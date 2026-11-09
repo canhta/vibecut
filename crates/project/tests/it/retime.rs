@@ -27,6 +27,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     }
 }

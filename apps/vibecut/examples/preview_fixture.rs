@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         },
     })?;

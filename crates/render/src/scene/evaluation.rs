@@ -68,7 +68,8 @@ impl<'a> Renderer<'a> {
         Ok(placement)
     }
     fn placement(&self, item: &Item) -> Placement {
-        self.settings
+        let placement = self
+            .settings
             .placements
             .get(&item.id)
             .copied()
@@ -119,7 +120,8 @@ impl<'a> Renderer<'a> {
                 } else {
                     Placement::default()
                 }
-            })
+            });
+        item_crop(item, placement)
     }
     fn frame(
         &mut self,
@@ -211,15 +213,16 @@ impl<'a> Renderer<'a> {
                 if self.placement_at(item, local_time(item, at)?)?.opacity == 0.0 {
                     continue;
                 }
+                let placement = item_crop(item, Placement::default());
                 if let Some(image) = self.video_image(
                     item,
                     source_time(item, at)?,
-                    Placement::default(),
+                    placement,
                     sources,
                     hooks,
                     preview,
                 )? {
-                    draw(&mut out, &image, Placement::default(), hooks)?;
+                    draw(&mut out, &image, placement, hooks)?;
                     blur(&mut out, radius, hooks)?;
                     prepared = Some((item.id, image));
                     break;
@@ -742,6 +745,22 @@ impl<'a> Renderer<'a> {
         self.cache_stats.entries = self.text_cache.len();
         Ok(image)
     }
+}
+/// Maps the item's source-normalized crop into the placement's source window so
+/// sampling keeps the cropped region and every later stage sees the placed item.
+fn item_crop(item: &Item, mut placement: Placement) -> Placement {
+    if let ItemParams::Video(p) = &item.content
+        && let Some(crop) = p.crop
+    {
+        let base = placement.crop;
+        placement.crop = Rect {
+            x: base.x + crop.x * base.width,
+            y: base.y + crop.y * base.height,
+            width: crop.width * base.width,
+            height: crop.height * base.height,
+        };
+    }
+    placement
 }
 /// Finite scalar channel value at the item-local time, or the stored base when unkeyed.
 fn scalar_at(animations: &project::Animations, path: &str, at: Tick, base: f32) -> Result<f32> {

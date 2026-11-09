@@ -119,6 +119,7 @@ fn populated(path: PathBuf) -> Project {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
         ItemParams::Audio(AudioParams {
             fades: project::Fades {
@@ -474,6 +475,37 @@ fn model_trust_boundaries() {
             d.scene_mut().timeline.audio.push(wrong);
         } else {
             d.scene_mut().timeline.overlays.push(wrong);
+        }
+        cases.push(d);
+    }
+    type CorruptCrop = fn(&mut project::Crop);
+    let crops: [CorruptCrop; 7] = [
+        |c| c.width = 0.0,
+        |c| c.height = -0.1,
+        |c| c.x = 0.75,
+        |c| c.y = 0.75,
+        |c| c.x = -0.01,
+        |c| c.width = f64::NAN,
+        |c| c.height = f64::INFINITY,
+    ];
+    for corrupt in crops {
+        let mut d = base.clone();
+        let item = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Video(_)))
+            .unwrap();
+        if let ItemParams::Video(params) = &mut item.content {
+            let mut crop = project::Crop {
+                x: 0.25,
+                y: 0.25,
+                width: 0.5,
+                height: 0.5,
+            };
+            corrupt(&mut crop);
+            params.crop = Some(crop);
         }
         cases.push(d);
     }

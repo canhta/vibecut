@@ -12,6 +12,10 @@ Persisted visual item properties and their bounds: transform, blend selection, m
 
 Opacity is owned by the scalar `opacity` animation channel. A missing channel means unity.
 
+## Crop
+
+`Crop` is one rectangle in normalized source coordinates: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the source frame. Every field is finite, width and height are positive, and the rectangle stays inside `0..=1`. Video and image items carry `VideoParams.crop`; absent means the full frame. Render owns sampling; the crop is item content and survives trim, retime, split, undo/redo and persistence.
+
 ## Masks
 
 `Item.masks` is an ordered vector of at most 1,024 `Mask` values. IDs are unique within the item and follow the animation-path identifier grammar. Audio items refuse masks. Empty or whitespace-only text masks are inactive but keep their data. Modes are None/Add/Subtract/Intersect/Lighten/Darken/Difference; render owns coverage math.

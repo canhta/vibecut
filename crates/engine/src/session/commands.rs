@@ -102,6 +102,7 @@ pub enum ItemParamPatch {
     ScaleY(f64),
     #[serde(rename = "transform.rotate")]
     Rotate(f64),
+    Crop(Option<project::Crop>),
     GraphicFill(Color),
     GraphicStroke(Color),
 }
@@ -126,31 +127,33 @@ impl ItemParamPatch {
             (
                 Self::AudioGain(_) | Self::AudioMuted(_),
                 ItemParams::Audio(_) | ItemParams::Video(_)
-            ) | (
-                Self::TextContent(_)
-                    | Self::TextFont(_)
-                    | Self::TextWeight(_)
-                    | Self::TextItalic(_)
-                    | Self::TextLetterSpacing(_)
-                    | Self::TextLineHeight(_)
-                    | Self::TextSize(_)
-                    | Self::TextColor(_)
-                    | Self::TextBackground(_)
-                    | Self::TextBackgroundColor(_)
-                    | Self::TextBackgroundPaddingX(_)
-                    | Self::TextBackgroundPaddingY(_)
-                    | Self::TextBackgroundOffsetX(_)
-                    | Self::TextBackgroundOffsetY(_)
-                    | Self::TextBackgroundCornerRadius(_)
-                    | Self::TextAlign(_)
-                    | Self::TextDecoration(_)
-                    | Self::TextPositionX(_)
-                    | Self::TextPositionY(_),
-                ItemParams::Text(_)
-            ) | (
-                Self::GraphicFill(_) | Self::GraphicStroke(_),
-                ItemParams::Overlay(_)
-            )
+            ) | (Self::Crop(_), ItemParams::Video(_))
+                | (
+                    Self::TextContent(_)
+                        | Self::TextFont(_)
+                        | Self::TextWeight(_)
+                        | Self::TextItalic(_)
+                        | Self::TextLetterSpacing(_)
+                        | Self::TextLineHeight(_)
+                        | Self::TextSize(_)
+                        | Self::TextColor(_)
+                        | Self::TextBackground(_)
+                        | Self::TextBackgroundColor(_)
+                        | Self::TextBackgroundPaddingX(_)
+                        | Self::TextBackgroundPaddingY(_)
+                        | Self::TextBackgroundOffsetX(_)
+                        | Self::TextBackgroundOffsetY(_)
+                        | Self::TextBackgroundCornerRadius(_)
+                        | Self::TextAlign(_)
+                        | Self::TextDecoration(_)
+                        | Self::TextPositionX(_)
+                        | Self::TextPositionY(_),
+                    ItemParams::Text(_)
+                )
+                | (
+                    Self::GraphicFill(_) | Self::GraphicStroke(_),
+                    ItemParams::Overlay(_)
+                )
         )
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
@@ -166,6 +169,7 @@ impl ItemParamPatch {
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
             Self::AudioGain(v) => project::valid_volume(*v),
             Self::AudioMuted(_) => true,
+            Self::Crop(crop) => crop.as_ref().is_none_or(|crop| crop.valid()),
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
             Self::TextWeight(v) => project::valid_weight(*v),

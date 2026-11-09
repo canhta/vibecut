@@ -53,6 +53,11 @@ pub(super) fn apply_patch(
                 project::Param::new(project::ParamValue::Bool(*v))?,
             )?;
         }
+        crate::ItemParamPatch::Crop(crop) => {
+            if let ItemParams::Video(p) = &mut target.content {
+                p.crop = *crop;
+            }
+        }
         crate::ItemParamPatch::TextContent(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.content = v.clone();

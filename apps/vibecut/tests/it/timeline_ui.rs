@@ -112,6 +112,7 @@ pub(crate) fn fixture() -> Fixture {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     let video_b = insert(
@@ -125,6 +126,7 @@ pub(crate) fn fixture() -> Fixture {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     let _audio_item = insert(
@@ -2750,6 +2752,7 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     let mut h = harness(f.editor);

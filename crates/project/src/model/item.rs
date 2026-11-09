@@ -17,6 +17,9 @@ pub struct VideoParams {
     pub source_audio_enabled: bool,
     pub volume: f32,
     pub muted: bool,
+    /// Source-normalized region shown in place of the whole frame; absent keeps the full frame.
+    #[serde(default)]
+    pub crop: Option<crate::Crop>,
     #[serde(default)]
     pub fades: crate::Fades,
 }

@@ -48,6 +48,7 @@ fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
                     source_audio_enabled: true,
                     volume: 0.0,
                     muted: false,
+                    crop: None,
                 }),
             },
         })

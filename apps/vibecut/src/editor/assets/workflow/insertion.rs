@@ -69,6 +69,7 @@ impl Editor {
                             source_audio_enabled: true,
                             volume: 0.0,
                             muted: false,
+                            crop: None,
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
                             fades: Default::default(),

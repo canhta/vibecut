@@ -526,6 +526,7 @@ mod tests {
                 volume: 0.,
                 muted: false,
                 fades: Default::default(),
+                crop: None,
             });
         }
         for (speed, cut, expected) in [

@@ -87,6 +87,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         }],
     });

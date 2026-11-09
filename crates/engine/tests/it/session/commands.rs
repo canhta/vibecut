@@ -540,6 +540,152 @@ fn transform_command_bounds_atomicity_undo_and_persistence() {
         Color([12, 34, 56, 78])
     );
 }
+#[test]
+fn crop_patch_is_validated_undoable_persisted_and_survives_trim_and_retime() {
+    use engine::ItemParamPatch;
+    let mut data = project().into_data();
+    let asset = testkit::source::asset(7, std::env::temp_dir().join("crop-controls.mp4"))
+        .format("mp4")
+        .duration(Tick(1000))
+        .content_hash(ContentHash::from_bytes(&[7]))
+        .stream(
+            testkit::source::video()
+                .duration(Tick(1000))
+                .start(Tick::ZERO)
+                .build(),
+        )
+        .build();
+    data.assets.push(asset);
+    data.scene_mut().timeline.main.items = vec![Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(20),
+        source_asset: Some(AssetId(7)),
+        source_range: range(0, 500),
+        start: Tick::ZERO,
+        content: ItemParams::Video(project::VideoParams {
+            crop: None,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+        }),
+    }];
+    let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    let initial = s.project().clone();
+    let crop = |s: &Session| match &get(s, 20).content {
+        ItemParams::Video(p) => p.crop,
+        _ => panic!("video fixture"),
+    };
+    assert_eq!(crop(&s), None);
+    let centred = project::Crop {
+        x: 0.25,
+        y: 0.25,
+        width: 0.5,
+        height: 0.5,
+    };
+    s.execute(
+        "timeline.set_item_param",
+        json!({"item":20,"patch":{"field":"crop","value":{"x":0.25,"y":0.25,"width":0.5,"height":0.5}}}),
+    )
+    .unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    assert_eq!(s.history_len(), (1, 0));
+    let edited = s.project().clone();
+    let saved = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        &project::decode(&saved).unwrap().project,
+        s.project().as_ref()
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &initial);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &edited);
+    for invalid in [
+        project::Crop {
+            x: 0.25,
+            y: 0.25,
+            width: 0.0,
+            height: 0.5,
+        },
+        project::Crop {
+            x: 0.25,
+            y: 0.25,
+            width: -0.1,
+            height: 0.5,
+        },
+        project::Crop {
+            x: 0.75,
+            y: 0.25,
+            width: 0.5,
+            height: 0.5,
+        },
+        project::Crop {
+            x: 0.25,
+            y: 0.75,
+            width: 0.5,
+            height: 0.5,
+        },
+        project::Crop {
+            x: -0.01,
+            y: 0.25,
+            width: 0.5,
+            height: 0.5,
+        },
+        project::Crop {
+            x: 0.0,
+            y: 0.0,
+            width: f64::NAN,
+            height: 0.5,
+        },
+        project::Crop {
+            x: 0.0,
+            y: 0.0,
+            width: 0.5,
+            height: f64::INFINITY,
+        },
+    ] {
+        let before = s.project().clone();
+        assert!(
+            s.apply(Command::SetItemField {
+                item: ItemId(20),
+                patch: ItemParamPatch::Crop(Some(invalid)),
+            })
+            .is_err(),
+            "{invalid:?}"
+        );
+        assert_eq!(s.project(), &before);
+    }
+    s.execute("trim_start", json!({"item":20,"at":50})).unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    s.execute("trim_end", json!({"item":20,"at":400})).unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    s.execute(
+        "timeline.set_speed",
+        json!({"items":[20],"speed":2.0,"maintain_pitch":true}),
+    )
+    .unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    s.execute(
+        "timeline.set_item_param",
+        json!({"item":20,"patch":{"field":"crop","value":null}}),
+    )
+    .unwrap();
+    assert_eq!(crop(&s), None);
+    let before = s.project().clone();
+    assert!(
+        s.apply(Command::SetItemField {
+            item: ItemId(10),
+            patch: ItemParamPatch::Crop(Some(centred)),
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+}
 fn get(s: &Session, id: u64) -> &Item {
     get_project(s.project(), id)
 }
@@ -1024,6 +1170,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     insert(
@@ -1389,6 +1536,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                     source_audio_enabled: true,
                     volume: 0.0,
                     muted: false,
+                    crop: None,
                 }),
             },
         })
@@ -2952,6 +3100,7 @@ fn policy_insert(id: u64) -> Command {
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         },
     }

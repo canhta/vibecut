@@ -111,6 +111,7 @@ fn video(id: u64, start: i64, source: SourceRange) -> Item {
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     }
 }

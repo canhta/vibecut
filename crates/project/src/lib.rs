@@ -19,7 +19,7 @@ pub use persistence::{
     ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path, read_metadata,
 };
 pub use visual::{
-    BlendMode, DEFAULT_WEIGHT, EffectDefinition, EffectInstance, EffectParamDefinition,
+    BlendMode, Crop, DEFAULT_WEIGHT, EffectDefinition, EffectInstance, EffectParamDefinition,
     EffectParams, GRADE_MAX, GRADE_MIN, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask,
     MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS,
     TransformField, Transition, TransitionAlignment, TransitionDefinition, TransitionId,

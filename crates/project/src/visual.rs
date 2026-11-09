@@ -2,6 +2,7 @@
 
 mod blend;
 mod bounds;
+mod crop;
 mod effects;
 mod mask;
 mod transform;
@@ -10,6 +11,7 @@ mod typography;
 
 pub use blend::BlendMode;
 pub(crate) use bounds::{MAX_BYTES, Writer, check};
+pub use crop::Crop;
 pub use effects::{
     EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, GRADE_MAX, GRADE_MIN,
     effect_definitions,

@@ -145,6 +145,7 @@ fn fixture() -> Fixture {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     let image = insert(
@@ -158,6 +159,7 @@ fn fixture() -> Fixture {
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     );
     let graphic = insert(

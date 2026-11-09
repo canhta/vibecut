@@ -4,7 +4,7 @@
 
 `Renderer::new(project, RenderSettings)` validates output geometry and per-item normalized crop and destination rectangles. `render_frame(t, sources, hooks)` returns one `Image`; `preview_frame` is the separate placeholder path. Track order is bottom-to-top. Hidden visual tracks and half-open inactive items produce no pixels. Position uses the project-owned retime mapping. Cover center-crops, Contain letterboxes, Stretch maps the selected crop. Background blur renders behind every timeline layer. Selected caption languages admit up to two; the default is the source language or the first available text.
 
-`Rect::validate_crop` exposes the compositor's source-normalized rectangle admission for desktop crop controls.
+`Rect::validate_crop` exposes the compositor's source-normalized rectangle admission for desktop crop controls. An item's `VideoParams.crop` is a source-normalized rectangle (`x`/`y` top-left, `width`/`height` size, fractions of the source frame) composed into the placement's source window before the first sample; it therefore precedes transform, mask, effect and blend stages and the cropped region keeps its aspect through the placement's `Fit`. Absent or full-frame crop samples the whole source.
 
 An item's `opacity` animation overrides its static `Placement.opacity`. Evaluation calls project's `Animations::value_at` with item-local ticks, the evaluator the engine uses. Values clamp to 0..=1. Missing opacity data keeps the static placement.
 

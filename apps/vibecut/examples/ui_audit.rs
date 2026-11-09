@@ -1184,6 +1184,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
+            crop: None,
         }),
     )?;
     insert(
@@ -1196,6 +1197,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
             fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
+            crop: None,
             muted: false,
         }),
     )?;
@@ -1282,6 +1284,7 @@ fn player_editor(theme: Theme, empty: bool) -> Result<Editor, Failure> {
             ItemParams::Video(VideoParams {
                 source_audio_enabled: true,
                 volume: 0.0,
+                crop: None,
                 muted: false,
                 fades: Default::default(),
             }),
@@ -1885,6 +1888,7 @@ fn timeline_main(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         )?;
     }
@@ -2050,6 +2054,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
             fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
+            crop: None,
             muted: false,
         }),
     )?;
@@ -2062,6 +2067,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         ItemParams::Video(VideoParams {
             fades: Default::default(),
             source_audio_enabled: true,
+            crop: None,
             volume: 0.0,
             muted: false,
         }),

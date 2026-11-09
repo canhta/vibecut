@@ -306,6 +306,7 @@ fn transition_consumes_both_video_handles_at_exact_source_ticks() {
             volume: 0.,
             muted: false,
             fades: Default::default(),
+            crop: None,
         });
     }
     let p = Project::new(d).unwrap();

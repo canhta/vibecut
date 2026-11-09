@@ -168,6 +168,7 @@ fn prepare_clip(
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         });
         next_item = next_item.checked_add(1).ok_or(EditError::IdExhausted)?;

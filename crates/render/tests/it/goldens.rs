@@ -3,6 +3,239 @@ use crate::support::*;
 use render::*;
 use time::{Tick, TimeRange};
 struct Pixels;
+struct Quadrants;
+impl SourceProvider for Quadrants {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        let mut bytes = Vec::new();
+        for y in 0..8 {
+            for x in 0..8 {
+                let pixel = match (x < 4, y < 4) {
+                    (true, true) => [255, 0, 0, 255],
+                    (false, true) => [0, 255, 0, 255],
+                    (true, false) => [0, 0, 255, 255],
+                    (false, false) => [255, 255, 0, 255],
+                };
+                bytes.extend_from_slice(&pixel);
+            }
+        }
+        Ok(Some(Image::from_rgba8(8, 8, &bytes, false, 13, h)?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, h)
+    }
+}
+fn crop_scene(
+    format: &str,
+    crop: Option<project::Crop>,
+    transform: &[(&str, f64)],
+) -> project::Project {
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-crop-source"))
+        .format(format)
+        .duration(tick(1, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(1, 1))
+                .start(Tick::ZERO)
+                .frame_count(30)
+                .variable_frame_rate(false)
+                .size(8, 8)
+                .build(),
+        )
+        .build();
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    data.canvas.background = project::Color([0, 0, 0, 255]);
+    data.assets.push(asset);
+    let mut animations = project::Animations::default();
+    for (path, value) in transform {
+        animations
+            .set(
+                project::AnimationPath::new(*path).unwrap(),
+                project::Param::new(project::ParamValue::Scalar(*value)).unwrap(),
+            )
+            .unwrap();
+    }
+    data.scene_mut().timeline.main.items = vec![project::Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations,
+        id: project::ItemId(0),
+        source_asset: Some(media::AssetId(1)),
+        source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        start: Tick::ZERO,
+        content: project::ItemParams::Video(project::VideoParams {
+            crop,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+        }),
+    }];
+    project::Project::new(data).unwrap()
+}
+fn hash(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
+        (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+    })
+}
+#[test]
+fn item_crop_renders_centred_and_edge_regions_before_transform() {
+    if !tools() {
+        return;
+    }
+    let h = Hooks::default();
+    let centred = project::Crop {
+        x: 0.25,
+        y: 0.25,
+        width: 0.5,
+        height: 0.5,
+    };
+    let edge = project::Crop {
+        x: 0.0,
+        y: 0.0,
+        width: 0.5,
+        height: 0.5,
+    };
+    for (case, format, crop, transform, expected) in [
+        (
+            "centred",
+            "synthetic",
+            Some(centred),
+            vec![],
+            18372119245977500073u64,
+        ),
+        (
+            "edge",
+            "synthetic",
+            Some(edge),
+            vec![],
+            8779314781866312485u64,
+        ),
+        (
+            "rotate-scale",
+            "synthetic",
+            Some(centred),
+            vec![
+                ("transform.scaleX", 0.5),
+                ("transform.scaleY", 0.5),
+                ("transform.rotate", 90.0),
+            ],
+            2049379840725108052u64,
+        ),
+        (
+            "image",
+            "png_pipe",
+            Some(centred),
+            vec![],
+            18372119245977500073u64,
+        ),
+    ] {
+        let p = crop_scene(format, crop, &transform);
+        let mut renderer = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+        let frame = renderer
+            .render_frame(Tick::ZERO, &mut Quadrants, &h)
+            .unwrap();
+        let preview = renderer
+            .preview_frame(Tick::ZERO, &mut Quadrants, &h)
+            .unwrap();
+        assert_eq!(frame.pixels(), preview.pixels(), "{case} preview");
+        let packed = frame.rgba8(1, &h).unwrap();
+        let actual = hash(&packed.bytes);
+        let raw = root().join(format!("crop-{case}-golden.rgba"));
+        std::fs::write(&raw, &packed.bytes).unwrap();
+        let png = root().join(format!("crop-{case}-golden.png"));
+        ffmpeg(&[
+            "-f".as_ref(),
+            "rawvideo".as_ref(),
+            "-pixel_format".as_ref(),
+            "rgba".as_ref(),
+            "-video_size".as_ref(),
+            "64x64".as_ref(),
+            "-i".as_ref(),
+            raw.as_os_str(),
+            "-frames:v".as_ref(),
+            "1".as_ref(),
+            png.as_os_str(),
+        ]);
+        assert_eq!(actual, expected, "inspected {case} crop golden");
+    }
+    let none = crop_scene("synthetic", None, &[]);
+    let full = crop_scene(
+        "synthetic",
+        Some(project::Crop {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        }),
+        &[],
+    );
+    let render = |p: &project::Project| {
+        Renderer::new(p, RenderSettings::from_project(p))
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut Quadrants, &h)
+            .unwrap()
+    };
+    assert_eq!(render(&none).pixels(), render(&full).pixels());
+    let p = crop_scene("synthetic", Some(centred), &[]);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.include_audio = false;
+    settings.mode = ExportMode::Encode;
+    settings.quality = 100;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let path = root().join("crop-export-golden.mp4");
+    let receipt = export_with_sources(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 10)).unwrap(),
+        &settings,
+        &path,
+        &mut Quadrants,
+        &h,
+    )
+    .unwrap();
+    assert_eq!(receipt.video_frames, 3);
+    let exported = rgba(&path);
+    let reference = render(&p).rgba8(1, &h).unwrap();
+    assert_eq!(exported.len(), reference.bytes.len());
+    let mse = exported
+        .iter()
+        .zip(&reference.bytes)
+        .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+        .sum::<f64>()
+        / exported.len() as f64;
+    assert!(mse < 150.0, "encoded crop MSE {mse}");
+}
+
 impl SourceProvider for Pixels {
     fn status(
         &mut self,
@@ -77,6 +310,7 @@ fn scene() -> project::Project {
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
             Some(media::AssetId(1)),
         ),

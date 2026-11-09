@@ -220,6 +220,7 @@ fn export_benchmark(
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,
+                crop: None,
             }),
         }],
     });
