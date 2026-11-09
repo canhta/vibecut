@@ -66,6 +66,42 @@ fn project(fps: FrameRate, width: u32, height: u32, two_items: bool) -> Project 
     Project::new(data).unwrap()
 }
 
+/// One visible text item whose default position is the lower third of the canvas.
+fn text(id: u64) -> Item {
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(id),
+        source_asset: None,
+        source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
+        start: Tick::ZERO,
+        content: ItemParams::Text(project::TextParams::new("Hello world")),
+    }
+}
+
+fn text_project(track_locked: bool, track_hidden: bool) -> Project {
+    let mut data = Project::empty(ProjectId(170), "Text".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 640;
+    data.canvas.height = 360;
+    data.canvas.fps = FrameRate::FPS_30;
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(2),
+        name: "Text".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: track_hidden,
+        locked: track_locked,
+        items: vec![text(1)],
+    });
+    Project::new(data).unwrap()
+}
+
 fn editor(project: Project, preferences: Preferences) -> Editor {
     let session = Session::new(project, 20).unwrap();
     let mut playback = Playback::new(
@@ -84,6 +120,70 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     h.run_steps(3);
     h
+}
+
+/// Double-click needs two presses inside egui's 0.3 s window; the default
+/// harness advances 0.25 s per event, so these sessions run at 0.05 s.
+fn build_fast(editor: Editor) -> Harness<'static, Editor> {
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    h.run_steps(3);
+    h
+}
+
+/// Screen point at the text item's default (50 %, 84.5 %) canvas position.
+fn text_point(h: &Harness<Editor>) -> egui::Pos2 {
+    let stage = widget(h, "preview.canvas").rect;
+    let scale = (stage.width() / 640.0).min(stage.height() / 360.0);
+    let frame = egui::Rect::from_center_size(stage.center(), egui::vec2(640.0, 360.0) * scale);
+    frame.center() + egui::vec2(0.0, (0.845 - 0.5) * 360.0 * scale)
+}
+
+fn double_click(h: &mut Harness<Editor>, at: egui::Pos2) {
+    for _ in 0..2 {
+        h.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+    }
+    h.run_steps(3);
+}
+
+fn text_edit_open(h: &Harness<Editor>) -> bool {
+    h.query_all(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
+        .next()
+        .is_some()
+}
+
+fn type_into_edit(h: &mut Harness<Editor>, text: &str) {
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
+        .focus();
+    h.run_steps(1);
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
+        .type_text(text);
+    h.run_steps(2);
+}
+
+fn content(project: &Project, item: ItemId) -> String {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .and_then(|candidate| match &candidate.content {
+            ItemParams::Text(params) => Some(params.content.as_str().to_owned()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing text item {item:?}"))
 }
 
 fn click(h: &mut Harness<Editor>, id: &str) {
@@ -984,4 +1084,201 @@ fn preview_transform_refuses_hidden_and_locked_items_and_clamps_minimum_scale() 
     drop_at(&mut h, start + egui::vec2(-2000.0, 0.0));
     assert_eq!(history(&h), 1);
     assert!((value(&h, ItemId(1), TransformField::ScaleX) - 0.01).abs() < 1e-9);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Finish {
+    Escape,
+    Blur,
+    Playback,
+}
+
+#[test]
+fn preview_inline_text_edit_commits_on_escape_blur_and_playback_with_undo_redo() {
+    let rows = [
+        (Finish::Escape, "Escape"),
+        (Finish::Blur, "blur"),
+        (Finish::Playback, "playback"),
+    ];
+    for (finish, label) in rows {
+        let mut h = build_fast(editor(text_project(false, false), Preferences::default()));
+        let before = content(h.state().session.project(), ItemId(1));
+        let point = text_point(&h);
+        double_click(&mut h, point);
+        assert!(text_edit_open(&h), "{label} opens the overlay");
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+        type_into_edit(&mut h, "Edited");
+        assert_eq!(history(&h), 0, "{label} stages no history");
+        assert_eq!(
+            content(h.state().session.project(), ItemId(1)),
+            before,
+            "{label} never mutates the committed project directly"
+        );
+        assert_eq!(
+            content(
+                h.state().session.preview_project().unwrap().as_ref(),
+                ItemId(1)
+            ),
+            "Edited",
+            "{label} stages through the text param command"
+        );
+        match finish {
+            Finish::Escape => {
+                h.key_press(egui::Key::Escape);
+                h.run_steps(3);
+            }
+            Finish::Blur => {
+                h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+                    .click();
+                h.run_steps(3);
+            }
+            Finish::Playback => {
+                h.state_mut().activate("transport.play").unwrap();
+                h.run_steps(3);
+                assert!(h.state().playback.playing(), "{label} starts playback");
+                h.state_mut().activate("transport.pause").unwrap();
+                h.run_steps(2);
+            }
+        }
+        assert!(
+            !h.state().session.gesture_active(),
+            "{label} closes preview"
+        );
+        assert!(!text_edit_open(&h), "{label} closes the overlay");
+        assert_eq!(history(&h), 1, "{label} publishes one undo step");
+        assert_eq!(
+            content(h.state().session.project(), ItemId(1)),
+            "Edited",
+            "{label} commits the buffer"
+        );
+
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(2);
+        assert_eq!(
+            content(h.state().session.project(), ItemId(1)),
+            before,
+            "{label} undo restores the opening content"
+        );
+        h.state_mut().activate("edit.redo").unwrap();
+        h.run_steps(2);
+        assert_eq!(
+            content(h.state().session.project(), ItemId(1)),
+            "Edited",
+            "{label} redo restores the edit"
+        );
+        assert_eq!(history(&h), 1, "{label} stays one step");
+    }
+}
+
+#[test]
+fn preview_inline_text_edit_enter_inserts_a_newline_and_empty_content_is_allowed() {
+    // Enter inserts a newline, never commits.
+    let mut h = build_fast(editor(text_project(false, false), Preferences::default()));
+    let point = text_point(&h);
+    double_click(&mut h, point);
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    type_into_edit(&mut h, "A");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    type_into_edit(&mut h, "B");
+    assert!(text_edit_open(&h), "Enter keeps the session open");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(content(h.state().session.project(), ItemId(1)), "A\nB");
+    assert_eq!(history(&h), 1);
+
+    // Emptying the buffer is allowed, keeps the caret anchored and commits.
+    let mut h = build_fast(editor(text_project(false, false), Preferences::default()));
+    let before = content(h.state().session.project(), ItemId(1));
+    let point = text_point(&h);
+    double_click(&mut h, point);
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    h.key_press(egui::Key::Backspace);
+    h.run_steps(2);
+    assert!(text_edit_open(&h), "an empty buffer keeps the session open");
+    assert_eq!(
+        content(
+            h.state().session.preview_project().unwrap().as_ref(),
+            ItemId(1)
+        ),
+        ""
+    );
+    assert_eq!(
+        content(h.state().session.project(), ItemId(1)),
+        before,
+        "the committed project is untouched while staging empty content"
+    );
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(content(h.state().session.project(), ItemId(1)), "");
+    assert_eq!(history(&h), 1);
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(content(h.state().session.project(), ItemId(1)), before);
+}
+
+#[test]
+fn preview_inline_text_edit_refuses_locked_and_hidden_items() {
+    for (track_locked, track_hidden) in [(true, false), (false, true)] {
+        let mut h = build_fast(editor(
+            text_project(track_locked, track_hidden),
+            Preferences::default(),
+        ));
+        let before = json(h.state().session.project());
+        let point = text_point(&h);
+        double_click(&mut h, point);
+        assert!(
+            !text_edit_open(&h),
+            "a locked or hidden item exposes no inline editor"
+        );
+        assert!(h.state().selection.is_empty());
+        assert_eq!(history(&h), 0);
+        assert_eq!(json(h.state().session.project()), before);
+    }
+}
+
+/// Offscreen evidence for the ticket; wgpu stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-25-text-edit.png"]
+fn preview_inline_text_edit_renders_screenshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .unwrap_or_else(|| root.join("target"));
+    let mut h = build_fast(editor(text_project(false, false), Preferences::default()));
+    let point = text_point(&h);
+    double_click(&mut h, point);
+    assert!(text_edit_open(&h));
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    type_into_edit(&mut h, "Inline heading");
+    // Select the buffer so the capture shows the selection and caret treatment.
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    h.run_steps(2);
+    // The edited preview renders on a worker: give it real time before capturing.
+    let mut rendered = false;
+    for _ in 0..80 {
+        h.run_steps(1);
+        if h.state().playback.frame().is_some() {
+            rendered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert!(rendered, "the edited preview frame arrives");
+    assert!(
+        h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
+            .is_focused(),
+        "the screenshot keeps the caret and selection visible"
+    );
+    let image = h.render().expect("offscreen render");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-25-text-edit.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }

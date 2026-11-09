@@ -26,6 +26,19 @@ pub(super) enum Action {
     TransformEnd {
         commit: bool,
     },
+    /// Open one inline text session and select its item.
+    TextBegin {
+        item: ItemId,
+    },
+    /// Stage the whole text buffer as the session's absolute candidate.
+    TextPreview {
+        item: ItemId,
+        content: String,
+    },
+    /// Close the inline text session; `commit` publishes one undo step.
+    TextEnd {
+        commit: bool,
+    },
     Remember {
         id: String,
         icon: Option<&'static str>,

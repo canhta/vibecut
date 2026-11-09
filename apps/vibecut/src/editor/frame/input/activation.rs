@@ -10,6 +10,11 @@ impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
     pub fn activate(&mut self, id: &str) -> Result<()> {
+        // Starting playback closes an inline edit before the engine admits the
+        // action: selection and save commands refuse while a preview is open.
+        if id == "transport.play" && !self.playback.playing() {
+            self.commit_text_edit();
+        }
         let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
         if let Some(ticket) = spec.pending_ticket() {
             return Err(Error::NotAvailable(ticket));

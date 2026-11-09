@@ -262,6 +262,9 @@ impl Editor {
                     self.preview_transform(item, &values);
                 }
                 Action::TransformEnd { commit } => self.end_preview_transform(commit),
+                Action::TextBegin { item } => self.begin_text_edit(item),
+                Action::TextPreview { item, content } => self.preview_text(item, &content),
+                Action::TextEnd { commit } => self.end_preview_transform(commit),
                 Action::CommitTimecode => self.commit_timecode(),
                 Action::Retry => {
                     self.player.timecode_error = None;

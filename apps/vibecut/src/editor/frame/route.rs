@@ -236,6 +236,37 @@ impl Editor {
             Err(error) => self.error = Some(error.to_string()),
         }
     }
+    /// Select the text item whose inline session just opened and keep the
+    /// timeline's preview contract as the only writer.
+    pub(in crate::editor) fn begin_text_edit(&mut self, item: ItemId) {
+        if self.session.gesture_active() {
+            self.end_preview_transform(false);
+        }
+        self.select_single(item);
+    }
+    /// Stage the whole text buffer as an absolute `text_content` candidate; each
+    /// call replaces the candidate from the session's opening snapshot.
+    pub(in crate::editor) fn preview_text(&mut self, item: ItemId, content: &str) {
+        let commands = [serde_json::json!({
+            "command":"timeline.set_item_param",
+            "params":{"item":item,"patch":{"field":"text_content","value":content}}
+        })];
+        match self
+            .session
+            .execute("timeline.preview", serde_json::json!({"commands":commands}))
+        {
+            Ok(_) => self.sync_preview(),
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+    /// Commit an open inline edit as one undo step, or discard a net-zero session.
+    pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
+        let Some(commit) = self.player.transform.cancel_text() else {
+            return false;
+        };
+        self.end_preview_transform(commit);
+        true
+    }
     /// Escape during a preview transform drops the candidate without a history entry.
     fn cancel_preview_transform(&mut self) -> bool {
         if !self.player.transform.cancel() {
@@ -457,6 +488,10 @@ impl Editor {
     }
     /// Escape: abandon the innermost pointer interaction in progress.
     pub(in crate::editor) fn cancel_interaction(&mut self) {
+        // An inline edit commits on Escape; it never cancels the typed buffer.
+        if self.commit_text_edit() {
+            return;
+        }
         if self.cancel_preview_transform() {
             return;
         }

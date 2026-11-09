@@ -311,6 +311,10 @@ pub(crate) mod size {
     /// Rotation grip circle and its constant screen gap below the box.
     pub const TRANSFORM_GRIP: f32 = 18.0;
     pub const TRANSFORM_GAP: f32 = 12.0;
+    /// Inline text edit caret width and selection fill opacity. The web editor
+    /// capture (2026-11-09) draws a 2 px caret and a ~38 % accent selection.
+    pub const TEXT_EDIT_CARET: f32 = 2.0;
+    pub const TEXT_EDIT_SELECTION: f32 = 0.38;
 }
 /// Measured glyph boxes; larger empty-state glyphs are not editor measurements.
 pub(crate) mod icon {
