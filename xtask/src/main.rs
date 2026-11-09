@@ -1,5 +1,6 @@
 //! Workspace checks and admitted crate scaffolding.
 mod build;
+mod checkout;
 mod distribution;
 mod ffmpeg;
 mod i18n;
@@ -362,7 +363,7 @@ fn assets(root: &Path) -> Result<(), String> {
 }
 
 fn names(root: &Path) -> Result<(), String> {
-    let patterns = root.join(".scratch/forbidden-names.txt");
+    let patterns = checkout::main(root)?.join(".scratch/forbidden-names.txt");
     if !patterns.exists() {
         return Ok(());
     }
