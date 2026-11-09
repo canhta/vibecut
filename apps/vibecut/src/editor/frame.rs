@@ -1,5 +1,7 @@
 //! Owns editor frame composition.
 mod assets;
+#[cfg(test)]
+mod bench;
 mod desk;
 mod input;
 mod layout;
