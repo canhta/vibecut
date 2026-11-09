@@ -13,19 +13,28 @@ use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 /// 20 ms at the speech extract's 16 kHz mono rate.
 const FRAME_SAMPLES: usize = SPEECH_SAMPLE_RATE as usize / 50;
+/// One frame is 20 ms, so Martin's 1.5 s minimum-search window is 75 frames.
+const NOISE_BLOCK_FRAMES: usize = 75;
+/// Low-percentile noise floor and margin, from the percentile validator.
+const NOISE_PERCENTILE: f64 = 0.10;
+const NOISE_MARGIN_DB: f64 = 6.0;
+/// The gate also stays this far below the median frame, twice the margin, so a
+/// unimodal speech signal cannot be swallowed by its own floor estimate.
+const NOISE_GUARD_DB: f64 = 2.0 * NOISE_MARGIN_DB;
 const MAX_SECONDS: i64 = 86_400;
+/// 20 ms frames over one day, plus the partial final frame.
+const MAX_FRAMES: usize = MAX_SECONDS as usize * 50 + 1;
 const MAX_SPANS: usize = 288_000;
 const MAX_RUNS: usize = 2 * MAX_SPANS;
 const MAX_BYTES: usize = 32 << 20;
-const RECIPE: &str = "speech-activity-v1:rms-20ms:min-speech.1s:min-pause.5s";
+const RECIPE: &str =
+    "speech-activity-v2:rms-20ms:minstats-1.5s-p10:margin.6db:min-speech.1s:min-pause.5s";
 
-/// Frame log-energy gate and run lengths. Defaults cite their source in the
-/// analysis README; admitted ranges only keep hostile settings bounded.
+/// Run lengths. Defaults cite their source in the analysis README; admitted
+/// ranges only keep hostile settings bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpeechActivitySettings {
-    /// Frame RMS at or below this gate is silence, in dBFS: -120..=-20. Default -60.
-    pub noise_db: f32,
     /// Shortest silence between speech that is a pause: 0..=10 s. Default 0.5 s.
     pub min_pause: Tick,
     /// Shortest speech between pauses that stays speech: 0..=10 s. Default 0.1 s.
@@ -34,7 +43,6 @@ pub struct SpeechActivitySettings {
 impl Default for SpeechActivitySettings {
     fn default() -> Self {
         Self {
-            noise_db: -60.,
             min_pause: Tick(TICKS_PER_SECOND / 2),
             min_speech: Tick(TICKS_PER_SECOND / 10),
         }
@@ -99,8 +107,6 @@ impl SpeechActivityRequest {
         if range.start() < Tick::ZERO
             || range.duration().0 > MAX_SECONDS * TICKS_PER_SECOND
             || asset.probe().duration.is_some_and(|end| range.end() > end)
-            || !settings.noise_db.is_finite()
-            || !(-120.0..=-20.0).contains(&settings.noise_db)
             || !(0..=10 * TICKS_PER_SECOND).contains(&settings.min_pause.0)
             || !(0..=10 * TICKS_PER_SECOND).contains(&settings.min_speech.0)
         {
@@ -163,14 +169,15 @@ impl SpeechActivityRequest {
         };
         let request = self.clone();
         // The media speech extract retains one default 10-minute PCM window
-        // (600 s * 16 kHz * 4 bytes = 38.4 MB); runs and spans share 64 MiB.
+        // (600 s * 16 kHz * 4 bytes = 38.4 MB). The frame history is one f32
+        // per 20 ms (17.3 MB/day); block minima, runs and spans share 96 MiB.
         let spec = JobSpec {
             kind: JobKind::AnalyzeSpeechActivity,
             class: ResourceClass::Cpu,
             input: self.key,
             bytes: JobBytes {
                 decoded_frames: 40 << 20,
-                compositor: 64 << 20,
+                compositor: 96 << 20,
                 result: MAX_BYTES as u64,
                 ..Default::default()
             },
@@ -327,31 +334,37 @@ impl Run {
 
 struct Detector {
     range: SourceRange,
-    noise_db: f64,
     min_pause: i64,
     min_speech: i64,
     next_window: Option<Tick>,
     pending_start: Option<Tick>,
     pending: Vec<f32>,
-    runs: Vec<Run>,
-    frames: u64,
+    first_start: Option<Tick>,
+    frames_db: Vec<f32>,
+    histogram: [u32; 121],
+    block_min: Option<f32>,
+    block_frames: usize,
+    block_minima: Vec<f32>,
 }
 impl Detector {
     fn new(range: SourceRange, settings: SpeechActivitySettings) -> Self {
         Self {
             range,
-            noise_db: f64::from(settings.noise_db),
             min_pause: settings.min_pause.0,
             min_speech: settings.min_speech.0,
             next_window: None,
             pending_start: None,
             pending: Vec::new(),
-            runs: Vec::new(),
-            frames: 0,
+            first_start: None,
+            frames_db: Vec::new(),
+            histogram: [0; 121],
+            block_min: None,
+            block_frames: 0,
+            block_minima: Vec::new(),
         }
     }
 
-    /// Append one contiguous PCM window and classify every complete frame.
+    /// Append one contiguous PCM window and record every complete frame.
     fn push_samples(&mut self, samples: &[f32], window: SourceRange) -> Result<(), EditError> {
         match self.next_window {
             Some(expected) if window.start() != expected => {
@@ -390,77 +403,107 @@ impl Detector {
             .pending
             .get(..FRAME_SAMPLES)
             .ok_or(EditError::Invalid("speech activity frame"))?;
-        let (activity, speech_confidence, pause_confidence) = classify(samples, self.noise_db);
+        let db = frame_db(samples);
         let start = self
             .pending_start
             .ok_or(EditError::Invalid("speech activity frame clock"))?;
         let end = start
             .checked_add(ticks_of(FRAME_SAMPLES)?)
             .ok_or(EditError::Limit)?;
-        self.push_run(activity, start, end, speech_confidence, pause_confidence)?;
+        self.record(db, start)?;
         self.pending.drain(..FRAME_SAMPLES);
         self.pending_start = Some(end);
-        self.frames = self.frames.checked_add(1).ok_or(EditError::Limit)?;
         Ok(())
     }
 
-    fn push_run(
-        &mut self,
-        activity: Activity,
-        start: Tick,
-        end: Tick,
-        speech_confidence: f64,
-        pause_confidence: f64,
-    ) -> Result<(), EditError> {
-        if end <= start {
-            return Err(EditError::Invalid("speech activity run"));
+    fn record(&mut self, db: f64, start: Tick) -> Result<(), EditError> {
+        if !db.is_finite() && db != f64::NEG_INFINITY {
+            return Err(EditError::Invalid("speech activity energy"));
         }
-        if let Some(last) = self.runs.last_mut()
-            && last.activity == activity
-        {
-            if last.end != start {
-                return Err(EditError::Invalid("speech activity run clock"));
-            }
-            last.end = end;
-            last.frames = last.frames.checked_add(1).ok_or(EditError::Limit)?;
-            last.speech_confidence += speech_confidence;
-            last.pause_confidence += pause_confidence;
-            return Ok(());
-        }
-        if self.runs.len() >= MAX_RUNS {
+        if self.frames_db.len() >= MAX_FRAMES {
             return Err(EditError::Limit);
         }
-        self.runs.push(Run {
-            activity,
-            start,
-            end,
-            frames: 1,
-            speech_confidence,
-            pause_confidence,
-        });
+        self.first_start.get_or_insert(start);
+        let value = db as f32;
+        self.frames_db.push(value);
+        let bin = if db.is_infinite() {
+            0
+        } else {
+            ((db.clamp(-120.0, 0.0) + 120.0).round() as usize).min(120)
+        };
+        let count = self
+            .histogram
+            .get_mut(bin)
+            .ok_or(EditError::Invalid("speech activity histogram"))?;
+        *count = count.checked_add(1).ok_or(EditError::Limit)?;
+        self.block_min = Some(self.block_min.map_or(value, |min| min.min(value)));
+        self.block_frames += 1;
+        if self.block_frames == NOISE_BLOCK_FRAMES {
+            self.block_minima.push(
+                self.block_min
+                    .take()
+                    .ok_or(EditError::Invalid("speech activity block"))?,
+            );
+            self.block_frames = 0;
+        }
         Ok(())
     }
 
     fn finish(mut self) -> Result<(Vec<SpeechActivitySpan>, u64), EditError> {
-        if !self.pending.is_empty() {
+        let partial = self.pending.len();
+        if partial > 0 {
             let samples = self
                 .pending
                 .get(..)
                 .ok_or(EditError::Invalid("speech activity frame"))?;
-            let (activity, speech_confidence, pause_confidence) = classify(samples, self.noise_db);
+            let db = frame_db(samples);
             let start = self
                 .pending_start
                 .ok_or(EditError::Invalid("speech activity frame clock"))?;
-            let end = start
-                .checked_add(ticks_of(samples.len())?)
-                .ok_or(EditError::Limit)?;
-            self.push_run(activity, start, end, speech_confidence, pause_confidence)?;
-            self.frames = self.frames.checked_add(1).ok_or(EditError::Limit)?;
+            self.record(db, start)?;
         }
-        if self.frames == 0 {
+        if let Some(min) = self.block_min.take() {
+            self.block_minima.push(min);
+        }
+        let frames = self.frames_db.len();
+        if frames == 0 {
             return Err(EditError::Unsupported("speech activity has no samples"));
         }
-        let mut spans = finalize(self.runs, self.min_speech, self.min_pause)?;
+        let floor = percentile_sorted(&mut self.block_minima, NOISE_PERCENTILE)?;
+        let median = histogram_percentile(&self.histogram, 0.5)?;
+        // Minimum statistics gives the floor; the low-percentile selection and
+        // 6 dB margin are the percentile validator. The guard keeps the gate
+        // below the median so continuous speech cannot become its own floor.
+        let gate = (floor + NOISE_MARGIN_DB).min(median - NOISE_GUARD_DB);
+        let first = self
+            .first_start
+            .ok_or(EditError::Invalid("speech activity frame clock"))?;
+        let step = ticks_of(FRAME_SAMPLES)?;
+        let mut runs = Vec::new();
+        for (index, db) in self.frames_db.iter().enumerate() {
+            let start = frame_start(first, step, index)?;
+            let samples = if index + 1 == frames && partial > 0 {
+                partial
+            } else {
+                FRAME_SAMPLES
+            };
+            let end = start
+                .checked_add(ticks_of(samples)?)
+                .ok_or(EditError::Limit)?;
+            let (activity, speech_confidence, pause_confidence) = classify_db(f64::from(*db), gate);
+            merge_run(
+                &mut runs,
+                Run {
+                    activity,
+                    start,
+                    end,
+                    frames: 1,
+                    speech_confidence,
+                    pause_confidence,
+                },
+            )?;
+        }
+        let mut spans = finalize(runs, self.min_speech, self.min_pause)?;
         let last = spans
             .last_mut()
             .ok_or(EditError::Unsupported("speech activity has no spans"))?;
@@ -488,11 +531,11 @@ impl Detector {
         } else if first.range.start() != self.range.start() {
             return Err(EditError::Invalid("speech activity range"));
         }
-        Ok((spans, self.frames))
+        Ok((spans, frames as u64))
     }
 }
 
-fn classify(samples: &[f32], noise_db: f64) -> (Activity, f64, f64) {
+fn frame_db(samples: &[f32]) -> f64 {
     let mean = if samples.is_empty() {
         0.0
     } else {
@@ -503,21 +546,71 @@ fn classify(samples: &[f32], noise_db: f64) -> (Activity, f64, f64) {
             / samples.len() as f64
     };
     let rms = mean.sqrt();
-    let db = if rms > 0.0 {
+    if rms > 0.0 {
         20.0 * rms.log10()
     } else {
         f64::NEG_INFINITY
-    };
-    let span = -noise_db;
-    if db > noise_db {
-        let confidence = ((db - noise_db) / span).clamp(0.0, 1.0);
+    }
+}
+
+fn classify_db(db: f64, gate: f64) -> (Activity, f64, f64) {
+    if gate == f64::NEG_INFINITY {
+        return if db.is_finite() {
+            (Activity::Speech, 1.0, 0.0)
+        } else {
+            (Activity::Pause, 0.0, 1.0)
+        };
+    }
+    let span = (-gate).max(1.0);
+    if db > gate {
+        let confidence = ((db - gate) / span).clamp(0.0, 1.0);
         (Activity::Speech, confidence, 0.0)
     } else if db.is_finite() {
-        let confidence = ((noise_db - db) / span).clamp(0.0, 1.0);
+        let confidence = ((gate - db) / span).clamp(0.0, 1.0);
         (Activity::Pause, 0.0, confidence)
     } else {
         (Activity::Pause, 0.0, 1.0)
     }
+}
+
+fn frame_start(first: Tick, step: Tick, index: usize) -> Result<Tick, EditError> {
+    let index = i64::try_from(index).map_err(|_| EditError::Limit)?;
+    let offset = step.0.checked_mul(index).ok_or(EditError::Limit)?;
+    Ok(Tick(first.0.checked_add(offset).ok_or(EditError::Limit)?))
+}
+
+fn percentile_sorted(values: &mut [f32], percentile: f64) -> Result<f64, EditError> {
+    if values.is_empty() {
+        return Err(EditError::Unsupported("speech activity has no blocks"));
+    }
+    values.sort_unstable_by(f32::total_cmp);
+    let rank = (((values.len() - 1) as f64) * percentile).round() as usize;
+    Ok(f64::from(
+        *values
+            .get(rank)
+            .ok_or(EditError::Invalid("speech activity percentile"))?,
+    ))
+}
+
+fn histogram_percentile(histogram: &[u32; 121], percentile: f64) -> Result<f64, EditError> {
+    let total = histogram
+        .iter()
+        .try_fold(0u64, |total, count| total.checked_add(u64::from(*count)))
+        .ok_or(EditError::Limit)?;
+    if total == 0 {
+        return Err(EditError::Unsupported("speech activity has no frames"));
+    }
+    let rank = (((total - 1) as f64) * percentile).round() as u64;
+    let mut cumulative = 0u64;
+    for (index, count) in histogram.iter().enumerate() {
+        cumulative = cumulative
+            .checked_add(u64::from(*count))
+            .ok_or(EditError::Limit)?;
+        if cumulative > rank {
+            return Ok(index as f64 - 120.0);
+        }
+    }
+    Ok(0.0)
 }
 
 fn finalize(

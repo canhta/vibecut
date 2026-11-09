@@ -22,7 +22,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{SourceRange, TICKS_PER_SECOND, Tick};
+use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 fn ms(value: i64) -> Tick {
     Tick(value * (TICKS_PER_SECOND / 1000))
@@ -53,6 +53,39 @@ fn fixture() -> Option<SourceAsset> {
         &["-f", "lavfi", "-i", input.as_str(), "-c:a", "pcm_s16le"],
     )?;
     Some(SourceAsset::import(AssetId(1), path).unwrap())
+}
+/// 12 s of the same tone over a steady white-noise bed at about -45 dBFS RMS,
+/// with three declared pauses and one continuous final segment.
+fn noise_fixture() -> Option<SourceAsset> {
+    if !testkit::oracle::require("speech activity") {
+        return None;
+    }
+    let dir = testkit::fixture::dir("speech-activity");
+    let expression = "(0.25*sin(2*PI*180*t)+0.15*sin(2*PI*320*t)+0.1*sin(2*PI*520*t))*\
+        (between(t\\,0\\,2)+between(t\\,2.8\\,4.6)+between(t\\,5.8\\,7.8)+between(t\\,9.4\\,12))";
+    let speech = format!("aevalsrc={expression}:s=16000:d=12");
+    let path = testkit::oracle::generate(
+        &dir,
+        "speech activity",
+        "noise-floor.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "anoisesrc=color=white:amplitude=0.0105:duration=12:sample_rate=16000:seed=7",
+            "-f",
+            "lavfi",
+            "-i",
+            speech.as_str(),
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:normalize=0[a]",
+            "-map",
+            "[a]",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    )?;
+    Some(SourceAsset::import(AssetId(4), path).unwrap())
 }
 fn video_only(dir: &Path) -> SourceAsset {
     let path = testkit::oracle::generate(
@@ -187,6 +220,54 @@ fn declared_silences_and_the_continuous_segment_match_within_one_frame() {
 }
 
 #[test]
+fn steady_noise_floor_and_three_pauses_match_within_one_frame() {
+    let Some(asset) = noise_fixture() else {
+        return;
+    };
+    let request =
+        SpeechActivityRequest::new(asset, range(0, 12), SpeechActivitySettings::default()).unwrap();
+    let (result, _runner, _cache, _dir) = run(&request);
+    assert_eq!(result.analyzed_frames, 600);
+    let pauses = pauses(&result.spans);
+    assert_eq!(pauses.len(), 3, "{:?}", result.spans);
+    for (span, (start, end)) in pauses
+        .iter()
+        .zip([(2000, 2800), (4600, 5800), (7800, 9400)])
+    {
+        let offset = (span.range.start().0 - ms(start).0).abs();
+        let trailing = (span.range.end().0 - ms(end).0).abs();
+        assert!(
+            offset <= ms(20).0,
+            "pause start {} vs {start} ms",
+            span.range.start().0
+        );
+        assert!(
+            trailing <= ms(20).0,
+            "pause end {} vs {end} ms",
+            span.range.end().0
+        );
+    }
+    assert_eq!(
+        result
+            .spans
+            .iter()
+            .filter(|span| span.activity == Activity::Speech)
+            .count(),
+        4,
+        "{:?}",
+        result.spans
+    );
+    let mut end = Tick::ZERO;
+    for span in &result.spans {
+        assert_eq!(span.range.start(), end);
+        assert!(span.range.end() > end);
+        assert!((0.0..=1.0).contains(&span.confidence));
+        end = span.range.end();
+    }
+    assert_eq!(end, t(12));
+}
+
+#[test]
 fn warm_cache_reuses_the_spans_without_opening_the_source() {
     let Some(asset) = fixture() else {
         return;
@@ -214,10 +295,6 @@ fn warm_cache_reuses_the_spans_without_opening_the_source() {
 
     let mut keys = std::collections::BTreeSet::from([request.cache_key()]);
     for settings in [
-        SpeechActivitySettings {
-            noise_db: -50.,
-            ..Default::default()
-        },
         SpeechActivitySettings {
             min_pause: ms(600),
             ..Default::default()
@@ -334,18 +411,6 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
 
     for settings in [
         SpeechActivitySettings {
-            noise_db: f32::NAN,
-            ..Default::default()
-        },
-        SpeechActivitySettings {
-            noise_db: 1.0,
-            ..Default::default()
-        },
-        SpeechActivitySettings {
-            noise_db: -121.0,
-            ..Default::default()
-        },
-        SpeechActivitySettings {
             min_pause: Tick(-1),
             ..Default::default()
         },
@@ -378,4 +443,53 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
         )
         .is_err()
     );
+}
+
+/// Manual check against a real 30-minute interview. Silencedetect at -40 dB
+/// finds these four pauses in the first 300 s; the adaptive gate must keep
+/// every one of them. Not part of CI: the sample is local and may be absent.
+#[test]
+#[ignore = "manual: set VIBECUT_INTERVIEW_SAMPLE to interview-30m.mp4"]
+fn interview_first_300_seconds_finds_every_documented_pause() {
+    let Some(path) = std::env::var_os("VIBECUT_INTERVIEW_SAMPLE").map(std::path::PathBuf::from)
+    else {
+        eprintln!("skipping: VIBECUT_INTERVIEW_SAMPLE is not set");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("skipping: {} does not exist", path.display());
+        return;
+    }
+    let asset = SourceAsset::import(AssetId(9), path).unwrap();
+    let request =
+        SpeechActivityRequest::new(asset, range(0, 300), SpeechActivitySettings::default())
+            .unwrap();
+    let (result, _runner, _cache, _dir) = run(&request);
+    let found = pauses(&result.spans);
+    for span in &found {
+        eprintln!(
+            "pause {:.3} {:.3}",
+            span.range.start().seconds(),
+            span.range.end().seconds()
+        );
+    }
+    let documented = [
+        (106.475397, 106.983039),
+        (109.963628, 111.117868),
+        (112.787324, 113.892721),
+        (114.657052, 115.384807),
+    ];
+    for (start, end) in documented {
+        let start = Tick::from_seconds_f64(start, Rounding::Nearest).unwrap();
+        let end = Tick::from_seconds_f64(end, Rounding::Nearest).unwrap();
+        assert!(
+            found.iter().any(|span| {
+                span.range.start() <= start + ms(20) && span.range.end() >= end - ms(20)
+            }),
+            "missing documented pause {:.3}..{:.3}",
+            start.seconds(),
+            end.seconds()
+        );
+    }
+    assert!(found.len() >= documented.len());
 }
