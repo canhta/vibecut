@@ -4,6 +4,7 @@ mod decoding;
 mod fixture_generation;
 mod hostile_input;
 mod import_metadata;
+mod peaks;
 mod pipeline;
 mod speech_extraction;
 mod vision_preparation;

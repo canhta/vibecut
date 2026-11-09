@@ -10,10 +10,11 @@ mod vision;
 mod write;
 
 pub use audio::{
-    AudioChunk, AudioResampler, AudioSampleFormat, SPEECH_SAMPLE_RATE, SpeechEnergyWindow,
+    AudioChunk, AudioResampler, AudioSampleFormat, BucketPeak, PEAK_BUCKET_SAMPLES,
+    PEAK_SUMMARY_MAX_BYTES, PeakSummary, SPEECH_SAMPLE_RATE, SpeechEnergyWindow,
     SpeechExtractSettings, SpeechWindow, analyze_speech_energy, extract_speech_audio,
     extract_speech_audio_with, extract_speech_audio_with_cancel,
-    extract_speech_windows_with_cancel,
+    extract_speech_windows_with_cancel, peak_summary,
 };
 pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use read::{

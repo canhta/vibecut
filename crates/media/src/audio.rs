@@ -3,6 +3,7 @@
 mod chunk;
 mod energy;
 mod extract;
+mod peaks;
 mod resample;
 
 pub use chunk::{
@@ -12,4 +13,7 @@ pub use chunk::{
 };
 pub use energy::{SpeechEnergyWindow, analyze_speech_energy};
 pub use extract::SPEECH_SAMPLE_RATE;
+pub use peaks::{
+    BucketPeak, PEAK_BUCKET_SAMPLES, PEAK_SUMMARY_MAX_BYTES, PeakSummary, peak_summary,
+};
 pub use resample::{AudioResampler, AudioSampleFormat};

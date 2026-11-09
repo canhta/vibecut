@@ -28,6 +28,7 @@ mod analysis;
 pub use analysis::loudness;
 pub use analysis::scene_detection;
 pub use analysis::speech_activity;
+pub use analysis::waveform;
 pub use analysis::{
     AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, Scene,
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,

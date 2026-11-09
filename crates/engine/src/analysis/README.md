@@ -1,6 +1,6 @@
 # Analysis
 
-Interface: `scene_detection`, `speech_activity`, `loudness`, `AnalysisRequest`, `AnalysisJob`.
+Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `AnalysisRequest`, `AnalysisJob`.
 
 `audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains. `audio.clear_loudness {scope}` removes it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and ordering only. See [loudness normalization](#loudness-normalization).
 
@@ -37,3 +37,11 @@ The noise floor is the 10th percentile of the minimum frame RMS in each 1.5 s su
 `confidence` is the span's mean frame margin normalized over the gate-to-full-scale span: above the gate for speech, below it for pause. It is a heuristic score, not a calibrated probability. The gate follows the measured room tone, so a steady floor around -45 dBFS is silence while the speech above it stays speech.
 
 Limits: one day, 288,000 spans (twice the 144,000 default 0.1 s speech + 0.5 s pause cycles in one day), 32 MiB serialized result and a 96 MiB workspace (one f32 frame per 20 ms is 17.3 MB/day). Decode retains at most one media-default 10-minute PCM window (600 s at 16 kHz mono f32, 38.4 MB). A source without an audio stream is `Unsupported`; a deleted or unreadable source fails the job with the media error; overflow is `Limit`.
+
+## Waveform peaks
+
+`waveform::WaveformRequest::new(asset)` admits a mono or stereo audio source whose stream rate is 8-192 kHz. Its key binds the source content hash, sample rate, channel count and the versioned recipe, so changed content never hits the old entry. `submit` runs one local CPU `GenerateWaveform` job whose decode is media's [source peak summary](../../../media/src/audio/README.md#source-peaks); a warm cache hit opens no source. `finish` validates and caches complete output as `ArtifactKind::Waveform`; an undecodable cached payload is regenerated, and cancellation before runner promotion leaves no entry.
+
+`waveform::display(asset, item, visible, columns, cache)` is the cache-only display query. It clamps the visible output range to the clip, maps each of `columns` output slices through the project item's trim and retime mapping (`project::Item::source_time_at`), reduces the covered 128-sample buckets to one min/max bar per slice and returns `Ready(bars)`, `Pending` when no summary is cached, `Failed` when the cached summary cannot be decoded, or `Unsupported` when the source has no mono or stereo audio. It never decodes media and never blocks on a job. Bars combine all channels; `over` marks a bar whose any sample leaves -1..=1 so the timeline can draw a >0 dBFS tip.
+
+Limits: columns 1..=4096, one 64 MiB summary (about 3.1 h at 48 kHz stereo), and a mismatched asset or an out-of-clip visible range is `Invalid`. The job reserves 16 MiB for decoded frames and 64 MiB for its result. Cancelled generation leaves the previous content's cache entry intact; project JSON is never touched.

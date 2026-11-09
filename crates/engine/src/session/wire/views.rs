@@ -102,6 +102,7 @@ pub enum JobKind {
     AnalyzeShots,
     DetectScenes,
     AnalyzeSpeechActivity,
+    GenerateWaveform,
     MeasureLoudness,
     Preview,
     EffectThumbnail,

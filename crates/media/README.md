@@ -7,7 +7,7 @@ Headless streaming media I/O through dynamically linked FFmpeg (LGPL on macOS an
 | `source/` | Source identity and what a source contains | [Source identity and import metadata](src/source/README.md) |
 | `read/` | Containers, packet decoding, sequential video, thumbnails | [Reading and decoding](src/read/README.md) |
 | `write/` | Video and audio encoding, encoder selection, container writing | [Encoding and muxing](src/write/README.md) |
-| `audio/` | Speech extraction, chunk planning, speech energy, resampling | [Speech and audio conversion](src/audio/README.md) |
+| `audio/` | Speech extraction, chunk planning, speech energy, source peaks, resampling | [Speech, peaks and audio conversion](src/audio/README.md) |
 | `vision/` | Exact-time frames, face and scene tensors, MFCC features, preparation limits | [Vision preparation](src/vision/README.md) |
 | `ffi` | Narrow FFmpeg wrapper gaps and native allocation bounds | [Bounds and verification](src/ffi/README.md) |
 
