@@ -14,6 +14,7 @@ pub use shot_analysis::{
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
 mod loudness_workflow;
+pub mod speech_activity;
 pub mod loudness {
     //! Measures source audio loudness.
     pub use super::loudness_workflow::{LoudnessJob, LoudnessResult, Measured, submit_loudness};

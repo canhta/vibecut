@@ -33,6 +33,7 @@ Language for the editor's privacy and execution boundaries.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.
 - **Transition**: A video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/src/visual/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.
 - **Scene-change candidate**: A possible hard cut or gradual transition in source media, with a source time and confidence, awaiting review before it becomes a timeline split.
+- **Speech-activity span**: One source-time interval classified as speech or pause by local frame energy, with a heuristic confidence; pause removal consumes these spans without claiming speech recognition.
 - **Project**: The editable document: its identity and name, canvas, assets, scenes, active scene and output settings; [project](crates/project/README.md) owns its validation, persistence and writer lease.
 - **Project library**: The managed set of projects that Home lists, searches and trashes, with each project's cover image and metadata; the store owns it, not the file system.
 - **Scene**: One timeline inside a Project, with a name, a main flag, tracks and bookmarks; a project has one main scene and up to 255 secondary scenes, while assets, canvas and output audio stay project-level.

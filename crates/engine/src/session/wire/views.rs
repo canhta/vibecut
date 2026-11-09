@@ -101,6 +101,7 @@ pub enum JobKind {
     SuggestClips,
     AnalyzeShots,
     DetectScenes,
+    AnalyzeSpeechActivity,
     MeasureLoudness,
     Preview,
     EffectThumbnail,

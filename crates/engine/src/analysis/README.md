@@ -1,6 +1,6 @@
 # Analysis
 
-Interface: `scene_detection`, `loudness`, `AnalysisRequest`, `AnalysisJob`.
+Interface: `scene_detection`, `speech_activity`, `loudness`, `AnalysisRequest`, `AnalysisJob`.
 
 `audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains. `audio.clear_loudness {scope}` removes it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and ordering only. See [loudness normalization](#loudness-normalization).
 
@@ -25,3 +25,13 @@ These heuristics can miss same-histogram cuts and long, subtle or irregular fade
 Limits: one day, 16 Mi-pixel frames, 4095 candidates, 1 MiB serialized result. Decode streams through media's `decode_shot_frames` in <=300-second, <=100,000-frame slices including preroll. Only two fixed 1824-byte signatures and a bounded marker vector persist, so memory does not grow with duration. Jobs reserve 192 MiB for overlapping decode and conversion frames, 16 MiB workspace and 1 MiB retained output; these are reservations, not a native decoder RSS guarantee. Media keeps its native allocation and decoder ceilings, including refusal of geometry changes before packed conversion.
 
 The Mac-only `duration_scaling_bounds_peak_memory` test measures resident memory of fresh subprocesses through `/usr/bin/time -l` for 300 versus 12,000 decoded 64×64 frames: each peak must stay below 192 MiB and growth within 16 MiB. Windows and Linux memory measurement is unverified.
+
+## Speech activity
+
+`speech_activity::SpeechActivityRequest::new(asset, range, SpeechActivitySettings)` produces contiguous source-time `SpeechActivitySpan`s classified as speech or pause, each with a heuristic confidence. `submit` runs one local CPU `AnalyzeSpeechActivity` job; `finish` validates and caches complete output as `SpeechActivity`. Keys bind source content, source range, the thresholds and the versioned recipe. A warm hit opens no source. Cancellation before runner promotion leaves no cache entry, and cache pressure preserves the runner output for retry.
+
+Decode reuses media's speech extract: `extract_speech_windows_with_cancel` is the PCM sibling of `extract_speech_audio_with_cancel` in [chunk.rs](../../../media/src/audio/chunk.rs), with zero overlap. There is no second decode path and no file is written. Each 20 ms frame is media's existing speech energy frame (`ENERGY_FRAME_SAMPLES`, 320 samples at 16 kHz in [extract.rs](../../../media/src/audio/extract.rs)), so a boundary is quantized to at most one frame. A frame's RMS at or below -60 dBFS is silence; -60 dBFS is the default `noise` tolerance of FFmpeg's [silencedetect](https://ffmpeg.org/ffmpeg-filters.html#silencedetect) filter. A silence shorter than 0.5 s between speech runs is hangover and stays speech; a speech run shorter than 0.1 s between pauses stays pause. Both defaults are FFmpeg's [whisper](https://ffmpeg.org/ffmpeg-filters.html#whisper-1) filter VAD defaults (`vad_min_silence_duration`, `vad_min_speech_duration`). Short speech is removed before short silence so one click cannot split a long pause into two short ones. Adjacent same-activity spans merge, and spans always cover the requested range contiguously.
+
+`confidence` is the span's mean frame margin normalized over the 60 dB between the gate and full scale: above the gate for speech, below it for pause. It is a heuristic score, not a calibrated probability. The gate is absolute, not adaptive, so a steady noise floor above -60 dBFS reads as speech; no adaptive estimate is claimed.
+
+Limits: one day, 288,000 spans (twice the 144,000 default 0.1 s speech + 0.5 s pause cycles in one day), 32 MiB serialized result and a 2x run workspace. Decode retains at most one media-default 10-minute PCM window (600 s at 16 kHz mono f32, 38.4 MB). A source without an audio stream is `Unsupported`; a deleted or unreadable source fails the job with the media error; overflow is `Limit`.
