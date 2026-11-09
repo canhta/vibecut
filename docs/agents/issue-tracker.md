@@ -16,7 +16,7 @@ Ticket headers use these exact fields; omit `Blocked by` when empty:
 Status: open | claimed | blocked | resolved | wontfix
 Type: task | research | bug
 Priority: P0 | P1 | P2 | P3 | P4
-Assignee: opencode | claude-sonnet | codex | human | -
+Assignee: opencode | claude-sonnet | human | -
 Blocked by: NN, <milestone>/NN
 ```
 
