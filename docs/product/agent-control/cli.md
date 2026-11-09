@@ -20,6 +20,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |
 | `vibecut-cli cut <project> --remove-pauses [--min-pause-ms N] [--pad-ms N] [--crossfade-ms N] [--dry-run]` | List detected pauses, or remove them as one undoable edit |
+| `vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]` | List cue/word output times, or delete a measured word range as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
@@ -47,6 +48,10 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 ## Pause removal
 
 `cut <project> --remove-pauses [--min-pause-ms 500] [--pad-ms 20] [--crossfade-ms 20] [--dry-run]` runs the engine's local speech-activity job over the active scene's audible items, prints the output-time candidate spans and, without `--dry-run`, applies them through `timeline.remove_pauses` and saves. One invocation is one undoable edit; `--dry-run` writes nothing. Defaults and their sources are in the [analysis contract](../../../crates/engine/src/analysis/README.md#pause-candidates). The job has no artifact cache, so a second run decodes the sources again. Candidates never cut inside a native caption word span, a span is padded by the silence it keeps and the join fades with the equal-power pair the reviewed spans imply.
+
+## Transcript deletion
+
+`transcript <project>` prints the active scene's caption cues and measured words with their output tick ranges, paired word text, and `protected` (explicitly edited cue text) and `locked` (track) flags; it writes nothing. `--item <id> --cue <id> --words <first>-<last> [--json]` deletes that cue's inclusive zero-based word range through `transcript.delete_range` and saves. Consecutive words form one cut span, words separated by an unselected word stay separate, and the edit closes vacated tails through the ripple path as one undoable edit. A word in another scene refuses with `SceneBoundary`, an edited cue with `Protected` and a locked track with `Locked`; each leaves the project unchanged and exits 5. A cut never rewrites cue text or timings.
 
 ## Subtitles
 

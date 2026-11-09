@@ -159,6 +159,58 @@ pub(super) fn execute_import_captions(
 
     Ok(data)
 }
+/// Applies transcript word cuts as reviewed output spans. Selected words are
+/// removed from every track through the shared reviewed-span cutter; an
+/// unselected word inside a span, an edited cue or another scene refuses.
+pub(super) fn execute_transcript_delete(
+    data: ProjectData,
+    word_ids: Vec<crate::WordId>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let all = super::super::transcript::scene_words(data.scene())?;
+    let selected = super::super::transcript::selected_words(&data, &all, &word_ids)?;
+    let mut spans: Vec<SourceRange> = Vec::new();
+    let mut run: Option<(Tick, Tick)> = None;
+    for word in &all {
+        let id = crate::WordId {
+            item: word.item,
+            cue: word.cue.clone(),
+            word: word.index,
+        };
+        if selected.contains(&id) {
+            run = Some(match run {
+                Some((start, end)) if word.output.start() <= end => {
+                    (start, end.max(word.output.end()))
+                }
+                Some((start, end)) => {
+                    spans.push(SourceRange::new(start, end)?);
+                    (word.output.start(), word.output.end())
+                }
+                None => (word.output.start(), word.output.end()),
+            });
+        } else if let Some((start, end)) = run.take() {
+            if word.output.start() < end {
+                return Err(EditError::Invalid("transcript delete crosses a word"));
+            }
+            spans.push(SourceRange::new(start, end)?);
+        }
+    }
+    if let Some((start, end)) = run {
+        spans.push(SourceRange::new(start, end)?);
+    }
+    super::clips::remove_output_ranges(
+        data,
+        &spans,
+        0,
+        super::clips::WordCut::Words(&selected),
+        created,
+        next,
+        sources,
+    )
+}
+
 pub(super) fn execute_retranslate(
     mut data: ProjectData,
     id: ItemId,

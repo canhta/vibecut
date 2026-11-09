@@ -737,14 +737,24 @@ pub(super) fn execute_ripple_delete(mut data: ProjectData, id: ItemId) -> Result
     Ok(data)
 }
 
+/// Which measured words a reviewed span cut may remove.
+pub(super) enum WordCut<'a> {
+    /// No span may touch a measured word; every caption word stays intact.
+    Clear,
+    /// Exactly these words are removed; every word touching a span must be one of
+    /// them and sit fully inside that span.
+    Words(&'a BTreeSet<crate::WordId>),
+}
+
 /// Remove reviewed output ranges from every track. Items are split at the span
 /// boundaries inside them, pieces fully inside a span are deleted, and the
 /// session's ripple policy closes the vacated tails on each track. A nonzero
 /// crossfade sets an equal-power fade pair on the surviving edges of each join.
 pub(super) fn remove_output_ranges(
     mut data: ProjectData,
-    spans: &[crate::session::wire::PauseSpan],
+    spans: &[SourceRange],
     crossfade_ms: i64,
+    cut: WordCut<'_>,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
     sources: &mut TrimSources,
@@ -753,7 +763,7 @@ pub(super) fn remove_output_ranges(
         || spans.len() > crate::session::wire::MAX_PAUSE_SPANS
         || !(0..=crate::session::wire::MAX_PAUSE_MS).contains(&crossfade_ms)
     {
-        return Err(EditError::Invalid("pause removal spans"));
+        return Err(EditError::Invalid("reviewed spans"));
     }
     let crossfade = Tick::from_units(crossfade_ms, 1000, time::Rounding::Nearest)?;
     let mut timeline_end = Tick::ZERO;
@@ -763,14 +773,14 @@ pub(super) fn remove_output_ranges(
         }
     }
     if timeline_end == Tick::ZERO {
-        return Err(EditError::Invalid("pause removal needs a timeline"));
+        return Err(EditError::Invalid("reviewed cut needs a timeline"));
     }
     let mut previous = Tick::ZERO;
     for span in spans {
-        if span.start < previous || span.end <= span.start || span.end > timeline_end {
-            return Err(EditError::Invalid("pause removal span"));
+        if span.start() < previous || span.end() <= span.start() || span.end() > timeline_end {
+            return Err(EditError::Invalid("reviewed span"));
         }
-        previous = span.end;
+        previous = span.end();
     }
     let mut words = Vec::new();
     for track in data.scene().timeline.iter() {
@@ -778,13 +788,31 @@ pub(super) fn remove_output_ranges(
             words.extend(item.word_spans()?);
         }
     }
+    let mut removed_words = BTreeSet::new();
     for span in spans {
-        if words
+        for word in words
             .iter()
-            .any(|word| word.start() < span.end && span.start < word.end())
+            .filter(|word| word.output.start() < span.end() && span.start() < word.output.end())
         {
-            return Err(EditError::Invalid("pause removal crosses a word"));
+            let id = crate::WordId {
+                item: word.item,
+                cue: word.cue.clone(),
+                word: word.index,
+            };
+            let allowed = match &cut {
+                WordCut::Clear => false,
+                WordCut::Words(selected) => selected.contains(&id),
+            };
+            if !allowed || word.output.start() < span.start() || word.output.end() > span.end() {
+                return Err(EditError::Invalid("reviewed cut crosses a word"));
+            }
+            removed_words.insert(id);
         }
+    }
+    if let WordCut::Words(selected) = cut
+        && removed_words != *selected
+    {
+        return Err(EditError::Invalid("transcript word was not removed"));
     }
 
     let mut targets: Vec<(ItemId, Tick, Tick)> = Vec::new();
@@ -793,7 +821,7 @@ pub(super) fn remove_output_ranges(
             let end = item.end()?;
             if spans
                 .iter()
-                .any(|span| item.start < span.end && span.start < end)
+                .any(|span| item.start < span.end() && span.start() < end)
             {
                 targets.push((item.id, item.start, end));
             }
@@ -802,7 +830,7 @@ pub(super) fn remove_output_ranges(
     for (id, start, end) in targets {
         let mut bounds = Vec::new();
         for span in spans {
-            for at in [span.start, span.end] {
+            for at in [span.start(), span.end()] {
                 if at > start && at < end && !bounds.contains(&at) {
                     bounds.push(at);
                 }
@@ -820,7 +848,7 @@ pub(super) fn remove_output_ranges(
             let end = item.end()?;
             if spans
                 .iter()
-                .any(|span| item.start >= span.start && end <= span.end)
+                .any(|span| item.start >= span.start() && end <= span.end())
             {
                 removed.push(item.id);
             }
@@ -835,10 +863,10 @@ pub(super) fn remove_output_ranges(
                 let mut right: Option<(Tick, ItemId)> = None;
                 for item in &track.items {
                     let end = item.end()?;
-                    if end == span.start {
+                    if end == span.start() {
                         left = Some((item.start, item.id));
                     }
-                    if item.start == span.end {
+                    if item.start == span.end() {
                         right = Some((end, item.id));
                     }
                 }

@@ -9,3 +9,5 @@ mod captions;
 pub(super) use captions::run as captions;
 mod cut;
 pub(super) use cut::run as cut;
+mod transcript;
+pub(super) use transcript::run as transcript;

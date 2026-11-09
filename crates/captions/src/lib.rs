@@ -25,6 +25,7 @@ pub use timing::{
     TimingSpans, TimingUnit,
 };
 use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Actionable failures; diagnostics never contain subtitle text.
 #[derive(Debug, thiserror::Error)]
@@ -233,6 +234,59 @@ impl Cue {
         self.texts.insert(lang, text);
         true
     }
+
+    /// The cue's text in its source language, matched exactly or by primary subtag.
+    /// A translation's text is never returned as source text.
+    pub fn source_text(&self) -> Option<&CueText> {
+        if let Some((_, text)) = self.texts.get_key_value(&self.source_lang) {
+            return Some(text);
+        }
+        let wanted = primary(self.source_lang.as_str());
+        self.texts
+            .iter()
+            .find(|(tag, _)| primary(tag.as_str()) == wanted)
+            .map(|(_, text)| text)
+    }
+
+    /// Measured words of the cue: source text tokens paired index-for-index with
+    /// `word_ranges`. Empty when the cue has no source text or the token count
+    /// disagrees, so estimated text never becomes a fake word alignment.
+    pub fn words(&self) -> Vec<CueWord> {
+        let Some(text) = self.source_text() else {
+            return Vec::new();
+        };
+        let tokens: Vec<&str> = word_tokens(text.text.as_str()).collect();
+        if tokens.len() != self.word_ranges.len() {
+            return Vec::new();
+        }
+        tokens
+            .into_iter()
+            .zip(self.word_ranges.iter().copied())
+            .map(|(token, range)| CueWord {
+                text: token.into(),
+                range,
+            })
+            .collect()
+    }
+}
+
+/// One measured source word: its display token and native timing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CueWord {
+    pub text: NfcText,
+    pub range: SourceRange,
+}
+
+/// The primary subtag of a BCP 47 tag.
+pub(crate) fn primary(tag: &str) -> &str {
+    tag.split('-').next().unwrap_or(tag)
+}
+
+/// UAX #29 word segments that contain a letter or digit, in source order.
+pub(crate) fn word_tokens(text: &str) -> impl Iterator<Item = &str> {
+    text.split_word_bound_indices()
+        .map(|(_, token)| token)
+        .filter(|token| token.chars().any(char::is_alphanumeric))
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CueTrack {

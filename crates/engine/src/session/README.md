@@ -1,6 +1,6 @@
 # Session
 
-Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `wire`.
+Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `WordId`, `wire`.
 
 ## Public entry points
 
@@ -13,6 +13,10 @@ Each declaration line also carries per-command facts once, outside the wire cata
 Required nullable keyframe fields stay required; `NewItem.source_asset` may be omitted or null. JSON integer admission is limited to ±(2^53−1), including nested values. ProjectId has one decimal-string encoding at its owner, including project persistence; other IDs and Tick remain numbers.
 
 `execute("timeline.add_track", {"name":"Video", "kind":"video"})` returns `Outcome { changed, created }`. `created` lists engine-allocated typed track, item and bookmark IDs in execution order (including batch children). IDs share a checked increasing counter initialized above all loaded track, item and bookmark IDs. They are not reused after delete, undo, branching, cancelled previews or rolled-back groups within a Session. Media supplies asset identity; `import.add_asset` registers a validated SourceAsset and does no probe or hash IO. A failed command or batch consumes no IDs; successful preview and group children retire their IDs even when their outer operation rolls back. ID exhaustion returns a typed error. Reloading a project starts a new Session and identity lifetime.
+
+## Transcript read model
+
+`Session::transcript()` returns the active scene's caption cues in output time, each with its item and track, source/target texts, `protected` (the cue's source text was explicitly edited) and `locked` (the owning track) flags, and its measured words. A `TranscriptWord` carries a `WordId` (`item`, retained `cue`, `word` index into the cue's ranges), the paired source token when token and timing counts agree, its output range and the same flags. It reads `Item::word_spans`, so a trimmed item clips its words instead of duplicating a source range, and repeated source spans produce one entry per item occurrence. The view is a read: it changes no project, revision or history. Selecting a `WordId` from another scene is addressable by the command path, which refuses it with `SceneBoundary` rather than cutting two timelines.
 
 ## Transactions, gestures and changes
 

@@ -5,7 +5,8 @@ pub(crate) use session::transitions;
 pub use session::{
     Availability, Command, CommandKind, CommandSpec, CreatedId, DEFAULT_BOOKMARK_COLOR, Effect,
     Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move,
-    NewItem, Outcome, Placement, TrackPlacement, TrimEdge, lifecycle, registry,
+    NewItem, Outcome, Placement, TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord,
+    TrimEdge, WordId, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
@@ -176,6 +177,10 @@ pub enum EditError {
     NoItem(project::ItemId),
     #[error("track {0:?} is locked")]
     Locked(project::TrackId),
+    #[error("transcript word is in another scene")]
+    SceneBoundary,
+    #[error("transcript cue text is edited and protects its words")]
+    Protected,
     #[error("items overlap on track {0:?}")]
     Overlap(project::TrackId),
     #[error("Project is empty")]

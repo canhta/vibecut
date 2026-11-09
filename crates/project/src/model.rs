@@ -15,7 +15,8 @@ mod track;
 
 pub use item::{
     AudioParams, AudioSource, CaptionParams, Item, ItemId, ItemParams, LibrarySound, OverlayParams,
-    TextAlign, TextBackground, TextDecoration, TextParams, TextPosition, VideoParams, valid_volume,
+    TextAlign, TextBackground, TextDecoration, TextParams, TextPosition, VideoParams, WordSpan,
+    valid_volume,
 };
 pub use project::{Project, ProjectData, ProjectId};
 pub use scene::{Bookmark, BookmarkId, Scene, SceneId, SceneScope, Scenes};

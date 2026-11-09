@@ -244,6 +244,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.insert", Effect::Edit, true, true),
         ("sounds.add_to_timeline", Effect::Edit, false, false),
         ("captions.import", Effect::Edit, false, false),
+        ("transcript.delete_range", Effect::Edit, true, true),
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),

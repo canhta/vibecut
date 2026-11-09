@@ -4,3 +4,4 @@ mod control;
 mod cut;
 mod exec;
 mod lifecycle;
+mod transcript;

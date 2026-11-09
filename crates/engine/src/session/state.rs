@@ -16,11 +16,11 @@ struct Snapshot {
     project: Arc<Project>,
     selection: Arc<BTreeSet<ItemId>>,
 }
-/// A reviewed pause cut needs the ripple pass wherever it is nested.
-fn cuts_pauses(command: &Command) -> bool {
+/// A reviewed span cut needs the ripple pass wherever it is nested.
+fn cuts_spans(command: &Command) -> bool {
     match command {
-        Command::RemovePauses { .. } => true,
-        Command::Batch { commands } => commands.iter().any(cuts_pauses),
+        Command::RemovePauses { .. } | Command::TranscriptDeleteRange { .. } => true,
+        Command::Batch { commands } => commands.iter().any(cuts_spans),
         _ => false,
     }
 }
@@ -534,9 +534,9 @@ impl Session {
             } => return self.add_library_sound(placement, start, asset, sound),
             command => command,
         };
-        // A pause removal always closes its vacated tails; the caller cannot turn
-        // the ripple path off for a reviewed cut, including inside a batch.
-        let ripple = ripple || cuts_pauses(&command);
+        // A reviewed span cut always closes its vacated tails; the caller cannot
+        // turn the ripple path off, including inside a batch.
+        let ripple = ripple || cuts_spans(&command);
         // Keep one generation available to close an active preview lifetime even
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(

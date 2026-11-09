@@ -5193,3 +5193,441 @@ fn remove_pauses_keeps_five_clip_audio_video_aligned() {
     s.undo().unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
 }
+
+// --- Transcript word cuts -------------------------------------------------
+
+fn word_cue(id: &str, start: i64, end: i64, words: &[(i64, i64)], edited: bool) -> captions::Cue {
+    let language = captions::LanguageTag::parse("vi").unwrap();
+    let text = ["Một", "hai", "ba", "bốn"]
+        .get(..words.len())
+        .unwrap_or_default()
+        .join(" ");
+    captions::Cue {
+        id: id.into(),
+        range: range(start, end),
+        source_lang: language.clone(),
+        texts: std::collections::BTreeMap::from([(
+            language,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
+        style: None,
+    }
+}
+
+fn caption_words_item(id: u64, start: i64, source: (i64, i64), cues: Vec<captions::Cue>) -> Item {
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(id),
+        source_asset: Some(AssetId(7)),
+        source_range: range(source.0, source.1),
+        start: Tick(start),
+        content: ItemParams::Caption(project::CaptionParams {
+            cues: captions::CueTrack { cues },
+        }),
+    }
+}
+
+fn clip_item(id: u64, start: i64, source: (i64, i64)) -> Item {
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(id),
+        source_asset: None,
+        source_range: range(source.0, source.1),
+        start: Tick(start),
+        content: content(),
+    }
+}
+
+fn word_asset(data: &mut project::ProjectData, duration: i64) {
+    data.assets.push(
+        testkit::source::asset(7, std::env::temp_dir().join("transcript-words.mp4"))
+            .format("mp4")
+            .duration(Tick(duration))
+            .content_hash(ContentHash::from_bytes(b"words"))
+            .build(),
+    );
+}
+
+/// Two adjacent visual clips and one caption item whose third word crosses the
+/// clip boundary at 600.
+fn word_project(edited: bool, locked: bool) -> Session {
+    let mut data = project().into_data();
+    word_asset(&mut data, 1200);
+    let main = data.scene().timeline.main.id;
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .find(|track| track.id == main)
+        .unwrap()
+        .items = vec![clip_item(5, 0, (0, 600)), clip_item(6, 600, (600, 1200))];
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(9),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked,
+        items: vec![caption_words_item(
+            4,
+            0,
+            (0, 1200),
+            vec![word_cue(
+                "câu-1",
+                0,
+                1200,
+                &[(50, 150), (150, 250), (550, 650), (800, 900)],
+                edited,
+            )],
+        )],
+    });
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
+/// Word output ranges of the active scene keyed by cue word index.
+fn word_layout(session: &Session) -> Vec<(usize, i64, i64)> {
+    let mut words: Vec<(usize, i64, i64)> = session
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .flat_map(|cue| &cue.words)
+        .map(|word| (word.id.word, word.output.start().0, word.output.end().0))
+        .collect();
+    words.sort_unstable();
+    words
+}
+
+fn assert_unchanged(s: &Session, bytes: &[u8], revision: &engine::control::Revision) {
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    assert_eq!(&s.revision(), revision);
+    assert_eq!(s.history_len(), (0, 0));
+}
+
+#[test]
+fn transcript_delete_cuts_a_word_across_a_clip_boundary_as_one_undo_step() {
+    let mut s = word_project(false, false);
+    let before = project::encode(s.project(), false).unwrap();
+    let revision = s.revision();
+    let expected_texts = word_cue(
+        "câu-1",
+        0,
+        1200,
+        &[(50, 150), (150, 250), (550, 650), (800, 900)],
+        false,
+    )
+    .texts;
+    assert_eq!(
+        word_layout(&s),
+        vec![(0, 50, 150), (1, 150, 250), (2, 550, 650), (3, 800, 900)]
+    );
+    let cue = s.transcript().unwrap().cues[0].clone();
+    let outcome = s
+        .execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":cue.item,"cue":cue.id,"word":2}]}),
+        )
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (1, 0), "one undo step per command");
+    assert_ne!(s.revision(), revision);
+    // The span crosses the 600 boundary: both clips are cut and the tails close.
+    let main = s.project().data().scene().timeline.main.id;
+    let layout: Vec<(Tick, Tick)> = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.id == main)
+        .unwrap()
+        .items
+        .iter()
+        .map(|item| (item.start, item.end().unwrap()))
+        .collect();
+    assert_eq!(layout, vec![(Tick(0), Tick(550)), (Tick(550), Tick(1100))]);
+    assert_eq!(
+        word_layout(&s),
+        vec![(0, 50, 150), (1, 150, 250), (3, 700, 800)]
+    );
+
+    // Caption text, language and edit flags survive the cut; no cue is rewritten.
+    let view = s.transcript().unwrap();
+    for cue in &view.cues {
+        assert_eq!(cue.texts, expected_texts);
+        assert!(!cue.protected);
+        assert!(!cue.locked);
+    }
+
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    s.redo().unwrap();
+    let edited = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        word_layout(&s),
+        vec![(0, 50, 150), (1, 150, 250), (3, 700, 800)]
+    );
+
+    // A nested batch child still cuts through the reviewed-span path.
+    let mut batched = word_project(false, false);
+    batched
+        .execute(
+            "batch",
+            json!({"commands":[{"command":"transcript.delete_range",
+                "params":{"word_ids":[{"item":4,"cue":"câu-1","word":2}]}}]}),
+        )
+        .unwrap();
+    assert_eq!(project::encode(batched.project(), false).unwrap(), edited);
+}
+
+#[test]
+fn transcript_delete_keeps_repeated_spans_and_trimmed_items_distinct() {
+    let mut data = project().into_data();
+    word_asset(&mut data, 1200);
+    let cues = || vec![word_cue("câu-1", 0, 1200, &[(50, 150), (150, 250)], false)];
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(9),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            caption_words_item(4, 0, (0, 1200), cues()),
+            caption_words_item(8, 2000, (0, 1200), cues()),
+            caption_words_item(
+                12,
+                4000,
+                (100, 1200),
+                vec![word_cue("câu-1", 100, 1200, &[(100, 150)], false)],
+            ),
+        ],
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    s.execute(
+        "transcript.delete_range",
+        json!({"word_ids":[{"item":4,"cue":"câu-1","word":1}]}),
+    )
+    .unwrap();
+    let mut words: Vec<(u64, usize, i64, i64)> = s
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .flat_map(|cue| &cue.words)
+        .map(|word| {
+            (
+                word.id.item.0,
+                word.id.word,
+                word.output.start().0,
+                word.output.end().0,
+            )
+        })
+        .collect();
+    words.sort_unstable();
+    assert_eq!(
+        words,
+        vec![
+            (4, 0, 50, 150),
+            // The repeated source span in another item keeps both words, shifted
+            // left with the tail the cut vacated on this track.
+            (8, 0, 1950, 2050),
+            (8, 1, 2050, 2150),
+            // A trimmed item clips its word instead of duplicating it.
+            (12, 0, 3900, 3950),
+        ]
+    );
+    let mut outputs: Vec<(i64, i64)> = words.iter().map(|&(_, _, a, b)| (a, b)).collect();
+    outputs.dedup();
+    assert_eq!(outputs.len(), words.len(), "no output range is duplicated");
+}
+
+#[test]
+fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
+    let word = |item: u64, cue: &str, index: usize| json!({"item":item,"cue":cue,"word":index});
+    let cases = vec![
+        json!([]),
+        json!([word(4, "câu-1", 0), word(4, "câu-1", 0)]),
+        json!([word(4, "câu-1", 9)]),
+        json!([word(4, "khác", 0)]),
+        json!([word(77, "câu-1", 0)]),
+        json!([word(4, "câu-1", usize::MAX)]),
+        json!([word(6, "câu-1", 0)]),
+    ];
+
+    let mut plain = word_project(false, false);
+    let before = project::encode(plain.project(), false).unwrap();
+    let revision = plain.revision();
+    for word_ids in cases {
+        let params = json!({"word_ids": word_ids});
+        assert!(
+            plain
+                .execute("transcript.delete_range", params.clone())
+                .is_err(),
+            "{params}"
+        );
+        assert_unchanged(&plain, &before, &revision);
+    }
+
+    let many: Vec<Value> = (0..=engine::control::MAX_COLLECTION)
+        .map(|index| word(4, "câu-1", index))
+        .collect();
+    assert!(matches!(
+        plain.execute("transcript.delete_range", json!({"word_ids":many})),
+        Err(EditError::Limit)
+    ));
+    assert_unchanged(&plain, &before, &revision);
+
+    // An edited cue text protects every one of its words.
+    let mut protected = word_project(true, false);
+    let before = project::encode(protected.project(), false).unwrap();
+    let revision = protected.revision();
+    assert!(matches!(
+        protected.execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]})
+        ),
+        Err(EditError::Protected)
+    ));
+    assert_unchanged(&protected, &before, &revision);
+
+    // A locked caption track refuses the whole edit.
+    let mut locked = word_project(false, true);
+    let before = project::encode(locked.project(), false).unwrap();
+    let revision = locked.revision();
+    assert!(matches!(
+        locked.execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]})
+        ),
+        Err(EditError::Locked(_))
+    ));
+    assert_unchanged(&locked, &before, &revision);
+
+    // A word that lives in another scene refuses with the typed scene boundary.
+    let mut data = word_project(false, false).project().data().clone();
+    let mut other = data.scene().clone();
+    other.id = project::SceneId(7);
+    other.name = "Khác".into();
+    other.is_main = false;
+    other.timeline = Default::default();
+    other.timeline.main.id = TrackId(30);
+    other.timeline.insert_track(Track {
+        id: TrackId(20),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![caption_words_item(
+            90,
+            0,
+            (0, 1200),
+            vec![word_cue("câu-2", 0, 1200, &[(0, 100)], false)],
+        )],
+    });
+    let main = data.scene().clone();
+    data.scenes = project::Scenes::try_from(vec![main, other]).unwrap();
+    let mut two_scenes = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = project::encode(two_scenes.project(), false).unwrap();
+    let revision = two_scenes.revision();
+    assert!(matches!(
+        two_scenes.execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":90,"cue":"câu-2","word":0}]})
+        ),
+        Err(EditError::SceneBoundary)
+    ));
+    assert_unchanged(&two_scenes, &before, &revision);
+    // The same words are editable while their scene is active.
+    two_scenes
+        .apply(Command::SwitchScene {
+            scene: project::SceneId(7),
+        })
+        .unwrap();
+    two_scenes
+        .execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":90,"cue":"câu-2","word":0}]}),
+        )
+        .unwrap();
+}
+
+proptest! {
+    #[test]
+    fn transcript_delete_mapping_round_trips_within_a_frame(
+        length in 500_i64..5_000,
+        first_start in 0_i64..400,
+        first_len in 1_i64..100,
+        gap in 0_i64..300,
+        second_len in 1_i64..100,
+    ) {
+        let first_end = first_start + first_len;
+        let second_start = first_end + gap;
+        let second_end = (second_start + second_len).min(length);
+        prop_assume!(second_end > second_start && first_end <= second_start);
+        let mut data = project().into_data();
+        word_asset(&mut data, length);
+        data.scene_mut().timeline.insert_track(Track {
+            id: TrackId(9),
+            name: "Captions".into(),
+            kind: TrackKind::Text,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![caption_words_item(
+                4,
+                0,
+                (0, length),
+                vec![word_cue(
+                    "câu-1",
+                    0,
+                    length,
+                    &[(first_start, first_end), (second_start, second_end)],
+                    false,
+                )],
+            )],
+        });
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        s.execute(
+            "transcript.delete_range",
+            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]}),
+        ).unwrap();
+        let frame = time::FrameRate::FPS_30.tick_of(1).unwrap();
+        for track in s.project().data().scene().timeline.iter() {
+            for item in &track.items {
+                for word in item.word_spans().unwrap() {
+                    prop_assert_eq!(
+                        item.output_time_of(word.source.start()).unwrap(),
+                        word.output.start()
+                    );
+                    let back = item.source_time_at(word.output.start()).unwrap();
+                    prop_assert!((back.0 - word.source.start().0).abs() <= frame.0);
+                    let back = item.source_time_at(word.output.end()).unwrap();
+                    prop_assert!((back.0 - word.source.end().0).abs() <= frame.0);
+                }
+            }
+        }
+        // The second word survives with its source duration and its text.
+        let view = s.transcript().unwrap();
+        let words: Vec<_> = view.cues.iter().flat_map(|cue| &cue.words).collect();
+        prop_assert_eq!(words.len(), 1);
+        prop_assert_eq!(words[0].id.word, 1);
+        prop_assert_eq!(words[0].output.duration().0, second_end - second_start);
+        prop_assert_eq!(words[0].text.as_ref().unwrap().as_str(), "hai");
+    }
+}

@@ -308,33 +308,54 @@ impl Item {
             .ok_or(Error::Invalid("item end overflow"))
     }
 
-    /// Native ASR word ranges of a caption item, clamped to its source window and
-    /// mapped to output time. Other item kinds carry no words.
+    /// Native ASR words of a caption item, each clipped to its cue and the item's
+    /// source window, with source and output ranges. Other item kinds carry none.
     ///
     /// # Errors
     ///
     /// Returns an error when the retained retime mapping or a range is unrepresentable.
-    pub fn word_spans(&self) -> Result<Vec<SourceRange>> {
+    pub fn word_spans(&self) -> Result<Vec<WordSpan>> {
         let ItemParams::Caption(params) = &self.content else {
             return Ok(Vec::new());
         };
         let mut spans = Vec::new();
         for cue in &params.cues.cues {
-            for word in &cue.word_ranges {
-                let start = word.start().max(self.source_range.start());
-                let end = word.end().min(self.source_range.end());
+            for (index, word) in cue.word_ranges.iter().enumerate() {
+                let start = word
+                    .start()
+                    .max(self.source_range.start())
+                    .max(cue.range.start());
+                let end = word.end().min(self.source_range.end()).min(cue.range.end());
                 if start >= end {
                     continue;
                 }
-                let start = self.output_time_of(start)?;
-                let end = self.output_time_of(end)?;
-                if start < end {
-                    spans.push(SourceRange::new(start, end)?);
+                let source = SourceRange::new(start, end)?;
+                let output =
+                    SourceRange::new(self.output_time_of(start)?, self.output_time_of(end)?)?;
+                if output.start() >= output.end() {
+                    continue;
                 }
+                spans.push(WordSpan {
+                    item: self.id,
+                    cue: cue.id.clone(),
+                    index,
+                    source,
+                    output,
+                });
             }
         }
         Ok(spans)
     }
+}
+
+/// One native ASR word retained by a caption item, in source and output time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WordSpan {
+    pub item: ItemId,
+    pub cue: NfcText,
+    pub index: usize,
+    pub source: SourceRange,
+    pub output: SourceRange,
 }
 
 /// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.

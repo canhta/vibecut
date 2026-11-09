@@ -51,6 +51,11 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             {
                 return Err(EditError::Limit);
             }
+            Command::TranscriptDeleteRange { word_ids }
+                if word_ids.len() > super::wire::MAX_COLLECTION =>
+            {
+                return Err(EditError::Limit);
+            }
             Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
@@ -299,7 +304,22 @@ pub(crate) fn apply(
             spans,
             crossfade_ms,
         } => {
-            data = clips::remove_output_ranges(data, &spans, crossfade_ms, created, next, sources)?;
+            let spans = spans
+                .iter()
+                .map(|span| SourceRange::new(span.start, span.end).map_err(EditError::from))
+                .collect::<Result<Vec<_>>>()?;
+            data = clips::remove_output_ranges(
+                data,
+                &spans,
+                crossfade_ms,
+                clips::WordCut::Clear,
+                created,
+                next,
+                sources,
+            )?;
+        }
+        Command::TranscriptDeleteRange { word_ids } => {
+            data = text::execute_transcript_delete(data, word_ids, created, next, sources)?;
         }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;

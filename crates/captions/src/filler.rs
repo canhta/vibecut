@@ -4,7 +4,6 @@ use crate::{Cue, CueText, CueTrack, Error, LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use time::SourceRange;
-use unicode_segmentation::UnicodeSegmentation;
 
 /// Embedded lexicons are small reviewed data; a caller-provided file is capped
 /// before parsing so hostile input cannot allocate unboundedly.
@@ -167,7 +166,12 @@ pub fn detect_fillers(
     let mut output = Vec::new();
     let mut track_tokens = 0usize;
     for cue in &track.cues {
-        let Some(text) = cue_text(cue, &lexicon.language) else {
+        // Word ranges are recognition timing; a lexicon for another language
+        // must never pair with this cue's source text.
+        if crate::primary(lexicon.language.as_str()) != crate::primary(cue.source_lang.as_str()) {
+            continue;
+        }
+        let Some(text) = cue.source_text() else {
             continue;
         };
         let tokens = tokenize(text.text.as_str());
@@ -204,25 +208,6 @@ pub fn detect_fillers(
         flush(&mut output, cue, text, run)?;
     }
     Ok(output)
-}
-
-fn cue_text<'a>(cue: &'a Cue, language: &LanguageTag) -> Option<&'a CueText> {
-    let (tag, text) = match cue.texts.get_key_value(language) {
-        Some(entry) => entry,
-        None => {
-            let wanted = primary(language.as_str());
-            cue.texts
-                .iter()
-                .find(|(tag, _)| primary(tag.as_str()) == wanted)?
-        }
-    };
-    // Word ranges are recognition timing; a translation's text must never be
-    // paired with the source language's word times.
-    (primary(tag.as_str()) == primary(cue.source_lang.as_str())).then_some(text)
-}
-
-fn primary(tag: &str) -> &str {
-    tag.split('-').next().unwrap_or(tag)
 }
 
 fn match_phrase(
@@ -280,12 +265,12 @@ fn flush(
 
 /// UAX #29 word segments that contain a letter or digit, NFC and lowercased.
 fn tokenize(text: &str) -> Vec<String> {
-    text.split_word_bound_indices()
-        .filter_map(|(_, token)| {
-            let folded = token
+    crate::word_tokens(text)
+        .map(|token| {
+            token
                 .trim_matches(|c: char| !c.is_alphanumeric())
-                .to_lowercase();
-            (!folded.is_empty() && folded.chars().any(char::is_alphanumeric)).then_some(folded)
+                .to_lowercase()
         })
+        .filter(|token| !token.is_empty())
         .collect()
 }

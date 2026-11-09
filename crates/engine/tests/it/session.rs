@@ -8,5 +8,6 @@ mod masks;
 mod media;
 mod retime;
 mod scenes;
+mod transcript;
 mod transitions;
 pub(crate) use transitions::session as transition_session;

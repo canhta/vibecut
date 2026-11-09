@@ -350,6 +350,26 @@ fn seed() -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The seed with measured words on its caption cue for transcript edit examples.
+fn with_words(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            let cue = params.cues.cues.first_mut().unwrap();
+            cue.texts.values_mut().next().unwrap().text = "Hello brave world".into();
+            cue.word_ranges = (0..3)
+                .map(|index| SourceRange::new(Tick(index * 100), Tick(index * 100 + 100)).unwrap())
+                .collect();
+        }
+    }
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
 /// The seed plus one audible clip (track 5, item 5) for audio registry examples.
 fn with_audio(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();
@@ -575,6 +595,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
             Fixture::SourceAudio => s = with_source_audio(&s),
+            Fixture::Words => s = with_words(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
                     name: "History".into(),
@@ -1259,7 +1280,11 @@ fn deterministic_catalog_and_schema_document_receipts() {
     for (rule, expected) in [
         (
             Availability::CaptionItem,
-            &["burn_subtitles", "export_subtitles"][..],
+            &[
+                "burn_subtitles",
+                "export_subtitles",
+                "transcript.delete_range",
+            ][..],
         ),
         (
             Availability::NoTransaction,

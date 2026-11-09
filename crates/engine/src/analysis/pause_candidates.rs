@@ -226,14 +226,10 @@ pub fn decode(bytes: &[u8]) -> Result<PauseCandidates, EditError> {
 
 /// Output-time word ranges of every caption item in the active scene.
 fn word_spans(data: &ProjectData) -> Result<Vec<SourceRange>, EditError> {
-    let mut spans = Vec::new();
-    for track in data.scene().timeline.iter() {
-        for item in &track.items {
-            spans.extend(item.word_spans()?);
-        }
-    }
-    spans.sort_by_key(|range| (range.start(), range.end()));
-    Ok(spans)
+    Ok(crate::session::transcript::scene_words(data.scene())?
+        .into_iter()
+        .map(|word| word.output)
+        .collect())
 }
 
 fn audible(item: &Item) -> bool {
