@@ -14,7 +14,7 @@ Contiguous filled-pause words inside one cue merge into one candidate; each disc
 
 `FillerLexicon::builtin(&LanguageTag)` selects a shipped file by primary subtag (`vi`, `en`, `zh`) and keeps the full requested tag for cue lookup. `FillerLexicon::parse(json)` accepts caller data for any BCP 47 language, so adding a language needs no detector code change; shipping a built-in also needs one row in `BUILTIN`. Every file declares `language`, a `references` header map and entries whose `references` name keys from that map. Debug output of candidates keeps text redacted through `NfcText`.
 
-The shipped Vietnamese file holds only hesitation evidence from the Vietnamese disfluency corpus: `ừm`, `ờ`, `ờm` and `à` are Interregnum examples in Dao et al. (2022), Table 1. Sentence-final particles such as `đấy`, `nhé` and `nhỉ` are meaning-bearing and are deliberately excluded; `ừ` means "yes" and is excluded too.
+The shipped Vietnamese file holds only hesitation evidence from the Vietnamese disfluency corpus: `ừm`, `ờ` and `ờm` are Interregnum examples in Dao et al. (2022), Table 1, and ship as filled pauses; `à` is an Interregnum example there too but is also a question particle ("Anh đi à?"), so it ships as an opt-in discourse marker. Sentence-final particles such as `đấy`, `nhé` and `nhỉ` are meaning-bearing and are deliberately excluded; `ừ` means "yes" and is excluded too.
 
 A file is refused with `Error::MalformedLexicon` when JSON, the language tag, a kind, a reference, an entry reference, a duplicate phrase or a phrase token is invalid, and above 512 KiB; `Error::NoFillerLexicon` refuses a language with no shipped lexicon. Limits: 2,048 entries, 8 tokens per phrase, 128 bytes per token, 1,000,000 tokenized words per track and 100,000 candidates.
 

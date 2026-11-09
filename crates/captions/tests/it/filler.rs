@@ -165,6 +165,13 @@ fn ordinary_word_uses_are_not_candidates_by_default() {
         cues: vec![cue("en", "en", "I like it.", english_words, false)],
     };
     assert!(detect(&english, "en").is_empty());
+
+    // Vietnamese question particle: "Anh đi à?" keeps its meaning by default.
+    let vietnamese = CueTrack {
+        cues: vec![cue("vi", "vi", "Anh đi à?", words(3), false)],
+    };
+    assert!(detect(&vietnamese, "vi").is_empty());
+    assert_eq!(detect_with(&vietnamese, "vi", true).len(), 1);
     let english_markers = detect_with(&english, "en", true);
     assert_eq!(english_markers.len(), 1);
     assert_eq!(

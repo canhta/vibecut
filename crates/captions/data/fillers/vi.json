@@ -7,6 +7,6 @@
     { "phrase": "ừm", "kind": "filled_pause", "references": ["dao-2022"] },
     { "phrase": "ờ", "kind": "filled_pause", "references": ["dao-2022"] },
     { "phrase": "ờm", "kind": "filled_pause", "references": ["dao-2022"] },
-    { "phrase": "à", "kind": "filled_pause", "references": ["dao-2022"] }
+    { "phrase": "à", "kind": "discourse_marker", "references": ["dao-2022"] }
   ]
 }
