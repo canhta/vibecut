@@ -130,8 +130,38 @@ pub fn thumbnails_at(
     positions: &[Tick],
     max_edge: u32,
     cancelled: Arc<AtomicBool>,
-    mut sample: impl FnMut(Tick, Thumbnail),
+    sample: impl FnMut(Tick, Thumbnail),
 ) -> Result<()> {
+    sample_positions(path, positions, max_edge, cancelled, sample).map(|_| ())
+}
+
+/// Same as [`thumbnail_at`], also reporting how many source bytes the first
+/// frame needed. Used to prove bounded reads on large files.
+pub fn thumbnail_at_with_read_bytes(
+    path: &Path,
+    at: Tick,
+    max_edge: u32,
+    cancelled: Arc<AtomicBool>,
+) -> Result<(Thumbnail, u64)> {
+    let mut decoded = None;
+    let bytes = sample_positions(path, &[at], max_edge, cancelled, |_, image| {
+        decoded = Some(image);
+    })?;
+    let thumbnail = decoded.ok_or(MediaError::Unsupported("video has no decodable frame"))?;
+    Ok((thumbnail, bytes))
+}
+
+/// The one open/seek/decode loop behind [`thumbnail_at`] and
+/// [`thumbnails_at`]: open once, seek once, decode forward and hand each
+/// ascending position the first frame at or after it. Returns the source bytes
+/// read when the first frame was delivered.
+fn sample_positions(
+    path: &Path,
+    positions: &[Tick],
+    max_edge: u32,
+    cancelled: Arc<AtomicBool>,
+    mut sample: impl FnMut(Tick, Thumbnail),
+) -> Result<u64> {
     if !(1..=MAX_THUMBNAIL_EDGE).contains(&max_edge) {
         return Err(MediaError::Invalid("thumbnail max edge"));
     }
@@ -150,11 +180,22 @@ pub fn thumbnails_at(
         return Err(MediaError::Invalid("thumbnail positions"));
     };
     let mut reader = VideoReader::open_thumbnail(path, cancelled.clone())?;
+    let mut target = 0;
+    let mut first_bytes = 0;
+    // Opening recovery already decoded and rewound the first frame; publish it
+    // instead of decoding position zero again.
+    if first == Tick::ZERO
+        && max_edge == THUMBNAIL_MAX_EDGE
+        && let Some(thumbnail) = reader.take_recovered_thumbnail()
+    {
+        first_bytes = reader.bytes_read();
+        target = 1;
+        sample(first, thumbnail);
+    }
     if first > Tick::ZERO {
         reader.seek(first)?;
     }
     let mut converter = RgbaConverter::new()?;
-    let mut target = 0;
     while target < positions.len() {
         if cancelled.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
@@ -174,6 +215,9 @@ pub fn thumbnails_at(
                 break;
             }
             let image = from_frame_with(&mut converter, &frame, at, max_edge)?;
+            if target == 0 {
+                first_bytes = reader.bytes_read();
+            }
             target += 1;
             sample(at, image);
             if cancelled.load(Ordering::Relaxed) {
@@ -184,41 +228,7 @@ pub fn thumbnails_at(
             reader.start_read_window(PASS_LEG_BYTES);
         }
     }
-    Ok(())
-}
-
-/// Same as [`thumbnail_at`], also reporting how many source bytes the first
-/// frame needed. Used to prove bounded reads on large files.
-pub fn thumbnail_at_with_read_bytes(
-    path: &Path,
-    at: Tick,
-    max_edge: u32,
-    cancelled: Arc<AtomicBool>,
-) -> Result<(Thumbnail, u64)> {
-    if !(1..=MAX_THUMBNAIL_EDGE).contains(&max_edge) {
-        return Err(MediaError::Invalid("thumbnail max edge"));
-    }
-    if cancelled.load(Ordering::Relaxed) {
-        return Err(MediaError::Cancelled);
-    }
-    let mut reader = VideoReader::open_thumbnail(path, cancelled.clone())?;
-    if at == Tick::ZERO
-        && max_edge == THUMBNAIL_MAX_EDGE
-        && let Some(thumbnail) = reader.take_recovered_thumbnail()
-    {
-        return Ok((thumbnail, reader.bytes_read()));
-    }
-    if at > Tick::ZERO {
-        reader.seek(at)?;
-    }
-    let frame = reader
-        .next_frame()?
-        .ok_or(MediaError::Unsupported("video has no decodable frame"))?;
-    if cancelled.load(Ordering::Relaxed) {
-        return Err(MediaError::Cancelled);
-    }
-    let thumbnail = from_frame(&frame, at, max_edge)?;
-    Ok((thumbnail, reader.bytes_read()))
+    Ok(first_bytes)
 }
 
 pub(crate) fn from_frame(frame: &crate::VideoFrame, at: Tick, max_edge: u32) -> Result<Thumbnail> {
