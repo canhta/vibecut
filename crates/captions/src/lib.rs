@@ -6,7 +6,7 @@ mod mapping;
 mod segment;
 mod span;
 mod timing;
-pub use filler::{FillerCandidate, FillerLexicon, detect_fillers};
+pub use filler::{FillerCandidate, FillerKind, FillerLexicon, detect_fillers};
 pub use interchange::ass;
 pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
 pub use interchange::{Export, Format, Import, export, parse};

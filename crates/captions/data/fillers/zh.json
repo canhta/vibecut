@@ -6,8 +6,8 @@
     "xiandai-2016": "Institute of Linguistics, Chinese Academy of Social Sciences (Ed.). (2016). 现代汉语词典 (7th ed.). 商务印书馆. Entry 嗯 as an interjection."
   },
   "entries": [
-    { "phrase": "嗯", "references": ["zhao-jurafsky-2005", "xiandai-2016"] },
-    { "phrase": "那个", "references": ["zhao-jurafsky-2005", "liu-2009"] },
-    { "phrase": "这个", "references": ["zhao-jurafsky-2005", "liu-2009"] }
+    { "phrase": "嗯", "kind": "filled_pause", "references": ["zhao-jurafsky-2005", "xiandai-2016"] },
+    { "phrase": "那个", "kind": "discourse_marker", "references": ["zhao-jurafsky-2005", "liu-2009"] },
+    { "phrase": "这个", "kind": "discourse_marker", "references": ["zhao-jurafsky-2005", "liu-2009"] }
   ]
 }

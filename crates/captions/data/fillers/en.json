@@ -7,12 +7,12 @@
     "schiffrin-1987": "Schiffrin, D. (1987). Discourse Markers. Cambridge University Press."
   },
   "entries": [
-    { "phrase": "um", "references": ["clark-fox-tree-2002"] },
-    { "phrase": "uh", "references": ["clark-fox-tree-2002"] },
-    { "phrase": "er", "references": ["biber-1999"] },
-    { "phrase": "erm", "references": ["biber-1999"] },
-    { "phrase": "like", "references": ["siegel-2002"] },
-    { "phrase": "you know", "references": ["schiffrin-1987"] },
-    { "phrase": "i mean", "references": ["schiffrin-1987"] }
+    { "phrase": "um", "kind": "filled_pause", "references": ["clark-fox-tree-2002"] },
+    { "phrase": "uh", "kind": "filled_pause", "references": ["clark-fox-tree-2002"] },
+    { "phrase": "er", "kind": "filled_pause", "references": ["biber-1999"] },
+    { "phrase": "erm", "kind": "filled_pause", "references": ["biber-1999"] },
+    { "phrase": "like", "kind": "discourse_marker", "references": ["siegel-2002"] },
+    { "phrase": "you know", "kind": "discourse_marker", "references": ["schiffrin-1987"] },
+    { "phrase": "i mean", "kind": "discourse_marker", "references": ["schiffrin-1987"] }
   ]
 }

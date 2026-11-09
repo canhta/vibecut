@@ -22,24 +22,41 @@ const BUILTIN: &[(&str, &str)] = &[
     ("zh", include_str!("../data/fillers/zh.json")),
 ];
 
+/// Whether a lexicon phrase is a filled pause or a meaning-bearing marker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FillerKind {
+    /// A hesitation sound such as `um`, `ừm` or `嗯`.
+    FilledPause,
+    /// A normal word or phrase that can also act as a discourse marker.
+    DiscourseMarker,
+}
+
 /// One whole-word filler span awaiting review for removal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FillerCandidate {
     /// Stable for a cue and word span: `filler:<cue id>:<start tick>`.
     pub id: NfcText,
-    /// The source word span; adjacent filler words merge into one span.
+    /// The source word span; adjacent filled pauses merge into one span.
     pub range: SourceRange,
     /// The cue that owns every word in `range`.
     pub cue_id: NfcText,
     /// Whether the detected language's text on that cue was edited.
     pub edited_cue: bool,
+    /// Whether the match is a filled pause or a discourse marker.
+    pub kind: FillerKind,
 }
 
 /// Validated per-language lexicon data; phrases match whole normalized words.
 #[derive(Clone, Debug)]
 pub struct FillerLexicon {
     language: LanguageTag,
-    entries: Vec<Vec<String>>,
+    entries: Vec<LexiconEntry>,
+}
+#[derive(Clone, Debug)]
+struct LexiconEntry {
+    tokens: Vec<String>,
+    kind: FillerKind,
 }
 /// The one data-file shape; every phrase names references declared in the header.
 #[derive(Deserialize)]
@@ -53,12 +70,14 @@ struct Wire {
 #[serde(deny_unknown_fields)]
 struct WireEntry {
     phrase: String,
+    kind: FillerKind,
     references: Vec<String>,
 }
 
 impl FillerLexicon {
-    /// Parse and validate one lexicon file. Every entry must cite a nonempty
-    /// header reference; phrases are NFC, lowercased and tokenized here.
+    /// Parse and validate one lexicon file. Every entry declares a kind and
+    /// cites a nonempty header reference; phrases are NFC, lowercased and
+    /// tokenized here.
     pub fn parse(json: &str) -> Result<Self, Error> {
         if json.len() > MAX_LEXICON_BYTES {
             return Err(Error::MalformedLexicon("size"));
@@ -76,7 +95,7 @@ impl FillerLexicon {
         {
             return Err(Error::MalformedLexicon("reference"));
         }
-        let mut entries = Vec::with_capacity(wire.entries.len());
+        let mut entries: Vec<LexiconEntry> = Vec::with_capacity(wire.entries.len());
         for entry in wire.entries {
             if entry.references.is_empty()
                 || entry
@@ -96,12 +115,20 @@ impl FillerLexicon {
             {
                 return Err(Error::MalformedLexicon("phrase token"));
             }
-            if entries.iter().any(|existing| existing == &tokens) {
+            if entries.iter().any(|existing| existing.tokens == tokens) {
                 return Err(Error::MalformedLexicon("duplicate phrase"));
             }
-            entries.push(tokens);
+            entries.push(LexiconEntry {
+                tokens,
+                kind: entry.kind,
+            });
         }
-        entries.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        entries.sort_by(|a, b| {
+            b.tokens
+                .len()
+                .cmp(&a.tokens.len())
+                .then_with(|| a.tokens.cmp(&b.tokens))
+        });
         Ok(Self { language, entries })
     }
 
@@ -128,11 +155,14 @@ impl FillerLexicon {
 /// Detect whole-word filler candidates in source order. Every cue's text in the
 /// lexicon language is tokenized with UAX #29 and paired index-for-index with
 /// `Cue::word_ranges`; a cue whose counts disagree has no measured word timing
-/// and contributes nothing. Longest phrase wins, and contiguous filler words
-/// merge into one candidate.
+/// and contributes nothing. Only `FilledPause` entries match unless
+/// `include_markers` is set, when `DiscourseMarker` entries also match. The
+/// longest eligible phrase wins. Contiguous filled pauses merge into one
+/// candidate; each marker stays separate because it is its own review decision.
 pub fn detect_fillers(
     track: &CueTrack,
     lexicon: &FillerLexicon,
+    include_markers: bool,
 ) -> Result<Vec<FillerCandidate>, Error> {
     let mut output = Vec::new();
     let mut track_tokens = 0usize;
@@ -148,12 +178,23 @@ pub fn detect_fillers(
         if tokens.is_empty() || tokens.len() != cue.word_ranges.len() {
             continue;
         }
-        let mut run: Option<(usize, usize)> = None;
+        let mut run: Option<(usize, usize, FillerKind)> = None;
         let mut index = 0usize;
         while index < tokens.len() {
-            if let Some(end) = match_phrase(&tokens, index, lexicon) {
-                let start = run.map_or(index, |(start, _)| start);
-                run = Some((start, end));
+            if let Some((end, kind)) = match_phrase(&tokens, index, lexicon, include_markers) {
+                run = match run {
+                    Some((start, run_end, run_kind))
+                        if kind == FillerKind::FilledPause
+                            && run_kind == kind
+                            && run_end == index =>
+                    {
+                        Some((start, end, kind))
+                    }
+                    _ => {
+                        flush(&mut output, cue, text, run.take())?;
+                        Some((index, end, kind))
+                    }
+                };
                 index = end;
             } else {
                 flush(&mut output, cue, text, run.take())?;
@@ -184,14 +225,22 @@ fn primary(tag: &str) -> &str {
     tag.split('-').next().unwrap_or(tag)
 }
 
-fn match_phrase(tokens: &[String], index: usize, lexicon: &FillerLexicon) -> Option<usize> {
+fn match_phrase(
+    tokens: &[String],
+    index: usize,
+    lexicon: &FillerLexicon,
+    include_markers: bool,
+) -> Option<(usize, FillerKind)> {
     lexicon.entries.iter().find_map(|entry| {
-        let window = tokens.get(index..index + entry.len())?;
+        if !include_markers && entry.kind != FillerKind::FilledPause {
+            return None;
+        }
+        let window = tokens.get(index..index + entry.tokens.len())?;
         window
             .iter()
-            .zip(entry)
+            .zip(&entry.tokens)
             .all(|(token, word)| token == word)
-            .then_some(index + entry.len())
+            .then_some((index + entry.tokens.len(), entry.kind))
     })
 }
 
@@ -199,9 +248,9 @@ fn flush(
     output: &mut Vec<FillerCandidate>,
     cue: &Cue,
     text: &CueText,
-    run: Option<(usize, usize)>,
+    run: Option<(usize, usize, FillerKind)>,
 ) -> Result<(), Error> {
-    let Some((start, end)) = run else {
+    let Some((start, end, kind)) = run else {
         return Ok(());
     };
     let first = cue
@@ -224,6 +273,7 @@ fn flush(
         range,
         cue_id: cue.id.clone(),
         edited_cue: text.edited,
+        kind,
     });
     Ok(())
 }

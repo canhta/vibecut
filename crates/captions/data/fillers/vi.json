@@ -1,18 +1,12 @@
 {
   "language": "vi",
   "references": {
-    "dao-2022": "Dao, M. H., Truong, T. H., & Nguyen, D. Q. (2022). Disfluency Detection for Vietnamese. Proceedings of W-NUT 2022, 194-200. https://aclanthology.org/2022.wnut-1.21/ (Table 1 annotates ừm, ờm and ờ as interregnum fillers and ừm không as a repair cue).",
-    "tran-2020": "Tran Trong Giang (2020). Teaching final particles in Vietnamese. Bulletin of Kanda University of International Studies, 32, 267-288. (Final-particle set: à, chứ, đấy, mà, nhé, nhỉ, thôi, vậy.)",
-    "thompson-1965": "Thompson, L. C. (1965). A Vietnamese Grammar. University of Washington Press. (Reprinted 1987 as A Vietnamese Reference Grammar, University of Hawaii Press.)"
+    "dao-2022": "Dao, M. H., Truong, T. H., & Nguyen, D. Q. (2022). Disfluency Detection for Vietnamese. Proceedings of W-NUT 2022, 194-200. https://aclanthology.org/2022.wnut-1.21/ (Table 1 annotates ừm, ờm and ờ as Interregnum fillers, and à starts an Interregnum span in Examples 1 and 3.)"
   },
   "entries": [
-    { "phrase": "ừ", "references": ["thompson-1965", "dao-2022"] },
-    { "phrase": "ừm", "references": ["dao-2022"] },
-    { "phrase": "ờ", "references": ["dao-2022"] },
-    { "phrase": "ờm", "references": ["dao-2022"] },
-    { "phrase": "à", "references": ["dao-2022", "thompson-1965"] },
-    { "phrase": "đấy", "references": ["tran-2020"] },
-    { "phrase": "nhé", "references": ["tran-2020"] },
-    { "phrase": "nhỉ", "references": ["tran-2020"] }
+    { "phrase": "ừm", "kind": "filled_pause", "references": ["dao-2022"] },
+    { "phrase": "ờ", "kind": "filled_pause", "references": ["dao-2022"] },
+    { "phrase": "ờm", "kind": "filled_pause", "references": ["dao-2022"] },
+    { "phrase": "à", "kind": "filled_pause", "references": ["dao-2022"] }
   ]
 }

@@ -5,7 +5,8 @@
 )]
 
 use captions::{
-    Cue, CueText, CueTrack, Error, FillerCandidate, FillerLexicon, LanguageTag, detect_fillers,
+    Cue, CueText, CueTrack, Error, FillerCandidate, FillerKind, FillerLexicon, LanguageTag,
+    detect_fillers,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -47,8 +48,14 @@ fn cue(id: &str, tag: &str, text: &str, words: Vec<SourceRange>, edited: bool) -
         style: None,
     }
 }
+fn builtin(tag: &str) -> FillerLexicon {
+    FillerLexicon::builtin(&lang(tag)).unwrap()
+}
 fn detect(track: &CueTrack, tag: &str) -> Vec<FillerCandidate> {
-    detect_fillers(track, &FillerLexicon::builtin(&lang(tag)).unwrap()).unwrap()
+    detect_fillers(track, &builtin(tag), false).unwrap()
+}
+fn detect_with(track: &CueTrack, tag: &str, include_markers: bool) -> Vec<FillerCandidate> {
+    detect_fillers(track, &builtin(tag), include_markers).unwrap()
 }
 fn span(words: &[SourceRange], start: usize, end: usize) -> SourceRange {
     range(
@@ -56,9 +63,15 @@ fn span(words: &[SourceRange], start: usize, end: usize) -> SourceRange {
         words.get(end - 1).map_or(0, |range| range.end().0),
     )
 }
+fn ranges(found: &[FillerCandidate]) -> Vec<SourceRange> {
+    found.iter().map(|candidate| candidate.range).collect()
+}
+fn kinds(found: &[FillerCandidate]) -> Vec<FillerKind> {
+    found.iter().map(|candidate| candidate.kind).collect()
+}
 
 #[test]
-fn shipped_lexicons_match_known_fillers_per_language() {
+fn shipped_lexicons_match_known_filled_pauses_per_language() {
     struct Case {
         tag: &'static str,
         text: &'static str,
@@ -70,19 +83,19 @@ fn shipped_lexicons_match_known_fillers_per_language() {
             tag: "en",
             text: "Um, uh, so you know, well I mean that like this.",
             words: 11,
-            expected: &[(0, 2), (3, 5), (6, 8), (9, 10)],
+            expected: &[(0, 2)],
         },
         Case {
             tag: "vi",
             text: "Ừm, ờ, cái đó đấy, nhé!",
             words: 6,
-            expected: &[(0, 2), (4, 6)],
+            expected: &[(0, 2)],
         },
         Case {
             tag: "zh",
             text: "嗯那个我们这个好",
             words: 8,
-            expected: &[(0, 3), (5, 7)],
+            expected: &[(0, 1)],
         },
     ];
     for case in cases {
@@ -91,13 +104,18 @@ fn shipped_lexicons_match_known_fillers_per_language() {
             cues: vec![cue("cue", case.tag, case.text, words.clone(), false)],
         };
         let found = detect(&track, case.tag);
-        let ranges: Vec<SourceRange> = found.iter().map(|candidate| candidate.range).collect();
         let expected: Vec<SourceRange> = case
             .expected
             .iter()
             .map(|(start, end)| span(&words, *start, *end))
             .collect();
-        assert_eq!(ranges, expected, "{} candidates", case.tag);
+        assert_eq!(ranges(&found), expected, "{} candidates", case.tag);
+        assert_eq!(
+            kinds(&found),
+            vec![FillerKind::FilledPause; found.len()],
+            "{} kinds",
+            case.tag
+        );
         assert!(
             found
                 .iter()
@@ -109,17 +127,81 @@ fn shipped_lexicons_match_known_fillers_per_language() {
 }
 
 #[test]
-fn edited_state_and_stable_ids_come_from_the_caption_track() {
+fn discourse_markers_are_opt_in_and_keep_their_kind() {
+    let words = words(4);
+    let track = CueTrack {
+        cues: vec![cue(
+            "cue",
+            "en",
+            "Um, like, you know.",
+            words.clone(),
+            false,
+        )],
+    };
+    let default = detect_with(&track, "en", false);
+    assert_eq!(ranges(&default), vec![span(&words, 0, 1)]);
+    assert_eq!(kinds(&default), vec![FillerKind::FilledPause]);
+
+    let all = detect_with(&track, "en", true);
+    assert_eq!(
+        ranges(&all),
+        vec![span(&words, 0, 1), span(&words, 1, 2), span(&words, 2, 4)],
+        "adjacent markers stay separate review items"
+    );
+    assert_eq!(
+        kinds(&all),
+        vec![
+            FillerKind::FilledPause,
+            FillerKind::DiscourseMarker,
+            FillerKind::DiscourseMarker
+        ]
+    );
+}
+
+#[test]
+fn ordinary_word_uses_are_not_candidates_by_default() {
+    let english_words = words(3);
+    let english = CueTrack {
+        cues: vec![cue("en", "en", "I like it.", english_words, false)],
+    };
+    assert!(detect(&english, "en").is_empty());
+    let english_markers = detect_with(&english, "en", true);
+    assert_eq!(english_markers.len(), 1);
+    assert_eq!(
+        english_markers.first().unwrap().kind,
+        FillerKind::DiscourseMarker
+    );
+
+    let chinese_words = words(5);
+    let chinese = CueTrack {
+        cues: vec![cue("zh", "zh", "那个人很好", chinese_words.clone(), false)],
+    };
+    assert!(detect(&chinese, "zh").is_empty());
+    let chinese_markers = detect_with(&chinese, "zh", true);
+    assert_eq!(
+        ranges(&chinese_markers),
+        vec![span(&chinese_words, 0, 2)],
+        "那个 is only a marker when the caller opts in"
+    );
+    assert_eq!(
+        chinese_markers.first().unwrap().kind,
+        FillerKind::DiscourseMarker
+    );
+}
+
+#[test]
+fn adjacent_filled_pauses_merge_and_ids_are_stable() {
     let words = words(2);
     let track = CueTrack {
-        cues: vec![cue("cue-7", "en", "Like uh.", words.clone(), true)],
+        cues: vec![cue("cue-7", "en", "Uh uh.", words.clone(), true)],
     };
     let first = detect(&track, "en");
     let second = detect(&track, "en");
     assert_eq!(first, second, "repeat runs are identical");
-    assert_eq!(first.len(), 1, "adjacent fillers merge");
+    assert_eq!(ranges(&first), vec![span(&words, 0, 2)]);
     let candidate = first.first().expect("one candidate");
     assert!(candidate.edited_cue);
+    assert_eq!(candidate.kind, FillerKind::FilledPause);
     assert_eq!(candidate.cue_id.as_str(), "cue-7");
     assert_eq!(
         candidate.id.as_str(),
@@ -154,7 +236,12 @@ fn unknown_language_is_a_typed_refusal() {
     let track = CueTrack {
         cues: vec![cue("cue", "vi-VN", "Ừm.", words(1), false)],
     };
-    assert_eq!(detect_fillers(&track, &regional).expect("detect").len(), 1);
+    assert_eq!(
+        detect_fillers(&track, &regional, false)
+            .expect("detect")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -162,7 +249,7 @@ fn malformed_lexicons_are_typed_errors() {
     let cases = [
         ("", "json"),
         (
-            r#"{"language":"!!","references":{"a":"x"},"entries":[{"phrase":"um","references":["a"]}]}"#,
+            r#"{"language":"!!","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":["a"]}]}"#,
             "language",
         ),
         (
@@ -170,31 +257,43 @@ fn malformed_lexicons_are_typed_errors() {
             "entry count",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","references":[]}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":[]}]}"#,
             "entry reference",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","references":["b"]}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":["b"]}]}"#,
             "entry reference",
         ),
         (
-            r#"{"language":"en","references":{"a":" "},"entries":[{"phrase":"um","references":["a"]}]}"#,
+            r#"{"language":"en","references":{"a":" "},"entries":[{"phrase":"um","kind":"filled_pause","references":["a"]}]}"#,
             "reference",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"!!!","references":["a"]}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"!!!","kind":"filled_pause","references":["a"]}]}"#,
             "phrase",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"a b c d e f g h i","references":["a"]}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"a b c d e f g h i","kind":"filled_pause","references":["a"]}]}"#,
             "phrase",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","references":["a"]},{"phrase":"UM","references":["a"]}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":["a"]},{"phrase":"UM","kind":"filled_pause","references":["a"]}]}"#,
             "duplicate phrase",
         ),
         (
-            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","references":["a"],"extra":1}]}"#,
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":["a"]},{"phrase":"um","kind":"discourse_marker","references":["a"]}]}"#,
+            "duplicate phrase",
+        ),
+        (
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","references":["a"]}]}"#,
+            "missing kind",
+        ),
+        (
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"hesitation","references":["a"]}]}"#,
+            "unknown kind",
+        ),
+        (
+            r#"{"language":"en","references":{"a":"x"},"entries":[{"phrase":"um","kind":"filled_pause","references":["a"],"extra":1}]}"#,
             "json",
         ),
     ];
@@ -215,13 +314,13 @@ fn malformed_lexicons_are_typed_errors() {
 #[test]
 fn a_caller_lexicon_adds_a_language_without_detector_changes() {
     let french = FillerLexicon::parse(
-        r#"{"language":"fr","references":{"x":"test"},"entries":[{"phrase":"euh","references":["x"]}]}"#,
+        r#"{"language":"fr","references":{"x":"test"},"entries":[{"phrase":"euh","kind":"filled_pause","references":["x"]}]}"#,
     )
     .expect("caller lexicon");
     let track = CueTrack {
         cues: vec![cue("cue", "fr", "Euh, oui.", words(2), false)],
     };
-    let found = detect_fillers(&track, &french).expect("detect");
+    let found = detect_fillers(&track, &french, false).expect("detect");
     assert_eq!(found.len(), 1);
     assert_eq!(
         found.first().expect("candidate").range,
@@ -232,29 +331,38 @@ fn a_caller_lexicon_adds_a_language_without_detector_changes() {
 #[test]
 fn lexicon_phrases_are_nfc_normalized() {
     let lexicon = FillerLexicon::parse(
-        "{\"language\":\"fr\",\"references\":{\"x\":\"test\"},\"entries\":[{\"phrase\":\"cafe\u{301}\",\"references\":[\"x\"]}]}",
+        "{\"language\":\"fr\",\"references\":{\"x\":\"test\"},\"entries\":[{\"phrase\":\"cafe\u{301}\",\"kind\":\"filled_pause\",\"references\":[\"x\"]}]}",
     )
     .expect("decomposed caller lexicon");
     let track = CueTrack {
         cues: vec![cue("cue", "fr", "Café.", words(1), false)],
     };
-    assert_eq!(detect_fillers(&track, &lexicon).expect("detect").len(), 1);
+    assert_eq!(
+        detect_fillers(&track, &lexicon, false)
+            .expect("detect")
+            .len(),
+        1
+    );
 }
 
 #[test]
 fn longest_phrase_wins_without_overlap() {
     let lexicon = FillerLexicon::parse(
-        r#"{"language":"en","references":{"x":"test"},"entries":[{"phrase":"you","references":["x"]},{"phrase":"you know","references":["x"]}]}"#,
+        r#"{"language":"en","references":{"x":"test"},"entries":[{"phrase":"you","kind":"discourse_marker","references":["x"]},{"phrase":"you know","kind":"discourse_marker","references":["x"]}]}"#,
     )
     .expect("lexicon");
     let track = CueTrack {
         cues: vec![cue("cue", "en", "You know.", words(2), false)],
     };
-    let found = detect_fillers(&track, &lexicon).expect("detect");
+    let found = detect_fillers(&track, &lexicon, true).expect("detect");
     assert_eq!(found.len(), 1);
     assert_eq!(
         found.first().expect("candidate").range,
         span(&words(2), 0, 2)
+    );
+    assert_eq!(
+        found.first().expect("candidate").kind,
+        FillerKind::DiscourseMarker
     );
 }
 
@@ -264,7 +372,7 @@ fn a_same_primary_tag_finds_the_cue_text() {
     let track = CueTrack {
         cues: vec![cue("cue", "zh-Hant", "嗯。", words(1), false)],
     };
-    let found = detect_fillers(&track, &lexicon).expect("detect");
+    let found = detect_fillers(&track, &lexicon, false).expect("detect");
     assert_eq!(found.len(), 1);
 }
 
@@ -283,7 +391,7 @@ fn candidate_ids_are_unique_across_a_track() {
     let track = CueTrack {
         cues: vec![
             cue("a", "en", "Um, uh.", words(2), false),
-            cue("b", "en", "Like.", words(1), false),
+            cue("b", "en", "Er.", words(1), false),
             cue("c", "en", "Um.", words(1), true),
         ],
     };
@@ -339,7 +447,7 @@ fn interview_excerpt_matches_the_manual_filler_read() {
             texts: BTreeMap::from([(
                 lang("vi"),
                 CueText {
-                    text: asr.text.into(),
+                    text: asr.text.clone().into(),
                     edited: false,
                     translation_ref: None,
                 },
@@ -349,16 +457,13 @@ fn interview_excerpt_matches_the_manual_filler_read() {
         }],
     };
     let found = detect(&track, "vi");
-    println!("{:?}", found.iter().map(|c| c.range).collect::<Vec<_>>());
-    assert_eq!(found.len(), 1, "the 60 s excerpt has one final particle");
-    let candidate = found.first().unwrap();
-    assert_eq!(candidate.cue_id.as_str(), "interview-09");
-    assert_eq!(
-        candidate.range,
-        SourceRange::new(
-            Tick::from_seconds_f64(33.46, Rounding::Nearest).unwrap(),
-            Tick::from_seconds_f64(33.62, Rounding::Nearest).unwrap(),
-        )
-        .unwrap()
+    println!("{:?}", ranges(&found));
+    assert!(
+        found.is_empty(),
+        "the excerpt has no ừm/ờ/ờm/à token; only a backchannel Dạ survives"
+    );
+    assert!(
+        asr.text.contains("Dạ."),
+        "the ASR keeps a backchannel word but no filled pause"
     );
 }
