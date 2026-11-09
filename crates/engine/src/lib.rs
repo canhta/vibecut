@@ -38,6 +38,7 @@ mod artifacts;
 pub(crate) use artifacts::control_preview;
 pub use artifacts::effect_thumbnails;
 pub use artifacts::snapshot;
+pub use artifacts::thumbnail_strip;
 pub use artifacts::thumbnails;
 pub mod providers;
 pub use ai::clips::{

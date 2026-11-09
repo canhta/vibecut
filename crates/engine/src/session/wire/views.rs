@@ -104,6 +104,7 @@ pub enum JobKind {
     AnalyzeSpeechActivity,
     GenerateWaveform,
     AnalyzePauses,
+    GenerateClipThumbnails,
     MeasureLoudness,
     Preview,
     EffectThumbnail,

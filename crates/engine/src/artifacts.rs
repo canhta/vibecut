@@ -5,6 +5,7 @@ pub mod thumbnails {
     pub use super::frame_thumbnails::{RetainedThumbnail, ThumbnailCache, thumbnail_key};
 }
 mod frame_snapshot;
+pub mod thumbnail_strip;
 pub mod snapshot {
     //! Publishes project frame snapshots.
     pub(crate) use super::frame_snapshot::save_with_overwrite;

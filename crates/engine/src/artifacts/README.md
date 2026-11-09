@@ -1,6 +1,6 @@
 # Artifacts
 
-Interface: `thumbnails`, `snapshot`, `effect_thumbnails`.
+Interface: `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`.
 
 ## Import jobs and thumbnails
 
@@ -9,6 +9,16 @@ The desktop import composer submits `JobKind::Probe` for canonicalize, probe, ha
 `thumbnails::thumbnail_key` binds the source content hash, requested frame position and output edge. `ThumbnailCache::get_or_generate` decodes only on a miss; corrupt envelopes or payloads count as misses and regenerate. `ThumbnailCache` keeps validated source probe metadata in the same content-keyed envelope as pixels, so a warm image import reuses geometry before opening a recovery decoder. It never caches machine capabilities.
 
 `thumbnails::RetainedThumbnail` shares pixels through an Arc and holds the aggregate `DecodedFrames` allowance until the last owner drops. It reserves four RGBA byte counts for packed pixels, egui CPU image, upload staging and GPU texture, plus the retained probe metadata allocation. App owners keep that handle while any texture is retained.
+
+## Thumbnail strips
+
+`thumbnail_strip::tile_interval(strip_height_px, pixels_per_second)` returns the output ticks between two tiles: one 16:9 tile, whose width is the filmstrip height times 16/9 (the implementation reference's `THUMBNAIL_ASPECT_RATIO = 16 / 9` in `apps/web/src/timeline/components/timeline-element.tsx:97`, used at `:1108`). The measured editor uses a 39 px filmstrip at the ruler's 71.5 px/s, about 0.97 s per tile.
+
+`ThumbnailStripRequest::new(asset, source_range, interval, max_edge)` samples a video or image source on a grid anchored at source zero, so overlapping requests reuse the same `thumbnails::thumbnail_key` entry per position. `submit` runs one local CPU `GenerateClipThumbnails` job, decodes every missing position through `media::thumbnail` (no second decoder or key builder) and reserves 32 MiB decoded frames and a 64 MiB result. A warm cache opens no source. `finish` validates the manifest (magic, count, requested positions, per-frame geometry, 64 MiB) and publishes each frame through the existing thumbnail cache. A still image has one frame at source zero and repeats it.
+
+`thumbnail_strip::display(asset, item, visible, interval, max_edge, cache)` is the cache-only query: it clamps the visible output range to the clip, maps each tile's start through `project::Item::source_time_at` (trim and retime), floors it to the request grid and returns `Ready(tiles)` with one `StripTile { output, at, image }` per tile, `Pending` when any frame is missing, `Failed` when a cached frame cannot be decoded, or `Unsupported` when the source has no video stream. It never decodes media and never blocks on a job. Repeated source positions share one retained image.
+
+Limits: one request or visible range 1..=128 tiles, a positive interval and max edge 1..=320. A range outside the clip, a mismatched asset, a negative source range or a hostile tile count is `Invalid`. Cancellation publishes nothing and leaves the previous frames intact; a changed source content hash misses every old entry.
 
 ## Frame snapshots
 

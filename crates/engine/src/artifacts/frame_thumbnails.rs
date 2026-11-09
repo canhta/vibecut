@@ -102,6 +102,14 @@ impl RetainedThumbnail {
     }
 }
 
+/// One cache read: a decoded hit, an absent entry or an entry that must be
+/// regenerated.
+pub(crate) enum ThumbnailLookup {
+    Hit(RetainedThumbnail),
+    Missing,
+    Corrupt,
+}
+
 /// One exclusive thumbnail cache directory, reusing the engine artifact policy.
 pub struct ThumbnailCache {
     cache: ArtifactCache,
@@ -146,19 +154,33 @@ impl ThumbnailCache {
         at: Tick,
         max_edge: u32,
     ) -> Result<Option<RetainedThumbnail>> {
+        Ok(match self.lookup(asset, at, max_edge)? {
+            ThumbnailLookup::Hit(image) => Some(image),
+            ThumbnailLookup::Missing | ThumbnailLookup::Corrupt => None,
+        })
+    }
+
+    /// Cache read that keeps a corrupt entry distinguishable from a miss, so a
+    /// display query can report `Failed` while generation treats both as misses.
+    pub(crate) fn lookup(
+        &mut self,
+        asset: &SourceAsset,
+        at: Tick,
+        max_edge: u32,
+    ) -> Result<ThumbnailLookup> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
-            Err(EditError::CacheCorrupt) => return Ok(None),
+            Err(EditError::CacheCorrupt) => return Ok(ThumbnailLookup::Corrupt),
             Err(error) => return Err(error),
         };
         let Some(lease) = lease else {
-            return Ok(None);
+            return Ok(ThumbnailLookup::Missing);
         };
         // Reserve the decoded image, CPU upload and GPU allowance before the
         // payload decoder allocates pixels. The cache read lease stays pinned.
         let Some((probe, payload)) = Self::unpack(lease.bytes(), asset.content_hash()) else {
-            return Ok(None);
+            return Ok(ThumbnailLookup::Corrupt);
         };
         let pixels = payload.len().saturating_sub(24) as u64;
         let image_lease = self.budget.reserve(
@@ -168,16 +190,15 @@ impl ThumbnailCache {
         let decoded = Thumbnail::decode(payload);
         drop(lease);
         match decoded {
-            Ok(image) if image.width <= max_edge && image.height <= max_edge => Ok(Some(
-                RetainedThumbnail(std::sync::Arc::new(RetainedImage {
+            Ok(image) if image.width <= max_edge && image.height <= max_edge => Ok(
+                ThumbnailLookup::Hit(RetainedThumbnail(std::sync::Arc::new(RetainedImage {
                     image,
                     probe,
                     _lease: image_lease,
-                })),
-            )),
-            Ok(_) => Ok(None),
+                }))),
+            ),
             // Replaced on the next successful put.
-            Err(_) => Ok(None),
+            Ok(_) | Err(_) => Ok(ThumbnailLookup::Corrupt),
         }
     }
 
