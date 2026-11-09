@@ -37,6 +37,7 @@ Each module's contract is its README.
 | `editor/player/` | [Editor player](src/editor/player/README.md) |
 | `editor/properties/` | [Properties](src/editor/properties/README.md) |
 | `editor/properties/font_picker/` | [Font picker](src/editor/properties/font_picker/README.md) |
+| `editor/properties/mask_picker/` | [Mask picker](src/editor/properties/mask_picker/README.md) |
 | `editor/properties/view/` | [Properties view](src/editor/properties/view/README.md) |
 | `editor/properties/workflow/` | [Properties workflow](src/editor/properties/workflow/README.md) |
 | `editor/timeline/` | [Timeline](src/editor/timeline/README.md) |

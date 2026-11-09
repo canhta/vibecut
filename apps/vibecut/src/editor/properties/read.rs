@@ -141,6 +141,16 @@ pub(super) fn has_key_at(project: &project::Project, item: ItemId, field: &str, 
         })
 }
 
+/// Whether the item's track refuses edits.
+pub(super) fn item_locked(project: &project::Project, id: ItemId) -> bool {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .any(|track| track.locked && track.items.iter().any(|item| item.id == id))
+}
+
 /// The item's start and end on the timeline.
 pub(super) fn range_of(project: &project::Project, id: ItemId) -> Option<(Tick, Tick)> {
     let item = find(project, id)?;

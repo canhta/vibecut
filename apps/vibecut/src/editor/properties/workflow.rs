@@ -4,6 +4,7 @@ mod canvas;
 mod commands;
 mod effects;
 mod fonts;
+mod masks;
 mod number_edit;
 mod speed;
 
@@ -103,6 +104,7 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 recent,
             } => editor.commit_color(command, params, recent),
             Action::Font(action) => editor.font_action(action),
+            Action::Mask(action) => editor.mask_action(action),
             Action::Error(message) => {
                 editor.error = Some(message);
                 Ok(())

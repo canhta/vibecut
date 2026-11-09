@@ -106,6 +106,8 @@ pub(in crate::editor) enum Action {
     },
     /// Font picker commands, preferences and family selection.
     Font(super::font_picker::Action),
+    /// Mask row sub-panel edits.
+    Mask(super::mask_picker::Action),
     Error(String),
 }
 
@@ -210,6 +212,9 @@ impl State {
         }
         if self.font_picker.open && self.details {
             self.font_picker.close();
+        }
+        if self.mask.is_open() && (selected != self.mask.item() || self.details) {
+            self.mask.close();
         }
         if self
             .reorder

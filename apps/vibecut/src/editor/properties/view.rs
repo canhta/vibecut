@@ -26,10 +26,7 @@ fn diamond_group(field: &str) -> &str {
 const VALUE_COLUMN: f32 = 120.0;
 
 fn is_basic(tab: PropertiesTab) -> bool {
-    matches!(
-        tab,
-        PropertiesTab::Transform | PropertiesTab::Blending | PropertiesTab::Masks
-    )
+    matches!(tab, PropertiesTab::Transform | PropertiesTab::Blending)
 }
 
 /// Content inset from the panel edge, measured.
@@ -68,6 +65,7 @@ pub(in crate::editor) fn show(
     panel.area(&mut ui, area);
     panel.picker_dialog(ui.ctx());
     panel.font_dialog(ui.ctx());
+    panel.mask_dialog(ui.ctx());
     panel.actions
 }
 
@@ -433,7 +431,10 @@ impl<'a, 'c> Panel<'a, 'c> {
             .and_then(|id| PropertiesTab::from_id(id))
             .filter(|tab| tabs.contains(tab));
         let active = stored.unwrap_or_else(|| kind.default_tab());
-        // Transform, blending and masks share one top tab with segmented sub-tabs.
+        if !is_basic(active) || !matches!(kind, ElementKind::Video | ElementKind::Image) {
+            self.state.mask.close();
+        }
+        // Transform and blending share one top tab with segmented sub-tabs.
         let basic: Vec<PropertiesTab> = tabs.iter().copied().filter(|tab| is_basic(*tab)).collect();
         let group_label = match kind {
             ElementKind::Video => Text::Video,
@@ -524,7 +525,12 @@ impl<'a, 'c> Panel<'a, 'c> {
         egui::ScrollArea::vertical()
             .id_salt("inspector.properties")
             .auto_shrink([false, false])
-            .show(&mut body, |ui| self.properties_tab(ui, item, kind, active));
+            .show(&mut body, |ui| {
+                if is_basic(active) {
+                    self.mask_row(ui, item, kind);
+                }
+                self.properties_tab(ui, item, kind, active)
+            });
     }
 
     fn properties_tab(
@@ -651,31 +657,6 @@ impl<'a, 'c> Panel<'a, 'c> {
                     },
                 );
             }
-            PropertiesTab::Masks => {
-                let masks = super::read::item(self.cx.session.project(), item)
-                    .map(|i| i.masks.iter().map(|m| m.id.clone()).collect::<Vec<_>>())
-                    .unwrap_or_default();
-                if !masks.is_empty() {
-                    self.panel_section(
-                        ui,
-                        "inspector.section.masks",
-                        "inspector.masks",
-                        Text::Masks,
-                        true,
-                        false,
-                        |panel, ui| {
-                            for mask in masks {
-                                panel.color_row(
-                                    ui,
-                                    &format!("inspector.mask.{mask}.stroke"),
-                                    Text::GraphicStroke,
-                                    ColorTarget::MaskStroke { item, mask },
-                                );
-                            }
-                        },
-                    );
-                }
-            }
             PropertiesTab::Audio if kind == ElementKind::Audio => {
                 self.panel_section(
                     ui,
@@ -769,6 +750,8 @@ mod effects;
 mod text_style;
 
 mod appearance;
+
+mod mask;
 
 mod number_edit;
 

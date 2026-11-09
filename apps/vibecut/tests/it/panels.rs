@@ -259,10 +259,8 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
             harness.run_steps(8);
         }
     }
-    if matches!(
-        id,
-        "inspector.tab.transform" | "inspector.tab.blending" | "inspector.tab.masks"
-    ) && !has_widget(harness, id)
+    if matches!(id, "inspector.tab.transform" | "inspector.tab.blending")
+        && !has_widget(harness, id)
     {
         click(harness, "inspector.group.basic");
     }
@@ -606,31 +604,21 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
 }
 
 #[test]
-fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
+fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
-    harness.state_mut().session.execute("masks.add",serde_json::json!({"item":fixture.video,"mask":project::Mask::new("outline",project::MaskShape::Rectangle)})).unwrap();
-    for (selection, tab, button) in [
-        (Some(fixture.text), None, "inspector.text_color.picker"),
-        (Some(fixture.text), None, "inspector.background_color"),
-        (Some(fixture.graphic), None, "inspector.graphic_fill"),
-        (Some(fixture.graphic), None, "inspector.graphic_stroke"),
-        (
-            Some(fixture.video),
-            Some("inspector.tab.masks"),
-            "inspector.mask.outline.stroke",
-        ),
-        (None, None, "inspector.canvas_background"),
+    for (selection, button) in [
+        (Some(fixture.text), "inspector.text_color.picker"),
+        (Some(fixture.text), "inspector.background_color"),
+        (Some(fixture.graphic), "inspector.graphic_fill"),
+        (Some(fixture.graphic), "inspector.graphic_stroke"),
+        (None, "inspector.canvas_background"),
     ] {
         harness.key_press(egui::Key::Escape);
         harness.run_steps(2);
         harness.state_mut().selection = selection.into_iter().collect();
         harness.run_steps(3);
-        if let Some(tab) = tab {
-            click(&mut harness, tab);
-            harness.run_steps(2);
-        }
         if button == "inspector.background_color" {
             harness
                 .state_mut()
@@ -678,15 +666,6 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
                     Color([0; 4])
                 )
                 .unwrap(),
-                chosen
-            ),
-            "inspector.mask.outline.stroke" => assert_eq!(
-                item(&harness, fixture.video)
-                    .masks
-                    .first()
-                    .unwrap()
-                    .stroke
-                    .color,
                 chosen
             ),
             _ => assert_eq!(
@@ -802,7 +781,7 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         if let Some(field) = active_field {
             assert!(has_widget(&harness, field), "{item:?} default tab content");
         }
-        // Transform, blending and masks share one group tab with sub-tabs.
+        // Transform and blending share one group tab with sub-tabs.
         if has_widget(&harness, "inspector.group.basic") {
             click(&mut harness, "inspector.group.basic");
         }
@@ -846,7 +825,6 @@ fn every_registry_kind_has_its_reference_tab_set() {
                 PropertiesTab::Audio,
                 PropertiesTab::Speed,
                 PropertiesTab::Blending,
-                PropertiesTab::Masks,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ][..],
@@ -856,7 +834,6 @@ fn every_registry_kind_has_its_reference_tab_set() {
             &[
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
-                PropertiesTab::Masks,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ][..],
@@ -875,7 +852,6 @@ fn every_registry_kind_has_its_reference_tab_set() {
                 PropertiesTab::Graphic,
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
-                PropertiesTab::Masks,
                 PropertiesTab::Effects,
             ][..],
         ),
@@ -932,6 +908,251 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
             .map(String::as_str),
         Some("blending")
     );
+}
+
+#[test]
+fn mask_row_opens_every_capture_shape_and_none_removes_one_command_step_each() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    assert!(has_widget(&harness, "inspector.mask.row"));
+    assert!(mask_of(&harness, fixture.video).is_none());
+
+    click(&mut harness, "inspector.mask.row");
+    assert!(has_widget(&harness, "inspector.mask.shape.none"));
+    for (choice, shape) in [
+        ("horizontal", project::MaskShape::Split),
+        ("mirror", project::MaskShape::CinematicBars),
+        ("circle", project::MaskShape::Ellipse),
+        ("rectangle", project::MaskShape::Rectangle),
+        ("heart", project::MaskShape::Heart),
+        ("stars", project::MaskShape::Star),
+    ] {
+        let history = harness.state().session.history_len();
+        click(&mut harness, &format!("inspector.mask.shape.{choice}"));
+        assert_eq!(
+            harness.state().session.history_len().0,
+            history.0 + 1,
+            "{choice} is one undo step"
+        );
+        let mask = mask_of(&harness, fixture.video).expect("the choice adds a mask");
+        assert_eq!(mask.id, "mask1", "the panel keeps one mask per clip");
+        assert_eq!(mask.shape, shape, "{choice}");
+        assert_eq!(
+            mask.rotation, -90.0,
+            "{choice} keeps the split's default quarter turn"
+        );
+    }
+    // Geometry is shared: a shape change keeps centre, size and rotation.
+    enter(&mut harness, "inspector.mask.size.w", "70");
+    enter(&mut harness, "inspector.mask.size.h", "80");
+    enter(&mut harness, "inspector.mask.position.x", "10");
+    enter(&mut harness, "inspector.mask.position.y", "-20");
+    enter(&mut harness, "inspector.mask.rotation", "45");
+    let before = mask_of(&harness, fixture.video).unwrap();
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.heart");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let after = mask_of(&harness, fixture.video).unwrap();
+    assert_eq!(after.shape, project::MaskShape::Heart);
+    assert_eq!(
+        (
+            after.center_x,
+            after.center_y,
+            after.width,
+            after.height,
+            after.rotation
+        ),
+        (
+            before.center_x,
+            before.center_y,
+            before.width,
+            before.height,
+            before.rotation
+        ),
+        "changing the shape keeps geometry"
+    );
+    // The same choice is not an edit.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.heart");
+    assert_eq!(harness.state().session.history_len(), history);
+    // None removes the one mask.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.none");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(mask_of(&harness, fixture.video).is_none());
+    // Done closes the panel.
+    click(&mut harness, "inspector.mask.done");
+    assert!(!has_widget(&harness, "inspector.mask.shape.none"));
+}
+
+#[test]
+fn mask_fields_are_one_command_step_each_and_round_trip() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    let added = harness.state().session.project().clone();
+    for (field, value, read, expected) in [
+        ("feather", "50", "feather", 50.0),
+        ("size.w", "70", "width", 0.7),
+        ("size.h", "80", "height", 0.8),
+        ("position.x", "10", "center_x", 0.1),
+        ("position.y", "-20", "center_y", -0.2),
+        ("rotation", "45", "rotation", 45.0),
+    ] {
+        let history = harness.state().session.history_len();
+        enter(&mut harness, &format!("inspector.mask.{field}"), value);
+        assert_eq!(
+            harness.state().session.history_len().0,
+            history.0 + 1,
+            "{field} is one undo step"
+        );
+        let mask = mask_of(&harness, fixture.video).unwrap();
+        let actual = match read {
+            "feather" => mask.feather,
+            "width" => mask.width,
+            "height" => mask.height,
+            "center_x" => mask.center_x,
+            "center_y" => mask.center_y,
+            _ => mask.rotation,
+        };
+        assert!((actual - expected).abs() < 1e-9, "{field} = {actual}");
+    }
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.invert");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(mask_of(&harness, fixture.video).unwrap().inverted);
+    // Bounds clamp in the engine's units.
+    enter(&mut harness, "inspector.mask.feather", "999");
+    assert_eq!(mask_of(&harness, fixture.video).unwrap().feather, 100.0);
+    enter(&mut harness, "inspector.mask.size.w", "0");
+    assert_eq!(mask_of(&harness, fixture.video).unwrap().width, 0.01);
+    enter(&mut harness, "inspector.mask.rotation", "2000000");
+    assert_eq!(
+        mask_of(&harness, fixture.video).unwrap().rotation,
+        1_000_000.0
+    );
+    // Invalid input refuses without a change.
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    enter(&mut harness, "inspector.mask.feather", "nope");
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().session.history_len(), history);
+    // The feather rail commits once on release.
+    let history = harness.state().session.history_len();
+    let slider = widget_rect(&harness, "inspector.mask.feather.slider");
+    harness.drag_at(slider.right_center());
+    harness.run_steps(2);
+    harness.hover_at(slider.left_center());
+    harness.run_steps(2);
+    harness.drop_at(slider.left_center());
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(mask_of(&harness, fixture.video).unwrap().feather, 0.0);
+    // Undo/redo walks each field edit, then round-trips the saved project.
+    for _ in 0..11 {
+        harness.state_mut().session.undo().unwrap();
+    }
+    assert_eq!(harness.state().session.project(), &added);
+    for _ in 0..11 {
+        harness.state_mut().session.redo().unwrap();
+    }
+    let saved = project::encode(harness.state().session.project(), false).unwrap();
+    let decoded = project::decode(&saved).unwrap();
+    assert_eq!(&decoded.project, harness.state().session.project().as_ref());
+    assert_eq!(
+        decoded
+            .project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|item| item.id == fixture.video)
+            .unwrap()
+            .masks
+            .first()
+            .unwrap()
+            .feather,
+        0.0
+    );
+}
+
+#[test]
+fn mask_row_is_absent_off_video_and_image_and_locked_tracks_are_read_only() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    for absent in [fixture.text, fixture.audio, fixture.graphic] {
+        select(&mut harness, absent);
+        assert!(
+            !has_widget(&harness, "inspector.mask.row"),
+            "{absent:?} has no mask row"
+        );
+    }
+    select(&mut harness, fixture.image);
+    assert!(has_widget(&harness, "inspector.mask.row"));
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.circle");
+    assert!(matches!(
+        mask_of(&harness, fixture.image).unwrap().shape,
+        project::MaskShape::Ellipse
+    ));
+    click(&mut harness, "inspector.mask.done");
+
+    let track = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .id;
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackFlags {
+            track,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.mask.row");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    assert_eq!(harness.state().session.history_len(), history);
+    assert!(
+        mask_of(&harness, fixture.video).is_none(),
+        "a locked track refuses the add"
+    );
+    click(&mut harness, "inspector.mask.done");
+}
+
+#[test]
+fn mask_panel_screenshot_is_available() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    enter(&mut harness, "inspector.mask.feather", "24");
+    let image = harness.render().expect("offscreen render");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-36-mask.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image.save(&path).unwrap();
+    assert!(path.exists());
+}
+
+fn mask_of(harness: &Harness<Editor>, id: ItemId) -> Option<project::Mask> {
+    item(harness, id).masks.first().cloned()
 }
 
 #[test]
@@ -1278,12 +1499,12 @@ fn active_tab_memory_round_trips_through_the_store() {
     let mut harness = build(first.editor);
     harness.run_steps(3);
     select(&mut harness, image);
-    click(&mut harness, "inspector.tab.masks");
+    click(&mut harness, "inspector.tab.adjust");
     store.save(&harness.state().preferences).unwrap();
     let restored = store.load().unwrap();
     assert_eq!(
         restored.properties_tabs.get("image").map(String::as_str),
-        Some("masks")
+        Some("adjust")
     );
     let restarted_fixture = fixture();
     let restarted_image = restarted_fixture.image;
@@ -1291,7 +1512,7 @@ fn active_tab_memory_round_trips_through_the_store() {
     restarted.state_mut().preferences = restored;
     restarted.run_steps(3);
     select(&mut restarted, restarted_image);
-    assert!(has_widget(&restarted, "inspector.tab.masks"));
+    assert!(has_widget(&restarted, "inspector.tab.adjust"));
     assert_eq!(
         restarted
             .state()
@@ -1299,7 +1520,7 @@ fn active_tab_memory_round_trips_through_the_store() {
             .properties_tabs
             .get("image")
             .map(String::as_str),
-        Some("masks")
+        Some("adjust")
     );
 }
 
