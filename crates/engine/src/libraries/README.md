@@ -2,11 +2,7 @@
 
 Interface: `fonts`, `sounds`.
 
-`libraries` provides external assets to a project without turning the engine into
-an asset marketplace: fonts are resolved and verified for rendering, and sounds
-are searched, saved, previewed and inserted as ordinary project media. Both
-submodules own their remote transport, local cache and admission limits; neither
-edits project data except through the registered insert/edit commands.
+External assets for a project: fonts are resolved and verified for rendering; sounds are searched, saved, previewed and inserted as project media. Each submodule owns its remote transport, local cache and admission limits. Neither edits project data except through the registered insert/edit commands.
 
 | Module | Responsibility | Contract |
 |---|---|---|

@@ -4,16 +4,14 @@ Headless project editing, bounded background execution, persistent sessions and 
 Domain crates own processing algorithms, decoded/raster storage and persisted project formats.
 Widgets, device state, app preferences and authenticated transports live in consumers.
 
-`submit_scene_exports_with_sources` admits portable `render::OutputOptions`, resolves
-all scene snapshots and executes them in one cancellable job. Every scene file is
-finalized in private temporary storage before user output publication begins;
-cancellation or rendering failure removes private files and preserves destinations.
-The final publication phase uses the existing job fence and per-file atomic
-publication. A filesystem failure while publishing multiple outputs can leave
-earlier complete outputs; it never publishes a partial file. The caller owns
-project-file protection and the output grant authorizes every generated path.
-Control API version 2 requires `export.settings` with this typed contract rather
-than the previous standalone range; explicitly older API envelopes are refused.
+`submit_scene_exports_with_sources` admits portable `render::OutputOptions`, resolves all scene
+snapshots and runs them as one cancellable job. Every scene file is finalized in private
+temporary storage before user output publication begins; cancellation or rendering failure
+removes private files and preserves destinations. Publication uses the job fence and per-file
+atomic publication. A filesystem failure while publishing several outputs can leave earlier
+complete outputs; it never publishes a partial file. The caller owns project-file protection and
+the output grant authorizes every generated path. Control API version 2 requires
+`export.settings` with this typed contract.
 
 | Folder | Responsibility | Contract |
 |---|---|---|
@@ -36,10 +34,8 @@ than the previous standalone range; explicitly older API envelopes are refused.
 | `providers/` | Resolves explicit AI provider choices, their consent and the local models. | [Providers](src/providers/README.md) |
 | `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | [Control](src/control/README.md) |
 
-The crate root exposes its consumer-facing namespaces and item exports; the map above
-lists each folder's interface items and its contract. The implementation
-folders expose only their consumer-facing interfaces. The dependency table is owned by
-[structure](../../docs/engineering/structure.md#engine-cratesenginesrc) and `xtask/modules.toml`.
+The dependency table is owned by [structure](../../docs/engineering/structure.md#engine-cratesenginesrc)
+and `xtask/modules.toml`.
 
 Entry points: use [Session commands](src/session/README.md#public-entry-points) for edits,
 [control admission](src/control/README.md#control-admission-revisions-and-receipts) for transport adapters,
