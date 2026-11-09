@@ -1,35 +1,7 @@
 # Editor presentation
 
+`editor.rs` is the public `Editor` facade. `editor/state.rs` holds the shared presentation context, `editor/widgets.rs` the automation-recording controls, `editor/timing.rs` tick-grid time formatting, and `editor/frame.rs` window composition and input routing (its `State` owns the rename draft and splitter gesture; `show` returns actions for the frame to route). The read-only `editor::Context` carries session, selection, locale and theme into areas. Each panel receives its full slot including its header strip; the frame supplies only outer insets and draggable gutters. The assets, player, properties, timeline, captions, export and models areas are folder interfaces with private `view` and `workflow` implementations. Responsibilities follow [structure](../../../../docs/engineering/structure.md).
 
-`editor.rs` retains the public `Editor` facade; `editor/state.rs` holds its
-shared presentation context, `editor/widgets.rs` its automation-recording
-controls and `editor/timing.rs` the tick-grid time formatting. `editor/frame.rs`
-owns window composition and editor input routing. Its `State` owns the editor's
-rename draft and splitter gesture; `show` returns window actions for the frame to
-route. The read-only `editor::Context` carries the session, selection, locale and
-theme into area interfaces. Each panel receives its complete slot, including its
-own header strip; the frame supplies only the outer insets and draggable gutters.
-The assets, player, properties, timeline, captions, export and models area files
-are folder interfaces with private `view` and `workflow` implementations; existing
-state projections live with their area. Responsibilities follow
-[structure](../../../../docs/engineering/structure.md).
+The player keeps its view state and returns requests for the frame to route. The assets State owns navigation drafts and the prepared workflow projection; `show` consumes `editor::Context` and returns Action values routed by the frame.
 
-The physical extraction preserves existing facade calls and their ordering.
-The player owns its retained view state and renders from read-only context,
-returning requests for the frame to route. The assets State owns its navigation
-drafts and prepared workflow projection; `show` consumes the shared
-`editor::Context` and returns Action values routed by the frame. Its offscreen
-audit uses the same surface. Remaining State/show/action migrations belong to
-their consumer UI tickets; retained cross-area calls are recorded in each report.
-
-`Editor::ui` runs without a window/device. `Playback::new` injects `Sources`, which
-creates render's `SourceProvider`; production uses `FileSources` exactly as export
-does. `AudioPort::fill` accepts a headless device callback for transport tests.
-`Editor::activate` maps stable widget IDs to engine `execute` for every project
-edit and to app-owned transport/preferences/selection. `inspect` exposes
-enabled/focus/rect/current view, playing, position, selection, zoom, snapping
-and the active snap-indicator target. The project remains the Session's immutable
-snapshot. Each interactive
-control, including every timeline item and trim handle, exposes the same stable
-`author_id` through AccessKit, independent of locale and layout. Headless tests
-query those IDs and click or drag through the real widget/engine path.
+`Editor::ui` runs without a window or device. `Playback::new` injects `Sources`, which creates render's `SourceProvider`; production uses `FileSources` as export does. `AudioPort::fill` accepts a headless device callback. `Editor::activate` maps stable widget IDs to engine `execute` for every project edit and to app-owned transport, preferences and selection. `inspect` exposes enabled/focus/rect/current view, playing, position, selection, zoom, snapping and the active snap-indicator target. The project is the Session's immutable snapshot. Every interactive control, including each timeline item and trim handle, exposes a locale- and layout-independent `author_id` through AccessKit.

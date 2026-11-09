@@ -2,36 +2,10 @@
 
 ## Effects panel
 
-The assets Effects tab lists `project::effect_definitions()` as draggable tiles;
-each tile shows a live preview scheduled through the engine `EffectThumbnails`
-job/cache with the CPU reference compositor headlessly; native startup attaches
-the playback GPU adapter and shares playback's byte budget. Pending, failed and ready
-states stay visible, and a failed tile offers Retry. A tile can be dragged onto a
-video, image, sticker or graphic clip, or added with `+` to the selected clip.
+The Effects tab lists `project::effect_definitions()` as draggable tiles. Each tile previews through the engine `EffectThumbnails` job/cache: the CPU reference compositor headlessly, the playback GPU adapter and its byte budget in native startup. Pending, failed and ready states stay visible; a failed tile offers Retry. A tile drops onto a video, image, sticker or graphic clip, or `+` adds it to the selected clip.
 
 ## Transition catalog
 
-The assets-panel Transitions tab reads `project::TRANSITION_DEFINITIONS`; localized
-names and family navigation share the app catalog. Search filters the current
-family. Cards follow the measured 88 px asset grid with 15 px gaps and a 116 px
-row pitch. Hover or keyboard focus animates a bounded 48 px illustrative preview
-at 12 frames/s through render's real transition evaluator; idle tiles retain a
-still frame, failed previews offer Retry, and theme changes replace their textures.
-The private assets `transition` module owns these previews; `view/transition` owns
-the catalog presentation and `workflow/transition` resolves targets.
+The Transitions tab reads `project::TRANSITION_DEFINITIONS`; names and family navigation use the app catalog, and search filters the current family. Cards follow the measured 88 px grid, 15 px gaps, 116 px row pitch. Hover or keyboard focus plays a 48 px preview at 12 frames/s through render's transition evaluator; idle tiles keep a still frame, failed previews offer Retry, theme changes replace textures. The private `transition` module owns previews, `view/transition` the catalog, `workflow/transition` target resolution.
 
-Click a card or its plus with two adjacent video clips selected, or with the
-playhead exactly at their cut. Drag a card to the visible shared edge (12 px
-capture on either side); the edge highlights before release. Every application
-uses `transition.add` with a centered 0.5 s duration, clamped by project's source
-handle rules. Missing adjacency, exhausted handles, locked tracks, duplicate cuts
-and overlapping transitions carry localized refusal reasons. The plus is disabled
-without a valid selection, while dragging remains available when adjacent clips
-exist. Escape, leaving the tab, focus loss, a changed project snapshot or a
-missed/reversed drop publishes no edit. One successful release is one history step.
-
-`tests/it/transitions.rs` exercises catalog application, drop/cancel boundaries,
-localized search, refusal states, undo/redo and persistence using real widgets.
-`cargo xtask ui-audit assets-transitions` captures the empty-target catalog at
-the reference window size in both themes and densities. Timeline selection and
-the transition inspector belong to their respective area owners.
+A card or its plus applies to two adjacent selected video clips, or to the cut under the playhead. A card can also be dropped on the visible shared edge (12 px capture each side), which highlights before release. Every application is `transition.add` with a centered 0.5 s duration clamped by project's source-handle rules. Missing adjacency, exhausted handles, locked tracks, duplicate cuts and overlapping transitions give localized refusals. The plus is disabled without a valid selection. Escape, leaving the tab, focus loss, a changed snapshot or a missed or reversed drop publishes nothing. One release is one history step.
