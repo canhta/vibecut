@@ -1,6 +1,6 @@
 # UI: Long video to shorts window
 
-Measured geometry for the Long video to shorts window. Shared rules, measurement conventions, type, icons and motion: [UI design](index.md).
+Measured geometry for the Long video to shorts window. Shared rules: [UI design](index.md).
 
 ## Measured frame
 
@@ -15,5 +15,5 @@ Shots 221941 pick, 221946 working, 222002 and 222010 quick edit. Window content 
 
 ## Gaps
 
-- The results grid with inline players, the caption template grid and the Fill/Fit/4:3/Split layout presets are captured but not built, because the engine only crops to 9:16.
-- A control stays only if a capture shows it and an engine command backs it: the trim tool, quick-edit header icons, options popover and a separate results grid have no capture and are hidden.
+- Not built (the engine only crops to 9:16): results grid with inline players, caption template grid, Fill/Fit/4:3/Split layout presets.
+- A control stays only if a capture shows it and an engine command backs it. The trim tool, quick-edit header icons, options popover and a separate results grid have no capture and are hidden.

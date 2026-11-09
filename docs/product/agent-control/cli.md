@@ -1,6 +1,6 @@
 # CLI
 
-`vibecut-cli` opens projects, runs editor commands, probes media and exports MP4; adapter boundaries follow [architecture](../../engineering/architecture.md#contracts).
+`vibecut-cli` opens projects, runs editor commands, probes media and exports video; adapter boundaries follow [architecture](../../engineering/architecture.md#contracts).
 
 Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents/orchestration.md#placement-and-builds); output is `target/<profile>/vibecut-cli`.
 
@@ -27,43 +27,37 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli commands` | Print the generated command registry |
 | `vibecut-cli schema` | Print the generated control request/response/event schema |
 
-Add `--json` to any command for a machine-readable result on stdout. Without it, results are human-readable on stdout. Progress and diagnostics are always on stderr, so stdout stays a single result. Errors use exit codes below and, with `--json`, one JSON object on the last stderr line.
+Add `--json` for a machine-readable result on stdout; without it stdout is human-readable. Progress and diagnostics go to stderr, so stdout stays a single result. Errors use the [exit codes](#exit-codes) and, with `--json`, one JSON object on the last stderr line.
 
-`export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` renders 1920×1080; without it the project canvas is used. `--overwrite` replaces an existing output. `--allow-degraded` is the explicit consent described below.
+`export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` 1920×1080 (default: project canvas); `--overwrite` replaces an existing output; `--allow-degraded` is the consent described in [Export admission](#export-admission).
 
-Timeline group edits use `exec <project> timeline.move_items
-'{"items":[1,2],"delta":100}'` and `exec <project> timeline.trim
-'{"items":[1,2],"edge":"end","delta":-100}'` (PowerShell single-quoted JSON).
-Times are integer output ticks. Optional move `placement` uses the same tagged
-track/above/below placement as insertion; omitted placement retains each track.
-Each invocation saves one atomic edit. Interactive preview stays in an app-owned
-Session through the [engine preview contract](../../../crates/engine/src/session/edit/README.md#timeline-placement).
+Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta":100}'` and `exec <project> timeline.trim '{"items":[1,2],"edge":"end","delta":-100}'`. Times are integer output ticks. Optional move `placement` is the tagged track/above/below placement used by insertion; omitted, each item keeps its track. Each invocation saves one atomic edit. Interactive preview stays in an app-owned Session ([engine preview contract](../../../crates/engine/src/session/edit/README.md#timeline-placement)).
 
 ## Fonts
 
-`vibecut-cli fonts list [--query <text>]` lists families whose name contains the text, prefix matches first and then alphabetical: bundled families, OS-installed families and the curated downloadable catalog, one entry per name (bundled over a cached download over a system install over a download not cached yet). Each entry carries `origin` (`bundled`, `system`, `google`), `state` (`available` or `not_downloaded`), `styles`, and for bundled and catalog families the `license` id and `source` URL. `fonts resolve <family>` loads a family the way a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid` or `unknown`) and the `effective_family` layout will use; any state other than `loaded` exits 4 and layout falls back to Inter. Neither command uses the network.
+`fonts list [--query <text>]` lists families whose name contains the text, prefix matches first then alphabetical, from bundled, OS-installed and the curated downloadable catalog, one entry per name (bundled over cached download over system install over uncached download). Each entry has `origin` (`bundled`, `system`, `google`), `state` (`available`, `not_downloaded`), `styles`, and for bundled and catalog families `license` id and `source` URL. `fonts resolve <family>` loads a family as a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid`, `unknown`) and the `effective_family` layout uses; any state but `loaded` exits 4 and layout falls back to Inter. Neither uses the network.
 
-`fonts download <family> --accept-license` is the only network action. It prints the family, licence id, source URL and byte count to stderr and refuses with exit 5 unless the flag acknowledges them. Files are fetched over HTTPS, verified against their pinned size and SHA-256, stored with a licence file and a per-file attribution record under the per-user cache `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing behind. A cached family whose files no longer match their pins reports `cache_invalid` until it is downloaded again. The same operations are the `fonts.list`, `fonts.load` and `fonts.download` entries of the command registry in a `control` session.
+`fonts download <family> --accept-license` is the only network action. It prints family, licence id, source URL and byte count to stderr and refuses with exit 5 without the flag. Files are fetched over HTTPS, verified against pinned size and SHA-256, stored with a licence file and per-file attribution under `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing. A cached family whose files no longer match their pins reports `cache_invalid` until downloaded again. A `control` session reaches the same operations as `fonts.list`, `fonts.load` and `fonts.download`.
 
 ## Captions
 
-`vibecut-cli captions import <project> <file.ass|file.ssa> [--language <tag>] [--start <ticks>] [--track <id>] [--name <name>]` parses the script through `captions::parse_ass`, prints cue/style/skipped counts and line-numbered warnings, and applies the registered `captions.import` command. The asset, caption track and caption item are one undo step; `--track` targets an existing text track and `--name` labels a newly allocated one (`Captions` by default). `--language` is the cue source language (default `en`) and `--start` offsets the caption item in output ticks. Input is capped at 16 MiB; malformed lines warn and skip, while an oversized file or a document with no surviving cue fails with a typed error and leaves the project unchanged.
+`captions import <project> <file.ass|file.ssa> [--language <tag>] [--start <ticks>] [--track <id>] [--name <name>]` parses the script with `captions::parse_ass`, prints cue/style/skipped counts and line-numbered warnings, and applies `captions.import`. Asset, caption track and caption item are one undo step. `--track` targets an existing text track; `--name` labels a new one (default `Captions`). `--language` is the cue source language (default `en`); `--start` offsets the item in ticks. Input is capped at 16 MiB. Malformed lines warn and skip; an oversized file or a document with no surviving cue fails with a typed error and leaves the project unchanged.
 
 ## Subtitles
 
-`vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual] [--srt out.srt] [--burn out.mp4] [--aspect 9:16] [--provider <id>] [--model <id>] [--translate-provider openai|anthropic] [--translate-model <id>] [--yes-upload] [--overwrite]` runs the engine subtitle workflow: speech extraction, selected ASR, checkpointed chunks, local alignment when the provider has no native timing, cue segmentation, optional contextual translation, and the existing SRT/burn export paths. The input media is probed once; `--aspect 9:16` selects 1080×1920 for burn and `16:9` selects 1920×1080; without it the source geometry is used. At least one of `--srt` and `--burn` is required.
+`subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual] [--srt out.srt] [--burn out.mp4] [--aspect 9:16] [--provider <id>] [--model <id>] [--translate-provider openai|anthropic] [--translate-model <id>] [--yes-upload] [--overwrite]` runs the engine subtitle workflow: speech extraction, ASR, checkpointed chunks, local alignment when the provider lacks native timing, cue segmentation, optional contextual translation, and SRT/burn export. At least one of `--srt` and `--burn` is required. `--aspect` as for `export`; without it burn uses the source geometry.
 
-Providers and models are explicit and are never switched automatically. `auto` language detection requires the local `whisper.cpp` provider and resolves the source before deciding whether a translator is needed; a same-language local run therefore needs no cloud translation credentials. A different-language run still requires the explicitly selected translation provider and its key. `vibecut-cli providers --operation transcribe|translate --language <tag>` lists offline capability data; `--model` must be one of the listed models. Local defaults are `whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud choices are OpenAI `gpt-transcribe` and ElevenLabs `scribe_v2`. Translation choices are OpenAI `gpt-6.1-sol` and Anthropic `claude-sonnet-5-5`; `--to zh` selects Simplified (`zh-Hans`), and `zh-Hant` is available explicitly.
+Providers and models are explicit and never switched automatically. `auto` language detection requires the local `whisper.cpp` provider and resolves the source before deciding whether a translator is needed, so a same-language local run needs no cloud credentials; a different-language run needs the selected translation provider and its key. `providers --operation transcribe|translate --language <tag>` lists offline capabilities; `--model` must be a listed model. Local defaults are `whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud choices are OpenAI `gpt-transcribe` and ElevenLabs `scribe_v2`. Translation choices are OpenAI `gpt-6.1-sol` and Anthropic `claude-sonnet-5-5`. `--to zh` selects Simplified (`zh-Hans`); `zh-Hant` is explicit.
 
-Remote requests are refused before any upload unless `--yes-upload` is present. The command prints the exact provider/model, languages, audio duration, upload payload bytes, per-invocation cost ceiling and the provider's official policy links for every request scope; the flag authorizes only those displayed scopes, never a model download or a different provider. Local providers need no upload consent.
+Remote requests are refused before any upload unless `--yes-upload` is present. The command prints the provider/model, languages, audio duration, upload bytes, per-invocation cost ceiling and the provider's policy links; the flag authorizes only those scopes, never a model download or another provider. Local providers need no consent.
 
-ASR checkpoints are content-addressed complete windows in the default model cache. A restarted command reuses valid windows and executes only missing ones; the outcome reports the reused count. Checksum failure or an incomplete window is recomputed; an alignment failure keeps the completed recognition checkpoint and alignment is retried next run. The engine workflow also exposes an operation-wide cooperative cancellation token connected to extraction, active jobs, translation and export; the CLI has no signal-driven cancel gesture, so process interruption remains crash semantics. Local weights are separate from checkpoints and are never downloaded implicitly: `vibecut-cli model download <id> --yes-download` prints licence, source, size, every file SHA-256 and requires the explicit flag. A missing model returns an actionable `setup` error naming the download command.
+ASR checkpoints are content-addressed complete windows in the model cache. A restart reuses valid windows, runs the missing ones and reports the reused count; a checksum failure or incomplete window is recomputed; an alignment failure keeps the recognition checkpoint and retries alignment. The CLI has no signal-driven cancel, so interruption has crash semantics. Local weights are never downloaded implicitly: `model download <id> --yes-download` prints licence, source, size and every file SHA-256 and requires the flag. A missing model returns a `setup` error naming that command.
 
-`VIBECUT_ASR_THREADS` selects 1–32 local threads (default 4). `VIBECUT_ASR_GPU=0` forces the CPU path. `VIBECUT_LOCAL_ASR` names the shipped Gipformer runner; without it the Gipformer provider returns a typed setup error. Credentials come from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` and `ANTHROPIC_API_KEY`; keys are never printed. Credential absence is a `setup` refusal before media or network work.
+`VIBECUT_ASR_THREADS` selects 1–32 local threads (default 4). `VIBECUT_ASR_GPU=0` forces CPU. `VIBECUT_LOCAL_ASR` names the shipped Gipformer runner; without it that provider returns a typed setup error. Credentials come from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` and `ANTHROPIC_API_KEY` and are never printed. A missing credential is a `setup` refusal before media or network work.
 
 ## Commands and schemas
 
-`vibecut-cli commands --json` is the authoritative generated catalog: one object with `api_version`, `registry_hash`, the static control `limits` and `entries`, where every entry carries its command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture example. `vibecut-cli schema --json` returns the same `api_version`/`registry_hash` with the generated request, response and event envelope schemas. Registry ownership follows [architecture](../../engineering/architecture.md#contracts); there is no CLI-side command table. `exec` takes that command ID and its `params` object:
+`commands --json` is the authoritative generated catalog: `api_version`, `registry_hash`, the static control `limits` and `entries`, each with command ID, label, effect, JSON Schema 2020-12 input/output shapes and a fixture example. `schema --json` returns the same `api_version`/`registry_hash` with the request, response and event envelope schemas. There is no CLI-side command table ([architecture](../../engineering/architecture.md#contracts)). `exec` takes a command ID and its `params` object:
 
 ```sh
 vibecut-cli project new demo.vibecut
@@ -75,49 +69,33 @@ vibecut-cli exec demo.vibecut batch '{"commands":[
 vibecut-cli project info demo.vibecut --json
 ```
 
-`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel scroll, integer-tick playhead), persists optional metadata and leaves editable project bytes unchanged. `project.rename` takes `{"name":"My project"}`; `project.save` takes `{}`. Missing/corrupt metadata defaults on open. `project new` uses the registered creation command; `exec` refuses creation inside an existing session. Project info and edits refuse a busy writer instead of reading stale state or overwriting another session.
+`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel scroll, integer-tick playhead), persists view metadata and leaves project bytes unchanged. `project.rename` takes `{"name":"My project"}`; `project.save` takes `{}`. Missing or corrupt metadata defaults on open. `project new` uses the registered creation command; `exec` refuses creation inside an existing session. Project info and edits refuse a busy writer.
 
-`timeline.set_speed` takes `{"items":[1,2],"speed":2.0,"maintain_pitch":true}`: it retimes the listed video/audio items together (pass a linked video and audio item in one call to keep them in sync), keeping each source window, and `export` renders the result at that speed with pitch preserved or following speed.
+`timeline.set_speed {"items":[1,2],"speed":2.0,"maintain_pitch":true}` retimes the listed items together (pass a linked video and audio item in one call), keeping each source window; `export` renders that speed with pitch preserved or following speed.
 
-Keyframed item parameters are ordinary registry commands: `keyframes.set_param`, `keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and `keyframes.scale_time` accept the project animation shapes. `export` evaluates the saved curves through render's single project evaluator; for example an `opacity` channel animates a clip in the exported frames.
+Keyframed parameters are registry commands: `keyframes.set_param`, `.add`, `.remove`, `.retime`, `.set_handle`, `.scale_time`. `export` evaluates the saved curves through render's single project evaluator.
 
-`audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades an audio or video clip edge; the same envelope is applied to the exported audio and to preview.
+`audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades a clip edge in both export and preview.
 
-Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../../crates/engine/src/session/README.md#public-entry-points) describes the registry and JSON limits.
+Fields are required; unknown command, parameter and model fields are refused. Wire types are the Serde shapes of their crates; the [engine contract](../../../crates/engine/src/session/README.md#public-entry-points) covers the registry and JSON limits.
 
 ## Control session
 
-`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
+`control <project> [--allow-overwrite] [--no-save]` is the CLI consumer of the [engine control contract](../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts). One process is one engine Session with an OS-random epoch. The writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Separate invocations share no revisions or receipts.
 
-Requests are newline-delimited JSON objects on stdin: `request_id`, `command`, `params`, and optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash` and `session_id`. Omitted contract identity is filled from the running catalog; supplied values are still admitted by the engine, so a wrong version or digest returns `schema_mismatch` and a wrong session returns `session_gone`. Read commands need no revision or key. Effectful commands need the current `base_rev` and a 1–128 byte `idempotency_key`; stale revisions return `stale_revision` before any child of a batch, and replaying an accepted key returns its original result while a different request under the same key returns `idempotency_conflict`. Receipts are not evicted: the next new effect after 4096 retained keys returns `receipt_capacity`. Unknown commands, unknown/extra fields, duplicate JSON keys, frames over 8 MiB and integers outside ±(2^53−1) are refused before effects; an oversized frame is drained and returned as an in-band `limit` error, so the session continues with earlier accepted edits intact. A session retains 100 undo steps, so `undo` and `redo` are ordinary frames; lifecycle `project.create` stays with `project new` and is refused inside a session.
+Requests are newline-delimited JSON objects on stdin: `request_id`, `command`, `params`, and optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash`, `session_id`. Omitted contract identity is filled from the running catalog; a wrong version or digest returns `schema_mismatch` and a wrong session `session_gone`. Read commands need no revision or key. Effectful commands need the current `base_rev` and a 1–128 byte `idempotency_key`. A stale revision returns `stale_revision` before any child of a batch; replaying an accepted key returns its original result; a different request under the same key returns `idempotency_conflict`. Receipts are never evicted: the next new effect after 4096 retained keys returns `receipt_capacity`. Unknown commands, unknown or extra fields, duplicate JSON keys, frames over 8 MiB and integers outside ±(2^53−1) are refused before effects; an oversized frame is drained and returned as an in-band `limit` error and the session continues. A session keeps 100 undo steps; `undo` and `redo` are ordinary frames. `project.create` stays with `project new` and is refused inside a session.
 
-stdout is always newline-delimited JSON; `--json` is implied and no human formatting is applied. Each response line is the engine `Response` plus a stable `exit_code` field. A frame that cannot become a request returns `{"status":"error","exit_code":N,"error":{"code":"…","message":"…","exit_code":N}}` instead. The process exits with the last frame's mapped code (0 for success), so a one-frame session can be used like `exec`; earlier refusals stay in-band so the session can retry. Mapping: usage/schema errors 2, stale revision 3, permission/idempotency/receipt/transaction/refusal 5, and session/job/execution failures 7. Engine replay returns the original effect revision even after a later save; use `inspect` for the current revision.
+stdout is newline-delimited JSON (`--json` implied). Each line is the engine `Response` plus a stable `exit_code`. A frame that cannot become a request returns `{"status":"error","exit_code":N,"error":{"code":"…","message":"…","exit_code":N}}`. The process exits with the last frame's mapped code, so a one-frame session works like `exec`; earlier refusals stay in-band. Mapping: usage/schema 2, stale revision 3, permission/idempotency/receipt/transaction/refusal 5, session/job/execution failure 7. Replay returns the original effect revision even after a later save; use `inspect` for the current one.
 
-`project.save` is the explicit save point. Its admission, request-ID bounds, idempotency conflict/replay and receipt capacity are owned by `Session::control_lifecycle_save`; the CLI callback performs only project/metadata file publication. A refused or failed save keeps the session dirty; success and typed execution errors are both receipted, so the same request replays its error while a retry that must execute again uses a fresh key. Otherwise a changed project and metadata are saved once on clean EOF; `--no-save` suppresses that final save while leaving explicit `project.save` available. Saves use the project owner's atomic publication. Explicit save failures are reported in-band so the session can continue; a final EOF save failure exits non-zero. `--allow-overwrite` is the trusted policy grant for `export`, `export_subtitles` and `burn_subtitles` with `overwrite: true`; without it the engine refuses with `permission`. External gesture commands stay refused; agents use atomic `batch` plus `undo`.
+`project.save` is the explicit save point. Admission, request-ID bounds, replay and receipt capacity are owned by `Session::control_lifecycle_save`; the CLI callback only publishes project and metadata files atomically. A refused or failed save keeps the session dirty and is reported in-band; success and typed execution errors are both receipted, so a retry that must execute again uses a fresh key. A changed project is otherwise saved once on clean EOF (a failed EOF save exits non-zero); `--no-save` suppresses that save. `--allow-overwrite` is the policy grant for `export`, `export_subtitles` and `burn_subtitles` with `overwrite: true`; without it the engine refuses with `permission`. External gesture commands are refused; agents use atomic `batch` plus `undo`.
 
-The session ticks the engine job runner between requests. `preview` and `export` return job IDs; poll `job_status`, including retained inline preview JPEGs, and use `job_cancel` for graceful cancellation. `preview.snapshot {time, path}` is synchronous: it renders the requested frame at canvas size through the production compositor and publishes a PNG atomically without changing project bytes; the CLI registers the active project and metadata paths as protected, so an aliasing destination is refused. EOF cancels and joins outstanding jobs through the runner's publication fence. There is no signal-to-job-cancel handler: process interruption follows crash semantics, so the OS releases the lease, running work stops with the process and unsaved edits are lost; `job_cancel` is the graceful path.
+The session ticks the engine job runner between requests. `preview` and `export` return job IDs; poll `job_status` (including retained inline preview JPEGs) and use `job_cancel` for graceful cancellation. `preview.snapshot {time, path}` is synchronous: it renders the frame at canvas size through the production compositor and publishes a PNG atomically without changing project bytes; the active project and metadata paths are protected, so an aliasing destination is refused. EOF cancels and joins outstanding jobs through the publication fence. There is no signal handler: interruption has crash semantics, the OS releases the lease and unsaved edits are lost.
 
 ## Batch job files
 
-`vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]` renders an
-ordered set of saved projects through the same `export` engine/render job path.
-The command never edits or saves a project: each distinct project is loaded once
-as an immutable snapshot before any job is submitted. It performs no network,
-provider, cache-download or subtitle work, so the command is offline.
+`batch <job-file> [--allow-degraded] [--allow-overwrite]` renders an ordered set of saved projects through the `export` job path. It never edits or saves a project, loads each distinct project once as an immutable snapshot before any job is submitted, and does no network, provider, download or subtitle work.
 
-The file is a JSON object with exactly `version` (`1`) and `jobs` (1–1000 entries).
-Distinct project files held as immutable snapshots are capped at 64 MiB aggregate.
-Each entry has exactly `project` and `output`, plus optional `aspect` (`project`,
-`9:16` or `16:9`; default `project`), `allow_degraded` and `overwrite` (default
-`false`). Relative paths resolve from the job file's directory. Paths must be
-UTF-8, non-empty, at most 4096 bytes and name a file; `output` parents must already
-exist. All outputs must be distinct and must not alias a project, project source or
-the job file. Hard-linked outputs are refused; on Windows and macOS case-only
-destination collisions are conservatively refused even in case-sensitive
-directories. macOS protection also equates composed/decomposed Unicode spellings.
-Existing outputs refuse unless that entry sets `overwrite` and the
-command has `--allow-overwrite`. An entry setting `allow_degraded` requires
-`--allow-degraded`; neither grant can be inferred from the file alone.
+The file is a JSON object with exactly `version` (`1`) and `jobs` (1–1000 entries), at most 1 MiB, with distinct project snapshots capped at 64 MiB aggregate. Each entry has exactly `project` and `output`, plus optional `aspect` (`project`, `9:16`, `16:9`; default `project`), `allow_degraded` and `overwrite` (default `false`). Relative paths resolve from the job file's directory. Paths are non-empty UTF-8 of at most 4096 bytes naming a file, and `output` parents must exist. Outputs must be distinct and must not alias a project, project source or the job file. Hard-linked outputs are refused; on Windows and macOS case-only collisions are refused even on case-sensitive directories, and macOS also equates composed and decomposed Unicode spellings. An existing output is refused unless its entry sets `overwrite` and the command has `--allow-overwrite`. An entry setting `allow_degraded` requires `--allow-degraded`. Neither grant can come from the file alone.
 
 ```json
 {
@@ -129,47 +107,21 @@ command has `--allow-overwrite`. An entry setting `allow_degraded` requires
 }
 ```
 
-The file is bounded to 1 MiB before parsing; malformed/truncated JSON, duplicate
-keys, unknown fields, an unsupported version, wrong field types, empty or oversized
-`jobs`, invalid paths and unsafe/ambiguous destinations are typed refusals before
-any job or output. A non-regular job file is refused; a missing or unreadable file
-is an I/O failure.
+Malformed or truncated JSON, duplicate keys, unknown fields, an unsupported version, wrong types, empty or oversized `jobs`, invalid paths and unsafe destinations are typed refusals before any job or output. A non-regular job file is refused; a missing or unreadable one is an I/O failure.
 
-Jobs run in file order with one engine export worker. Results are an object with
-`status` (`completed` or `failed`) and a `jobs` array in file order; each entry has
-its zero-based `index`, `project`, `output`, `status` (`completed`, `failed` or
-`skipped`) and, on failure, a typed `error` object. The first failed or cancelled
-job stops the batch: later entries are `skipped`, already completed files remain
-complete, and the process exits with that first failure's code. Render's staging and
-publication fence means a failed/cancelled job never promotes a partial file and
-preserves an existing destination. Process interruption follows the existing crash
-semantics: the OS ends the process, staging files are not final outputs, and no
-partial MP4 is promoted. There is no signal-to-job-cancel handler; use the engine
-`job_cancel` path for graceful cancellation.
+Jobs run in file order on one export worker. The result has `status` (`completed`, `failed`) and a `jobs` array in file order; each entry has `index`, `project`, `output`, `status` (`completed`, `failed`, `skipped`) and, on failure, a typed `error`. The first failed or cancelled job stops the batch: later entries are `skipped`, completed files stay, and the process exits with that job's code. A failed or cancelled job never promotes a partial file and preserves an existing destination. Interruption has crash semantics; there is no signal-to-cancel handler.
 
 ## Project files and concurrency
 
-A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../../crates/project/src/persistence/README.md#persistence-and-limits); the CLI does not define a second format page.
-
-Lease admission for reads and writes follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
+A project is the `.vibecut` file owned by the project crate: [project contract](../../../crates/project/src/persistence/README.md#persistence-and-limits). Lease admission follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
 
 ## Export admission
 
-The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared
-render owner. `--settings <JSON>` accepts the versioned `render::OutputOptions`
-contract: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`,
-`bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`,
-`range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and
-`scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are
-required; older versions and unknown fields refuse. Defaults and bounds belong
-to the [render contract](../../../crates/render/README.md).
-`--aspect` remains an output geometry override; explicit settings resolution wins.
-All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds
-`paths` containing every completed file; `path` remains the requested output stem.
+The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared render owner. `--settings <JSON>` is `render::OutputOptions`: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`, `bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`, `range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and `scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are required; other versions and unknown fields refuse. Defaults and bounds: [render contract](../../../crates/render/README.md). `--aspect` overrides output geometry; an explicit settings resolution wins. All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds `paths` with every completed file; `path` stays the requested stem.
 
-`export` uses render's finished-file path: output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit code 4 and `unavailable` entries naming the asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is promoted and an existing destination is preserved.
+Output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit 4 and `unavailable` entries naming asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video`, `audio`); no partial file is promoted and an existing destination is preserved.
 
-Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../../crates/render/src/export/README.md#export-and-publication).
+Degraded output is never a default. `--allow-degraded` admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Fence details: [render contract](../../../crates/render/src/export/README.md#export-and-publication).
 
 ## Exit codes
 
@@ -183,47 +135,22 @@ Degraded output is never a silent default. `--allow-degraded` is the explicit co
 | 6 | Media or render execution failed |
 | 7 | I/O or background job failure |
 
-With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the stable codes `setup` (missing local model/runner/credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language choice). A `control` session returns the same codes per response line and exits with the last frame's code; its error envelope and mapping are described in [Control session](#control-session).
-
-`batch` writes its multi-job result to stdout (JSON with `--json`); admission
-refusals of the job file itself use the same stderr error envelope as other
-commands. Its process status is the first failed job's code from this table, or 0
-when every job completed.
+With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the codes `setup` (missing local model, runner or credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language). A `control` session returns the same codes per line ([Control session](#control-session)). `batch` writes its result to stdout and exits with the first failed job's code, or 0; refusals of the job file use the stderr envelope.
 
 ## Sounds
 
-`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]`
-calls Freesound APIv2 directly when `FREESOUND_API_KEY` is set and otherwise
-searches saved local sounds. Results are commercial-only by default and sorted by
-downloads; each carries author, licence, attribution, source page and preview URL.
-The token is never printed, stored or appended to a URL. Provider failures use the
-stable codes `auth`, `quota`, `rate_limit`, `network` and `setup`; a missing
-credential degrades to local search rather than failing.
+`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]` calls Freesound APIv2 when `FREESOUND_API_KEY` is set and otherwise searches saved local sounds. Results are commercial-only by default, sorted by downloads, each with author, licence, attribution, source page and preview URL. The token is never printed, stored or put in a URL. Provider failures use the codes `auth`, `quota`, `rate_limit`, `network`, `setup`; a missing credential degrades to local search.
 
-`sounds save <library> <sound-json>` and `sounds unsave <library> <id>` update the
-durable local library; `sounds add <project> <library> <id> [--start <ticks>]`
-requires the preview to be cached and commits one undoable audio item with
-`sourceType=library`, attribution and licence metadata. `clear_all` is exposed by
-the engine library owner for the panel. Cached previews are keyed by the exact
-provider URL, so changing it invalidates the old bytes.
+`sounds save <library> <sound-json>` and `sounds unsave <library> <id>` update the local library. `sounds add <project> <library> <id> [--start <ticks>]` requires a cached preview and commits one undoable audio item with `sourceType=library`, attribution and licence metadata. Cached previews are keyed by the exact provider URL.
 
 ## Clip suggestions
 
-`vibecut-cli clips <in> [--from vi|en|zh|auto] [--count N] [--min 20s] [--max 60s] [--max-segments N] [--min-segment 2s] [--overlap R] [--keywords a,b] [--provider heuristic|openai|anthropic] [--model <id>] [--asr-provider <id>] [--asr-model <id>] [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual] [--aspect 9:16] [--translate-provider openai|anthropic] [--overwrite] [--allow-degraded]] [--yes-upload]` transcribes the input through the engine subtitle workflow, ranks ordered-segment shorts, snaps every source edge and prints the candidates as JSON. `--provider` selects the suggestion source explicitly; `heuristic` is the local default and needs no upload. Remote suggestion uploads only transcript segments, never audio, and require `--yes-upload` after the command prints the provider, endpoint, exact byte count, cost ceiling and the provider's data-retention/training policy link. A failed provider is a typed failure; the command never falls back to another provider or to the heuristic.
+`clips <in> [--from vi|en|zh|auto] [--count N] [--min 20s] [--max 60s] [--max-segments N] [--min-segment 2s] [--overlap R] [--keywords a,b] [--provider heuristic|openai|anthropic] [--model <id>] [--asr-provider <id>] [--asr-model <id>] [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual] [--aspect 9:16] [--translate-provider openai|anthropic] [--overwrite] [--allow-degraded]] [--yes-upload]` transcribes the input through the subtitle workflow, ranks ordered-segment shorts, snaps every source edge and prints candidates as JSON. `heuristic` is the local default and needs no upload. Remote suggestion uploads transcript segments only, never audio, and needs `--yes-upload` after the command prints provider, endpoint, byte count, cost ceiling and the provider's retention/training policy link. A failed provider is a typed failure; the command never falls back to another provider or the heuristic.
 
-`--select` takes 1-based candidate indices; without it every candidate is exported. `--export` requires `--subs` and prepares one engine batch export per selected short at 1080×1920, burning the requested language. When `--subs` differs from the detected source, or `--bilingual` is set, the same subtitle translation path runs before export. Outputs are `<title>.mp4`; selected sidecars are none by default. Existing files are preserved unless `--overwrite` is set, and `--allow-degraded` is the explicit consent for initially missing/changed visual sources.
+`--select` takes 1-based candidate indices (default: all). `--export` requires `--subs` and runs one engine batch export per selected short at 1080×1920, burning the requested language; when `--subs` differs from the detected source, or with `--bilingual`, subtitle translation runs first. Outputs are `<title>.mp4` with no sidecars. Existing files are preserved unless `--overwrite`.
 
-Candidate output preserves the AI ordered-segment contract: `pieces` are the provider's play-order pieces with roles, `segments` are the snapped source ranges, and `adjustments` carries the signed original/adjusted delta per edge. The `word_fade` kind identifies frame rounding at a sub-frame word gap; [shorts snapping](../../../crates/shorts/src/boundaries/README.md) owns its overlap and export-audio policy. Rejected snap candidates and dropped suggestions are reported with typed reasons. `vibecut-cli providers --operation clips` lists the offline suggestion catalog, including each remote provider's policy link.
-
+Candidates carry `pieces` (the provider's play-order pieces with roles), `segments` (snapped source ranges) and `adjustments` (signed original/adjusted delta per edge). The `word_fade` kind marks frame rounding at a sub-frame word gap; [shorts snapping](../../../crates/shorts/src/boundaries/README.md) owns its overlap and export-audio policy. Rejected snaps and dropped suggestions are reported with typed reasons. `providers --operation clips` lists the offline suggestion catalog with policy links.
 
 ## Scene detection
 
-`vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20]
-[--min-scene-ticks <ticks>] [--json]` imports a local known-duration video and
-runs the engine's [scene detection job](../../../crates/engine/src/analysis/README.md#scene-detection).
-Human output prints source ticks, change kind and confidence; JSON includes the
-content key, source identity, requested range, ordered `candidates` and
-`decoded_frames`. Confidence is measured change, not a calibrated probability.
-Explicit settings enter the content cache key. The command never edits a project.
-There is no signal-driven graceful cancellation; process interruption follows the
-CLI's crash semantics. Engine callers use the returned job cancellation token.
+`scenes <file> [--threshold 0.28] [--fade-threshold 0.20] [--min-scene-ticks <ticks>] [--json]` imports a local known-duration video and runs the engine [scene detection job](../../../crates/engine/src/analysis/README.md#scene-detection). Human output prints source ticks, change kind and confidence; JSON adds the content key, source identity, requested range, ordered `candidates` and `decoded_frames`. Confidence is measured change, not a probability. Explicit settings enter the content cache key. The command never edits a project and has no signal-driven cancel; engine callers use the job cancellation token.

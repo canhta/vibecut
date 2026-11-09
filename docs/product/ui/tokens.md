@@ -1,9 +1,6 @@
 # UI tokens
 
-[`theme.rs`](../../../apps/vibecut/src/kit/theme.rs) owns executable colour and geometry
-values. [`index.md`](index.md#measured-desktop-reference) owns capture provenance and
-region measurements. Do not add a second numeric token table here or inline
-copies in widgets.
+[`theme.rs`](../../../apps/vibecut/src/kit/theme.rs) owns executable colour and geometry values. [`index.md`](index.md#measured-desktop-reference) owns capture provenance and region measurements. Add no second numeric table here and no inline copies in widgets.
 
 | Contract | Rust owner | Measurement source in UI design |
 |---|---|---|
@@ -12,23 +9,11 @@ copies in widgets.
 | Body/chrome type and semibold label family | `kit::type_size`, `label_font` | Type scale; sizes inferred from capital heights |
 | Control boxes, rows, steppers, slider and media dimensions | `kit::size` | Player, properties, timeline and shortcuts |
 | Dense glyph boxes and play/layout glyphs | `kit::icon` | Feature tabs and toolbar measurements |
-| App surfaces and accents | Semantic colour functions | Existing app palette |
-| Light surfaces and non-editor status colours | Semantic colour functions | Existing proposed accessible ramp |
+| App surfaces and accents | Semantic colour functions | App palette |
+| Light surfaces and non-editor status colours | Semantic colour functions | Accessible ramp |
 
-The app palette remains unchanged; reference hex samples are not app tokens.
-Dark and light use the existing app colours and share measured geometry. Hover,
-pressed, focus and disabled presentation reuse app semantic roles. Reference
-colour differences are intentional, not parity failures. Page heading sizes,
-dialog margins, uncaptured track types and legacy panel layout calculations
-remain caller-owned until their area tickets measure and replace them; they are
-not admitted as measured foundation tokens.
+Reference hex samples are not app tokens; colour differences from the reference are intentional. Dark and light share measured geometry. Hover, pressed, focus and disabled states reuse app semantic roles. Page heading sizes, dialog margins, uncaptured track types and panel layout calculations stay caller-owned until measured.
 
-[`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the kit shared by
-later areas: icon buttons, tab strips, section headers, property rows and
-slider/stepper drafts. Callers retain existing labels/tooltips, automation IDs,
-preferences and preview/commit/rollback decisions. There is no standalone demo.
+[`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the shared kit: icon buttons, tab strips, section headers, property rows and slider/stepper drafts. Callers keep their labels, tooltips, automation IDs, preferences and preview/commit/rollback decisions.
 
-The measured text styles, 22 px control height, spacing and 4 px corners are an
-editor-only density (`kit::install_editor_density`, called by the editor frame);
-Home, Shorts and the workspace shell keep the toolkit defaults until their own
-window tickets measure them.
+The measured text styles, 22 px control height, spacing and 4 px corners are an editor-only density (`kit::install_editor_density`, called by the editor frame). Home, Shorts and the workspace shell keep toolkit defaults until measured.

@@ -2,8 +2,8 @@
 
 ## Principles
 
-1. **Quality and stability first.** Correct picture, sound, timing and subtitles, and an editor that never crashes or loses work. Features and speed never buy these down.
-2. **Light and fast.** Why it is a native Rust app: small install, low memory, quick startup, fast preview and export.
+1. Quality and stability first: correct picture, sound, timing and subtitles, and an editor that never crashes or loses work. Features and speed never buy these down.
+2. Light and fast: small install, low memory, quick startup, fast preview and export.
 
 ## Scope
 
@@ -19,7 +19,7 @@ Local-first desktop video editor for macOS, Windows and Linux.
 
 Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions always go through user review.
 
-Delivery order (the table ranks value, this ranks build order): foundation (structure, build, test kit) first, then the reference product's core editor features, then AI editing in the editor and agent control, then Home, then long video to shorts. Ticket priorities encode it ([issue tracker](../agents/issue-tracker.md)).
+Build order: foundation (structure, build, test kit), the reference product's core editor features, AI editing in the editor and agent control, Home, then long video to shorts. Ticket priorities encode it ([issue tracker](../agents/issue-tracker.md)).
 
 ## Providers
 
