@@ -485,11 +485,20 @@ fn import_batches_are_capped_and_require_shared_budget_admission() {
 
 #[test]
 fn probe_job_progress_advances_within_each_file() {
+    // A hashed file counts 0.99 of its share: probing still follows the hash,
+    // so the batch shows 100% only once it is done.
     for (files, expected) in [
-        (1usize, vec![0.5f32, 1.0]),
+        (1usize, vec![0.495f32, 0.99]),
         (
             3,
-            vec![0.5 / 3.0, 1.0 / 3.0, 1.5 / 3.0, 2.0 / 3.0, 2.5 / 3.0, 1.0],
+            vec![
+                0.495 / 3.0,
+                0.99 / 3.0,
+                1.495 / 3.0,
+                1.99 / 3.0,
+                2.495 / 3.0,
+                2.99 / 3.0,
+            ],
         ),
     ] {
         let budget = ByteBudget::new(512 << 20).unwrap();
@@ -549,7 +558,7 @@ fn probe_job_progress_advances_within_each_file() {
                 "{files} files: observed {observed:?}, expected {expected:?}"
             );
         }
-        assert!((observed.last().unwrap() - 1.0).abs() < 1e-3);
+        assert!(*observed.last().unwrap() < 0.9999, "{observed:?}");
     }
 }
 

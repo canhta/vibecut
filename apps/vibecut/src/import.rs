@@ -804,13 +804,16 @@ fn finish(
     Ok(Vec::new())
 }
 
-/// One file's hash fraction. A zero-length file is complete before reading and
-/// a file that grew mid-read stays at the end, so the batch never moves back.
+/// One file's hash fraction, held below the whole file: probing and decoder
+/// checks still follow the hash, so the overlay reaches 100% only when the
+/// batch finishes. A file that grew mid-read stays at the cap, so the batch
+/// never moves back.
 fn probe_fraction(hashed: u64, length: u64) -> f32 {
+    const HASHED_FILE: f64 = 0.99;
     if length == 0 {
-        return 1.0;
+        return HASHED_FILE as f32;
     }
-    (hashed as f64 / length as f64).clamp(0.0, 1.0) as f32
+    ((hashed as f64 / length as f64).clamp(0.0, 1.0) * HASHED_FILE) as f32
 }
 
 #[cfg(test)]
