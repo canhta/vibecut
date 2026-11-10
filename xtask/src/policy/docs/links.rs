@@ -137,14 +137,14 @@ fn targets(line: &str) -> Vec<String> {
     }
     let chars: Vec<char> = line.chars().collect();
     let mut index = 0;
-    while index < chars.len() {
-        if chars[index] == '`'
+    while let Some(&character) = chars.get(index) {
+        if character == '`'
             && let Some(end) = code_span(&chars, index)
         {
             index = end;
             continue;
         }
-        if chars[index] == '['
+        if character == '['
             && let Some(link) = inline(&chars, index)
         {
             targets.push(link.target);
@@ -228,8 +228,8 @@ fn code_span(chars: &[char], start: usize) -> Option<usize> {
         .take_while(|c| **c == '`')
         .count();
     let mut index = start + width;
-    while index < chars.len() {
-        if chars[index] == '`' {
+    while let Some(&character) = chars.get(index) {
+        if character == '`' {
             let run = chars
                 .get(index..)?
                 .iter()
@@ -301,15 +301,15 @@ fn decode(fragment: &str) -> String {
     let bytes = fragment.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%'
+    while let Some(&byte) = bytes.get(index) {
+        if byte == b'%'
             && let (Some(high), Some(low)) = (bytes.get(index + 1), bytes.get(index + 2))
             && let (Some(high), Some(low)) = (hex(*high), hex(*low))
         {
             out.push(high * 16 + low);
             index += 3;
         } else {
-            out.push(bytes[index]);
+            out.push(byte);
             index += 1;
         }
     }
@@ -366,7 +366,7 @@ fn heading(line: &str) -> Option<String> {
         return None;
     }
     let mut text = rest.trim();
-    if let Some(position) = text.rfind(|c| c == ' ' || c == '\t')
+    if let Some(position) = text.rfind([' ', '\t'])
         && text[position + 1..].chars().all(|c| c == '#')
     {
         text = text[..position].trim_end();
@@ -392,23 +392,30 @@ fn plain(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::new();
     let mut index = 0;
-    while index < chars.len() {
-        if chars[index] == '`'
+    while let Some(&character) = chars.get(index) {
+        if character == '`'
             && let Some(end) = code_span(&chars, index)
         {
-            let width = chars[index..].iter().take_while(|c| **c == '`').count();
+            let width = chars
+                .get(index..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(|c| **c == '`')
+                .count();
             out.extend(chars.get(index + width..end - width).unwrap_or_default());
             index = end;
             continue;
         }
-        if chars[index] == '!' && chars.get(index + 1) == Some(&'[') {
+        if character == '!' && chars.get(index + 1) == Some(&'[') {
             index += 1;
             continue;
         }
-        if chars[index] == '['
+        if character == '['
             && let Some(link) = inline(&chars, index)
         {
-            let label_end = chars[index..]
+            let label_end = chars
+                .get(index..)
+                .unwrap_or_default()
                 .iter()
                 .position(|c| *c == ']')
                 .map(|offset| index + offset)
@@ -423,11 +430,11 @@ fn plain(text: &str) -> String {
             index = link.end;
             continue;
         }
-        if matches!(chars[index], '*' | '~') {
+        if matches!(character, '*' | '~') {
             index += 1;
             continue;
         }
-        out.push(chars[index]);
+        out.push(character);
         index += 1;
     }
     out
@@ -474,9 +481,7 @@ fn token(text: &str) -> Option<String> {
         })
         .map(|(index, _)| index)
         .unwrap_or(text.len());
-    let token = text
-        .get(..end)?
-        .trim_end_matches(|c| matches!(c, '.' | ':'));
+    let token = text.get(..end)?.trim_end_matches(['.', ':']);
     Some(token.to_owned())
 }
 

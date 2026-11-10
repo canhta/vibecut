@@ -15,15 +15,18 @@ jobs:
     name: package (${{ matrix.name }})
     strategy:
       fail-fast: false
+      # windows-arm64 is advisory: p0-core/54 tracks its Opus CPU-detection
+      # compile failure, so it cannot gate a merge yet. windows-x86_64 is
+      # required and its failures fail this job.
       matrix:
         include:
-          - { name: macos-arm64, runner: macos-15, arch: aarch64, windows: false, macos: true }
-          - { name: macos-x86_64, runner: macos-15-intel, arch: x86_64, windows: false, macos: true }
-          - { name: linux-x86_64, runner: ubuntu-latest, arch: x86_64, windows: false, macos: false }
-          - { name: windows-x86_64, runner: windows-latest, arch: x86_64, windows: true, macos: false }
-          - { name: windows-arm64, runner: windows-11-arm, arch: aarch64, windows: true, macos: false }
+          - { name: macos-arm64, runner: macos-15, arch: aarch64, windows: false, macos: true, advisory: false }
+          - { name: macos-x86_64, runner: macos-15-intel, arch: x86_64, windows: false, macos: true, advisory: false }
+          - { name: linux-x86_64, runner: ubuntu-latest, arch: x86_64, windows: false, macos: false, advisory: false }
+          - { name: windows-x86_64, runner: windows-latest, arch: x86_64, windows: true, macos: false, advisory: false }
+          - { name: windows-arm64, runner: windows-11-arm, arch: aarch64, windows: true, macos: false, advisory: true }
     runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.windows }}
+    continue-on-error: ${{ matrix.advisory }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -129,17 +132,19 @@ jobs:
     needs: [native, universal]
     strategy:
       fail-fast: false
+      # The windows-arm64 smoke row follows its advisory package row: with no
+      # artifact to install it reports the same p0-core/54 gap, not a new one.
       matrix:
         include:
-          - { name: macos-arm64, runner: macos-15, tool: macos-arm64, windows: false }
-          - { name: macos-x86_64, runner: macos-15-intel, tool: macos-x86_64, windows: false }
-          - { name: macos-universal, runner: macos-15, tool: macos-arm64, windows: false }
-          - { name: macos-universal, runner: macos-15-intel, tool: macos-x86_64, windows: false }
-          - { name: linux-x86_64, runner: ubuntu-latest, tool: linux-x86_64, windows: false }
-          - { name: windows-x86_64, runner: windows-latest, tool: windows-x86_64, windows: true }
-          - { name: windows-arm64, runner: windows-11-arm, tool: windows-arm64, windows: true }
+          - { name: macos-arm64, runner: macos-15, tool: macos-arm64, windows: false, advisory: false }
+          - { name: macos-x86_64, runner: macos-15-intel, tool: macos-x86_64, windows: false, advisory: false }
+          - { name: macos-universal, runner: macos-15, tool: macos-arm64, windows: false, advisory: false }
+          - { name: macos-universal, runner: macos-15-intel, tool: macos-x86_64, windows: false, advisory: false }
+          - { name: linux-x86_64, runner: ubuntu-latest, tool: linux-x86_64, windows: false, advisory: false }
+          - { name: windows-x86_64, runner: windows-latest, tool: windows-x86_64, windows: true, advisory: false }
+          - { name: windows-arm64, runner: windows-11-arm, tool: windows-arm64, windows: true, advisory: true }
     runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.windows }}
+    continue-on-error: ${{ matrix.advisory }}
     timeout-minutes: 15
     # Fresh VM: native standalone smoke helper; no Rust/media setup or caches.
     steps:

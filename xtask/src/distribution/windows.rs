@@ -10,43 +10,183 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-fn pe(path: &Path) -> Result<(u16, u16)> {
+/// A PE image's headers, enough to map an RVA to a file offset.
+struct Image {
+    machine: u16,
+    subsystem: u16,
+    import_rva: u32,
+    sections: Vec<Section>,
+}
+
+struct Section {
+    virtual_address: u32,
+    virtual_size: u32,
+    raw_size: u32,
+    raw_offset: u32,
+}
+
+fn image(path: &Path) -> Result<Image> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut header = [0_u8; 64];
-    file.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if header.get(..2) != Some(b"MZ") {
+    let mut dos = [0_u8; 64];
+    file.read_exact(&mut dos).map_err(|e| e.to_string())?;
+    if dos.get(..2) != Some(b"MZ") {
         return Err("not a PE image".into());
     }
     let offset = u32::from_le_bytes(
-        header
-            .get(0x3c..0x40)
+        dos.get(0x3c..0x40)
             .ok_or("PE offset")?
             .try_into()
             .map_err(|_| "PE offset")?,
     );
     file.seek(SeekFrom::Start(u64::from(offset)))
         .map_err(|e| e.to_string())?;
-    let mut image = [0_u8; 96];
-    file.read_exact(&mut image).map_err(|e| e.to_string())?;
-    if image.get(..4) != Some(b"PE\0\0") {
+    let mut coff = [0_u8; 24];
+    file.read_exact(&mut coff).map_err(|e| e.to_string())?;
+    if coff.get(..4) != Some(b"PE\0\0") {
         return Err("invalid PE signature".into());
     }
-    Ok((
-        u16::from_le_bytes(
-            image
-                .get(4..6)
-                .ok_or("PE machine")?
+    let machine = u16::from_le_bytes(
+        coff.get(4..6)
+            .ok_or("PE machine")?
+            .try_into()
+            .map_err(|_| "machine")?,
+    );
+    let count = u16::from_le_bytes(
+        coff.get(6..8)
+            .ok_or("PE sections")?
+            .try_into()
+            .map_err(|_| "sections")?,
+    );
+    if count == 0 || count > 96 {
+        return Err("PE section count out of range".into());
+    }
+    let optional_size = usize::from(u16::from_le_bytes(
+        coff.get(20..22)
+            .ok_or("PE optional size")?
+            .try_into()
+            .map_err(|_| "optional size")?,
+    ));
+    let mut optional = vec![0_u8; optional_size];
+    file.read_exact(&mut optional).map_err(|e| e.to_string())?;
+    let magic = u16::from_le_bytes(
+        optional
+            .get(..2)
+            .ok_or("PE optional magic")?
+            .try_into()
+            .map_err(|_| "optional magic")?,
+    );
+    // Data directories start after the fixed fields of each optional header.
+    let directories = match magic {
+        0x10b => 96,
+        0x20b => 112,
+        _ => return Err("unknown PE optional header".into()),
+    };
+    let subsystem = u16::from_le_bytes(
+        optional
+            .get(68..70)
+            .ok_or("PE subsystem")?
+            .try_into()
+            .map_err(|_| "subsystem")?,
+    );
+    let import_rva = u32::from_le_bytes(
+        optional
+            .get(directories + 8..directories + 12)
+            .ok_or("PE import directory")?
+            .try_into()
+            .map_err(|_| "import directory")?,
+    );
+    let mut table = vec![0_u8; usize::from(count) * 40];
+    file.read_exact(&mut table).map_err(|e| e.to_string())?;
+    let mut sections = Vec::with_capacity(usize::from(count));
+    for index in 0..usize::from(count) {
+        let base = index * 40;
+        let field = |range: std::ops::Range<usize>| -> Result<u32> {
+            Ok(u32::from_le_bytes(
+                table
+                    .get(range)
+                    .ok_or("PE section")?
+                    .try_into()
+                    .map_err(|_| "PE section")?,
+            ))
+        };
+        sections.push(Section {
+            virtual_size: field(base + 8..base + 12)?,
+            virtual_address: field(base + 12..base + 16)?,
+            raw_size: field(base + 16..base + 20)?,
+            raw_offset: field(base + 20..base + 24)?,
+        });
+    }
+    Ok(Image {
+        machine,
+        subsystem,
+        import_rva,
+        sections,
+    })
+}
+
+/// Maps an RVA to a file offset through the section that owns it.
+fn offset(sections: &[Section], rva: u32) -> Result<u64> {
+    for section in sections {
+        let size = section.virtual_size.max(section.raw_size);
+        if let Some(relative) = rva.checked_sub(section.virtual_address)
+            && relative < size
+        {
+            return Ok(u64::from(section.raw_offset) + u64::from(relative));
+        }
+    }
+    Err("PE RVA outside every section".into())
+}
+
+fn name(file: &mut fs::File, at: u64) -> Result<String> {
+    file.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    let mut byte = [0_u8; 1];
+    loop {
+        if bytes.len() >= 260 {
+            return Err("PE import name is too long".into());
+        }
+        file.read_exact(&mut byte).map_err(|e| e.to_string())?;
+        if byte.first() == Some(&0) {
+            break;
+        }
+        bytes.push(byte.first().copied().ok_or("PE import name byte")?);
+    }
+    if bytes.is_empty() {
+        return Err("empty PE import name".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "PE import name is not UTF-8".into())
+}
+
+/// Every DLL named by the import directory, without an external dump tool.
+fn imports(path: &Path) -> Result<Vec<String>> {
+    let image = image(path)?;
+    if image.import_rva == 0 {
+        return Err("no PE import directory".into());
+    }
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let base = offset(&image.sections, image.import_rva)?;
+    let mut names = Vec::new();
+    for index in 0..4096_u64 {
+        let at = base + index * 20;
+        file.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+        let mut entry = [0_u8; 20];
+        file.read_exact(&mut entry).map_err(|e| e.to_string())?;
+        if entry.iter().all(|byte| *byte == 0) {
+            return Ok(names);
+        }
+        let name_rva = u32::from_le_bytes(
+            entry
+                .get(12..16)
+                .ok_or("PE import descriptor")?
                 .try_into()
-                .map_err(|_| "machine")?,
-        ),
-        u16::from_le_bytes(
-            image
-                .get(0x5c..0x5e)
-                .ok_or("PE subsystem")?
-                .try_into()
-                .map_err(|_| "subsystem")?,
-        ),
-    ))
+                .map_err(|_| "import descriptor")?,
+        );
+        if name_rva == 0 {
+            return Err("PE import descriptor has no name".into());
+        }
+        names.push(name(&mut file, offset(&image.sections, name_rva)?)?);
+    }
+    Err("PE import table has no terminator".into())
 }
 
 fn audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()> {
@@ -63,12 +203,12 @@ fn audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()> {
     let system =
         PathBuf::from(tools.variable("SystemRoot").ok_or("missing SystemRoot")?).join("System32");
     for path in files {
-        let (machine, subsystem) = pe(path)?;
-        if machine != expected {
+        let header = image(path)?;
+        if header.machine != expected {
             return Err("wrong PE architecture".into());
         }
         if path.extension() == Some(OsStr::new("exe"))
-            && subsystem
+            && header.subsystem
                 != if path.file_stem() == Some(OsStr::new("vibecut")) {
                     2
                 } else {
@@ -77,14 +217,7 @@ fn audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()> {
         {
             return Err("wrong executable subsystem".into());
         }
-        let output = run!(tools, "dumpbin", "/dependents", path)?;
-        let dependencies: Vec<_> = output
-            .lines()
-            .map(str::trim)
-            .filter(|line| {
-                line.to_lowercase().ends_with(".dll") && !line.contains(char::is_whitespace)
-            })
-            .collect();
+        let dependencies = imports(path)?;
         if dependencies.is_empty() {
             return Err("no PE dependencies reported".into());
         }
@@ -104,7 +237,7 @@ fn audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()> {
                 ]
                 .iter()
                 .any(|prefix| name.starts_with(prefix));
-                if ffmpeg || !system.join(dep).is_file() {
+                if ffmpeg || !system.join(&dep).is_file() {
                     return Err(format!("unbundled dependency {dep}"));
                 }
             }
@@ -207,23 +340,43 @@ pub(super) fn package(
     clippy::panic
 )]
 mod tests {
-    use super::{audit, pe};
+    use super::{audit, image, imports};
     use crate::distribution::{Temp, Tools};
     use std::env;
     use std::fs;
+
+    /// A PE32+ image with one section; `linked` adds one import descriptor.
+    fn synthetic(linked: bool) -> Vec<u8> {
+        let mut data = vec![0_u8; 1024];
+        data[..2].copy_from_slice(b"MZ");
+        data[0x3c..0x40].copy_from_slice(&64_u32.to_le_bytes());
+        data[64..68].copy_from_slice(b"PE\0\0");
+        data[68..70].copy_from_slice(&0xaa64_u16.to_le_bytes());
+        data[70..72].copy_from_slice(&1_u16.to_le_bytes());
+        data[84..86].copy_from_slice(&240_u16.to_le_bytes());
+        let optional = 88;
+        data[optional..optional + 2].copy_from_slice(&0x20b_u16.to_le_bytes());
+        data[optional + 68..optional + 70].copy_from_slice(&2_u16.to_le_bytes());
+        let table = optional + 240;
+        data[table + 8..table + 12].copy_from_slice(&0x200_u32.to_le_bytes());
+        data[table + 12..table + 16].copy_from_slice(&0x1000_u32.to_le_bytes());
+        data[table + 16..table + 20].copy_from_slice(&0x200_u32.to_le_bytes());
+        data[table + 20..table + 24].copy_from_slice(&512_u32.to_le_bytes());
+        if linked {
+            data[optional + 120..optional + 124].copy_from_slice(&0x1000_u32.to_le_bytes());
+            data[524..528].copy_from_slice(&0x1040_u32.to_le_bytes());
+            data[576..588].copy_from_slice(b"KERNEL32.dll");
+        }
+        data
+    }
 
     #[test]
     fn pe_headers_are_bounded_and_preserve_architecture_and_subsystem() {
         let temp = Temp::new(&env::temp_dir()).expect("temp");
         let path = temp.0.join("vibecut.exe");
-        let mut data = vec![0_u8; 256];
-        data[..2].copy_from_slice(b"MZ");
-        data[0x3c..0x40].copy_from_slice(&64_u32.to_le_bytes());
-        data[64..68].copy_from_slice(b"PE\0\0");
-        data[68..70].copy_from_slice(&0xaa64_u16.to_le_bytes());
-        data[64 + 0x5c..64 + 0x5e].copy_from_slice(&2_u16.to_le_bytes());
-        fs::write(&path, &data).expect("PE");
-        assert_eq!(pe(&path).expect("header"), (0xaa64, 2));
+        fs::write(&path, synthetic(false)).expect("PE");
+        let header = image(&path).expect("header");
+        assert_eq!((header.machine, header.subsystem), (0xaa64, 2));
         let mut tools = Tools::new(&temp.0);
         tools
             .env
@@ -235,7 +388,24 @@ mod tests {
         );
         for data in [b"not PE".to_vec(), b"MZ".to_vec(), vec![0; 65]] {
             fs::write(&path, data).expect("hostile");
-            assert!(pe(&path).is_err());
+            assert!(image(&path).is_err());
         }
+    }
+
+    #[test]
+    fn imports_name_every_linked_library_and_refuse_hostile_tables() {
+        let temp = Temp::new(&env::temp_dir()).expect("temp");
+        let path = temp.0.join("vibecut.exe");
+        fs::write(&path, synthetic(true)).expect("PE");
+        assert_eq!(imports(&path).expect("imports"), ["KERNEL32.dll"]);
+        fs::write(&path, synthetic(false)).expect("PE");
+        assert!(
+            imports(&path)
+                .expect_err("no import directory")
+                .contains("import directory")
+        );
+        fs::write(&path, &synthetic(true)[..100]).expect("truncated");
+        assert!(imports(&path).is_err());
+        assert!(image(&path).is_err());
     }
 }
