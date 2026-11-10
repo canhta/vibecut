@@ -5,11 +5,27 @@
     clippy::panic,
     reason = "public-interface conformance assertions"
 )]
-use crate::support::control::{
-    Allow, finish, fixture_chapters, font_access, media_access, ok, request, runner, seed,
-    sound_access, submit, with_audio, with_loudness, with_source_audio, with_thumbnails,
-    with_video, with_waveform, with_words, write_png, write_video, write_wav,
-};
+use crate::support::control::Allow;
+use crate::support::control::finish;
+use crate::support::control::fixture_chapters;
+use crate::support::control::font_access;
+use crate::support::control::media_access;
+use crate::support::control::ok;
+use crate::support::control::request;
+use crate::support::control::runner;
+use crate::support::control::seed;
+use crate::support::control::sound_access;
+use crate::support::control::submit;
+use crate::support::control::with_audio;
+use crate::support::control::with_loudness;
+use crate::support::control::with_source_audio;
+use crate::support::control::with_thumbnails;
+use crate::support::control::with_video;
+use crate::support::control::with_waveform;
+use crate::support::control::with_words;
+use crate::support::control::write_png;
+use crate::support::control::write_video;
+use crate::support::control::write_wav;
 use engine::control::{self, Caller, ControlResult};
 use engine::jobs::{JobState, SystemClock};
 use engine::{ByteBudget, Command, Effect, Fixture, Session, registry};
@@ -39,6 +55,22 @@ fn replace_paths(v: &mut Value, root: &std::path::Path) {
             }
         }
         _ => {}
+    }
+}
+#[test]
+fn command_declarations_are_in_ascending_id_order() {
+    let ids: Vec<_> = registry().iter().map(|spec| spec.id).collect();
+    assert_eq!(engine::declaration_order_error(&ids), None);
+    for (rows, expected) in [
+        (&["alpha", "bravo"][..], None),
+        (&["bravo", "alpha"][..], Some(("bravo", "alpha"))),
+        (&["alpha", "alpha"][..], None),
+        (
+            &["alpha", "charlie", "bravo", "delta"][..],
+            Some(("charlie", "bravo")),
+        ),
+    ] {
+        assert_eq!(engine::declaration_order_error(rows), expected, "{rows:?}");
     }
 }
 #[test]

@@ -13,7 +13,7 @@ pub use command_facts::{Availability, GrantClass, Lifecycle};
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
     ItemPlacement, KeyframeRef, Move, NewItem, Outcome, Placement, TrackPlacement, TrimEdge,
-    lifecycle, registry,
+    declaration_order_error, lifecycle, registry,
 };
 mod edit;
 pub(crate) mod filler;

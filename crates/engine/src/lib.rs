@@ -6,7 +6,7 @@ pub use session::{
     Availability, ChapterSidecars, Command, CommandKind, CommandSpec, CreatedId, CueId,
     DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement,
     KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement, TranscriptCue,
-    TranscriptView, TranscriptWord, TrimEdge, WordId, lifecycle, registry,
+    TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;

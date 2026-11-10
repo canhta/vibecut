@@ -1,6 +1,6 @@
 //! Generated-tree tests for the structure gate: each rule passes and fails.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use super::{BASELINE, CONFIG, check};
+use super::{BASELINE, CONFIG, check, imports::control_order};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -21,6 +21,12 @@ impl Tree {
         fs::create_dir_all(dir.join("xtask")).unwrap();
         fs::write(dir.join(CONFIG), "").unwrap();
         fs::write(dir.join(BASELINE), "").unwrap();
+        fs::create_dir_all(dir.join("crates/engine/tests/it/control")).unwrap();
+        fs::write(
+            dir.join("crates/engine/tests/it/control/catalog.rs"),
+            "use crate::support::control::Allow;\n",
+        )
+        .unwrap();
         git(&dir, &["init", "--quiet"]);
         Self(dir)
     }
@@ -797,6 +803,35 @@ fn root_module_aliases_resolve_and_stale_table_entries_fail() {
     let error = check(&tree.0).unwrap_err();
     assert!(
         error.contains("`two`") && error.contains("no longer exists"),
+        "{error}"
+    );
+}
+
+#[test]
+fn control_support_imports_are_one_sorted_name_per_line() {
+    let sorted = "\
+use crate::support::control::Allow;
+use crate::support::control::finish;
+use crate::support::control::write_wav;
+";
+    control_order(sorted).unwrap();
+    let disordered = "\
+use crate::support::control::Allow;
+use crate::support::control::write_wav;
+use crate::support::control::finish;
+";
+    let error = control_order(disordered).unwrap_err();
+    assert!(error.contains("`finish`"), "{error}");
+    assert!(error.contains("sorts before `write_wav`"), "{error}");
+    let grouped = "\
+use crate::support::control::{Allow, finish};
+";
+    let error = control_order(grouped).unwrap_err();
+    assert!(error.contains("one name per line"), "{error}");
+    let missing = "fn main() {}\n";
+    let error = control_order(missing).unwrap_err();
+    assert!(
+        error.contains("no `use crate::support::control::"),
         "{error}"
     );
 }
