@@ -26,7 +26,7 @@ Engine owns the command registry, control admission, revisions, receipts, job po
 
 ## Limits
 
-Engine limits govern frames, responses, preview count, size, quality and receipts; the adapter adds its own queue and connection bounds in [MCP control](../../docs/product/agent-control/mcp.md#transport-and-file-permissions): eight attached connections, 16 queued calls, one in-flight request per connection, a 30 s call deadline and a 5 s initialization, connect and write deadline. A refused or expired request never reaches engine admission; accepted mutations stay in the session's receipt ledger after a disconnect.
+Engine limits govern frames, responses, preview count, size, quality and receipts; the adapter's queue and connection bounds are owned by [MCP control](../../docs/product/agent-control/mcp.md#transport-and-file-permissions). A refused or expired request never reaches engine admission; accepted mutations stay in the session's receipt ledger after a disconnect.
 
 ## Tests
 
