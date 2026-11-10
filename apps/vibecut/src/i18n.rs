@@ -8,8 +8,8 @@ mod locale;
 mod text;
 
 pub use format::{
-    Plural, blend_label, date, decimal, export_duration, export_range, format, format_count,
-    number, parse_decimal, signed,
+    Plural, blend_label, date, decimal, effect_label, export_duration, export_range, format,
+    format_count, number, parse_decimal, signed,
 };
 pub use locale::Locale;
 pub use text::{Text, text};

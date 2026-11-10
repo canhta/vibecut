@@ -23,6 +23,233 @@ use vibecut::{
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
+#[derive(Default)]
+struct PreviewClock(std::sync::atomic::AtomicU64);
+impl PreviewClock {
+    fn set(&self, ms: u64) {
+        self.0.store(ms, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+impl engine::jobs::Clock for PreviewClock {
+    fn now(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+/// Reads the real painter output, including tile names drawn without widgets.
+fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool {
+    let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Text(text)
+                if text.galley.text() == expected && region.contains(text.pos) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+#[test]
+fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
+    use vibecut::i18n::Locale;
+    let rows: &[(&str, &str, &str, &[(&str, &str, &str)])] = &[
+        ("black_white", "Black & white", "Đen trắng", &[]),
+        (
+            "channel_mix",
+            "Channel mixer",
+            "Trộn kênh",
+            &[
+                ("rr", "Red from red", "Đỏ từ đỏ"),
+                ("rg", "Red from green", "Đỏ từ xanh lá"),
+                ("rb", "Red from blue", "Đỏ từ xanh dương"),
+                ("rc", "Red constant", "Hằng số đỏ"),
+                ("gr", "Green from red", "Xanh lá từ đỏ"),
+                ("gg", "Green from green", "Xanh lá từ xanh lá"),
+                ("gb", "Green from blue", "Xanh lá từ xanh dương"),
+                ("gc", "Green constant", "Hằng số xanh lá"),
+                ("br", "Blue from red", "Xanh dương từ đỏ"),
+                ("bg", "Blue from green", "Xanh dương từ xanh lá"),
+                ("bb", "Blue from blue", "Xanh dương từ xanh dương"),
+                ("bc", "Blue constant", "Hằng số xanh dương"),
+            ],
+        ),
+        (
+            "color_pass",
+            "Keep colour",
+            "Giữ màu",
+            &[("similarity", "Similarity", "Độ tương đồng")],
+        ),
+        (
+            "color_replace",
+            "Swap colour",
+            "Thay màu",
+            &[("similarity", "Similarity", "Độ tương đồng")],
+        ),
+        (
+            "extract",
+            "Threshold",
+            "Ngưỡng",
+            &[
+                ("black", "Black point", "Điểm đen"),
+                ("white", "White point", "Điểm trắng"),
+                ("softness", "Softness", "Độ mềm"),
+            ],
+        ),
+        (
+            "gamma_correction",
+            "Gamma",
+            "Gamma",
+            &[("gamma", "Gamma", "Gamma")],
+        ),
+        (
+            "invert",
+            "Invert",
+            "Đảo màu",
+            &[("blend", "Blend with original", "Trộn với gốc")],
+        ),
+        (
+            "levels",
+            "Levels",
+            "Mức màu",
+            &[
+                ("in_black", "Input black", "Điểm đen gốc"),
+                ("in_white", "Input white", "Điểm trắng gốc"),
+                ("out_black", "Output black", "Điểm đen sau chỉnh"),
+                ("out_white", "Output white", "Điểm trắng sau chỉnh"),
+                ("gamma", "Gamma", "Gamma"),
+            ],
+        ),
+        (
+            "posterize",
+            "Posterise",
+            "Giảm bậc màu",
+            &[("levels", "Levels", "Mức màu")],
+        ),
+        (
+            "strobe",
+            "Strobe",
+            "Chớp sáng",
+            &[
+                ("blend", "Blend with original", "Trộn với gốc"),
+                ("duration", "Duration", "Thời lượng"),
+                ("period", "Period", "Chu kỳ"),
+            ],
+        ),
+        (
+            "tint",
+            "Two-tone",
+            "Hai tông màu",
+            &[("amount", "Amount", "Cường độ")],
+        ),
+    ];
+    for &(kind, en, vi, parameters) in rows {
+        let f = fixture();
+        let video = f.video;
+        // Show the complete twelve-row mixer without substituting a test view.
+        let mut h = crate::gpu::builder()
+            .with_size(egui::vec2(1727.0, 1800.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        let original = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        for (locale, name) in [(Locale::En, en), (Locale::Vi, vi)] {
+            let before_locale_history = h.state().session.history_len();
+            h.state_mut().preferences.locale = locale;
+            h.run_steps(3);
+            if locale == Locale::Vi && en != vi {
+                assert!(
+                    !has_widget(&h, &format!("effects.tile.{kind}")),
+                    "stale search {kind}"
+                );
+            }
+            type_value(&mut h, "assets.search", name);
+            let tile = widget_rect(&h, &format!("effects.tile.{kind}"));
+            assert!(paints_text(&h, name, tile), "tile {kind} {locale:?}");
+            for &(other, _, _, _) in rows {
+                if other != kind {
+                    assert!(
+                        !has_widget(&h, &format!("effects.tile.{other}")),
+                        "search {kind} included {other}"
+                    );
+                }
+            }
+            assert_eq!(h.state().session.project(), &original);
+            assert_eq!(h.state().session.history_len(), before_locale_history);
+            click(&mut h, &format!("effects.add.{kind}"));
+            let added = h.state().session.project().clone();
+            let added_history = h.state().session.history_len();
+            assert_eq!(added_history.0, history.0 + 1, "one add {kind}");
+            assert_eq!(effects(&h, video)[0].kind, kind);
+            let toast = h.state().inspect().unwrap().import_toast.unwrap();
+            assert!(toast.contains(name), "toast {toast:?} missing {name}");
+            assert!(toast.contains(if locale == Locale::En {
+                "Effect added"
+            } else {
+                "Đã thêm hiệu ứng"
+            }));
+            // Locale switches must preserve every static/animated parameter and history.
+            for (display, title) in [(Locale::En, en), (Locale::Vi, vi)] {
+                h.state_mut().preferences.locale = display;
+                h.run_steps(3);
+                let left = widget_rect(&h, &format!("effects.row.{kind}.handle")).left();
+                let region =
+                    egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(1727.0, 1800.0));
+                assert!(
+                    paints_text(&h, title, region),
+                    "Properties header {kind} {display:?}"
+                );
+                let definition = project::effect_definition(kind).unwrap();
+                let numeric: Vec<_> = definition
+                    .params
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p.kind,
+                            project::EffectParamKind::Float { .. }
+                                | project::EffectParamKind::Angle
+                        )
+                    })
+                    .map(|p| p.id)
+                    .collect();
+                assert_eq!(
+                    numeric,
+                    parameters.iter().map(|p| p.0).collect::<Vec<_>>(),
+                    "complete numeric census {kind}"
+                );
+                for &(key, english, vietnamese) in parameters {
+                    let expected = if display == Locale::En {
+                        english
+                    } else {
+                        vietnamese
+                    };
+                    let id = format!("effects.{kind}.param.{key}");
+                    h.get(
+                        By::new()
+                            .label(expected)
+                            .predicate(|node| node.author_id() == Some(id.as_str())),
+                    );
+                    assert!(
+                        paints_text(&h, expected, region),
+                        "painted numeric {kind}.{key} {display:?}"
+                    );
+                }
+                assert_eq!(h.state().session.project(), &added);
+                assert_eq!(h.state().session.history_len(), added_history);
+            }
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &original, "undo {kind}");
+            // A fresh add clears the redo entry; compare the undo count independently.
+            assert_eq!(h.state().session.history_len().0, history.0);
+        }
+    }
+}
+
 struct Fixture {
     editor: Editor,
     video: ItemId,
@@ -189,8 +416,10 @@ fn fixture() -> Fixture {
     )
     .unwrap();
     playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.set_clock(Arc::new(PreviewClock::default()));
     Fixture {
-        editor: Editor::new(session, playback, Preferences::default()),
+        editor,
         video,
         image,
         graphic,
@@ -236,6 +465,294 @@ fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
         .widgets
         .iter()
         .any(|widget| widget.id == id)
+}
+
+fn tile_texture(h: &Harness<Editor>, kind: &str) -> egui::TextureId {
+    let center = widget_rect(h, &format!("effects.tile.{kind}")).center();
+    let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Mesh(mesh) if mesh.calc_bounds().contains(center) => {
+                return mesh.texture_id;
+            }
+            egui::Shape::Rect(rect) if rect.brush.is_some() && rect.rect.contains(center) => {
+                return rect.fill_texture_id();
+            }
+            _ => {}
+        }
+    }
+    panic!("missing real tile texture {kind}")
+}
+type Uploads =
+    Arc<std::sync::Mutex<std::collections::BTreeMap<egui::TextureId, Arc<egui::ColorImage>>>>;
+struct PreviewUploads {
+    inner: egui_kittest::LazyRenderer,
+    seen: Uploads,
+}
+impl egui_kittest::TestRenderer for PreviewUploads {
+    fn handle_delta(&mut self, delta: &mut egui::TexturesDelta) {
+        let mut seen = self.seen.lock().unwrap();
+        seen.clear();
+        for (id, changes) in &delta.set {
+            if let Some(change) = changes.last() {
+                let egui::ImageData::Color(image) = &change.image;
+                seen.insert(*id, image.clone());
+            }
+        }
+        self.inner.handle_delta(delta);
+    }
+    fn render(
+        &mut self,
+        ctx: &egui::Context,
+        output: &egui::FullOutput,
+    ) -> Result<image::RgbaImage, String> {
+        self.inner.render(ctx, output)
+    }
+}
+fn uploaded(seen: &Uploads, id: egui::TextureId) -> Option<Arc<egui::ColorImage>> {
+    seen.lock().unwrap().get(&id).cloned()
+}
+
+#[test]
+fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_project_edits() {
+    let f = fixture();
+    let clock = Arc::new(PreviewClock::default());
+    let mut editor = f.editor;
+    editor.set_clock(clock.clone());
+    let adapter = Arc::new(PreviewGate::new(true, None));
+    let uploads: Uploads = Default::default();
+    let mut h = crate::gpu::builder()
+        .renderer(PreviewUploads {
+            inner: Default::default(),
+            seen: uploads.clone(),
+        })
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    inject_previews(&mut h, adapter.clone());
+    h.run_steps(3);
+    click(&mut h, "assets.tab.effects");
+    let original = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    let playhead = h.state().inspect().unwrap().position;
+    let mut initial = None;
+    let mut texture = None;
+    for ms in [0, 100, 1900, 2000] {
+        clock.set(ms);
+        h.run_steps(1);
+        h.state_mut()
+            .settle_previews(std::time::Duration::from_secs(10))
+            .unwrap();
+        h.run_steps(1);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 12);
+        assert!(
+            h.state()
+                .inspect()
+                .unwrap()
+                .effect_previews
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Ready)
+        );
+        let id = tile_texture(&h, "strobe");
+        if let Some(before) = texture {
+            assert_eq!(id, before, "update existing texture handle");
+        }
+        texture = Some(id);
+        let image = uploaded(&uploads, id).expect("new phase uploaded");
+        if ms == 0 {
+            initial = Some(image.clone());
+        }
+        if ms == 100 || ms == 1900 {
+            assert_ne!(image, initial.clone().unwrap());
+        }
+        if ms == 2000 {
+            assert_eq!(
+                image,
+                initial.clone().unwrap(),
+                "loop wrap must present the newer sequence at local zero"
+            );
+        }
+        let calls = adapter.state.lock().unwrap().1;
+        h.run_steps(3);
+        assert!(
+            uploaded(&uploads, id).is_none(),
+            "stationary clock must not reload texture"
+        );
+        assert_eq!(
+            adapter.state.lock().unwrap().1,
+            calls,
+            "stationary time does not resubmit"
+        );
+    }
+    click(&mut h, "assets.tab.media");
+    let calls = adapter.state.lock().unwrap().1;
+    clock.set(12300);
+    h.run_steps(4);
+    assert_eq!(
+        adapter.state.lock().unwrap().1,
+        calls,
+        "hidden panel requests no work"
+    );
+    click(&mut h, "assets.tab.effects");
+    h.state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    h.run_steps(1);
+    assert_eq!(
+        uploaded(&uploads, texture.unwrap()).unwrap(),
+        initial.unwrap(),
+        "resume excludes 10.3 seconds hidden time"
+    );
+    adapter.state.lock().unwrap().0 = false;
+    clock.set(12400);
+    h.run_steps(2);
+    let (state, timeout) = adapter
+        .changed
+        .wait_timeout_while(
+            adapter.state.lock().unwrap(),
+            std::time::Duration::from_secs(10),
+            |s| s.2 == 0,
+        )
+        .unwrap();
+    assert!(!timeout.timed_out());
+    drop(state);
+    h.state_mut()
+        .set_effects(Arc::new(render::effects::CpuEffects))
+        .unwrap();
+    assert_eq!(
+        adapter.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "replacing source/cache owner cancels and joins the old generation"
+    );
+    h.run_steps(1);
+    h.state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    h.run_steps(1);
+    assert!(
+        h.state()
+            .inspect()
+            .unwrap()
+            .effect_previews
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+    assert_eq!(h.state().session.project(), &original);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(h.state().inspect().unwrap().position, playhead);
+}
+
+#[test]
+fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_bounded() {
+    use vibecut::effect_previews::EffectPreviews;
+    let budget = ByteBudget::new(16 << 20).unwrap();
+    let gate = Arc::new(PreviewGate::new(true, None));
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    previews.update(true, std::time::Duration::ZERO);
+    for d in project::effect_definitions()
+        .iter()
+        .filter(|d| d.shelf.in_library())
+    {
+        previews.ensure(d.id, &d.instance(d.id), &project::Animations::default());
+    }
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    let initial_calls = gate.state.lock().unwrap().1;
+    gate.state.lock().unwrap().0 = false;
+    previews.update(true, std::time::Duration::from_millis(100));
+    previews.tick().unwrap();
+    previews.tick().unwrap();
+    let (state, timeout) = gate
+        .changed
+        .wait_timeout_while(
+            gate.state.lock().unwrap(),
+            std::time::Duration::from_secs(10),
+            |s| s.2 == 0,
+        )
+        .unwrap();
+    assert!(!timeout.timed_out());
+    drop(state);
+    let mut peak = 0;
+    for ms in (101..=2200).step_by(33) {
+        previews.update(true, std::time::Duration::from_millis(ms));
+        previews.tick().unwrap();
+        peak = peak.max(budget.snapshot().unwrap().used);
+        assert!(
+            previews
+                .statuses()
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Ready)
+        );
+    }
+    assert_eq!(
+        gate.state.lock().unwrap().1,
+        initial_calls + 1,
+        "one blocked worker; time does not cancel it"
+    );
+    assert_eq!(gate.cancelled.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(
+        previews
+            .settle(std::time::Duration::from_millis(20))
+            .is_err(),
+        "Ready refresh still belongs to settle target"
+    );
+    gate.release();
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+    let completed_calls = gate.state.lock().unwrap().1;
+    assert!(
+        completed_calls <= initial_calls + 24,
+        "coalesced latest frame, not one queued job per clock update"
+    );
+    eprintln!(
+        "live-pressure initial_calls={initial_calls} completed_calls={completed_calls} peak_used={peak} limit={}",
+        budget.snapshot().unwrap().limit
+    );
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+
+    // Changed animation input invalidates a running generation without an explicit Retry.
+    let gate = Arc::new(PreviewGate::new(false, None));
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    let effect = project::effect_definition("blur").unwrap().instance("blur");
+    previews.ensure("blur", &effect, &project::Animations::default());
+    previews.tick().unwrap();
+    gate.wait_started();
+    let mut animation = project::Animations::default();
+    animation
+        .set(
+            effect.param_path("intensity").unwrap(),
+            project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
+        )
+        .unwrap();
+    previews.ensure("blur", &effect, &animation);
+    gate.release();
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert_eq!(gate.cancelled.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(previews.status("blur"), Some(EffectPreviewStatus::Ready));
+    let mut expected = EffectPreviews::cpu().unwrap();
+    expected.ensure(
+        "blur",
+        &effect
+            .clone()
+            .with("intensity", EffectValue::Scalar(0.0))
+            .unwrap(),
+        &project::Animations::default(),
+    );
+    expected.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        previews.image("blur").unwrap(),
+        expected.image("blur").unwrap(),
+        "changed animation cannot display the old blur"
+    );
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
@@ -709,6 +1226,368 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
 }
 
 struct BlockingPreview;
+
+struct PreviewGate {
+    state: std::sync::Mutex<(bool, usize, usize)>, // released, calls, active
+    changed: std::sync::Condvar,
+    failure: Option<u8>,
+    order: std::sync::Mutex<Vec<&'static str>>,
+    cancelled: std::sync::atomic::AtomicUsize,
+}
+impl PreviewGate {
+    fn new(released: bool, failure: Option<u8>) -> Self {
+        Self {
+            state: std::sync::Mutex::new((released, 0, 0)),
+            changed: Default::default(),
+            failure,
+            order: Default::default(),
+            cancelled: Default::default(),
+        }
+    }
+    fn wait_started(&self) {
+        let (state, timeout) = self
+            .changed
+            .wait_timeout_while(
+                self.state.lock().unwrap(),
+                std::time::Duration::from_secs(10),
+                |s| s.1 == 0,
+            )
+            .unwrap();
+        assert!(
+            !timeout.timed_out() && state.1 > 0,
+            "real thumbnail worker never started"
+        );
+    }
+    fn release(&self) {
+        self.state.lock().unwrap().0 = true;
+        self.changed.notify_all();
+    }
+}
+impl render::effects::EffectCompositor for PreviewGate {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
+    fn apply(
+        &self,
+        current: &render::Image,
+        passes: &[render::effects::EffectPass],
+        inputs: render::effects::EffectInputs<'_>,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::Image> {
+        let mut state = self.state.lock().unwrap();
+        state.1 += 1;
+        state.2 += 1;
+        self.order.lock().unwrap().push(passes[0].entry_point());
+        self.changed.notify_all();
+        while !state.0 && !hooks.cancelled() {
+            state = self
+                .changed
+                .wait_timeout(state, std::time::Duration::from_millis(2))
+                .unwrap()
+                .0;
+        }
+        state.2 -= 1;
+        drop(state);
+        if hooks.cancelled() {
+            self.cancelled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            return Err(render::Error::Cancelled);
+        }
+        if passes.iter().any(|p| p.entry_point() == "gaussian") {
+            match self.failure {
+                Some(0) => return Err(render::Error::Invalid("test preview")),
+                Some(1) => {
+                    return Err(render::Error::Budget {
+                        requested: 1,
+                        limit: 0,
+                    });
+                }
+                Some(2) => return Err(render::Error::Cancelled),
+                _ => {}
+            }
+        }
+        render::effects::CpuEffects.apply(current, passes, inputs, hooks)
+    }
+}
+
+#[test]
+fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
+    use vibecut::effect_previews::EffectPreviews;
+    let definitions: Vec<_> = project::effect_definitions()
+        .iter()
+        .filter(|definition| definition.shelf.in_library())
+        .collect();
+    assert_eq!(definitions.len(), 12);
+    // Five is the smallest request set that exceeds the real four-entry queue.
+    for count in [5, definitions.len()] {
+        let mut previews = EffectPreviews::cpu().unwrap();
+        for definition in definitions.iter().take(count) {
+            previews.ensure(
+                definition.id,
+                &definition.instance(definition.id),
+                &project::Animations::default(),
+            );
+        }
+        let statuses = previews.statuses();
+        assert_eq!(statuses.len(), count);
+        assert!(
+            statuses
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Pending),
+            "queue pressure must defer requests, not fail them: {statuses:?}"
+        );
+        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        for definition in definitions.iter().take(count) {
+            assert_eq!(
+                previews.status(definition.id),
+                Some(EffectPreviewStatus::Ready),
+                "{}: {:?}",
+                definition.id,
+                previews.failure(definition.id)
+            );
+            let image = previews.image(definition.id).unwrap();
+            assert_eq!(image.size, [320, 180]);
+        }
+    }
+    // Replacing a full, unpumped queue leaves only deferred entries: the old
+    // cancelled jobs still occupy the runner but none belongs to a current tile.
+    let mut previews = EffectPreviews::cpu().unwrap();
+    for definition in definitions.iter().take(4) {
+        previews.ensure(
+            definition.id,
+            &definition.instance(definition.id),
+            &project::Animations::default(),
+        );
+    }
+    for definition in definitions.iter().take(4) {
+        previews.retry(
+            definition.id,
+            &definition.instance(definition.id),
+            &project::Animations::default(),
+        );
+    }
+    assert!(
+        matches!(
+            previews.settle(std::time::Duration::ZERO),
+            Err(vibecut::Error::PreviewUnavailable(_))
+        ),
+        "deferred-only work must not falsely settle"
+    );
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Pending)
+    );
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+}
+
+#[test]
+fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
+    use vibecut::effect_previews::EffectPreviews;
+    for retry in [false, true] {
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let gate = Arc::new(PreviewGate::new(false, None));
+        let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+        let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+        let blur = project::effect_definition("blur").unwrap().instance("blur");
+        for definition in project::effect_definitions()
+            .iter()
+            .filter(|d| d.shelf.in_library())
+        {
+            previews.ensure(
+                definition.id,
+                &definition.instance(definition.id),
+                &project::Animations::default(),
+            );
+        }
+        previews.tick().unwrap();
+        gate.wait_started();
+        assert!(matches!(
+            previews.settle(std::time::Duration::from_millis(20)),
+            Err(vibecut::Error::PreviewUnavailable(_))
+        ));
+        assert_eq!(
+            previews
+                .statuses()
+                .values()
+                .filter(|s| **s == EffectPreviewStatus::Pending)
+                .count(),
+            12
+        );
+        if retry {
+            let replacement = blur
+                .clone()
+                .with("intensity", EffectValue::Scalar(0.0))
+                .unwrap();
+            // Retry one active and one deferred kind; ordinary ensure cannot duplicate either.
+            previews.retry("blur", &replacement, &project::Animations::default());
+            let extract = project::effect_definition("extract")
+                .unwrap()
+                .instance("extract");
+            previews.retry("extract", &extract, &project::Animations::default());
+            previews.ensure("blur", &replacement, &project::Animations::default());
+            gate.release();
+            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(previews.statuses().len(), 12);
+            assert!(
+                previews
+                    .statuses()
+                    .values()
+                    .all(|s| *s == EffectPreviewStatus::Ready)
+            );
+            let mut expected = EffectPreviews::cpu().unwrap();
+            expected.ensure("blur", &replacement, &project::Animations::default());
+            expected.settle(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                previews.image("blur").unwrap(),
+                expected.image("blur").unwrap(),
+                "cancelled old blur cannot replace the fresh identity request"
+            );
+            assert!(gate.state.lock().unwrap().1 > 1, "other kinds progressed");
+            let order = gate.order.lock().unwrap();
+            assert_eq!(
+                order.iter().filter(|kind| **kind == "extract").count(),
+                1,
+                "a deferred retry admits exactly one fresh job"
+            );
+            assert!(
+                order.iter().position(|kind| *kind == "invert").unwrap()
+                    < order.iter().position(|kind| *kind == "extract").unwrap(),
+                "retry must join behind already deferred requests: {order:?}"
+            );
+        }
+        drop(previews); // Includes blocked active, queued and deferred requests in the first row.
+        assert_eq!(
+            gate.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "old active job observes cancellation on retry or Drop"
+        );
+        assert_eq!(gate.state.lock().unwrap().2, 0, "adapter joined on drop");
+        assert_eq!(
+            budget.snapshot().unwrap().used,
+            0,
+            "source, jobs and cache leases released"
+        );
+    }
+}
+
+#[test]
+fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
+    use vibecut::effect_previews::EffectPreviews;
+    for failure in [0, 1, 2] {
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let adapter = Arc::new(PreviewGate::new(true, Some(failure)));
+        let cache =
+            engine::effect_thumbnails::EffectThumbnails::new(adapter.clone(), budget.clone());
+        let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+        for definition in project::effect_definitions()
+            .iter()
+            .filter(|d| d.shelf.in_library())
+        {
+            let mut effect = definition.instance(definition.id);
+            if definition.id == "tint" {
+                effect.params.clear();
+            } // Validation still refuses behind a full queue.
+            previews.ensure(definition.id, &effect, &project::Animations::default());
+        }
+        assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
+        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        for (kind, status) in previews.statuses() {
+            assert_eq!(
+                status,
+                if kind == "blur" || kind == "tint" {
+                    EffectPreviewStatus::Failed
+                } else {
+                    EffectPreviewStatus::Ready
+                },
+                "failure {failure}, kind {kind}"
+            );
+        }
+        let calls = adapter.state.lock().unwrap().1;
+        for _ in 0..3 {
+            previews.tick().unwrap();
+        }
+        assert_eq!(
+            adapter.state.lock().unwrap().1,
+            calls,
+            "terminal errors are not transient admission"
+        );
+        assert!(previews.failure("blur").is_some());
+        drop(previews);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
+    use vibecut::effect_previews::EffectPreviews;
+    let limit = 16 << 20;
+    let budget = ByteBudget::new(limit).unwrap();
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(
+        Arc::new(render::effects::CpuEffects),
+        budget.clone(),
+    );
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    let identity = project::effect_definition("channel_mix")
+        .unwrap()
+        .instance("channel_mix");
+    previews.ensure("channel_mix", &identity, &project::Animations::default());
+    let blur = project::effect_definition("blur").unwrap().instance("blur");
+    previews.ensure("blur", &blur, &project::Animations::default());
+    previews.tick().unwrap();
+    // Wait without ticking away the completed result. Once working images are
+    // released, only source + runner result ceiling + packed cache image remain.
+    let retained = 320 * 180 * 16 + 320 * 320 * 4 + 320 * 180 * 4;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while budget.snapshot().unwrap().used != retained {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "identity job did not release its work images"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    // The runner must evict that unconsumed result to admit the next real job.
+    let pressure = budget
+        .reserve(engine::ByteOwner::JobResults, limit - retained - 1)
+        .unwrap();
+    while previews.status("channel_mix") == Some(EffectPreviewStatus::Pending) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "evicted ID left Pending forever"
+        );
+        previews.tick().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(
+        previews.status("channel_mix"),
+        Some(EffectPreviewStatus::Failed)
+    );
+    assert_eq!(
+        previews.failure("channel_mix"),
+        Some(engine::EditError::JobNotRetained.to_string().as_str())
+    );
+    drop(pressure);
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+
 impl render::effects::EffectCompositor for BlockingPreview {
     fn frame<'a>(
         &'a self,
@@ -823,13 +1702,27 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
         .settle_previews(std::time::Duration::from_secs(10))
         .unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert!(!statuses.is_empty());
+    assert_eq!(statuses.len(), 12);
     assert!(
         statuses
             .values()
-            .all(|status| *status != EffectPreviewStatus::Pending),
+            .all(|status| *status == EffectPreviewStatus::Ready),
         "{statuses:?}"
     );
+    harness.run_steps(3);
+    for definition in project::effect_definitions()
+        .iter()
+        .filter(|d| d.shelf.in_library())
+    {
+        assert!(has_widget(
+            &harness,
+            &format!("effects.tile.{}.ready", definition.id)
+        ));
+        assert!(!has_widget(
+            &harness,
+            &format!("effects.preview.retry.{}", definition.id)
+        ));
+    }
 
     let blocking: Arc<dyn render::effects::EffectCompositor> = Arc::new(BlockingPreview);
     let failing: Arc<dyn render::effects::EffectCompositor> = Arc::new(FailingPreview);
@@ -1521,4 +2414,724 @@ fn effects_panel_renders_tiles_stack_and_preview() {
         image.save(target.join(filename)).unwrap();
         assert!(image.width() > 0 && image.height() > 0);
     }
+}
+
+#[test]
+fn discrete_effect_controls_commit_once_and_restore_with_undo_redo() {
+    for (kind, key, choices) in [
+        ("invert", "channel", true),
+        ("color_pass", "reverse", false),
+        ("color_replace", "solid", false),
+        ("extract", "invert", false),
+    ] {
+        let f = fixture();
+        let video = f.video;
+        let mut editor = f.editor;
+        if choices {
+            editor.preferences.locale = vibecut::i18n::Locale::Vi;
+        }
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition(kind)
+                    .unwrap()
+                    .instance("discrete"),
+            })
+            .unwrap();
+        add_effect(&mut editor.session, video, "untouched", false);
+        let mut harness = build(editor);
+        harness.run_steps(3);
+        open_effect_tabs(&mut harness, video);
+        let id = format!("effects.discrete.param.{key}");
+        assert!(has_widget(&harness, &id), "missing {kind}.{key}");
+        assert!(!has_widget(&harness, &format!("{id}.keyframe")));
+        assert!(has_widget(
+            &harness,
+            "effects.untouched.param.intensity.keyframe"
+        ));
+        let values: Vec<_> = if choices {
+            [1, 2, 3, 4, 0, 0]
+                .into_iter()
+                .map(EffectValue::Choice)
+                .collect()
+        } else {
+            vec![EffectValue::Bool(true), EffectValue::Bool(false)]
+        };
+        for value in values {
+            let before = item(&harness, video);
+            let history = harness.state().session.history_len().0;
+            if let EffectValue::Choice(index) = value {
+                click(&mut harness, &id);
+                let option = format!("{id}.{index}");
+                let label = ["RGB", "Đỏ", "Xanh lá", "Xanh dương", "Độ trong suốt"][index as usize];
+                assert_eq!(
+                    harness
+                        .get(By::new().predicate(|n| n.author_id() == Some(option.as_str())))
+                        .accesskit_node()
+                        .label(),
+                    Some(label.to_owned())
+                );
+                click(&mut harness, &option);
+            } else {
+                click(&mut harness, &id);
+            }
+            let mut expected = before.clone();
+            expected.effects[0].params.insert(key.into(), value);
+            assert_eq!(item(&harness, video), expected, "{kind}.{key} {value:?}");
+            let changed = expected != before;
+            assert_eq!(
+                harness.state().session.history_len().0,
+                history + usize::from(changed)
+            );
+            if changed {
+                harness.state_mut().activate("edit.undo").unwrap();
+                harness.run_steps(2);
+                assert_eq!(item(&harness, video), before);
+                match before.effects[0].value(key).unwrap() {
+                    EffectValue::Bool(on) => assert_eq!(
+                        harness
+                            .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                            .accesskit_node()
+                            .toggled(),
+                        Some(if *on {
+                            egui::accesskit::Toggled::True
+                        } else {
+                            egui::accesskit::Toggled::False
+                        })
+                    ),
+                    EffectValue::Choice(index) => {
+                        click(&mut harness, &id);
+                        assert_eq!(
+                            harness
+                                .get(By::new().predicate(
+                                    |n| n.author_id() == Some(format!("{id}.{index}").as_str())
+                                ))
+                                .accesskit_node()
+                                .toggled(),
+                            Some(egui::accesskit::Toggled::True)
+                        );
+                        harness.key_press(egui::Key::Escape);
+                        harness.run_steps(2);
+                    }
+                    _ => unreachable!(),
+                }
+                harness.state_mut().activate("edit.redo").unwrap();
+                harness.run_steps(2);
+                assert_eq!(item(&harness, video), expected);
+            }
+            if let EffectValue::Bool(on) = value {
+                assert_eq!(
+                    harness
+                        .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                        .accesskit_node()
+                        .toggled(),
+                    Some(if on {
+                        egui::accesskit::Toggled::True
+                    } else {
+                        egui::accesskit::Toggled::False
+                    })
+                );
+            } else if let EffectValue::Choice(index) = value {
+                click(&mut harness, &id);
+                assert_eq!(
+                    harness
+                        .get(
+                            By::new().predicate(
+                                |n| n.author_id() == Some(format!("{id}.{index}").as_str())
+                            )
+                        )
+                        .accesskit_node()
+                        .toggled(),
+                    Some(egui::accesskit::Toggled::True)
+                );
+                harness.key_press(egui::Key::Escape);
+                harness.run_steps(2);
+            }
+            click(&mut harness, "inspector.group.basic");
+            click(&mut harness, "inspector.tab.effects");
+            assert_eq!(item(&harness, video), expected);
+        }
+        harness
+            .state_mut()
+            .session
+            .apply(Command::SetTrackLocked {
+                track: f.main,
+                locked: true,
+            })
+            .unwrap();
+        harness.run_steps(3);
+        let before = harness.state().session.project().clone();
+        let history = harness.state().session.history_len();
+        assert!(
+            harness
+                .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                .accesskit_node()
+                .is_disabled()
+        );
+        click(&mut harness, &id);
+        assert_eq!(harness.state().session.project(), &before);
+        assert_eq!(harness.state().session.history_len(), history);
+    }
+}
+
+#[test]
+fn discrete_effect_popups_follow_selection_removal_and_locked_tracks() {
+    let f = fixture();
+    let (video, image, main) = (f.video, f.image, f.main);
+    let mut editor = f.editor;
+    for item in [video, image] {
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item,
+                effect: project::effect_definition("invert")
+                    .unwrap()
+                    .instance("same"),
+            })
+            .unwrap();
+    }
+    editor
+        .preferences
+        .properties_tabs
+        .insert("image".into(), "effects".into());
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    let id = "effects.same.param.channel";
+    click(&mut harness, id);
+    assert!(has_widget(&harness, &format!("{id}.4")));
+    let before = item(&harness, video);
+    select(&mut harness, image);
+    assert!(
+        !has_widget(&harness, &format!("{id}.4")),
+        "old item's popup is absent"
+    );
+    click(&mut harness, id);
+    click(&mut harness, &format!("{id}.4"));
+    assert_eq!(item(&harness, video), before);
+    assert_eq!(
+        effects(&harness, image)[0].value("channel"),
+        Some(&EffectValue::Choice(4))
+    );
+    click(&mut harness, id);
+    click(&mut harness, "inspector.group.basic");
+    assert!(!has_widget(&harness, &format!("{id}.4")));
+    click(&mut harness, "inspector.tab.effects");
+    click(&mut harness, id);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::RemoveEffect {
+            item: image,
+            effect: "same".into(),
+        })
+        .unwrap();
+    harness.run_steps(3);
+    assert!(!has_widget(&harness, &format!("{id}.4")));
+    select(&mut harness, video);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track: main,
+            locked: true,
+        })
+        .unwrap();
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    assert!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .accesskit_node()
+            .is_disabled()
+    );
+    click(&mut harness, id);
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+#[test]
+fn effect_rgb_pickers_edit_all_six_authoritative_bases_once() {
+    use project::{AnimationPath, ParamValue};
+    for (kind, key) in [
+        ("color_pass", "color"),
+        ("color_replace", "target"),
+        ("color_replace", "replace"),
+        ("tint", "black"),
+        ("tint", "white"),
+        ("strobe", "color"),
+    ] {
+        let f = fixture();
+        let video = f.video;
+        let mut editor = f.editor;
+        if matches!(kind, "tint" | "strobe") {
+            editor.preferences.locale = vibecut::i18n::Locale::Vi;
+        }
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition(kind).unwrap().instance("rgb"),
+            })
+            .unwrap();
+        add_effect(&mut editor.session, video, "untouched", false);
+        let mut h = build(editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        let id = format!("effects.rgb.param.{key}");
+        assert!(has_widget(&h, &id), "{kind}.{key}");
+        let path = AnimationPath::new(format!("effects.rgb.params.{key}")).unwrap();
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len().0;
+        click(&mut h, &id);
+        assert!(!has_widget(&h, "color.a"));
+        type_value(&mut h, "color.hex", "#8000FF");
+        assert_eq!(
+            h.state().session.history_len().0,
+            history + 1,
+            "{kind}.{key}"
+        );
+        let edited = item(&h, video);
+        assert_eq!(
+            edited.effects,
+            before.data().scene().timeline.main.items[0].effects,
+            "static storage stays fallback"
+        );
+        let Some(ParamValue::Color(rgba)) = edited.animations.value_at(&path, Tick::ZERO).unwrap()
+        else {
+            panic!("missing authoritative Color");
+        };
+        for (actual, expected) in rgba.into_iter().zip([0.2158605, 0.0, 1.0, 1.0]) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        assert_eq!(
+            render::color::at(&edited.animations, &path, Tick::ZERO, Color([0; 4])).unwrap(),
+            Color([128, 0, 255, 255])
+        );
+        let after = h.state().session.project().clone();
+        type_value(&mut h, "color.hex", "#8000FF");
+        assert_eq!(h.state().session.history_len().0, history + 1, "no-op");
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &before);
+        h.state_mut().activate("edit.redo").unwrap();
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &after);
+    }
+}
+
+#[test]
+fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
+    use project::{
+        AnimationPath, ColorComponent as C, CurveHandle, Extrapolation, Keyframe, Param,
+        ParamValue as V, Segment,
+    };
+    let f = fixture();
+    let video = f.video;
+    let mut editor = f.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb")
+                .with("duration", EffectValue::Scalar(30.0))
+                .unwrap(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetSpeed {
+            items: vec![video],
+            speed: time::Speed::from_f64(0.5).unwrap(),
+            maintain_pitch: false,
+        })
+        .unwrap();
+    let path = AnimationPath::new("effects.rgb.params.color").unwrap();
+    let mut param = Param::new(V::Color([0.2, 0.3, 0.4, 0.75])).unwrap();
+    for c in [C::R, C::G] {
+        for (t, value) in [(0, 0.123456789), (SECOND, 0.5), (2 * SECOND, 0.75)] {
+            let mut key = Keyframe::new(Tick(t), V::Scalar(value));
+            key.segment = Segment::Bezier;
+            key.incoming = Some(CurveHandle {
+                dt: Tick(-SECOND / 4),
+                dv: -0.02,
+            });
+            key.outgoing = Some(CurveHandle {
+                dt: Tick(SECOND / 4),
+                dv: 0.03,
+            });
+            param.channel_mut(Some(c)).unwrap().put(key).unwrap();
+        }
+        param
+            .channel_mut(Some(c))
+            .unwrap()
+            .set_extrapolation(Extrapolation::Linear, Extrapolation::Hold)
+            .unwrap();
+    }
+    param
+        .channel_mut(Some(C::A))
+        .unwrap()
+        .put(Keyframe::new(Tick(SECOND), V::Scalar(0.123456789)))
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: video,
+            path: path.clone(),
+            param: param.clone(),
+        })
+        .unwrap();
+    let mut h = build(editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        item(&h, video).source_time_at(Tick(SECOND)).unwrap(),
+        Tick(SECOND / 2)
+    );
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(
+        h.state().inspect().unwrap().color_preview,
+        Some(Color([188, 188, 170, 255]))
+    );
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    type_value(&mut h, "color.hex", "#FF00FF");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let edited = item(&h, video);
+    let updated = edited.animations.get(&path).unwrap();
+    assert_eq!(
+        updated.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    for c in [C::R, C::G] {
+        let original = param.channel(Some(c)).unwrap();
+        let current = updated.channel(Some(c)).unwrap();
+        assert_eq!(original.base(), current.base());
+        assert_eq!(original.extrapolation(), current.extrapolation());
+        for (a, b) in original.keys().iter().zip(current.keys()) {
+            if a.time != Tick(SECOND) {
+                assert_eq!(a, b);
+            } else {
+                let mut a = a.clone();
+                a.value = b.value.clone();
+                assert_eq!(&a, b);
+            }
+        }
+    }
+    assert_eq!(
+        updated.value_at(Tick(SECOND)).unwrap(),
+        V::Color([1.0, 0.0, 1.0, 0.123456789])
+    );
+    let budget = ByteBudget::new(1 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let image = render::Image::new(1, 1, [0.125, 0.125, 0.125, 0.25], &hooks).unwrap();
+    let effect = edited.effects.iter().find(|e| e.id == "rgb").unwrap();
+    let passes =
+        render::effects::evaluate_effect(&edited.animations, effect, Tick(SECOND), 1, 1, true)
+            .unwrap();
+    use render::effects::EffectCompositor;
+    let out = render::effects::CpuEffects
+        .apply(
+            &image,
+            &passes,
+            render::effects::EffectInputs {
+                input: &image,
+                below: &image,
+                coverage: None,
+            },
+            &hooks,
+        )
+        .unwrap();
+    for (a, b) in out.pixels()[0].into_iter().zip([0.25, 0.0, 0.25, 0.25]) {
+        assert!((a - b).abs() < 3e-6);
+    }
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(2);
+    let keyed = h.state().session.project().clone();
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let removed = item(&h, video);
+    let p = removed.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(
+            !p.channel(Some(c))
+                .unwrap()
+                .keys()
+                .iter()
+                .any(|k| k.time == Tick(SECOND))
+        );
+    }
+    assert_eq!(
+        p.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &keyed);
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(2);
+    // A fresh tick adds all RGB components as ONE composite edit, retaining alpha.
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let added = item(&h, video);
+    let p = added.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(
+            p.channel(Some(c))
+                .unwrap()
+                .keys()
+                .iter()
+                .any(|k| k.time == Tick(3 * SECOND))
+        );
+    }
+    assert_eq!(
+        p.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn effect_rgb_zero_key_base_survives_static_changes_and_last_key_removal() {
+    use project::{AnimationPath, ColorComponent as C, Param, ParamValue as V};
+    let f = fixture();
+    let video = f.video;
+    let mut editor = f.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb"),
+        })
+        .unwrap();
+    let path = AnimationPath::new("effects.rgb.params.color").unwrap();
+    let mut base = Param::new(V::Color([0.123456789, 0.25, 0.5, 0.314159265])).unwrap();
+    base.channel_mut(Some(C::A))
+        .unwrap()
+        .put(project::Keyframe::new(Tick::ZERO, V::Scalar(0.314159265)))
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: video,
+            path: path.clone(),
+            param: base.clone(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::UpdateEffectParam {
+            item: video,
+            effect: "rgb".into(),
+            key: "color".into(),
+            value: 16711680.0,
+        })
+        .unwrap();
+    let mut h = build(editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(
+        h.state().inspect().unwrap().color_preview,
+        Some(Color([99, 137, 188, 255]))
+    );
+    type_value(&mut h, "color.hex", "#00FF00");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let edited = item(&h, video);
+    let param = edited.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(param.channel(Some(c)).unwrap().keys().is_empty());
+    }
+    assert_eq!(
+        param.value_at(Tick::ZERO).unwrap(),
+        V::Color([0.0, 1.0, 0.0, 0.314159265])
+    );
+    click(&mut h, "effects.rgb.param.color");
+    type_value(&mut h, "color.hex", "#0000FF");
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(V::Color([0.0, 0.0, 1.0, 0.314159265]))
+    );
+}
+
+#[test]
+fn effect_rgb_picker_cancels_stale_gestures_and_disables_keyed_edits_outside() {
+    for reason in ["escape", "selection", "remove", "lock", "time", "tab"] {
+        let f = fixture();
+        let video = f.video;
+        let image = f.image;
+        let main = f.main;
+        let mut editor = f.editor;
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition("strobe")
+                    .unwrap()
+                    .instance("rgb"),
+            })
+            .unwrap();
+        let mut h = build(editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        click(&mut h, "effects.rgb.param.color");
+        let slider = widget_rect(&h, "color.v.slider");
+        h.drag_at(slider.center());
+        h.run_steps(2);
+        h.hover_at(slider.left_center());
+        h.run_steps(2);
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        match reason {
+            "escape" => h.key_press(egui::Key::Escape),
+            "selection" => {
+                h.state_mut().selection = [image].into_iter().collect();
+            }
+            "remove" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::RemoveEffect {
+                        item: video,
+                        effect: "rgb".into(),
+                    })
+                    .unwrap();
+            }
+            "lock" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::SetTrackFlags {
+                        track: main,
+                        locked: true,
+                        muted: false,
+                        hidden: false,
+                    })
+                    .unwrap();
+            }
+            "time" => {
+                let project = h.state().session.project().clone();
+                h.state_mut()
+                    .playback
+                    .seek(Tick(SECOND), false, project)
+                    .unwrap();
+            }
+            "tab" => {
+                h.state_mut()
+                    .preferences
+                    .set("properties_tabs", serde_json::json!({"video":"transform"}))
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let expected = h.state().session.project().clone();
+        let expected_history = h.state().session.history_len();
+        h.run_steps(3);
+        h.drop_at(slider.left_center());
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &expected, "{reason}");
+        assert_eq!(
+            h.state().session.history_len(),
+            expected_history,
+            "{reason}"
+        );
+        assert_eq!(h.state().inspect().unwrap().color_preview, None, "{reason}");
+        if !matches!(reason, "lock" | "remove") {
+            assert_eq!(&expected, &before);
+            assert_eq!(expected_history, history);
+        }
+    }
+    let f = fixture();
+    let video = f.video;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb"),
+        })
+        .unwrap();
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    let widgets = h.state().inspect().unwrap().widgets;
+    for id in [
+        "effects.rgb.param.color",
+        "effects.rgb.param.color.keyframe",
+    ] {
+        assert!(!widgets.iter().find(|w| w.id == id).unwrap().enabled);
+    }
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick::ZERO, false, project)
+        .unwrap();
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color");
+    let history = h.state().session.history_len().0;
+    let slider = widget_rect(&h, "color.v.slider");
+    h.drag_at(slider.center());
+    h.run_steps(2);
+    h.hover_at(slider.left_center());
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history);
+    h.drop_at(slider.left_center());
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let path = project::AnimationPath::new("effects.rgb.params.color").unwrap();
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick(3 * SECOND))
+            .unwrap(),
+        Some(project::ParamValue::Color([0.0, 0.0, 0.0, 1.0]))
+    );
 }

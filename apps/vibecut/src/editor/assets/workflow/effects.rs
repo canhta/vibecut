@@ -14,7 +14,6 @@ impl Editor {
         let previews = crate::effect_previews::EffectPreviews::new(cache, budget)?;
         self.playback.set_effects(effects)?;
         self.effect_previews = Some(previews);
-        self.effect_textures.clear();
         Ok(())
     }
     pub(in crate::editor) fn add_effect_from_selection(&mut self, kind: &str) {

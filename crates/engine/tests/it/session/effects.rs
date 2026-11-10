@@ -441,6 +441,141 @@ fn thumbnail_runner(budget: &engine::ByteBudget, clock: Arc<dyn Clock>) -> JobRu
     )
     .unwrap()
 }
+
+#[test]
+fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache_hits() {
+    use engine::effect_thumbnails::EffectThumbnails;
+    let budget = engine::ByteBudget::new(16 << 20).unwrap();
+    let adapter = Arc::new(CountingEffects::default());
+    let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
+    let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+    let source = Arc::new(render::Image::new(8, 4, [0.2, 0.1, 0.05, 1.0], &Hooks).unwrap());
+    let effect = effect_definition("strobe").unwrap().instance("flash");
+    let frame = FrameRate::FPS_30.tick_of(1).unwrap();
+    let mut sample = |effect: EffectInstance,
+                      animations: Animations,
+                      local: Tick,
+                      source: Arc<render::Image>| {
+        let (id, _) = cache
+            .submit(&mut runner, source, effect, animations, local)
+            .unwrap();
+        let state = pump(&mut runner, id).state;
+        let output = runner.take_output(id).map(|o| o.bytes().to_vec());
+        (state, output)
+    };
+    let mut pictures = Vec::new();
+    for n in [0, 3, 15, 15] {
+        let (state, bytes) = sample(
+            effect.clone(),
+            Animations::default(),
+            Tick(frame.0 * n),
+            source.clone(),
+        );
+        assert_eq!(state, JobState::Completed);
+        pictures.push(bytes.unwrap());
+    }
+    assert_ne!(
+        pictures[0], pictures[1],
+        "real strobe must leave its lit phase"
+    );
+    assert_eq!(pictures[0], pictures[2], "period returns to its lit phase");
+    assert_eq!(pictures[2], pictures[3]);
+    assert_eq!(
+        adapter.calls.load(Ordering::SeqCst),
+        2,
+        "same complete identity hits cache"
+    );
+    let mut animations = Animations::default();
+    let path = effect.param_path("color").unwrap();
+    animations
+        .set(
+            path.clone(),
+            Param::new(ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap(),
+        )
+        .unwrap();
+    let red = sample(
+        effect.clone(),
+        animations.clone(),
+        Tick::ZERO,
+        source.clone(),
+    )
+    .1
+    .unwrap();
+    assert_ne!(red, pictures[0]);
+    assert!(
+        red.chunks_exact(4)
+            .all(|p| p[0] > 250 && p[1] < 2 && p[2] < 2)
+    );
+    let mut keyed = Param::new(ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap();
+    keyed
+        .channel_mut(Some(ColorComponent::R))
+        .unwrap()
+        .put(Keyframe::new(Tick::ZERO, ParamValue::Scalar(0.0)))
+        .unwrap();
+    keyed
+        .channel_mut(Some(ColorComponent::B))
+        .unwrap()
+        .put(Keyframe::new(Tick::ZERO, ParamValue::Scalar(1.0)))
+        .unwrap();
+    animations.set(path.clone(), keyed).unwrap();
+    let blue = sample(
+        effect.clone(),
+        animations.clone(),
+        Tick::ZERO,
+        source.clone(),
+    )
+    .1
+    .unwrap();
+    assert!(blue.chunks_exact(4).all(|p| p[0] < 2 && p[2] > 250));
+    let calls = adapter.calls.load(Ordering::SeqCst);
+    assert_eq!(
+        sample(
+            effect.clone(),
+            animations.clone(),
+            Tick::ZERO,
+            source.clone()
+        )
+        .1
+        .unwrap(),
+        blue
+    );
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), calls);
+    let mut renamed = effect.clone();
+    renamed.id = "another".into();
+    assert_eq!(
+        sample(renamed, animations.clone(), Tick::ZERO, source.clone())
+            .1
+            .unwrap(),
+        pictures[0],
+        "animation path binds the instance ID"
+    );
+    let other = Arc::new(render::Image::new(8, 4, [0.0, 0.3, 0.0, 1.0], &Hooks).unwrap());
+    assert_ne!(
+        sample(
+            effect.clone(),
+            Animations::default(),
+            Tick(frame.0 * 3),
+            other
+        )
+        .1
+        .unwrap(),
+        pictures[1],
+        "source identity binds idle strobe pixels"
+    );
+    animations
+        .set(path, Param::new(ParamValue::Scalar(1.0)).unwrap())
+        .unwrap();
+    let (state, bytes) = sample(effect.clone(), animations, Tick::ZERO, source.clone());
+    assert_eq!(state, JobState::Failed);
+    assert!(bytes.is_none(), "wrong animated kind never publishes");
+    assert!(matches!(
+        cache.submit(&mut runner, source, effect, Animations::default(), Tick(-1)),
+        Err(engine::EditError::Invalid("thumbnail local time"))
+    ));
+    drop(cache);
+    drop(runner);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
 #[test]
 fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
     use engine::effect_thumbnails::*;
@@ -488,7 +623,13 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         let calls = |runs| if unsupported == Some(false) { 0 } else { runs };
         for n in 0..2 {
             let (id, _) = cache
-                .submit(&mut runner, source.clone(), original.clone())
+                .submit(
+                    &mut runner,
+                    source.clone(),
+                    original.clone(),
+                    Animations::default(),
+                    Tick::ZERO,
+                )
                 .unwrap();
             assert_eq!(pump(&mut runner, id).state, JobState::Completed);
             let output = runner.take_output(id).unwrap();
@@ -505,6 +646,8 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
                     .clone()
                     .with("brightness", EffectValue::Scalar(49.0))
                     .unwrap(),
+                Animations::default(),
+                Tick::ZERO,
             )
             .unwrap();
         token.cancel();
@@ -516,7 +659,15 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
                 .clone()
                 .with("brightness", EffectValue::Scalar(n as f64 - 40.0))
                 .unwrap();
-            let (id, _) = cache.submit(&mut runner, source.clone(), effect).unwrap();
+            let (id, _) = cache
+                .submit(
+                    &mut runner,
+                    source.clone(),
+                    effect,
+                    Animations::default(),
+                    Tick::ZERO,
+                )
+                .unwrap();
             assert_eq!(pump(&mut runner, id).state, JobState::Completed);
             runner.take_output(id).unwrap();
         }
@@ -525,7 +676,13 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             MAX_THUMBNAILS as u64 * 32 * 18 * 4
         );
         let (id, _) = cache
-            .submit(&mut runner, source.clone(), original.clone())
+            .submit(
+                &mut runner,
+                source.clone(),
+                original.clone(),
+                Animations::default(),
+                Tick::ZERO,
+            )
             .unwrap();
         assert_eq!(pump(&mut runner, id).state, JobState::Completed);
         assert_eq!(runner.take_output(id).unwrap().bytes(), expected);
@@ -542,9 +699,29 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         hostile
             .params
             .insert("brightness".into(), EffectValue::Scalar(f64::NAN));
-        assert!(cache.submit(&mut runner, source.clone(), hostile).is_err());
+        assert!(
+            cache
+                .submit(
+                    &mut runner,
+                    source.clone(),
+                    hostile,
+                    Animations::default(),
+                    Tick::ZERO
+                )
+                .is_err()
+        );
         let large = Arc::new(render::Image::new(321, 1, [0.0; 4], &Hooks).unwrap());
-        assert!(cache.submit(&mut runner, large, original.clone()).is_err());
+        assert!(
+            cache
+                .submit(
+                    &mut runner,
+                    large,
+                    original.clone(),
+                    Animations::default(),
+                    Tick::ZERO
+                )
+                .is_err()
+        );
         drop(cache);
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
@@ -616,7 +793,13 @@ fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
         let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
         let source = Arc::new(render::Image::new(32, 18, [0.0; 4], &Hooks).unwrap());
         let (id, token) = cache
-            .submit(&mut runner, source, blur("preview", 15.0))
+            .submit(
+                &mut runner,
+                source,
+                blur("preview", 15.0),
+                Animations::default(),
+                Tick::ZERO,
+            )
             .unwrap();
         runner.tick().unwrap();
         ready.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -694,7 +877,13 @@ fn thumbnail_publication_seals_late_cancellation_and_retains_cache() {
     let source = Arc::new(render::Image::new(32, 18, [0.2; 4], &Hooks).unwrap());
     let effect = blur("preview", 15.0);
     let (id, token) = cache
-        .submit(&mut runner, source.clone(), effect.clone())
+        .submit(
+            &mut runner,
+            source.clone(),
+            effect.clone(),
+            Animations::default(),
+            Tick::ZERO,
+        )
         .unwrap();
     runner.tick().unwrap();
     ready.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -712,7 +901,15 @@ fn thumbnail_publication_seals_late_cancellation_and_retains_cache() {
     assert_eq!(pump(&mut runner, id).state, JobState::Completed);
     let expected = runner.take_output(id).unwrap().bytes().to_vec();
     assert_eq!(expected.len(), 32 * 18 * 4);
-    let (id, _) = cache.submit(&mut runner, source, effect).unwrap();
+    let (id, _) = cache
+        .submit(
+            &mut runner,
+            source,
+            effect,
+            Animations::default(),
+            Tick::ZERO,
+        )
+        .unwrap();
     assert_eq!(pump(&mut runner, id).state, JobState::Completed);
     assert_eq!(runner.take_output(id).unwrap().bytes(), expected);
     assert_eq!(
