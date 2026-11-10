@@ -137,7 +137,7 @@ Jobs run in file order on one export worker. The result has `status` (`completed
 
 ## Project files and concurrency
 
-A project is the `.vibecut` file owned by the project crate: [project contract](../../../crates/project/src/persistence/README.md#persistence-and-limits). Lease admission follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
+A project is the `.vibecut` file owned by the project crate: [project contract](../../../crates/project/src/persistence/README.md#envelope-and-limits). Lease admission follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
 
 ## Export admission
 

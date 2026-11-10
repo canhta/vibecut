@@ -10,7 +10,7 @@ Ranges are full, in/out markers or an explicit selected-clip bounding range. Mar
 
 ## Execution
 
-`export` uses `FileSources`; `export_with_sources` accepts an explicit source owner. Settings select range, canvas/crop, fps, bitrate/quality, hardware-preferred or platform software encoder, audio and overwrite policy. The initial encoder preference follows [media's platform default](../../../media/src/encode/README.md#input-and-quality-boundaries).
+`export` uses `FileSources`; `export_with_sources` accepts an explicit source owner. Settings select range, canvas/crop, fps, bitrate/quality, hardware-preferred or platform software encoder, audio and overwrite policy. The initial encoder preference follows [media's platform default](../../../media/src/write/README.md#encoding).
 
 `ExportSettings::container` defaults to MP4. MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus. Output is chosen by the settings, never guessed from the filename. Auto copies only an admitted container video codec (H.264/HEVC/MPEG-4 for MP4/MOV; VP8/VP9/AV1 for WebM), otherwise it encodes, and forced copy refuses. Included audio always mixes and encodes for the target so mastering cannot be bypassed.
 

@@ -16,7 +16,7 @@ Take the first rung that works: not needed, existing owner, std, platform featur
 
 ## Quality and speed
 
-Codec admission follows [media](../../crates/media/src/encode/README.md#input-and-quality-boundaries). Stream bounded buffers; avoid needless frame, audio and raster copies. Execution owners follow [architecture](architecture.md#contracts); measure hot paths through [verification](verification.md#checks).
+Codec admission follows [media](../../crates/media/src/write/README.md#encoding). Stream bounded buffers; avoid needless frame, audio and raster copies. Execution owners follow [architecture](architecture.md#contracts); measure hot paths through [verification](verification.md#checks).
 
 ## Errors and concurrency
 

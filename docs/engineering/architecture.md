@@ -73,23 +73,23 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Preview screen/canvas conversion, selectable item geometry, rotated handles | [render viewport](../../crates/render/src/scene/README.md#preview-viewport-geometry) |
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/src/analysis/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
-| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/src/providers/README.md#local-model-transfers) / [app manager](../../apps/vibecut/src/model_manager/README.md#local-model-manager) |
-| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/src/segment/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/src/providers/README.md#local-model-transfers) / [app manager](../../apps/vibecut/src/editor/dialogs/models/README.md) |
+| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/src/segment/README.md#source-cut-units) / [media](../../crates/media/src/audio/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/src/analysis/shot_analysis/README.md#per-shot-analysis) |
-| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision_prep/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
+| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision/README.md) / [ai detectors](../../crates/ai/src/vision/README.md) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
 | Sound search, saved local sounds, preview cache and attribution | [libraries sounds](../../crates/libraries/src/sound_library/README.md#sound-library) |
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/src/transcript/README.md#translation-selection-and-application) |
 | Chapter document, prompt and validation / sidecar publication | [ai chapters](../../crates/ai/src/chapters/README.md) / [engine artifacts](../../crates/engine/src/artifacts/README.md#chapter-sidecars) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 
-Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
+Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. In-process callers pass a typed `Command`; a command id with JSON parameters exists only on the control wire. A workflow that runs as a job is a registry command, so every transport can start it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
 
 ```mermaid
 flowchart LR
-  ui[Desktop UI] --> registry
-  cli[CLI] --> registry
-  mcp[MCP and control sessions] --> control[control: admission, revision, receipt] --> registry
+  ui[Desktop UI] -- typed Command --> registry
+  cli[CLI] -- typed Command --> registry
+  mcp[MCP and control sessions] -- id + JSON --> control[control: admission, revision, receipt] --> registry
   registry[command registry] --> session[Session: transaction, history]
   session --> project[(Project)]
   registry --> jobs[job runner] --> work[media, render, AI execution]
