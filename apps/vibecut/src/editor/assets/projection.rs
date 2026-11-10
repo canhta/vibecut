@@ -97,11 +97,8 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             }
             effects.push(EffectRow {
                 kind: definition.id,
-                name: if definition.id == "blur" {
-                    editor.tr(Text::EffectBlur)
-                } else {
-                    definition.name
-                },
+                name: crate::i18n::effect_label(definition.id, None)
+                    .map_or(definition.name, |key| editor.tr(key)),
                 shelf: definition.shelf,
                 status,
                 texture: editor.effect_textures.get(definition.id).cloned(),

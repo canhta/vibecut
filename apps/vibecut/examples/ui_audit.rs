@@ -311,6 +311,12 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "effects"),
     },
     Scene {
+        name: "assets-effects-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-vi"),
+    },
+    Scene {
         name: "assets-transitions",
         reference_dark: None,
         reference_light: None,
@@ -639,6 +645,54 @@ const SCENES: &[Scene] = &[
         reference_dark: None,
         reference_light: None,
         build: |theme, scale| inspector_video_tab(theme, scale, "effects-threshold"),
+    },
+    Scene {
+        name: "inspector-effects-threshold-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-threshold-vi"),
+    },
+    Scene {
+        name: "inspector-effects-colours-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-colours-vi"),
+    },
+    Scene {
+        name: "inspector-effects-tonal",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-tonal"),
+    },
+    Scene {
+        name: "inspector-effects-tonal-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-tonal-vi"),
+    },
+    Scene {
+        name: "inspector-effects-mixer",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-mixer"),
+    },
+    Scene {
+        name: "inspector-effects-mixer-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-mixer-vi"),
+    },
+    Scene {
+        name: "inspector-effects-mixer-bottom",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-mixer-bottom"),
+    },
+    Scene {
+        name: "inspector-effects-mixer-bottom-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-mixer-bottom-vi"),
     },
     Scene {
         name: "inspector-video",
@@ -1817,10 +1871,16 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
         },
     )?;
     capture_columns(&mut editor)?;
+    let tab = tab.strip_suffix("-vi").unwrap_or(tab);
     let colour_picker = tab == "effects-colours-picker";
+    let mixer_bottom = tab == "effects-mixer-bottom";
     let tab = if tab.starts_with("effects") {
         let kinds: &[&str] = if tab == "effects-threshold" {
             &["extract"]
+        } else if tab.starts_with("effects-mixer") {
+            &["channel_mix"]
+        } else if tab == "effects-tonal" {
+            &["black_white", "levels", "gamma_correction", "posterize"]
         } else if tab.starts_with("effects-colours") {
             &["tint", "strobe"]
         } else {
@@ -1843,6 +1903,13 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
+    if mixer_bottom {
+        app.get(
+            By::new().predicate(|node| node.author_id() == Some("effects.channel_mix.param.bc")),
+        )
+        .scroll_to_me();
+        app.run_steps(3);
+    }
     if colour_picker {
         app.get(By::new().predicate(|node| node.author_id() == Some("effects.tint.param.black")))
             .click();

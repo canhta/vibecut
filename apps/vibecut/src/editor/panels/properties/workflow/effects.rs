@@ -122,7 +122,11 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
             desk.select_single(item);
             let text =
                 crate::i18n::text(desk.view().preferences.locale, Text::EffectAdded).to_owned();
-            let name = effect_name(definition, desk.view().preferences.locale).to_owned();
+            let name = crate::i18n::effect_label(definition.id, None)
+                .map_or(definition.name, |key| {
+                    crate::i18n::text(desk.view().preferences.locale, key)
+                })
+                .to_owned();
             desk.toast(&text, Some(name));
         }
         Err(error) => {
@@ -140,21 +144,6 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
     if !std::sync::Arc::ptr_eq(&before, desk.view().session.project()) {
         desk.sync();
     }
-}
-
-/// Localized name of one effect definition.
-fn effect_name(
-    definition: &project::EffectDefinition,
-    locale: crate::i18n::Locale,
-) -> &'static str {
-    crate::i18n::text(
-        locale,
-        match definition.id {
-            "blur" => Text::EffectBlur,
-            "color_grade" => Text::EffectColorGrade,
-            _ => return definition.name,
-        },
-    )
 }
 
 /// The next free instance id for `kind` on one clip.

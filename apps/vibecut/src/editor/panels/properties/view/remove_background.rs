@@ -77,7 +77,7 @@ impl Panel<'_, '_> {
             ) else {
                 continue;
             };
-            self.effect_scrub_field(ui, item, &effect, parameter, current);
+            self.effect_scrub_field(ui, item, &effect, "chroma_key", parameter, current);
         }
     }
 

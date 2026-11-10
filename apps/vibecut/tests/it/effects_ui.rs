@@ -23,6 +23,220 @@ use vibecut::{
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
+/// Reads the real painter output, including tile names drawn without widgets.
+fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool {
+    let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Text(text)
+                if text.galley.text() == expected && region.contains(text.pos) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+#[test]
+fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
+    use vibecut::i18n::Locale;
+    let rows: &[(&str, &str, &str, &[(&str, &str, &str)])] = &[
+        ("black_white", "Black & white", "Đen trắng", &[]),
+        (
+            "channel_mix",
+            "Channel mixer",
+            "Trộn kênh",
+            &[
+                ("rr", "Red from red", "Đỏ từ đỏ"),
+                ("rg", "Red from green", "Đỏ từ xanh lá"),
+                ("rb", "Red from blue", "Đỏ từ xanh dương"),
+                ("rc", "Red constant", "Hằng số đỏ"),
+                ("gr", "Green from red", "Xanh lá từ đỏ"),
+                ("gg", "Green from green", "Xanh lá từ xanh lá"),
+                ("gb", "Green from blue", "Xanh lá từ xanh dương"),
+                ("gc", "Green constant", "Hằng số xanh lá"),
+                ("br", "Blue from red", "Xanh dương từ đỏ"),
+                ("bg", "Blue from green", "Xanh dương từ xanh lá"),
+                ("bb", "Blue from blue", "Xanh dương từ xanh dương"),
+                ("bc", "Blue constant", "Hằng số xanh dương"),
+            ],
+        ),
+        (
+            "color_pass",
+            "Keep colour",
+            "Giữ màu",
+            &[("similarity", "Similarity", "Độ tương đồng")],
+        ),
+        (
+            "color_replace",
+            "Swap colour",
+            "Thay màu",
+            &[("similarity", "Similarity", "Độ tương đồng")],
+        ),
+        (
+            "extract",
+            "Threshold",
+            "Ngưỡng",
+            &[
+                ("black", "Black point", "Điểm đen"),
+                ("white", "White point", "Điểm trắng"),
+                ("softness", "Softness", "Độ mềm"),
+            ],
+        ),
+        (
+            "gamma_correction",
+            "Gamma",
+            "Gamma",
+            &[("gamma", "Gamma", "Gamma")],
+        ),
+        (
+            "invert",
+            "Invert",
+            "Đảo màu",
+            &[("blend", "Blend with original", "Trộn với gốc")],
+        ),
+        (
+            "levels",
+            "Levels",
+            "Mức màu",
+            &[
+                ("in_black", "Input black", "Điểm đen gốc"),
+                ("in_white", "Input white", "Điểm trắng gốc"),
+                ("out_black", "Output black", "Điểm đen sau chỉnh"),
+                ("out_white", "Output white", "Điểm trắng sau chỉnh"),
+                ("gamma", "Gamma", "Gamma"),
+            ],
+        ),
+        (
+            "posterize",
+            "Posterise",
+            "Giảm bậc màu",
+            &[("levels", "Levels", "Mức màu")],
+        ),
+        (
+            "strobe",
+            "Strobe",
+            "Chớp sáng",
+            &[
+                ("blend", "Blend with original", "Trộn với gốc"),
+                ("duration", "Duration", "Thời lượng"),
+                ("period", "Period", "Chu kỳ"),
+            ],
+        ),
+        (
+            "tint",
+            "Two-tone",
+            "Hai tông màu",
+            &[("amount", "Amount", "Cường độ")],
+        ),
+    ];
+    for &(kind, en, vi, parameters) in rows {
+        let f = fixture();
+        let video = f.video;
+        // Show the complete twelve-row mixer without substituting a test view.
+        let mut h = crate::gpu::builder()
+            .with_size(egui::vec2(1727.0, 1800.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        let original = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        for (locale, name) in [(Locale::En, en), (Locale::Vi, vi)] {
+            let before_locale_history = h.state().session.history_len();
+            h.state_mut().preferences.locale = locale;
+            h.run_steps(3);
+            if locale == Locale::Vi && en != vi {
+                assert!(
+                    !has_widget(&h, &format!("effects.tile.{kind}")),
+                    "stale search {kind}"
+                );
+            }
+            type_value(&mut h, "assets.search", name);
+            let tile = widget_rect(&h, &format!("effects.tile.{kind}"));
+            assert!(paints_text(&h, name, tile), "tile {kind} {locale:?}");
+            for &(other, _, _, _) in rows {
+                if other != kind {
+                    assert!(
+                        !has_widget(&h, &format!("effects.tile.{other}")),
+                        "search {kind} included {other}"
+                    );
+                }
+            }
+            assert_eq!(h.state().session.project(), &original);
+            assert_eq!(h.state().session.history_len(), before_locale_history);
+            click(&mut h, &format!("effects.add.{kind}"));
+            let added = h.state().session.project().clone();
+            let added_history = h.state().session.history_len();
+            assert_eq!(added_history.0, history.0 + 1, "one add {kind}");
+            assert_eq!(effects(&h, video)[0].kind, kind);
+            let toast = h.state().inspect().unwrap().import_toast.unwrap();
+            assert!(toast.contains(name), "toast {toast:?} missing {name}");
+            assert!(toast.contains(if locale == Locale::En {
+                "Effect added"
+            } else {
+                "Đã thêm hiệu ứng"
+            }));
+            // Locale switches must preserve every static/animated parameter and history.
+            for (display, title) in [(Locale::En, en), (Locale::Vi, vi)] {
+                h.state_mut().preferences.locale = display;
+                h.run_steps(3);
+                let left = widget_rect(&h, &format!("effects.row.{kind}.handle")).left();
+                let region =
+                    egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(1727.0, 1800.0));
+                assert!(
+                    paints_text(&h, title, region),
+                    "Properties header {kind} {display:?}"
+                );
+                let definition = project::effect_definition(kind).unwrap();
+                let numeric: Vec<_> = definition
+                    .params
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p.kind,
+                            project::EffectParamKind::Float { .. }
+                                | project::EffectParamKind::Angle
+                        )
+                    })
+                    .map(|p| p.id)
+                    .collect();
+                assert_eq!(
+                    numeric,
+                    parameters.iter().map(|p| p.0).collect::<Vec<_>>(),
+                    "complete numeric census {kind}"
+                );
+                for &(key, english, vietnamese) in parameters {
+                    let expected = if display == Locale::En {
+                        english
+                    } else {
+                        vietnamese
+                    };
+                    let id = format!("effects.{kind}.param.{key}");
+                    h.get(
+                        By::new()
+                            .label(expected)
+                            .predicate(|node| node.author_id() == Some(id.as_str())),
+                    );
+                    assert!(
+                        paints_text(&h, expected, region),
+                        "painted numeric {kind}.{key} {display:?}"
+                    );
+                }
+                assert_eq!(h.state().session.project(), &added);
+                assert_eq!(h.state().session.history_len(), added_history);
+            }
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &original, "undo {kind}");
+            // A fresh add clears the redo entry; compare the undo count independently.
+            assert_eq!(h.state().session.history_len().0, history.0);
+        }
+    }
+}
+
 struct Fixture {
     editor: Editor,
     video: ItemId,

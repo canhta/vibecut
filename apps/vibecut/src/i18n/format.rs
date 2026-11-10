@@ -3,6 +3,60 @@
 use super::{Locale, Text, text};
 use crate::{Error, Result};
 
+/// Creator labels shared by effect tiles, search, Properties and add feedback.
+/// `None` selects the kind name; unknown identities use the definition's label.
+pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
+    Some(match (kind, parameter) {
+        ("blur", None) => Text::EffectBlur,
+        ("color_grade", None) => Text::EffectColorGrade,
+        ("chroma_key", None) => Text::ChromaKey,
+        ("black_white", None) => Text::EffectBlackWhite,
+        ("channel_mix", None) => Text::EffectChannelMixer,
+        ("color_pass", None) => Text::EffectKeepColour,
+        ("color_replace", None) => Text::EffectSwapColour,
+        ("extract", None) => Text::EffectThreshold,
+        ("gamma_correction", None) => Text::EffectGamma,
+        ("invert", None) => Text::EffectInvert,
+        ("levels", None) => Text::EffectLevels,
+        ("posterize", None) => Text::EffectPosterise,
+        ("strobe", None) => Text::EffectStrobe,
+        ("tint", None) => Text::EffectTwoTone,
+        ("blur" | "chroma_key", Some("intensity")) => Text::EffectIntensity,
+        ("chroma_key", Some("shadow")) => Text::EffectShadow,
+        ("color_grade", Some("brightness")) => Text::Brightness,
+        ("color_grade", Some("contrast")) => Text::Contrast,
+        ("color_grade", Some("saturation")) => Text::Saturation,
+        ("color_grade", Some("hue")) => Text::Hue,
+        ("channel_mix", Some("rr")) => Text::EffectRedFromRed,
+        ("channel_mix", Some("rg")) => Text::EffectRedFromGreen,
+        ("channel_mix", Some("rb")) => Text::EffectRedFromBlue,
+        ("channel_mix", Some("rc")) => Text::EffectRedConstant,
+        ("channel_mix", Some("gr")) => Text::EffectGreenFromRed,
+        ("channel_mix", Some("gg")) => Text::EffectGreenFromGreen,
+        ("channel_mix", Some("gb")) => Text::EffectGreenFromBlue,
+        ("channel_mix", Some("gc")) => Text::EffectGreenConstant,
+        ("channel_mix", Some("br")) => Text::EffectBlueFromRed,
+        ("channel_mix", Some("bg")) => Text::EffectBlueFromGreen,
+        ("channel_mix", Some("bb")) => Text::EffectBlueFromBlue,
+        ("channel_mix", Some("bc")) => Text::EffectBlueConstant,
+        ("color_pass" | "color_replace", Some("similarity")) => Text::EffectSimilarity,
+        ("extract", Some("black")) => Text::EffectBlackPoint,
+        ("extract", Some("white")) => Text::EffectWhitePoint,
+        ("extract", Some("softness")) => Text::EffectSoftness,
+        ("gamma_correction" | "levels", Some("gamma")) => Text::EffectGamma,
+        ("invert" | "strobe", Some("blend")) => Text::EffectBlendOriginal,
+        ("levels", Some("in_black")) => Text::EffectInputBlack,
+        ("levels", Some("in_white")) => Text::EffectInputWhite,
+        ("levels", Some("out_black")) => Text::EffectOutputBlack,
+        ("levels", Some("out_white")) => Text::EffectOutputWhite,
+        ("posterize", Some("levels")) => Text::EffectLevels,
+        ("strobe", Some("duration")) => Text::SpeedDuration,
+        ("strobe", Some("period")) => Text::EffectPeriod,
+        ("tint", Some("amount")) => Text::EffectAmount,
+        _ => return None,
+    })
+}
+
 /// Fill `{name}` placeholders in a catalog message in one pass, so text a
 /// replacement inserts is never read as another placeholder.
 pub fn format(locale: Locale, key: Text, args: &[(&str, &str)]) -> String {

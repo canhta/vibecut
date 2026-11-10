@@ -20,11 +20,7 @@ impl Panel<'_, '_> {
     }
 
     fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
-        match definition.id {
-            "blur" => self.tr(Text::EffectBlur),
-            "color_grade" => self.tr(Text::EffectColorGrade),
-            _ => definition.name,
-        }
+        crate::i18n::effect_label(definition.id, None).map_or(definition.name, |key| self.tr(key))
     }
 
     /// Adjust tab: the item's colour-grade effect, shown at neutral until the
@@ -50,7 +46,7 @@ impl Panel<'_, '_> {
                 read::effect_param_value_at(self.cx.session.project(), item, &id, parameter.id, at)
                     .or_else(|| parameter.default.scalar())
                     .unwrap_or(0.0);
-            self.effect_scrub_field(ui, item, &id, parameter, current);
+            self.effect_scrub_field(ui, item, &id, definition.id, parameter, current);
         }
     }
 
@@ -176,7 +172,12 @@ impl Panel<'_, '_> {
                                         at,
                                     ) {
                                         self.effect_scrub_field(
-                                            ui, item, &effect.id, parameter, current,
+                                            ui,
+                                            item,
+                                            &effect.id,
+                                            definition.id,
+                                            parameter,
+                                            current,
                                         );
                                     }
                                 }
@@ -427,20 +428,14 @@ impl Panel<'_, '_> {
         ui: &mut egui::Ui,
         item: ItemId,
         effect: &str,
+        kind: &str,
         parameter: &project::EffectParamDefinition,
         current: f64,
     ) {
         let spec = effect_scrub_spec(parameter);
         ui.add_space(theme::space::MD);
-        let label = match parameter.id {
-            "intensity" => self.tr(Text::EffectIntensity),
-            "shadow" => self.tr(Text::EffectShadow),
-            "brightness" => self.tr(Text::Brightness),
-            "contrast" => self.tr(Text::Contrast),
-            "saturation" => self.tr(Text::Saturation),
-            "hue" => self.tr(Text::Hue),
-            _ => parameter.name,
-        };
+        let label = crate::i18n::effect_label(kind, Some(parameter.id))
+            .map_or(parameter.name, |key| self.tr(key));
         let caption = ui.label(label);
         let draft_key = format!("effects.{effect}.param.{}", parameter.id);
         ui.horizontal(|ui| {

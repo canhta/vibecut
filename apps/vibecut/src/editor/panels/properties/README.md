@@ -57,6 +57,8 @@ catalog key colour. Every value goes through an effect command; a command that a
 
 Lists the selected clip's ordered stack. Each header has a drag-reorder handle (either
 direction; cancels on selection or inspector change), an enable toggle and remove.
+Headers and numeric labels use the shared i18n effect lookup, as do library search
+and add feedback; switching locale changes display without a project/history edit.
 Scalar parameters use the scrub contract above. Static channel choices use the
 catalogue's exact index order in a compact dropdown; Reverse, Solid colour and Invert
 use labelled checkboxes. Their model values are read each frame; actual changes use
