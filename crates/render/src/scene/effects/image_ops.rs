@@ -33,7 +33,9 @@ fn axis(i: i64, n: i64, edge: Edge) -> i64 {
     }
 }
 
-/// Bilinear sample at a pixel-edge coordinate `(x, y)` with `edge` handling.
+/// Bilinear sample in texel-index coordinates: integer `(x, y)` is that exact texel.
+/// Geometry in image-edge coordinates (pixel centres `x+0.5`, `y+0.5`) subtracts
+/// 0.5 exactly once before this lookup, including reflection and upsampling.
 pub(super) fn sample(image: &Image, x: f32, y: f32, edge: Edge) -> [f32; 4] {
     let (w, h) = (i64::from(image.width), i64::from(image.height));
     let (floor_x, floor_y) = (x.floor(), y.floor());

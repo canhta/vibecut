@@ -961,13 +961,15 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
 #[test]
 fn sample_pass_mirrors_through_the_bilinear_helper() {
     let hooks = Hooks::default();
-    // Left half red, right half blue: the two sides tell the reflection apart.
+    // Checker plus impulse: exact integer reflections must not blur columns,
+    // mix rows or lose alpha at the final row/column.
     let source = (0..32).map(|i| {
-        if i % 8 < 4 {
-            [1.0, 0.0, 0.0, 1.0]
-        } else {
-            [0.0, 0.0, 1.0, 1.0]
-        }
+        [
+            ((i % 8) % 2) as f32,
+            (i / 8 % 2) as f32,
+            f32::from(i == 3),
+            1.0,
+        ]
     });
     let image = Image::from_working_pixels(8, 4, source, &hooks).unwrap();
     let mirror = |values: [f32; 4]| EffectPass::Sample {
@@ -992,13 +994,49 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
         .unwrap();
     assert_eq!(output.width(), 8);
     assert_eq!(output.height(), 4);
-    // The negative side (left) keeps its pixels; the positive side samples the
-    // reflection, so the blue right half becomes red.
-    for x in 0..4 {
-        assert_eq!(at(&output, x, 1), [1.0, 0.0, 0.0, 1.0], "x={x}");
+    for y in 0..4 {
+        for (x, sx) in [0, 1, 2, 3, 3, 2, 1, 0].into_iter().enumerate() {
+            assert_eq!(at(&output, x, y), at(&image, sx, y), "x={x} y={y}");
+        }
     }
-    assert_eq!(at(&output, 7, 1), [1.0, 0.0, 0.0, 1.0]);
-    assert_eq!(at(&output, 4, 1), [0.5, 0.0, 0.5, 1.0]);
+    for (values, expected_y) in [([4.0, 2.0, 0.0, 1.0], [0, 1, 1, 0])] {
+        let reflected = CpuEffects
+            .apply(
+                &image,
+                &[mirror(values)],
+                EffectInputs {
+                    input: &image,
+                    coverage: None,
+                    below: &image,
+                },
+                &hooks,
+            )
+            .unwrap();
+        for (y, sy) in expected_y.into_iter().enumerate() {
+            for x in 0..8 {
+                assert_eq!(at(&reflected, x, y), at(&image, x, sy));
+            }
+        }
+    }
+    let fractional = CpuEffects
+        .apply(
+            &image,
+            &[mirror([4.25, 2.0, 1.0, 0.0])],
+            EffectInputs {
+                input: &image,
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap();
+    // x=4 reflects to edge coordinate 4.0, halfway between texels 3 and 4.
+    for y in 0..4 {
+        assert_eq!(
+            at(&fractional, 4, y),
+            [0.5, (y % 2) as f32, if y == 0 { 0.5 } else { 0.0 }, 1.0]
+        );
+    }
     // Same input, same output: no clock, no global state.
     let again = CpuEffects
         .apply(

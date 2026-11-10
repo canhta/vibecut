@@ -182,7 +182,7 @@ fn inst_texel(x: i32, y: i32) -> vec4<f32> {
     if x < 0 || y < 0 || x >= i32(p.width) || y >= i32(p.height) { return vec4<f32>(0.0); }
     return inst[u32(y) * p.width + u32(x)];
 }
-// Transparent-border bilinear sample of the instance input, as helpers::sample.
+// Texel-index bilinear sample: integers address exact texels, as image_ops::sample.
 fn inst_sample(x: f32, y: f32) -> vec4<f32> {
     let ix = floor(x);
     let iy = floor(y);
@@ -207,7 +207,7 @@ fn mirror(@builtin(global_invocation_id) id: vec3<u32>) {
     let dir = vec2<f32>(weights[2], weights[3]);
     let d = dot(vec2<f32>(px, py) - centre, dir);
     var out = src[id.y * p.width + id.x];
-    if d > 0.0 { out = inst_sample(px - 2.0 * d * dir.x, py - 2.0 * d * dir.y); }
+    if d > 0.0 { out = inst_sample(px - 2.0 * d * dir.x - 0.5, py - 2.0 * d * dir.y - 0.5); }
     let a = clamp(out.a, 0.0, 1.0);
     dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
 }

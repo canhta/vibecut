@@ -177,6 +177,49 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             eprintln!("mirror scale={scale} values={values:?} max_abs={max}");
             assert!(max <= 2e-5, "GPU mirror difference {values:?}: {max}");
         }
+        // One instance with a visible prefix and a Sample read of its original
+        // input, split in both device/CPU directions on the actual adapter.
+        let prefix = grade_passes(-50.0, 0.0, 0.0, 0.0).unwrap();
+        let sample = [EffectPass::Sample {
+            entry_point: "mirror",
+            uniforms: [w as f32 / 2.0, h as f32 / 2.0, 1.0, 0.0]
+                .map(Uniform::Float)
+                .to_vec(),
+        }];
+        let all: Vec<_> = prefix.iter().chain(&sample).cloned().collect();
+        let inputs = || EffectInputs {
+            input: &image,
+            coverage: None,
+            below: &image,
+        };
+        let reference = CpuEffects.apply(&image, &all, inputs(), &Hooks).unwrap();
+        for cpu_prefix in [false, true] {
+            let prefix_adapter: &dyn EffectCompositor = if cpu_prefix {
+                &CpuEffects
+            } else {
+                gpu.as_ref()
+            };
+            let sample_adapter: &dyn EffectCompositor = if cpu_prefix {
+                gpu.as_ref()
+            } else {
+                &CpuEffects
+            };
+            let current = prefix_adapter
+                .apply(&image, &prefix, inputs(), &Hooks)
+                .unwrap();
+            assert_ne!(current.pixels(), image.pixels());
+            let actual = sample_adapter
+                .apply(&current, &sample, inputs(), &Hooks)
+                .unwrap();
+            let max = reference
+                .pixels()
+                .iter()
+                .zip(actual.pixels())
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                .fold(0.0_f32, f32::max);
+            eprintln!("mixed-input scale={scale} cpu_prefix={cpu_prefix} max_abs={max}");
+            assert!(max <= 2e-5, "GPU mixed-input difference {max}");
+        }
         let below = Image::from_working_pixels(
             w,
             h,

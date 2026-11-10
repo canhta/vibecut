@@ -392,12 +392,12 @@ impl SampleInputs<'_> {
     pub fn texel_input(&self, x: u32, y: u32) -> [f32; 4] {
         texel(self.input, x, y)
     }
-    /// Bilinear sample of the current image at a pixel-edge coordinate.
+    /// Bilinear sample of the current image in texel-index coordinates (integers are exact).
     #[allow(dead_code, reason = "first used by the 264 and 265 ops")]
     pub fn sample_current(&self, x: f32, y: f32, edge: image_ops::Edge) -> [f32; 4] {
         image_ops::sample(self.current, x, y, edge)
     }
-    /// Bilinear sample of the instance's input image at a pixel-edge coordinate.
+    /// Bilinear sample of the instance input in texel-index coordinates (integers are exact).
     pub fn sample_input(&self, x: f32, y: f32, edge: image_ops::Edge) -> [f32; 4] {
         image_ops::sample(self.input, x, y, edge)
     }
@@ -448,8 +448,8 @@ fn mirror(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4]
     let distance = (px - cx) * nx + (py - cy) * ny;
     if distance > 0.0 {
         inputs.sample_input(
-            px - 2.0 * distance * nx,
-            py - 2.0 * distance * ny,
+            px - 2.0 * distance * nx - 0.5,
+            py - 2.0 * distance * ny - 0.5,
             image_ops::Edge::Transparent,
         )
     } else {
