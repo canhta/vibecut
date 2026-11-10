@@ -117,7 +117,7 @@ fn build_process() {
                 &args,
                 root.clone(),
                 test_admission(3, false),
-                |_| Ok(31 * GIB),
+                |_| Ok(100 * GIB),
                 |_| Ok(())
             )
             .is_err()
@@ -137,7 +137,7 @@ fn build_process() {
                 &args,
                 root.clone(),
                 test_admission(3, false),
-                |_| Ok(31 * GIB),
+                |_| Ok(100 * GIB),
                 |command| {
                     command.env("VIBECUT_BUILD_TEST_NATIVE", "provisioned");
                     Ok(())
@@ -163,7 +163,7 @@ fn build_process() {
                 &args,
                 root.clone(),
                 test_admission(3, false),
-                |_| Ok(31 * GIB),
+                |_| Ok(100 * GIB),
                 |_| Ok(())
             )
             .unwrap()
@@ -329,7 +329,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
         );
         assert_eq!(
             PathBuf::from(fs::read_to_string(root.join("native.target")).unwrap()),
-            root.join("target/slot-1")
+            root.join("target").join(cache::target_name(root).unwrap())
         );
     }
     #[cfg(unix)]
@@ -1542,11 +1542,10 @@ fn child_exit_or_kill_releases_slot_lease() {
         );
         let input = wrapper.0.stdin.take().unwrap();
         wait(&root.join("wrapped.ready"));
-        assert!(
-            try_lock(open(&root.join("locks/slot-1")).unwrap())
-                .unwrap()
-                .is_none()
-        );
+        let target_lock = root.join("locks").join(cache::target_name(root).unwrap());
+        for path in [root.join("locks/slot-1"), target_lock.clone()] {
+            assert!(try_lock(open(&path).unwrap()).unwrap().is_none());
+        }
         if label == "killed" {
             let pid = fs::read_to_string(root.join("command.pid")).unwrap();
             #[cfg(windows)]
@@ -1563,11 +1562,9 @@ fn child_exit_or_kill_releases_slot_lease() {
         }
         drop(input);
         assert!(wrapper.0.wait().unwrap().success());
-        assert!(
-            try_lock(open(&root.join("locks/slot-1")).unwrap())
-                .unwrap()
-                .is_some()
-        );
+        for path in [root.join("locks/slot-1"), target_lock] {
+            assert!(try_lock(open(&path).unwrap()).unwrap().is_some());
+        }
     }
 }
 
@@ -1607,7 +1604,8 @@ fn launcher_death_and_detached_descendants_do_not_outlive_the_slot() {
         }
         wrapper.0.wait().unwrap();
         let deadline = Instant::now() + Duration::from_secs(15);
-        for lock in ["command-live", "locks/slot-1"] {
+        let target_lock = format!("locks/{}", cache::target_name(root).unwrap());
+        for lock in ["command-live", "locks/slot-1", target_lock.as_str()] {
             loop {
                 let free = try_lock(open(&root.join(lock)).unwrap()).unwrap().is_some();
                 if free {

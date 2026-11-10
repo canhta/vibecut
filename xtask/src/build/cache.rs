@@ -25,8 +25,20 @@ pub(crate) const CACHE_SLOT_LIMIT: u64 = 40 * GIB;
 /// days go first; an over-budget free slot drops dependencies oldest first
 /// and is cleared under its lock only if it still exceeds the budget.
 /// Held slots are left alone because a build is using their artifacts.
-pub(crate) fn prune_cache(dry_run: bool) -> Result<(), String> {
-    prune_slots(&cache()?, SystemTime::now(), CACHE_SLOT_LIMIT, dry_run)
+pub(crate) fn prune_cache(root: &Path, dry_run: bool, make_room: bool) -> Result<(), String> {
+    let base = cache()?;
+    prune_targets(
+        &base,
+        SystemTime::now(),
+        disk_free(&base)?,
+        dry_run,
+        make_room,
+        &configuration(root, &[])?,
+    )?;
+    if !make_room {
+        prune_slots(&base, SystemTime::now(), CACHE_SLOT_LIMIT, dry_run)?;
+    }
+    Ok(())
 }
 
 pub(super) fn older_than(modified: SystemTime, now: SystemTime) -> bool {
@@ -409,4 +421,484 @@ pub(super) fn remove_dir(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         result => result,
     }
+}
+
+const DISK_FLOOR: u64 = 30 * GIB;
+
+/// Learned samples apply to default full-workspace test output under the same
+/// compiler, manifests, Cargo configuration and target/profile environment.
+/// Explicit target/profile/features and unknown commands use a distinct key,
+/// so a default-workload sample cannot lower their conservative bootstrap.
+pub(super) fn configuration(root: &Path, args: &[std::ffi::OsString]) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    for name in [
+        "Cargo.toml",
+        "Cargo.lock",
+        ".cargo/config.toml",
+        "rust-toolchain.toml",
+        "rust-toolchain",
+    ] {
+        hash.update(name.as_bytes());
+        match fs::read(root.join(name)) {
+            Ok(bytes) => hash.update(bytes),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => hash.update(b"missing"),
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map(|home| PathBuf::from(home).join(".cargo"))
+        });
+    if let Some(home) = cargo_home {
+        match fs::read(home.join("config.toml")) {
+            Ok(bytes) => hash.update(bytes),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                hash.update(b"no user cargo configuration")
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let compiler = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let version = std::process::Command::new(&compiler)
+        .current_dir(root)
+        .arg("--version")
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !version.status.success() {
+        return Err("cannot identify compiler for build capacity".into());
+    }
+    hash.update(version.stdout);
+    hash.update(std::env::consts::OS.as_bytes());
+    hash.update(std::env::consts::ARCH.as_bytes());
+    let mut environment = std::env::vars_os()
+        .filter(|(key, _)| {
+            key.to_str().is_some_and(|key| {
+                key.starts_with("CARGO_PROFILE_")
+                    || (key.starts_with("CARGO_TARGET_") && key != "CARGO_TARGET_DIR")
+                    || matches!(
+                        key,
+                        "CARGO_BUILD_TARGET"
+                            | "CARGO_BUILD_RUSTFLAGS"
+                            | "CARGO_BUILD_RUSTC"
+                            | "RUSTC_WORKSPACE_WRAPPER"
+                            | "RUSTC_BOOTSTRAP"
+                            | "RUSTFLAGS"
+                            | "CARGO_ENCODED_RUSTFLAGS"
+                            | "RUSTC"
+                            | "RUSTUP_TOOLCHAIN"
+                    )
+            })
+        })
+        .collect::<Vec<_>>();
+    environment.sort();
+    for (key, value) in environment {
+        hash.update(key.as_encoded_bytes());
+        hash.update([0]);
+        hash.update(value.as_encoded_bytes());
+        hash.update([0]);
+    }
+    let ordinary = args.is_empty()
+        || args.first().is_some_and(|arg| arg == "cargo")
+            && args.get(1).is_some_and(|arg| {
+                matches!(arg.to_str(), Some("test" | "build" | "check" | "xtask"))
+            });
+    let explicit = args.iter().take_while(|arg| *arg != "--").any(|arg| {
+        arg.to_str().is_some_and(|arg| {
+            [
+                "--config",
+                "--release",
+                "--profile",
+                "--target",
+                "--features",
+                "--all-features",
+                "--no-default-features",
+            ]
+            .iter()
+            .any(|flag| arg == *flag || arg.starts_with(&format!("{flag}=")))
+                || arg == "-r"
+                || arg.starts_with("-F")
+        })
+    });
+    if !ordinary || explicit {
+        for arg in args {
+            hash.update(arg.as_encoded_bytes());
+            hash.update([0]);
+        }
+    }
+    Ok(hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+pub(super) fn target_name(root: &Path) -> Result<String, String> {
+    let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    Ok(recorded_name(&root))
+}
+
+fn recorded_name(root: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
+    let hash: String = digest
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("wt-{hash}")
+}
+
+pub(super) struct Target {
+    pub(super) name: String,
+    pub(super) root: PathBuf,
+    pub(super) bytes: u64,
+    pub(super) modified: SystemTime,
+    pub(super) busy: bool,
+    pub(super) valid_owner: bool,
+}
+
+pub(super) fn targets(base: &Path) -> Result<Vec<Target>, String> {
+    let mut targets = Vec::new();
+    let directory = base.join("target");
+    if !directory.is_dir() {
+        return Ok(targets);
+    }
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name
+            .strip_prefix("wt-")
+            .is_some_and(|hash| hash.len() == 32 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            continue;
+        }
+        if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            continue;
+        }
+        let root = fs::read_to_string(base.join("locks").join(format!("{name}.owner")))
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let busy = open(&base.join("locks").join(&name))
+            .and_then(try_lock)
+            .map_err(|e| e.to_string())?
+            .is_none();
+        // Canonical owner records remain verifiable after their checkout is
+        // removed. An unknown or mismatched owner is never an eviction candidate.
+        let identity = fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+        let valid_owner = identity.is_absolute() && recorded_name(&identity) == name;
+        targets.push(Target {
+            valid_owner,
+            busy,
+            bytes: used_bytes(&entry.path()).map_err(|e| e.to_string())?,
+            modified: fs::metadata(base.join("locks").join(format!("{name}.used")))
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH),
+            name,
+            root,
+        });
+    }
+    targets.sort_by_key(|target| (!target.valid_owner || target.root.is_dir(), target.modified));
+    Ok(targets)
+}
+
+pub(super) fn directory_cap(free: u64, used: u64, reserve: u64) -> u64 {
+    free.saturating_add(used).saturating_sub(DISK_FLOOR) / reserve.max(1)
+}
+
+#[derive(Default)]
+struct Reserve {
+    configuration: String,
+    measured: u64,
+    peak: u64,
+}
+
+impl Reserve {
+    fn read(base: &Path) -> Self {
+        let path = base.join("build-reserve.json");
+        use std::io::Read;
+        let state = fs::File::open(&path)
+            .ok()
+            .and_then(|file| {
+                let mut bytes = Vec::new();
+                file.take(513).read_to_end(&mut bytes).ok()?;
+                (bytes.len() <= 512).then_some(bytes)
+            })
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        let Some(state) = state else {
+            return Self::default();
+        };
+        match (
+            state["version"].as_u64(),
+            state["measured_bytes"].as_u64(),
+            state["peak_bytes"].as_u64(),
+            state["configuration"].as_str(),
+        ) {
+            (Some(1), Some(measured), Some(peak), Some(configuration))
+                if peak >= measured
+                    && (measured == 0
+                        || configuration.len() == 64
+                            && configuration.bytes().all(|byte| byte.is_ascii_hexdigit())) =>
+            {
+                Self {
+                    configuration: configuration.to_owned(),
+                    measured,
+                    peak,
+                }
+            }
+            _ => Self::default(),
+        }
+    }
+
+    fn bytes(&self, configuration: &str) -> u64 {
+        let warm = if self.measured > 0 && self.configuration == configuration {
+            self.measured
+        } else {
+            CACHE_SLOT_LIMIT
+        };
+        warm.max(self.peak)
+    }
+
+    fn write(&self, base: &Path) -> Result<(), String> {
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "version": 1, "configuration": self.configuration, "measured_bytes": self.measured, "peak_bytes": self.peak
+        }))
+        .map_err(|e| e.to_string())?;
+        let pending = base.join("build-reserve.pending");
+        fs::write(&pending, bytes)
+            .and_then(|()| fs::rename(pending, base.join("build-reserve.json")))
+            .map_err(|e| format!("publish build reserve: {e}"))
+    }
+}
+
+/// Caller holds admission. Small and incomplete targets can raise the observed
+/// peak, but cannot replace the conservative per-target policy bootstrap.
+pub(super) fn warm_reserve(
+    base: &Path,
+    entries: &[Target],
+    configuration: &str,
+) -> Result<u64, String> {
+    let mut state = Reserve::read(base);
+    state.peak = state
+        .peak
+        .max(entries.iter().map(|target| target.bytes).max().unwrap_or(0));
+    state.write(base)?;
+    Ok(state.bytes(configuration))
+}
+
+/// Only an actual successful full-workspace test run can establish a smaller
+/// warm sample for its workload and target configuration.
+pub(super) fn record_size(
+    base: &Path,
+    root: &Path,
+    target: &Path,
+    args: &[std::ffi::OsString],
+    success: bool,
+) -> Result<(), String> {
+    let _admission =
+        super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
+    let mut state = Reserve::read(base);
+    let bytes = used_bytes(target).map_err(|e| e.to_string())?;
+    state.peak = state.peak.max(bytes);
+    let full = matches!(
+        args.iter()
+            .map(|arg| arg.to_str())
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [Some("cargo"), Some("test"), Some("--workspace")]
+            | [Some("cargo"), Some("xtask"), Some("ci")]
+            | [
+                Some("cargo"),
+                Some("xtask"),
+                Some("ci"),
+                Some("--require-oracles")
+            ]
+    );
+    if success && full && bytes > 0 {
+        let configuration = configuration(root, args)?;
+        state.measured = if state.configuration == configuration {
+            state.measured.max(bytes)
+        } else {
+            bytes
+        };
+        state.configuration = configuration;
+    }
+    state.write(base)
+}
+
+fn candidates(targets: &[Target]) -> String {
+    targets
+        .iter()
+        .filter(|target| !target.busy && target.valid_owner)
+        .map(|target| {
+            format!(
+                "{} ({}, {})",
+                target.name,
+                target.root.display(),
+                if target.root.is_dir() {
+                    "oldest idle first"
+                } else {
+                    "checkout removed"
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A dispatcher reads precisely the same capacity calculation as admission.
+pub(crate) fn capacity(root: &Path) -> Result<(), String> {
+    let base = cache()?;
+    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    fs::create_dir_all(base.join("locks")).map_err(|e| e.to_string())?;
+    let _admission =
+        super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
+    let targets = targets(&base)?;
+    let free = disk_free(&base)?;
+    let configuration = configuration(root, &[])?;
+    let reserve = warm_reserve(&base, &targets, &configuration)?;
+    let state = Reserve::read(&base);
+    let qualified = state.measured > 0 && state.configuration == configuration;
+    let used = targets
+        .iter()
+        .fold(0u64, |sum, target| sum.saturating_add(target.bytes));
+    println!(
+        "{}",
+        serde_json::json!({
+            "capacity": directory_cap(free, used, reserve), "directories": targets.len(),
+            "warm_bytes": reserve, "bootstrap_bytes": CACHE_SLOT_LIMIT,
+            "reserve_source": if qualified { "measured_workspace_tests" } else { "bootstrap" },
+            "qualified_warm_bytes": if qualified { Some(state.measured) } else { None },
+            "observed_peak_bytes": state.peak,
+            "configuration": configuration, "free_bytes": free,
+            "floor_bytes": DISK_FLOOR,
+            "targets": targets.iter().map(|target| serde_json::json!({
+                "directory": base.join("target").join(&target.name),
+                "checkout": target.root, "bytes": target.bytes,
+                "removed": !target.root.is_dir(), "owner_valid": target.valid_owner, "in_use": target.busy
+            })).collect::<Vec<_>>()
+        })
+    );
+    Ok(())
+}
+
+/// Caller holds this checkout's target lock. Admission serializes the capacity
+/// check and publication, so concurrent first builds cannot exceed the cap.
+pub(super) fn prepare(
+    base: &Path,
+    root: &Path,
+    args: &[std::ffi::OsString],
+    mut free_space: impl FnMut(&Path) -> Result<u64, String>,
+) -> Result<PathBuf, String> {
+    let name = target_name(root)?;
+    let target = base.join("target").join(&name);
+    let admission =
+        super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
+    let entries = targets(base)?;
+    let reserve = warm_reserve(base, &entries, &configuration(root, args)?)?;
+    let free = free_space(base)?;
+    let used = entries
+        .iter()
+        .fold(0u64, |sum, target| sum.saturating_add(target.bytes));
+    let cap = directory_cap(free, used, reserve);
+    if free < DISK_FLOOR || (!target.is_dir() && entries.len() as u64 >= cap) {
+        return Err(format!(
+            "build refused: checkout target capacity {cap} ({} directories), 30 GiB disk floor; run cargo xtask prune --make-room. Candidates:\n{}",
+            entries.len(),
+            candidates(&entries)
+        ));
+    }
+    let fresh = !target.is_dir();
+    if !fresh {
+        let recorded = fs::read_to_string(base.join("locks").join(format!("{name}.owner")))
+            .map_err(|e| format!("checkout target owner cannot be read: {e}"))?;
+        let canonical = fs::canonicalize(root).map_err(|e| e.to_string())?;
+        if fs::canonicalize(recorded).ok().as_ref() != Some(&canonical) {
+            return Err(format!(
+                "build refused: checkout hash collision or damaged owner for {name}; inspect its owner record"
+            ));
+        }
+    }
+    fs::write(
+        base.join("locks").join(format!("{name}.owner")),
+        fs::canonicalize(root)
+            .map_err(|e| e.to_string())?
+            .to_str()
+            .ok_or("checkout path is not UTF-8")?,
+    )
+    .map_err(|e| e.to_string())?;
+    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    open(&base.join("locks").join(format!("{name}.used")))
+        .and_then(|file| file.set_modified(SystemTime::now()))
+        .map_err(|e| e.to_string())?;
+    drop(admission);
+    if free_space(base)? < DISK_FLOOR {
+        return Err(
+            "build refused: disk below 30 GiB after checkout target preparation; run cargo xtask prune".into(),
+        );
+    }
+    Ok(target)
+}
+
+pub(super) fn prune_targets(
+    base: &Path,
+    now: SystemTime,
+    free: u64,
+    dry_run: bool,
+    make_room: bool,
+    configuration: &str,
+) -> Result<(), String> {
+    let _admission =
+        super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
+    let entries = targets(base)?;
+    let reserve = warm_reserve(base, &entries, configuration)?;
+    let used = entries
+        .iter()
+        .fold(0u64, |sum, target| sum.saturating_add(target.bytes));
+    let cap = directory_cap(free, used, reserve);
+    let mut count = entries.len() as u64;
+    let mut room_made = false;
+    for entry in entries {
+        if !entry.valid_owner {
+            eprintln!(
+                "[cleanup] {} has an unverified owner; keeping it",
+                entry.name
+            );
+            continue;
+        }
+        let Some(_held) = open(&base.join("locks").join(&entry.name))
+            .and_then(try_lock)
+            .map_err(|e| e.to_string())?
+        else {
+            eprintln!("[cleanup] {} is in use; keeping it", entry.name);
+            continue;
+        };
+        let path = base.join("target").join(&entry.name);
+        let extra = make_room && !room_made && cap > 0 && count >= cap;
+        if !entry.root.is_dir() || (!make_room && count > cap) || extra {
+            remove_slot(
+                &path,
+                dry_run,
+                if extra && entry.root.is_dir() {
+                    "explicitly making room for one checkout"
+                } else {
+                    "checkout removed or above directory capacity"
+                },
+            )?;
+            count = count.saturating_sub(1);
+            room_made |= extra && entry.root.is_dir();
+        } else if !make_room {
+            prune_incrementals(&path, now, dry_run).map_err(|e| e.to_string())?;
+            if entry.bytes > CACHE_SLOT_LIMIT {
+                let freed = prune_deps(&path, now, entry.bytes, CACHE_SLOT_LIMIT, dry_run)
+                    .map_err(|e| e.to_string())?;
+                if entry.bytes.saturating_sub(freed) > CACHE_SLOT_LIMIT {
+                    remove_slot(&path, dry_run, "above 40 GiB after dependency pruning")?;
+                }
+            }
+        }
+    }
+    Ok(())
 }

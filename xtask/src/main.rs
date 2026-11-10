@@ -127,8 +127,11 @@ fn run() -> Result<ExitCode, String> {
     {
         ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
         ["media-bench"] => measure::media(root),
-        ["prune"] => build::prune(false),
-        ["prune", "--dry-run"] => build::prune(true),
+        ["build-cap", "--json"] => build::capacity(root),
+        ["prune"] => build::prune(root, false, false),
+        ["prune", "--dry-run"] => build::prune(root, true, false),
+        ["prune", "--make-room"] => build::prune(root, false, true),
+        ["prune", "--make-room", "--dry-run"] | ["prune", "--dry-run", "--make-room"] => build::prune(root, true, true),
         ["clip-eval", ..] => measure::clip_eval(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
@@ -168,7 +171,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|prune [--dry-run]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|build-cap --json|prune [--make-room] [--dry-run]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

@@ -11,11 +11,11 @@ mod slot;
 mod tests;
 
 use admission::{Admission, caller_jobs, claim};
-use cache::{cache, disk_free};
+use cache::{cache, disk_free, prepare, target_name};
 use environment::{configured_slots, load, memory, total_memory};
 use queue::Queue;
 use receipt::receipt;
-use slot::{contain, prepare};
+use slot::contain;
 
 use std::ffi::OsString;
 use std::fs;
@@ -23,9 +23,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Age and size-prune the shared cache without touching held slots.
-pub fn prune(dry_run: bool) -> Result<(), String> {
-    cache::prune_cache(dry_run)
+/// Report checkout-target capacity for host dispatchers.
+pub fn capacity(root: &Path) -> Result<(), String> {
+    cache::capacity(root)
+}
+
+/// Age and size-prune the shared cache without touching held targets or slots.
+pub fn prune(root: &Path, dry_run: bool, make_room: bool) -> Result<(), String> {
+    cache::prune_cache(root, dry_run, make_room)
 }
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
@@ -72,6 +77,14 @@ fn run_in(
         return Ok(ExitCode::SUCCESS);
     }
     let started = Instant::now();
+    fs::create_dir_all(base.join("locks")).map_err(|e| e.to_string())?;
+    // Serialize a checkout before entering FIFO, without reserving jobs while
+    // another command still owns its target. This lock follows child lifetime.
+    let target_key = target_name(root)?;
+    let target_file =
+        queue::open(&base.join("locks").join(&target_key)).map_err(|e| e.to_string())?;
+    target_file.lock().map_err(|e| e.to_string())?;
+    let target_lock = queue::Lock::new(target_file);
     let mut queue = Queue::enter(&base.join("locks")).map_err(|e| e.to_string())?;
     let mut said = false;
     let mut slot = loop {
@@ -89,7 +102,8 @@ fn run_in(
         }
         std::thread::sleep(Duration::from_secs(1));
     };
-    let target = prepare(&base, root, slot.number, free_space)?;
+    slot.target_lock = Some(target_lock);
+    let target = prepare(&base, root, args, free_space)?;
     eprintln!(
         "[build] slot-{} after {:.0}s wait",
         slot.number,
@@ -103,7 +117,7 @@ fn run_in(
     command
         .args(args.get(1..).unwrap_or(&[]))
         .current_dir(root)
-        .env("CARGO_TARGET_DIR", target)
+        .env("CARGO_TARGET_DIR", &target)
         .env_remove("RUSTC_WRAPPER");
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
         command.env("CARGO_BUILD_JOBS", slot.jobs.to_string());
@@ -115,6 +129,10 @@ fn run_in(
     let status = slot
         .execute(&mut command)
         .map_err(|e| format!("build command: {e}"))?;
+    cache::record_size(&base, root, &target, args, status.success())?;
+    queue::open(&base.join("locks").join(format!("{target_key}.used")))
+        .and_then(|file| file.set_modified(SystemTime::now()))
+        .map_err(|e| e.to_string())?;
     if status.success()
         && let Some(path) = before
         && receipt(root, &base, args)?.as_ref() == Some(&path)

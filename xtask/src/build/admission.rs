@@ -179,7 +179,12 @@ pub(super) fn claim(
         },
     )?;
     queue.leave()?;
-    Ok(Some(Slot { lock, number, jobs }))
+    Ok(Some(Slot {
+        lock,
+        number,
+        jobs,
+        target_lock: None,
+    }))
 }
 fn clear_gone_owner(locks: &Path, number: usize) -> io::Result<()> {
     let owned = owner(locks, number);
