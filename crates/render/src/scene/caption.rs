@@ -98,11 +98,11 @@ impl CaptionStyle {
             // are pixels at 1080 output lines.
             size: cue.font_size_ratio * 1080.0,
             color: cue.primary_color,
-            outline: (cue.border_style != 3).then(|| CaptionOutline {
+            outline: (cue.border_style != 3).then_some(CaptionOutline {
                 color: cue.outline_color,
                 width: IMPORTED_OUTLINE_WIDTH,
             }),
-            background: (cue.border_style == 3).then(|| CaptionBackground {
+            background: (cue.border_style == 3).then_some(CaptionBackground {
                 color: cue.background_color,
                 padding: 0.0,
                 radius: 0.0,
