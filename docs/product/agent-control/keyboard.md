@@ -34,7 +34,7 @@
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
 | `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable; `p1-parity/20`) |
 | `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable; `p1-parity/20`) |
-| `timeline.split` — Split | Edit | S, Ctrl+B | `split_at` | — |
+| `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
 | `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
@@ -61,6 +61,7 @@
 | `edit.redo` — Redo | History | Ctrl+Shift+Z, Ctrl+Y | — | app and engine history |
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
 | `timeline.ripple` — Toggle ripple editing | Timeline | — | — | timeline view |
+| `timeline.preview_axis` — Preview axis | Timeline | S | — | timeline view |
 | `timeline.zoom_in` — Zoom in | Timeline | — | — | timeline view |
 | `timeline.zoom_out` — Zoom out | Timeline | — | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |

@@ -9,7 +9,7 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:
 export options, caption options, media view and sort, panel tabs and sections, preview
-fit, zoom and snapshot directory, projects view and sort (`home`), keybinding deltas
+fit, zoom, preview axis and snapshot directory, projects view and sort (`home`), keybinding deltas
 (`input`), window geometry and panel ratios.
 
 The document is validated on load and before save. A damaged layout falls back to

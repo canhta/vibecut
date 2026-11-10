@@ -63,6 +63,11 @@ impl Editor {
             self.player.fullscreen_commanded = self.player.fullscreen;
         }
         if self.player.fullscreen {
+            // The timeline is not painted here, so the pointer necessarily left it.
+            self.timeline.clear_hover();
+            if let Err(error) = self.playback.set_hover(None) {
+                self.desk().fail(error.to_string());
+            }
             let rect = ui.max_rect();
             let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
             ui.painter().rect_filled(

@@ -92,6 +92,7 @@ pub enum UiAction {
     Redo,
     Snap,
     Ripple,
+    PreviewAxis,
     ZoomIn,
     ZoomOut,
     OpenScenes,

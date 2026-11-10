@@ -43,6 +43,11 @@ restarts at an end position, second and frame steps clamp to the timeline, and S
 End are explicit positions. The editor frame and the shorts window call it with the
 immutable project their preview renders.
 
+`set_hover` is a transient preview time for the timeline's preview axis: it renders one
+frame at the pointer time while the transport position, play state and audio stay put.
+Each pointer time fences the previous generation, so only the latest frame request
+survives; clearing it or a seek returns the preview to the transport.
+
 ## Preview and snapshot
 
 Timecode format and parse come from `time`'s DF/NDF owner (`29.97` and `59.94` use `;`,

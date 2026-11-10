@@ -242,7 +242,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionTimelineSplit,
         ActionCategory::Edit,
         EngineAction::Split,
-        &["S", "Ctrl+B"],
+        &["Ctrl+B"],
     ),
     ActionSpec::engine(
         "timeline.split_left",
@@ -442,6 +442,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         "timeline view",
         UiAction::Ripple,
         &[],
+    ),
+    ActionSpec::ui(
+        "timeline.preview_axis",
+        Text::ActionTimelinePreviewAxis,
+        ActionCategory::Timeline,
+        "timeline view",
+        UiAction::PreviewAxis,
+        &["S"],
     ),
     ActionSpec::ui(
         "timeline.zoom_in",

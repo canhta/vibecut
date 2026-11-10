@@ -701,6 +701,18 @@ const SCENES: &[Scene] = &[
         build: timeline_multi,
     },
     Scene {
+        name: "preview-axis",
+        reference_dark: None,
+        reference_light: None,
+        build: preview_axis,
+    },
+    Scene {
+        name: "preview-axis-reference",
+        reference_dark: None,
+        reference_light: None,
+        build: preview_axis_reference,
+    },
+    Scene {
         name: "tracks",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
@@ -1952,6 +1964,10 @@ const EDITOR_WINDOW: [f32; 2] = [1728.0, 1030.0];
 
 /// One long clip on the main track, like the single-track reference capture.
 fn timeline_main(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    timeline_main_sized(theme, scale, EDITOR_WINDOW)
+}
+
+fn timeline_main_sized(theme: Theme, scale: f32, window: [f32; 2]) -> Result<AppHarness, Failure> {
     let mut session = empty_session("Timeline")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
         session.apply(Command::AddAsset {
@@ -1996,10 +2012,33 @@ fn timeline_main(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let project = editor.session.project().clone();
     editor.playback.seek(playhead, false, project)?;
     wait_for_frame(&mut editor)?;
-    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, window);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
     Ok(app)
+}
+
+/// The preview axis holding a pointer time over the lanes.
+fn preview_axis(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = timeline_main(theme, scale)?;
+    hover_preview_axis(&mut app)?;
+    Ok(app)
+}
+
+/// The same state at the cited web capture's 1440×900 logical size.
+fn preview_axis_reference(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = timeline_main_sized(theme, scale, WINDOW)?;
+    hover_preview_axis(&mut app)?;
+    Ok(app)
+}
+
+fn hover_preview_axis(app: &mut AppHarness) -> Result<(), Failure> {
+    let ruler = widget_rect(app, "timeline.ruler")?;
+    let zoom = app.state().inspect()?.zoom;
+    app.hover_at(egui::pos2(ruler.left() + 4.0 * zoom, ruler.center().y));
+    app.run_steps(2);
+    wait_for_presented(app)?;
+    Ok(())
 }
 
 /// Populated multi-track timeline (video, audio, text) at the reference size.

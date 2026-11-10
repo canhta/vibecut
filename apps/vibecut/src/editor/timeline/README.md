@@ -4,6 +4,20 @@ Each item has a 16 px chevron opening its keyframe lanes. The open set is presen
 
 A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee selects, drag retimes with the clips' snapping candidates in one engine gesture, and Delete removes selected diamonds through `keyframes.delete_selection` in one undo step. Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`. Audio clips draw a draggable volume line using the linear-gain squared map over -60..20 dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes show on the line and in the lane.
 
+## Preview axis
+
+The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as
+`preview_axis`, default on) scrubs the player from the pointer. While the
+pointer is over the ruler or the lanes, `view/hover.rs` holds a frame-snapped
+pointer time, paints a vertical guide there and the player footer shows that
+time in place of the playhead. The frame hands the time to the playback
+service's transient hover render, which fences one generation per pointer time,
+so only the latest request is shown. Leaving the timeline or turning the axis
+off returns both the counter and the player to the playhead. The hover time is
+presentation state: it never enters Project JSON, the transport or the undo
+history, and clicking the ruler still moves the playhead while the guide keeps
+following the pointer.
+
 ## Markers
 
 The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared colour window plus a reset to the engine default, a duration field in seconds stepped by 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo step; drafts stay in the panel and the project changes only when the frame runs the command. The target-free [colour service](../../services/color_picker/README.md) supplies the controls; the marker target and commit action stay in timeline. Escape closes the colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.

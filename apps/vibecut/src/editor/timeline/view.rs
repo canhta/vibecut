@@ -2,6 +2,7 @@
 use crate::i18n;
 mod bookmark;
 mod clips;
+mod hover;
 mod lanes;
 mod ruler;
 mod scenes;
@@ -82,8 +83,10 @@ pub(in crate::editor) fn show(
     let empty_items = views.items.is_empty();
     let duration = views.duration;
     let rows = views.rows;
+    state.track_hover(cx, ui, &layout);
     state.paint_playhead(cx, ui, &layout);
     state.playhead_interaction(cx, ui, &layout);
+    state.paint_hover(cx, ui, &layout);
     state.scrollbars(cx, ui, &layout, duration, &rows);
     state.paint_refusal(cx, ui, &layout);
     if empty_items && !rows.is_empty() {

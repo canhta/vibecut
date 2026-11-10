@@ -169,8 +169,17 @@ struct Request {
     start: Tick,
     origin: u64,
     playing: bool,
+    /// Transient preview-axis time; `None` follows the transport.
+    hover: Option<Tick>,
 }
 impl Request {
+    /// The tick the preview shows: the pointer time while the axis holds one.
+    fn display_at(&self, counter: u64) -> Result<Tick> {
+        match self.hover {
+            Some(at) => Ok(at),
+            None => self.at(counter),
+        }
+    }
     fn at(&self, counter: u64) -> Result<Tick> {
         let delta = if self.playing {
             counter.saturating_sub(self.origin)
@@ -253,6 +262,7 @@ impl Playback {
             start: Tick::ZERO,
             origin: 0,
             playing: false,
+            hover: None,
         }));
         let output = Arc::new(Mutex::new(Output {
             frames: VecDeque::new(),
@@ -416,6 +426,18 @@ impl Playback {
             .map_err(|_| Error::Poisoned)?
             .at(self.port.audible.load(Ordering::Acquire))
     }
+    /// The preview-axis time the next frame renders, if one is held.
+    pub fn hover(&self) -> Option<Tick> {
+        self.request.lock().ok().and_then(|request| request.hover)
+    }
+    /// The tick the player shows: the hover time while one is held, otherwise
+    /// the transport position. The transport itself never moves.
+    pub fn display_position(&self) -> Result<Tick> {
+        self.request
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .display_at(self.port.audible.load(Ordering::Acquire))
+    }
     pub fn playing(&self) -> bool {
         self.port.playing.load(Ordering::Acquire)
     }
@@ -488,9 +510,37 @@ impl Playback {
             start: at,
             origin: self.port.submitted.load(Ordering::Acquire),
             playing,
+            hover: None,
         };
         self.port.epoch.store(epoch, Ordering::Release);
         self.port.playing.store(playing, Ordering::Release);
+        drop(request);
+        self.shown = None;
+        let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
+        output.frames.clear();
+        output.error = None;
+        self.last_callback = (
+            self.port.submitted.load(Ordering::Acquire),
+            std::time::Instant::now(),
+        );
+        Ok(())
+    }
+    /// Render at a transient pointer time without moving the transport. Every
+    /// change fenced by a new generation, so only the latest pointer time is
+    /// shown and a superseded frame is dropped instead of queued.
+    pub fn set_hover(&mut self, at: Option<Tick>) -> Result<()> {
+        let mut request = self.request.lock().map_err(|_| Error::Poisoned)?;
+        let at = at.map(|at| at.clamp(Tick::ZERO, request.project.duration()));
+        if request.hover == at {
+            return Ok(());
+        }
+        let epoch = request
+            .epoch
+            .checked_add(1)
+            .ok_or(Error::Invalid("preview generation exhausted"))?;
+        request.hover = at;
+        request.epoch = epoch;
+        self.port.epoch.store(epoch, Ordering::Release);
         drop(request);
         self.shown = None;
         let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
@@ -544,7 +594,7 @@ impl Playback {
             return Err(Error::PreviewUnavailable("audio clock stalled"));
         }
         let request = self.request.lock().map_err(|_| Error::Poisoned)?.clone();
-        let at = self.position()?;
+        let at = request.display_at(self.port.audible.load(Ordering::Acquire))?;
         {
             let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
             while output
@@ -559,7 +609,7 @@ impl Playback {
                 }
             }
         }
-        if request.playing && at >= request.project.duration() {
+        if request.playing && request.hover.is_none() && at >= request.project.duration() {
             self.seek(at, false, request.project)?;
         }
         Ok(())
@@ -676,7 +726,10 @@ fn video_loop(
         let epoch = r.epoch;
         let mut sources = factory.create();
         let fps = r.project.data().canvas.fps;
-        let mut next = fps.frame_at(r.at(port.audible.load(Ordering::Acquire))?)?;
+        // A held pointer time is one frame: never decode ahead of it, and never
+        // advance it with the audio clock.
+        let pinned = !r.playing || r.hover.is_some();
+        let mut next = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
         let mut settings = r.render_state.settings(&r.project)?;
         let scale = (640.0 / f64::from(settings.width))
             .min(360.0 / f64::from(settings.height))
@@ -686,9 +739,9 @@ fn video_loop(
         settings.effects = r.effects.clone();
         let mut renderer = render::Renderer::new(&r.project, settings)?;
         while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
-            let current = fps.frame_at(r.at(port.audible.load(Ordering::Acquire))?)?;
+            let current = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
             next = next.max(current);
-            if (!r.playing && next > current)
+            if (pinned && next > current)
                 || output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES
             {
                 std::thread::sleep(Duration::from_millis(2));

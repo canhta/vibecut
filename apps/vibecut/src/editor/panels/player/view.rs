@@ -287,7 +287,7 @@ fn footer_controls(
 ) {
     let dark = cx.dark;
     let y = footer.center().y;
-    let current = timecode(cx, cx.playback.position().unwrap_or(Tick::ZERO));
+    let current = timecode(cx, cx.hover.unwrap_or(cx.playhead));
     let total_hint = crate::i18n::format(
         cx.locale,
         Text::TimeTotal,

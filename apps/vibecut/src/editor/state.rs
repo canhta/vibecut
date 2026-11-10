@@ -152,6 +152,13 @@ pub struct Inspection {
     pub preview_fit: bool,
     pub preview_offset: egui::Vec2,
     pub preview_fullscreen: bool,
+    /// The preview axis toggle state.
+    pub preview_axis: bool,
+    /// The pointer time the timeline guide holds, if any.
+    pub hover_time: Option<Tick>,
+    /// The tick the shared preview last requested; equals `hover_time` while
+    /// the axis scrubs and is `None` when the player follows the playhead.
+    pub preview_at: Option<Tick>,
     pub timecode: String,
     pub timecode_editing: bool,
     pub snapshot_dialog_open: bool,

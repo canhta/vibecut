@@ -359,6 +359,7 @@ impl Rig {
             dark: true,
             save_status: Text::AutoSaved,
             playhead: Tick::ZERO,
+            hover: None,
             ripple: false,
             preferences: &self.preferences,
             playback: &self.playback,

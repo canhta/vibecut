@@ -40,7 +40,16 @@ impl Editor {
     }
 
     pub(in crate::editor) fn current_timecode(&self) -> String {
-        self.format_timecode(self.playback.position().unwrap_or(Tick::ZERO))
+        self.format_timecode(self.playback.display_position().unwrap_or(Tick::ZERO))
+    }
+
+    /// Ask the shared preview to render the timeline panel's hover time, or to
+    /// return to the playhead when the pointer left the timeline.
+    pub(in crate::editor) fn sync_hover(&mut self) {
+        let hover = self.timeline.hover_time();
+        if let Err(error) = self.playback.set_hover(hover) {
+            self.desk().fail(error.to_string());
+        }
     }
 
     pub(in crate::editor) fn commit_timecode(&mut self) {

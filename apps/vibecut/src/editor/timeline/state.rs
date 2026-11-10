@@ -196,6 +196,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) bookmark_drag: Option<BookmarkDrag>,
     pub(in crate::editor::timeline) bookmark_popover: Option<BookmarkPopover>,
     pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
+    /// Preview-axis pointer time; transient and never part of the project.
+    pub(in crate::editor::timeline) hover: Option<Tick>,
     pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
     pub(in crate::editor::timeline) track_rename: Option<(TrackId, String)>,
     pub(in crate::editor::timeline) track_rename_focus: bool,
@@ -235,6 +237,7 @@ impl State {
             bookmark_drag: None,
             bookmark_popover: None,
             snap_indicator: None,
+            hover: None,
             marquee: None,
             track_rename: None,
             track_rename_focus: false,
@@ -258,6 +261,13 @@ impl State {
     }
     pub(in crate::editor) fn snap_indicator(&self) -> Option<Tick> {
         self.snap_indicator
+    }
+    /// The pointer time the preview axis currently shows, if any.
+    pub(in crate::editor) fn hover_time(&self) -> Option<Tick> {
+        self.hover
+    }
+    pub(in crate::editor) fn clear_hover(&mut self) {
+        self.hover = None;
     }
     /// The bookmark whose editor is open, if any.
     pub(in crate::editor) fn bookmark_popover(&self) -> Option<BookmarkId> {

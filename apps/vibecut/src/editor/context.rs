@@ -28,6 +28,8 @@ pub(crate) struct Context<'a> {
     pub(crate) save_status: Text,
     /// Playback position of the shared transport.
     pub(crate) playhead: time::Tick,
+    /// Preview-axis pointer time; `None` follows the playhead.
+    pub(crate) hover: Option<time::Tick>,
     pub(crate) ripple: bool,
     /// Last presented preview frame, for the export dialog's poster.
     pub(crate) preview: Option<&'a egui::TextureHandle>,

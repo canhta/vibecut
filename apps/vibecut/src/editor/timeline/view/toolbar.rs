@@ -17,7 +17,7 @@ const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
 
 /// The registered actions the toolbar can show as unavailable.
-pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 12] = [
+pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 13] = [
     "timeline.add_track",
     "edit.undo",
     "edit.redo",
@@ -28,6 +28,7 @@ pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 12] = [
     "timeline.snap",
     "timeline.magnet",
     "timeline.ripple",
+    "timeline.preview_axis",
     "timeline.zoom_out",
     "timeline.zoom_in",
 ];
@@ -127,7 +128,7 @@ impl State {
             egui::Stroke::new(1.0, divider),
         );
         right -= 1.0 + DIVIDER_GAP;
-        let mut toggles = [Rect::NOTHING; 3];
+        let mut toggles = [Rect::NOTHING; 4];
         for toggle in toggles.iter_mut().rev() {
             *toggle = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
             right = toggle.left() - GAP;
@@ -167,6 +168,20 @@ impl State {
             Icon::Waveform,
             Text::Ripple,
             Some(cx.ripple),
+        );
+        let preview_axis = cx.preferences.preview_axis;
+        self.toolbar_button(
+            cx,
+            ui,
+            toggles[3],
+            "timeline.preview_axis",
+            Icon::ArrowsInLineVertical,
+            if preview_axis {
+                Text::PreviewAxisOff
+            } else {
+                Text::PreviewAxisOn
+            },
+            Some(preview_axis),
         );
         self.toolbar_button(
             cx,

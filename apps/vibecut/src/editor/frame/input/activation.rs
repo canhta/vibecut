@@ -297,6 +297,10 @@ impl Editor {
                     let after = !self.preferences.ripple;
                     self.set_preference("ripple", serde_json::json!(after))?;
                 }
+                UiAction::PreviewAxis => {
+                    let after = !self.preferences.preview_axis;
+                    self.set_preference("preview_axis", serde_json::json!(after))?;
+                }
                 UiAction::ZoomIn => self.zoom_timeline(ZOOM_STEP),
                 UiAction::ZoomOut => self.zoom_timeline(1.0 / ZOOM_STEP),
                 UiAction::Theme => {

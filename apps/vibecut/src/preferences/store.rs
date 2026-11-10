@@ -144,14 +144,15 @@ mod tests {
         (PREVIEW_MIN..=PREVIEW_MAX).contains(&(1.0 - panels[0] - panels[1]))
     }
 
-    /// A complete version-6 document as the app wrote it before the i18n/preferences
-    /// split (including the font picker section).
+    /// A complete version-7 document as the app writes it, including the font
+    /// picker section and the preview axis toggle.
     #[test]
     fn default_is_deterministic_and_system_preferences_follow_the_os() {
         assert_eq!(Preferences::default().locale, Locale::En);
         assert_eq!(Preferences::default().panels, DEFAULT_PANELS);
         assert!(Preferences::default().snapping);
         assert!(!Preferences::default().ripple);
+        assert!(Preferences::default().preview_axis);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -193,6 +194,7 @@ mod tests {
             ("dark", serde_json::json!(false)),
             ("snapping", serde_json::json!(false)),
             ("ripple", serde_json::json!(true)),
+            ("preview_axis", serde_json::json!(false)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),

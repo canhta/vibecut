@@ -17,7 +17,7 @@ use vibecut::{
 const SECOND: i64 = TICKS_PER_SECOND;
 
 #[test]
-fn default_split_key_mutates_history_and_undo_redo_restore_it() {
+fn default_split_chord_mutates_history_and_undo_redo_restore_it() {
     let fixture = fixture();
     let id = fixture.video_a;
     let mut editor = fixture.editor;
@@ -30,7 +30,7 @@ fn default_split_key_mutates_history_and_undo_redo_restore_it() {
     let mut harness = harness(editor);
     harness.run_steps(3);
 
-    harness.key_press(egui::Key::S);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
     harness.run_steps(3);
     assert_ne!(harness.state().session.project(), &before);
     let after = harness.state().session.project().clone();
@@ -578,7 +578,7 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
             .preferences
             .keybindings
             .effective_chords(split),
-        ["S", "Ctrl+B"]
+        ["Ctrl+B"]
     );
 
     let invalid = harness

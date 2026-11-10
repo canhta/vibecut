@@ -11,6 +11,7 @@ impl Editor {
             dark: self.preferences.dark,
             save_status: self.save_status(),
             playhead: self.playback.position().unwrap_or(Tick::ZERO),
+            hover: self.playback.hover(),
             ripple: self.preferences.ripple,
             preferences: &self.preferences,
             playback: &self.playback,
@@ -66,6 +67,7 @@ impl Editor {
     /// Paint the timeline panel and apply its requests.
     pub(super) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
         self.with_timeline(|state, cx| timeline::show(state, cx, ui));
+        self.sync_hover();
         if let Err(error) = self.remember_view() {
             self.desk().fail(error.to_string());
         }

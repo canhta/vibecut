@@ -620,6 +620,182 @@ fn snapping_preference_toggles_through_app_history_and_persists() {
 }
 
 #[test]
+fn preview_axis_hover_scrubs_the_counter_and_preview_without_moving_the_playhead() {
+    let fixture = fixture();
+    let playhead = Tick(3 * SECOND);
+    let mut editor = fixture.editor;
+    editor
+        .playback
+        .seek(playhead, false, editor.session.project().clone())
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let fps = harness.state().session.project().data().canvas.fps;
+    let project = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let history = harness.state().session.history_len();
+    let before = harness.state().inspect().unwrap();
+    assert!(before.preview_axis, "the preview axis starts on");
+    assert_eq!(before.hover_time, None);
+    assert_eq!(before.preview_at, None);
+    assert_eq!(before.position, playhead);
+
+    let ruler = widget(&harness, "timeline.ruler");
+    let zoom = before.zoom;
+    let first = egui::pos2(ruler.left() + 4.0 * zoom, ruler.center().y);
+    harness.hover_at(first);
+    harness.run_steps(2);
+    let hovered = harness.state().inspect().unwrap();
+    let at = hovered.hover_time.expect("hover time");
+    assert!(
+        (at.seconds() - 4.0).abs() < 0.05,
+        "hover samples the pointer time, got {at:?}"
+    );
+    assert_eq!(hovered.preview_at, Some(at), "one frame request at hover");
+    assert_eq!(
+        hovered.timecode,
+        time::format_timecode(at, fps).unwrap(),
+        "the counter shows the hovered time"
+    );
+    assert_eq!(hovered.position, playhead, "the playhead does not move");
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        project,
+        "hover never changes Project JSON"
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+
+    // A second move supersedes the first request instead of queueing both.
+    harness.hover_at(egui::pos2(ruler.left() + 7.0 * zoom, ruler.center().y));
+    harness.run_steps(2);
+    let moved = harness.state().inspect().unwrap();
+    let later = moved.hover_time.expect("second hover time");
+    assert!(later > at, "the guide follows the pointer");
+    assert_eq!(
+        moved.preview_at,
+        Some(later),
+        "only the latest request is kept"
+    );
+
+    // Leaving the timeline returns the counter and preview to the playhead.
+    let canvas = widget(&harness, "preview.canvas");
+    harness.hover_at(canvas.center());
+    harness.run_steps(2);
+    let left = harness.state().inspect().unwrap();
+    assert_eq!(left.hover_time, None);
+    assert_eq!(left.preview_at, None);
+    assert_eq!(
+        left.timecode,
+        time::format_timecode(playhead, fps).unwrap(),
+        "the counter returns to the playhead"
+    );
+    assert_eq!(left.position, playhead);
+
+    // A ruler click moves the playhead; the guide keeps following the pointer.
+    // `drop_at` removes the cursor, so press and release in place instead.
+    let click = egui::pos2(ruler.left() + 6.0 * zoom, ruler.center().y);
+    harness.hover_at(click);
+    harness.run_steps(1);
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: click,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(1);
+    }
+    harness.run_steps(1);
+    let clicked = harness.state().inspect().unwrap();
+    assert!(
+        (clicked.position.seconds() - 6.0).abs() < 0.05,
+        "the ruler click sets the playhead, got {:?}",
+        clicked.position
+    );
+    let guiding = clicked.hover_time.expect("guide after the click");
+    assert_eq!(clicked.preview_at, Some(guiding));
+    assert_eq!(
+        clicked.timecode,
+        time::format_timecode(guiding, fps).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        project
+    );
+
+    // Past the content the request clamps to the timeline end, like a seek.
+    harness.hover_at(egui::pos2(ruler.right() - 1.0, ruler.center().y));
+    harness.run_steps(2);
+    let end = harness.state().inspect().unwrap();
+    let duration = harness.state().session.project().duration();
+    assert_eq!(end.hover_time, Some(duration));
+    assert_eq!(end.preview_at, Some(duration));
+
+    // The toolbar toggle turns the axis off; the pointer no longer scrubs.
+    let toggle = widget(&harness, "timeline.preview_axis");
+    click_at(&mut harness, toggle.center());
+    let off = harness.state().inspect().unwrap();
+    assert!(!off.preview_axis);
+    assert_eq!(off.hover_time, None);
+    assert_eq!(off.preview_at, None);
+    assert_eq!(
+        off.timecode,
+        time::format_timecode(off.position, fps).unwrap()
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&harness.state().preferences).unwrap();
+    assert!(
+        !store.load().unwrap().preview_axis,
+        "the toggle persists off"
+    );
+    harness.hover_at(first);
+    harness.run_steps(2);
+    let disabled = harness.state().inspect().unwrap();
+    assert_eq!(disabled.hover_time, None);
+    assert_eq!(disabled.preview_at, None);
+    assert_eq!(
+        disabled.timecode,
+        time::format_timecode(disabled.position, fps).unwrap()
+    );
+
+    // `S` toggles the axis on again and hover resumes.
+    harness.key_press(egui::Key::S);
+    harness.run_steps(2);
+    assert!(harness.state().inspect().unwrap().preview_axis);
+    harness.hover_at(first);
+    harness.run_steps(2);
+    let resumed = harness.state().inspect().unwrap();
+    assert_eq!(resumed.hover_time, resumed.preview_at);
+    assert!(resumed.hover_time.is_some());
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        project
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+#[test]
+fn preview_axis_hover_renders_screenshot() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let ruler = widget(&harness, "timeline.ruler");
+    let zoom = harness.state().inspect().unwrap().zoom;
+    harness.hover_at(egui::pos2(ruler.left() + 4.0 * zoom, ruler.center().y));
+    harness.run_steps(2);
+    assert!(
+        harness.state().inspect().unwrap().hover_time.is_some(),
+        "the guide and counter need a hover time"
+    );
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-300-preview-axis.png");
+    image.save(&path).unwrap();
+    eprintln!("preview axis screenshot: {}", path.display());
+}
+
+#[test]
 fn move_and_trim_snap_and_shift_mid_drag_bypasses() {
     let fixture = fixture();
     let video_a = fixture.video_a;
@@ -1227,6 +1403,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("timeline.snap", "magnet"),
         ("timeline.magnet", "link-simple"),
         ("timeline.ripple", "waveform"),
+        ("timeline.preview_axis", "arrows-in-line-vertical"),
         ("timeline.zoom_out", "magnifying-glass-minus"),
         ("timeline.zoom_in", "magnifying-glass-plus"),
         ("track.1.header", "film-strip"),
@@ -1267,8 +1444,9 @@ fn every_editor_button_reports_its_embedded_icon() {
     );
     for (id, text) in [
         ("edit.undo", undo.as_str()),
-        ("timeline.split", "Split (S)"),
+        ("timeline.split", "Split (Ctrl+B)"),
         ("timeline.snap", "Snap (N)"),
+        ("timeline.preview_axis", "Turn off preview axis (S)"),
         ("timeline.zoom_in", "Zoom +"),
         ("timeline.magnet", "Main track magnet"),
         ("transport.back", "Back 1 second (J)"),
@@ -3710,16 +3888,16 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     };
 
     click_item(&mut h, video_a);
-    h.key_press(egui::Key::S);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
     h.run_steps(2);
-    assert_eq!(count(h.state()), 5, "S splits the selected item");
+    assert_eq!(count(h.state()), 5, "Ctrl+B splits the selected item");
     undo(&mut h);
     assert_eq!(count(h.state()), 4);
 
     // With an empty selection every unlocked item under the playhead splits.
     h.state_mut().activate("timeline.deselect_all").unwrap();
     seek(&mut h);
-    h.key_press(egui::Key::S);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
     h.run_steps(2);
     assert_eq!(
         count(h.state()),
