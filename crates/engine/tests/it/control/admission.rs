@@ -753,6 +753,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
 fn owner_failures_classify_publication_receipts_and_events() {
     use ErrorCode as C;
     use engine::EditError as E;
+    use engine::recovery::Error as R;
     use engine::{
         Failure, FontError as F, SoundError as S, providers::Error as P, transcript::Error as T,
     };
@@ -775,11 +776,40 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::CacheBusy, Refused, false),
         row!(E::ModelResponse, Refused, false),
         row!(E::StorageFull, Refused, false),
-        row!(E::RecoveryCorrupt, Refused, false),
-        row!(E::RecoveryBusy, Refused, false),
-        row!(E::SaveAsRequired, Refused, false),
+        row!(E::Recovery(R::Corrupt), Refused, false),
+        row!(E::Recovery(R::Busy), Refused, false),
+        row!(E::Recovery(R::SaveAsRequired), Refused, false),
         row!(
-            E::PersistenceFailed(Arc::new(E::Io(io::Error::other("disk")))),
+            E::Recovery(R::PersistenceFailed(Arc::new(E::Io(io::Error::other(
+                "disk"
+            ))))),
+            Io,
+            false
+        ),
+        row!(E::Recovery(R::Io(io::Error::other("disk"))), Io, false),
+        row!(E::Recovery(R::Limit), Limit, false),
+        row!(E::Recovery(R::Invalid("clock")), Refused, false),
+        row!(E::Recovery(R::Unsupported("locking")), Refused, false),
+        row!(E::Recovery(R::Project(project::Error::Busy)), Busy, false),
+        row!(
+            E::Recovery(R::Project(project::Error::Conflict)),
+            Conflict,
+            false
+        ),
+        row!(
+            E::Recovery(R::Project(project::Error::Io(io::Error::other("disk")))),
+            Io,
+            false
+        ),
+        row!(
+            E::Recovery(R::Project(project::Error::Media(
+                media::MediaError::Cancelled
+            ))),
+            Media,
+            false
+        ),
+        row!(
+            E::Recovery(R::Project(project::Error::Invalid("journal"))),
             Refused,
             false
         ),
@@ -931,6 +961,20 @@ fn owner_failures_classify_publication_receipts_and_events() {
             code,
             false,
         ));
+    }
+    for (cause, code) in [
+        (E::Limit, C::Limit),
+        (E::BudgetFull, C::Budget),
+        (E::WorkerPanicked, C::WorkerFailure),
+        (E::JobPoisoned, C::Job),
+        (E::Cancelled, C::Cancelled),
+        (E::StaleResult, C::StaleResult),
+        (E::NetworkTransient, C::Job),
+    ] {
+        let failure = R::PersistenceFailed(Arc::new(cause));
+        assert_eq!(failure.code(), code);
+        assert!(!failure.transient());
+        cases.push((E::Recovery(failure), code, false));
     }
     let message = E::Providers(P::ModelMissing("test-model")).to_string();
     assert!(message.contains("test-model"));

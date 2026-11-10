@@ -9,6 +9,14 @@ gestures; `switch()` flushes before replacing it with never-saved work, and repl
 saved file means flushing first and constructing `Autosave::open`. Each observed committed
 snapshot advances a checked session-local revision; gesture previews are never journaled.
 
+`recovery::Error` owns recovery refusals, filesystem/format causes and sticky persistence
+failures. Discovery, candidate discard and protected export paths return `recovery::Result`;
+discovery retains those concrete diagnostics. Methods composing Session edits or runtime jobs
+retain the engine result and wrap recovery errors upward. No recovery error contains that root
+error type. A sticky failure shares an `Arc<dyn Failure>` retaining the original typed cause;
+borrowed standard Error downcasts remain available. Its wire code delegates to the cause, but
+it is never transient and its displayed message stays `session persistence failed`.
+
 Call `tick()` from the app event loop. `Schedule::default()` uses an 800 ms debounce and a 10 s
 maximum dirty age, measured from the first unpublished edit, including continuous editing. These
 are scheduling deadlines: event-loop latency, budget pressure and filesystem latency add to
@@ -60,6 +68,11 @@ written its snapshot, so even undo to the previously saved `Arc` stays dirty and
 This also covers aliased save destinations; a fresh acknowledged save restores the clean
 baseline. A stale save-as releases the destination lease and never adopts its path or receipt;
 the existing saved path keeps its source lease.
+
+Direct stale acknowledgement remains nonsticky; a stale error inside a failed worker stays
+sticky. Explicit pending Save As admission can be corrected with another destination while
+retaining the source lease. Automatic journal admission follows the existing sticky failure
+path; code delegation alone changes neither admission nor runtime retry/cancellation policy.
 
 An acknowledged Save As transfers path, receipt, fresh ProjectId and destination lease together.
 The worker journals the original snapshot before attempting publication, so a completed Save As

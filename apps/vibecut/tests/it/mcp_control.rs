@@ -208,6 +208,7 @@ fn socket_edits_activate_editor() {
             reader.read_line(&mut line).unwrap();
             send.send(serde_json::from_str::<Value>(&line).unwrap())
                 .unwrap();
+            reader
         });
         let deadline = Instant::now() + Duration::from_secs(10);
         let response_value = loop {
@@ -218,7 +219,7 @@ fn socket_edits_activate_editor() {
             assert!(Instant::now() < deadline, "control request timed out");
             std::thread::sleep(Duration::from_millis(2));
         };
-        response.join().unwrap();
+        let mut reader = response.join().unwrap();
         let editor = h.state_mut().editor_mut(id).unwrap();
         assert!(
             editor.playback.generation() > generation,
@@ -291,6 +292,39 @@ fn socket_edits_activate_editor() {
             assert!(
                 editor.inspect().unwrap().selection.is_empty(),
                 "deleted item remains selected"
+            );
+            // Real persistence moves the sole editor onto its worker. Requests
+            // arriving before that boundary settles keep the same refusal code.
+            h.state_mut()
+                .persist(
+                    Some(root.path().join("saving.vibecut")),
+                    false,
+                    false,
+                    false,
+                )
+                .unwrap();
+            assert!(h.state().windows[&id].editor.is_none());
+            writeln!(input, "{}", json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"command_run","arguments":{"request_id":"saving","command":"inspect","params":{},"project_id":id}}})).unwrap();
+            let (send, receive) = std::sync::mpsc::channel();
+            let response = std::thread::spawn(move || {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                send.send(serde_json::from_str::<Value>(&line).unwrap())
+                    .unwrap();
+            });
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let refused = loop {
+                vibecut::control::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
+                if let Ok(value) = receive.try_recv() {
+                    break value;
+                }
+                assert!(Instant::now() < deadline, "busy editor response timed out");
+                std::thread::sleep(Duration::from_millis(2));
+            };
+            response.join().unwrap();
+            assert_eq!(
+                refused.pointer("/result/structuredContent/error/code"),
+                Some(&json!("refused"))
             );
         }
     }

@@ -717,7 +717,7 @@ pub struct EditorWindow {
     pending: Option<Pending>,
     picker: Option<Picker>,
     candidates: Vec<Candidate>,
-    diagnostics: Vec<EditError>,
+    diagnostics: Vec<recovery::Error>,
     error: Option<Error>,
     retry_path: Option<PathBuf>,
     startup_path: Option<PathBuf>,
@@ -1112,7 +1112,7 @@ impl EditorWindow {
                     .lock()
                     .map_err(|_| EditError::JobPoisoned)?
                     .take()
-                    .ok_or(EditError::RecoveryBusy)?;
+                    .ok_or(EditError::Invalid("missing lifecycle work"))?;
                 let result = run(
                     work,
                     &root,

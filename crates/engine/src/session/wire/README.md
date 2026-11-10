@@ -12,7 +12,7 @@ Before publishing an admitted JSON/control edit, Session validates the candidate
 
 `Failure` states code and retry eligibility at the error's declaration owner. Engine enums
 classify exhaustively; engine wrapping variants classify foreign errors. `JobFailure` delegates
-its code recursively, while persistence retains its refusal class. Delegating a code does not
+its code recursively, as does recovery's erased persistence cause. Delegating a code does not
 make a wrapper transient: only direct network and selected AI failures qualify, subject to
 runtime's existing retry/publication gates. Refined failure classes change envelopes and the
 catalog digest within the coordinated API3 rollout; consumers use the current digest.
