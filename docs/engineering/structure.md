@@ -43,7 +43,7 @@ flowchart TB
   substrate --> kernel[Kernel: session/]
 ```
 
-Features register commands through the registry; the kernel never names a feature. Each layer declares the errors it raises; `control` owns the one mapping from them to wire codes, and no layer names an error of a layer or crate above it. The layer table is enforced from `xtask/modules.toml`.
+Features register commands through the registry; the kernel never names a feature. Each layer declares the errors it raises and states the wire code of each variant where it is declared; a higher layer wraps a lower error, and no layer names an error of a layer or crate above it. The layer table is enforced from `xtask/modules.toml`.
 
 ## Libraries (`crates/libraries/src`)
 
