@@ -1,6 +1,6 @@
 # Label format
 
-One file per video. Paths are relative to the label file.
+One file per video. Paths resolve relative to the label file; absolute paths are used as-is.
 
 ```json
 {
