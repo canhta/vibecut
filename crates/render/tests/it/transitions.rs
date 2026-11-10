@@ -453,7 +453,8 @@ fn every_registered_kind_meets_the_endpoint_finite_deterministic_continuous_cont
             for (w, ht) in [(16, 9), (1, 1), (1, 7), (7, 1), (2, 2)] {
                 let (a, b) = (frame(w, ht, true), frame(w, ht, false));
                 let run = |p: f64, scale: f32| {
-                    transitions::apply(definition.kind, &params, &a, &b, p, scale, &h).unwrap()
+                    transitions::apply(definition.kind, &params, &a, &b, p, scale, &h)
+                        .unwrap_or_else(|error| panic!("{case}: {error:?}"))
                 };
                 assert_eq!(run(0., 1.).pixels(), a.pixels(), "{case} p=0 is outgoing");
                 assert_eq!(run(1., 1.).pixels(), b.pixels(), "{case} p=1 is incoming");

@@ -3,6 +3,12 @@ use crate::{Error, ExecutionHooks, Image, Result, check};
 use project::{TransitionParamDef, TransitionParams, TransitionValue, transition_definition};
 use rayon::prelude::*;
 
+mod dissolve;
+mod grunge;
+mod lights;
+mod pixels;
+mod wipe;
+
 /// Rows evaluated between cancellation checks.
 const ROW_GROUP: usize = 8;
 
@@ -122,7 +128,8 @@ pub struct Out<'a> {
     hooks: &'a dyn ExecutionHooks,
 }
 impl Out<'_> {
-    /// Set each pixel to `f(x, y)` with integer pixel coordinates.
+    /// Set each pixel to `f(x, y)` with integer pixel coordinates. The written value is clamped
+    /// to the working-image contract: finite, 0..=1 and RGB at most the alpha.
     pub fn paint(&mut self, f: impl Fn(usize, usize) -> [f32; 4] + Sync) -> Result<()> {
         let hooks = self.hooks;
         self.pixels
@@ -133,10 +140,14 @@ impl Out<'_> {
                     check(hooks)?;
                 }
                 for (x, px) in row.iter_mut().enumerate() {
-                    *px = f(x, y);
+                    *px = pixels::working(f(x, y));
                 }
                 Ok(())
             })
+    }
+    /// Hooks for a kind that must prepare a scratch frame before painting.
+    pub fn hooks(&self) -> &dyn ExecutionHooks {
+        self.hooks
     }
 }
 
@@ -168,6 +179,245 @@ const KINDS: &[Kind] = &[
         id: "dip_to_color",
         run: |t, out| dip(t, out, t.params.color("color")?, hold(&t.params)?),
         sides: |params, p| Ok(dip_sides(p, hold(params)?)),
+    },
+    // Dissolves (261).
+    Kind {
+        id: "light_fade",
+        run: |t, out| dissolve::run("light_fade", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "film_fade",
+        run: |t, out| dissolve::run("film_fade", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "soft_focus_fade",
+        run: |t, out| dissolve::run("soft_focus_fade", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "burn_through",
+        run: |t, out| dissolve::run("burn_through", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "brightness_fade",
+        run: |t, out| dissolve::run("brightness_fade", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "pixel_blocks",
+        run: |t, out| dissolve::run("pixel_blocks", t, out),
+        sides: both_sides,
+    },
+    // Wipes (261).
+    Kind {
+        id: "straight_wipe",
+        run: |t, out| wipe::run("straight_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "soft_edge_wipe",
+        run: |t, out| wipe::run("soft_edge_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "clock_wipe",
+        run: |t, out| wipe::run("clock_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "corner_sweep",
+        run: |t, out| wipe::run("corner_sweep", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "star_wipe",
+        run: |t, out| wipe::run("star_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "panel_wipe",
+        run: |t, out| wipe::run("panel_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "stair_wipe",
+        run: |t, out| wipe::run("stair_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "stretch_wipe",
+        run: |t, out| wipe::run("stretch_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "neon_edge_wipe",
+        run: |t, out| wipe::run("neon_edge_wipe", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "circle_reveal",
+        run: |t, out| wipe::run("circle_reveal", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "box_reveal",
+        run: |t, out| wipe::run("box_reveal", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "diamond_reveal",
+        run: |t, out| wipe::run("diamond_reveal", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "cross_reveal",
+        run: |t, out| wipe::run("cross_reveal", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "double_doors",
+        run: |t, out| wipe::run("double_doors", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "corner_inset",
+        run: |t, out| wipe::run("corner_inset", t, out),
+        sides: both_sides,
+    },
+    // Lights and blurs (261).
+    Kind {
+        id: "zoom_cross",
+        run: |t, out| lights::run("zoom_cross", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "zoom_smear",
+        run: |t, out| lights::run("zoom_smear", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "spin_smear",
+        run: |t, out| lights::run("spin_smear", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "streak_smear",
+        run: |t, out| lights::run("streak_smear", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "lens_defocus",
+        run: |t, out| lights::run("lens_defocus", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "bloom",
+        run: |t, out| lights::run("bloom", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "flash",
+        run: |t, out| lights::run("flash", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "lens_flare",
+        run: |t, out| lights::run("lens_flare", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "light_leak",
+        run: |t, out| lights::run("light_leak", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "colour_leak",
+        run: |t, out| lights::run("colour_leak", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "colour_burn",
+        run: |t, out| lights::run("colour_burn", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "light_sweep",
+        run: |t, out| lights::run("light_sweep", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "light_rays",
+        run: |t, out| lights::run("light_rays", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "phosphor_trail",
+        run: |t, out| lights::run("phosphor_trail", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "solarise",
+        run: |t, out| lights::run("solarise", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "stripes",
+        run: |t, out| lights::run("stripes", t, out),
+        sides: both_sides,
+    },
+    // Grunge and distort (261).
+    Kind {
+        id: "scramble",
+        run: |t, out| grunge::run("scramble", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "digital_glitch",
+        run: |t, out| grunge::run("digital_glitch", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "tape_damage",
+        run: |t, out| grunge::run("tape_damage", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "flicker_cut",
+        run: |t, out| grunge::run("flicker_cut", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "quake",
+        run: |t, out| grunge::run("quake", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "glass_shards",
+        run: |t, out| grunge::run("glass_shards", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "rough_edge",
+        run: |t, out| grunge::run("rough_edge", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "kaleidoscope",
+        run: |t, out| grunge::run("kaleidoscope", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "liquid_warp",
+        run: |t, out| grunge::run("liquid_warp", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "screen_off",
+        run: |t, out| grunge::run("screen_off", t, out),
+        sides: both_sides,
     },
 ];
 
