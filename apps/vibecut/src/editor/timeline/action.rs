@@ -1,6 +1,8 @@
 //! Names the requests the timeline panel hands back to the frame.
 
-use crate::editor::timeline::{BTreeSet, ItemId, KeyframeSelection, Tick, egui};
+use crate::editor::timeline::{
+    BTreeSet, ItemId, KeyframeSelection, Tick, egui, visuals::VisualRequest,
+};
 
 /// One timeline gesture command from the group move/trim contract.
 ///
@@ -74,6 +76,8 @@ pub(in crate::editor) enum Action {
         id: &'static str,
         params: serde_json::Value,
     },
+    /// Submit one registered media generation job for a pending clip visual.
+    Generate(VisualRequest),
     /// Rename a scene; the frame reports a refusal back through
     /// `State::keep_scene_rename`.
     RenameScene {

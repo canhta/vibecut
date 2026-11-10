@@ -21,8 +21,5 @@ pub(crate) fn thumbnail_cache(budget: ByteBudget) -> Result<ThumbnailCache, CliE
 
 /// Both caches one control session lends to its generation jobs.
 pub(crate) fn media_access(budget: ByteBudget) -> Result<MediaAccess, CliError> {
-    Ok(MediaAccess::new(
-        waveform_cache(budget.clone())?,
-        thumbnail_cache(budget)?,
-    ))
+    Ok(MediaAccess::open(budget)?)
 }

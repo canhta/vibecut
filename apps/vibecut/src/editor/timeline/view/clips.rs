@@ -2,9 +2,10 @@
 
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
-    LABEL_CHARS, Locale, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio, display_label,
-    egui, icons, theme,
+    LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio,
+    display_label, egui, icons, theme,
     view::{Ink, tr},
+    visuals::{self, StripState, WaveState},
 };
 use crate::i18n;
 
@@ -62,15 +63,38 @@ impl State {
                         theme::size::CLIP_FILMSTRIP.min(inner.height()),
                     ),
                 );
-                self.paint_filmstrip(cx, ui, &painter, strip, item, dark);
                 let wave = Rect::from_min_max(
                     egui::pos2(inner.left(), strip.bottom()),
                     inner.right_bottom(),
                 );
-                paint_waveform(&painter, wave, item, theme::waveform(dark), 0.9);
+                self.paint_clip_visuals(
+                    cx,
+                    ui,
+                    &painter,
+                    item,
+                    ClipBands {
+                        strip: Some(strip),
+                        wave,
+                        visible,
+                        left: layout.body.left(),
+                    },
+                    dark,
+                );
             }
             TrackKind::Audio => {
-                paint_waveform(&painter, inner, item, theme::waveform(dark), 0.7);
+                self.paint_clip_visuals(
+                    cx,
+                    ui,
+                    &painter,
+                    item,
+                    ClipBands {
+                        strip: None,
+                        wave: inner,
+                        visible,
+                        left: layout.body.left(),
+                    },
+                    dark,
+                );
             }
             _ => {}
         }
@@ -550,88 +574,292 @@ fn item_db_at(channel: &project::Channel, time: crate::editor::timeline::Tick, b
     }
 }
 
+/// One waveform column is 3 logical px wide, matching the drawn bar pitch.
+const BAR_PX: f32 = 3.0;
+/// A 16:9 placeholder tile until the first strip frame arrives.
+const PLACEHOLDER_ASPECT: f32 = 16.0 / 9.0;
+
+/// The two media bands of one clip and the mapping back to output time.
+struct ClipBands {
+    strip: Option<Rect>,
+    wave: Rect,
+    visible: Rect,
+    /// Timeline body left edge; clip rectangles start at this origin's tick.
+    left: f32,
+}
+
 impl State {
-    /// Frame tiles at the asset aspect: the decoded thumbnail when there is
-    /// one, otherwise quiet placeholder frames so the strip still reads as footage.
-    fn paint_filmstrip(
+    /// Paint the cache-only strip and waveform for one clip. The panel asks the
+    /// shared display query for ready tiles/bars and never decodes or keys
+    /// media itself; a pending display only draws quiet placeholders.
+    fn paint_clip_visuals(
         &mut self,
         cx: &Context<'_>,
         ui: &egui::Ui,
         painter: &egui::Painter,
-        strip: Rect,
         item: &ItemView,
+        bands: ClipBands,
         dark: bool,
     ) {
-        let texture = item
-            .source_asset
-            .and_then(|asset| cx.thumbnails.texture(ui.ctx(), asset));
-        let aspect = texture.as_ref().map_or(16.0 / 9.0, |texture| {
-            let [width, height] = texture.size();
-            width.max(1) as f32 / height.max(1) as f32
-        });
-        let tile = (strip.height() * aspect).max(8.0);
-        let hover = theme::hover(dark);
-        let visible = strip.intersect(painter.clip_rect());
-        if !visible.is_positive() {
+        let ClipBands {
+            strip,
+            wave,
+            visible,
+            left,
+        } = bands;
+        let data = cx.staged_project().data();
+        let source = data
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == item.id);
+        let asset = source
+            .and_then(|candidate| candidate.source_asset)
+            .and_then(|id| data.assets.iter().find(|asset| asset.id() == id));
+        let range = time::TimeRange::new(
+            self.tick_at(visible.left(), left),
+            self.tick_at(visible.right(), left),
+        )
+        .ok();
+        let (Some(source), Some(asset), Some(range)) = (source, asset, range) else {
+            if let Some(strip) = strip {
+                paint_placeholders(painter, strip, dark);
+            }
+            paint_flat(painter, wave, theme::waveform(dark).gamma_multiply(0.35));
             return;
-        }
-        let first = ((visible.left() - strip.left()) / tile).floor();
-        let left = visible.left() - (visible.left() - strip.left()).rem_euclid(tile);
-        let count = ((visible.right() - left) / tile).ceil() as usize;
-        for index in 0..count {
-            let x = left + index as f32 * tile;
-            let rect =
-                Rect::from_min_size(egui::pos2(x, strip.top()), Vec2::new(tile, strip.height()));
-            match &texture {
-                Some(texture) => {
-                    painter.image(
-                        texture.id(),
-                        rect,
-                        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        Color32::WHITE,
-                    );
-                }
-                None => {
-                    let shade = if (first + index as f32).rem_euclid(2.0) < 1.0 {
-                        hover
-                    } else {
-                        theme::field(dark)
-                    };
-                    painter.rect_filled(rect.shrink(0.5), 0.0, shade);
+        };
+        let waveform_ink = theme::waveform(dark);
+        let tip = visuals::clip_tip(dark);
+        if let Some(strip) = strip {
+            let state = cx.visuals.strip(
+                ui.ctx(),
+                asset,
+                source,
+                range,
+                f64::from(self.zoom.max(MIN_ZOOM_FLOOR)),
+            );
+            match &state {
+                StripState::Ready(tiles) => paint_strip_tiles(self, painter, strip, left, tiles),
+                StripState::Pending => paint_placeholders(painter, strip, dark),
+                StripState::Failed | StripState::Unsupported => {
+                    painter.rect_filled(strip, 0.0, theme::field(dark));
+                    paint_marker(painter, strip, dark);
                 }
             }
+            let label = match state {
+                StripState::Ready(_) => tr(cx, Text::TimelineThumbnails).to_owned(),
+                StripState::Pending => tr(cx, Text::Loading).to_owned(),
+                StripState::Failed => tr(cx, Text::VisualFailed).to_owned(),
+                StripState::Unsupported => tr(cx, Text::VisualUnsupported).to_owned(),
+            };
+            self.remember_visual(ui, item, "filmstrip", strip, label);
         }
+        let columns =
+            ((visible.width() / BAR_PX).ceil() as usize).clamp(1, engine::waveform::MAX_COLUMNS);
+        let state = cx.visuals.waveform(asset, source, range, columns);
+        let reach = if strip.is_some() { 0.9 } else { 0.7 };
+        match &state {
+            WaveState::Ready(bars) => {
+                paint_bars(painter, wave, visible, bars, reach, waveform_ink, tip)
+            }
+            WaveState::Pending => paint_flat(painter, wave, waveform_ink.gamma_multiply(0.35)),
+            WaveState::Failed | WaveState::Unsupported => {
+                paint_flat(painter, wave, waveform_ink.gamma_multiply(0.35));
+                paint_marker(painter, wave, dark);
+            }
+        }
+        let clipped = matches!(&state, WaveState::Ready(bars) if bars.iter().any(|bar| bar.over));
+        let label = match state {
+            WaveState::Ready(_) if clipped => format!(
+                "{}; {}",
+                tr(cx, Text::TimelineWaveform),
+                tr(cx, Text::VisualClipping)
+            ),
+            WaveState::Ready(_) => tr(cx, Text::TimelineWaveform).to_owned(),
+            WaveState::Pending => tr(cx, Text::Loading).to_owned(),
+            WaveState::Failed => tr(cx, Text::VisualFailed).to_owned(),
+            WaveState::Unsupported => tr(cx, Text::VisualUnsupported).to_owned(),
+        };
+        self.remember_visual(ui, item, "waveform", wave, label);
+    }
+
+    /// Publish one visual band's state for automation and its hover name.
+    fn remember_visual(
+        &mut self,
+        ui: &egui::Ui,
+        item: &ItemView,
+        band: &str,
+        rect: Rect,
+        label: String,
+    ) {
+        if !rect.is_positive() {
+            return;
+        }
+        let response = ui.interact(
+            rect,
+            Id::unique(("timeline.item.visual", item.id.0, band)),
+            egui::Sense::hover(),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label.as_str()));
+        self.remember_with(
+            format!("timeline.item.{}.{band}", item.id.0),
+            None,
+            Some(label.clone()),
+            &response,
+        );
+        let _ = response.on_hover_text(label);
     }
 }
 
-/// Deterministic amplitude bars until the engine publishes waveform peaks.
-fn paint_waveform(
+/// Frame tiles on their output slices: cached frames or the wait placeholder.
+fn paint_strip_tiles(
+    state: &State,
     painter: &egui::Painter,
-    area: Rect,
-    item: &ItemView,
-    color: Color32,
-    reach: f32,
+    strip: Rect,
+    left: f32,
+    tiles: &[visuals::StripTile],
 ) {
+    let visible = strip.intersect(painter.clip_rect());
+    if !visible.is_positive() {
+        return;
+    }
+    for tile in tiles {
+        let rect = Rect::from_min_max(
+            egui::pos2(state.x_at(tile.output.start(), left), strip.top()),
+            egui::pos2(state.x_at(tile.output.end(), left), strip.bottom()),
+        )
+        .intersect(visible);
+        if !rect.is_positive() {
+            continue;
+        }
+        painter.image(
+            tile.texture.id(),
+            rect,
+            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
+}
+
+/// Quiet placeholder frames so the strip still reads as footage.
+fn paint_placeholders(painter: &egui::Painter, strip: Rect, dark: bool) {
+    let tile = (strip.height() * PLACEHOLDER_ASPECT).max(8.0);
+    let hover = theme::hover(dark);
+    let visible = strip.intersect(painter.clip_rect());
+    if !visible.is_positive() {
+        return;
+    }
+    let first = ((visible.left() - strip.left()) / tile).floor();
+    let left = visible.left() - (visible.left() - strip.left()).rem_euclid(tile);
+    let count = ((visible.right() - left) / tile).ceil() as usize;
+    for index in 0..count {
+        let x = left + index as f32 * tile;
+        let rect = Rect::from_min_size(egui::pos2(x, strip.top()), Vec2::new(tile, strip.height()));
+        let shade = if (first + index as f32).rem_euclid(2.0) < 1.0 {
+            hover
+        } else {
+            theme::field(dark)
+        };
+        painter.rect_filled(rect.shrink(0.5), 0.0, shade);
+    }
+}
+
+/// A typed 12 px marker for failed or unsupported media.
+fn paint_marker(painter: &egui::Painter, area: Rect, dark: bool) {
+    if area.width() < 14.0 || area.height() < 12.0 {
+        return;
+    }
+    let rect = Rect::from_min_size(
+        egui::pos2(area.left() + 4.0, area.center().y - 6.0),
+        Vec2::new(12.0, 12.0),
+    );
+    painter.rect_filled(rect, 2.0, theme::warning(dark));
+    let ink = theme::on_accent(dark);
+    let bar = Rect::from_min_size(
+        egui::pos2(rect.center().x - 1.0, rect.top() + 2.0),
+        Vec2::new(2.0, 5.0),
+    );
+    painter.rect_filled(bar, 0.0, ink);
+    painter.rect_filled(
+        Rect::from_min_size(
+            egui::pos2(rect.center().x - 1.0, rect.bottom() - 4.0),
+            Vec2::splat(2.0),
+        ),
+        0.0,
+        ink,
+    );
+}
+
+/// A flat centre line while bars are pending or unavailable.
+fn paint_flat(painter: &egui::Painter, area: Rect, color: Color32) {
     let visible = area.intersect(painter.clip_rect());
     if !visible.is_positive() {
         return;
     }
+    let y = area.center().y;
+    painter.line_segment(
+        [
+            egui::pos2(visible.left(), y),
+            egui::pos2(visible.right(), y),
+        ],
+        egui::Stroke::new(1.0, color),
+    );
+}
+
+/// Real cache-only bars mapped through the same display floor as the source.
+fn paint_bars(
+    painter: &egui::Painter,
+    area: Rect,
+    visible: Rect,
+    bars: &[visuals::WaveBar],
+    reach: f32,
+    color: Color32,
+    tip: Color32,
+) {
+    let clip = area.intersect(painter.clip_rect());
+    if !clip.is_positive() || bars.is_empty() || !visible.is_positive() {
+        return;
+    }
+    let step = visible.width() / bars.len() as f32;
     let center = area.center().y;
-    let bars = (area.width() / 3.0).floor().max(1.0);
-    let first = ((visible.left() - area.left()) / 3.0).floor();
-    let left = visible.left() - (visible.left() - area.left()).rem_euclid(3.0);
-    let count = ((visible.right() - left) / 3.0).ceil() as usize;
-    for index in 0..count {
-        let t = (first + index as f32) / bars;
-        // Synthetic stand-in amplitude until the engine publishes waveform
-        // peaks; the display floor and log curve match the source mapping.
-        let amplitude = ((t * 47.0 + item.id.0 as f32).sin() * 0.5 + 0.5) * 0.8 + 0.1;
-        let half = (area.height() * 0.5 * reach * audio::bar_fraction(amplitude)).max(1.0);
-        let x = left + index as f32 * 3.0 + 1.5;
+    let half = area.height() * 0.5 * reach;
+    for (index, bar) in bars.iter().enumerate() {
+        let x = visible.left() + (index as f32 + 0.5) * step;
+        if x < clip.left() - 1.0 || x > clip.right() + 1.0 {
+            continue;
+        }
+        let top = center - half * audio::bar_fraction(bar.max);
+        let bottom = center + half * audio::bar_fraction(-bar.min);
+        let (top, bottom) = if (bottom - top).abs() < 1.0 {
+            (center - 0.5, center + 0.5)
+        } else {
+            (top, bottom)
+        };
         painter.line_segment(
-            [egui::pos2(x, center - half), egui::pos2(x, center + half)],
+            [
+                egui::pos2(x, top.max(area.top())),
+                egui::pos2(x, bottom.min(area.bottom())),
+            ],
             egui::Stroke::new(1.0, color),
         );
+        if bar.over {
+            // A >0 dBFS sample extends past full scale: cap both ends.
+            painter.line_segment(
+                [
+                    egui::pos2(x, area.top() + 1.0),
+                    egui::pos2(x, (area.top() + 4.0).min(area.bottom())),
+                ],
+                egui::Stroke::new(1.0, tip),
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(x, area.bottom() - 1.0),
+                    egui::pos2(x, (area.bottom() - 4.0).max(area.top())),
+                ],
+                egui::Stroke::new(1.0, tip),
+            );
+        }
     }
 }
 

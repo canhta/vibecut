@@ -46,6 +46,9 @@ impl Editor {
         self.apply_import_events();
         self.restore_asset_state();
         self.poll_fonts();
+        if let Err(error) = self.media.tick(&mut self.session) {
+            self.desk().fail(error.to_string());
+        }
         self.truncate_toast();
         if self
             .media_reveal

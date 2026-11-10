@@ -447,6 +447,8 @@ pub struct Editor {
     pub(super) frame: super::frame::State,
     pub(super) player: super::player::State,
     pub(super) timeline: super::timeline::State,
+    /// Cache-only clip visuals and the generation jobs they request.
+    pub(super) media: super::timeline::Media,
     pub(super) fullscreen_commanded: bool,
     pub snapshot: preview::SnapshotDialog,
     pub(super) error: Option<String>,

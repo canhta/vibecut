@@ -3017,9 +3017,12 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
         assert!(
             shapes.iter().any(|shape| {
                 matches!(shape, egui::Shape::LineSegment { points, .. }
-                if (points[0].x - middle).abs() < 4.0
+                if points[0].x.min(points[1].x) <= middle
+                    && points[0].x.max(points[1].x) >= middle
                     && points[0].y > clip.bottom() - 17.0
-                    && points[1].y < clip.bottom() && points[1].y > points[0].y)
+                    && points[0].y < clip.bottom()
+                    && points[1].y > clip.bottom() - 17.0
+                    && points[1].y < clip.bottom())
             }),
             "waveform must cover the visible clip at scroll {scroll}"
         );

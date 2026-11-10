@@ -878,6 +878,13 @@ catalog! {
     CropReset { key: "crop_reset", en: "Reset", vi: "Đặt lại" },
     CropApply { key: "crop_apply", en: "Apply", vi: "Áp dụng" },
     CropPreview { key: "crop_preview", en: "Crop box", vi: "Vùng cắt" },
+
+    // Timeline clip visuals.
+    TimelineThumbnails { key: "timeline_thumbnails", en: "Thumbnails", vi: "Ảnh thu nhỏ" },
+    TimelineWaveform { key: "timeline_waveform", en: "Waveform", vi: "Dạng sóng" },
+    VisualFailed { key: "visual_failed", en: "Unavailable", vi: "Không khả dụng" },
+    VisualUnsupported { key: "visual_unsupported", en: "Not supported", vi: "Không được hỗ trợ" },
+    VisualClipping { key: "visual_clipping", en: "Audio clips past 0 dBFS", vi: "Âm thanh vượt 0 dBFS" },
 }
 
 /// The message for `key` in `locale`.

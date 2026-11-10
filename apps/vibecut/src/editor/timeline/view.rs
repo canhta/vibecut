@@ -97,5 +97,8 @@ pub(in crate::editor) fn show(
         );
     }
     state.show_bookmark_popover(cx, ui.ctx());
+    for request in cx.visuals.take_requests() {
+        state.push(Action::Generate(request));
+    }
     std::mem::take(&mut state.outbox)
 }

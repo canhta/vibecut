@@ -143,6 +143,7 @@ impl Editor {
         let keybinding_issues = keymap.issues().to_vec();
         let keymap_source = preferences.keybindings.clone();
         let project = session.project().data().id;
+        let media = timeline::Media::new(playback.budget().clone());
         let timeline_lanes: Vec<ItemId> = preferences
             .timeline_lanes
             .get(&project)
@@ -177,6 +178,7 @@ impl Editor {
                 state.restore_lanes(timeline_lanes);
                 state
             },
+            media,
             fullscreen_commanded: false,
             snapshot: preview::SnapshotDialog::default(),
             error: None,

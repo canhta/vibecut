@@ -9,11 +9,13 @@ mod audio;
 mod layout;
 mod state;
 mod view;
+mod visuals;
 mod workflow;
 
 pub(super) use action::{Action, Gesture};
 pub(super) use state::{DropZone, State};
 pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_scenes};
+pub(super) use visuals::{Media, VisualQuery};
 
 use super::{
     Align2, AssetId, BTreeSet, BUTTON_ICON, BookmarkId, Color32, Command, Context, DEFAULT_ZOOM,

@@ -1,5 +1,5 @@
 //! Routes the actions an area returns to the owners that apply them.
-use crate::editor::{Command, Context, Editor, ItemId, Tick, egui, frame, timeline};
+use crate::editor::{Command, Context, Editor, ItemId, Tick, egui, timeline};
 
 impl Editor {
     /// The read-only services every area receives.
@@ -18,10 +18,7 @@ impl Editor {
             keybindings: &self.preferences.keybindings,
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
-            thumbnails: frame::Thumbnails {
-                images: &self.thumbnails,
-                textures: &self.thumbnail_textures,
-            },
+            visuals: &self.media,
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
         }
@@ -79,6 +76,11 @@ impl Editor {
             match action {
                 Action::Activate(id) => self.action(&id),
                 Action::Command { id, params } => self.track_command(id, params),
+                Action::Generate(request) => {
+                    if let Err(error) = self.media.generate(&mut self.session, request) {
+                        self.desk().fail(error.to_string());
+                    }
+                }
                 Action::RenameScene { scene, name } => {
                     if !self.desk().edit(
                         "scene.rename",

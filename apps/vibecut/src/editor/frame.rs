@@ -37,7 +37,8 @@ pub(crate) struct Context<'a> {
     pub(crate) ripple: bool,
     /// Last presented preview frame, for the export dialog's poster.
     pub(crate) preview: Option<&'a egui::TextureHandle>,
-    pub(crate) thumbnails: Thumbnails<'a>,
+    /// Cache-only clip visual queries (thumbnail strip and waveform).
+    pub(crate) visuals: &'a dyn crate::editor::timeline::VisualQuery,
     /// Registered action ids the editor currently refuses.
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,
     /// While an effect is being dragged: the clips that accept it.
