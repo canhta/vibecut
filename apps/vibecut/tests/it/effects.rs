@@ -18,6 +18,84 @@ fn pixel(entry_point: &'static str, values: &[f32]) -> EffectPass {
         uniforms: values.iter().copied().map(Uniform::Float).collect(),
     }
 }
+const MIX_IDENTITY: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+const MIX_CROSS: [f32; 12] = [
+    2.0, -2.0, 0.25, -0.25, -0.5, 1.5, 0.5, 0.125, 0.25, 0.5, -2.0, 2.0,
+];
+fn linear_colour_rows() -> Vec<EffectPass> {
+    let mut rows = vec![
+        pixel("black_white", &[]), // No parameters; nondefault parameter rows are N/A.
+        pixel("channel_mix", &MIX_IDENTITY),
+        pixel(
+            "channel_mix",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+        ),
+        pixel("channel_mix", &MIX_CROSS),
+        pixel(
+            "channel_mix",
+            &[
+                0.0, 0.0, 0.0, -2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.1234567,
+            ],
+        ),
+        pixel("tint", &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]),
+        pixel("tint", &[0.2, 0.4, 0.6, 0.2, 0.4, 0.6, 1.0]),
+    ];
+    for amount in [0.0, 0.35, 1.0] {
+        rows.push(pixel(
+            "tint",
+            &[0.1234567, 0.75, 0.05, 0.91, 0.234567, 0.66, amount],
+        ));
+    }
+    rows
+}
+// Independent f64 colour equations, not calls into the f32 CPU reference.
+fn expected_linear_colour(pass: &EffectPass, source: [f32; 4]) -> Option<[f64; 4]> {
+    let values = pass.values();
+    let a = f64::from(source[3]);
+    let c = [0, 1, 2].map(|k| {
+        if a > 0.0 {
+            f64::from(source[k]) / a
+        } else {
+            0.0
+        }
+    });
+    let encode = |v: f64| {
+        if v <= 0.0031308 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let decode = |v: f64| {
+        let v = v.clamp(0.0, 1.0);
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let luma = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    let e = c.map(encode);
+    let rgb = match pass.entry_point() {
+        "black_white" => [luma; 3],
+        "channel_mix" => [0, 1, 2].map(|k| {
+            let row = k * 4;
+            decode(
+                f64::from(values[row]) * e[0]
+                    + f64::from(values[row + 1]) * e[1]
+                    + f64::from(values[row + 2]) * e[2]
+                    + f64::from(values[row + 3]),
+            )
+        }),
+        "tint" => [0, 1, 2].map(|k| {
+            let black = f64::from(values[k]);
+            let target = black + (f64::from(values[k + 3]) - black) * encode(luma);
+            decode(e[k] + (target - e[k]) * f64::from(values[6]))
+        }),
+        _ => return None,
+    };
+    Some([rgb[0] * a, rgb[1] * a, rgb[2] * a, a])
+}
 fn pixel_rows() -> Vec<EffectPass> {
     let mut rows: Vec<_> = [1.0, 1e-6, 1e-3, 0.7, 2.8, 4.0]
         .map(|g| pixel("gamma", &[g]))
@@ -31,6 +109,7 @@ fn pixel_rows() -> Vec<EffectPass> {
     for channel in [0.49, 0.5, 1.5, 3.5] {
         rows.push(pixel("invert", &[channel, 0.35]));
     }
+    rows.extend(linear_colour_rows());
     rows
 }
 fn max_error(a: &Image, b: &Image) -> f32 {
@@ -70,15 +149,33 @@ fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) 
                 src[3]
             };
             assert!((out[3] - alpha).abs() <= 2e-5, "{pass:?} alpha");
+            if let Some(expected) = expected_linear_colour(&pass, *src) {
+                assert_eq!(out[3], src[3], "linear-colour alpha {pass:?}");
+                for (actual, expected) in out.iter().zip(expected) {
+                    assert!(
+                        (f64::from(*actual) - expected).abs() <= 2e-5,
+                        "independent colour {label} {pass:?}: {out:?} vs {expected}"
+                    );
+                }
+                if pass.entry_point() == "black_white" {
+                    assert_eq!(out[0], out[1]);
+                    assert_eq!(out[1], out[2]);
+                }
+            }
         }
         if label.starts_with("scale") {
             let values = pass.values();
-            if (pass.entry_point() == "gamma" && values[0] != 1.0)
-                || (pass.entry_point() == "invert" && values[1] != 1.0)
-            {
-                assert!(max_error(image, &actual) > 1e-5, "visible {pass:?}");
-            } else {
+            let identity = match pass.entry_point() {
+                "gamma" => values[0] == 1.0,
+                "invert" => values[1] == 1.0,
+                "channel_mix" => values.as_ref() == MIX_IDENTITY,
+                "tint" => values[6] == 0.0,
+                _ => false,
+            };
+            if identity {
                 assert!(max_error(image, &actual) <= 2e-5, "identity {pass:?}");
+            } else {
+                assert!(max_error(image, &actual) > 1e-5, "visible {pass:?}");
             }
         }
         eprintln!("pixel-parity {label} {pass:?} max_abs={max:e}");
@@ -105,14 +202,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
     );
-    for entry in [
-        "black_white",
-        "color_mix",
-        "gamma_unknown",
-        "levels",
-        "posterize",
-        "tint",
-    ] {
+    for entry in ["color_mix", "gamma_unknown", "levels", "posterize"] {
         assert!(!gpu.supports(entry), "unadmitted {entry}");
     }
     // The public image boundary rejects HDR/out-of-gamut working pixels; decoded
@@ -147,6 +237,20 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         .unwrap();
         pixel_parity(&gpu, &image, &format!("edges-{w}x{h}"));
     }
+    // Primary colours independently expose each Rec.709 weight and channel row.
+    let primaries = Image::from_working_pixels(
+        3,
+        1,
+        [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 0.5, 0.0, 0.5],
+            [0.0, 0.0, 0.25, 0.25],
+        ]
+        .into_iter(),
+        &Hooks,
+    )
+    .unwrap();
+    pixel_parity(&gpu, &primaries, "primaries-3x1");
     // Actual device admission and transparent singleton footprints use the
     // same contract as the CPU, including the largest admitted frame centres.
     for (w, h) in [(8, 4), (1, 3), (3, 1), (1, 1)] {
@@ -585,8 +689,8 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
 }
 
 #[test]
-#[ignore = "bounded native 1080p Gamma/Invert measurement; run explicitly on hardware"]
-fn gamma_invert_native_1080p_measurement() {
+#[ignore = "bounded native 1080p pixel-effect measurement; run explicitly on hardware"]
+fn pixel_effects_native_1080p_measurement() {
     use std::sync::atomic::{AtomicU64, Ordering};
     struct Meter {
         budget: engine::ByteBudget,
@@ -643,7 +747,11 @@ fn gamma_invert_native_1080p_measurement() {
         coverage: None,
         below: &input,
     };
-    for pass in [pixel("gamma", &[0.7]), pixel("invert", &[0.0, 0.35])] {
+    for pass in [
+        pixel("black_white", &[]),
+        pixel("channel_mix", &MIX_CROSS),
+        pixel("tint", &[0.1234567, 0.75, 0.05, 0.91, 0.234567, 0.66, 0.35]),
+    ] {
         assert!(gpu.supports(pass.entry_point()));
         // Oracle remains outside timed/charged work; every timed result is verified.
         let expected = CpuEffects
@@ -797,7 +905,10 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     );
     drop(out);
     assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
-    for pass in [pixel("gamma", &[0.7]), pixel("invert", &[4.0, 0.35])] {
+    for pass in [pixel("gamma", &[0.7]), pixel("invert", &[4.0, 0.35])]
+        .into_iter()
+        .chain(linear_colour_rows())
+    {
         let original = source.pixels().to_vec();
         let out = gpu
             .apply(&source, &[pass.clone()], inputs(), &meter)
@@ -852,6 +963,17 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         pixel("invert", &[0.0, f32::INFINITY]),
         pixel("invert", &[0.0]),
         pixel("gamma_unknown", &[1.0]),
+        pixel("black_white", &[1.0]),
+        pixel("channel_mix", &[1.0; 11]),
+        pixel("channel_mix", &[2.0001; 12]),
+        pixel("channel_mix", &[-2.0001; 12]),
+        pixel("channel_mix", &[f32::NAN; 12]),
+        pixel("tint", &[0.5; 6]),
+        pixel("tint", &[-0.0001, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]),
+        pixel("tint", &[0.0, 0.0, 0.0, 1.0001, 1.0, 1.0, 1.0]),
+        pixel("tint", &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, -0.0001]),
+        pixel("tint", &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0001]),
+        pixel("tint", &[f32::INFINITY; 7]),
     ] {
         assert!(matches!(
             gpu.apply(&source, &[pass], inputs(), &meter),
@@ -1061,6 +1183,22 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             project::effect_definition("invert")
                 .unwrap()
                 .instance("invert"),
+            project::effect_definition("black_white")
+                .unwrap()
+                .instance("grey"),
+            project::effect_definition("channel_mix")
+                .unwrap()
+                .instance("mix")
+                .with("rg", project::EffectValue::Scalar(50.0))
+                .unwrap(),
+            project::effect_definition("tint")
+                .unwrap()
+                .instance("tint")
+                .with(
+                    "white",
+                    project::EffectValue::Color(project::Color([220, 80, 30, 255])),
+                )
+                .unwrap(),
             project::effect_definition("posterize")
                 .unwrap()
                 .instance("cpu-only"),
@@ -1172,6 +1310,12 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         let mut plain = grade.clone();
         plain.push(pixel("gamma", &[0.7]));
         plain.push(pixel("invert", &[3.0, 0.35]));
+        plain.push(pixel("black_white", &[]));
+        plain.push(pixel("channel_mix", &MIX_CROSS));
+        plain.push(pixel(
+            "tint",
+            &[0.1234567, 0.75, 0.05, 0.91, 0.234567, 0.66, 0.35],
+        ));
         plain.extend(chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap());
         plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
         let mut mixed = plain.clone();

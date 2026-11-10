@@ -102,6 +102,45 @@ fn invert(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     dst[i] = decoded_premultiplied(mixed, px.a);
 }
+// Mirrors black_white_pixel; no uniforms. Luma stays in linear light.
+@compute @workgroup_size(8, 8)
+fn black_white(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let c = straight_rgb(px);
+    let l = clamp(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, 0.0, 1.0);
+    dst[i] = vec4<f32>(vec3<f32>(l * px.a), px.a);
+}
+// Mirrors channel_mix_pixel; weights = three encoded-space rows [r,g,b,constant].
+@compute @workgroup_size(8, 8)
+fn channel_mix(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let e = encoded_rgb(straight_rgb(px));
+    var mixed = vec3<f32>(0.0);
+    for (var k = 0u; k < 3u; k++) {
+        let row = k * 4u;
+        mixed[k] = clamp(weights[row] * e.r + weights[row + 1u] * e.g
+            + weights[row + 2u] * e.b + weights[row + 3u], 0.0, 1.0);
+    }
+    dst[i] = decoded_premultiplied(mixed, px.a);
+}
+// Mirrors tint_pixel; weights = encoded black RGB, white RGB, amount.
+@compute @workgroup_size(8, 8)
+fn tint(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let c = straight_rgb(px);
+    let l = oetf(max(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, 0.0));
+    let black = vec3<f32>(weights[0], weights[1], weights[2]);
+    let white = vec3<f32>(weights[3], weights[4], weights[5]);
+    let mapped = black + (white - black) * l;
+    let e = encoded_rgb(c);
+    dst[i] = decoded_premultiplied(e + (mapped - e) * clamp(weights[6], 0.0, 1.0), px.a);
+}
 fn ramp(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
