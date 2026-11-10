@@ -1,6 +1,17 @@
 //! Smoke and install-smoke acceptance runs against packaged and installed artifacts.
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::macos;
+use super::package;
+use super::{
+    Host, Options, Result, Temp, Tools, arg, canonical, entries, field, fresh, text, write_json,
+};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::env;
+use std::ffi::OsString;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 fn sanitized(tools: &Tools, program: &Path, cwd: &Path) -> Command {
     let mut command = Command::new(program);
@@ -55,7 +66,7 @@ fn verify_signed(tools: &mut Tools, app: &Path) -> Result<()> {
         "--verbose",
         app
     )?;
-    package::validate_staple(tools, app)?;
+    macos::validate_staple(tools, app)?;
     Ok(())
 }
 pub(super) fn run(tools: &mut Tools, o: &Options) -> Result<()> {
@@ -290,7 +301,7 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     let file = packages.first().ok_or("download missing")?;
     if tools.host == Host::Mac && o.has("--signed") {
         run!(tools, "codesign", "--verify", "--strict", file)?;
-        package::validate_staple(tools, file)?;
+        macos::validate_staple(tools, file)?;
         run!(
             tools,
             "spctl",

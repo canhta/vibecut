@@ -1,7 +1,13 @@
 //! Signing, notarization and credential lifecycle for macOS distribution artifacts.
-#[allow(clippy::wildcard_imports)]
-use super::*;
-use std::collections::BTreeSet;
+use super::package;
+use super::{Host, Result, Tools, arg, field, fresh, text, write_json};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 const REQUIRED: [&str; 6] = [
     "MACOS_CERT_P12",
@@ -449,9 +455,16 @@ pub(super) fn run(tools: &mut Tools, args: &[String]) -> Result<()> {
     clippy::panic,
     clippy::indexing_slicing
 )]
-#[allow(clippy::wildcard_imports)]
 mod tests {
-    use super::*;
+    use super::{
+        Config, Notary, REQUIRED, decode_base64, notarize, state, validate, with_credentials,
+    };
+    use crate::distribution::{Captured, Host, Temp, Tools};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::env;
+    use std::ffi::OsStr;
+    use std::path::Path;
     #[test]
     fn rejected_submission_fetches_only_safe_diagnostic_categories() {
         let mut tools = Tools::new(Path::new("."));
@@ -544,9 +557,17 @@ mod tests {
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
-#[allow(clippy::wildcard_imports)]
 mod cleanup_tests {
-    use super::*;
+    #[cfg(unix)]
+    use super::{REQUIRED, with_credentials};
+    use super::{cleanup, fresh, state};
+    #[cfg(unix)]
+    use crate::distribution::Host;
+    use crate::distribution::{Captured, Temp, Tools};
+    use std::env;
+    use std::ffi::OsStr;
+    use std::fs;
+
     #[test]
     fn cleanup_removes_keys_even_when_search_restore_fails_or_is_corrupt() {
         for corrupt in [false, true] {

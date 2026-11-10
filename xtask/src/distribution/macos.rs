@@ -1,7 +1,16 @@
-//! macOS deployment, architecture, runpath and code-signing audits for packaged binaries.
-#[allow(clippy::wildcard_imports)]
-use super::*;
+//! macOS deployment, architecture, runpath, signing and package audits.
+use super::package::{self, compliance, files_with};
+use super::{
+    Options, Result, Tools, arg, copy, digest, entries, executable, insert, manifest, signing,
+    symlink,
+};
+use serde_json::json;
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 pub(super) const MINIMUM: &str = "11.0";
 pub(super) fn audit(tools: &mut Tools, path: &Path, arch: &str) -> Result<()> {
@@ -207,6 +216,212 @@ pub(super) fn replace(tools: &mut Tools, o: &Options) -> Result<()> {
     }
     sign(tools, &app, "-")
 }
+
+pub(super) fn package(
+    tools: &mut Tools,
+    r: &package::Request,
+    config: &signing::Config,
+    prefix: &Path,
+    output: &Path,
+    receipt: &mut serde_json::Value,
+) -> Result<()> {
+    let payload = output.join("root");
+    let app = payload.join("Applications/VibeCut.app");
+    let contents = app.join("Contents");
+    let binaries = contents.join("MacOS");
+    let libraries = contents.join("Frameworks");
+    let resources = contents.join("Resources");
+    for path in [&binaries, &libraries, &resources] {
+        fs::create_dir_all(path).map_err(|e| e.to_string())?;
+    }
+    for name in ["vibecut", "vibecut-cli"] {
+        copy(&r.binaries.join(name), &binaries.join(name))?;
+        executable(&binaries.join(name))?;
+    }
+    for path in files_with(&prefix.join("lib"), "dylib")? {
+        let deps = dependencies(tools, &path)?;
+        let name = Path::new(deps.first().ok_or("missing dylib install ID")?)
+            .file_name()
+            .ok_or("dylib name")?;
+        copy(&path, &libraries.join(name))?;
+        executable(&libraries.join(name))?;
+    }
+    let libs = files_with(&libraries, "dylib")?;
+    if libs.len() < 6 {
+        return Err("incomplete FFmpeg dylib set".into());
+    }
+    let files: Vec<_> = libs
+        .iter()
+        .cloned()
+        .chain([binaries.join("vibecut-cli"), binaries.join("vibecut")])
+        .collect();
+    for path in &files {
+        audit(tools, path, &r.arch)?;
+    }
+    relocate(tools, &files, &libs)?;
+    copy(
+        &tools.root.join("assets/app-icon/vibecut.icns"),
+        &resources.join("vibecut.icns"),
+    )?;
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>vibecut</string><key>CFBundleIdentifier</key><string>com.canhta.vibecut</string><key>CFBundleName</key><string>VibeCut</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>{version}</string><key>CFBundleVersion</key><string>{version}</string><key>CFBundleIconFile</key><string>vibecut.icns</string><key>NSHighResolutionCapable</key><true/><key>LSMinimumSystemVersion</key><string>{minimum}</string></dict></plist>"#,
+        version = tools.version(),
+        minimum = MINIMUM
+    );
+    fs::write(contents.join("Info.plist"), plist).map_err(|e| e.to_string())?;
+    compliance(tools, prefix, &resources.join("compliance"))?;
+    fs::create_dir_all(payload.join("usr/local/bin")).map_err(|e| e.to_string())?;
+    symlink(
+        Path::new("/Applications/VibeCut.app/Contents/MacOS/vibecut-cli"),
+        &payload.join("usr/local/bin/vibecut-cli"),
+    )?;
+    for path in &files {
+        sign(tools, path, &config.identity)?;
+    }
+    sign(tools, &app, &config.identity)?;
+    insert(
+        receipt,
+        "signing",
+        json!(if config.identity == "-" {
+            "ad-hoc"
+        } else {
+            "Developer ID requested"
+        }),
+    )?;
+    let components = output.join("components.plist");
+    fs::write(&components,r#"<?xml version="1.0"?><plist version="1.0"><array><dict><key>RootRelativeBundlePath</key><string>Applications/VibeCut.app</string><key>BundleIsRelocatable</key><false/><key>BundleHasStrictIdentifier</key><true/><key>BundleIsVersionChecked</key><true/><key>BundleOverwriteAction</key><string>upgrade</string></dict></array></plist>"#).map_err(|e|e.to_string())?;
+    let pkg = output.join(format!("vibecut-{}-macos-{}.pkg", tools.version(), r.arch));
+    let mut args = vec![
+        arg("--root"),
+        arg(&payload),
+        arg("--identifier"),
+        arg("com.canhta.vibecut"),
+        arg("--version"),
+        arg(tools.version()),
+        arg("--install-location"),
+        arg("/"),
+        arg("--component-plist"),
+        arg(&components),
+    ];
+    if let Some(identity) = &config.installer {
+        args.extend([arg("--sign"), arg(identity)]);
+    }
+    args.push(arg(&pkg));
+    tools.run("pkgbuild", args)?;
+    if config.installer.is_some() {
+        run!(tools, "pkgutil", "--check-signature", &pkg)?;
+    }
+    if config.notary.is_some() {
+        let archive = output.join("notary-app.zip");
+        run!(tools, "ditto", "-c", "-k", "--keepParent", &app, &archive)?;
+        signing::notarize(tools, &archive, config)?;
+        staple(tools, &app)?;
+        run!(
+            tools,
+            "spctl",
+            "--assess",
+            "--type",
+            "execute",
+            "--verbose",
+            &app
+        )?;
+        let image = output.join("image");
+        fs::create_dir(&image).map_err(|e| e.to_string())?;
+        run!(tools, "ditto", &app, image.join("VibeCut.app"))?;
+        symlink(Path::new("/Applications"), &image.join("Applications"))?;
+        for name in ["install-cli.sh", "README.md"] {
+            copy(&tools.root.join("packaging").join(name), &image.join(name))?;
+        }
+        let dmg = output.join(format!("vibecut-{}-macos-{}.dmg", tools.version(), r.arch));
+        run!(
+            tools,
+            "hdiutil",
+            "create",
+            "-volname",
+            "VibeCut",
+            "-srcfolder",
+            &image,
+            "-format",
+            "UDZO",
+            &dmg
+        )?;
+        sign(tools, &dmg, &config.identity)?;
+        signing::notarize(tools, &dmg, config)?;
+        staple(tools, &dmg)?;
+        run!(
+            tools,
+            "spctl",
+            "--assess",
+            "--type",
+            "open",
+            "--context",
+            "context:primary-signature",
+            "--verbose",
+            &dmg
+        )?;
+        insert(receipt, "image_sha256", json!(digest(&dmg)?))?;
+        insert(receipt, "app_notarization", json!({"status":"Accepted"}))?;
+        insert(receipt, "image_notarization", json!({"status":"Accepted"}))?;
+        if config.installer.is_some() {
+            signing::notarize(tools, &pkg, config)?;
+            staple(tools, &pkg)?;
+        }
+    }
+    insert(receipt, "package_sha256", json!(digest(&pkg)?))?;
+    insert(receipt, "files", manifest(&payload)?)?;
+    Ok(())
+}
+pub(super) fn staple(tools: &mut Tools, path: &Path) -> Result<()> {
+    stapler_with_wait(tools, "staple", path, std::thread::sleep)?;
+    validate_staple(tools, path)
+}
+pub(super) fn validate_staple(tools: &mut Tools, path: &Path) -> Result<()> {
+    stapler_with_wait(tools, "validate", path, std::thread::sleep)
+}
+fn stapler_with_wait(
+    tools: &mut Tools,
+    operation: &str,
+    path: &Path,
+    mut wait: impl FnMut(Duration),
+) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(180);
+    for (attempt, delay) in [0, 10, 20, 30, 50, 60].into_iter().enumerate() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let delay = Duration::from_secs(delay);
+        if remaining <= delay {
+            break;
+        }
+        if !delay.is_zero() {
+            wait(delay);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let mut command = Command::new("xcrun");
+        command.args([arg("stapler"), arg(operation), arg(path)]);
+        command.current_dir(&tools.root);
+        let captured = tools.execute(&mut command, remaining)?;
+        if captured.code == Some(0) {
+            return Ok(());
+        }
+        // EX_NOHOST covers unavailable tickets/unexpected ticket-service replies.
+        // Invalid/revoked signatures, unsupported files and write errors fail now.
+        if captured.code != Some(68) {
+            return Err(format!(
+                "stapler {operation} failed ({:?}); native diagnostics suppressed",
+                captured.code
+            ));
+        }
+        if attempt < 5 {
+            eprintln!("stapler {operation}: ticket lookup unavailable; bounded retry");
+        }
+    }
+    Err(format!(
+        "stapler {operation}: ticket lookup unavailable after bounded retries; native diagnostics suppressed"
+    ))
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -214,9 +429,11 @@ pub(super) fn replace(tools: &mut Tools, o: &Options) -> Result<()> {
     clippy::panic,
     clippy::indexing_slicing
 )]
-#[allow(clippy::wildcard_imports)]
 mod tests {
-    use super::*;
+    use super::{dependencies, deployment, relocate, rpaths, stapler_with_wait};
+    use crate::distribution::{Captured, Tools};
+    use std::path::{Path, PathBuf};
+
     #[test]
     fn every_slice_needs_an_admitted_deployment_version() {
         for (versions, slices, valid) in [
@@ -260,5 +477,35 @@ mod tests {
                 .expect_err("external library")
                 .contains("unbundled")
         );
+    }
+    #[test]
+    fn ticket_lookup_retries_are_bounded_and_do_not_retry_invalid_data() {
+        for operation in ["staple", "validate"] {
+            for (codes, expected_success, expected_delays) in [
+                (vec![68, 68, 0], true, vec![10, 20]),
+                (vec![68; 6], false, vec![10, 20, 30, 50, 60]),
+                (vec![65], false, vec![]),
+            ] {
+                let mut tools = Tools::new(Path::new("."));
+                let mut codes = std::collections::VecDeque::from(codes);
+                tools.runner = Box::new(move |_, _| {
+                    Ok(Captured {
+                        code: codes.pop_front(),
+                        stdout: "PRIVATE-STDOUT".into(),
+                        stderr: "PRIVATE-STDERR".into(),
+                    })
+                });
+                let mut delays = Vec::new();
+                let result =
+                    stapler_with_wait(&mut tools, operation, Path::new("private.app"), |delay| {
+                        delays.push(delay.as_secs())
+                    });
+                assert_eq!(result.is_ok(), expected_success);
+                assert_eq!(delays, expected_delays);
+                if let Err(error) = result {
+                    assert!(!error.contains("PRIVATE"));
+                }
+            }
+        }
     }
 }

@@ -1,7 +1,11 @@
-//! Assemble the per-platform package tree with its compliance files and platform binary audits.
-#[allow(clippy::wildcard_imports)]
-use super::*;
+//! Common package tree assembly, compliance files and per-platform dispatch.
+use super::{Host, Result, Tools, canonical, copy, digest, entries, fresh, insert, manifest};
+use super::{linux, macos, signing, text, tree, windows, write_json};
+use serde_json::json;
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub(super) struct Request {
     pub os: String,
@@ -11,7 +15,7 @@ pub(super) struct Request {
     pub output: PathBuf,
 }
 impl Request {
-    pub fn options(o: &Options) -> Result<Self> {
+    pub fn options(o: &super::Options) -> Result<Self> {
         Ok(Self {
             os: o.get("--os")?.into(),
             arch: o.get("--arch")?.into(),
@@ -215,109 +219,6 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         &destination.join("README.md"),
     )
 }
-fn pe(path: &Path) -> Result<(u16, u16)> {
-    use std::io::{Seek, SeekFrom};
-    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut header = [0_u8; 64];
-    file.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if header.get(..2) != Some(b"MZ") {
-        return Err("not a PE image".into());
-    }
-    let offset = u32::from_le_bytes(
-        header
-            .get(0x3c..0x40)
-            .ok_or("PE offset")?
-            .try_into()
-            .map_err(|_| "PE offset")?,
-    );
-    file.seek(SeekFrom::Start(u64::from(offset)))
-        .map_err(|e| e.to_string())?;
-    let mut image = [0_u8; 96];
-    file.read_exact(&mut image).map_err(|e| e.to_string())?;
-    if image.get(..4) != Some(b"PE\0\0") {
-        return Err("invalid PE signature".into());
-    }
-    Ok((
-        u16::from_le_bytes(
-            image
-                .get(4..6)
-                .ok_or("PE machine")?
-                .try_into()
-                .map_err(|_| "machine")?,
-        ),
-        u16::from_le_bytes(
-            image
-                .get(0x5c..0x5e)
-                .ok_or("PE subsystem")?
-                .try_into()
-                .map_err(|_| "subsystem")?,
-        ),
-    ))
-}
-
-fn windows_audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()> {
-    let expected = match arch {
-        "x86_64" => 0x8664,
-        "aarch64" => 0xaa64,
-        _ => return Err("unsupported Windows architecture".into()),
-    };
-    let names: BTreeSet<_> = files
-        .iter()
-        .filter_map(|p| p.file_name())
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .collect();
-    let system =
-        PathBuf::from(tools.variable("SystemRoot").ok_or("missing SystemRoot")?).join("System32");
-    for path in files {
-        let (machine, subsystem) = pe(path)?;
-        if machine != expected {
-            return Err("wrong PE architecture".into());
-        }
-        if path.extension() == Some(OsStr::new("exe"))
-            && subsystem
-                != if path.file_stem() == Some(OsStr::new("vibecut")) {
-                    2
-                } else {
-                    3
-                }
-        {
-            return Err("wrong executable subsystem".into());
-        }
-        let output = run!(tools, "dumpbin", "/dependents", path)?;
-        let dependencies: Vec<_> = output
-            .lines()
-            .map(str::trim)
-            .filter(|line| {
-                line.to_lowercase().ends_with(".dll") && !line.contains(char::is_whitespace)
-            })
-            .collect();
-        if dependencies.is_empty() {
-            return Err("no PE dependencies reported".into());
-        }
-        for dep in dependencies {
-            let name = dep.to_lowercase();
-            if !names.contains(&name)
-                && !name.starts_with("api-ms-")
-                && !name.starts_with("ext-ms-")
-            {
-                let ffmpeg = [
-                    "avcodec-",
-                    "avformat-",
-                    "avutil-",
-                    "avfilter-",
-                    "swscale-",
-                    "swresample-",
-                ]
-                .iter()
-                .any(|prefix| name.starts_with(prefix));
-                if ffmpeg || !system.join(dep).is_file() {
-                    return Err(format!("unbundled dependency {dep}"));
-                }
-            }
-        }
-    }
-    Ok(())
-}
 pub(super) fn package(
     tools: &mut Tools,
     request: &Request,
@@ -348,9 +249,9 @@ pub(super) fn package(
     }
     let result = (|| {
         match tools.host {
-            Host::Mac => mac_package(tools, request, config, &prefix, &output, &mut receipt)?,
-            Host::Windows => windows_package(tools, request, &prefix, &output, &mut receipt)?,
-            _ => linux_package(tools, request, &prefix, &output, &mut receipt)?,
+            Host::Mac => macos::package(tools, request, config, &prefix, &output, &mut receipt)?,
+            Host::Windows => windows::package(tools, request, &prefix, &output, &mut receipt)?,
+            _ => linux::package(tools, request, &prefix, &output, &mut receipt)?,
         }
         insert(
             &mut receipt,
@@ -366,359 +267,6 @@ pub(super) fn package(
     let written = write_json(&output.join("receipt.json"), &receipt);
     result.and(written)
 }
-fn mac_package(
-    tools: &mut Tools,
-    r: &Request,
-    config: &signing::Config,
-    prefix: &Path,
-    output: &Path,
-    receipt: &mut Value,
-) -> Result<()> {
-    let payload = output.join("root");
-    let app = payload.join("Applications/VibeCut.app");
-    let contents = app.join("Contents");
-    let binaries = contents.join("MacOS");
-    let libraries = contents.join("Frameworks");
-    let resources = contents.join("Resources");
-    for path in [&binaries, &libraries, &resources] {
-        fs::create_dir_all(path).map_err(|e| e.to_string())?;
-    }
-    for name in ["vibecut", "vibecut-cli"] {
-        copy(&r.binaries.join(name), &binaries.join(name))?;
-        executable(&binaries.join(name))?;
-    }
-    for path in files_with(&prefix.join("lib"), "dylib")? {
-        let deps = macos::dependencies(tools, &path)?;
-        let name = Path::new(deps.first().ok_or("missing dylib install ID")?)
-            .file_name()
-            .ok_or("dylib name")?;
-        copy(&path, &libraries.join(name))?;
-        executable(&libraries.join(name))?;
-    }
-    let libs = files_with(&libraries, "dylib")?;
-    if libs.len() < 6 {
-        return Err("incomplete FFmpeg dylib set".into());
-    }
-    let files: Vec<_> = libs
-        .iter()
-        .cloned()
-        .chain([binaries.join("vibecut-cli"), binaries.join("vibecut")])
-        .collect();
-    for path in &files {
-        macos::audit(tools, path, &r.arch)?;
-    }
-    macos::relocate(tools, &files, &libs)?;
-    copy(
-        &tools.root.join("assets/app-icon/vibecut.icns"),
-        &resources.join("vibecut.icns"),
-    )?;
-    let plist = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>vibecut</string><key>CFBundleIdentifier</key><string>com.canhta.vibecut</string><key>CFBundleName</key><string>VibeCut</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>{version}</string><key>CFBundleVersion</key><string>{version}</string><key>CFBundleIconFile</key><string>vibecut.icns</string><key>NSHighResolutionCapable</key><true/><key>LSMinimumSystemVersion</key><string>{minimum}</string></dict></plist>"#,
-        version = tools.version(),
-        minimum = macos::MINIMUM
-    );
-    fs::write(contents.join("Info.plist"), plist).map_err(|e| e.to_string())?;
-    compliance(tools, prefix, &resources.join("compliance"))?;
-    fs::create_dir_all(payload.join("usr/local/bin")).map_err(|e| e.to_string())?;
-    symlink(
-        Path::new("/Applications/VibeCut.app/Contents/MacOS/vibecut-cli"),
-        &payload.join("usr/local/bin/vibecut-cli"),
-    )?;
-    for path in &files {
-        macos::sign(tools, path, &config.identity)?;
-    }
-    macos::sign(tools, &app, &config.identity)?;
-    insert(
-        receipt,
-        "signing",
-        json!(if config.identity == "-" {
-            "ad-hoc"
-        } else {
-            "Developer ID requested"
-        }),
-    )?;
-    let components = output.join("components.plist");
-    fs::write(&components,r#"<?xml version="1.0"?><plist version="1.0"><array><dict><key>RootRelativeBundlePath</key><string>Applications/VibeCut.app</string><key>BundleIsRelocatable</key><false/><key>BundleHasStrictIdentifier</key><true/><key>BundleIsVersionChecked</key><true/><key>BundleOverwriteAction</key><string>upgrade</string></dict></array></plist>"#).map_err(|e|e.to_string())?;
-    let pkg = output.join(format!("vibecut-{}-macos-{}.pkg", tools.version(), r.arch));
-    let mut args = vec![
-        arg("--root"),
-        arg(&payload),
-        arg("--identifier"),
-        arg("com.canhta.vibecut"),
-        arg("--version"),
-        arg(tools.version()),
-        arg("--install-location"),
-        arg("/"),
-        arg("--component-plist"),
-        arg(&components),
-    ];
-    if let Some(identity) = &config.installer {
-        args.extend([arg("--sign"), arg(identity)]);
-    }
-    args.push(arg(&pkg));
-    tools.run("pkgbuild", args)?;
-    if config.installer.is_some() {
-        run!(tools, "pkgutil", "--check-signature", &pkg)?;
-    }
-    if config.notary.is_some() {
-        let archive = output.join("notary-app.zip");
-        run!(tools, "ditto", "-c", "-k", "--keepParent", &app, &archive)?;
-        signing::notarize(tools, &archive, config)?;
-        staple(tools, &app)?;
-        run!(
-            tools,
-            "spctl",
-            "--assess",
-            "--type",
-            "execute",
-            "--verbose",
-            &app
-        )?;
-        let image = output.join("image");
-        fs::create_dir(&image).map_err(|e| e.to_string())?;
-        run!(tools, "ditto", &app, image.join("VibeCut.app"))?;
-        symlink(Path::new("/Applications"), &image.join("Applications"))?;
-        for name in ["install-cli.sh", "README.md"] {
-            copy(&tools.root.join("packaging").join(name), &image.join(name))?;
-        }
-        let dmg = output.join(format!("vibecut-{}-macos-{}.dmg", tools.version(), r.arch));
-        run!(
-            tools,
-            "hdiutil",
-            "create",
-            "-volname",
-            "VibeCut",
-            "-srcfolder",
-            &image,
-            "-format",
-            "UDZO",
-            &dmg
-        )?;
-        macos::sign(tools, &dmg, &config.identity)?;
-        signing::notarize(tools, &dmg, config)?;
-        staple(tools, &dmg)?;
-        run!(
-            tools,
-            "spctl",
-            "--assess",
-            "--type",
-            "open",
-            "--context",
-            "context:primary-signature",
-            "--verbose",
-            &dmg
-        )?;
-        insert(receipt, "image_sha256", json!(digest(&dmg)?))?;
-        insert(receipt, "app_notarization", json!({"status":"Accepted"}))?;
-        insert(receipt, "image_notarization", json!({"status":"Accepted"}))?;
-        if config.installer.is_some() {
-            signing::notarize(tools, &pkg, config)?;
-            staple(tools, &pkg)?;
-        }
-    }
-    insert(receipt, "package_sha256", json!(digest(&pkg)?))?;
-    insert(receipt, "files", manifest(&payload)?)?;
-    Ok(())
-}
-pub(super) fn staple(tools: &mut Tools, path: &Path) -> Result<()> {
-    stapler_with_wait(tools, "staple", path, std::thread::sleep)?;
-    validate_staple(tools, path)
-}
-pub(super) fn validate_staple(tools: &mut Tools, path: &Path) -> Result<()> {
-    stapler_with_wait(tools, "validate", path, std::thread::sleep)
-}
-fn stapler_with_wait(
-    tools: &mut Tools,
-    operation: &str,
-    path: &Path,
-    mut wait: impl FnMut(Duration),
-) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(180);
-    for (attempt, delay) in [0, 10, 20, 30, 50, 60].into_iter().enumerate() {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let delay = Duration::from_secs(delay);
-        if remaining <= delay {
-            break;
-        }
-        if !delay.is_zero() {
-            wait(delay);
-        }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        let mut command = Command::new("xcrun");
-        command.args([arg("stapler"), arg(operation), arg(path)]);
-        command.current_dir(&tools.root);
-        let captured = tools.execute(&mut command, remaining)?;
-        if captured.code == Some(0) {
-            return Ok(());
-        }
-        // EX_NOHOST covers unavailable tickets/unexpected ticket-service replies.
-        // Invalid/revoked signatures, unsupported files and write errors fail now.
-        if captured.code != Some(68) {
-            return Err(format!(
-                "stapler {operation} failed ({:?}); native diagnostics suppressed",
-                captured.code
-            ));
-        }
-        if attempt < 5 {
-            eprintln!("stapler {operation}: ticket lookup unavailable; bounded retry");
-        }
-    }
-    Err(format!(
-        "stapler {operation}: ticket lookup unavailable after bounded retries; native diagnostics suppressed"
-    ))
-}
-fn linux_package(
-    tools: &mut Tools,
-    r: &Request,
-    prefix: &Path,
-    output: &Path,
-    receipt: &mut Value,
-) -> Result<()> {
-    let name = format!("vibecut-{}-linux-{}", tools.version(), r.arch);
-    let payload = output.join(&name);
-    let bin = payload.join("bin");
-    fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
-    for binary in ["vibecut", "vibecut-cli"] {
-        let destination = bin.join(binary);
-        copy(&r.binaries.join(binary), &destination)?;
-        executable(&destination)?;
-        // The package keeps FFmpeg beside the binaries; refuse an unrelocated build.
-        let dynamic = run!(tools, "readelf", "-d", &destination)?;
-        if !dynamic.contains("$ORIGIN/../lib") {
-            return Err(format!("{binary} is missing the $ORIGIN/../lib runpath"));
-        }
-    }
-    let lib = payload.join("lib");
-    fs::create_dir_all(&lib).map_err(|e| e.to_string())?;
-    let mut codec = false;
-    for path in entries(&prefix.join("lib"))? {
-        let Some(name) = path.file_name().and_then(OsStr::to_str) else {
-            continue;
-        };
-        if !name.contains(".so") {
-            continue;
-        }
-        let destination = lib.join(name);
-        if path.is_symlink() {
-            symlink(
-                &fs::read_link(&path).map_err(|e| e.to_string())?,
-                &destination,
-            )?;
-        } else {
-            copy(&path, &destination)?;
-        }
-        codec |= name.starts_with("libavcodec.so.");
-    }
-    if !codec {
-        return Err("incomplete FFmpeg shared library set".into());
-    }
-    compliance(tools, prefix, &payload.join("compliance"))?;
-    for (source, name) in [
-        ("packaging/linux/install.sh", "install.sh"),
-        ("packaging/linux/vibecut.desktop", "vibecut.desktop"),
-    ] {
-        copy(&tools.root.join(source), &payload.join(name))?;
-    }
-    copy(
-        &tools.root.join("assets/app-icon/vibecut-1024.png"),
-        &payload.join("vibecut.png"),
-    )?;
-    executable(&payload.join("install.sh"))?;
-    write_json(&payload.join("install-manifest.json"), &manifest(&payload)?)?;
-    let archive = output.join(format!("{name}.tar.gz"));
-    run!(tools, "tar", "-czf", &archive, "-C", output, &name)?;
-    insert(receipt, "package_sha256", json!(digest(&archive)?))?;
-    insert(receipt, "files", manifest(&payload)?)?;
-    Ok(())
-}
-fn windows_package(
-    tools: &mut Tools,
-    r: &Request,
-    prefix: &Path,
-    output: &Path,
-    receipt: &mut Value,
-) -> Result<()> {
-    let payload = output.join("VibeCut");
-    fs::create_dir(&payload).map_err(|e| e.to_string())?;
-    for name in ["vibecut.exe", "vibecut-cli.exe"] {
-        copy(&r.binaries.join(name), &payload.join(name))?;
-    }
-    for path in files_with(&prefix.join("bin"), "dll")? {
-        copy(&path, &payload.join(path.file_name().ok_or("DLL name")?))?;
-    }
-    let files = entries(&payload)?;
-    if files.len() < 8 {
-        return Err("incomplete FFmpeg DLL set".into());
-    }
-    windows_audit(tools, &files, &r.arch)?;
-    compliance(tools, prefix, &payload.join("compliance"))?;
-    for name in ["install.ps1", "uninstall.ps1"] {
-        copy(
-            &tools.root.join("packaging/windows").join(name),
-            &payload.join(name),
-        )?;
-    }
-    if let Some(certificate) = tools.env.get("VIBECUT_WINDOWS_CERT_SHA1").cloned() {
-        let timestamp = tools
-            .env
-            .get("VIBECUT_WINDOWS_TIMESTAMP_URL")
-            .cloned()
-            .ok_or("Windows signing timestamp URL missing")?;
-        for path in files_with(&payload, "dll")?
-            .into_iter()
-            .chain([payload.join("vibecut-cli.exe"), payload.join("vibecut.exe")])
-        {
-            run!(
-                tools,
-                "signtool",
-                "sign",
-                "/sha1",
-                &certificate,
-                "/fd",
-                "SHA256",
-                "/tr",
-                &timestamp,
-                "/td",
-                "SHA256",
-                &path
-            )?;
-            run!(tools, "signtool", "verify", "/pa", "/all", &path)?;
-        }
-        for name in ["uninstall.ps1", "install.ps1"] {
-            run!(
-                tools,
-                "powershell",
-                "-NoProfile",
-                "-File",
-                tools.root.join("packaging/windows/sign-script.ps1"),
-                payload.join(name),
-                &certificate,
-                &timestamp
-            )?;
-        }
-    }
-    write_json(&payload.join("install-manifest.json"), &manifest(&payload)?)?;
-    let zip = output.join(format!(
-        "vibecut-{}-windows-{}.zip",
-        tools.version(),
-        r.arch
-    ));
-    let script = "$ErrorActionPreference='Stop'; Compress-Archive -LiteralPath $env:VIBECUT_ZIP_SOURCE -DestinationPath $env:VIBECUT_ZIP_TARGET";
-    let mut command = Command::new("powershell");
-    command
-        .args(["-NoProfile", "-Command", script])
-        .env("VIBECUT_ZIP_SOURCE", &payload)
-        .env("VIBECUT_ZIP_TARGET", &zip);
-    if tools.execute(&mut command, Duration::from_secs(600))?.code != Some(0) {
-        return Err("Windows archive creation failed".into());
-    }
-    insert(receipt, "package_sha256", json!(digest(&zip)?))?;
-    insert(receipt, "files", manifest(&payload)?)?;
-    Ok(())
-}
 
 #[cfg(test)]
 #[allow(
@@ -727,39 +275,14 @@ fn windows_package(
     clippy::indexing_slicing,
     clippy::panic
 )]
-#[allow(clippy::wildcard_imports)]
 mod tests {
-    use super::*;
-    #[test]
-    fn ticket_lookup_retries_are_bounded_and_do_not_retry_invalid_data() {
-        for operation in ["staple", "validate"] {
-            for (codes, expected_success, expected_delays) in [
-                (vec![68, 68, 0], true, vec![10, 20]),
-                (vec![68; 6], false, vec![10, 20, 30, 50, 60]),
-                (vec![65], false, vec![]),
-            ] {
-                let mut tools = Tools::new(Path::new("."));
-                let mut codes = std::collections::VecDeque::from(codes);
-                tools.runner = Box::new(move |_, _| {
-                    Ok(Captured {
-                        code: codes.pop_front(),
-                        stdout: "PRIVATE-STDOUT".into(),
-                        stderr: "PRIVATE-STDERR".into(),
-                    })
-                });
-                let mut delays = Vec::new();
-                let result =
-                    stapler_with_wait(&mut tools, operation, Path::new("private.app"), |delay| {
-                        delays.push(delay.as_secs())
-                    });
-                assert_eq!(result.is_ok(), expected_success);
-                assert_eq!(delays, expected_delays);
-                if let Err(error) = result {
-                    assert!(!error.contains("PRIVATE"));
-                }
-            }
-        }
-    }
+    use super::{compliance, text};
+    use crate::distribution::{Captured, Temp, Tools, arg, digest, entries};
+    use std::collections::BTreeSet;
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
     fn sdk(root: &Path) -> PathBuf {
         let prefix = root.join("prefix");
         fs::create_dir_all(prefix.join("compliance")).expect("licenses");
@@ -814,7 +337,7 @@ mod tests {
                 stderr: String::new(),
             })
         });
-        universal::export(
+        crate::distribution::universal::export(
             &mut tools,
             &prefix,
             &temp.0.join("binaries"),
@@ -908,35 +431,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn pe_headers_are_bounded_and_preserve_architecture_and_subsystem() {
-        let temp = Temp::new(&env::temp_dir()).expect("temp");
-        let path = temp.0.join("vibecut.exe");
-        let mut data = vec![0_u8; 256];
-        data[..2].copy_from_slice(b"MZ");
-        data[0x3c..0x40].copy_from_slice(&64_u32.to_le_bytes());
-        data[64..68].copy_from_slice(b"PE\0\0");
-        data[68..70].copy_from_slice(&0xaa64_u16.to_le_bytes());
-        data[64 + 0x5c..64 + 0x5e].copy_from_slice(&2_u16.to_le_bytes());
-        fs::write(&path, &data).expect("PE");
-        assert_eq!(pe(&path).expect("header"), (0xaa64, 2));
-        let mut tools = Tools::new(&temp.0);
-        tools
-            .env
-            .insert("SystemRoot".into(), temp.0.to_string_lossy().into_owned());
-        assert!(
-            windows_audit(&mut tools, std::slice::from_ref(&path), "x86_64")
-                .expect_err("wrong arch")
-                .contains("architecture")
-        );
-        for data in [b"not PE".to_vec(), b"MZ".to_vec(), vec![0; 65]] {
-            fs::write(&path, data).expect("hostile");
-            assert!(pe(&path).is_err());
-        }
-    }
     #[cfg(unix)]
     #[test]
     fn manifest_records_symlink_without_reading_external_target() {
+        use crate::distribution::{manifest, symlink};
+        use serde_json::json;
         let temp = Temp::new(&env::temp_dir()).expect("temp");
         symlink(Path::new("/missing/app/cli"), &temp.0.join("cli")).expect("link");
         assert_eq!(

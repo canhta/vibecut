@@ -1,7 +1,15 @@
 //! Universal macOS export and architecture combination for packaged binaries.
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::package;
+use super::{
+    Host, Options, Result, Tools, build, copy, digest, executable, fresh, macos, signing, text,
+    tree,
+};
+use serde_json::Value;
 use std::collections::BTreeSet;
+use std::env;
+use std::ffi::{OsStr, OsString};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub(super) fn export(
     tools: &mut Tools,
@@ -203,9 +211,13 @@ pub(super) fn universal(tools: &mut Tools, o: &Options) -> Result<()> {
     clippy::panic,
     clippy::indexing_slicing
 )]
-#[allow(clippy::wildcard_imports)]
 mod tests {
-    use super::*;
+    use super::admission;
+    use crate::distribution::{Temp, write_json};
+    use serde_json::json;
+    use std::env;
+    use std::fs;
+
     #[test]
     fn incompatible_native_inputs_refuse_before_merging() {
         for mismatch in ["revision", "sources", "libraries"] {

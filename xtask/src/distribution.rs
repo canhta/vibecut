@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -22,12 +22,14 @@ macro_rules! run {
 }
 
 mod icons;
+mod linux;
 mod macos;
 mod package;
 mod publish;
 mod signing;
 mod smoke;
 mod universal;
+mod windows;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Host {
@@ -612,9 +614,14 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::wildcard_imports)]
+#[allow(clippy::expect_used)]
 mod process_environment_tests {
-    use super::*;
+    #[cfg(windows)]
+    use super::native_windows_path;
+    use super::{Captured, Host, Tools, arg};
+    use std::path::Path;
+    #[cfg(windows)]
+    use std::path::PathBuf;
     #[test]
     fn windows_environment_lookup_is_case_insensitive() {
         let mut tools = Tools::new(Path::new("."));

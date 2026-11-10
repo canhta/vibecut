@@ -1,7 +1,12 @@
 //! Nightly and draft GitHub release publication with ordered asset uploads.
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{Options, Result, Temp, Tools, arg, digest, entries, field, write_json};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 fn api(
     tools: &mut Tools,
@@ -321,9 +326,11 @@ pub(super) fn run(tools: &mut Tools, args: &[String]) -> Result<()> {
     clippy::panic,
     clippy::indexing_slicing
 )]
-#[allow(clippy::wildcard_imports)]
 mod tests {
-    use super::*;
+    use super::publish;
+    use crate::distribution::{Temp, Tools};
+    use std::env;
+    use std::fs;
     #[test]
     fn missing_or_foreign_assets_refuse_before_remote_mutation() {
         let temp = Temp::new(&env::temp_dir()).expect("temp");
@@ -342,12 +349,13 @@ mod tests {
     clippy::expect_used,
     clippy::unwrap_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::wildcard_imports
+    clippy::indexing_slicing
 )]
 mod publication_tests {
-    use super::*;
-    use std::{cell::RefCell, rc::Rc};
+    use super::publish;
+    use crate::distribution::{Captured, Temp, Tools};
+    use serde_json::{Value, json};
+    use std::{cell::RefCell, env, fs, path::Path, rc::Rc};
     fn packages(root: &Path, version: &str, suffix: &str) {
         for arch in ["aarch64", "x86_64", "universal"] {
             fs::write(
