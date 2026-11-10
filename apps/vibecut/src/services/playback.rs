@@ -210,6 +210,7 @@ pub struct Frame {
 struct Output {
     frames: VecDeque<Arc<Frame>>,
     error: Option<Arc<Error>>,
+    audio_error: Option<Arc<Error>>,
 }
 enum Workers {
     Running,
@@ -270,6 +271,7 @@ impl Playback {
         let output = Arc::new(Mutex::new(Output {
             frames: VecDeque::new(),
             error: None,
+            audio_error: None,
         }));
         let config = RunnerConfig {
             concurrency: [2, 1, 1],
@@ -358,7 +360,11 @@ impl Playback {
                         if let Ok(mut out) = output.lock()
                             && generation.load(Ordering::Acquire) == epoch
                         {
-                            out.error = Some(Arc::new(error));
+                            if audio {
+                                out.audio_error = Some(Arc::new(error));
+                            } else {
+                                out.error = Some(Arc::new(error));
+                            }
                         }
                         while !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch {
                             std::thread::sleep(Duration::from_millis(2));
@@ -522,6 +528,8 @@ impl Playback {
             .generation
             .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
+        // Invalidation and publication share this lock: a new pinned frame
+        // cannot publish between advancing its generation and clearing output.
         let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
         self.port.playing.store(false, Ordering::Release);
         *request = Request {
@@ -541,6 +549,7 @@ impl Playback {
         self.shown = None;
         output.frames.clear();
         output.error = None;
+        output.audio_error = None;
         self.last_callback = (
             self.port.submitted.load(Ordering::Acquire),
             std::time::Instant::now(),
@@ -598,7 +607,10 @@ impl Playback {
         if let Workers::Failed(error) = &self.workers {
             return Some(Arc::new(Error::Worker(error.clone())));
         }
-        self.output.lock().ok().and_then(|out| out.error.clone())
+        self.output
+            .lock()
+            .ok()
+            .and_then(|out| out.audio_error.clone().or_else(|| out.error.clone()))
     }
     pub fn frame(&self) -> Option<&Arc<Frame>> {
         self.shown.as_ref()

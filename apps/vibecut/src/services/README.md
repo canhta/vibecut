@@ -54,7 +54,8 @@ Each pointer time fences only the preview generation, so only the latest frame
 request survives; clearing it or a seek returns the preview to the transport.
 The independent audio epoch, queued PCM, source cursor, mixer state and callback
 health baseline are unchanged by pointer movement. Seek, pause and snapshot
-replacement invalidate both generations with checked increments.
+replacement invalidate both generations with checked increments. Audio failures
+remain attached to the audio epoch; pointer changes clear only preview failures.
 
 ## Preview and snapshot
 

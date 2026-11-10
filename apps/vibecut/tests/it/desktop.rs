@@ -990,7 +990,7 @@ struct PreviewWork {
     provider: u64,
     start: i64,
     frames: usize,
-    release: std::sync::mpsc::SyncSender<()>,
+    release: std::sync::mpsc::SyncSender<bool>,
 }
 struct ControlledSources {
     audio: bool,
@@ -1014,7 +1014,7 @@ impl vibecut::services::playback::Sources for ControlledSources {
     }
 }
 impl ControlledSource {
-    fn gate(&self, start: i64, frames: usize, hooks: &dyn render::ExecutionHooks) {
+    fn gate(&self, start: i64, frames: usize, hooks: &dyn render::ExecutionHooks) -> bool {
         if let Some(work) = &self.work {
             let (release, receive) = std::sync::mpsc::sync_channel(1);
             if work
@@ -1028,12 +1028,14 @@ impl ControlledSource {
             {
                 while !hooks.cancelled() {
                     match receive.recv_timeout(Duration::from_millis(10)) {
-                        Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                        Ok(accept) => return accept,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                     }
                 }
             }
         }
+        true
     }
 }
 impl render::SourceProvider for ControlledSource {
@@ -1068,8 +1070,8 @@ impl render::SourceProvider for ControlledSource {
         rate: u32,
         hooks: &dyn render::ExecutionHooks,
     ) -> render::Result<render::AudioBlock> {
-        if self.audio {
-            self.gate(start, frames, hooks);
+        if self.audio && !self.gate(start, frames, hooks) {
+            return Err(render::Error::Invalid("controlled audio failure"));
         }
         let mut block =
             render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)?;
@@ -1196,7 +1198,7 @@ fn preview_axis_playing_hover_preserves_prefilled_pcm_source_cursor_and_dsp() {
     while pending.start < 2400 {
         assert_eq!(pending.start, end);
         end += pending.frames as i64;
-        pending.release.send(()).unwrap();
+        pending.release.send(true).unwrap();
         pending = next_preview_work(&receive);
     }
     let port = playback.audio_port();
@@ -1220,7 +1222,7 @@ fn preview_axis_playing_hover_preserves_prefilled_pcm_source_cursor_and_dsp() {
     }
     assert_eq!(pending.start, end);
     assert_eq!(pending.provider, provider);
-    pending.release.send(()).unwrap();
+    pending.release.send(true).unwrap();
     let continued = next_preview_work(&receive);
     assert_eq!(
         continued.provider, provider,
@@ -1276,10 +1278,10 @@ fn preview_axis_stale_pixels_are_fenced_after_rapid_hover_and_seek() {
             .set_hover(Some(Tick(seconds * TICKS_PER_SECOND)))
             .unwrap();
     }
-    stale.release.send(()).unwrap();
+    stale.release.send(true).unwrap();
     let latest = next_preview_work(&receive);
     assert_eq!(latest.start, 8 * TICKS_PER_SECOND);
-    latest.release.send(()).unwrap();
+    latest.release.send(true).unwrap();
     wait_preview(&mut playback, Tick(8 * TICKS_PER_SECOND));
     let first = playback.frame().unwrap().clone();
     assert!(first.image.pixels.iter().all(|p| p.r() > 200 && p.g() == 0));
@@ -1293,10 +1295,10 @@ fn preview_axis_stale_pixels_are_fenced_after_rapid_hover_and_seek() {
     playback
         .seek(Tick(3 * TICKS_PER_SECOND), false, session.project().clone())
         .unwrap();
-    stale.release.send(()).unwrap();
+    stale.release.send(true).unwrap();
     let replacement = next_preview_work(&receive);
     assert_eq!(replacement.start, 3 * TICKS_PER_SECOND);
-    replacement.release.send(()).unwrap();
+    replacement.release.send(true).unwrap();
     wait_preview(&mut playback, Tick(3 * TICKS_PER_SECOND));
     let frame = playback.frame().unwrap();
     assert!(frame.generation > first.generation);
@@ -1449,5 +1451,41 @@ fn preview_axis_changing_hover_cannot_refresh_a_stalled_callback_clock() {
         playback.position().unwrap(),
         at,
         "no wall-clock substitution after stop"
+    );
+}
+
+#[test]
+fn preview_axis_hover_cannot_clear_a_current_audio_failure() {
+    let (session, mut playback, receive) = controlled_preview(true);
+    playback
+        .seek(Tick::ZERO, true, session.project().clone())
+        .unwrap();
+    next_preview_work(&receive).release.send(false).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while playback.error().is_none() {
+        assert!(Instant::now() < deadline);
+        playback.poll(Instant::now()).unwrap();
+        std::thread::yield_now();
+    }
+    let failure = playback.error().unwrap();
+    assert!(matches!(
+        failure.as_ref(),
+        vibecut::Error::Render(render::Error::Invalid("controlled audio failure"))
+    ));
+    for hover in [Some(Tick(TICKS_PER_SECOND)), None] {
+        playback.set_hover(hover).unwrap();
+        assert!(Arc::ptr_eq(
+            &playback
+                .error()
+                .expect("audio failure survives pointer changes"),
+            &failure
+        ));
+    }
+    playback
+        .seek(Tick::ZERO, false, session.project().clone())
+        .unwrap();
+    assert!(
+        playback.error().is_none(),
+        "explicit transport reset clears the audio failure"
     );
 }
