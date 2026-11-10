@@ -10,6 +10,7 @@ pub(crate) use wire::budget;
 mod command_facts;
 mod commands;
 pub use command_facts::{Availability, GrantClass, Lifecycle};
+use commands::EditCommand;
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
     ItemPlacement, KeyframeRef, Move, NewItem, Outcome, Placement, TrackPlacement, TrimEdge,

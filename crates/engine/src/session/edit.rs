@@ -1,4 +1,5 @@
 //! Applies validated editing commands to project candidates.
+use super::EditCommand;
 use crate::{
     AssetUsage, Command, CreatedId, EditError, Effect, Move, NewItem, Placement, Result,
     TrackPlacement,
@@ -158,8 +159,15 @@ pub(crate) fn apply(
                 | Command::Batch { .. }
         ))
     .then(|| crate::transitions::cuts(&data.scene().timeline));
+    let command = match command.into_edit() {
+        Ok(command) => command,
+        Err(command) => {
+            outside_edit(&command)?;
+            return Err(EditError::Invalid("command is not an edit"));
+        }
+    };
     match command {
-        Command::AddTransition {
+        EditCommand::AddTransition {
             track,
             from,
             to,
@@ -171,57 +179,57 @@ pub(crate) fn apply(
                 data, track, from, to, kind, duration, alignment, created, next,
             )?;
         }
-        Command::MoveTransition { transition, start } => {
+        EditCommand::MoveTransition { transition, start } => {
             data = transitions::execute_move_transition(data, transition, start)?;
         }
-        Command::SetTransitionDuration {
+        EditCommand::SetTransitionDuration {
             transition,
             duration,
         } => {
             data = transitions::execute_set_transition_duration(data, transition, duration)?;
         }
-        Command::SetTransitionParam {
+        EditCommand::SetTransitionParam {
             transition,
             param,
             value,
         } => {
             data = transitions::execute_set_transition_param(data, transition, &param, value)?;
         }
-        Command::RemoveTransition { transition } => {
+        EditCommand::RemoveTransition { transition } => {
             data = transitions::execute_remove_transition(data, transition)?;
         }
-        Command::CreateScene { name } => {
+        EditCommand::CreateScene { name } => {
             data = project_edits::execute_create_scene(data, name, created, next)?;
         }
-        Command::DeleteScenes { scenes } => {
+        EditCommand::DeleteScenes { scenes } => {
             data = project_edits::execute_delete_scenes(data, scenes)?;
         }
-        Command::RenameScene { scene, name } => {
+        EditCommand::RenameScene { scene, name } => {
             data = project_edits::execute_rename_scene(data, scene, name)?;
         }
-        Command::RenameProject { name } => {
+        EditCommand::RenameProject { name } => {
             data = project_edits::execute_rename_project(data, name)?;
         }
-        Command::AddAsset { asset } => {
+        EditCommand::AddAsset { asset } => {
             data = media_edits::execute_add_asset(data, asset)?;
         }
-        Command::RemoveAssets { assets } => {
+        EditCommand::RemoveAssets { assets } => {
             data = media_edits::execute_remove_assets(data, assets)?;
         }
-        Command::AddTrack {
+        EditCommand::AddTrack {
             name,
             kind,
             placement,
         } => {
             data = tracks::execute_add_track(data, name, kind, placement, created, next)?;
         }
-        Command::RemoveTrack { track: id } => {
+        EditCommand::RemoveTrack { track: id } => {
             data = tracks::execute_remove_track(data, id)?;
         }
-        Command::SetMaster { volume, muted } => {
+        EditCommand::SetMaster { volume, muted } => {
             data = audio::execute_set_master(data, volume, muted)?;
         }
-        Command::SetFade {
+        EditCommand::SetFade {
             item: id,
             edge,
             duration,
@@ -229,29 +237,29 @@ pub(crate) fn apply(
         } => {
             data = audio::execute_set_fade(data, id, edge, duration, curve)?;
         }
-        Command::SetLoudness {
+        EditCommand::SetLoudness {
             scope,
             target_lufs,
             true_peak_db,
         } => {
             data = audio::execute_set_loudness(data, scope, target_lufs, true_peak_db)?;
         }
-        Command::ClearLoudness { scope } => {
+        EditCommand::ClearLoudness { scope } => {
             data = audio::execute_clear_loudness(data, scope)?;
         }
-        Command::ApplyLoudness { gains } => {
+        EditCommand::ApplyLoudness { gains } => {
             data = audio::execute_apply_loudness(data, gains)?;
         }
-        Command::SetTrackMuted { track: id, muted } => {
+        EditCommand::SetTrackMuted { track: id, muted } => {
             data = tracks::execute_set_track_muted(data, id, muted)?;
         }
-        Command::SetTrackHidden { track: id, hidden } => {
+        EditCommand::SetTrackHidden { track: id, hidden } => {
             data = tracks::execute_set_track_hidden(data, id, hidden)?;
         }
-        Command::SetTrackMagnet { enabled } => {
+        EditCommand::SetTrackMagnet { enabled } => {
             data = tracks::execute_set_track_magnet(data, enabled)?;
         }
-        Command::SetTrackFlags {
+        EditCommand::SetTrackFlags {
             track: id,
             muted,
             hidden,
@@ -259,16 +267,16 @@ pub(crate) fn apply(
         } => {
             data = tracks::execute_set_track_flags(data, id, muted, hidden, locked)?;
         }
-        Command::SetTrackLocked { track: id, locked } => {
+        EditCommand::SetTrackLocked { track: id, locked } => {
             data = tracks::execute_set_track_locked(data, id, locked)?;
         }
-        Command::RenameTrack { track: id, name } => {
+        EditCommand::RenameTrack { track: id, name } => {
             data = tracks::execute_rename_track(data, id, name)?;
         }
-        Command::ReorderTrack { track: id, index } => {
+        EditCommand::ReorderTrack { track: id, index } => {
             data = tracks::execute_reorder_track(data, id, index)?;
         }
-        Command::ImportCaptions {
+        EditCommand::ImportCaptions {
             asset,
             language,
             start,
@@ -293,32 +301,37 @@ pub(crate) fn apply(
             )?;
         }
         // Session commits this as one grouped transaction before reaching edit.
-        Command::AddLibrarySound { .. } => {
+        EditCommand::AddLibrarySound {
+            placement: _placement,
+            start: _start,
+            asset: _asset,
+            sound: _sound,
+        } => {
             return Err(EditError::Invalid("library sound requires a session"));
         }
-        Command::InsertItem {
+        EditCommand::InsertItem {
             placement,
             item: new,
         } => {
             data = clips::execute_insert_item(data, placement, new, created, next)?;
         }
-        Command::MoveItem { item, track, start } => {
+        EditCommand::MoveItem { item, track, start } => {
             data = clips::execute_move_item(data, item, track, start)?;
         }
-        Command::MoveItems { moves } => {
+        EditCommand::MoveItems { moves } => {
             data = clips::execute_move_items(data, moves)?;
         }
-        Command::TimelineMoveItems {
+        EditCommand::TimelineMoveItems {
             items,
             delta,
             placement,
         } => {
             data = clips::move_group(data, items, delta, placement, created, next)?;
         }
-        Command::TimelineTrim { items, edge, delta } => {
+        EditCommand::TimelineTrim { items, edge, delta } => {
             data = clips::trim_group(data, items, edge, delta, sources)?;
         }
-        Command::RemovePauses {
+        EditCommand::RemovePauses {
             spans,
             crossfade_ms,
         } => {
@@ -336,102 +349,102 @@ pub(crate) fn apply(
                 sources,
             )?;
         }
-        Command::TranscriptDeleteRange { word_ids } => {
+        EditCommand::TranscriptDeleteRange { word_ids } => {
             data = text::execute_transcript_delete(data, word_ids, created, next, sources)?;
         }
-        Command::TranscriptMergeCues { cue_ids } => {
+        EditCommand::TranscriptMergeCues { cue_ids } => {
             data = text::execute_transcript_merge(data, cue_ids, sources)?;
         }
-        Command::RemoveFillers {
+        EditCommand::RemoveFillers {
             ids,
             confirm_edited,
         } => {
             data = text::execute_remove_fillers(data, ids, confirm_edited, created, next, sources)?;
         }
-        Command::SplitAt { item: id, at } => {
+        EditCommand::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
-        Command::TimelineSplitLeft { items, at } => {
+        EditCommand::TimelineSplitLeft { items, at } => {
             data = clips::execute_split_left(data, items, at, created, next, sources)?;
         }
-        Command::TimelineSplitRight { items, at } => {
+        EditCommand::TimelineSplitRight { items, at } => {
             data = clips::execute_split_right(data, items, at, created, next, sources)?;
         }
-        Command::DuplicateItems { items } => {
+        EditCommand::DuplicateItems { items } => {
             data = clips::execute_duplicate(data, items, created, next)?;
         }
-        Command::SetItemsHidden { items, hidden } => {
+        EditCommand::SetItemsHidden { items, hidden } => {
             data = clips::execute_set_items_hidden(data, items, hidden)?;
         }
-        Command::SetItemsMuted { items, muted } => {
+        EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;
         }
-        Command::ExtractAudio { items } => {
+        EditCommand::ExtractAudio { items } => {
             data = clips::execute_extract_audio(data, items, created, next)?;
         }
-        Command::RecoverAudio { items } => {
+        EditCommand::RecoverAudio { items } => {
             data = clips::execute_recover_audio(data, items)?;
         }
-        Command::TrimStart { item: id, at } => {
+        EditCommand::TrimStart { item: id, at } => {
             data = clips::execute_trim_start(data, id, at, sources)?;
         }
-        Command::TrimEnd { item: id, at } => {
+        EditCommand::TrimEnd { item: id, at } => {
             data = clips::execute_trim_end(data, id, at, sources)?;
         }
-        Command::Delete { items } => {
+        EditCommand::Delete { items } => {
             data = clips::execute_delete(data, items)?;
         }
-        Command::RippleDelete { item: id } => {
+        EditCommand::RippleDelete { item: id } => {
             data = clips::execute_ripple_delete(data, id)?;
         }
-        Command::SetItemParam { item: id, content } => {
+        EditCommand::SetItemParam { item: id, content } => {
             data = parameters::execute_set_item_param(data, id, content, sources)?;
         }
-        Command::SetItemField { item: id, patch } => {
+        EditCommand::SetItemField { item: id, patch } => {
             data = parameters::execute_set_item_field(data, id, patch, copied_text_bytes)?;
         }
-        Command::SetCanvas {
+        EditCommand::SetCanvas {
             width,
             height,
             preset,
         } => {
             data = project_edits::execute_set_canvas(data, width, height, preset)?;
         }
-        Command::SetFps { num, den } => {
+        EditCommand::SetFps { num, den } => {
             data = project_edits::execute_set_fps(data, num, den)?;
         }
-        Command::SetBackground { color } => {
+        EditCommand::SetBackground { color } => {
             data = project_edits::execute_set_background(data, color)?;
         }
-        Command::SetSpeed {
+        EditCommand::SetSpeed {
             items,
             speed,
             maintain_pitch,
         } => {
             data = retime::execute_set_speed(data, items, speed, maintain_pitch)?;
         }
-        Command::SetItemParamMany { items, patch } => {
+        EditCommand::SetItemParamMany { items, patch } => {
             data = parameters::execute_set_item_param_many(data, items, patch, copied_text_bytes)?;
         }
-        Command::AddMask { item: id, mask } => {
+        EditCommand::AddMask { item: id, mask } => {
             data = masks::execute_add_mask(data, id, mask)?;
         }
-        Command::RemoveMask { item: id, mask } => {
+        EditCommand::RemoveMask { item: id, mask } => {
             data = masks::execute_remove_mask(data, id, mask)?;
         }
-        Command::UpdateMask { item: id, mask } => {
+        EditCommand::UpdateMask { item: id, mask } => {
             data = masks::execute_update_mask(data, id, mask)?;
         }
-        Command::ReorderMasks { item: id, order } => {
+        EditCommand::ReorderMasks { item: id, order } => {
             data = masks::execute_reorder_masks(data, id, order)?;
         }
-        Command::AddEffect { item: id, effect } => {
+        EditCommand::AddEffect { item: id, effect } => {
             data = effects::execute_add_effect(data, id, effect)?;
         }
-        Command::RemoveEffect { item: id, effect } => {
+        EditCommand::RemoveEffect { item: id, effect } => {
             data = effects::execute_remove_effect(data, id, effect)?;
         }
-        Command::UpdateEffectParam {
+        EditCommand::UpdateEffectParam {
             item: id,
             effect,
             key,
@@ -439,24 +452,24 @@ pub(crate) fn apply(
         } => {
             data = effects::execute_update_effect_param(data, id, effect, key, value)?;
         }
-        Command::ToggleEffect {
+        EditCommand::ToggleEffect {
             item: id,
             effect,
             enabled,
         } => {
             data = effects::execute_toggle_effect(data, id, effect, enabled)?;
         }
-        Command::ReorderEffects { item: id, order } => {
+        EditCommand::ReorderEffects { item: id, order } => {
             data = effects::execute_reorder_effects(data, id, order)?;
         }
-        Command::SetAnimatedParam {
+        EditCommand::SetAnimatedParam {
             item: id,
             path,
             param,
         } => {
             data = keyframes::execute_set_animated_param(data, id, path, param)?;
         }
-        Command::AddKeyframe {
+        EditCommand::AddKeyframe {
             item: id,
             path,
             component,
@@ -464,7 +477,7 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_add_keyframe(data, id, path, component, key)?;
         }
-        Command::ToggleKeyframe {
+        EditCommand::ToggleKeyframe {
             item: id,
             path,
             component,
@@ -473,10 +486,10 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_toggle_keyframe(data, id, path, component, time, value)?;
         }
-        Command::DeleteKeyframes { keys } => {
+        EditCommand::DeleteKeyframes { keys } => {
             data = keyframes::execute_delete_keyframes(data, keys)?;
         }
-        Command::SetKeyframeExtrapolation {
+        EditCommand::SetKeyframeExtrapolation {
             item: id,
             path,
             component,
@@ -487,7 +500,7 @@ pub(crate) fn apply(
                 data, id, path, component, before, after,
             )?;
         }
-        Command::RemoveKeyframe {
+        EditCommand::RemoveKeyframe {
             item: id,
             path,
             component,
@@ -495,7 +508,7 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_remove_keyframe(data, id, path, component, time)?;
         }
-        Command::RetimeKeyframe {
+        EditCommand::RetimeKeyframe {
             item: id,
             path,
             component,
@@ -504,7 +517,7 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_retime_keyframe(data, id, path, component, from, to)?;
         }
-        Command::SetKeyframeHandle {
+        EditCommand::SetKeyframeHandle {
             item: id,
             path,
             component,
@@ -517,14 +530,14 @@ pub(crate) fn apply(
                 data, id, path, component, time, side, handle, tangent,
             )?;
         }
-        Command::ScaleKeyframeTime {
+        EditCommand::ScaleKeyframeTime {
             item: id,
             numerator,
             denominator,
         } => {
             data = keyframes::execute_scale_keyframe_time(data, id, numerator, denominator)?;
         }
-        Command::BookmarkAdd {
+        EditCommand::BookmarkAdd {
             start,
             duration,
             note,
@@ -534,13 +547,13 @@ pub(crate) fn apply(
                 data, start, duration, note, color, created, next,
             )?;
         }
-        Command::MoveBookmark { bookmark, start } => {
+        EditCommand::MoveBookmark { bookmark, start } => {
             data = project_edits::execute_move_bookmark(data, bookmark, start)?;
         }
-        Command::ToggleBookmark { at } => {
+        EditCommand::ToggleBookmark { at } => {
             data = project_edits::execute_toggle_bookmark(data, at, created, next)?;
         }
-        Command::UpdateBookmark {
+        EditCommand::UpdateBookmark {
             bookmark,
             note,
             color,
@@ -548,10 +561,10 @@ pub(crate) fn apply(
         } => {
             data = project_edits::execute_update_bookmark(data, bookmark, note, color, duration)?;
         }
-        Command::RemoveBookmark { bookmark } => {
+        EditCommand::RemoveBookmark { bookmark } => {
             data = project_edits::execute_remove_bookmark(data, bookmark)?;
         }
-        Command::Retranslate {
+        EditCommand::Retranslate {
             item: id,
             target_language,
             texts,
@@ -568,62 +581,17 @@ pub(crate) fn apply(
                 sources,
             )?;
         }
-        Command::Batch { commands } => {
+        EditCommand::Batch { commands } => {
             for command in commands {
                 // Consume each candidate before applying the next child; validation must
                 // not clone an unvalidated allocation or publish a partial batch.
                 data = apply(data, command, created, next, sources, copied_text_bytes)?.into_data();
             }
         }
-        Command::TimelineEdit { .. } => return Err(EditError::Invalid("nested ripple policy")),
-        command @ (Command::Inspect {}
-        | Command::Preview { .. }
-        | Command::Snapshot { .. }
-        | Command::Export { .. }
-        | Command::JobStatus { .. }
-        | Command::JobCancel { .. }
-        | Command::Catalog {}
-        | Command::ProviderCatalog {}
-        | Command::FontsList { .. }
-        | Command::FontsLoad { .. }
-        | Command::FontsDownload { .. }
-        | Command::SoundsSave { .. }
-        | Command::SoundsSearch { .. }
-        | Command::SoundsUnsave { .. }
-        | Command::ExportSubtitles { .. }
-        | Command::BurnSubtitles { .. }
-        | Command::DuplicateProject { .. }
-        | Command::DeleteProject {}
-        | Command::RestoreProject {}
-        | Command::PurgeProject {}
-        | Command::ThumbnailProject {}
-        | Command::CreateProject { .. }
-        | Command::SaveProject {}
-        | Command::SetViewState { .. }
-        | Command::SwitchScene { .. }
-        | Command::Undo {}
-        | Command::Redo {}
-        | Command::TimelineSetRipple { .. }
-        | Command::PauseCandidates { .. }
-        | Command::FillerCandidates { .. }
-        | Command::FillersClassify { .. }
-        | Command::ChaptersGenerate { .. }
-        | Command::ChaptersExportSidecars { .. }
-        | Command::GenerateWaveform { .. }
-        | Command::DetectScenes { .. }
-        | Command::MeasureLoudness {}
-        | Command::GenerateClipThumbnails { .. }
-        | Command::TimelinePreview { .. }
-        | Command::TimelineCommitPreview {}
-        | Command::TimelineDiscardPreview {}
-        | Command::BeginGesture {}
-        | Command::CommitGesture {}
-        | Command::CancelGesture {}) => {
-            // The variants stay listed so a new command must choose a side at compile
-            // time; the refusal itself derives from the declared effect.
-            outside_edit(&command)?;
-            return Err(EditError::Invalid("command is not an edit"));
-        }
+        EditCommand::TimelineEdit {
+            commands: _commands,
+            ripple: _ripple,
+        } => return Err(EditError::Invalid("nested ripple policy")),
     }
     check_timeline(&mut data)?;
     if let Some(previous) = previous_cuts {

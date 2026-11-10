@@ -319,6 +319,45 @@ impl CommandSpec {
         self.availability.holds(session)
     }
 }
+// Collect only edit variants and move their payloads from the public command.
+// Each effect is classified explicitly: a new effect must choose its admission rule.
+macro_rules! edit_commands {
+    (@collect [$($variants:tt)*] [$($arms:tt)*];) => {
+        pub(super) enum EditCommand { $($variants)* }
+        impl Command {
+            pub(super) fn into_edit(self) -> Result<EditCommand, Self> {
+                match self { $($arms)* }
+            }
+        }
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $variant:ident Edit { $($field:ident: $ty:ty),* }; $($rest:tt)*) => {
+        edit_commands!(@collect
+            [$($variants)* $variant { $($field: $ty),* },]
+            [$($arms)* Self::$variant { $($field),* } => Ok(EditCommand::$variant { $($field),* }),];
+            $($rest)*);
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $variant:ident Read { $($fields:tt)* }; $($rest:tt)*) => {
+        edit_commands!(@collect [$($variants)*]
+            [$($arms)* command @ Self::$variant { .. } => Err(command),]; $($rest)*);
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $variant:ident SessionControl { $($fields:tt)* }; $($rest:tt)*) => {
+        edit_commands!(@collect [$($variants)*]
+            [$($arms)* command @ Self::$variant { .. } => Err(command),]; $($rest)*);
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $variant:ident FilePublish { $($fields:tt)* }; $($rest:tt)*) => {
+        edit_commands!(@collect [$($variants)*]
+            [$($arms)* command @ Self::$variant { .. } => Err(command),]; $($rest)*);
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $variant:ident JobControl { $($fields:tt)* }; $($rest:tt)*) => {
+        edit_commands!(@collect [$($variants)*]
+            [$($arms)* command @ Self::$variant { .. } => Err(command),]; $($rest)*);
+    };
+}
 /// One line per command: `Variant, "id", "Label", Effect { params } => Fixture, example`
 /// then, in this order and each optional: `, available = Availability`,
 /// `, grant = GrantClass` (defaults by effect, required for session and job control),
@@ -332,6 +371,8 @@ macro_rules! commands {
         pub enum Command {
             $(#[serde(rename = $id)] $variant { $($(#[$attr])* $field: $ty),* }),*
         }
+        // Field attributes belong to public serde/schema admission, not the private reducer.
+        edit_commands!(@collect [] []; $($variant $effect { $($field: $ty),* };)*);
         fn declarations() -> Vec<(&'static str, &'static str, Effect, Example, Facts)> {
             vec![$(($id, $label, Effect::$effect, Example { fixture:Fixture::$fixture, params:$example }, CommandKind::$variant.facts())),*]
         }
