@@ -6,17 +6,47 @@ use crate::editor::properties::{
 };
 
 impl Editor {
-    /// The Remove BG toggle: presence plus enabled, so the panel never shows
-    /// keyed controls while the effect bypasses the frame.
+    /// The Remove BG switch: on with no effect stages the eyedropper, so the
+    /// first pick adds the effect; off removes an existing effect. Enabling a
+    /// bypassed effect is a toggle, not a second instance.
     pub(in crate::editor::properties) fn toggle_chroma_key(&mut self, item: ItemId, enabled: bool) {
         let existing = read::chroma_key(self.session.project(), item)
             .map(|effect| (effect.id.clone(), effect.enabled));
-        match (existing, enabled) {
-            (None, false) => {}
-            (None, true) => self.add_effect_to_item(item, "chroma_key"),
-            (Some((id, on)), want) if on != want => self.toggle_effect(item, &id, want),
-            (Some(_), _) => {}
+        match (enabled, existing) {
+            (true, Some((id, false))) => {
+                self.toggle_effect(item, &id, true);
+                self.properties.chroma_staged = None;
+            }
+            (true, Some((_, true))) => self.properties.chroma_staged = None,
+            (true, None) => self.properties.chroma_staged = Some(item),
+            (false, Some((id, _))) => {
+                self.remove_effect(item, &id);
+                self.properties.chroma_staged = None;
+            }
+            (false, None) => self.properties.chroma_staged = None,
         }
+    }
+
+    /// One eyedropper pick: add the missing effect carrying the colour, or
+    /// update an existing effect. The staged switch clears only on success.
+    pub(in crate::editor) fn pick_key_color(
+        &mut self,
+        item: ItemId,
+        effect: Option<&str>,
+        color: project::Color,
+    ) -> Result<()> {
+        let existing = effect.map(str::to_owned).or_else(|| {
+            read::chroma_key(self.session.project(), item).map(|effect| effect.id.clone())
+        });
+        if let Some(effect) = existing {
+            self.set_key_color(item, &effect, color)?;
+        } else {
+            let [r, g, b, _] = color.0;
+            let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
+            self.set_effect_param(item, "chroma_key", "key_color", packed)?;
+        }
+        self.properties.chroma_staged = None;
+        Ok(())
     }
 
     /// Restore the catalog's default key colour in one undo step.

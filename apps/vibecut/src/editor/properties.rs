@@ -44,6 +44,9 @@ pub(super) struct State {
     pub(super) font_picker: font_picker::State,
     /// Mask row's shape and field sub-panel.
     pub(super) mask: mask_picker::State,
+    /// Clip whose Chroma key is switched on before any colour is picked; the
+    /// first pick adds the effect, so no effect exists while this is set.
+    pub(super) chroma_staged: Option<ItemId>,
     /// Rect of the last drawn panel, where the picker hangs off.
     pub(super) area: Option<Rect>,
     widgets: Vec<Widget>,
@@ -63,6 +66,7 @@ impl Default for State {
             color_base: None,
             font_picker: font_picker::State::default(),
             mask: mask_picker::State::default(),
+            chroma_staged: None,
             area: None,
             widgets: Vec::new(),
         }

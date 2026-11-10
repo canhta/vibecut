@@ -73,6 +73,7 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
             Action::SetSection { key, open } => desk.editor().set_section_open(key, open),
             Action::SetTab { kind, tab } => {
                 desk.editor().key_color_pick = None;
+                desk.editor().properties.chroma_staged = None;
                 let mut next = desk.editor().preferences.properties_tabs.clone();
                 next.insert(kind.to_owned(), tab.to_owned());
                 serde_json::to_value(next)

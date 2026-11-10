@@ -229,6 +229,12 @@ impl State {
             self.mask.close();
         }
         if self
+            .chroma_staged
+            .is_some_and(|staged| selected != Some(staged) || self.details)
+        {
+            self.chroma_staged = None;
+        }
+        if self
             .reorder
             .as_ref()
             .is_some_and(|drag| selected != Some(drag.item) || self.details)

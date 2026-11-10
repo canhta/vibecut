@@ -314,7 +314,8 @@ impl Editor {
                 }
                 Action::PickKeyColor(color) => {
                     if let Some(pick) = self.key_color_pick.take()
-                        && let Err(error) = self.set_key_color(pick.item, &pick.effect, color)
+                        && let Err(error) =
+                            self.pick_key_color(pick.item, pick.effect.as_deref(), color)
                     {
                         self.desk().fail(error.to_string());
                     }

@@ -332,12 +332,13 @@ pub(super) struct EffectReorder {
     pub(super) item: ItemId,
     pub(super) effect: String,
 }
-/// The chroma-key eyedropper is armed for one effect on one item; the next
-/// player click samples the rendered preview frame into that effect's key colour.
+/// The chroma-key eyedropper is armed for one item; the next player click
+/// samples the rendered preview frame. `effect` is `None` while the Chroma key
+/// switch is on but the clip has no effect yet, so the first pick adds it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct KeyPick {
     pub(crate) item: ItemId,
-    pub(crate) effect: String,
+    pub(crate) effect: Option<String>,
 }
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
