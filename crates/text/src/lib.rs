@@ -29,5 +29,5 @@ pub use layout::{
     Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout,
     word_range,
 };
-pub use mask::{StrokeKind, coverage_signed_distance};
+pub use mask::{StrokeKind, coverage_signed_distance, coverage_signed_distance_bytes};
 pub use render::{Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, render};

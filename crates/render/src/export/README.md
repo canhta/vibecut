@@ -12,7 +12,7 @@ Ranges are full, in/out markers or an explicit selected-clip bounding range. Mar
 
 `export` uses `FileSources`; `export_with_sources` accepts an explicit source owner. Settings select range, canvas/crop, fps, bitrate/quality, hardware-preferred or platform software encoder, audio and overwrite policy. The initial encoder preference follows [media's platform default](../../../media/src/write/README.md#encoding).
 
-`ExportSettings::container` defaults to MP4. MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus. Output is chosen by the settings, never guessed from the filename. Auto copies only an admitted container video codec (H.264/HEVC/MPEG-4 for MP4/MOV; VP8/VP9/AV1 for WebM), otherwise it encodes, and forced copy refuses. Included audio always mixes and encodes for the target so mastering cannot be bypassed.
+`ExportSettings::container` defaults to MP4. MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus. `VideoCodec::fits(container)` and `OutputOptions::profile_fits(profile, container)` are the one statement of that rule: `apply` refuses with them and a dialog offers choices with them. Output is chosen by the settings, never guessed from the filename. Auto copies only an admitted container video codec (H.264/HEVC/MPEG-4 for MP4/MOV; VP8/VP9/AV1 for WebM), otherwise it encodes, and forced copy refuses. Included audio always mixes and encodes for the target so mastering cannot be bypassed.
 
 Optional `degraded_consent` binds an interactive caller's `allow_degraded` to the accepted typed asset, item, range and reason diagnostics. Any additional unavailable range or changed reason refuses. CLI callers keep an explicit whole-export `allow_degraded` switch.
 

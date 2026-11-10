@@ -42,6 +42,18 @@ pub enum VideoCodec {
     H264,
     Vp9,
 }
+impl VideoCodec {
+    /// Whether this codec can be written into `container`. WebM carries VP9
+    /// only and the other containers H.264 only; `Automatic` fits all of them.
+    pub fn fits(self, container: media::Container) -> bool {
+        let webm = matches!(container, media::Container::WebM);
+        match self {
+            Self::Automatic => true,
+            Self::H264 => !webm,
+            Self::Vp9 => webm,
+        }
+    }
+}
 /// Versioned portable extension of the existing export settings. Runtime render
 /// caches, effect adapters, overwrite consent and destinations never serialize.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -188,13 +200,15 @@ impl OutputOptions {
         }
         Ok(TimeRange::new(start, end)?)
     }
+    /// Whether `profile` can be requested for `container`: an explicit H.264
+    /// profile has no meaning in WebM.
+    pub fn profile_fits(profile: media::H264Profile, container: media::Container) -> bool {
+        profile == media::H264Profile::Automatic || !matches!(container, media::Container::WebM)
+    }
     pub fn apply(self, settings: &mut ExportSettings) -> Result<()> {
         self.validate()?;
-        let webm = matches!(settings.container, media::Container::WebM);
-        if matches!(
-            (self.codec, webm),
-            (VideoCodec::H264, true) | (VideoCodec::Vp9, false)
-        ) || (webm && self.profile != media::H264Profile::Automatic)
+        if !self.codec.fits(settings.container)
+            || !Self::profile_fits(self.profile, settings.container)
         {
             return Err(Error::Unsupported("codec/profile for container"));
         }

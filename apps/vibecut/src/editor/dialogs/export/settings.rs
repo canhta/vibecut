@@ -158,9 +158,7 @@ pub(super) fn show(
                         (render::VideoCodec::H264, "export.codec.h264"),
                         (render::VideoCodec::Vp9, "export.codec.vp9"),
                     ] {
-                        let allowed = codec == render::VideoCodec::Automatic
-                            || (codec == render::VideoCodec::Vp9)
-                                == (options.format == super::ExportFormat::Webm);
+                        let allowed = codec.fits(options.format.container());
                         let r = ui.add_enabled(
                             allowed,
                             egui::Button::selectable(
@@ -273,8 +271,10 @@ pub(super) fn show(
                         media::H264Profile::High,
                     ] {
                         ui.add_enabled_ui(
-                            options.format != super::ExportFormat::Webm
-                                || profile == media::H264Profile::Automatic,
+                            render::OutputOptions::profile_fits(
+                                profile,
+                                options.format.container(),
+                            ),
                             |ui| {
                                 ui.selectable_value(
                                     &mut options.output.profile,

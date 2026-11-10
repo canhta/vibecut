@@ -463,13 +463,12 @@ pub struct RasterMask {
 impl RasterMask {
     pub fn from_image(image: &Image, hooks: &dyn ExecutionHooks) -> Result<Self> {
         check(hooks)?;
-        // The text distance operation retains three area buffers and produces the
-        // fourth; scratch holds f,d,v,z for the longer axis (usize is 8 bytes).
-        let retained = u64::from(image.width) * u64::from(image.height) * 4;
+        // This mask keeps the returned distances; text states what the
+        // transform holds on top of them while it runs.
+        let retained = u64::from(image.width) * u64::from(image.height) * size_of::<f32>() as u64;
         let _lease = hooks.reserve(MemoryKind::Compositor, retained)?;
-        let peak = u64::from(image.width) * u64::from(image.height) * 12
-            + u64::from(image.width.max(image.height)) * 24
-            + 4;
+        let peak = text::coverage_signed_distance_bytes(image.width, image.height)
+            .saturating_sub(retained);
         let transient = hooks.reserve(MemoryKind::Compositor, peak)?;
         let distance = text::coverage_signed_distance(
             image.width,

@@ -216,8 +216,8 @@ fn check(cancelled: &impl Fn() -> bool) -> Result<(), crate::RenderError> {
 /// their coverage offset; empty/full rasters saturate beyond the canvas extent.
 /// Positive dimensions, <=64 Mi pixels, exact length and finite 0..=1 coverage
 /// are required. Cancellation is checked per input row and distance-transform row/column.
-/// Callers that enforce a byte budget reserve 16 bytes/pixel plus
-/// 20 bytes per maximum canvas axis plus 4 bytes before calling (input and output included).
+/// Callers that enforce a byte budget reserve [`coverage_signed_distance_bytes`]
+/// before calling.
 pub fn coverage_signed_distance(
     width: u32,
     height: u32,
@@ -254,6 +254,19 @@ pub fn coverage_signed_distance(
         },
         &cancelled,
     )
+}
+
+/// Peak bytes [`coverage_signed_distance`] holds for a `width` x `height`
+/// raster, the returned distances included: the coverage copy, both distance
+/// grids and the result (four `f32` per pixel), plus the row scratch of the
+/// transform on the longer axis.
+pub fn coverage_signed_distance_bytes(width: u32, height: u32) -> u64 {
+    const F32: u64 = size_of::<f32>() as u64;
+    let area = u64::from(width) * u64::from(height);
+    let axis = u64::from(width.max(height));
+    // f, d and z are f32 rows (z has one extra slot); v is a usize row.
+    let scratch = axis * (3 * F32 + size_of::<usize>() as u64) + F32;
+    area * 4 * F32 + scratch
 }
 
 /// Stroke coverage of `width` pixels around the shape in `mask`.
@@ -309,6 +322,16 @@ mod tests {
             (1, 1, vec![1.1]),
         ] {
             assert!(coverage_signed_distance(w, h, pixels.into_iter(), || false).is_err());
+        }
+        // Four f32 grids per pixel, three f32 rows and one usize row on the
+        // longer axis, and the extra slot of `z`.
+        let row = 12 + size_of::<usize>() as u64;
+        for (w, h, bytes) in [
+            (9, 9, 81 * 16 + 9 * row + 4),
+            (192, 48, 192 * 48 * 16 + 192 * row + 4),
+            (1, 7, 7 * 16 + 7 * row + 4),
+        ] {
+            assert_eq!(coverage_signed_distance_bytes(w, h), bytes);
         }
         let calls = std::cell::Cell::new(0);
         assert!(matches!(
