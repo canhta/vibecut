@@ -117,6 +117,8 @@ impl Drop for NativeEyedropper {
 pub(crate) struct Picker {
     pub original: Color,
     pub color: Color,
+    /// RGB-only presentation; other callers retain the full RGBA controls.
+    pub opaque: bool,
     hsva: [f64; 4],
     hex: String,
     entries: [String; 4],
@@ -136,6 +138,7 @@ impl Picker {
         let mut value = Self {
             original: color,
             color,
+            opaque: false,
             hsva: [0.0; 4],
             hex: String::new(),
             entries: Default::default(),
@@ -146,21 +149,28 @@ impl Picker {
         value.set(color);
         value
     }
-    fn set(&mut self, color: Color) {
+    fn set(&mut self, mut color: Color) {
+        if self.opaque {
+            color.0[3] = 255;
+        }
         self.color = color;
-        self.hex = render::color::hex(color);
         self.hsva = render::color::to_hsva(color);
         self.refresh_entries();
         self.invalid = false;
     }
     fn refresh_entries(&mut self) {
+        self.hex = render::color::hex(self.color);
+        if self.opaque {
+            self.hex.truncate(7);
+        }
         // Hue in degrees, the other channels as whole percents.
         let [h, s, v, a] = self.hsva;
         self.entries = [h, s * 100.0, v * 100.0, a * 100.0].map(|v| format!("{v:.0}"));
     }
     fn set_hsva(&mut self, values: [f64; 4]) -> Result<()> {
-        let color = render::color::from_hsva(values)?;
         let [h, s, v, a] = values;
+        let a = if self.opaque { 1.0 } else { a };
+        let color = render::color::from_hsva([h, s, v, a])?;
         self.hsva = [
             h.clamp(0.0, 360.0),
             s.clamp(0.0, 1.0),
@@ -168,12 +178,14 @@ impl Picker {
             a.clamp(0.0, 1.0),
         ];
         self.color = color;
-        self.hex = render::color::hex(color);
         self.refresh_entries();
         self.invalid = false;
         Ok(())
     }
     pub fn ui(&mut self, ctx: &egui::Context, locale: Locale, recent: &[Color]) -> PickerEvent {
+        if self.opaque {
+            self.hex.truncate(7);
+        }
         let mut event = PickerEvent {
             preview: false,
             commit: false,
@@ -218,7 +230,7 @@ impl Picker {
                 .add(
                     egui::TextEdit::singleline(&mut self.hex)
                         .id(Id::unique("color.hex"))
-                        .char_limit(9),
+                        .char_limit(if self.opaque { 7 } else { 9 }),
                 )
                 .labelled_by(caption.id);
             if response.changed() {
@@ -240,6 +252,9 @@ impl Picker {
                 (2, "v", Text::Value, 1.0),
                 (3, "a", Text::Alpha, 1.0),
             ] {
+                if self.opaque && index == 3 {
+                    continue;
+                }
                 let caption = ui.label(i18n::text(locale, label));
                 let mut value = self.hsva.get(index).copied().unwrap_or(0.0);
                 let slider = ui
@@ -251,7 +266,6 @@ impl Picker {
                     }
                     if let Ok(color) = render::color::from_hsva(self.hsva) {
                         self.color = color;
-                        self.hex = render::color::hex(color);
                         self.refresh_entries();
                         event.preview = true;
                     }

@@ -2,7 +2,7 @@
 use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError, Result};
-use project::EffectInstance;
+use project::{Animations, EffectInstance};
 use render::effects::{EffectCompositor, apply_effect};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -12,6 +12,16 @@ pub const MAX_THUMBNAIL_EDGE: u32 = 320;
 /// LRU entries; at most 12.5 MiB of RGBA8, charged to the shared byte budget.
 pub const MAX_THUMBNAILS: usize = 32;
 const MAX_BYTES: u64 = MAX_THUMBNAIL_EDGE as u64 * MAX_THUMBNAIL_EDGE as u64 * 4;
+struct Identity<'a>(&'a mut blake3::Hasher);
+impl std::io::Write for Identity<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 struct Entry {
     key: CacheKey,
     bytes: Vec<u8>,
@@ -38,8 +48,8 @@ impl EffectThumbnails {
     }
     /// Start a cancellable preview of a registered effect on a source image.
     /// Output is straight sRGB RGBA8, with the same dimensions as `source`.
-    /// Content pixels, geometry and typed params key the cache, independently of
-    /// playhead identity. Call on source/param changes; cadence is caller-driven.
+    /// Source content/geometry, full instance, animations and local time key the
+    /// cache. Negative local time refuses; cadence is caller-driven.
     /// Cache hits are jobs too, preserving the same cancellation/result contract.
     /// The shared executor retries only Unsupported on CPU; budget, cancellation
     /// and invalid-data failures never fall back or publish an unfinished result.
@@ -48,7 +58,12 @@ impl EffectThumbnails {
         runner: &mut JobRunner,
         source: Arc<render::Image>,
         effect: EffectInstance,
+        animations: Animations,
+        local: time::Tick,
     ) -> Result<(JobId, CancelToken)> {
+        if local < time::Tick::ZERO {
+            return Err(EditError::Invalid("thumbnail local time"));
+        }
         effect.validate()?;
         if source.width().max(source.height()) > MAX_THUMBNAIL_EDGE {
             return Err(EditError::Limit);
@@ -61,15 +76,17 @@ impl EffectThumbnails {
                 hash.update(&value.to_le_bytes());
             }
         }
-        let settings = serde_json::to_vec(&(&effect.kind, &effect.params))
+        let mut identity = blake3::Hasher::new();
+        serde_json::to_writer(Identity(&mut identity), &(&effect, &animations, local))
             .map_err(|_| EditError::InvalidParams)?;
+        let settings = identity.finalize();
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
             source: *hash.finalize().as_bytes(),
             provider: "local",
             model: "effect-thumbnail",
-            version: "1",
-            settings: &settings,
+            version: "2",
+            settings: settings.as_bytes(),
             transcript: [0; 32],
             cues: [0; 32],
             clip_range: [0; 32],
@@ -101,9 +118,9 @@ impl EffectThumbnails {
                     }
                 }
                 let passes = render::effects::evaluate_effect(
-                    &project::Animations::default(),
+                    &animations,
                     &effect,
-                    time::Tick::ZERO,
+                    local,
                     source.width(),
                     source.height(),
                     true,

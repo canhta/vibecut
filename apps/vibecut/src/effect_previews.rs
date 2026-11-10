@@ -1,5 +1,4 @@
-//! Effects-panel tile previews. The engine owns scheduling, accounting and the
-//! bounded thumbnail cache; this module only keeps the panel's latest state.
+//! Effects-panel preview admission over engine-owned jobs, accounting and cache.
 
 use crate::{Result, egui};
 use engine::effect_thumbnails::EffectThumbnails;
@@ -7,7 +6,7 @@ use engine::jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, System
 use engine::{ByteBudget, ByteBudgetHooks};
 use project::EffectInstance;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -25,24 +24,34 @@ pub enum EffectPreviewStatus {
     Failed,
 }
 
+struct Flight {
+    job: JobId,
+    cancel: CancelToken,
+    sequence: u64,
+}
 struct Entry {
-    job: Option<JobId>,
-    cancel: Option<CancelToken>,
-    status: Status,
+    effect: EffectInstance,
+    animations: project::Animations,
+    job: Option<Flight>,
+    desired: Option<u64>,
+    image: Option<Arc<egui::ColorImage>>,
+    presented: Option<u64>,
+    failure: Option<String>,
+    texture: Option<egui::TextureHandle>,
+    texture_dirty: bool,
 }
-enum Status {
-    Pending,
-    Ready(Arc<egui::ColorImage>),
-    Failed(String),
-}
-
 /// One cache per editor. Jobs start only when the effects panel first needs a
-/// tile, and the same thumbnail contract serves retry and live refresh.
+/// tile; retry replaces that kind's static request through the same contract.
 pub struct EffectPreviews {
     runner: JobRunner,
     cache: EffectThumbnails,
     source: Arc<render::Image>,
     entries: BTreeMap<String, Entry>,
+    deferred: VecDeque<String>,
+    visible: bool,
+    last_clock: Option<Duration>,
+    elapsed: Duration,
+    sequence: u64,
 }
 
 impl EffectPreviews {
@@ -80,6 +89,11 @@ impl EffectPreviews {
             cache,
             source,
             entries: BTreeMap::new(),
+            deferred: VecDeque::new(),
+            visible: true,
+            last_clock: None,
+            elapsed: Duration::ZERO,
+            sequence: 0,
         })
     }
 
@@ -91,102 +105,234 @@ impl EffectPreviews {
         Self::new(cache, budget)
     }
 
-    /// Admit one preview per effect kind. A refused submission is a rendered
-    /// failure state, not a silent blank tile.
-    pub fn ensure(&mut self, kind: &str, effect: &EffectInstance) {
-        if self.entries.contains_key(kind) {
+    /// Advance the visible two-second, 30fps demo from the editor clock only.
+    /// Hidden time is excluded; a visibility change invalidates submitted work.
+    pub fn update(&mut self, visible: bool, now: Duration) {
+        if let Some(last) = self.last_clock {
+            self.elapsed = self.elapsed.saturating_add(now.saturating_sub(last));
+        }
+        self.last_clock = visible.then_some(now);
+        let sequence = (self.elapsed.as_nanos().saturating_mul(30) / 1_000_000_000)
+            .min(u128::from(u64::MAX)) as u64;
+        let changed = visible != self.visible;
+        self.visible = visible;
+        if changed {
+            self.deferred.clear();
+            for entry in self.entries.values_mut() {
+                Self::cancel(entry);
+            }
+        }
+        if visible && (changed || sequence != self.sequence) {
+            for (kind, entry) in &mut self.entries {
+                if entry.failure.is_none() {
+                    entry.desired = Some(sequence);
+                    if entry.job.is_none() && !self.deferred.contains(kind) {
+                        self.deferred.push_back(kind.clone());
+                    }
+                }
+            }
+        }
+        self.sequence = sequence;
+    }
+
+    /// Coalesce a kind's desired frame; changed authored input starts a generation.
+    pub fn ensure(
+        &mut self,
+        kind: &str,
+        effect: &EffectInstance,
+        animations: &project::Animations,
+    ) {
+        if !self.visible {
             return;
         }
-        let entry = match self
-            .cache
-            .submit(&mut self.runner, self.source.clone(), effect.clone())
-        {
-            Ok((job, cancel)) => Entry {
-                job: Some(job),
-                cancel: Some(cancel),
-                status: Status::Pending,
-            },
-            Err(error) => Entry {
-                job: None,
-                cancel: None,
-                status: Status::Failed(error.to_string()),
-            },
-        };
-        self.entries.insert(kind.to_owned(), entry);
-    }
-
-    /// Submit again after a failure. The previous job, if any, is cancelled
-    /// before the engine cache/runner sees another request.
-    pub fn retry(&mut self, kind: &str, effect: &EffectInstance) {
-        if let Some(entry) = self.entries.remove(kind)
-            && let Some(cancel) = entry.cancel
-        {
-            cancel.cancel();
-        }
-        self.ensure(kind, effect);
-    }
-
-    /// Pump the engine runner and retain only terminal truth the tile can show.
-    pub fn tick(&mut self) -> Result<()> {
-        self.runner.tick()?;
-        let kinds: Vec<String> = self
+        if self
             .entries
-            .iter()
-            .filter(|(_, entry)| entry.job.is_some())
-            .map(|(kind, _)| kind.clone())
-            .collect();
-        for kind in kinds {
+            .get(kind)
+            .is_some_and(|e| e.effect == *effect && e.animations == *animations)
+        {
+            return;
+        }
+        if let Some(entry) = self.entries.get_mut(kind) {
+            Self::cancel(entry);
+            entry.effect = effect.clone();
+            entry.animations = animations.clone();
+            entry.failure = None;
+            entry.desired = self.visible.then_some(self.sequence);
+        } else {
+            self.entries.insert(
+                kind.to_owned(),
+                Entry {
+                    effect: effect.clone(),
+                    animations: animations.clone(),
+                    job: None,
+                    desired: Some(self.sequence),
+                    image: None,
+                    presented: None,
+                    failure: None,
+                    texture: None,
+                    texture_dirty: false,
+                },
+            );
+        }
+        if let Err(error) = effect.validate() {
+            if let Some(entry) = self.entries.get_mut(kind) {
+                entry.failure = Some(error.to_string());
+                entry.desired = None;
+            }
+            return;
+        }
+        if !self.deferred.iter().any(|pending| pending == kind) {
+            self.deferred.push_back(kind.to_owned());
+        }
+        self.admit();
+    }
+
+    fn cancel(entry: &mut Entry) {
+        if let Some(flight) = entry.job.take() {
+            flight.cancel.cancel();
+        }
+        entry.desired = None;
+        entry.presented = None;
+    }
+
+    /// Retry invalidates its old job ID; late output cannot replace the new entry.
+    pub fn retry(&mut self, kind: &str, effect: &EffectInstance, animations: &project::Animations) {
+        self.deferred.retain(|pending| pending != kind);
+        if let Some(entry) = self.entries.get_mut(kind) {
+            Self::cancel(entry);
+            entry.failure = None;
+            // Replace identical input too, retaining the last good image.
+            entry.desired = self.visible.then_some(self.sequence);
+            entry.effect = effect.clone();
+            entry.animations = animations.clone();
+            if let Err(error) = effect.validate() {
+                entry.failure = Some(error.to_string());
+                entry.desired = None;
+                return;
+            }
+            if self.visible {
+                self.deferred.push_back(kind.to_owned());
+            }
+            self.admit();
+        } else {
+            self.ensure(kind, effect, animations);
+        }
+    }
+
+    fn local(sequence: u64) -> time::Tick {
+        time::Tick((sequence % 60) as i64 * (time::TICKS_PER_SECOND / 30))
+    }
+
+    fn admit(&mut self) {
+        if !self.visible {
+            return;
+        }
+        while let Some(kind) = self.deferred.pop_front() {
             let Some(entry) = self.entries.get_mut(&kind) else {
                 continue;
             };
-            let Some(job) = entry.job else {
+            if entry.job.is_some() || entry.failure.is_some() {
+                continue;
+            }
+            let Some(sequence) = entry.desired else {
                 continue;
             };
-            let Some(snapshot) = self.runner.snapshot(job) else {
-                continue;
-            };
-            match snapshot.state {
-                JobState::Completed => {
-                    let expected = (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4) as usize;
-                    entry.status = match self.runner.take_output(job) {
-                        Some(output) if output.bytes().len() == expected => {
-                            let image = egui::ColorImage::from_rgba_unmultiplied(
-                                [PREVIEW_WIDTH as usize, PREVIEW_HEIGHT as usize],
-                                output.bytes(),
-                            );
-                            Status::Ready(Arc::new(image))
-                        }
-                        Some(_) => Status::Failed("preview output size".into()),
-                        None => Status::Failed("preview result unavailable".into()),
-                    };
-                    entry.job = None;
-                    entry.cancel = None;
+            match self.cache.submit(
+                &mut self.runner,
+                self.source.clone(),
+                entry.effect.clone(),
+                entry.animations.clone(),
+                Self::local(sequence),
+            ) {
+                Ok((job, cancel)) => {
+                    entry.job = Some(Flight {
+                        job,
+                        cancel,
+                        sequence,
+                    });
+                    entry.desired = None;
                 }
-                JobState::Failed | JobState::Cancelled => {
-                    let reason = snapshot
-                        .error
-                        .as_ref()
-                        .map_or_else(|| "preview cancelled".to_owned(), |error| error.to_string());
-                    entry.status = Status::Failed(reason);
-                    entry.job = None;
-                    entry.cancel = None;
+                Err(engine::EditError::QueueFull) => {
+                    self.deferred.push_front(kind);
+                    break;
                 }
-                JobState::Queued
-                | JobState::Running
-                | JobState::Cancelling
-                | JobState::Publishing
-                | JobState::Backoff => {}
+                Err(error) => {
+                    entry.failure = Some(error.to_string());
+                    entry.desired = None;
+                }
             }
         }
+    }
+
+    /// Complete current generations before fair admission of their latest frames.
+    pub fn tick(&mut self) -> Result<()> {
+        self.runner.tick()?;
+        for (kind, entry) in &mut self.entries {
+            let Some(flight) = &entry.job else {
+                continue;
+            };
+            let job = flight.job;
+            let sequence = flight.sequence;
+            let outcome = match self.runner.snapshot(job) {
+                None => Some(Err(engine::EditError::JobNotRetained.to_string())),
+                Some(snapshot) => match snapshot.state {
+                    JobState::Completed => Some(
+                        self.runner
+                            .take_output(job)
+                            .filter(|output| {
+                                output.bytes().len()
+                                    == (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4) as usize
+                            })
+                            .map(|output| {
+                                egui::ColorImage::from_rgba_unmultiplied(
+                                    [PREVIEW_WIDTH as usize, PREVIEW_HEIGHT as usize],
+                                    output.bytes(),
+                                )
+                            })
+                            .ok_or_else(|| "preview result unavailable".to_owned()),
+                    ),
+                    JobState::Failed | JobState::Cancelled => Some(Err(snapshot
+                        .error
+                        .map_or_else(|| "preview cancelled".to_owned(), |e| e.to_string()))),
+                    _ => None,
+                },
+            };
+            if let Some(outcome) = outcome {
+                entry.job = None;
+                match outcome {
+                    Ok(image) => {
+                        if entry.presented.is_none_or(|last| sequence > last) {
+                            entry.image = Some(Arc::new(image));
+                            entry.presented = Some(sequence);
+                            entry.texture_dirty = true;
+                        }
+                    }
+                    Err(reason) => {
+                        entry.failure = Some(reason);
+                        entry.desired = None;
+                    }
+                }
+                if entry.desired == Some(sequence) {
+                    entry.desired = None;
+                }
+                if entry.desired.is_some() && !self.deferred.contains(kind) {
+                    self.deferred.push_back(kind.clone());
+                }
+            }
+        }
+        self.admit();
         Ok(())
     }
 
-    /// Pump the engine runner until every submitted tile is terminal or the
-    /// timeout passes; this blocks the caller and is meant for audits that
-    /// capture a settled panel. The engine runner stays the only renderer.
+    /// Drain the frozen current target, including refreshes behind a Ready image.
+    /// No editor clock is sampled inside this loop.
     pub fn settle(&mut self, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
-        while self.entries.values().any(|entry| entry.job.is_some()) {
+        while self
+            .entries
+            .values()
+            .any(|e| e.job.is_some() || e.desired.is_some())
+        {
             self.tick()?;
             if Instant::now() >= deadline {
                 return Err(crate::Error::PreviewUnavailable(
@@ -197,64 +343,61 @@ impl EffectPreviews {
         }
         Ok(())
     }
-
     pub fn status(&self, kind: &str) -> Option<EffectPreviewStatus> {
-        self.entries.get(kind).map(|entry| match entry.status {
-            Status::Pending => EffectPreviewStatus::Pending,
-            Status::Ready(_) => EffectPreviewStatus::Ready,
-            Status::Failed(_) => EffectPreviewStatus::Failed,
+        self.entries.get(kind).map(|e| {
+            if e.failure.is_some() {
+                EffectPreviewStatus::Failed
+            } else if e.image.is_some() {
+                EffectPreviewStatus::Ready
+            } else {
+                EffectPreviewStatus::Pending
+            }
         })
     }
-
     pub fn statuses(&self) -> BTreeMap<String, EffectPreviewStatus> {
         self.entries
-            .iter()
-            .map(|(kind, entry)| {
-                let status = match entry.status {
-                    Status::Pending => EffectPreviewStatus::Pending,
-                    Status::Ready(_) => EffectPreviewStatus::Ready,
-                    Status::Failed(_) => EffectPreviewStatus::Failed,
-                };
-                (kind.clone(), status)
-            })
+            .keys()
+            .filter_map(|kind| self.status(kind).map(|s| (kind.clone(), s)))
             .collect()
     }
-
     pub fn image(&self, kind: &str) -> Option<Arc<egui::ColorImage>> {
-        match &self.entries.get(kind)?.status {
-            Status::Ready(image) => Some(image.clone()),
-            Status::Pending | Status::Failed(_) => None,
-        }
+        self.entries.get(kind)?.image.clone()
+    }
+    pub fn failure(&self, kind: &str) -> Option<&str> {
+        self.entries.get(kind)?.failure.as_deref()
     }
 
-    pub fn failure(&self, kind: &str) -> Option<&str> {
-        match &self.entries.get(kind)?.status {
-            Status::Failed(reason) => Some(reason),
-            Status::Pending | Status::Ready(_) => None,
+    /// Upload a newly presented frame once; stationary paints reuse the handle.
+    pub(crate) fn texture(
+        &mut self,
+        ctx: &egui::Context,
+        kind: &str,
+    ) -> Option<egui::TextureHandle> {
+        let entry = self.entries.get_mut(kind)?;
+        let image = entry.image.as_ref()?;
+        if entry.texture_dirty {
+            if let Some(texture) = &mut entry.texture {
+                texture.set((**image).clone(), egui::TextureOptions::LINEAR);
+            } else {
+                entry.texture = Some(ctx.load_texture(
+                    format!("effects.preview.{kind}"),
+                    (**image).clone(),
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+            entry.texture_dirty = false;
         }
+        entry.texture.clone()
     }
 }
 
 impl Drop for EffectPreviews {
     fn drop(&mut self) {
         for entry in self.entries.values() {
-            if let Some(cancel) = &entry.cancel {
-                cancel.cancel();
+            if let Some(flight) = &entry.job {
+                flight.cancel.cancel();
             }
         }
         self.runner.shutdown();
     }
-}
-
-/// App-level conversion for an image-panel texture key.
-pub fn preview_texture(
-    ctx: &egui::Context,
-    kind: &str,
-    image: Arc<egui::ColorImage>,
-) -> egui::TextureHandle {
-    ctx.load_texture(
-        format!("effects.preview.{kind}"),
-        (*image).clone(),
-        egui::TextureOptions::LINEAR,
-    )
 }

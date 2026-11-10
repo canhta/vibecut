@@ -1,6 +1,6 @@
 //! Device-free evaluated passes, shared by CPU and app GPU adapters.
 use crate::{Error, ExecutionHooks, Image, Result, check};
-use project::{Animations, EffectInstance, EffectValue, Item, ParamValue};
+use project::{Animations, EffectInstance, EffectParamKind, EffectValue, Item, Param, ParamValue};
 use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
@@ -333,12 +333,20 @@ pub fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
 /// chroma-distance tolerance and 0 emits no pass; shadow restores pixels darker
 /// than the key. Stages follow the implementation reference's matte and spill
 /// stages; the observed UI exposes no spill control, so removal is inherent.
+/// `key_color` is finite straight encoded sRGB RGBA in 0..=1; alpha is unused.
+/// Invalid colour/control values refuse before allocating a pass list.
 pub fn chroma_key_passes(
-    key_color: project::Color,
+    key_color: [f64; 4],
     intensity: f64,
     shadow: f64,
 ) -> Result<Vec<EffectPass>> {
     let range = project::CHROMA_KEY_MIN..=project::CHROMA_KEY_MAX;
+    if key_color
+        .iter()
+        .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+    {
+        return Err(Error::Invalid("chroma key colour"));
+    }
     if [intensity, shadow]
         .iter()
         .any(|v| !v.is_finite() || !range.contains(v))
@@ -348,17 +356,10 @@ pub fn chroma_key_passes(
     if intensity == 0.0 {
         return Ok(Vec::new());
     }
-    // Project colours are straight sRGB bytes; the pass compares sRGB-encoded
-    // pixels, so the key needs no transfer conversion here.
-    let encoded = |byte: u8| f32::from(byte) / 255.0;
     Ok(vec![EffectPass::Pixel {
         entry_point: "chroma_key",
         uniforms: vec![
-            Uniform::Color([
-                encoded(key_color.0[0]),
-                encoded(key_color.0[1]),
-                encoded(key_color.0[2]),
-            ]),
+            color_uniform(key_color),
             Uniform::Float((intensity / 100.0) as f32),
             Uniform::Float((shadow / 100.0) as f32),
         ],
@@ -432,7 +433,7 @@ struct PixelOp {
     valid: fn(&[f32]) -> bool,
     apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-static PIXEL_OPS: [PixelOp; 2] = [
+static PIXEL_OPS: [PixelOp; 13] = [
     PixelOp {
         entry_point: "grade",
         len: 4,
@@ -445,7 +446,329 @@ static PIXEL_OPS: [PixelOp; 2] = [
         valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
         apply: chroma_key_pixel,
     },
+    PixelOp {
+        entry_point: "black_white",
+        len: 0,
+        valid: |_| true,
+        apply: black_white_pixel,
+    },
+    PixelOp {
+        entry_point: "channel_mix",
+        len: 12,
+        valid: |v| v.iter().all(|g| (-2.0..=2.0).contains(g)),
+        apply: channel_mix_pixel,
+    },
+    PixelOp {
+        entry_point: "color_pass",
+        len: 5,
+        valid: |v| {
+            v.get(..3)
+                .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
+                && v.get(3).is_some_and(|sim| (0.0..=1.2).contains(sim))
+                && v.get(4)
+                    .is_some_and(|reverse| (0.0..=1.0).contains(reverse))
+        },
+        apply: color_pass_pixel,
+    },
+    PixelOp {
+        entry_point: "color_replace",
+        len: 8,
+        valid: |v| {
+            v.get(0).is_some_and(|sim| (0.0..=1.2).contains(sim))
+                && v.get(1).is_some_and(|solid| (0.0..=1.0).contains(solid))
+                && v.get(2..8)
+                    .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+        },
+        apply: color_replace_pixel,
+    },
+    PixelOp {
+        entry_point: "extract",
+        len: 4,
+        valid: |v| {
+            v.get(0).is_some_and(|lo| (0.0..=1.0).contains(lo))
+                && v.get(1).is_some_and(|hi| (0.0..=1.0).contains(hi))
+                && v.get(2).is_some_and(|soft| (0.0..=0.2001).contains(soft))
+                && v.get(3).is_some_and(|invert| (0.0..=1.0).contains(invert))
+        },
+        apply: extract_pixel,
+    },
+    PixelOp {
+        entry_point: "gamma",
+        len: 1,
+        valid: |v| v.first().is_some_and(|g| *g > 0.0 && *g <= 4.0),
+        apply: gamma_pixel,
+    },
+    PixelOp {
+        entry_point: "invert",
+        len: 2,
+        valid: |v| {
+            v.first()
+                .is_some_and(|channel| (0.0..=4.0).contains(channel))
+                && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
+        },
+        apply: invert_pixel,
+    },
+    PixelOp {
+        entry_point: "levels",
+        len: 5,
+        valid: |v| {
+            v.get(0..4)
+                .is_some_and(|bounds| bounds.iter().all(|b| (0.0..=1.0).contains(b)))
+                && v.get(4).is_some_and(|gamma| *gamma > 0.0 && *gamma <= 12.0)
+        },
+        apply: levels_pixel,
+    },
+    PixelOp {
+        entry_point: "posterize",
+        len: 1,
+        valid: |v| v.first().is_some_and(|n| *n >= 1.0 && n.is_finite()),
+        apply: posterize_pixel,
+    },
+    PixelOp {
+        entry_point: "strobe",
+        len: 4,
+        valid: |v| {
+            v.get(0..3)
+                .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+                && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
+        },
+        apply: strobe_pixel,
+    },
+    PixelOp {
+        entry_point: "tint",
+        len: 7,
+        valid: |v| {
+            v.get(0..6)
+                .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+                && v.get(6).is_some_and(|amount| (0.0..=1.0).contains(amount))
+        },
+        apply: tint_pixel,
+    },
 ];
+
+/// Straight linear colour and alpha of a premultiplied working pixel; transparent
+/// black for a fully transparent one so every op keeps its contract.
+fn straight(pixel: [f32; 4]) -> ([f32; 3], f32) {
+    let alpha = pixel[3];
+    if alpha <= 0.0 {
+        return ([0.0; 3], 0.0);
+    }
+    (
+        [pixel[0] / alpha, pixel[1] / alpha, pixel[2] / alpha].map(|v| v.clamp(0.0, 1.0)),
+        alpha,
+    )
+}
+fn encoded_color(rgb: [f32; 3]) -> [f32; 3] {
+    rgb.map(|v| crate::image::oetf(v.clamp(0.0, 1.0), 13))
+}
+fn decoded_color(rgb: [f32; 3]) -> [f32; 3] {
+    rgb.map(|v| crate::image::eotf(v.clamp(0.0, 1.0), 13))
+}
+fn premultiply(rgb: [f32; 3], alpha: f32) -> [f32; 4] {
+    let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * alpha).clamp(0.0, alpha));
+    [r, g, b, alpha]
+}
+fn uniform(values: &[f32], index: usize) -> f32 {
+    values.get(index).copied().unwrap_or(0.0)
+}
+fn uniform_color(values: &[f32], start: usize) -> [f32; 3] {
+    [0, 1, 2].map(|k| uniform(values, start + k))
+}
+fn luma(rgb: [f32; 3]) -> f32 {
+    KEY_LUMA[0] * rgb[0] + KEY_LUMA[1] * rgb[1] + KEY_LUMA[2] * rgb[2]
+}
+fn distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+fn hsl(rgb: [f32; 3]) -> [f32; 3] {
+    let [r, g, b] = rgb;
+    let high = r.max(g).max(b);
+    let low = r.min(g).min(b);
+    let l = (high + low) / 2.0;
+    if (high - low).abs() < 1e-7 {
+        return [0.0, 0.0, l];
+    }
+    let d = high - low;
+    let s = if l > 0.5 {
+        d / (2.0 - high - low)
+    } else {
+        d / (high + low)
+    };
+    let h = if high == r {
+        (g - b) / d + if g < b { 6.0 } else { 0.0 }
+    } else if high == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    [h / 6.0, s, l]
+}
+fn hsl_color(h: f32, s: f32, l: f32) -> [f32; 3] {
+    if s <= 0.0 {
+        return [l, l, l];
+    }
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let p = 2.0 * l - q;
+    let channel = |mut t: f32| {
+        t = t.rem_euclid(1.0);
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 0.5 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
+    };
+    [channel(h + 1.0 / 3.0), channel(h), channel(h - 1.0 / 3.0)]
+}
+/// Rec. 709 luma of the straight linear colour replaces every channel.
+pub fn black_white_pixel(pixel: [f32; 4], _: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    premultiply([luma(c); 3], alpha)
+}
+/// Encoded-space channel inversion mixed back by `blend`; the Alpha channel
+/// inverts coverage instead.
+pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let channel = uniform(values, 0).round().clamp(0.0, 4.0) as u32;
+    let blend = uniform(values, 1).clamp(0.0, 1.0);
+    if channel == 4 {
+        // Coverage inverts and blends back by `blend`; the picture keeps its
+        // straight colour, re-premultiplied by the new alpha.
+        let (c, alpha) = straight(pixel);
+        let out = (1.0 - alpha) * (1.0 - blend) + alpha * blend;
+        return premultiply(c, out);
+    }
+    if pixel[3] <= 0.0 {
+        return pixel;
+    }
+    let (c, alpha) = straight(pixel);
+    let e = encoded_color(c);
+    let inverted = e.map(|v| 1.0 - v);
+    let mixed = [0, 1, 2].map(|k| {
+        if channel == 0 || channel == k as u32 + 1 {
+            inverted[k] + (e[k] - inverted[k]) * blend
+        } else {
+            e[k]
+        }
+    });
+    premultiply(decoded_color(mixed), alpha)
+}
+/// Encoded-space quantisation into `n + 1` levels.
+pub fn posterize_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let n = uniform(values, 0).max(1.0);
+    let (c, alpha) = straight(pixel);
+    let quantized = encoded_color(c).map(|v| (v * n).round() / n);
+    premultiply(decoded_color(quantized), alpha)
+}
+/// Encoded-space input/output remap with a gamma power.
+pub fn levels_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let [in_black, in_white, out_black, out_white, gamma] =
+        [0, 1, 2, 3, 4].map(|i| uniform(values, i));
+    let span = (in_white - in_black).max(1e-3);
+    let (c, alpha) = straight(pixel);
+    let mapped = encoded_color(c).map(|v| {
+        out_black + ((v - in_black) / span).clamp(0.0, 1.0).powf(gamma) * (out_white - out_black)
+    });
+    premultiply(decoded_color(mapped), alpha)
+}
+/// Encoded-space power; a gain of 1 is the identity.
+pub fn gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let gamma = uniform(values, 0).max(1e-3);
+    let (c, alpha) = straight(pixel);
+    let mapped = encoded_color(c).map(|v| v.max(0.0).powf(gamma));
+    premultiply(decoded_color(mapped), alpha)
+}
+/// Encoded luma ramps between the two mapped colours, then mixes by amount.
+pub fn tint_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let black = uniform_color(values, 0);
+    let white = uniform_color(values, 3);
+    let amount = uniform(values, 6).clamp(0.0, 1.0);
+    let (c, alpha) = straight(pixel);
+    let l = crate::image::oetf(luma(c).max(0.0), 13);
+    let target = [0, 1, 2].map(|k| black[k] + (white[k] - black[k]) * l);
+    let e = encoded_color(c);
+    let mixed = [0, 1, 2].map(|k| e[k] + (target[k] - e[k]) * amount);
+    premultiply(decoded_color(mixed), alpha)
+}
+/// Keeps colours within `similarity` of the key and greys the rest.
+pub fn color_pass_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let key = uniform_color(values, 0);
+    let similarity = uniform(values, 3).clamp(0.0, 1.2);
+    let reverse = uniform(values, 4) > 0.5;
+    let (c, alpha) = straight(pixel);
+    let e = encoded_color(c);
+    if (distance(e, key) <= similarity * 1.2) != reverse {
+        return pixel;
+    }
+    premultiply([luma(c); 3], alpha)
+}
+/// Replaces colours within `similarity` of the target, keeping the pixel's
+/// lightness unless `solid` asks for the flat replace colour.
+pub fn color_replace_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let similarity = uniform(values, 0).clamp(0.0, 1.2);
+    let solid = uniform(values, 1) > 0.5;
+    let target = uniform_color(values, 2);
+    let replace = uniform_color(values, 5);
+    let (c, alpha) = straight(pixel);
+    let e = encoded_color(c);
+    let weight = 1.0 - smoothstep(similarity * 0.85, similarity.max(1e-4), distance(e, target));
+    if weight <= 0.0 {
+        return pixel;
+    }
+    let to = if solid {
+        replace
+    } else {
+        let [h, s, _] = hsl(replace);
+        hsl_color(h, s, hsl(e)[2])
+    };
+    let mixed = [0, 1, 2].map(|k| e[k] + (to[k] - e[k]) * weight);
+    premultiply(decoded_color(mixed), alpha)
+}
+/// Encoded 3x4 channel matrix; the last value of each row is a constant.
+pub fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let e = encoded_color(c);
+    let mixed = [0, 1, 2].map(|k| {
+        let row = k * 4;
+        (uniform(values, row) * e[0]
+            + uniform(values, row + 1) * e[1]
+            + uniform(values, row + 2) * e[2]
+            + uniform(values, row + 3))
+        .clamp(0.0, 1.0)
+    });
+    premultiply(decoded_color(mixed), alpha)
+}
+/// Black-and-white threshold on encoded luma with an optional feathered band.
+pub fn extract_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let low = uniform(values, 0);
+    let high = uniform(values, 1);
+    let softness = uniform(values, 2).max(0.0);
+    let invert = uniform(values, 3) > 0.5;
+    let (c, alpha) = straight(pixel);
+    let l = crate::image::oetf(luma(c).max(0.0), 13);
+    let inside = if softness <= 0.0 {
+        if l > low && l < high { 1.0 } else { 0.0 }
+    } else {
+        ((l - low) / softness)
+            .clamp(0.0, 1.0)
+            .min(((high - l) / softness).clamp(0.0, 1.0))
+    };
+    premultiply([if invert { 1.0 - inside } else { inside }; 3], alpha)
+}
+/// Mixes the linear colour toward the strobe colour by `blend`.
+pub fn strobe_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let strobe = decoded_color(uniform_color(values, 0));
+    let blend = uniform(values, 3).clamp(0.0, 1.0);
+    let (c, alpha) = straight(pixel);
+    let mixed = [0, 1, 2].map(|k| strobe[k] + (c[k] - strobe[k]) * blend);
+    premultiply(mixed, alpha)
+}
 fn pixel_op(entry_point: &str) -> Option<&'static PixelOp> {
     PIXEL_OPS.iter().find(|op| op.entry_point == entry_point)
 }
@@ -718,6 +1041,26 @@ pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ResolvedValue {
+    Scalar(f64),
+    Choice(u32),
+    Bool(bool),
+    Color([f64; 4]),
+    Point([f64; 2]),
+}
+impl From<EffectValue> for ResolvedValue {
+    fn from(value: EffectValue) -> Self {
+        match value {
+            EffectValue::Scalar(v) => Self::Scalar(v),
+            EffectValue::Choice(v) => Self::Choice(v),
+            EffectValue::Bool(v) => Self::Bool(v),
+            EffectValue::Color(v) => Self::Color(v.0.map(|v| f64::from(v) / 255.0)),
+            EffectValue::Point(v) => Self::Point(v),
+        }
+    }
+}
+
 /// What an evaluator sees: its parameters at item-local time (keyframes
 /// resolved, scalars clamped to the definition's hard range), the item-local
 /// time itself for time-driven effects, the output size and the quality the
@@ -732,10 +1075,12 @@ pub struct EffectFrame {
     /// number of scales; it never changes geometry, colour mapping, parameter meaning
     /// or which pixels are affected, and its output stays close to the fine one.
     pub fine: bool,
-    params: BTreeMap<&'static str, EffectValue>,
+    params: BTreeMap<&'static str, ResolvedValue>,
 }
 impl EffectFrame {
-    /// Resolve `effect`'s parameters against `animations` at item-local time `local`.
+    /// Resolve parameters at real item-local ticks; a content remap never changes this clock.
+    /// Missing paths use static values; present zero-key composites keep their own bases.
+    /// Wrong animation kinds/nonfinite samples refuse. Finite scalar/colour overshoot clamps.
     pub fn new(
         animations: &Animations,
         effect: &EffectInstance,
@@ -749,15 +1094,47 @@ impl EffectFrame {
             let stored = effect
                 .value(param.id)
                 .ok_or(Error::Invalid("effect parameter"))?;
-            let value = match (param.animatable, param.scalar_range()) {
-                (true, Some((min, max))) => {
-                    match animations.value_at(&effect.param_path(param.id)?, local)? {
-                        Some(ParamValue::Scalar(v)) => EffectValue::Scalar(v.clamp(min, max)),
-                        Some(_) => return Err(Error::Invalid("effect animation type")),
-                        None => *stored,
+            param.check(stored)?;
+            let path = param
+                .animatable
+                .then(|| effect.param_path(param.id))
+                .transpose()?;
+            let animated = path
+                .as_ref()
+                .and_then(|path| animations.get(path).map(|p| (path, p)));
+            let value = match (param.kind, animated) {
+                (_, None) => ResolvedValue::from(*stored),
+                (
+                    EffectParamKind::Float { .. } | EffectParamKind::Angle,
+                    Some((path, Param::Value(channel))),
+                ) if matches!(channel.base(), ParamValue::Scalar(_)) => {
+                    let Some(ParamValue::Scalar(v)) = animations.value_at(path, local)? else {
+                        return Err(Error::Invalid("effect animation type"));
+                    };
+                    if !v.is_finite() {
+                        return Err(Error::Invalid("effect animation value"));
                     }
+                    let (min, max) = param
+                        .scalar_range()
+                        .ok_or(Error::Invalid("effect scalar range"))?;
+                    ResolvedValue::Scalar(v.clamp(min, max))
                 }
-                _ => *stored,
+                (EffectParamKind::Color, Some((path, Param::Color(_)))) => {
+                    let Some(ParamValue::Color(mut rgba)) = animations.value_at(path, local)?
+                    else {
+                        return Err(Error::Invalid("effect animation type"));
+                    };
+                    if rgba.iter().any(|v| !v.is_finite()) {
+                        return Err(Error::Invalid("effect animation colour"));
+                    }
+                    for v in &mut rgba[..3] {
+                        // The shared transfer is f32; only sampled RGB crosses this boundary.
+                        *v = f64::from(crate::image::oetf(v.clamp(0.0, 1.0) as f32, 13));
+                    }
+                    rgba[3] = rgba[3].clamp(0.0, 1.0);
+                    ResolvedValue::Color(rgba)
+                }
+                _ => return Err(Error::Invalid("effect animation type")),
             };
             params.insert(param.id, value);
         }
@@ -770,35 +1147,42 @@ impl EffectFrame {
             params,
         })
     }
-    fn get(&self, id: &str) -> Result<&EffectValue> {
+    fn get(&self, id: &str) -> Result<&ResolvedValue> {
         self.params
             .get(id)
             .ok_or(Error::Invalid("effect parameter"))
     }
     pub fn scalar(&self, id: &str) -> Result<f64> {
-        self.get(id)?
-            .scalar()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Scalar(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn choice(&self, id: &str) -> Result<u32> {
-        self.get(id)?
-            .choice()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Choice(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn flag(&self, id: &str) -> Result<bool> {
-        self.get(id)?
-            .flag()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Bool(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
-    pub fn color(&self, id: &str) -> Result<project::Color> {
-        self.get(id)?
-            .color()
-            .ok_or(Error::Invalid("effect parameter"))
+    /// Straight encoded sRGB RGBA, each component in 0..=1; wrong kind/id refuses.
+    /// Animated RGB uses the shared f32 transfer once, without byte quantization.
+    pub fn color(&self, id: &str) -> Result<[f64; 4]> {
+        match self.get(id)? {
+            ResolvedValue::Color(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn point(&self, id: &str) -> Result<[f64; 2]> {
-        self.get(id)?
-            .point()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Point(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
 }
 
@@ -816,6 +1200,17 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "blur" => blur,
         "color_grade" => color_grade,
         "chroma_key" => chroma_key,
+        "black_white" => black_white,
+        "channel_mix" => channel_mix,
+        "color_pass" => color_pass,
+        "color_replace" => color_replace,
+        "extract" => extract,
+        "gamma_correction" => gamma_correction,
+        "invert" => invert,
+        "levels" => levels,
+        "posterize" => posterize,
+        "strobe" => strobe,
+        "tint" => tint,
         "hold_time" => hold_time,
         _ => return None,
     })
@@ -828,6 +1223,18 @@ pub fn content_remap(kind: &str) -> Option<ContentTime> {
         "hold_time" => hold_time_content,
         _ => return None,
     })
+}
+
+/// One pixel op reading flat uniforms.
+fn pixel(entry_point: &'static str, uniforms: Vec<Uniform>) -> EffectPass {
+    EffectPass::Pixel {
+        entry_point,
+        uniforms,
+    }
+}
+/// A resolved straight sRGB colour; alpha is intentionally unused by these RGB ops.
+fn color_uniform([r, g, b, _]: [f64; 4]) -> Uniform {
+    Uniform::Color([r as f32, g as f32, b as f32])
 }
 
 fn blur(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
@@ -864,6 +1271,139 @@ fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
             .map(Uniform::Float)
             .to_vec(),
     }])
+}
+
+fn black_white(_: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel("black_white", Vec::new())])
+}
+fn channel_mix(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    const GAINS: [&str; 12] = [
+        "rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc",
+    ];
+    const IDENTITY: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let mut values = [0.0f32; 12];
+    for (value, id) in values.iter_mut().zip(GAINS) {
+        *value = (frame.scalar(id)? / 100.0) as f32;
+    }
+    if values == IDENTITY {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "channel_mix",
+        values.map(Uniform::Float).to_vec(),
+    )])
+}
+fn color_pass(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel(
+        "color_pass",
+        vec![
+            color_uniform(frame.color("color")?),
+            Uniform::Float((frame.scalar("similarity")? / 100.0) as f32),
+            Uniform::Float(if frame.flag("reverse")? { 1.0 } else { 0.0 }),
+        ],
+    )])
+}
+fn color_replace(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel(
+        "color_replace",
+        vec![
+            Uniform::Float((frame.scalar("similarity")? / 100.0 * 1.2) as f32),
+            Uniform::Float(if frame.flag("solid")? { 1.0 } else { 0.0 }),
+            color_uniform(frame.color("target")?),
+            color_uniform(frame.color("replace")?),
+        ],
+    )])
+}
+fn extract(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    let softness = frame.scalar("softness")?;
+    Ok(vec![pixel(
+        "extract",
+        vec![
+            Uniform::Float((frame.scalar("black")? / 255.0) as f32),
+            Uniform::Float((frame.scalar("white")? / 255.0) as f32),
+            // Zero softness is a hard cutoff; a tiny fade keeps the feathered
+            // branch's limiting value without turning the edge grey.
+            Uniform::Float(if softness <= 0.0 {
+                0.0
+            } else {
+                (softness / 100.0 * 0.2 + 1e-4) as f32
+            }),
+            Uniform::Float(if frame.flag("invert")? { 1.0 } else { 0.0 }),
+        ],
+    )])
+}
+fn gamma_correction(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    let gamma = (frame.scalar("gamma")? / 10.0) as f32;
+    if (gamma - 1.0).abs() < 1e-6 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel("gamma", vec![Uniform::Float(gamma)])])
+}
+fn invert(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel(
+        "invert",
+        vec![
+            Uniform::Float(frame.choice("channel")? as f32),
+            Uniform::Float((frame.scalar("blend")? / 100.0) as f32),
+        ],
+    )])
+}
+fn levels(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    let in_black = frame.scalar("in_black")?;
+    let in_white = frame.scalar("in_white")?;
+    let out_black = frame.scalar("out_black")?;
+    let out_white = frame.scalar("out_white")?;
+    let gamma = frame.scalar("gamma")?;
+    if in_black == 0.0
+        && in_white == 255.0
+        && out_black == 0.0
+        && out_white == 255.0
+        && gamma == 100.0
+    {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "levels",
+        vec![
+            Uniform::Float((in_black / 255.0) as f32),
+            Uniform::Float((in_white / 255.0) as f32),
+            Uniform::Float((out_black / 255.0) as f32),
+            Uniform::Float((out_white / 255.0) as f32),
+            Uniform::Float((100.0 / gamma.max(1.0)) as f32),
+        ],
+    )])
+}
+fn posterize(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel(
+        "posterize",
+        vec![Uniform::Float(
+            (frame.scalar("levels")?.max(2.0) - 1.0) as f32,
+        )],
+    )])
+}
+fn strobe(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    let period = frame.scalar("period")?.max(0.001);
+    let duration = frame.scalar("duration")?;
+    if frame.seconds.rem_euclid(period) >= duration {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "strobe",
+        vec![
+            color_uniform(frame.color("color")?),
+            Uniform::Float((frame.scalar("blend")? / 100.0) as f32),
+        ],
+    )])
+}
+fn tint(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![pixel(
+        "tint",
+        vec![
+            color_uniform(frame.color("black")?),
+            color_uniform(frame.color("white")?),
+            Uniform::Float((frame.scalar("amount")? / 100.0) as f32),
+        ],
+    )])
 }
 
 /// The item-local time at which `item`'s content is sampled after its enabled

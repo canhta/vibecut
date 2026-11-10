@@ -41,9 +41,11 @@ impl Panel<'_, '_> {
             ui,
             "inspector.chroma_key.color",
             Text::KeyColor,
-            ColorTarget::EffectKeyColor {
+            ColorTarget::EffectColor {
                 item,
                 effect: effect.clone(),
+                key: "key_color".into(),
+                time: time::Tick::ZERO,
             },
         );
         let picked = read::chroma_key_color(project, item, &effect);
@@ -75,7 +77,7 @@ impl Panel<'_, '_> {
             ) else {
                 continue;
             };
-            self.effect_scrub_field(ui, item, &effect, parameter, current);
+            self.effect_scrub_field(ui, item, &effect, "chroma_key", parameter, current);
         }
     }
 

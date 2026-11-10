@@ -94,10 +94,15 @@ passed as protected paths.
 
 `effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail` jobs through
 the runner. Callers supply an accounted, downsampled working-space source image and registered
-an `EffectInstance`; the result is straight sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
+an `EffectInstance`, owned `Animations` and nonnegative item-local `Tick`; negative time
+refuses with Invalid. The shared evaluator receives those exact inputs with fine=true;
+malformed animated values fail through its typed admission. The result is straight
+sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
 bounds the edge and `MAX_THUMBNAILS` the cache, charged to the runner's shared byte budget. The
-cache belongs to one adapter lifetime; keys hash source pixels, geometry and canonical typed
-params. Consumers request on source or param changes; there is no timer or fixed cadence.
+cache belongs to one adapter lifetime. Version2 keys bind source pixels/geometry, the full
+instance (including its animation-path ID), animation data and local time. Animation identity
+streams into a hash without an intermediate serialized buffer. Consumers own cadence;
+the cache has no clock, fallback version or persisted migration.
 
 Work and readback run outside cache locks. Thumbnails use render's shared `apply_effect`
 executor: declared unsupported passes run on CPU and adapter `Unsupported` retries only

@@ -51,6 +51,7 @@ struct Row {
 struct EffectRow {
     kind: &'static str,
     name: &'static str,
+    shelf: project::EffectShelf,
     status: Option<crate::effect_previews::EffectPreviewStatus>,
     texture: Option<egui::TextureHandle>,
 }

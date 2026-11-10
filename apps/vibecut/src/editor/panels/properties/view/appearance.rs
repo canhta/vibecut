@@ -12,7 +12,7 @@ fn value_ui_width(ui: &egui::Ui) -> f32 {
 }
 
 const VALUE_COLUMN: f32 = 120.0;
-const FIELD_COLUMN: f32 = 150.0;
+pub(super) const FIELD_COLUMN: f32 = 150.0;
 
 impl Panel<'_, '_> {
     /// The right-hand region of a 39 px row, starting at the value column.

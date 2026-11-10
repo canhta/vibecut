@@ -5,7 +5,9 @@ Interface: `Picker`, `PickerEvent`, `NativeEyedropper`, `EyedropperState`, `pale
 The target-free controls serve the properties and marker colour windows. Callers
 provide an initial colour and recent colours and own the draft's lifetime. Hex,
 HSV and alpha entries, sliders, swatches and recents return preview, commit and
-cancel events without applying a project edit. Stable IDs:
+cancel events without applying a project edit. An opaque presentation option hides
+Alpha and keeps RGB picks opaque; the default remains full RGBA. Properties uses
+this only for RGB-only effect inputs and preserves stored animation alpha itself. Stable IDs:
 `color.hex`, `color.h/s/v/a` with `.slider` children, `color.swatch.N`,
 `color.recent.N`, `color.eyedropper`.
 

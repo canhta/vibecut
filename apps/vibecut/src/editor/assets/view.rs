@@ -122,6 +122,10 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
             egui::UiBuilder::new().max_rect(nav.shrink2(Vec2::new(8.0, 15.0))),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
+                if cx.preferences.assets_tab == AssetsTab::Effects {
+                    view.effects_nav(ui);
+                    return;
+                }
                 if cx.preferences.assets_tab == AssetsTab::Transitions {
                     view.transition_nav(ui);
                     return;
@@ -302,13 +306,11 @@ impl View<'_> {
         response.clicked()
     }
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
-        let hint = self.tr(
-            if self.cx.preferences.assets_tab == AssetsTab::Transitions {
-                Text::TransitionSearch
-            } else {
-                Text::AssetsSearch
-            },
-        );
+        let hint = self.tr(match self.cx.preferences.assets_tab {
+            AssetsTab::Transitions => Text::TransitionSearch,
+            AssetsTab::Effects => Text::EffectSearch,
+            _ => Text::AssetsSearch,
+        });
         let draft = self
             .state
             .searches

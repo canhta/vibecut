@@ -1,7 +1,10 @@
 //! Maps properties colour drafts to project commands.
 use crate::services::color_picker::Picker;
-use crate::{Error, Result};
-use project::{BookmarkId, Color, ItemId};
+use crate::{Error, Result, egui};
+use project::{AnimationPath, BookmarkId, Color, ColorComponent, ItemId, Param, ParamValue};
+use time::Tick;
+
+const RGB: [ColorComponent; 3] = [ColorComponent::R, ColorComponent::G, ColorComponent::B];
 
 pub(super) struct Draft {
     pub(super) target: ColorTarget,
@@ -18,10 +21,12 @@ pub enum ColorTarget {
         item: ItemId,
         mask: String,
     },
-    /// The chroma key's packed key colour on one effect instance.
-    EffectKeyColor {
+    /// One effect colour at the captured real item-local time.
+    EffectColor {
         item: ItemId,
         effect: String,
+        key: String,
+        time: Tick,
     },
     Bookmark(BookmarkId),
     Canvas,
@@ -33,7 +38,7 @@ impl ColorTarget {
             | Self::Background(id)
             | Self::GraphicFill(id)
             | Self::GraphicStroke(id) => Some(*id),
-            Self::MaskStroke { item, .. } | Self::EffectKeyColor { item, .. } => Some(*item),
+            Self::MaskStroke { item, .. } | Self::EffectColor { item, .. } => Some(*item),
             Self::Bookmark(_) | Self::Canvas => None,
         }
     }
@@ -77,12 +82,33 @@ impl ColorTarget {
                 .find(|m| m.id == *mask)
                 .map(|m| m.stroke.color)
                 .ok_or(Error::Invalid("mask colour target")),
-            (Self::EffectKeyColor { effect, .. }, _) => item
-                .effects
-                .iter()
-                .find(|candidate| candidate.id == *effect)
-                .and_then(|candidate| candidate.value("key_color")?.color())
-                .ok_or(Error::Invalid("chroma key colour target")),
+            (
+                Self::EffectColor {
+                    effect, key, time, ..
+                },
+                _,
+            ) => {
+                let fallback = item
+                    .effects
+                    .iter()
+                    .find(|candidate| candidate.id == *effect)
+                    .and_then(|candidate| candidate.value(key)?.color())
+                    .ok_or(Error::Invalid("effect colour target"))?;
+                if key == "key_color" {
+                    return Ok(fallback);
+                }
+                let path = AnimationPath::new(format!("effects.{effect}.params.{key}"))?;
+                if item
+                    .animations
+                    .get(&path)
+                    .is_some_and(|p| !matches!(p, Param::Color(_)))
+                {
+                    return Err(Error::Invalid("effect colour animation"));
+                }
+                let mut color = render::color::at(&item.animations, &path, *time, fallback)?;
+                color.0[3] = 255;
+                Ok(color)
+            }
             _ => Err(Error::Invalid("colour target")),
         }
     }
@@ -119,14 +145,49 @@ impl ColorTarget {
                 mask: value,
             });
         }
-        if let Self::EffectKeyColor { item, effect } = self {
-            let [r, g, b, _] = color.0;
-            let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-            return Ok(engine::Command::UpdateEffectParam {
+        if let Self::EffectColor {
+            item,
+            effect,
+            key,
+            time,
+        } = self
+        {
+            if key == "key_color" {
+                let [r, g, b, _] = color.0;
+                return Ok(engine::Command::UpdateEffectParam {
+                    item: *item,
+                    effect: effect.clone(),
+                    key: key.clone(),
+                    value: f64::from(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)),
+                });
+            }
+            let (path, mut param) = self.effect_animation(project)?;
+            let keyed = self.rgb_keys(project, false);
+            if keyed && !self.inside(project) {
+                return Err(Error::Invalid("effect colour time"));
+            }
+            for (component, byte) in RGB.into_iter().zip(color.0) {
+                let value =
+                    ParamValue::Scalar(f64::from(egui::ecolor::linear_f32_from_gamma_u8(byte)));
+                let channel = param.channel_mut(Some(component))?;
+                if keyed {
+                    let mut key = channel
+                        .keys()
+                        .iter()
+                        .find(|k| k.time == *time)
+                        .cloned()
+                        .unwrap_or_else(|| project::Keyframe::new(*time, value.clone()));
+                    key.value = value;
+                    channel.put(key)?;
+                } else {
+                    let (before, after) = channel.extrapolation();
+                    *channel = project::Channel::new(value, vec![], before, after)?;
+                }
+            }
+            return Ok(engine::Command::SetAnimatedParam {
                 item: *item,
-                effect: effect.clone(),
-                key: "key_color".into(),
-                value: packed,
+                path,
+                param,
             });
         }
         let item = self.item().ok_or(Error::Invalid("colour target"))?;
@@ -138,5 +199,110 @@ impl ColorTarget {
             _ => return Err(Error::Invalid("colour target")),
         };
         Ok(engine::Command::SetItemField { item, patch })
+    }
+    fn effect_item<'a>(&self, project: &'a project::Project) -> Result<&'a project::Item> {
+        project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| Some(i.id) == self.item())
+            .ok_or(Error::Invalid("effect colour target"))
+    }
+    fn effect_animation(&self, project: &project::Project) -> Result<(AnimationPath, Param)> {
+        let Self::EffectColor { effect, key, .. } = self else {
+            return Err(Error::Invalid("effect colour target"));
+        };
+        let item = self.effect_item(project)?;
+        let instance = item
+            .effects
+            .iter()
+            .find(|e| e.id == *effect)
+            .ok_or(Error::Invalid("effect colour target"))?;
+        let definition = instance.definition()?;
+        if !definition.params.iter().any(|p| {
+            p.id == key && p.animatable && matches!(p.kind, project::EffectParamKind::Color)
+        }) {
+            return Err(Error::Invalid("effect colour parameter"));
+        }
+        let path = AnimationPath::new(format!("effects.{effect}.params.{key}"))?;
+        let param = match item.animations.get(&path) {
+            Some(Param::Color(_)) => item
+                .animations
+                .get(&path)
+                .cloned()
+                .ok_or(Error::Invalid("effect colour animation"))?,
+            Some(_) => return Err(Error::Invalid("effect colour animation")),
+            None => {
+                let color = instance
+                    .value(key)
+                    .and_then(|v| v.color())
+                    .ok_or(Error::Invalid("effect colour parameter"))?;
+                let [r, g, b, a] = color.0;
+                let [r, g, b] =
+                    [r, g, b].map(|v| f64::from(egui::ecolor::linear_f32_from_gamma_u8(v)));
+                Param::new(ParamValue::Color([r, g, b, f64::from(a) / 255.0]))?
+            }
+        };
+        Ok((path, param))
+    }
+    pub(super) fn rgb_keys(&self, project: &project::Project, at_tick: bool) -> bool {
+        let Self::EffectColor {
+            effect, key, time, ..
+        } = self
+        else {
+            return false;
+        };
+        let Ok(item) = self.effect_item(project) else {
+            return false;
+        };
+        let Ok(path) = AnimationPath::new(format!("effects.{effect}.params.{key}")) else {
+            return false;
+        };
+        item.animations.get(&path).is_some_and(|param| {
+            RGB.into_iter().any(|c| {
+                param
+                    .channel(Some(c))
+                    .is_ok_and(|channel| channel.keys().iter().any(|k| !at_tick || k.time == *time))
+            })
+        })
+    }
+    pub(super) fn inside(&self, project: &project::Project) -> bool {
+        let Self::EffectColor { time, .. } = self else {
+            return false;
+        };
+        self.effect_item(project).is_ok_and(|i| {
+            i.duration()
+                .is_ok_and(|duration| Tick::ZERO <= *time && *time <= duration)
+        })
+    }
+    pub(super) fn toggle_rgb(&self, project: &project::Project) -> Result<engine::Command> {
+        let Self::EffectColor { item, time, .. } = self else {
+            return Err(Error::Invalid("effect colour target"));
+        };
+        if !self.inside(project) {
+            return Err(Error::Invalid("effect colour time"));
+        }
+        let (path, mut param) = self.effect_animation(project)?;
+        let ParamValue::Color(values) = param.value_at(*time)? else {
+            return Err(Error::Invalid("effect colour animation"));
+        };
+        let remove = self.rgb_keys(project, true);
+        for (component, value) in RGB.into_iter().zip(values) {
+            let channel = param.channel_mut(Some(component))?;
+            if remove {
+                if channel.keys().iter().any(|k| k.time == *time) {
+                    channel.remove(*time)?;
+                }
+            } else {
+                channel.put(project::Keyframe::new(*time, ParamValue::Scalar(value)))?;
+            }
+        }
+        Ok(engine::Command::SetAnimatedParam {
+            item: *item,
+            path,
+            param,
+        })
     }
 }

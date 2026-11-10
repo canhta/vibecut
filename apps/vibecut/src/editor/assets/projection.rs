@@ -64,46 +64,37 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         })
         .collect();
     let mut effects = Vec::new();
+    if let Some(previews) = &mut editor.effect_previews {
+        previews.update(
+            editor.preferences.assets_tab == AssetsTab::Effects,
+            editor.clock.now(),
+        );
+    }
     if editor.preferences.assets_tab == AssetsTab::Effects {
+        ctx.request_repaint_after(std::time::Duration::from_nanos(1_000_000_000 / 30));
         for definition in project::effect_definitions()
             .iter()
             .filter(|definition| definition.shelf.in_library())
         {
             let params = effect_preview_instance(definition);
             if let (Some(previews), Some(params)) = (&mut editor.effect_previews, params.as_ref()) {
-                previews.ensure(definition.id, params);
+                previews.ensure(definition.id, params, &project::Animations::default());
             }
             let status = editor
                 .effect_previews
                 .as_ref()
                 .and_then(|previews| previews.status(definition.id));
-            if matches!(
-                status,
-                Some(crate::effect_previews::EffectPreviewStatus::Ready)
-            ) {
-                if !editor.effect_textures.contains_key(definition.id)
-                    && let Some(image) = editor
-                        .effect_previews
-                        .as_ref()
-                        .and_then(|previews| previews.image(definition.id))
-                {
-                    editor.effect_textures.insert(
-                        definition.id.to_owned(),
-                        crate::effect_previews::preview_texture(ctx, definition.id, image),
-                    );
-                }
-            } else {
-                editor.effect_textures.remove(definition.id);
-            }
+            let texture = editor
+                .effect_previews
+                .as_mut()
+                .and_then(|previews| previews.texture(ctx, definition.id));
             effects.push(EffectRow {
                 kind: definition.id,
-                name: if definition.id == "blur" {
-                    editor.tr(Text::EffectBlur)
-                } else {
-                    definition.name
-                },
+                name: crate::i18n::effect_label(definition.id, None)
+                    .map_or(definition.name, |key| editor.tr(key)),
+                shelf: definition.shelf,
                 status,
-                texture: editor.effect_textures.get(definition.id).cloned(),
+                texture,
             });
         }
     }

@@ -235,7 +235,6 @@ impl Editor {
             selection_scopes: SelectionScopes::default(),
             properties: properties::State::default(),
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
-            effect_textures: BTreeMap::new(),
             effect_drag: None,
             frame,
             player,
@@ -651,18 +650,52 @@ fn error_detail(error: &dyn std::error::Error) -> String {
     }
     parts.join(": ")
 }
-/// A library tile must read as the effect at a glance, so previews use the
-/// admitted maximum of the leading scalar rather than the insertion default.
+/// A library tile must read as the effect at a glance, so previews use a
+/// visible setting instead of an insertion default that can be an identity.
 fn effect_preview_instance(
     definition: &project::EffectDefinition,
 ) -> Option<project::EffectInstance> {
     let mut instance = definition.instance(definition.id);
-    if definition.id == "blur" {
-        let (_, max) = definition.param("intensity")?.scalar_range()?;
-        instance.set_scalar("intensity", max).ok()?;
-        return Some(instance);
+    match definition.id {
+        "blur" => {
+            let (_, max) = definition.param("intensity")?.scalar_range()?;
+            instance.set_scalar("intensity", max).ok()?;
+        }
+        "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
+        "levels" => {
+            instance.set_scalar("in_black", 40.0).ok()?;
+            instance.set_scalar("in_white", 200.0).ok()?;
+        }
+        // Swap red and blue so the identity matrix does not read as no effect.
+        "channel_mix" => {
+            for (id, value) in [("rr", 0.0), ("rb", 100.0), ("br", 100.0), ("bb", 0.0)] {
+                instance.set_scalar(id, value).ok()?;
+            }
+        }
+        "color_replace" => {
+            instance = instance
+                .with(
+                    "target",
+                    project::EffectValue::Color(project::Color([0, 0, 255, 255])),
+                )
+                .ok()?
+                .with(
+                    "replace",
+                    project::EffectValue::Color(project::Color([255, 0, 0, 255])),
+                )
+                .ok()?;
+        }
+        "strobe" => {
+            instance = instance
+                .with(
+                    "color",
+                    project::EffectValue::Color(project::Color([255, 210, 0, 255])),
+                )
+                .ok()?;
+        }
+        _ => {}
     }
-    None
+    Some(instance)
 }
 fn display_label(value: &str, limit: usize) -> String {
     let mut label: String = value.chars().take(limit.saturating_add(1)).collect();
