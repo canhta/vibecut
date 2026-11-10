@@ -30,7 +30,7 @@ enum ReadImage {
 
 fn read_image(entry: &str) -> Result<Option<ReadImage>> {
     match entry {
-        "gaussian" | "grade" | "chroma_key" => Ok(None),
+        "gaussian" | "grade" | "chroma_key" | "gamma" | "invert" => Ok(None),
         "mirror" => Ok(Some(ReadImage::Instance)),
         "blend" => Ok(Some(ReadImage::Below)),
         _ => Err(Error::Unsupported("GPU shader inputs")),
@@ -84,22 +84,30 @@ impl GpuEffects {
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::include_wgsl!("effects.wgsl"));
-        let pipelines = ["gaussian", "blend", "grade", "chroma_key", "mirror"]
-            .into_iter()
-            .map(|entry| {
-                (
-                    entry,
-                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some(entry),
-                        layout: Some(&pipeline_layout),
-                        module: &module,
-                        entry_point: Some(entry),
-                        compilation_options: Default::default(),
-                        cache: None,
-                    }),
-                )
-            })
-            .collect();
+        let pipelines = [
+            "gaussian",
+            "blend",
+            "grade",
+            "chroma_key",
+            "mirror",
+            "gamma",
+            "invert",
+        ]
+        .into_iter()
+        .map(|entry| {
+            (
+                entry,
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&pipeline_layout),
+                    module: &module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    cache: None,
+                }),
+            )
+        })
+        .collect();
         if scope.pop().await.is_some() {
             return Err(Error::Unsupported("GPU effect pipeline"));
         }

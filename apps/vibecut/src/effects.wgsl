@@ -56,6 +56,52 @@ fn eotf(x: f32) -> f32 {
     if v <= 0.04045 { return v / 12.92; }
     return pow((v + 0.055) / 1.055, 2.4);
 }
+// PixelOp's straight/encoded/premultiplied contract, including tiny positive alpha.
+fn straight_rgb(px: vec4<f32>) -> vec3<f32> {
+    if px.a <= 0.0 { return vec3<f32>(0.0); }
+    return clamp(px.rgb / px.a, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+fn encoded_rgb(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(oetf(c.r), oetf(c.g), oetf(c.b));
+}
+fn decoded_premultiplied(c: vec3<f32>, a: f32) -> vec4<f32> {
+    let linear = vec3<f32>(eotf(c.r), eotf(c.g), eotf(c.b));
+    return vec4<f32>(clamp(linear * a, vec3<f32>(0.0), vec3<f32>(a)), a);
+}
+// Mirrors gamma_pixel; weights = [gamma]. Gamma is an encoded-space power.
+@compute @workgroup_size(8, 8)
+fn gamma(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let encoded = encoded_rgb(straight_rgb(px));
+    dst[i] = decoded_premultiplied(pow(encoded, vec3<f32>(max(weights[0], 1e-3))), px.a);
+}
+// Mirrors invert_pixel; weights = [channel (RGB/R/G/B/Alpha), blend back].
+@compute @workgroup_size(8, 8)
+fn invert(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let channel = u32(clamp(floor(weights[0] + 0.5), 0.0, 4.0));
+    let blend = clamp(weights[1], 0.0, 1.0);
+    let c = straight_rgb(px);
+    if channel == 4u {
+        let a = (1.0 - px.a) * (1.0 - blend) + px.a * blend;
+        dst[i] = vec4<f32>(clamp(c * a, vec3<f32>(0.0), vec3<f32>(a)), a);
+        return;
+    }
+    if px.a <= 0.0 { dst[i] = px; return; }
+    let e = encoded_rgb(c);
+    var mixed = e;
+    for (var k = 0u; k < 3u; k++) {
+        if channel == 0u || channel == k + 1u {
+            let inverted = 1.0 - e[k];
+            mixed[k] = inverted + (e[k] - inverted) * blend;
+        }
+    }
+    dst[i] = decoded_premultiplied(mixed, px.a);
+}
 fn ramp(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
