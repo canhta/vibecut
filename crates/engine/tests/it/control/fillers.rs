@@ -89,7 +89,9 @@ fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
     let ControlResult::Job { snapshot } = value else {
         panic!("{value:?}");
     };
-    let candidates = snapshot.fillers.clone().unwrap();
+    let Some(engine::control::JobOutput::Fillers { candidates }) = snapshot.output.clone() else {
+        panic!("fillers output: {snapshot:?}");
+    };
     assert_eq!(
         candidates
             .iter()

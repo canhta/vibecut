@@ -18,9 +18,10 @@ pub(crate) use json::{budget, close_schema, validate_wire};
 pub use ledger::{Cursor, Snapshot};
 pub(crate) use ledger::{Ledger, Receipt};
 pub use limits::*;
-pub use results::{ControlResult, JobView, ProviderView};
+pub use results::{ControlResult, JobOutput, JobView, ProviderView};
 pub use views::{
-    ChapterSidecars, FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState,
-    JobId, JobKind, JobStage, JobState, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult,
+    ChangeKind, ChapterSidecars, DetectionResult, FillerCandidate, FontEntry, FontLoad,
+    FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState, LoudnessResult,
+    Measured, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult, SceneCandidate,
     SnapshotResult,
 };

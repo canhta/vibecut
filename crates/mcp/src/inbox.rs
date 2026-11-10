@@ -269,7 +269,7 @@ impl Inbox {
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;
         // Send JPEG as MCP image content, not an array of byte-valued JSON numbers.
         if let ResponseValue::Result(ControlResult::Job { snapshot }) = &response.value
-            && let Some(result) = &snapshot.result
+            && let Some(control::JobOutput::Preview(result)) = &snapshot.output
         {
             let frames = serde_json::to_value(result).map_err(|_| EditError::InvalidParams)?;
             if let Some(frames) = frames.get("frames").and_then(Value::as_array) {
@@ -285,7 +285,7 @@ impl Inbox {
                     .ok_or(EditError::InvalidParams)?
                     .insert("images".into(), json!(images));
                 if let Some(frames) = value
-                    .pointer_mut("/value/value/snapshot/result/frames")
+                    .pointer_mut("/value/value/snapshot/output/frames")
                     .and_then(Value::as_array_mut)
                 {
                     for frame in frames {

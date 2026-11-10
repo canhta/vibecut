@@ -88,11 +88,29 @@ pub struct JobView {
     pub state: JobState,
     pub attempts: u8,
     pub error: Option<ErrorCode>,
-    pub result: Option<PreviewResult>,
-    /// Pause candidates, present on a completed `analyze_pauses` job.
-    pub pauses: Option<PauseCandidates>,
-    /// Chapter document, present on a completed `generate_chapters` job.
-    pub chapters: Option<Box<ai::chapters::ChapterDocument>>,
-    /// Filler candidates, present on a completed `fillers.classify` job.
-    pub fillers: Option<Vec<FillerCandidate>>,
+    /// What a completed job produced; `None` while it runs and for kinds that publish
+    /// files or caches instead of returning data.
+    pub output: Option<JobOutput>,
+}
+
+/// The data a completed job returns, one variant per job kind that has any.
+/// `control::output::decode` matches every [`JobKind`], so a new kind does not
+/// compile until it names its output or states it has none. A job never edits
+/// the project: the caller sends an ordinary edit command with the `revision`
+/// from `JobAccepted`.
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JobOutput {
+    /// Inline JPEG frames of a `preview` job.
+    Preview(PreviewResult),
+    /// Reviewed-span candidates of `timeline.pause_candidates`.
+    Pauses(PauseCandidates),
+    /// The chapter document of `chapters.generate`.
+    Chapters(Box<ai::chapters::ChapterDocument>),
+    /// Classified occurrences of `fillers.classify`.
+    Fillers { candidates: Vec<FillerCandidate> },
+    /// Measured values and the gains `audio.apply_loudness` takes.
+    Loudness(super::LoudnessResult),
+    /// Source-time candidates of `media.detect_scenes`.
+    Scenes(super::DetectionResult),
 }

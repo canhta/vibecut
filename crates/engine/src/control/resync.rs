@@ -15,10 +15,7 @@ impl From<JobSnapshot> for JobView {
             state: s.state,
             attempts: s.attempts,
             error: s.error.as_deref().map(ErrorCode::from_error),
-            result: None,
-            pauses: None,
-            chapters: None,
-            fillers: None,
+            output: None,
         }
     }
 }

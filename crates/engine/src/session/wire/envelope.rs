@@ -4,7 +4,7 @@ use crate::EditError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 
 /// Opaque epoch/generation; never restored by undo or exposed as an address.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

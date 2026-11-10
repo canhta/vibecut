@@ -1,10 +1,10 @@
 //! Defines the feature result views a control response carries.
 use super::Revision;
 use captions::NfcText;
-use project::ItemId;
+use project::{ItemId, LoudnessGains};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use time::Tick;
+use time::{SourceRange, Tick};
 
 /// Where a family comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
@@ -236,4 +236,47 @@ pub struct FillerCandidate {
     pub kind: captions::FillerKind,
     /// Whether the cue's source text was edited, so removal needs confirmation.
     pub edited_cue: bool,
+}
+
+/// Integrated loudness and true peak of one measured signal; `None` is silence.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Measured {
+    pub integrated_lufs: Option<f64>,
+    pub true_peak_db: Option<f64>,
+}
+/// One finished measurement: gains bound to the measured content, plus the
+/// numbers they were derived from (clips alone; master after clip gains).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoudnessResult {
+    pub gains: LoudnessGains,
+    pub clips: Vec<(ItemId, Measured)>,
+    pub master: Option<Measured>,
+}
+
+/// Whether a scene candidate is a hard cut or a gradual fade.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeKind {
+    HardCut,
+    Fade,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneCandidate {
+    /// Exact decoded source PTS; fade markers use the nearest observed midpoint (earlier on ties).
+    pub at: Tick,
+    /// Normalized measured change, a heuristic score rather than a calibrated probability.
+    pub confidence: f32,
+    pub kind: ChangeKind,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DetectionResult {
+    pub(crate) key: [u8; 32],
+    pub(crate) source: [u8; 32],
+    pub(crate) range: SourceRange,
+    pub candidates: Vec<SceneCandidate>,
+    pub decoded_frames: u64,
 }

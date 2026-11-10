@@ -271,7 +271,7 @@ fn control_refuses_unknown_extra_and_out_of_range_frames() {
     assert_eq!(refused["exit_code"], 2);
 
     let mut version = control_request("x2", "inspect", json!({}), None, None);
-    version["api_version"] = json!(3);
+    version["api_version"] = json!(engine::control::API_VERSION + 1);
     let refused = control.send(version);
     assert_eq!(response_error(&refused), "schema_mismatch");
     assert_eq!(refused["exit_code"], 2);

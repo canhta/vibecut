@@ -1814,10 +1814,7 @@ impl Backend for FakeFonts {
             state: inner.job_state,
             attempts: 0,
             error: None,
-            result: None,
-            pauses: None,
-            chapters: None,
-            fillers: None,
+            output: None,
         })
     }
     fn cancel(&mut self, _: &mut Session, _: JobId) -> vibecut::Result<()> {
