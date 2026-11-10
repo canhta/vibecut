@@ -14,7 +14,7 @@ pub use runtime::cache;
 pub use runtime::jobs;
 pub(crate) use runtime::publication;
 pub use runtime::transfer;
-pub use runtime::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
+pub use runtime::{BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner};
 pub use runtime::{
     submit_export, submit_export_publication, submit_export_with_sources,
     submit_scene_exports_with_sources, subtitle_file,

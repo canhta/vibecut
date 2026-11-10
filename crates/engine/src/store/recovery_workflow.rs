@@ -151,7 +151,7 @@ impl Autosave {
         if matches!(metadata.thumbnail, project::Thumbnail::Missing) {
             metadata.thumbnail = crate::store::project_cover::capture(
                 session.project(),
-                &crate::store::project_cover::Hooks(&budget),
+                &crate::ByteBudgetHooks::new(&budget, None),
             );
             // Optional thumbnail failure must never prevent opening editable content.
             let _ = writer.save_metadata(&metadata);

@@ -1,5 +1,4 @@
 //! Captures a managed project cover image.
-use crate::{ByteBudget, ByteOwner};
 use project::{Project, Thumbnail};
 use time::Tick;
 
@@ -26,29 +25,4 @@ pub(crate) fn capture(project: &Project, hooks: &dyn render::ExecutionHooks) -> 
         .ok()
         .and_then(Result::ok)
         .unwrap_or(Thumbnail::Unavailable)
-}
-
-pub(crate) struct Hooks<'a>(pub &'a ByteBudget);
-impl render::ExecutionHooks for Hooks<'_> {
-    fn cancelled(&self) -> bool {
-        false
-    }
-    fn reserve(
-        &self,
-        kind: render::MemoryKind,
-        bytes: u64,
-    ) -> render::Result<Box<dyn render::Reservation>> {
-        let owner = match kind {
-            render::MemoryKind::Decoded => ByteOwner::DecodedFrames,
-            render::MemoryKind::Compositor => ByteOwner::Compositor,
-            render::MemoryKind::Export => ByteOwner::Export,
-        };
-        self.0
-            .reserve(owner, bytes)
-            .map(|lease| Box::new(lease) as Box<dyn render::Reservation>)
-            .map_err(|_| render::Error::Budget {
-                requested: bytes,
-                limit: 0,
-            })
-    }
 }

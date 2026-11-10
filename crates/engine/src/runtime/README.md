@@ -32,6 +32,8 @@ Transcribe, Translate and DownloadModel jobs in the Network class retry NetworkT
 
 `submit_export` submits an immutable Project snapshot to the runner's export resource class. JobContext implements render's ExecutionHooks, leasing actual buffers from the shared ByteBudget under decoded, compositor and export owners rather than declaring a second whole-job charge. Render owns pixels, audio and output policy; the job never applies editing commands. Completion returns an empty JobOutput after the complete file has been atomically published.
 
+`ByteBudgetHooks::new(budget, cancel)` is the one adapter from render's memory kinds to the aggregate owners; it owns no policy of its own. JobContext delegates its reserve to it, and cover images, snapshots, effect previews and transition thumbnails construct it. Refusal keeps an IO source or reports `Budget` with the real remaining bytes, so render's conversion loop can lower its worker count before failing; the cancellation probe is optional. Effect previews keep their 16 MiB budget and transition thumbnails their 1 MiB budget, both now charged to their real decoded, compositor or export owner.
+
 Stages expose admission, rendering, mixing, encoding, finalization and publication. Cancellation uses the [shared publication fence](../runtime/staged_publication/README.md#completed-export-publication). Crash and power-loss durability are not established.
 
 `submit_export_with_sources` is the export job with an injected render source factory, constructed on the engine worker. `submit_export` supplies `FileSources`. Both share one scheduler, byte accounting, typed result and publication fence.

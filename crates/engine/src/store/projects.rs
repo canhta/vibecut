@@ -219,7 +219,7 @@ impl ProjectLibrary {
                 let mut metadata = lease.metadata();
                 metadata.thumbnail = crate::store::project_cover::capture(
                     &project,
-                    &crate::store::project_cover::Hooks(&self.budget),
+                    &crate::ByteBudgetHooks::new(&self.budget, None),
                 );
                 lease.save_metadata(&metadata)?;
             }
@@ -318,7 +318,7 @@ impl ProjectLibrary {
         // Capture from the source while rewritten destination paths are not published.
         metadata.thumbnail = crate::store::project_cover::capture(
             source,
-            &crate::store::project_cover::Hooks(&self.budget),
+            &crate::ByteBudgetHooks::new(&self.budget, None),
         );
         let mut writer = WriterLease::acquire(&stage.join(PROJECT))?;
         writer.save(&project)?;

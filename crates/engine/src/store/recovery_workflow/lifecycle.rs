@@ -78,7 +78,7 @@ impl Autosave {
         let mut metadata = self.session.metadata().clone();
         metadata.thumbnail = crate::store::project_cover::capture(
             self.session.project(),
-            &crate::store::project_cover::Hooks(&self.budget),
+            &crate::ByteBudgetHooks::new(&self.budget, None),
         );
         if let Some(writer) = &self.writer {
             writer.save_metadata(&metadata)?;

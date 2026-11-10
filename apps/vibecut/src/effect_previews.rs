@@ -2,11 +2,10 @@
 //! bounded thumbnail cache; this module only keeps the panel's latest state.
 
 use crate::{Result, egui};
-use engine::ByteBudget;
 use engine::effect_thumbnails::EffectThumbnails;
 use engine::jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock};
+use engine::{ByteBudget, ByteBudgetHooks};
 use project::EffectParams;
-use render::{ExecutionHooks, MemoryKind, Reservation};
 use std::{
     collections::BTreeMap,
     sync::Arc,
@@ -24,26 +23,6 @@ pub enum EffectPreviewStatus {
     Pending,
     Ready,
     Failed,
-}
-
-struct PreviewHooks {
-    budget: ByteBudget,
-}
-struct PreviewLease {
-    _lease: engine::ByteLease,
-}
-impl Reservation for PreviewLease {}
-impl ExecutionHooks for PreviewHooks {
-    fn cancelled(&self) -> bool {
-        false
-    }
-    fn reserve(&self, _: MemoryKind, bytes: u64) -> render::Result<Box<dyn Reservation>> {
-        let lease = self
-            .budget
-            .reserve(engine::ByteOwner::Compositor, bytes)
-            .map_err(|_| render::Error::Invalid("preview budget"))?;
-        Ok(Box::new(PreviewLease { _lease: lease }))
-    }
 }
 
 struct Entry {
@@ -68,9 +47,6 @@ pub struct EffectPreviews {
 
 impl EffectPreviews {
     pub fn new(cache: EffectThumbnails, budget: ByteBudget) -> Result<Self> {
-        let hooks = PreviewHooks {
-            budget: budget.clone(),
-        };
         let source = Arc::new(render::Image::from_working_pixels(
             PREVIEW_WIDTH,
             PREVIEW_HEIGHT,
@@ -85,7 +61,7 @@ impl EffectPreviews {
                 let shade = checker + x / PREVIEW_WIDTH as f32 * 0.18;
                 [shade * 0.55, shade * 0.78, shade, 1.0]
             }),
-            &hooks,
+            &ByteBudgetHooks::new(&budget, None),
         )?);
         let runner = JobRunner::new(
             RunnerConfig {

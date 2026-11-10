@@ -246,3 +246,155 @@ impl Drop for ByteLease {
         }
     }
 }
+
+/// The one bridge from render's memory kinds to aggregate byte accounting.
+/// Construct it beside the `ByteBudget` its caller owns; an underlying hooks
+/// owner supplies cancellation, scheduling and progress. This adapter never
+/// seals publication: an irreversible output keeps that fence with its job.
+pub struct ByteBudgetHooks<'a> {
+    budget: ByteBudget,
+    execution: Option<&'a dyn render::ExecutionHooks>,
+}
+
+impl<'a> ByteBudgetHooks<'a> {
+    pub fn new(budget: &ByteBudget, execution: Option<&'a dyn render::ExecutionHooks>) -> Self {
+        Self {
+            budget: budget.clone(),
+            execution,
+        }
+    }
+}
+
+impl render::ExecutionHooks for ByteBudgetHooks<'_> {
+    fn cancelled(&self) -> bool {
+        self.execution
+            .is_some_and(|execution| execution.cancelled())
+    }
+    fn parallelism(&self) -> usize {
+        self.execution
+            .map_or(1, |execution| execution.parallelism())
+    }
+    fn run_tasks(
+        &self,
+        tasks: &mut [&mut (dyn FnMut() -> render::Result<()> + Send)],
+    ) -> render::Result<()> {
+        match self.execution {
+            Some(execution) => execution.run_tasks(tasks),
+            None => {
+                for task in tasks {
+                    task()?;
+                }
+                Ok(())
+            }
+        }
+    }
+    fn reserve(
+        &self,
+        kind: render::MemoryKind,
+        bytes: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        if self.cancelled() {
+            return Err(render::Error::Cancelled);
+        }
+        let owner = match kind {
+            render::MemoryKind::Decoded => ByteOwner::DecodedFrames,
+            render::MemoryKind::Compositor => ByteOwner::Compositor,
+            render::MemoryKind::Export => ByteOwner::Export,
+        };
+        self.budget
+            .reserve(owner, bytes)
+            .map(|lease| Box::new(lease) as Box<dyn render::Reservation>)
+            .map_err(|error| match error {
+                EditError::Io(source) => render::Error::Io(source),
+                _ => render::Error::Budget {
+                    requested: bytes,
+                    limit: self
+                        .budget
+                        .snapshot()
+                        .map_or(0, |snapshot| snapshot.limit.saturating_sub(snapshot.used)),
+                },
+            })
+    }
+    fn progress(&self, stage: render::Stage, fraction: f32) -> render::Result<()> {
+        match self.execution {
+            Some(execution) => execution.progress(stage, fraction),
+            None => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use render::ExecutionHooks;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn adapter_charges_each_kind_to_its_owner_and_releases_on_drop() {
+        let budget = ByteBudget::new(1 << 20).unwrap();
+        let hooks = ByteBudgetHooks::new(&budget, None);
+        for (kind, owner) in [
+            (render::MemoryKind::Decoded, 0),
+            (render::MemoryKind::Compositor, 1),
+            (render::MemoryKind::Export, 2),
+        ] {
+            let lease = hooks.reserve(kind, 4096).unwrap();
+            let snapshot = budget.snapshot().unwrap();
+            assert_eq!(snapshot.owners[owner], 4096);
+            assert_eq!(snapshot.used, 4096);
+            drop(lease);
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
+    }
+
+    #[test]
+    fn adapter_refuses_with_budget_and_the_real_remaining_bytes() {
+        let budget = ByteBudget::new(1 << 20).unwrap();
+        let hooks = ByteBudgetHooks::new(&budget, None);
+        let held = budget.reserve(ByteOwner::Export, 1024).unwrap();
+        let Err(error) = hooks.reserve(render::MemoryKind::Compositor, 2 << 20) else {
+            panic!("oversized reservation was admitted");
+        };
+        assert!(matches!(
+            error,
+            render::Error::Budget {
+                requested: 2_097_152,
+                limit: 1_047_552,
+            }
+        ));
+        drop(held);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+
+    struct Probe(AtomicBool);
+
+    impl render::ExecutionHooks for Probe {
+        fn cancelled(&self) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+        fn reserve(
+            &self,
+            _: render::MemoryKind,
+            _: u64,
+        ) -> render::Result<Box<dyn render::Reservation>> {
+            panic!("the adapter owns reservations");
+        }
+    }
+
+    #[test]
+    fn adapter_checks_its_optional_execution_owner_before_reserving() {
+        let budget = ByteBudget::new(1 << 20).unwrap();
+        let probe = Probe(AtomicBool::new(false));
+        let hooks = ByteBudgetHooks::new(&budget, Some(&probe));
+        assert!(!hooks.cancelled());
+        assert!(hooks.reserve(render::MemoryKind::Decoded, 16).is_ok());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        probe.0.store(true, Ordering::SeqCst);
+        assert!(hooks.cancelled());
+        assert!(matches!(
+            hooks.reserve(render::MemoryKind::Decoded, 16),
+            Err(render::Error::Cancelled)
+        ));
+    }
+}

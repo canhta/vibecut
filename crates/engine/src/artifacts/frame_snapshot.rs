@@ -4,7 +4,7 @@
 //! reuses project's same-directory staging owner: a private temp file is written,
 //! synced and renamed over the destination only after source/project alias
 //! admission succeeds. A refusal or failed write leaves no partial destination.
-use crate::{ByteBudget, ByteOwner, EditError, Result};
+use crate::{ByteBudget, ByteBudgetHooks, EditError, Result};
 use image::ImageEncoder;
 use project::Project;
 use std::{
@@ -72,7 +72,7 @@ pub(crate) fn save_with_overwrite(
     budget: &ByteBudget,
     overwrite: project::atomic::Overwrite,
 ) -> Result<SnapshotResult> {
-    let hooks = SnapshotHooks(budget);
+    let hooks = ByteBudgetHooks::new(budget, None);
     let image = render(project, time, &hooks)?;
     crate::publication::Publication {
         project,
@@ -101,7 +101,7 @@ pub(crate) fn save_with_overwrite(
 /// Render the current frame as PNG without publishing a file (Copy action).
 pub fn image(project: &Project, time: Tick) -> Result<SnapshotImage> {
     let budget = local_budget(project)?;
-    render(project, time, &SnapshotHooks(&budget))
+    render(project, time, &ByteBudgetHooks::new(&budget, None))
 }
 
 /// Default save name: `<project>-<timecode>.png`, reserved characters replaced
@@ -218,39 +218,6 @@ impl Write for PngWriter {
     }
 }
 
-struct SnapshotHooks<'a>(&'a ByteBudget);
-
-impl render::ExecutionHooks for SnapshotHooks<'_> {
-    fn cancelled(&self) -> bool {
-        false
-    }
-
-    fn reserve(
-        &self,
-        kind: render::MemoryKind,
-        bytes: u64,
-    ) -> render::Result<Box<dyn render::Reservation>> {
-        let owner = match kind {
-            render::MemoryKind::Decoded => ByteOwner::DecodedFrames,
-            render::MemoryKind::Compositor => ByteOwner::Compositor,
-            render::MemoryKind::Export => ByteOwner::Export,
-        };
-        self.0
-            .reserve(owner, bytes)
-            .map(|lease| Box::new(lease) as Box<dyn render::Reservation>)
-            .map_err(|error| match error {
-                EditError::Io(source) => render::Error::Io(source),
-                _ => render::Error::Budget {
-                    requested: bytes,
-                    limit: self
-                        .0
-                        .snapshot()
-                        .map_or(0, |snapshot| snapshot.limit.saturating_sub(snapshot.used)),
-                },
-            })
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -305,9 +272,12 @@ mod tests {
         Project::empty(project::ProjectId(1), "Snapshot".into()).unwrap()
     }
 
-    fn hooks() -> SnapshotHooks<'static> {
+    fn hooks() -> ByteBudgetHooks<'static> {
         static BUDGET: std::sync::OnceLock<ByteBudget> = std::sync::OnceLock::new();
-        SnapshotHooks(BUDGET.get_or_init(|| ByteBudget::new(1 << 20).unwrap()))
+        ByteBudgetHooks::new(
+            BUDGET.get_or_init(|| ByteBudget::new(1 << 20).unwrap()),
+            None,
+        )
     }
 
     #[test]

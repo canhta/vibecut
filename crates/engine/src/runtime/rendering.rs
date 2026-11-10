@@ -3,7 +3,7 @@ use crate::cache::CacheKey;
 use crate::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
-use crate::{ByteLease, ByteOwner, EditError};
+use crate::{ByteBudgetHooks, ByteLease, EditError};
 use std::{path::PathBuf, sync::Arc};
 impl render::Reservation for ByteLease {}
 impl render::ExecutionHooks for JobContext {
@@ -75,24 +75,14 @@ impl render::ExecutionHooks for JobContext {
         kind: render::MemoryKind,
         bytes: u64,
     ) -> render::Result<Box<dyn render::Reservation>> {
-        let owner = match kind {
-            render::MemoryKind::Decoded => ByteOwner::DecodedFrames,
-            render::MemoryKind::Compositor => ByteOwner::Compositor,
-            render::MemoryKind::Export => ByteOwner::Export,
-        };
-        self.memory_budget()
-            .reserve(owner, bytes)
-            .map(|lease| Box::new(lease) as Box<dyn render::Reservation>)
-            .map_err(|error| match error {
-                EditError::Io(source) => render::Error::Io(source),
-                _ => render::Error::Budget {
-                    requested: bytes,
-                    limit: self
-                        .memory_budget()
-                        .snapshot()
-                        .map_or(0, |s| s.limit.saturating_sub(s.used)),
-                },
-            })
+        render::ExecutionHooks::reserve(
+            &ByteBudgetHooks::new(
+                self.memory_budget(),
+                Some(self as &dyn render::ExecutionHooks),
+            ),
+            kind,
+            bytes,
+        )
     }
     fn begin_publish(&self) -> render::Result<()> {
         self.begin_publication()
@@ -244,7 +234,10 @@ pub fn submit_scene_exports_with_sources(
                 )?);
             }
             let staging = SceneExportStaging::new()?;
-            let hooks = SceneStagingHooks(context);
+            let hooks = ByteBudgetHooks::new(
+                context.memory_budget(),
+                Some(context as &dyn render::ExecutionHooks),
+            );
             let mut completed = Vec::new();
             for (index, ((scene, range), path)) in scenes.iter().zip(&paths).enumerate() {
                 let snapshot = project.for_scene(*scene)?;
@@ -332,32 +325,6 @@ impl Drop for SceneExportStaging {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-struct SceneStagingHooks<'a>(&'a JobContext);
-impl render::ExecutionHooks for SceneStagingHooks<'_> {
-    fn cancelled(&self) -> bool {
-        self.0.cancelled()
-    }
-    fn parallelism(&self) -> usize {
-        render::ExecutionHooks::parallelism(self.0)
-    }
-    fn run_tasks(
-        &self,
-        tasks: &mut [&mut (dyn FnMut() -> render::Result<()> + Send)],
-    ) -> render::Result<()> {
-        render::ExecutionHooks::run_tasks(self.0, tasks)
-    }
-    fn reserve(
-        &self,
-        kind: render::MemoryKind,
-        bytes: u64,
-    ) -> render::Result<Box<dyn render::Reservation>> {
-        render::ExecutionHooks::reserve(self.0, kind, bytes)
-    }
-    fn progress(&self, stage: render::Stage, fraction: f32) -> render::Result<()> {
-        render::ExecutionHooks::progress(self.0, stage, fraction)
-    }
-}
-
 /// Publish a completed export on the runner. The snapshot and protected project
 /// paths are admitted before staging and again before the cancellation fence.
 /// Failure/cancel retains the completed input; the caller owns its lifetime.

@@ -1,10 +1,10 @@
 //! Renders bounded illustrative transition thumbnails through the shared compositor.
 use super::{Text, egui, theme};
+use engine::{ByteBudget, ByteBudgetHooks};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Transition,
     TransitionAlignment, TransitionDefinition, TransitionId,
 };
-use render::{ExecutionHooks, MemoryKind, Reservation};
 use time::{SourceRange, Tick};
 
 pub(super) fn name(definition: &TransitionDefinition) -> Text {
@@ -22,29 +22,10 @@ pub(super) fn family(definition: &TransitionDefinition) -> Text {
     }
 }
 
-struct Hooks(engine::ByteBudget);
-struct Lease {
-    _lease: engine::ByteLease,
-}
-impl Reservation for Lease {}
-impl ExecutionHooks for Hooks {
-    fn cancelled(&self) -> bool {
-        false
-    }
-    fn reserve(&self, _: MemoryKind, bytes: u64) -> render::Result<Box<dyn Reservation>> {
-        Ok(Box::new(Lease {
-            _lease: self
-                .0
-                .reserve(engine::ByteOwner::Compositor, bytes)
-                .map_err(|_| render::Error::Invalid("transition thumbnail budget"))?,
-        }))
-    }
-}
-
 pub(super) struct Preview {
     project: Project,
     settings: render::RenderSettings,
-    hooks: Hooks,
+    budget: ByteBudget,
     pub(super) texture: Option<egui::TextureHandle>,
     pub(super) failed: bool,
     frame: Option<u32>,
@@ -111,7 +92,7 @@ impl Preview {
         Ok(Self {
             project,
             settings,
-            hooks: Hooks(engine::ByteBudget::new(1 << 20)?),
+            budget: ByteBudget::new(1 << 20)?,
             texture: None,
             failed: false,
             frame: None,
@@ -134,11 +115,12 @@ impl Preview {
         }
         self.frame = Some(frame);
         let at = Tick(60 + i64::from(frame) * 4);
+        let hooks = ByteBudgetHooks::new(&self.budget, None);
         let result = render::Renderer::new(&self.project, self.settings.clone())
             .and_then(|mut renderer| {
-                renderer.render_frame(at, &mut render::FileSources::default(), &self.hooks)
+                renderer.render_frame(at, &mut render::FileSources::default(), &hooks)
             })
-            .and_then(|image| image.rgba8(13, &self.hooks));
+            .and_then(|image| image.rgba8(13, &hooks));
         match result {
             Ok(image) => {
                 let image = egui::ColorImage::from_rgba_unmultiplied([48, 48], &image.bytes);
