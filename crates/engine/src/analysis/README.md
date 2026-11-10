@@ -19,6 +19,11 @@ a valid envelope whose payload fails request validation. Waveforms also regenera
 invalid payloads, while cache-only display reports Failed without starting work.
 Job progress, cancellation and byte admission belong to the [job runner](../runtime/README.md#background-jobs-and-byte-policy).
 
+## Reframe
+
+`ReframeRequest` turns a source range into a cached subject path in source ticks and
+`emit_reframe` into the crop keys of one item; see [reframe](reframe/README.md).
+
 ## Loudness normalization
 
 `audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target

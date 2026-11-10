@@ -479,7 +479,7 @@ fn state(
         SpeakerState::Unknown
     }
 }
-fn iou(a: &FaceBox, b: &FaceBox) -> f32 {
+pub(crate) fn iou(a: &FaceBox, b: &FaceBox) -> f32 {
     let area = ((a.x + a.width).min(b.x + b.width) - a.x.max(b.x)).max(0.)
         * ((a.y + a.height).min(b.y + b.height) - a.y.max(b.y)).max(0.);
     area / (a.width * a.height + b.width * b.height - area).max(f32::MIN_POSITIVE)
@@ -487,7 +487,7 @@ fn iou(a: &FaceBox, b: &FaceBox) -> f32 {
 
 // Keep the engine's Preparing/Analyzing stages instead of replacing them with
 // the adapter's generic Vision stage at every inference checkpoint.
-struct VisionHooks<'a>(&'a JobContext);
+pub(crate) struct VisionHooks<'a>(pub(crate) &'a JobContext);
 impl ai::ExecutionHooks for VisionHooks<'_> {
     fn cancelled(&self) -> bool {
         self.0.cancelled()

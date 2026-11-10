@@ -40,8 +40,10 @@ pub use analysis::scene_detection;
 pub use analysis::speech_activity;
 pub use analysis::waveform;
 pub use analysis::{
-    AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, Scene,
-    SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
+    AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, ReframeAnalysis,
+    ReframeJob, ReframeKeys, ReframeReason, ReframeRequest, ReframeSample, ReframeShot,
+    ReframeTarget, Scene, SecondAnalysis, ShotAnalysis, ShotKeys, SpeakerRef, SpeakerState,
+    emit_reframe,
 };
 mod artifacts;
 pub use artifacts::chapter_sidecars;

@@ -74,6 +74,12 @@ pub mod scene_detection {
     pub use crate::session::wire::{ChangeKind, DetectionResult, SceneCandidate};
 }
 mod shot_analysis;
+pub(crate) use shot_analysis::{VisionHooks, iou};
+mod reframe;
+pub use reframe::{
+    ReframeAnalysis, ReframeJob, ReframeKeys, ReframeReason, ReframeRequest, ReframeSample,
+    ReframeShot, ReframeTarget, ShotKeys, emit as emit_reframe,
+};
 pub use shot_analysis::{
     AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, Scene,
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,

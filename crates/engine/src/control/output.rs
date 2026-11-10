@@ -36,6 +36,7 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
         JobKind::SuggestClips
         | JobKind::AnalyzeShots
+        | JobKind::AnalyzeReframe
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails

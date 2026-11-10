@@ -155,6 +155,7 @@ pub enum JobKind {
     GenerateChapters,
     ClassifyFillers,
     AnalyzeShots,
+    AnalyzeReframe,
     DetectScenes,
     AnalyzeSpeechActivity,
     GenerateWaveform,

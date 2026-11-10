@@ -27,6 +27,7 @@ generated path.
 | `transcript/` | Acquires source-timed cues from the user's chosen providers. | [Transcript](src/transcript/README.md) |
 | `analysis/` | Measures source media. | [Analysis](src/analysis/README.md) |
 | `analysis/shot_analysis/` | Produces conservative source-time shot analysis. | [Per-shot analysis](src/analysis/shot_analysis/README.md) |
+| `analysis/reframe/` | Turns a source range into a subject path and crop keys. | [Reframe analysis](src/analysis/reframe/README.md) |
 | `artifacts/` | Produces derived project artifacts. | [Artifacts](src/artifacts/README.md) |
 | `providers/` | Resolves explicit AI provider choices, their consent and the local models. | [Providers](src/providers/README.md) |
 | `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | [Control](src/control/README.md) |

@@ -14,6 +14,7 @@ use media::{MfccProgress, SourceAsset, StreamKind, VisionFrame, VisionPrepLimits
 use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
+pub(crate) use tracking::{VisionHooks, iou};
 
 const VERSION: &str = "shot-analysis-v5:rgb-hard-only-f32-order:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
 const MAX_SHOTS: usize = 4096;
@@ -41,6 +42,14 @@ pub struct AnalysisSettings {
     pub cut_threshold: f32,
     /// Minimum spacing between detected cuts, in source ticks: 0.04..=10 s.
     pub min_shot: Tick,
+}
+impl AnalysisSettings {
+    /// Whether both thresholds are in their admitted ranges.
+    pub(crate) fn admitted(&self) -> bool {
+        self.cut_threshold.is_finite()
+            && (0.01..=1.).contains(&self.cut_threshold)
+            && (VIDEO_STEP..=10 * TICKS_PER_SECOND).contains(&self.min_shot.0)
+    }
 }
 impl Default for AnalysisSettings {
     fn default() -> Self {
@@ -131,9 +140,7 @@ impl AnalysisRequest {
         if range.start() < Tick::ZERO
             || range.duration().0 > MAX_SECONDS as i64 * TICKS_PER_SECOND
             || speech.len() > 100_000
-            || !settings.cut_threshold.is_finite()
-            || !(0.01..=1.).contains(&settings.cut_threshold)
-            || !(VIDEO_STEP..=10 * TICKS_PER_SECOND).contains(&settings.min_shot.0)
+            || !settings.admitted()
             || asset.probe().duration.is_some_and(|end| range.end() > end)
         {
             return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
