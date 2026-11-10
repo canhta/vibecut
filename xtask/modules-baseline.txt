@@ -13,15 +13,13 @@ doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-folder	apps/vibecut/src	32 direct children (limit 12)
+folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
-layer	apps/vibecut/src/export.rs	crate::playback crosses feature groups in layer features (module export is export, target is player)
-layer	apps/vibecut/src/shorts/state.rs	crate::ai_task crosses feature groups in layer features (module shorts is shorts, target is models)
 layer	apps/vibecut/src/shorts/state.rs	crate::crop crosses feature groups in layer features (module shorts is shorts, target is player)
 layer	apps/vibecut/src/shorts/state.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
 layer	apps/vibecut/src/shorts/state.rs	crate::playback crosses feature groups in layer features (module shorts is shorts, target is player)
 layer	apps/vibecut/src/shorts/view.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
-layer	apps/vibecut/src/shorts/view/toast.rs	crate::export crosses feature groups in layer features (module shorts is shorts, target is export)
+layer	apps/vibecut/src/shorts/view/toast.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
 layer	apps/vibecut/src/shorts/view/tools.rs	crate::crop crosses feature groups in layer features (module shorts is shorts, target is player)
-layer	apps/vibecut/src/subtitles.rs	crate::ai_task crosses feature groups in layer features (module subtitles is captions, target is models)
-layer	apps/vibecut/src/subtitles/view.rs	crate::export crosses feature groups in layer features (module subtitles is captions, target is export)
+layer	apps/vibecut/src/subtitles.rs	crate::editor is in higher layer frame/editor (module subtitles is features/captions)
+layer	apps/vibecut/src/subtitles/view.rs	crate::editor is in higher layer frame/editor (module subtitles is features/captions)

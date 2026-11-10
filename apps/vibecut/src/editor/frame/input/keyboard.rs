@@ -52,7 +52,7 @@ impl Editor {
             }
             return;
         }
-        if self.export.as_ref().is_some_and(|dialog| dialog.open) {
+        if self.dialogs.export.is_open() {
             return;
         }
         // The shortcuts dialog records the next chord itself and owns Escape.
@@ -91,12 +91,8 @@ impl Editor {
             overlay_open: self.subtitles.as_ref().is_some_and(|s| s.modal_open())
                 || self.timeline.scenes.is_open()
                 || self.shortcuts_open
-                || self.export.as_ref().is_some_and(|dialog| dialog.open)
-                || self.models_visible
-                    && self
-                        .models
-                        .as_ref()
-                        .is_some_and(|models| models.inspect().open),
+                || self.dialogs.export.is_open()
+                || self.dialogs.models.is_open(),
             // There is no Editor while a project is loading; the workspace shows
             // its own progress surface and dispatches no actions.
             project_loading: false,

@@ -19,11 +19,9 @@ impl Editor {
             self.desk().fail(e.to_string());
         }
         self.tick_sounds();
-        if let Some(dialog) = &mut self.export
-            && let Err(error) = dialog.tick(self.session.project(), self.preferences.export)
-        {
-            dialog.failed(error);
-        }
+        self.dialogs
+            .export
+            .tick(self.session.project(), self.preferences.export);
         if let Some(subtitles) = &mut self.subtitles {
             subtitles.invalidate_options(&self.preferences.subtitles);
             let result = subtitles.tick(&mut self.session);

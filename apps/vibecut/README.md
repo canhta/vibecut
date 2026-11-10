@@ -17,7 +17,6 @@ Each module's contract is its README.
 | Module | README |
 |---|---|
 | `actions.rs` / `actions/` | [Action registry](src/actions/README.md) |
-| `ai_task.rs` | [AI tasks](src/ai_task/README.md) |
 | `appearance.rs` | — |
 | `capture.rs` | [Capture](src/capture/README.md) |
 | `color_picker.rs` / `color_picker/` | [Colour picker](src/color_picker/README.md) |
@@ -29,11 +28,12 @@ Each module's contract is its README.
 | `editor/assets/view/` | [Assets view](src/editor/assets/view/README.md) |
 | `editor/assets/workflow/` | [Assets workflow](src/editor/assets/workflow/README.md) |
 | `editor/captions/` | [Captions panel](src/editor/captions/README.md) |
-| `editor/export/` | [Export dialog](src/editor/export/README.md) |
+| `editor/dialogs/` | [Editor dialogs](src/editor/dialogs/README.md) |
+| `editor/dialogs/export/` | [Export dialog](src/editor/dialogs/export/README.md) |
+| `editor/dialogs/models/` | [Model manager](src/editor/dialogs/models/README.md) |
 | `editor/frame/` | [Editor frame](src/editor/frame/README.md) |
 | `editor/frame/input/` | [Keybindings](src/editor/frame/input/README.md) |
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |
-| `editor/models/` | [Editor models](src/editor/models/README.md) |
 | `editor/player/` | [Editor player](src/editor/player/README.md) |
 | `editor/properties/` | [Properties](src/editor/properties/README.md) |
 | `editor/properties/font_picker/` | [Font picker](src/editor/properties/font_picker/README.md) |
@@ -47,7 +47,6 @@ Each module's contract is its README.
 | `editor/timeline/workflow/viewport/` | [Timeline viewport](src/editor/timeline/workflow/viewport/README.md) |
 | `effects.rs` | [GPU effects](src/effects/README.md) |
 | `effect_previews.rs` | [Effect previews](src/effect_previews/README.md) |
-| `export.rs` / `export/` | [Export settings](src/export/README.md) |
 | `home.rs` / `home/` | [Projects page](src/home/README.md) |
 | `home/view/` | [Home view](src/home/view/README.md) |
 | `i18n.rs` / `i18n/` | [Localization](src/i18n/README.md) |
@@ -57,7 +56,6 @@ Each module's contract is its README.
 | `kit/widgets/` | [Kit widgets](src/kit/widgets/README.md) |
 | `lifecycle.rs` | [Project lifecycle](src/lifecycle/README.md) |
 | `media_panel.rs` | [Media library](src/media_panel/README.md) |
-| `model_manager.rs` | [Local model manager](src/model_manager/README.md) |
 | `panels.rs` | [Panels](src/panels/README.md) |
 | `playback.rs` | [Playback and limits](src/playback/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |

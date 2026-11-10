@@ -214,8 +214,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         std::thread::yield_now();
     }
     editor
-        .export
-        .as_mut()
+        .export_dialog()
         .unwrap()
         .set_sources(Arc::new(Spatial))
         .unwrap();
@@ -230,7 +229,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         exported.state_mut().tick();
-        let state = exported.state().export.as_ref().unwrap().inspect();
+        let state = exported.state().export_state().unwrap().inspect();
         if state
             .job
             .as_ref()
@@ -256,7 +255,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         exported.state_mut().tick();
-        let state = exported.state().export.as_ref().unwrap().inspect();
+        let state = exported.state().export_state().unwrap().inspect();
         if !state.open {
             break;
         }

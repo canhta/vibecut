@@ -225,18 +225,6 @@ name = "subtitles"
 group = "captions"
 
 [[crate.module]]
-name = "export"
-group = "export"
-
-[[crate.module]]
-name = "model_manager"
-group = "models"
-
-[[crate.module]]
-name = "ai_task"
-group = "models"
-
-[[crate.module]]
 name = "home"
 group = "home"
 

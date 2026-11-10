@@ -41,7 +41,7 @@ impl Editor {
         self.tick();
         // History and external commands can remove what the timeline is editing.
         self.timeline.forget_missing(&self.session);
-        if !self.export.as_ref().is_some_and(|d| d.open)
+        if !self.dialogs.export.is_open()
             && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
             && self.crop.is_none()
         {
@@ -171,7 +171,7 @@ impl Editor {
         self.import_overlay(ui.ctx());
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
-        super::super::export::show(self, ui.ctx());
+        self.show_export(ui);
         super::super::crop::show(self, ui.ctx());
         if let Some(subtitles) = &mut self.subtitles {
             let widgets = subtitles.dialogs(
@@ -184,7 +184,7 @@ impl Editor {
                 self.remember(id, &response);
             }
         }
-        super::super::models::show(self, ui.ctx());
+        self.show_models(ui);
         self.shortcuts_dialog(ui.ctx());
         if self
             .properties
@@ -226,6 +226,30 @@ impl Editor {
             ui.ctx().request_repaint();
         }
         super::super::properties::apply(&mut self.desk(), actions);
+    }
+    /// Paint the export dialog and route its requests.
+    fn show_export(&mut self, ui: &mut egui::Ui) {
+        let actions = {
+            let mut state = std::mem::take(&mut self.dialogs);
+            let cx = self.context();
+            let actions = super::super::dialogs::show_export(&mut state, &cx, ui);
+            drop(cx);
+            self.dialogs = state;
+            actions
+        };
+        super::super::dialogs::apply(&mut self.desk(), actions);
+    }
+    /// Paint the model manager and route its requests.
+    fn show_models(&mut self, ui: &mut egui::Ui) {
+        let actions = {
+            let mut state = std::mem::take(&mut self.dialogs);
+            let cx = self.context();
+            let actions = super::super::dialogs::show_models(&mut state, &cx, ui);
+            drop(cx);
+            self.dialogs = state;
+            actions
+        };
+        super::super::dialogs::apply(&mut self.desk(), actions);
     }
     /// Render the player through its read-only boundary, then route its requests.
     pub(in crate::editor) fn show_player(&mut self, ui: &mut egui::Ui) {

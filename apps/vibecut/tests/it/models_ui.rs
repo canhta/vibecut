@@ -1,148 +1,38 @@
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-//! Model-manager UI evidence through real widgets and injected engine transfers.
+﻿#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+//! Model-manager evidence that needs a whole window, the app owner or the repo tree.
 use ai::{
     models::{Model, ModelFile},
     transport::{DownloadTransport, HttpStreamResponse},
 };
-use egui_kittest::{
-    Harness,
-    kittest::{By, NodeT, Queryable},
-};
+use egui_kittest::kittest::{By, Queryable};
 use engine::{
     ByteBudget,
     cache::ArtifactCache,
-    jobs::JobState,
     models::{ModelIo, ModelTransfers},
 };
 use sha2::{Digest, Sha256};
 use std::{
-    collections::VecDeque,
     fs::File,
-    io::{self, Read, Write},
+    io::{self, Write},
     path::Path,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use vibecut::{
     Editor, egui,
-    model_manager::{ModelManager, ModelProblem},
+    model_manager::ModelManager,
     playback::{Files, Playback},
     preferences::Preferences,
 };
 
-struct Reply {
-    status: u16,
-    headers: Vec<(String, String)>,
-    data: Arc<[u8]>,
-    start: usize,
-    end: usize,
-    fail: bool,
-    delay: Duration,
-}
-impl Reply {
-    fn ok(data: Arc<[u8]>, tag: &str) -> Self {
-        let len = data.len();
-        Self {
-            status: 200,
-            headers: vec![
-                ("ETag".into(), tag.into()),
-                ("Content-Length".into(), len.to_string()),
-            ],
-            data,
-            start: 0,
-            end: len,
-            fail: false,
-            delay: Duration::ZERO,
-        }
-    }
-    fn interrupted(data: Arc<[u8]>, end: usize) -> Self {
-        let mut reply = Self::ok(data, "\"one\"");
-        reply.end = end;
-        reply.fail = true;
-        reply
-    }
-    fn range(data: Arc<[u8]>, start: usize, tag: &str) -> Self {
-        let len = data.len();
-        Self {
-            status: 206,
-            headers: vec![
-                ("ETag".into(), tag.into()),
-                ("Content-Length".into(), (len - start).to_string()),
-                (
-                    "Content-Range".into(),
-                    format!("bytes {start}-{}/{len}", len - 1),
-                ),
-            ],
-            data,
-            start,
-            end: len,
-            fail: false,
-            delay: Duration::ZERO,
-        }
-    }
-    fn slow(mut self, delay: Duration) -> Self {
-        self.delay = delay;
-        self
-    }
-}
-struct Body {
-    data: Arc<[u8]>,
-    position: usize,
-    end: usize,
-    fail: bool,
-    delay: Duration,
-}
-impl Read for Body {
-    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
-        if !self.delay.is_zero() {
-            std::thread::sleep(self.delay);
-        }
-        if self.position >= self.end {
-            return if self.fail {
-                Err(io::Error::new(
-                    io::ErrorKind::ConnectionReset,
-                    "injected interruption",
-                ))
-            } else {
-                Ok(0)
-            };
-        }
-        let n = out.len().min(self.end - self.position).min(65536);
-        out.get_mut(..n)
-            .ok_or_else(|| io::Error::other("body buffer"))?
-            .copy_from_slice(
-                self.data
-                    .get(self.position..self.position + n)
-                    .ok_or_else(|| io::Error::other("body range"))?,
-            );
-        self.position += n;
-        Ok(n)
-    }
-}
 type Request = (String, Vec<(String, String)>);
 #[derive(Default)]
 struct Http {
-    replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<Request>>,
 }
 impl Http {
-    fn push(&self, reply: Reply) {
-        self.replies.lock().unwrap().push_back(reply);
-    }
     fn count(&self) -> usize {
         self.requests.lock().unwrap().len()
-    }
-    fn header(&self, index: usize, name: &str) -> Option<String> {
-        self.requests
-            .lock()
-            .unwrap()
-            .get(index)
-            .and_then(|(_, headers)| {
-                headers
-                    .iter()
-                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
-                    .map(|(_, value)| value.clone())
-            })
     }
 }
 impl DownloadTransport for Http {
@@ -155,23 +45,7 @@ impl DownloadTransport for Http {
             .lock()
             .unwrap()
             .push((url.into(), headers.into()));
-        let reply = self
-            .replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .ok_or(ai::Error::Network)?;
-        Ok(HttpStreamResponse {
-            status: reply.status,
-            headers: reply.headers,
-            body: Box::new(Body {
-                data: reply.data,
-                position: reply.start,
-                end: reply.end,
-                fail: reply.fail,
-                delay: reply.delay,
-            }),
-        })
+        Err(ai::Error::Network)
     }
 }
 struct Io {
@@ -212,65 +86,6 @@ fn manager(dir: &Path, models: Vec<Model>, http: Arc<Http>, io: Arc<Io>) -> Mode
     assert_eq!(diagnostics, 0);
     ModelManager::with_transfers(budget, models, ModelTransfers::new(cache, http, io)).unwrap()
 }
-fn harness(editor: Editor) -> Harness<'static, Editor> {
-    crate::gpu::builder()
-        .with_size(egui::vec2(1280.0, 800.0))
-        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
-}
-fn wait(harness: &mut Harness<'_, Editor>, what: &str, ready: impl Fn(&Editor) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        harness.run_steps(1);
-        if ready(harness.state()) {
-            return;
-        }
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-}
-fn click(harness: &mut Harness<'_, Editor>, id: &str) {
-    harness
-        .get(By::new().predicate(|node| node.author_id() == Some(id)))
-        .click();
-    harness.run_steps(3);
-}
-/// The AccessKit node id egui assigned to the widget behind one automation id.
-fn node_id(harness: &Harness<'_, Editor>, id: &str) -> String {
-    format!(
-        "{:?}",
-        harness
-            .get(By::new().predicate(|node| node.author_id() == Some(id)))
-            .accesskit_node()
-            .id()
-    )
-}
-fn inspect(harness: &Harness<'_, Editor>) -> vibecut::model_manager::ModelInspection {
-    harness.state().inspect().unwrap().models.unwrap()
-}
-fn open(manager: ModelManager, id: &str) -> Editor {
-    let mut editor = editor();
-    editor.set_model_manager(manager);
-    editor.open_model(id).unwrap();
-    editor
-}
-fn wait_check(harness: &mut Harness<'_, Editor>) {
-    wait(harness, "installed check", |editor| {
-        !editor.inspect().unwrap().models.unwrap().checking
-    });
-    // The centered modal settles its size for a couple of frames; click after that.
-    harness.run_steps(6);
-}
-fn wait_terminal(harness: &mut Harness<'_, Editor>) {
-    wait(harness, "download terminal state", |editor| {
-        let inspection = editor.inspect().unwrap().models.unwrap();
-        inspection.job.as_ref().is_some_and(|job| {
-            matches!(
-                job.state,
-                JobState::Completed | JobState::Cancelled | JobState::Failed
-            )
-        }) && !inspection.checking
-    });
-}
 fn editor() -> Editor {
     let session = engine::Session::new(
         project::Project::empty(project::ProjectId(23), "Models".into()).unwrap(),
@@ -284,228 +99,6 @@ fn editor() -> Editor {
     )
     .unwrap();
     Editor::new(session, playback, Preferences::default())
-}
-
-#[test]
-fn opening_lists_licence_scope_and_never_transfers_before_download_click() {
-    let dir = tempfile::tempdir().unwrap();
-    let data = vec![7u8; 64 * 1024];
-    let permissive = model("whisper-large-v3-turbo", "MIT", &data);
-    let restricted = model("fixture-restricted", "CDLA-Permissive-2.0", &data);
-    let http = Arc::new(Http::default());
-    http.push(Reply::ok(Arc::from(data), "\"one\""));
-    let manager = manager(
-        dir.path(),
-        vec![permissive, restricted],
-        http.clone(),
-        Arc::new(Io {
-            available: u64::MAX,
-        }),
-    );
-    let mut harness = harness(open(manager, "whisper-large-v3-turbo"));
-    wait_check(&mut harness);
-    assert!(harness.query_all(By::new().label("Models")).count() > 0);
-    assert!(harness.query_by_label("Suggested default").is_some());
-    assert_eq!(http.count(), 0, "opening the manager must not transfer");
-    click(&mut harness, "models.row.fixture-restricted");
-    assert_eq!(
-        inspect(&harness).selected.as_deref(),
-        Some("fixture-restricted")
-    );
-    assert!(harness.query_by_label("Suggested default").is_none());
-    assert!(
-        harness
-            .query_by_label("Check the licence before downloading.")
-            .is_some(),
-        "the restriction is shown before consent"
-    );
-    assert_eq!(http.count(), 0, "selecting a model must not transfer");
-    let disabled = harness.get(
-        By::new().predicate(|node| node.author_id() == Some("models.download.fixture-restricted")),
-    );
-    assert!(disabled.accesskit_node().is_disabled());
-    harness
-        .get(
-            By::new()
-                .predicate(|node| node.author_id() == Some("models.accept.fixture-restricted")),
-        )
-        .click_accesskit();
-    harness.run_steps(3);
-    assert_eq!(http.count(), 0, "accepting the licence must not transfer");
-    assert!(
-        inspect(&harness)
-            .accepted
-            .contains(&"fixture-restricted".into())
-    );
-    click(&mut harness, "models.download.fixture-restricted");
-    wait_terminal(&mut harness);
-    assert_eq!(http.count(), 1, "only the download click starts transfer");
-    let inspection = inspect(&harness);
-    assert_eq!(inspection.job.unwrap().state, JobState::Completed);
-    assert!(inspection.installed.contains(&"fixture-restricted".into()));
-    assert!(harness.query_all(By::new().label("Installed")).count() > 0);
-}
-
-#[test]
-fn cancel_stops_the_active_download() {
-    let dir = tempfile::tempdir().unwrap();
-    let data = vec![9u8; 512 * 1024];
-    let fixture = model("fixture-cancel", "MIT", &data);
-    let http = Arc::new(Http::default());
-    http.push(Reply::ok(Arc::from(data), "\"one\"").slow(Duration::from_millis(200)));
-    let manager = manager(
-        dir.path(),
-        vec![fixture],
-        http,
-        Arc::new(Io {
-            available: u64::MAX,
-        }),
-    );
-    let mut harness = harness(open(manager, "fixture-cancel"));
-    wait_check(&mut harness);
-    click(&mut harness, "models.download.fixture-cancel");
-    wait(&mut harness, "running download", |editor| {
-        editor.inspect().unwrap().models.unwrap().active.is_some()
-    });
-    click(&mut harness, "models.cancel");
-    wait_terminal(&mut harness);
-    let inspection = inspect(&harness);
-    assert_eq!(inspection.job.unwrap().state, JobState::Cancelled);
-    assert_eq!(inspection.problem, Some(ModelProblem::Cancelled));
-}
-
-#[test]
-fn interrupted_download_resumes_with_range_and_strong_etag() {
-    let dir = tempfile::tempdir().unwrap();
-    let data: Arc<[u8]> = Arc::from(vec![5u8; 128 * 1024]);
-    let fixture = model("fixture-resume", "MIT", &data);
-    let http = Arc::new(Http::default());
-    http.push(Reply::interrupted(data.clone(), 64 * 1024));
-    http.push(Reply::range(data, 64 * 1024, "\"one\""));
-    let manager = manager(
-        dir.path(),
-        vec![fixture],
-        http.clone(),
-        Arc::new(Io {
-            available: u64::MAX,
-        }),
-    );
-    let mut harness = harness(open(manager, "fixture-resume"));
-    wait_check(&mut harness);
-    click(&mut harness, "models.download.fixture-resume");
-    wait_terminal(&mut harness);
-    let inspection = inspect(&harness);
-    assert_eq!(inspection.problem, Some(ModelProblem::Network));
-    assert!(
-        inspection.resume.contains(&"fixture-resume".into()),
-        "an interrupted transfer offers Resume"
-    );
-    click(&mut harness, "models.download.fixture-resume");
-    wait_terminal(&mut harness);
-    assert_eq!(inspect(&harness).job.unwrap().state, JobState::Completed);
-    assert_eq!(http.count(), 2);
-    assert_eq!(http.header(1, "range").as_deref(), Some("bytes=65536-"));
-    assert_eq!(http.header(1, "if-range").as_deref(), Some("\"one\""));
-}
-
-#[test]
-fn checksum_failure_is_discarded_and_reported() {
-    let dir = tempfile::tempdir().unwrap();
-    let expected = vec![3u8; 64 * 1024];
-    let fixture = model("fixture-hash", "MIT", &expected);
-    let http = Arc::new(Http::default());
-    http.push(Reply::ok(Arc::from(vec![4u8; expected.len()]), "\"one\""));
-    let manager = manager(
-        dir.path(),
-        vec![fixture],
-        http,
-        Arc::new(Io {
-            available: u64::MAX,
-        }),
-    );
-    let mut harness = harness(open(manager, "fixture-hash"));
-    wait_check(&mut harness);
-    click(&mut harness, "models.download.fixture-hash");
-    wait_terminal(&mut harness);
-    let inspection = inspect(&harness);
-    assert_eq!(inspection.job.unwrap().state, JobState::Failed);
-    assert_eq!(inspection.problem, Some(ModelProblem::Integrity));
-    assert!(
-        harness
-            .query_by_label("Download was damaged. Try again.")
-            .is_some()
-    );
-    assert!(inspection.installed.is_empty());
-}
-
-#[test]
-fn footer_rows_do_not_shift_the_model_action_controls() {
-    // The footer draws the installed-check spinner, a problem row and the job
-    // progress above its buttons. They appear asynchronously, so a press that
-    // straddles the update must still resolve to the same widget.
-    let dir = tempfile::tempdir().unwrap();
-    let expected = vec![3u8; 64 * 1024];
-    let fixture = model("fixture-footer", "MIT", &expected);
-    let http = Arc::new(Http::default());
-    http.push(Reply::ok(Arc::from(vec![4u8; expected.len()]), "\"one\""));
-    let manager = manager(
-        dir.path(),
-        vec![fixture],
-        http,
-        Arc::new(Io {
-            available: u64::MAX,
-        }),
-    );
-    let mut harness = harness(open(manager, "fixture-footer"));
-    wait_check(&mut harness);
-    let close = node_id(&harness, "models.close");
-    let download = node_id(&harness, "models.download.fixture-footer");
-
-    click(&mut harness, "models.download.fixture-footer");
-    wait_terminal(&mut harness);
-    assert_eq!(inspect(&harness).problem, Some(ModelProblem::Integrity));
-    assert!(
-        harness
-            .query_by_label("Download was damaged. Try again.")
-            .is_some(),
-        "the problem row is drawn above the buttons"
-    );
-    assert_eq!(
-        node_id(&harness, "models.close"),
-        close,
-        "Close must keep its widget id when the problem row appears"
-    );
-    assert_eq!(
-        node_id(&harness, "models.download.fixture-footer"),
-        download,
-        "the download control must keep its widget id when the problem row appears"
-    );
-}
-
-#[test]
-fn disk_full_is_reported_before_any_bytes_are_written() {
-    let dir = tempfile::tempdir().unwrap();
-    let fixture = model("fixture-disk", "MIT", &vec![6u8; 64 * 1024]);
-    let http = Arc::new(Http::default());
-    let manager = manager(
-        dir.path(),
-        vec![fixture],
-        http.clone(),
-        Arc::new(Io { available: 1 }),
-    );
-    let mut harness = harness(open(manager, "fixture-disk"));
-    wait_check(&mut harness);
-    click(&mut harness, "models.download.fixture-disk");
-    wait_terminal(&mut harness);
-    let inspection = inspect(&harness);
-    assert_eq!(inspection.job.unwrap().state, JobState::Failed);
-    assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
-    assert!(
-        harness
-            .query_by_label("Not enough space. Free some and retry.")
-            .is_some()
-    );
-    assert_eq!(http.count(), 0, "disk preflight precedes transfer");
 }
 
 #[test]
@@ -584,7 +177,23 @@ fn model_manager_screenshot_is_available_at_both_scales() {
             .with_size(egui::vec2(1280.0, 800.0))
             .with_pixels_per_point(scale)
             .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-        wait_check(&mut harness);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            harness.run_steps(1);
+            if !harness
+                .state()
+                .inspect()
+                .unwrap()
+                .models
+                .as_ref()
+                .is_some_and(|models| models.checking)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "model check did not finish");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        harness.run_steps(4);
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../target/p0-23-model-manager-{scale}x.png"));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

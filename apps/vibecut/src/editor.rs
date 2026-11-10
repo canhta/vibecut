@@ -3,11 +3,10 @@ use crate::i18n;
 mod assets;
 mod captions;
 mod crop;
-mod export;
+pub(crate) mod dialogs;
 mod frame;
 pub use crop::{Aspect as CropAspect, Inspection as CropInspection};
 pub(crate) use frame::{Context, Desk, Request};
-mod models;
 mod player;
 pub mod properties;
 mod timeline;
@@ -59,7 +58,7 @@ use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -201,14 +200,12 @@ impl Editor {
             media_marquee: None,
             media_reveal: None,
             media_delete_confirm: None,
-            export: None,
+            dialogs: dialogs::State::default(),
             crop: None,
             shortcuts_open: false,
             shortcut_tab: ShortcutTab::Timeline,
             shortcut_recording: None,
             shortcut_error: None,
-            models: None,
-            models_visible: true,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
             pending_imports: BTreeMap::new(),
@@ -348,16 +345,10 @@ impl Editor {
             media_delete_pending,
             sounds: self.sounds.as_ref().map(|sounds| sounds.view()),
             export_options: self.preferences.export,
-            export: self
-                .export
-                .as_ref()
-                .map(crate::export::ExportDialog::inspect),
+            export: self.dialogs.export.inspect(),
             crop: self.crop.as_ref().map(crop::Dialog::inspect),
             subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
-            models: self
-                .models
-                .as_ref()
-                .map(crate::model_manager::ModelManager::inspect),
+            models: self.dialogs.models.inspect(),
             keybinding_issues: self.keybinding_issues.clone(),
             color_preview: self.properties.picker.as_ref().map(|p| p.color),
             eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),

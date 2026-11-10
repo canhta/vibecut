@@ -183,17 +183,7 @@ impl Editor {
                         self.selection_scopes = SelectionScopes::default();
                     }
                 }
-                UiAction::Export => {
-                    if self.export.is_none() {
-                        self.export = Some(crate::export::ExportDialog::new(
-                            self.playback.budget().clone(),
-                            self.playback.render_state()?,
-                        )?);
-                    }
-                    if let Some(dialog) = &mut self.export {
-                        dialog.show(self.session.project());
-                    }
-                }
+                UiAction::Export => self.open_export()?,
                 UiAction::Crop => crate::editor::crop::open(self)?,
                 UiAction::RunExport => self.run_export(self.preferences.export)?,
                 action @ (UiAction::ExportMarkIn | UiAction::ExportMarkOut) => {
@@ -230,11 +220,9 @@ impl Editor {
                     self.run_export(options)?;
                 }
                 UiAction::RetryExport => {
-                    let dialog = self
-                        .export
-                        .as_mut()
-                        .ok_or(Error::Unsupported("export dialog"))?;
-                    dialog.retry(self.session.project().clone())?;
+                    let blocked = self.session.transaction_active();
+                    let project = self.session.project().clone();
+                    self.dialogs.export.retry(project, blocked)?;
                 }
                 UiAction::Save => {
                     self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save)

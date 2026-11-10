@@ -118,6 +118,7 @@ impl Rig {
             ripple: false,
             preferences: &self.preferences,
             playback: &self.playback,
+            preview: None,
             keybindings: &self.preferences.keybindings,
             scope: crate::selection::SelectionScope::None,
             keyframes: &keyframes,

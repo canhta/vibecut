@@ -1,4 +1,5 @@
-//! Export presentation and saved choices over the engine's existing export job.
+//! Presents one export job and its saved choices.
+use super::settings;
 use crate::i18n;
 use crate::{
     Error, Result, egui,
@@ -15,7 +16,6 @@ use engine::{
 pub use render::{OutputOptions, RangeChoice, SceneChoice};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-mod settings;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,7 +40,7 @@ impl ExportFormat {
             Self::Webm => media::Container::WebM,
         }
     }
-    fn label(self) -> Text {
+    pub(super) fn label(self) -> Text {
         match self {
             Self::Mp4 => Text::ExportMp4,
             Self::Mov => Text::ExportMov,
@@ -58,7 +58,7 @@ pub enum ExportQuality {
     VeryHigh,
 }
 impl ExportQuality {
-    fn label(self) -> Text {
+    pub(super) fn label(self) -> Text {
         match self {
             Self::Low => Text::QualityLow,
             Self::Medium => Text::QualityMedium,
@@ -560,14 +560,14 @@ fn diagnostics(error: &engine::EditError, unavailable: &[render::Unavailable]) -
 }
 pub use engine::{default_file_name, sanitize_file_name};
 
-pub(crate) enum Action {
+pub(crate) enum DialogAction {
     Retry,
     Save,
     Start,
 }
 pub(crate) struct DialogUi {
     pub widgets: Vec<(&'static str, egui::Response)>,
-    pub action: Option<Action>,
+    pub action: Option<DialogAction>,
 }
 impl ExportDialog {
     pub(crate) fn ui(
@@ -773,7 +773,7 @@ impl ExportDialog {
                                     egui::Button::new(tr(Text::ExportRetry)),
                                 );
                                 if r.clicked() {
-                                    result.action = Some(Action::Retry);
+                                    result.action = Some(DialogAction::Retry);
                                 }
                                 result.widgets.push(("export.retry", r));
                                 let r = ui.add_sized(
@@ -799,7 +799,7 @@ impl ExportDialog {
                                 let r =
                                     ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Save)));
                                 if r.clicked() {
-                                    result.action = Some(Action::Save);
+                                    result.action = Some(DialogAction::Save);
                                 }
                                 result.widgets.push(("export.save", r));
                                 let r =
@@ -827,7 +827,7 @@ impl ExportDialog {
                                     .min_size(egui::vec2(90.0, 34.0)),
                                 );
                                 if r.clicked() {
-                                    result.action = Some(Action::Start);
+                                    result.action = Some(DialogAction::Start);
                                 }
                                 result.widgets.push(("export.run", r));
                             }

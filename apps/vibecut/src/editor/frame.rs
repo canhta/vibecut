@@ -1,7 +1,7 @@
 //! Owns editor frame composition.
 mod assets;
 #[cfg(test)]
-mod bench;
+pub(crate) mod bench;
 mod desk;
 mod input;
 mod layout;
@@ -35,6 +35,8 @@ pub(crate) struct Context<'a> {
     /// Playback position of the shared transport.
     pub(crate) playhead: time::Tick,
     pub(crate) ripple: bool,
+    /// Last presented preview frame, for the export dialog's poster.
+    pub(crate) preview: Option<&'a egui::TextureHandle>,
     pub(crate) thumbnails: Thumbnails<'a>,
     /// Registered action ids the editor currently refuses.
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,

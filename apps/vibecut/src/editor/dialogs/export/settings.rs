@@ -1,5 +1,5 @@
 //! Renders output settings over the portable export contract.
-use super::{DialogUi, ExportOptions, RangeChoice, SceneChoice};
+use super::dialog::{DialogUi, ExportOptions, RangeChoice, SceneChoice};
 use crate::i18n;
 use crate::{
     egui,
