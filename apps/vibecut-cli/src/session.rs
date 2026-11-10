@@ -1,6 +1,7 @@
 //! Composes headless engine work under CLI admission settings.
 mod control;
 mod export;
+mod leased;
 mod media_cache;
 mod paths;
 mod runtime;
@@ -9,6 +10,7 @@ pub(crate) use control::{build_control_request, control, save_control_state};
 #[cfg(test)]
 use export::export_project_with;
 pub(crate) use export::{Aspect, export_job_key, export_project, export_settings};
+pub(crate) use leased::{Edit, History, WritePolicy, run_leased};
 pub(crate) use media_cache::{media_access, thumbnail_cache, waveform_cache};
 pub(crate) use paths::{resolve_target, same_target};
 pub(crate) use runtime::{cli_runner, cli_runtime};

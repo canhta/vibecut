@@ -3,9 +3,7 @@ use crate::args::CliError;
 use crate::args::{parse_i64, parse_u32, parse_u64, utf8};
 use crate::output::tick_json;
 use crate::output::{Output, hex, json_path};
-use crate::session::Context;
-use engine::Session;
-use project::WriterLease;
+use crate::session::{Context, Edit, History, WritePolicy, run_leased};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -208,24 +206,29 @@ fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
         }
     }
     let library = SoundLibrary::open(&library)?;
-    let mut lease = WriterLease::acquire(&project)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 1)?;
-    session.restore_metadata(lease.metadata())?;
     // Project-owned media sits beside the project file, so library cleanup never
     // removes bytes this project references.
     let mut media = project.clone().into_os_string();
     media.push(".media");
-    let outcome = add_saved(
-        &mut session,
-        &library,
-        id,
-        Path::new(&media),
-        engine::Placement::Auto,
-        start,
-    )?;
-    let receipt = lease.save(session.project())?;
-    lease.save_metadata(session.metadata())?;
+    let saved = run_leased(&project, History::Single, WritePolicy::Always, |session| {
+        let outcome = add_saved(
+            session,
+            &library,
+            id,
+            Path::new(&media),
+            engine::Placement::Auto,
+            start,
+        )?;
+        let changed = outcome.changed;
+        Ok(Edit {
+            value: outcome,
+            changed,
+        })
+    })?;
+    let outcome = saved.value;
+    let receipt = saved.receipt.ok_or(CliError::Unsupported(
+        "sounds add published no project receipt",
+    ))?;
     let placements: Vec<Value> = outcome
         .placements
         .iter()

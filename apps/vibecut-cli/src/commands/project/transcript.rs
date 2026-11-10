@@ -1,9 +1,8 @@
 //! Reads caption words and deletes a measured word range from a leased project.
 use crate::args::{CliError, parse_u64, utf8};
 use crate::output::{Output, json_path};
-use crate::session::Context;
-use engine::{Session, WordId};
-use project::WriterLease;
+use crate::session::{Context, Edit, History, WritePolicy, run_leased};
+use engine::{Command, WordId};
 use serde_json::json;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -48,68 +47,71 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
         _ => return Err(transcript_usage()),
     };
 
-    let mut lease = WriterLease::acquire(&project_path)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 1)?;
-    session.restore_metadata(lease.metadata())?;
-    let view = session.transcript()?;
+    run_leased(
+        &project_path,
+        History::Single,
+        WritePolicy::Changed,
+        |session| {
+            let view = session.transcript()?;
 
-    let Some((item, cue, (first, last))) = selection else {
-        let value = serde_json::to_value(&view)?;
-        let words: usize = view.cues.iter().map(|cue| cue.words.len()).sum();
-        let human = format!("{} cues, {} words", view.cues.len(), words);
-        return Ok(Output::new(
-            json!({"project": json_path(&project_path)?, "transcript": value}),
-            human,
-            false,
-            0,
-        ));
-    };
+            let Some((item, cue, (first, last))) = selection else {
+                let value = serde_json::to_value(&view)?;
+                let words: usize = view.cues.iter().map(|cue| cue.words.len()).sum();
+                let human = format!("{} cues, {} words", view.cues.len(), words);
+                return Ok(Edit {
+                    value: Output::new(
+                        json!({"project": json_path(&project_path)?, "transcript": value}),
+                        human,
+                        false,
+                        0,
+                    ),
+                    changed: false,
+                });
+            };
 
-    let entry = view
-        .cues
-        .iter()
-        .find(|entry| entry.item.0 == item && entry.id.as_str() == cue.as_str())
-        .ok_or_else(|| CliError::Usage("--item and --cue must name a listed cue".into()))?;
-    if last >= entry.words.len() || first > last {
-        return Err(CliError::Usage(
-            "--words must name measured words of that cue".into(),
-        ));
-    }
-    let ids: Vec<WordId> = (first..=last)
-        .map(|index| WordId {
-            item: entry.item,
-            cue: entry.id.clone(),
-            word: index,
-        })
-        .collect();
-    let count = ids.len();
-    let outcome = session.execute("transcript.delete_range", json!({ "word_ids": ids }))?;
-    if outcome.changed {
-        let _receipt = lease.save(session.project().as_ref())?;
-        session.saved()?;
-        let mut metadata = session.metadata().clone();
-        metadata.touch();
-        lease.save_metadata(&metadata)?;
-    }
-    let remaining = session
-        .transcript()?
-        .cues
-        .iter()
-        .map(|cue| cue.words.len())
-        .sum::<usize>();
-    let value = json!({
-        "project": json_path(&project_path)?,
-        "deleted": count,
-        "changed": outcome.changed,
-        "remaining_words": remaining,
-    });
-    let human = if outcome.changed {
-        format!("deleted {count} words, {remaining} remain")
-    } else {
-        format!("no change: {remaining} words remain")
-    };
-    Ok(Output::new(value, human, false, 0))
+            let entry = view
+                .cues
+                .iter()
+                .find(|entry| entry.item.0 == item && entry.id.as_str() == cue.as_str())
+                .ok_or_else(|| CliError::Usage("--item and --cue must name a listed cue".into()))?;
+            if last >= entry.words.len() || first > last {
+                return Err(CliError::Usage(
+                    "--words must name measured words of that cue".into(),
+                ));
+            }
+            let ids: Vec<WordId> = (first..=last)
+                .map(|index| WordId {
+                    item: entry.item,
+                    cue: entry.id.clone(),
+                    word: index,
+                })
+                .collect();
+            let count = ids.len();
+            let outcome = session.apply(Command::TranscriptDeleteRange { word_ids: ids })?;
+            let remaining = session
+                .transcript()?
+                .cues
+                .iter()
+                .map(|cue| cue.words.len())
+                .sum::<usize>();
+            let value = json!({
+                "project": json_path(&project_path)?,
+                "deleted": count,
+                "changed": outcome.changed,
+                "remaining_words": remaining,
+            });
+            let human = if outcome.changed {
+                format!("deleted {count} words, {remaining} remain")
+            } else {
+                format!("no change: {remaining} words remain")
+            };
+            Ok(Edit {
+                value: Output::new(value, human, false, 0),
+                changed: outcome.changed,
+            })
+        },
+    )
+    .map(|saved| saved.value)
 }
 
 /// `first-last` inclusive zero-based word indices.

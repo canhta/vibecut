@@ -2,9 +2,8 @@
 use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
-use crate::session::Context;
-use engine::{CreatedId, EditError, Session};
-use project::WriterLease;
+use crate::session::{Context, Edit, History, WritePolicy, run_leased};
+use engine::{CreatedId, EditError};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -22,16 +21,21 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
     let params = utf8(&params, "command JSON")?;
     let params: Value = serde_json::from_str(params).map_err(CliError::Json)?;
 
-    let mut lease = WriterLease::acquire(&project_path)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 1)?;
-    session.restore_metadata(lease.metadata())?;
     if engine::lifecycle(command_id) == Some(engine::Lifecycle::Save) {
-        if params != json!({}) {
-            return Err(EditError::InvalidParams.into());
-        }
-        let _ = lease.save(session.project())?;
-        lease.save_metadata(session.metadata())?;
+        run_leased(
+            &project_path,
+            History::Single,
+            WritePolicy::Always,
+            |_session| {
+                if params != json!({}) {
+                    return Err(EditError::InvalidParams.into());
+                }
+                Ok(Edit {
+                    value: (),
+                    changed: false,
+                })
+            },
+        )?;
         return Ok(Output::new(
             json!({"changed":false,"created":[]}),
             "saved".into(),
@@ -39,17 +43,20 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
             0,
         ));
     }
-    let before = session.project().clone();
-    let outcome = session.execute(command_id, params)?;
-    if outcome.changed && before != *session.project() {
-        let _receipt = lease.save(session.project().as_ref())?;
-        session.saved()?;
-    }
-    if outcome.changed {
-        let mut metadata = session.metadata().clone();
-        metadata.touch();
-        lease.save_metadata(&metadata)?;
-    }
+    let outcome = run_leased(
+        &project_path,
+        History::Single,
+        WritePolicy::Changed,
+        |session| {
+            let outcome = session.execute(command_id, params)?;
+            let changed = outcome.changed;
+            Ok(Edit {
+                value: outcome,
+                changed,
+            })
+        },
+    )?
+    .value;
     let value = serde_json::to_value(&outcome)?;
     Ok(Output::new(value, outcome_human(&outcome), false, 0))
 }

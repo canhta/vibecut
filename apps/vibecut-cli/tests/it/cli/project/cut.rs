@@ -1,4 +1,5 @@
 //! Verifies native pause removal behaviour.
+use crate::cli::fixtures::new_project;
 use crate::cli::process::{cli, code, os, stdout_json};
 use crate::media_fixture::{tool_command, tools};
 use serde_json::json;
@@ -71,8 +72,11 @@ fn cut_dry_run_lists_the_same_spans_and_apply_removes_them_once() {
     let audio = dir.path().join("pauses.wav");
     pause_audio(&audio);
     let project = dir.path().join("pauses.vibecut");
+    new_project(&project);
     pause_project(&project, &audio);
+    let metadata = project.with_extension("vibecut.meta.json");
     let before = fs::read(&project).unwrap();
+    let metadata_before = fs::read(&metadata).unwrap();
 
     let dry = cli(&[
         os("cut"),
@@ -87,6 +91,7 @@ fn cut_dry_run_lists_the_same_spans_and_apply_removes_them_once() {
     assert_eq!(spans.len(), 3, "{listed}");
     assert_eq!(listed["changed"], json!(false));
     assert_eq!(fs::read(&project).unwrap(), before);
+    assert_eq!(fs::read(&metadata).unwrap(), metadata_before);
     for span in spans {
         let start = span["start"].as_i64().unwrap();
         let end = span["end"].as_i64().unwrap();
@@ -117,14 +122,16 @@ fn cut_dry_run_lists_the_same_spans_and_apply_removes_them_once() {
     assert_eq!(result["spans"], listed["spans"]);
     let loaded = project::load(&project).unwrap().project;
     assert!(loaded.duration() < time::Tick(12 * time::TICKS_PER_SECOND));
-    assert_ne!(fs::read(&project).unwrap(), before);
+    let applied_bytes = fs::read(&project).unwrap();
+    let applied_metadata = fs::read(&metadata).unwrap();
+    assert_ne!(applied_bytes, before);
 
-    // A threshold above every pause lists nothing and writes nothing.
+    // A threshold above every pause lists nothing, so the command reports no
+    // change and writes neither project nor metadata bytes.
     let quiet = cli(&[
         os("cut"),
         project.as_os_str(),
         os("--remove-pauses"),
-        os("--dry-run"),
         os("--min-pause-ms"),
         os("5000"),
         os("--json"),
@@ -133,4 +140,6 @@ fn cut_dry_run_lists_the_same_spans_and_apply_removes_them_once() {
     let empty = stdout_json(&quiet);
     assert_eq!(empty["spans"], json!([]));
     assert_eq!(empty["changed"], json!(false));
+    assert_eq!(fs::read(&project).unwrap(), applied_bytes);
+    assert_eq!(fs::read(&metadata).unwrap(), applied_metadata);
 }

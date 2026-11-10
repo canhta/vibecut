@@ -22,6 +22,8 @@ The module doors follow [structure](../../docs/engineering/structure.md#cli-apps
 | `output.rs` / `output/` | Shapes results, progress and upload disclosures. | [Output](src/output/README.md) |
 | `session.rs` / `session/` | Holds the leased control session and export admission. | [Session](src/session/README.md) |
 
+Every in-process edit builds a typed `engine::Command`; the wire boundary is the only string-id path: `exec` (id and JSON come from the caller), `control` frames and MCP tool calls.
+
 The [CLI contract](../../docs/product/agent-control/cli.md) owns syntax, supported commands, flags, output shapes and exit codes. `run(Vec<OsString>)` returns `Output` or `CliError`; the binary removes the global JSON flag, writes the selected result and maps `CliError::exit_code`. Paths keep their native representation until JSON output needs them; an unrepresentable path returns a typed unsupported error.
 
 The single integration binary mirrors native command groups under `tests/it/cli/`. The `fixtures` door exposes project/media setup, `process` owns subprocess invocation, and `tests/it/media_fixture.rs` owns external media oracle fixtures. Progress is latest-only and throttled through engine; stderr stages are observational and cannot synchronize tests. Oracle tests need external FFmpeg/ffprobe: a missing tool prints a skip, required-oracle mode refuses a skip, and a found but failing tool fails. Run `cargo xtask ci --require-oracles` for the full check.

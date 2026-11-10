@@ -2,9 +2,8 @@
 use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::{Output, json_path};
-use crate::session::Context;
-use engine::{EditError, NfcText, Session};
-use project::WriterLease;
+use crate::session::{Context, Edit, History, WritePolicy, run_leased};
+use engine::{EditError, NfcText};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -114,72 +113,70 @@ fn captions_import(args: Vec<OsString>) -> Result<Output, CliError> {
     }
     let language = engine::providers::parse_language(&language)?;
 
-    let mut lease = WriterLease::acquire(&project_path)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 1)?;
-    session.restore_metadata(lease.metadata())?;
-    let asset_id = session
-        .project()
-        .data()
-        .assets
-        .iter()
-        .map(|asset| asset.id().0)
-        .max()
-        .unwrap_or(0)
-        .checked_add(1)
-        .ok_or(EditError::Limit)?;
-    let report = engine::prepare_ass_import(&engine::AssImportRequest {
-        path: file,
-        language,
-        start,
-        track,
-        name,
-        asset_id: media::AssetId(asset_id),
-    })?;
-    let before = session.project().clone();
-    let outcome = session.apply(report.command)?;
-    if outcome.changed && before != *session.project() {
-        let _receipt = lease.save(session.project().as_ref())?;
-        session.saved()?;
-    }
-    if outcome.changed {
-        let mut metadata = session.metadata().clone();
-        metadata.touch();
-        lease.save_metadata(&metadata)?;
-    }
-    let created = serde_json::to_value(&outcome)?;
-    let warnings = serde_json::to_value(&report.warnings)?;
-    let value = json!({
-        "project": json_path(&project_path)?,
-        "cues": report.cues,
-        "styles": report.styles,
-        "skipped_cues": report.skipped_cues,
-        "skipped_styles": report.skipped_styles,
-        "warnings": warnings,
-        "suppressed_warnings": report.suppressed_warnings,
-        "created": created.get("created").cloned().unwrap_or(Value::Null),
-        "placements": created.get("placements").cloned().unwrap_or(Value::Null),
-    });
-    let mut human = format!(
-        "imported {} cues from {} styles ({} skipped cues, {} skipped styles)",
-        report.cues, report.styles, report.skipped_cues, report.skipped_styles
-    );
-    for warning in &report.warnings {
-        let _ = write!(
-            human,
-            "\nwarning line {}: {}",
-            warning.line,
-            warning.kind.label()
-        );
-    }
-    if report.suppressed_warnings > 0 {
-        let _ = write!(
-            human,
-            "\nsuppressed {} additional warnings",
-            report.suppressed_warnings
-        );
-    }
-    Ok(Output::new(value, human, false, 0))
+    run_leased(
+        &project_path,
+        History::Single,
+        WritePolicy::Changed,
+        |session| {
+            let asset_id = session
+                .project()
+                .data()
+                .assets
+                .iter()
+                .map(|asset| asset.id().0)
+                .max()
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or(EditError::Limit)?;
+            let report = engine::prepare_ass_import(&engine::AssImportRequest {
+                path: file,
+                language,
+                start,
+                track,
+                name,
+                asset_id: media::AssetId(asset_id),
+            })?;
+            let outcome = session.apply(report.command)?;
+            let changed = outcome.changed;
+            let created = serde_json::to_value(&outcome)?;
+            let warnings = serde_json::to_value(&report.warnings)?;
+            let value = json!({
+                "project": json_path(&project_path)?,
+                "cues": report.cues,
+                "styles": report.styles,
+                "skipped_cues": report.skipped_cues,
+                "skipped_styles": report.skipped_styles,
+                "warnings": warnings,
+                "suppressed_warnings": report.suppressed_warnings,
+                "created": created.get("created").cloned().unwrap_or(Value::Null),
+                "placements": created.get("placements").cloned().unwrap_or(Value::Null),
+            });
+            let mut human = format!(
+                "imported {} cues from {} styles ({} skipped cues, {} skipped styles)",
+                report.cues, report.styles, report.skipped_cues, report.skipped_styles
+            );
+            for warning in &report.warnings {
+                let _ = write!(
+                    human,
+                    "\nwarning line {}: {}",
+                    warning.line,
+                    warning.kind.label()
+                );
+            }
+            if report.suppressed_warnings > 0 {
+                let _ = write!(
+                    human,
+                    "\nsuppressed {} additional warnings",
+                    report.suppressed_warnings
+                );
+            }
+            Ok(Edit {
+                value: Output::new(value, human, false, 0),
+                changed,
+            })
+        },
+    )
+    .map(|saved| saved.value)
 }
 
 fn captions_import_usage() -> &'static str {

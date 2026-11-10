@@ -1,10 +1,8 @@
 //! Detects and removes pauses from a leased project.
 use crate::args::{CliError, parse_i64, utf8};
 use crate::output::{Output, json_path, wait_for_job};
-use crate::session::{Context, cli_runner};
-use engine::Session;
+use crate::session::{Context, Edit, History, WritePolicy, cli_runner, run_leased};
 use engine::pause_candidates::{PauseCandidatesRequest, PauseSettings};
-use project::WriterLease;
 use serde_json::json;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -42,18 +40,36 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     }
     settings.validate()?;
 
-    let mut lease = WriterLease::acquire(&project_path)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 100)?;
-    session.restore_metadata(lease.metadata())?;
-    let request = PauseCandidatesRequest::new(session.project().clone(), settings)?;
-    let mut runner = cli_runner(context.budget()?)?;
-    let job = request.submit(&mut runner)?;
-    wait_for_job(&mut runner, job.id)?;
-    let candidates = job
-        .finish(&mut runner)?
-        .ok_or(CliError::Rejected("pause candidates produced no result"))?;
-    runner.shutdown();
+    let (candidates, changed) = run_leased(
+        &project_path,
+        History::PauseReview,
+        WritePolicy::Changed,
+        |session| {
+            let request = PauseCandidatesRequest::new(session.project().clone(), settings)?;
+            let mut runner = cli_runner(context.budget()?)?;
+            let job = request.submit(&mut runner)?;
+            wait_for_job(&mut runner, job.id)?;
+            let candidates = job
+                .finish(&mut runner)?
+                .ok_or(CliError::Rejected("pause candidates produced no result"))?;
+            runner.shutdown();
+            let changed = if dry_run || candidates.spans.is_empty() {
+                false
+            } else {
+                session
+                    .apply(engine::Command::RemovePauses {
+                        spans: candidates.spans.clone(),
+                        crossfade_ms: settings.crossfade_ms,
+                    })?
+                    .changed
+            };
+            Ok(Edit {
+                value: (candidates, changed),
+                changed,
+            })
+        },
+    )?
+    .value;
 
     let saved: i64 = candidates
         .spans
@@ -76,28 +92,6 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         saved as f64 / time::TICKS_PER_SECOND as f64
     );
 
-    let changed = if dry_run || candidates.spans.is_empty() {
-        false
-    } else {
-        let before = session.project().clone();
-        let outcome = session.execute(
-            "timeline.remove_pauses",
-            json!({
-                "spans": candidates.spans.clone(),
-                "crossfade_ms": settings.crossfade_ms,
-            }),
-        )?;
-        if outcome.changed && before != *session.project() {
-            let _receipt = lease.save(session.project().as_ref())?;
-            session.saved()?;
-        }
-        if outcome.changed {
-            let mut metadata = session.metadata().clone();
-            metadata.touch();
-            lease.save_metadata(&metadata)?;
-        }
-        outcome.changed
-    };
     let value = json!({
         "project": json_path(&project_path)?,
         "spans": candidates.spans,
