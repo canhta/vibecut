@@ -26,6 +26,14 @@ fn diamond_group(field: &str) -> &str {
 const VALUE_COLUMN: f32 = 120.0;
 
 fn is_basic(tab: PropertiesTab) -> bool {
+    matches!(
+        tab,
+        PropertiesTab::Transform | PropertiesTab::Blending | PropertiesTab::RemoveBackground
+    )
+}
+
+/// The basic sub-tabs that also carry the clip's Mask row.
+fn shows_mask_row(tab: PropertiesTab) -> bool {
     matches!(tab, PropertiesTab::Transform | PropertiesTab::Blending)
 }
 
@@ -286,7 +294,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                             relative,
                         )
                         .unwrap_or(0.0);
-                        (spec.field, value)
+                        (spec.field.to_owned(), value)
                     })
                     .collect();
                 self.actions.push(Action::ToggleKeyframe {
@@ -431,7 +439,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             .and_then(|id| PropertiesTab::from_id(id))
             .filter(|tab| tabs.contains(tab));
         let active = stored.unwrap_or_else(|| kind.default_tab());
-        if !is_basic(active) || !matches!(kind, ElementKind::Video | ElementKind::Image) {
+        if !shows_mask_row(active) || !matches!(kind, ElementKind::Video | ElementKind::Image) {
             self.state.mask.close();
         }
         // Transform and blending share one top tab with segmented sub-tabs.
@@ -526,7 +534,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             .id_salt("inspector.properties")
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
-                if is_basic(active) {
+                if shows_mask_row(active) {
                     self.mask_row(ui, item, kind);
                 }
                 self.properties_tab(ui, item, kind, active)
@@ -713,6 +721,11 @@ impl<'a, 'c> Panel<'a, 'c> {
                     |panel, ui| panel.adjust_controls(ui, item),
                 );
             }
+            PropertiesTab::RemoveBackground
+                if matches!(kind, ElementKind::Video | ElementKind::Image) =>
+            {
+                self.remove_background_controls(ui, item);
+            }
             PropertiesTab::Effects
                 if matches!(
                     kind,
@@ -754,6 +767,8 @@ mod appearance;
 mod mask;
 
 mod number_edit;
+
+mod remove_background;
 
 mod selection;
 

@@ -9,6 +9,13 @@ impl Editor {
             super::super::properties::single(&self.selection),
         );
         super::super::properties::apply(&mut self.desk(), actions);
+        // The eyedropper belongs to one selected clip's panel.
+        if self.key_color_pick.as_ref().is_some_and(|pick| {
+            super::super::properties::single(&self.selection) != Some(pick.item)
+                || self.properties.details
+        }) {
+            self.key_color_pick = None;
+        }
         if !self.session.transaction_active() {
             self.desk().select();
         }
@@ -302,6 +309,13 @@ impl Editor {
                 }
                 Action::Zoom(factor) => {
                     if let Err(error) = self.preview_zoom_by(factor) {
+                        self.desk().fail(error.to_string());
+                    }
+                }
+                Action::PickKeyColor(color) => {
+                    if let Some(pick) = self.key_color_pick.take()
+                        && let Err(error) = self.set_key_color(pick.item, &pick.effect, color)
+                    {
                         self.desk().fail(error.to_string());
                     }
                 }

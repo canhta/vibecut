@@ -346,6 +346,11 @@ catalog! {
 
     // Effects panel and per-clip stack.
     Adjust { key: "adjust", en: "Adjust", vi: "Điều chỉnh" },
+    RemoveBackground { key: "remove_background", en: "Remove BG", vi: "Xóa nền" },
+    ChromaKey { key: "chroma_key", en: "Chroma key", vi: "Chroma key" },
+    KeyColor { key: "key_color", en: "Key colour", vi: "Màu cần xóa" },
+    PickKeyColor { key: "pick_key_color", en: "Pick a colour from the player", vi: "Chọn màu trên trình phát" },
+    EffectShadow { key: "effect_shadow", en: "Shadow", vi: "Vùng tối" },
     Brightness { key: "color_brightness", en: "Brightness", vi: "Độ sáng" },
     Contrast { key: "color_contrast", en: "Contrast", vi: "Độ tương phản" },
     EffectColorGrade { key: "effect_color_grade", en: "Color adjustment", vi: "Chỉnh màu" },

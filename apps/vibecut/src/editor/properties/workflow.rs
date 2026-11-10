@@ -60,9 +60,19 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
                 field,
                 time,
                 value,
-            } => desk.editor().set_keyframe_at(item, field, time, value),
+            } => desk.editor().set_keyframe_at(item, &field, time, value),
+            Action::SetKeyColorPick(pick) => {
+                desk.editor().key_color_pick = pick;
+                Ok(())
+            }
+            Action::ToggleChromaKey { item, enabled } => {
+                desk.editor().toggle_chroma_key(item, enabled);
+                Ok(())
+            }
+            Action::ResetKeyColor { item, effect } => desk.editor().reset_key_color(item, &effect),
             Action::SetSection { key, open } => desk.editor().set_section_open(key, open),
             Action::SetTab { kind, tab } => {
+                desk.editor().key_color_pick = None;
                 let mut next = desk.editor().preferences.properties_tabs.clone();
                 next.insert(kind.to_owned(), tab.to_owned());
                 serde_json::to_value(next)

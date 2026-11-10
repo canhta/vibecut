@@ -14,6 +14,7 @@ mod widgets;
 
 mod state;
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
+pub(crate) use state::KeyPick;
 use state::{
     AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
     PreferenceCommand, PreferenceHistory, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT,
@@ -176,6 +177,7 @@ impl Editor {
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),
             effect_drag: None,
+            key_color_pick: None,
             last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
@@ -362,6 +364,7 @@ impl Editor {
             keybinding_issues: self.keybinding_issues.clone(),
             color_preview: self.properties.picker.as_ref().map(|p| p.color),
             eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
+            key_color_pick: self.key_color_pick.as_ref().map(|pick| pick.item),
             font_picker: self
                 .properties
                 .font_picker

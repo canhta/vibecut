@@ -43,6 +43,8 @@ pub(crate) struct Context<'a> {
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,
     /// While an effect is being dragged: the clips that accept it.
     pub(crate) effect_targets: Option<std::collections::BTreeSet<project::ItemId>>,
+    /// Armed chroma-key eyedropper; the player samples its next click.
+    pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
 }
 impl Context<'_> {
     /// Tooltip text from the action's first effective persisted chord.

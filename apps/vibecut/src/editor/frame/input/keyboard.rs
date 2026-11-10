@@ -23,6 +23,14 @@ impl Editor {
         if self.properties.picker.is_some() {
             return;
         }
+        // The armed eyedropper is a one-click mode: Escape leaves it without
+        // also deselecting the clip whose panel opened it.
+        if self.key_color_pick.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.key_color_pick = None;
+            }
+            return;
+        }
         if self.media_delete_confirm.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.media_delete_confirm = None;

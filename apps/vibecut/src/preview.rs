@@ -299,6 +299,30 @@ fn error_for(code: ErrorCode) -> EditError {
     }
 }
 
+/// The rendered frame pixel under `pos` inside the displayed `rect`, as an
+/// opaque sRGB colour; `None` outside the frame or for an empty image. The
+/// chroma-key eyedropper reads this retained preview frame, never a new decode.
+pub fn sample_color(
+    image: &egui::ColorImage,
+    rect: egui::Rect,
+    pos: egui::Pos2,
+) -> Option<project::Color> {
+    let [width, height] = image.size;
+    if width == 0 || height == 0 || !rect.is_positive() || !pos.is_finite() {
+        return None;
+    }
+    if !rect.contains(pos) {
+        return None;
+    }
+    let u = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 0.999_999);
+    let v = ((pos.y - rect.top()) / rect.height()).clamp(0.0, 0.999_999);
+    let x = (u * width as f32) as usize;
+    let y = (v * height as f32) as usize;
+    let pixel = *image.pixels.get(y.checked_mul(width)?.checked_add(x)?)?;
+    let [r, g, b, _] = pixel.to_srgba_unmultiplied();
+    Some(project::Color([r, g, b, 255]))
+}
+
 /// Decode the same PNG the engine would publish and hand it to egui's OS
 /// clipboard boundary. No file is written and the project is untouched.
 pub fn copy(session: &Session, at: Tick, ctx: &egui::Context) -> Result<()> {
@@ -360,5 +384,54 @@ mod tests {
         assert!(!view.fit);
         assert_eq!(view.zoom, 2.0);
         assert!(up > 1.0);
+    }
+
+    #[test]
+    fn sample_color_maps_inside_pixels_and_refuses_outside_or_empty_input() {
+        let image = egui::ColorImage::new(
+            [4, 2],
+            vec![
+                egui::Color32::from_rgb(255, 0, 0),
+                egui::Color32::from_rgb(0, 255, 0),
+                egui::Color32::from_rgb(0, 0, 255),
+                egui::Color32::from_rgb(10, 20, 30),
+                egui::Color32::from_rgb(1, 2, 3),
+                egui::Color32::from_rgb(4, 5, 6),
+                egui::Color32::from_rgb(7, 8, 9),
+                egui::Color32::from_rgb(11, 12, 13),
+            ],
+        );
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 200.0));
+        assert_eq!(
+            sample_color(&image, rect, rect.min),
+            Some(project::Color([255, 0, 0, 255]))
+        );
+        assert_eq!(
+            sample_color(&image, rect, egui::pos2(300.0, 150.0)),
+            Some(project::Color([7, 8, 9, 255]))
+        );
+        assert_eq!(
+            sample_color(&image, rect, egui::pos2(499.9, 249.9)),
+            Some(project::Color([11, 12, 13, 255]))
+        );
+        for pos in [
+            egui::pos2(99.0, 150.0),
+            egui::pos2(500.5, 150.0),
+            egui::pos2(300.0, 49.0),
+            egui::pos2(300.0, 250.5),
+            egui::pos2(f32::NAN, 150.0),
+            egui::pos2(300.0, f32::INFINITY),
+        ] {
+            assert_eq!(sample_color(&image, rect, pos), None, "{pos:?}");
+        }
+        for rect in [
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::Vec2::ZERO),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(-4.0, 2.0)),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(f32::NAN, 2.0)),
+        ] {
+            assert_eq!(sample_color(&image, rect, egui::pos2(0.0, 0.0)), None);
+        }
+        let empty = egui::ColorImage::new([0, 0], Vec::new());
+        assert_eq!(sample_color(&empty, rect, rect.center()), None);
     }
 }

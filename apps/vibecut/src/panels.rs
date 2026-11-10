@@ -140,12 +140,14 @@ impl ElementKind {
                 PropertiesTab::Speed,
                 PropertiesTab::Blending,
                 PropertiesTab::Adjust,
+                PropertiesTab::RemoveBackground,
                 PropertiesTab::Effects,
             ],
             Self::Image => &[
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
                 PropertiesTab::Adjust,
+                PropertiesTab::RemoveBackground,
                 PropertiesTab::Effects,
             ],
             Self::Sticker => &[
@@ -185,18 +187,20 @@ pub enum PropertiesTab {
     Speed,
     Blending,
     Adjust,
+    RemoveBackground,
     Effects,
     Graphic,
 }
 
 impl PropertiesTab {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Text,
         Self::Transform,
         Self::Audio,
         Self::Speed,
         Self::Blending,
         Self::Adjust,
+        Self::RemoveBackground,
         Self::Effects,
         Self::Graphic,
     ];
@@ -209,6 +213,7 @@ impl PropertiesTab {
             Self::Speed => "speed",
             Self::Blending => "blending",
             Self::Adjust => "adjust",
+            Self::RemoveBackground => "remove_background",
             Self::Effects => "effects",
             Self::Graphic => "graphic",
         }
@@ -226,6 +231,7 @@ impl PropertiesTab {
             Self::Speed => Text::Speed,
             Self::Blending => Text::Blending,
             Self::Adjust => Text::Adjust,
+            Self::RemoveBackground => Text::RemoveBackground,
             Self::Effects => Text::Effects,
             Self::Graphic => Text::Graphic,
         }

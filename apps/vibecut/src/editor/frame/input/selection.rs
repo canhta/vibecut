@@ -32,6 +32,7 @@ impl Editor {
     }
     pub(in crate::editor) fn selection_changed(&mut self) {
         self.finish_scrub(false);
+        self.key_color_pick = None;
         self.selection_scopes = SelectionScopes::default();
         self.properties.clear_drafts();
         self.desk().select();

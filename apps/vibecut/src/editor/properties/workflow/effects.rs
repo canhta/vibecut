@@ -2,10 +2,53 @@
 
 use crate::editor::properties::{
     Arc, BTreeSet, Editor, ElementKind, Error, ItemId, Result, Text, effect_params_from_definition,
-    error_detail,
+    error_detail, read,
 };
 
 impl Editor {
+    /// The Remove BG toggle: presence plus enabled, so the panel never shows
+    /// keyed controls while the effect bypasses the frame.
+    pub(in crate::editor::properties) fn toggle_chroma_key(&mut self, item: ItemId, enabled: bool) {
+        let existing = read::chroma_key(self.session.project(), item)
+            .map(|effect| (effect.id.clone(), effect.enabled));
+        match (existing, enabled) {
+            (None, false) => {}
+            (None, true) => self.add_effect_to_item(item, "chroma_key"),
+            (Some((id, on)), want) if on != want => self.toggle_effect(item, &id, want),
+            (Some(_), _) => {}
+        }
+    }
+
+    /// Restore the catalog's default key colour in one undo step.
+    pub(in crate::editor::properties) fn reset_key_color(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+    ) -> Result<()> {
+        let default = project::chroma_key_color(project::CHROMA_KEY_COLOR_DEFAULT)?;
+        let current = read::chroma_key_color(self.session.project(), item, effect);
+        if current == Some(default) {
+            return Ok(());
+        }
+        self.set_key_color(item, effect, default)
+    }
+
+    /// Write one key colour as the packed scalar the effect command admits.
+    pub(in crate::editor) fn set_key_color(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        color: project::Color,
+    ) -> Result<()> {
+        let [r, g, b, _] = color.0;
+        let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
+        self.desk().edit_result(
+            "effects.update_param",
+            serde_json::json!({"item": item, "effect": effect, "key": "key_color", "value": packed}),
+        )?;
+        Ok(())
+    }
+
     pub(in crate::editor) fn effect_refusal(&self, id: ItemId) -> Option<Text> {
         let data = self.session.project().data();
         let track = data

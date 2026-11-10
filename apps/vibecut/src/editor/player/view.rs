@@ -633,35 +633,37 @@ fn canvas(
     if middle && (r.hovered() || r.dragged()) {
         state.view.pan(delta, stage.size(), size);
     }
-    r.context_menu(|ui| {
-        menu(
-            ui,
-            cx,
-            actions,
-            "preview.menu.snapshot",
-            Text::SnapshotSave,
-            !empty,
-            "preview.snapshot",
-        );
-        menu(
-            ui,
-            cx,
-            actions,
-            "preview.menu.copy",
-            Text::SnapshotCopy,
-            !empty,
-            "copy",
-        );
-        menu(
-            ui,
-            cx,
-            actions,
-            "preview.menu.fullscreen",
-            Text::Fullscreen,
-            true,
-            "preview.fullscreen",
-        );
-    });
+    if cx.key_color_pick.is_none() {
+        r.context_menu(|ui| {
+            menu(
+                ui,
+                cx,
+                actions,
+                "preview.menu.snapshot",
+                Text::SnapshotSave,
+                !empty,
+                "preview.snapshot",
+            );
+            menu(
+                ui,
+                cx,
+                actions,
+                "preview.menu.copy",
+                Text::SnapshotCopy,
+                !empty,
+                "copy",
+            );
+            menu(
+                ui,
+                cx,
+                actions,
+                "preview.menu.fullscreen",
+                Text::Fullscreen,
+                true,
+                "preview.fullscreen",
+            );
+        });
+    }
     remember(cx, actions, "preview.canvas", r.clone());
     if empty {
         state.texture = None;
@@ -716,13 +718,27 @@ fn canvas(
             Rect::from_center_size(stage.center(), Vec2::splat(kit::icon::DENSE)),
         );
     }
-    super::transform::show(
-        &mut state.transform,
-        cx,
-        ui,
-        displayed,
-        &r,
-        cx.playhead,
-        actions,
-    );
+    if cx.key_color_pick.is_some() {
+        if r.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
+        if r.clicked()
+            && let Some(pos) =
+                ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.latest_pos()))
+            && let Some(frame) = cx.playback.frame()
+            && let Some(color) = preview::sample_color(&frame.image, displayed, pos)
+        {
+            actions.push(Action::PickKeyColor(color));
+        }
+    } else {
+        super::transform::show(
+            &mut state.transform,
+            cx,
+            ui,
+            displayed,
+            &r,
+            cx.playhead,
+            actions,
+        );
+    }
 }

@@ -225,6 +225,8 @@ pub struct Inspection {
     pub keybinding_issues: Vec<KeybindingIssue>,
     pub color_preview: Option<project::Color>,
     pub eyedropper: Option<EyedropperState>,
+    /// Clip whose chroma-key eyedropper is armed for the next player click.
+    pub key_color_pick: Option<ItemId>,
     /// Present while the shortcuts dialog is open.
     pub shortcuts: Option<ShortcutsInspection>,
     /// Font picker state, tab, favourites and download.
@@ -329,6 +331,13 @@ pub(super) struct MediaMarquee {
 pub(super) struct EffectReorder {
     pub(super) item: ItemId,
     pub(super) effect: String,
+}
+/// The chroma-key eyedropper is armed for one effect on one item; the next
+/// player click samples the rendered preview frame into that effect's key colour.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeyPick {
+    pub(crate) item: ItemId,
+    pub(crate) effect: String,
 }
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
@@ -441,6 +450,8 @@ pub struct Editor {
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
+    /// Armed chroma-key eyedropper, cleared by its pick, Escape or a selection change.
+    pub(super) key_color_pick: Option<KeyPick>,
     pub(super) last_view: project::ViewState,
     pub(super) widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,

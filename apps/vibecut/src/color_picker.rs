@@ -15,7 +15,15 @@ pub enum ColorTarget {
     Background(ItemId),
     GraphicFill(ItemId),
     GraphicStroke(ItemId),
-    MaskStroke { item: ItemId, mask: String },
+    MaskStroke {
+        item: ItemId,
+        mask: String,
+    },
+    /// The chroma key's packed key colour on one effect instance.
+    EffectKeyColor {
+        item: ItemId,
+        effect: String,
+    },
     Bookmark(BookmarkId),
     Canvas,
 }
@@ -26,7 +34,7 @@ impl ColorTarget {
             | Self::Background(id)
             | Self::GraphicFill(id)
             | Self::GraphicStroke(id) => Some(*id),
-            Self::MaskStroke { item, .. } => Some(*item),
+            Self::MaskStroke { item, .. } | Self::EffectKeyColor { item, .. } => Some(*item),
             Self::Bookmark(_) | Self::Canvas => None,
         }
     }
@@ -70,6 +78,15 @@ impl ColorTarget {
                 .find(|m| m.id == *mask)
                 .map(|m| m.stroke.color)
                 .ok_or(Error::Invalid("mask colour target")),
+            (Self::EffectKeyColor { effect, .. }, _) => item
+                .effects
+                .iter()
+                .find(|candidate| candidate.id == *effect)
+                .and_then(|candidate| match candidate.params {
+                    project::EffectParams::ChromaKey { key_color, .. } => Some(key_color),
+                    _ => None,
+                })
+                .ok_or(Error::Invalid("chroma key colour target")),
             _ => Err(Error::Invalid("colour target")),
         }
     }
@@ -105,6 +122,14 @@ impl ColorTarget {
             return Ok((
                 "masks.update",
                 serde_json::json!({"item":item,"mask":value}),
+            ));
+        }
+        if let Self::EffectKeyColor { item, effect } = self {
+            let [r, g, b, _] = color.0;
+            let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
+            return Ok((
+                "effects.update_param",
+                serde_json::json!({"item":item,"effect":effect,"key":"key_color","value":packed}),
             ));
         }
         let field = match self {

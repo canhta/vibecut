@@ -41,6 +41,8 @@ pub(super) enum Action {
     TextEnd {
         commit: bool,
     },
+    /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
+    PickKeyColor(project::Color),
     Remember {
         id: String,
         icon: Option<&'static str>,

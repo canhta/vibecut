@@ -369,6 +369,7 @@ impl Rig {
             visuals: &self.visuals,
             disabled: self.disabled.clone(),
             effect_targets: None,
+            key_color_pick: None,
         };
         if self.sheet {
             self.returned

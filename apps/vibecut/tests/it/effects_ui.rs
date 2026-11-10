@@ -900,6 +900,457 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     assert!(grade(&harness, video).is_none());
 }
 
+fn chroma(harness: &Harness<Editor>, id: ItemId) -> Option<project::EffectInstance> {
+    effects(harness, id)
+        .into_iter()
+        .find(|effect| matches!(effect.params, project::EffectParams::ChromaKey { .. }))
+}
+
+fn chroma_parts(harness: &Harness<Editor>, id: ItemId) -> Option<(project::Color, f64, f64, bool)> {
+    chroma(harness, id).and_then(|effect| match effect.params {
+        project::EffectParams::ChromaKey {
+            key_color,
+            intensity,
+            shadow,
+        } => Some((key_color, intensity, shadow, effect.enabled)),
+        _ => None,
+    })
+}
+
+fn channel_value(harness: &Harness<Editor>, id: ItemId, path: &str, at: Tick) -> Option<f64> {
+    let path = project::AnimationPath::new(path).unwrap();
+    match item(harness, id).animations.value_at(&path, at).ok()? {
+        Some(project::ParamValue::Scalar(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn has_key(harness: &Harness<Editor>, id: ItemId, path: &str, at: Tick) -> bool {
+    let path = project::AnimationPath::new(path).unwrap();
+    item(harness, id)
+        .animations
+        .get(&path)
+        .and_then(|param| match param {
+            project::Param::Value(channel) => Some(channel),
+            project::Param::Color(_) => None,
+        })
+        .is_some_and(|channel| {
+            channel
+                .keys()
+                .binary_search_by_key(&at, |key| key.time)
+                .is_ok()
+        })
+}
+
+fn open_remove_background(harness: &mut Harness<Editor>, item: ItemId) {
+    select(harness, item);
+    click(harness, "inspector.tab.remove_background");
+}
+
+fn click_pos(harness: &mut Harness<Editor>, pos: egui::Pos2) {
+    harness.hover_at(pos);
+    harness.run_steps(1);
+    harness.drag_at(pos);
+    harness.run_steps(1);
+    harness.drop_at(pos);
+    harness.run_steps(2);
+}
+
+#[test]
+fn remove_background_tab_toggles_chroma_key_on_video_and_image_only() {
+    let fixture = fixture();
+    let (video, image) = (fixture.video, fixture.image);
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    for item in [fixture.graphic, fixture.audio] {
+        select(&mut harness, item);
+        assert!(
+            !has_widget(&harness, "inspector.tab.remove_background"),
+            "{item:?}"
+        );
+    }
+    for item in [video, image] {
+        select(&mut harness, item);
+        assert!(has_widget(&harness, "inspector.tab.remove_background"));
+        click(&mut harness, "inspector.tab.remove_background");
+        assert!(has_widget(&harness, "inspector.chroma_key.toggle"));
+        assert!(
+            !has_widget(&harness, "effects.chroma_key.param.intensity"),
+            "controls stay hidden until the key is on"
+        );
+        assert!(chroma(&harness, item).is_none(), "viewing adds nothing");
+    }
+
+    open_remove_background(&mut harness, video);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.toggle");
+    assert_eq!(
+        chroma_parts(&harness, video),
+        Some((
+            Color([0, 255, 0, 255]),
+            project::CHROMA_KEY_INTENSITY_DEFAULT,
+            0.0,
+            true
+        )),
+        "the catalog defaults: green, intensity 40, shadow 0"
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    for id in [
+        "inspector.chroma_key.color",
+        "inspector.chroma_key.eyedropper",
+        "inspector.chroma_key.reset",
+        "effects.chroma_key.param.intensity",
+        "effects.chroma_key.param.shadow",
+        "effects.chroma_key.param.intensity.keyframe",
+        "effects.chroma_key.param.shadow.keyframe",
+    ] {
+        assert!(has_widget(&harness, id), "{id}");
+    }
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(
+        chroma(&harness, video).is_none(),
+        "the toggle is one undo step"
+    );
+    click(&mut harness, "inspector.chroma_key.toggle");
+
+    // Off disables the instance and hides its controls; on re-enables it.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.toggle");
+    assert!(!chroma_parts(&harness, video).unwrap().3);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(!has_widget(&harness, "effects.chroma_key.param.intensity"));
+    click(&mut harness, "inspector.chroma_key.toggle");
+    assert!(chroma_parts(&harness, video).unwrap().3);
+    assert!(has_widget(&harness, "effects.chroma_key.param.intensity"));
+}
+
+#[test]
+fn chroma_key_colour_field_writes_the_packed_key_colour_once() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    click(&mut harness, "inspector.chroma_key.toggle");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.color");
+    harness.run_steps(3);
+    type_value(&mut harness, "color.hex", "#FF8000");
+    assert_eq!(
+        chroma_parts(&harness, video).unwrap().0,
+        Color([255, 128, 0, 255])
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        chroma_parts(&harness, video).unwrap().0,
+        Color([0, 255, 0, 255])
+    );
+}
+
+#[test]
+fn chroma_key_controls_clamp_animate_and_undo_once_per_gesture() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    click(&mut harness, "inspector.chroma_key.toggle");
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(SECOND), false, project)
+        .unwrap();
+    harness.run_steps(2);
+
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.chroma_key.param.intensity", "999");
+    assert_eq!(chroma_parts(&harness, video).unwrap().1, 100.0);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    type_value(&mut harness, "effects.chroma_key.param.shadow", "999");
+    assert_eq!(chroma_parts(&harness, video).unwrap().2, 100.0);
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.chroma_key.param.shadow", "NaN");
+    assert_eq!(
+        harness.state().session.history_len(),
+        history,
+        "NaN refused"
+    );
+
+    // One diamond adds or removes the key at the playhead: one undo each.
+    let path = "effects.chroma_key.params.intensity";
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.chroma_key.param.intensity.keyframe");
+    assert!(has_key(&harness, video, path, Tick(SECOND)));
+    assert_eq!(
+        channel_value(&harness, video, path, Tick(SECOND)),
+        Some(100.0)
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    click(&mut harness, "effects.chroma_key.param.intensity.keyframe");
+    assert!(!has_key(&harness, video, path, Tick(SECOND)));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    click(&mut harness, "effects.chroma_key.param.intensity.keyframe");
+
+    // A keyed channel writes the key at the playhead, not the base value.
+    let start = widget_rect(&harness, "effects.chroma_key.param.intensity.scrub").center();
+    drag_to(
+        &mut harness,
+        "effects.chroma_key.param.intensity.scrub",
+        egui::vec2(-40.0, 0.0),
+    );
+    assert!(harness.state().session.gesture_active());
+    harness.drop_at(start - egui::vec2(40.0, 0.0));
+    harness.run_steps(2);
+    assert_eq!(
+        channel_value(&harness, video, path, Tick(SECOND)),
+        Some(80.0)
+    );
+    assert_eq!(chroma_parts(&harness, video).unwrap().1, 100.0, "base kept");
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        channel_value(&harness, video, path, Tick(SECOND)),
+        Some(100.0)
+    );
+
+    // A reversal publishes nothing.
+    let history = harness.state().session.history_len();
+    let start = widget_rect(&harness, "effects.chroma_key.param.intensity.scrub").center();
+    drag_to(
+        &mut harness,
+        "effects.chroma_key.param.intensity.scrub",
+        egui::vec2(-40.0, 0.0),
+    );
+    harness.hover_at(start);
+    harness.run_steps(2);
+    harness.drop_at(start);
+    harness.run_steps(2);
+    assert_eq!(
+        channel_value(&harness, video, path, Tick(SECOND)),
+        Some(100.0)
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+
+    // Outside the clip the diamonds refuse; the base value still edits.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    harness.run_steps(2);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.chroma_key.param.intensity.keyframe");
+    assert!(!has_key(&harness, video, path, Tick(3 * SECOND)));
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+/// A video clip after a solid overlay: the first rendered frame is the overlay,
+/// so the eyedropper samples a real preview frame without decoding the clip.
+fn chroma_frame_fixture() -> (Editor, ItemId) {
+    let mut session =
+        Session::new(Project::empty(ProjectId(9), "Chroma".into()).unwrap(), 200).unwrap();
+    session
+        .apply(Command::AddAsset {
+            asset: asset(
+                1,
+                vec![
+                    stream(media::StreamKind::Video, None),
+                    stream(media::StreamKind::Audio, None),
+                ],
+            ),
+        })
+        .unwrap();
+    let main = session.project().data().scene().timeline.main.id;
+    insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        Tick(2 * SECOND),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([10, 20, 30, 255]),
+        }),
+    );
+    let video = insert(
+        &mut session,
+        main,
+        Tick(2 * SECOND),
+        Tick(2 * SECOND),
+        Some(AssetId(1)),
+        ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            crop: None,
+        }),
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    (
+        Editor::new(session, playback, Preferences::default()),
+        video,
+    )
+}
+
+#[test]
+fn chroma_key_eyedropper_samples_the_rendered_preview_frame() {
+    let (editor, video) = chroma_frame_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    click(&mut harness, "inspector.chroma_key.toggle");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.state().playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "preview frame did not arrive"
+        );
+        harness.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let stage = widget_rect(&harness, "preview.canvas");
+    let canvas = {
+        let canvas = &harness.state().session.project().data().canvas;
+        [canvas.width, canvas.height]
+    };
+    let scale = vibecut::preview::fit_scale(stage.size(), canvas);
+    let displayed = egui::Rect::from_center_size(
+        stage.center(),
+        egui::vec2(canvas[0] as f32, canvas[1] as f32) * scale,
+    );
+    let pos = displayed.center();
+    let expected = vibecut::preview::sample_color(
+        &harness.state().playback.frame().unwrap().image,
+        displayed,
+        pos,
+    )
+    .expect("the clicked pixel is inside the frame");
+    assert_ne!(expected, Color([0, 255, 0, 255]), "not the default key");
+
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.eyedropper");
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        Some(video)
+    );
+    click_pos(&mut harness, pos);
+    assert_eq!(chroma_parts(&harness, video).unwrap().0, expected);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        None,
+        "the pick disarms"
+    );
+
+    // Reset restores the catalog default in one step.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.reset");
+    assert_eq!(
+        chroma_parts(&harness, video).unwrap().0,
+        Color([0, 255, 0, 255])
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+
+    // Escape leaves the eyedropper without a pick; a click outside the frame
+    // does nothing and keeps it armed.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.eyedropper");
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        Some(video)
+    );
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        None,
+        "Escape disarms"
+    );
+    assert_eq!(
+        chroma_parts(&harness, video).unwrap().0,
+        Color([0, 255, 0, 255])
+    );
+
+    click(&mut harness, "inspector.chroma_key.eyedropper");
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        Some(video)
+    );
+    click(&mut harness, "inspector.chroma_key.eyedropper");
+    assert_eq!(
+        harness.state().inspect().unwrap().key_color_pick,
+        None,
+        "the button leaves the mode without a pick"
+    );
+    assert_eq!(
+        chroma_parts(&harness, video).unwrap().0,
+        Color([0, 255, 0, 255])
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+#[test]
+fn remove_background_toggle_refuses_a_locked_track() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let main = fixture.main;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::SetTrackFlags {
+            track: main,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.chroma_key.toggle");
+    assert!(chroma(&harness, video).is_none());
+    assert_eq!(harness.state().session.history_len(), history);
+    let toast = harness
+        .state()
+        .inspect()
+        .unwrap()
+        .import_toast
+        .unwrap_or_default();
+    assert!(toast.contains("Track is locked"), "{toast}");
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-180-chroma.png"]
+fn remove_background_panel_renders_the_chroma_key_controls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    click(&mut harness, "inspector.chroma_key.toggle");
+    type_value(&mut harness, "effects.chroma_key.param.intensity", "60");
+    type_value(&mut harness, "effects.chroma_key.param.shadow", "25");
+    let image = harness.render().expect("offscreen render");
+    image.save(target.join("p1-180-chroma.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-68-adjust.png"]

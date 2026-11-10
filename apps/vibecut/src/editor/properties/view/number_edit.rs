@@ -80,14 +80,14 @@ impl Panel<'_, '_> {
             let value = spec.quantize(parsed);
             self.actions.push(Action::SetKeyframeAt {
                 item,
-                field: spec.field,
+                field: spec.field.to_owned(),
                 time,
                 value,
             });
             if self.state.uniform_scale && spec.field == "transform.scaleX" {
                 self.actions.push(Action::SetKeyframeAt {
                     item,
-                    field: "transform.scaleY",
+                    field: "transform.scaleY".to_owned(),
                     time,
                     value,
                 });

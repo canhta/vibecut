@@ -70,6 +70,11 @@ pub(super) fn item_value_at(
     {
         return transform.value_at(&item.animations, at).ok();
     }
+    if let Some(rest) = field.strip_prefix("effects.")
+        && let Some((effect, key)) = rest.split_once(".params.")
+    {
+        return effect_param_value_at(project, item.id, effect, key, at);
+    }
     match (field, &item.content) {
         ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
             let path = project::AnimationPath::new("opacity").ok()?;
@@ -181,22 +186,66 @@ pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64
     ))
 }
 
-pub(super) fn effect_param_value(
-    project: &project::Project,
-    item: ItemId,
-    effect: &str,
-    key: &str,
-) -> Option<f64> {
-    let effect = find(project, item)?
-        .effects
-        .iter()
-        .find(|candidate| candidate.id == effect)?;
-    match (&effect.params, key) {
+/// One registered effect scalar, the value a first edit starts from.
+fn effect_param(params: &project::EffectParams, key: &str) -> Option<f64> {
+    match (params, key) {
         (project::EffectParams::Blur { intensity }, "intensity") => Some(*intensity),
         (project::EffectParams::ColorGrade { brightness, .. }, "brightness") => Some(*brightness),
         (project::EffectParams::ColorGrade { contrast, .. }, "contrast") => Some(*contrast),
         (project::EffectParams::ColorGrade { saturation, .. }, "saturation") => Some(*saturation),
         (project::EffectParams::ColorGrade { hue, .. }, "hue") => Some(*hue),
+        (project::EffectParams::ChromaKey { intensity, .. }, "intensity") => Some(*intensity),
+        (project::EffectParams::ChromaKey { shadow, .. }, "shadow") => Some(*shadow),
+        _ => None,
+    }
+}
+
+/// The effect scalar at an item-relative time: an animated channel reads its
+/// curve, everything else its persisted value.
+pub(super) fn effect_param_value_at(
+    project: &project::Project,
+    item: ItemId,
+    effect: &str,
+    key: &str,
+    at: Tick,
+) -> Option<f64> {
+    let item = find(project, item)?;
+    let instance = item
+        .effects
+        .iter()
+        .find(|candidate| candidate.id == effect)?;
+    let base = effect_param(&instance.params, key)?;
+    let path = project::AnimationPath::new(format!("effects.{effect}.params.{key}")).ok()?;
+    Some(match item.animations.value_at(&path, at).ok().flatten() {
+        Some(project::ParamValue::Scalar(value)) => value,
+        _ => base,
+    })
+}
+
+/// The clip's chroma-key instance, the one the Remove BG sub-tab edits.
+pub(super) fn chroma_key(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<&project::EffectInstance> {
+    find(project, item)?
+        .effects
+        .iter()
+        .find(|candidate| matches!(candidate.params, project::EffectParams::ChromaKey { .. }))
+}
+
+/// An instance's key colour, opaque.
+pub(super) fn chroma_key_color(
+    project: &project::Project,
+    item: ItemId,
+    effect: &str,
+) -> Option<project::Color> {
+    match find(project, item)?
+        .effects
+        .iter()
+        .find(|candidate| candidate.id == effect)?
+        .params
+    {
+        project::EffectParams::ChromaKey { key_color, .. } => Some(key_color),
         _ => None,
     }
 }

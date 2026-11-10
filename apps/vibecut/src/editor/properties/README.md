@@ -6,6 +6,10 @@ The multi-selection inspector shows audio gain/mute and text content, font, size
 
 Each scrub field has a left drag handle, a click-to-type entry and clamping. A drag previews through an engine gesture and commits one `timeline.set_item_param` undo step on release; Escape cancels the gesture or draft. Changing selection or hiding the field cancels the preview. Invalid or non-finite input refuses without change. Drag sensitivity is a recorded decision: opacity and audio gain one 0.01/1 dB step per 4 px, text size 1 px per 2 px, speed 0.01 per 2 px. Enter or blur commits a typed shared-field patch through the engine registry in one undo step. Focused text editing owns keyboard input.
 
+## Remove BG sub-tab
+
+Video and image items get a `Remove BG` cell in the Basic sub-tab bar (reference `221751`; the web capture's panel is `screens/18`). Its `Chroma key` toggle turns the clip's `chroma_key` effect on or off through `effects.add`/`effects.toggle`; turning it on inserts the catalog defaults (green key colour, Intensity 40, Shadow 0) in one undo step. While on, the panel shows the key colour in the shared colour field, an eyedropper and a reset, then Intensity and Shadow as effect scrub rows with a keyframe diamond each. The eyedropper arms on one clip's effect and the player's next click samples the retained rendered preview frame (no second decode); Escape or the button again leaves the mode without a pick. Reset restores the catalog key colour. Every gesture is one undo step and every value goes through an effect command; a locked track or an unsupported item refuses through the existing effect refusal.
+
 ## Effects tab
 
 Lists the selected clip's ordered stack. Each header has a drag-reorder handle (either direction; cancels on selection or inspector change), an enable toggle and remove. Scalar parameters use the scrub contract above. Empty stacks, disabled effects, locked tracks, audio clips, unsupported kinds, missed drops and the 64-effect project limit show an explicit state or localized refusal. Edits go only through `effects.add`, `effects.reorder`, `effects.toggle`, `effects.remove` and `effects.update_param`.

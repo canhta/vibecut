@@ -20,7 +20,7 @@ impl Editor {
     pub fn toggle_keyframes(
         &mut self,
         item: ItemId,
-        fields: &[(&'static str, f64)],
+        fields: &[(String, f64)],
         time: time::Tick,
     ) -> Result<()> {
         let all = fields.iter().all(|(field, _)| {
@@ -32,10 +32,10 @@ impl Editor {
                 if has != all {
                     continue;
                 }
-                let path = if *field == "audio_gain" {
+                let path = if field == "audio_gain" {
                     "volume"
                 } else {
-                    field
+                    field.as_str()
                 };
                 session.execute(
                     "keyframes.toggle_at",

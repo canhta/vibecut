@@ -43,18 +43,18 @@ pub(in crate::editor) enum Action {
     },
     SetBackground(project::Color),
     ResetTransform(ItemId),
-    /// Add a key at the playhead on every listed field that lacks one, or remove
-    /// them all when each already has one: one diamond, one undo step.
+    /// Add a key at the playhead on every listed channel that lacks one, or
+    /// remove them all when each already has one: one diamond, one undo step.
     ToggleKeyframe {
         item: ItemId,
-        /// Field and its value at the playhead.
-        fields: Vec<(&'static str, f64)>,
+        /// Animation path (a field or `effects.<id>.params.<key>`) and its value.
+        fields: Vec<(String, f64)>,
         time: time::Tick,
     },
     /// Upsert a key at the playhead while a channel is already animated.
     SetKeyframeAt {
         item: ItemId,
-        field: &'static str,
+        field: String,
         time: time::Tick,
         value: f64,
     },
@@ -92,6 +92,18 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         effect: String,
         target: String,
+    },
+    /// Arm or leave the eyedropper that samples the rendered preview frame.
+    SetKeyColorPick(Option<crate::editor::KeyPick>),
+    /// Turn the chroma-key effect on or off for one clip.
+    ToggleChromaKey {
+        item: ItemId,
+        enabled: bool,
+    },
+    /// Restore the chroma key's default colour.
+    ResetKeyColor {
+        item: ItemId,
+        effect: String,
     },
     /// The preview returns to the project (picker closed or failed).
     SyncPreview,

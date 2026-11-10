@@ -1,11 +1,24 @@
 //! Renders effect parameters.
 use super::Panel;
 use crate::editor::properties::{
-    Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Vec2,
-    effect_definition, effect_scrub_spec, egui, icons, read, theme,
+    Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
+    Vec2, effect_definition, effect_scrub_spec, egui, icons, read, theme,
 };
 
 impl Panel<'_, '_> {
+    /// The item-relative playhead for a value read, or the clip start outside it.
+    pub(super) fn effect_time(&self, item: ItemId) -> Tick {
+        let Some((start, end)) = read::range_of(self.cx.session.project(), item) else {
+            return Tick::ZERO;
+        };
+        let at = self.cx.playhead;
+        if start <= at && at <= end {
+            at.saturating_sub(start)
+        } else {
+            Tick::ZERO
+        }
+    }
+
     fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
         match definition.kind {
             "blur" => self.tr(Text::EffectBlur),
@@ -31,10 +44,16 @@ impl Panel<'_, '_> {
                 .map(|effect| effect.id.clone())
         });
         let id = existing.unwrap_or_else(|| definition.kind.to_owned());
+        let at = self.effect_time(item);
         for parameter in definition.params {
-            let current =
-                read::effect_param_value(self.cx.session.project(), item, &id, parameter.key)
-                    .unwrap_or(parameter.default);
+            let current = read::effect_param_value_at(
+                self.cx.session.project(),
+                item,
+                &id,
+                parameter.key,
+                at,
+            )
+            .unwrap_or(parameter.default);
             self.effect_scrub_field(ui, item, &id, parameter, current);
         }
     }
@@ -146,12 +165,14 @@ impl Panel<'_, '_> {
                         }
                     });
                     if let Some(definition) = effect_definition(&effect.params) {
+                        let at = self.effect_time(item);
                         for parameter in definition.params {
-                            if let Some(current) = read::effect_param_value(
+                            if let Some(current) = read::effect_param_value_at(
                                 self.cx.session.project(),
                                 item,
                                 &effect.id,
                                 parameter.key,
+                                at,
                             ) {
                                 self.effect_scrub_field(ui, item, &effect.id, parameter, current);
                             }
@@ -210,6 +231,7 @@ impl Panel<'_, '_> {
         ui.add_space(theme::space::MD);
         let label = match parameter.key {
             "intensity" => self.tr(Text::EffectIntensity),
+            "shadow" => self.tr(Text::EffectShadow),
             "brightness" => self.tr(Text::Brightness),
             "contrast" => self.tr(Text::Contrast),
             "saturation" => self.tr(Text::Saturation),
@@ -253,7 +275,7 @@ impl Panel<'_, '_> {
                         / f64::from(spec.pixels_per_step);
                     let value = spec.quantize(scrub.start + steps * spec.step);
                     if value != scrub.last {
-                        self.set_effect_param(item, effect, parameter.key, value);
+                        self.write_effect_param(item, effect, parameter, value);
                         scrub.last = value;
                     }
                 }
@@ -262,7 +284,12 @@ impl Panel<'_, '_> {
             if handle.drag_stopped() {
                 self.finish_scrub(true);
             }
-            let width = ui.available_width().max(60.0);
+            let reserve = if parameter.animatable {
+                theme::size::CONTROL + theme::space::XS
+            } else {
+                0.0
+            };
+            let width = (ui.available_width() - reserve).max(60.0);
             let mut next = self
                 .state
                 .drafts
@@ -309,9 +336,85 @@ impl Panel<'_, '_> {
                         return;
                     }
                     let value = spec.quantize(parsed);
-                    self.set_effect_param(item, effect, parameter.key, value);
+                    self.write_effect_param(item, effect, parameter, value);
                 }
+            }
+            if parameter.animatable {
+                self.effect_keyframe_diamond(ui, item, effect, parameter, current);
             }
         });
     }
+
+    /// An animated channel writes a key at the playhead; every other scalar
+    /// writes the persisted value.
+    fn write_effect_param(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        parameter: &project::EffectParamDefinition,
+        value: f64,
+    ) {
+        let path = effect_param_path(effect, parameter.key);
+        if let Some(time) = self.animated_effect_time(item, &path) {
+            self.actions.push(Action::SetKeyframeAt {
+                item,
+                field: path,
+                time,
+                value,
+            });
+        } else {
+            self.set_effect_param(item, effect, parameter.key, value);
+        }
+    }
+
+    fn animated_effect_time(&self, item: ItemId, path: &str) -> Option<Tick> {
+        if !read::channel_has_keys(self.cx.session.project(), item, path) {
+            return None;
+        }
+        let (start, end) = read::range_of(self.cx.session.project(), item)?;
+        let at = self.cx.playhead;
+        (start <= at && at <= end).then(|| at.saturating_sub(start))
+    }
+
+    /// The reference puts one diamond after each animatable effect control.
+    fn effect_keyframe_diamond(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        parameter: &project::EffectParamDefinition,
+        current: f64,
+    ) {
+        let path = effect_param_path(effect, parameter.key);
+        let Some((start, end)) = read::range_of(self.cx.session.project(), item) else {
+            return;
+        };
+        let at = self.cx.playhead;
+        let inside = start <= at && at <= end;
+        let relative = at.saturating_sub(start);
+        let exists = read::has_key_at(self.cx.session.project(), item, &path, relative);
+        let label = self.tr(if exists {
+            Text::RemoveKeyframe
+        } else {
+            Text::AddKeyframe
+        });
+        let id = format!("effects.{effect}.param.{}.keyframe", parameter.key);
+        let response = ui
+            .add_enabled_ui(inside, |ui| {
+                crate::kit::icon_button(ui, &id, Icon::Diamond, label, exists)
+            })
+            .inner;
+        self.remember_with_icon(id, Some(Icon::Diamond.name()), &response);
+        if response.clicked() && inside {
+            self.actions.push(Action::ToggleKeyframe {
+                item,
+                fields: vec![(path, current)],
+                time: relative,
+            });
+        }
+    }
+}
+
+fn effect_param_path(effect: &str, key: &str) -> String {
+    format!("effects.{effect}.params.{key}")
 }
