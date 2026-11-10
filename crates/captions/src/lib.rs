@@ -11,7 +11,7 @@ pub use interchange::ass;
 pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
 pub use interchange::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
-pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
+pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick, clip_track};
 pub use segment::{
     LineLimit, SegmentRules, Segmentation, SegmentedCue, SourceSpeechUnit, TimingKind,
     segment_transcript, segment_translation, source_speech_units,

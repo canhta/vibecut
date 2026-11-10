@@ -54,15 +54,10 @@ pub(super) fn set_range(
     sources: &mut TrimSources,
 ) -> Result<()> {
     if let ItemParams::Caption(p) = &mut item.content {
-        let mapping = captions::EditMapping::new(vec![(range, range.start())])?;
         let source = sources
             .entry(item.id)
             .or_insert_with(|| Arc::new(p.cues.clone()));
-        let mut cues = mapping.map_cues(source)?;
-        for cue in &mut cues.cues {
-            cue.id = captions::CueFragmentId::from_id(&cue.id)?.source_id;
-        }
-        p.cues = cues;
+        p.cues = captions::clip_track(source, range)?;
     }
     // Keys are item-relative output ticks: they shift by the start edge's output move.
     item.animations.shift(key_shift)?;

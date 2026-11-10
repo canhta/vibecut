@@ -1,6 +1,6 @@
 //! Maps source ticks to output ticks through edit cut lists.
 
-use crate::{CueTrack, Error, NfcText};
+use crate::{Cue, CueTrack, Error, NfcText};
 use time::{SourceRange, Tick};
 
 /// Identity of one occurrence of a source cue in an edit mapping.
@@ -143,6 +143,22 @@ impl EditMapping {
     /// shifted by subtitle repair. Always pass the source track again after an edit,
     /// never a previously mapped track. No input state is mutated on failure.
     pub fn map_cues(&self, source: &CueTrack) -> Result<CueTrack, Error> {
+        self.rebuild(source, |cue, range| {
+            CueFragmentId {
+                source_id: cue.id.clone(),
+                segment: range.segment,
+            }
+            .to_id()
+        })
+    }
+
+    /// Shared retention rule: clone every retained cue, replace its range with the
+    /// mapped output and derive its identity from the mapping occurrence.
+    fn rebuild(
+        &self,
+        source: &CueTrack,
+        identity: impl Fn(&Cue, MappedRange) -> NfcText,
+    ) -> Result<CueTrack, Error> {
         let mut ids = std::collections::BTreeSet::new();
         let mut cues = Vec::new();
         for cue in &source.cues {
@@ -152,11 +168,7 @@ impl EditMapping {
             for range in self.map_range(cue.range)? {
                 let mut fragment = cue.clone();
                 fragment.range = range.output;
-                fragment.id = CueFragmentId {
-                    source_id: cue.id.clone(),
-                    segment: range.segment,
-                }
-                .to_id();
+                fragment.id = identity(cue, range);
                 cues.push(fragment);
             }
         }
@@ -166,6 +178,16 @@ impl EditMapping {
             cues,
         })
     }
+}
+
+/// Clip a source track to one source range. Retained cues keep their source IDs,
+/// text, language, edit flags and translation references; output uses the range's
+/// own coordinates, so a cue at the range start stays at the range start. Partial
+/// cues clamp at the half-open edges, fully cut cues are dropped, and the result
+/// stable-sorts by output start. Duplicate source IDs return `Error::Invalid`.
+/// No input state is mutated on failure.
+pub fn clip_track(source: &CueTrack, range: SourceRange) -> Result<CueTrack, Error> {
+    EditMapping::new(vec![(range, range.start())])?.rebuild(source, |cue, _| cue.id.clone())
 }
 
 fn translate(value: Tick, from: Tick, to: Tick) -> Result<Tick, Error> {
@@ -272,6 +294,57 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn clip_track_rows_keep_source_ids_and_clamp_to_the_half_open_range() {
+        for (case, cue, expected) in [
+            ("inside", (112, 118), Some((112, 118))),
+            ("crosses start", (105, 115), Some((110, 115))),
+            ("crosses end", (115, 125), Some((115, 120))),
+            ("exact range", (110, 120), Some((110, 120))),
+            ("ends on start", (100, 110), None),
+            ("starts on end", (120, 130), None),
+            ("outside", (125, 135), None),
+        ] {
+            let source = track(&[cue]);
+            let original = source.cues.first().unwrap();
+            let clipped = clip_track(&source, range(110, 120)).unwrap();
+            match expected {
+                Some((start, end)) => {
+                    let kept = clipped.cues.first().unwrap();
+                    assert_eq!(
+                        (kept.range.start().0, kept.range.end().0),
+                        (start, end),
+                        "{case}"
+                    );
+                    assert_eq!(kept.id, original.id, "{case}");
+                    assert_eq!(kept.texts, original.texts, "{case}");
+                    assert_eq!(kept.source_lang, original.source_lang, "{case}");
+                }
+                None => assert!(clipped.cues.is_empty(), "{case}"),
+            }
+        }
+        let source = track(&[(105, 115), (112, 118), (115, 125), (125, 135)]);
+        let clipped = clip_track(&source, range(110, 120)).unwrap();
+        assert_eq!(
+            clipped.cues.iter().map(|cue| cue.range).collect::<Vec<_>>(),
+            vec![range(110, 115), range(112, 118), range(115, 120)]
+        );
+        assert_eq!(
+            clipped
+                .cues
+                .iter()
+                .map(|cue| cue.id.clone())
+                .collect::<Vec<_>>(),
+            source
+                .cues
+                .iter()
+                .take(3)
+                .map(|cue| cue.id.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(clipped.styles, source.styles);
     }
 
     #[test]
@@ -449,6 +522,7 @@ mod tests {
         let mut duplicate = track(&[(0, 10), (10, 20)]);
         duplicate.cues.get_mut(1).unwrap().id = duplicate.cues.first().unwrap().id.clone();
         assert!(overlap.map_cues(&duplicate).is_err());
+        assert!(clip_track(&duplicate, range(0, 10)).is_err());
     }
 
     proptest! {

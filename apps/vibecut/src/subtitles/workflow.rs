@@ -132,14 +132,13 @@ impl Workflow for LocalWorkflow {
                     events,
                     cancel,
                 )?;
-                let mapping = captions::EditMapping::new(vec![(range, range.start())])?;
-                let mut cues = mapping.map_cues(&CueTrack {
-                    styles: Vec::new(),
-                    cues: output.cues,
-                })?;
-                for cue in &mut cues.cues {
-                    cue.id = captions::CueFragmentId::from_id(&cue.id)?.source_id;
-                }
+                let cues = captions::clip_track(
+                    &CueTrack {
+                        styles: Vec::new(),
+                        cues: output.cues,
+                    },
+                    range,
+                )?;
                 if cancel.cancelled() {
                     return Err(EditError::Cancelled);
                 }
