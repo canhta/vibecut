@@ -1,6 +1,6 @@
 //! Persisted effect instances and the parameter model; evaluation and devices
 //! belong to render/apps.
-use crate::{AnimationPath, Color, Error, Result};
+use crate::{AnimationPath, Animations, Color, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -266,6 +266,20 @@ impl EffectInstance {
         };
         param.check(&next)?;
         self.params.insert(id.to_owned(), next);
+        Ok(())
+    }
+
+    pub(crate) fn validate_animations(&self, animations: &Animations) -> Result<()> {
+        for key in self.definition()?.animated_ids() {
+            if let Some(param) = animations.get(&self.param_path(key)?)
+                && !matches!(
+                    param.value_at(time::Tick::ZERO)?,
+                    crate::ParamValue::Scalar(_)
+                )
+            {
+                return Err(Error::Invalid("effect animation must be scalar"));
+            }
+        }
         Ok(())
     }
 

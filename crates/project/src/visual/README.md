@@ -30,7 +30,7 @@ Paths admit 4,096 vertices and bounded normalized coordinates. Text admits 4 KiB
 
 Built-in kinds: `blur` has `intensity` 0–100 (default 15, animatable). `color_grade` has `brightness`, `contrast`, `saturation` and `hue`, each -50..=50 with 0 identity (`GRADE_MIN`/`GRADE_MAX`), static; the ranges are not measured parity. `chroma_key` has an opaque `key_color` (default green, static) plus `intensity` and `shadow`, each 0–100 with defaults 40 and 0 measured from the reference and animatable; intensity 0 keys nothing. `effects.update_param` carries one scalar: a float or angle takes the number, a choice its index, a bool 0 or 1 and a colour one packed `0xRRGGBB` (`PACKED_COLOR_MAX`, exact integers only, via `packed_color`), so a colour pick is a single command and one undo step. Points need two components and are not addressable by `update_param`. Scalar channels animate at `effects.<instance-id>.params.<id>` for every animatable parameter of the definition (`EffectDefinition::animated_ids`). Removing an effect removes its animation paths; undo restores both.
 
-`EffectInstance::set_scalar` validates a registered parameter id and value before replacing the parameter; unknown ids and invalid values keep the previous parameter.
+`EffectInstance::set_scalar` validates a registered parameter id and value before replacing the parameter; unknown ids and invalid values keep the previous parameter. Definition-specific animation admission belongs to this owner; [whole-project validation](../model/README.md#project) calls it for each instance.
 
 Pixel-local monochrome, channel mixing, selective colour, threshold, gamma,
 inversion, levels, posterisation, strobe and two-tone definitions use the same typed
