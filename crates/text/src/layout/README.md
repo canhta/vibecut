@@ -13,7 +13,8 @@ Language profiles are owned by `captions`; this crate does not match language ta
 - Left-to-right text only; no bidirectional reordering or vertical layout.
 - Registered faces are never unloaded within a process.
 - No hyphenation, OpenType feature toggles, variable-font axes, colour emoji or hinting.
-- Input text is capped at 16 MiB, canvases at 64 M pixels (256 MiB of RGBA8), font size at 4096 px and explicit line height at 16,384 px.
+- Input text is capped at 16 MiB, font size at 4096 px and explicit line height at 16,384 px.
+- Canvas limits belong to [Rendering](../render/README.md).
 - CR, CRLF, NEL, line separator, paragraph separator, vertical tab and form feed become LF before shaping.
 - Every line's final span is shaped independently whenever a boundary ligature or cross-boundary kerning changes its context; unaffected lines reuse the paragraph shape. A multi-grapheme line that still exceeds the width is split further without dropping its prefix, and a single grapheme wider than the wrap width occupies its own line.
 - Line ranges tile the complete source, apart from intentional max-lines overflow.
