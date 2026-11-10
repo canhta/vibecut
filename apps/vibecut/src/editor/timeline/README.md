@@ -1,40 +1,95 @@
 # Timeline
 
-Each item has a 16 px chevron opening its keyframe lanes. The open set is presentation state stored as `timeline_lanes` in the preference document, keyed by owning project so restarting item ids cannot alias. Save As copies the issuing project's set to the copy's fresh ProjectId; a refused Save As changes neither. Projects removed from the library are pruned at the next preferences save.
+Interface: `State`, `show`, `show_scenes`, `Action`, `Gesture`, `DropZone`, `Media`.
 
-A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee selects, drag retimes with the clips' snapping candidates in one engine gesture, and Delete removes selected diamonds through `keyframes.delete_selection` in one undo step. Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`. Audio clips draw a draggable volume line using the linear-gain squared map over -60..20 dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes show on the line and in the lane.
+Each item has a 16 px chevron opening its keyframe lanes. The open set is presentation
+state stored as `timeline_lanes` in the preference document, keyed by owning project so
+restarting item ids cannot alias. Save As copies the issuing project's set to the copy's
+fresh ProjectId; a refused Save As changes neither. Projects removed from the library are
+pruned at the next preferences save.
 
-Audio clips also carry a fade handle in each bottom corner. Dragging stages `audio.set_fade` through the engine's replacement preview, so release publishes one undo step and returning to the press point preserves a split fade's offset without history. Escape, loss of window focus, hiding the timeline or losing an editable audio target restores the entry project. The stored window clamps to the clip and against the other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a handle re-shapes that edge as one `audio.set_fade` command. Bottom-corner placement is a new design approved for the uncaptured timeline controls; duration fields belong to Properties.
+A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and
+shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee
+selects, drag retimes with the clips' snapping candidates in one engine gesture, and
+Delete removes selected diamonds through `keyframes.delete_selection` in one undo step.
+Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`.
+Audio clips draw a draggable volume line using the linear-gain squared map over -60..20
+dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes
+show on the line and in the lane.
+
+Audio clips also carry a fade handle in each bottom corner. Dragging stages
+`audio.set_fade` through the engine's replacement preview, so release publishes one undo
+step and returning to the press point preserves a split fade's offset without history.
+Escape, loss of window focus, fullscreen hiding the timeline or losing an editable audio
+target restores the entry project. The stored window clamps to the clip and against the
+other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a
+handle re-shapes that edge as one `audio.set_fade` command.
 
 ## Preview axis
 
-The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as
-`preview_axis`, default on) scrubs the player from the pointer. While the
-pointer is over the ruler or the lanes, `view/hover.rs` holds a frame-snapped
-nonnegative pointer time through empty tail beyond the project end, paints a
-vertical guide there and the player footer shows that time in place of the
-playhead. The frame hands the time to the playback
-service's transient hover render, which fences one generation per pointer time,
-so only the latest request is shown. Leaving the timeline or turning the axis
-off returns both the counter and the player to the playhead. The hover time is
-presentation state: it never enters Project JSON, the transport or the undo
-history, and clicking the ruler still moves the playhead while the guide keeps
-following the pointer.
+The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as `preview_axis`,
+default on) scrubs the player from the pointer. While the pointer is over the ruler or the
+lanes, `view/hover.rs` holds a frame-snapped nonnegative pointer time through empty tail
+beyond the project end, paints a vertical guide there and the player footer shows that
+time in place of the playhead. The frame hands the time to the playback service's
+transient hover render, which fences one generation per pointer time, so only the latest
+request is shown. Leaving the timeline or turning the axis off returns both the counter
+and the player to the playhead. The hover time is presentation state: it never enters
+Project JSON, the transport or the undo history, and clicking the ruler still moves the
+playhead while the guide keeps following the pointer.
 
 ## Markers
 
-The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared colour window plus a reset to the engine default, a duration field in seconds stepped by 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo step; drafts stay in the panel and the project changes only when the frame runs the command. The target-free [colour service](../../services/color_picker/README.md) supplies the controls; the marker target and commit action stay in timeline. Escape closes the colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
+The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the
+playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the
+ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared
+colour window plus a reset to the engine default, a duration field in seconds stepped by
+0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo
+step; drafts stay in the panel and the project changes only when the frame runs the
+command. The target-free [colour service](../../services/color_picker/README.md) supplies
+the controls; the marker target and commit action stay in timeline. Escape closes the
+colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
 
 ## Track controls
 
-Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#density), with embedded regular SVG kind icons, output toggles and accessibility-only names. Logical row sizes are constant across DPI; vectors are cached at display density. Empty rows have dashed placeholders. Header context menus remove unlocked secondary tracks and rename tracks inline (Enter commits, Escape cancels). Main has a persisted magnet control in its header and the toolbar. All edits are registered engine commands and refresh the shared preview snapshot; paste comes from the clipboard owner.
+Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#density),
+with embedded regular SVG kind icons, output toggles and accessibility-only names. Logical
+row sizes are constant across DPI. Header context menus remove unlocked secondary tracks
+and rename tracks inline (Enter commits, Escape cancels). The toolbar carries the persisted
+main-track magnet control. All edits are registered engine commands and refresh the shared preview
+snapshot; paste comes from the clipboard owner.
 
-Media insertion reuses an unlocked compatible track only when the playhead range fits, otherwise creates a secondary track at the top of its group. Solid colour is generated Video content, distinct from Sticker tracks. Lock protects item structure and properties, masks, effects and keyframes; selection, playback and track metadata stay usable. Dragging a header reorders within its overlay or audio section; main stays fixed; Escape cancels. The Add track action uses the active item's compatible kind above its track, or Video at the overlay section end with no active item. Commands and undo/persistence: [engine](../../../../../crates/engine/src/session/edit/README.md#edit-semantics-and-limits).
+Media insertion reuses an unlocked compatible track only when the playhead range fits,
+otherwise creates a secondary track at the top of its group. Solid colour is generated
+Video content, distinct from Sticker tracks. Lock protects item structure and properties,
+masks, effects and keyframes; selection, playback and track metadata stay usable. Dragging
+a header reorders within its overlay or audio section; main stays fixed; Escape cancels.
+The Add track action uses the active item's compatible kind above its track, or Video at
+the overlay section end with no active item. Commands and undo/persistence:
+[engine](../../../../../crates/engine/src/session/edit/README.md#edit-semantics-and-limits).
 
 ## Clip visuals
 
-Video and image clips paint the cached thumbnail strip across their visible source range; audio clips, and the audio band inside a video clip, paint the cached waveform. The panel passes its zoom in pixels per second to the engine display query, which maps trim and retime and reads only the cache. Pending displays paint quiet placeholders and ask the frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; failed or unsupported bands show a warning marker instead of retrying, and bars past 0 dBFS get a warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps drawing. The workspace owns the one process `MediaAccess` and lends it here and to the MCP inbox; `visuals.rs` owns this editor's in-flight jobs and uploaded strip textures, and the panel never decodes media or builds a cache key.
+Video and image clips paint the cached thumbnail strip across their visible source range;
+audio clips, and the audio band inside a video clip, paint the cached waveform. The panel
+passes its zoom in pixels per second to the engine display query, which maps trim and
+retime and reads only the cache. Pending displays paint quiet placeholders and ask the
+frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; failed or
+unsupported bands show a warning marker instead of retrying, and bars past 0 dBFS get a
+warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps
+drawing. The workspace owns the one process `MediaAccess` and lends it here and to the MCP
+inbox; `visuals.rs` owns this editor's in-flight jobs and uploaded strip textures, and the
+panel never decodes media or builds a cache key.
 
 ## Scene switcher
 
-The toolbar centres a split button with the current scene name and a scene-list control. The sheet lists all scenes and switches through `scene.switch`; Select mode allows multi-delete but disables main; delete opens an undo-explaining confirmation, which takes Escape before the rename editor. Closing or Escape dismisses the sheet. Per-scene zoom/scroll/playhead restore through Session metadata; item, keyframe and mask-point selection clear on switching. The plus action runs `scene.create` named `Scene N` as one undoable edit, then switches; the sheet stays open. A row context menu opens inline rename for any scene including main (`scene.rename`; Enter commits, Escape cancels); removal of the edited scene by a command or undo discards the edit. New scenes inherit canvas, frame rate and background with an empty timeline.
+The toolbar's right group carries a scene-list button whose tooltip names the current
+scene. The sheet lists all scenes and switches through `scene.switch`; Select mode allows
+multi-delete but disables main; delete opens an undo-explaining confirmation. Escape
+cancels the confirmation before closing the sheet. Per-scene zoom/scroll/playhead restore
+through Session metadata; item, keyframe and mask-point selection clear on switching. The
+plus action runs `scene.create` named `Scene N` as one undoable edit, then switches; the
+sheet stays open. A row context menu opens inline rename for any scene including main
+(`scene.rename`; Enter commits, Escape cancels); removal of the edited scene by a command
+or undo discards the edit. New scenes inherit canvas, frame rate and background with an
+empty timeline.
