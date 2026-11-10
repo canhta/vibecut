@@ -1,9 +1,46 @@
 # Long video to shorts
 
-The Home `home.shorts` card opens a separate native viewport. `Shorts` owns bounded presentation and review history; `LocalVideoWorkflow` composes the [shorts workflow](../../../../crates/shorts/README.md) through `clip_suggest::suggest` on the picked or dropped local video. Provider and model pickers use offline capability data. Local heuristics are an explicit choice. Remote ASR and suggestions stop at an exact per-upload disclosure (provider, model, language, audio duration, payload bytes, cost ceiling, policy links); refusal or cancellation sends no approval and never selects another provider. Missing models and credentials are actionable errors; nothing downloads implicitly.
+Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `LocalVideoWorkflow`,
+`Candidate`, `Decision`, `GenerationRequest`, `Generator`, `Review`, `ReviewSource`,
+`TaskEvents`.
 
-Candidates show title, duration, editorial score, reason and heuristic/AI source. The shared catalog formats metadata and numbers; trim values parse the same en/vi decimal and grouping notation and refuse malformed or mixed input. A runtime locale change refreshes trim drafts without changing source ticks.
+The Home `home.shorts` card opens a separate native viewport. `show` draws the whole
+window and returns the `Action` values the workspace must carry out; `State` owns
+bounded presentation and review history. `LocalVideoWorkflow` composes the
+[shorts workflow](../../../../crates/shorts/README.md) through `clip_suggest::suggest`
+on the picked or dropped local video. Provider and model pickers use offline capability
+data; local heuristics are an explicit choice.
 
-Review keeps roles and both play/source ranks, safe boundary snapping, accept/reject and a source-normalized 9:16 crop. The reusable `crop` control moves within source bounds, with arrow keys and Escape rollback. Review actions have a separate 100-step undo/redo history; a whole crop gesture is one step. `ClipBatch` produces the exact concatenated snapshot and crop placements used by both preview and export, so playback skips source gaps and follows play order. Only accepted shorts submit batch jobs, each with independent progress, cancel and retry; editing a review does not alter an already submitted immutable batch. Source-language captions can be burned and exported as SRT.
+Remote ASR and suggestions stop at an exact per-upload disclosure (provider, model,
+language, audio duration, payload bytes, cost ceiling, policy links); refusal or
+cancellation sends no approval and never selects another provider. Missing models and
+credentials are actionable errors; nothing downloads implicitly.
 
-Open in editor inserts every video segment and mapped source-caption item into a fresh portrait project in one engine transaction, keeping the prepared media's original dimensions while replaying items so first-import initialization preserves the explicit portrait canvas, then hands off to the nonblocking recovery/autosave owner. The window itself plays the selected short from its own prepared snapshot and `services::playback` transport, reusing `services::preview` for the frame upload and `services::progress` for export job progress; preview and every export share the one transient render-state owner that resolves placements against each immutable snapshot, so deleting items and undo/redo leave no stale placement IDs. Review crops are transient; persisted crop channels and later editor crop edits belong to the crop controls.
+Candidates show title, duration, editorial score, reason and heuristic/AI source. The
+shared catalog formats metadata and numbers; trim values parse the same en/vi decimal
+and grouping notation and refuse malformed or mixed input. A runtime locale change
+refreshes trim drafts without changing source ticks.
+
+Review keeps roles and both play and source ranks, safe boundary snapping, accept and
+reject, and a source-normalized 9:16 crop. The reusable `crop` control moves within
+source bounds, with arrow keys and Escape rollback. Review actions have a separate
+100-step undo and redo history; a whole crop gesture is one step. `ClipBatch` produces
+the exact concatenated snapshot and crop placements used by both preview and export, so
+playback skips source gaps and follows play order. Only accepted shorts submit batch
+jobs, each with independent progress, cancel and retry; editing a review does not alter
+an already submitted immutable batch. Source-language captions can be burned and
+exported as SRT.
+
+Preview and every export share the one transient render-state owner that resolves
+placements against each immutable snapshot, so deleting items and undo or redo leave no
+stale placement IDs. Open in editor inserts every video segment and mapped
+source-caption item into a fresh
+portrait project in one engine transaction, keeping the prepared media's original
+dimensions while replaying items so first-import initialization preserves the explicit
+portrait canvas, then hands off to the nonblocking recovery and autosave owner. The
+window plays the selected short from its own prepared snapshot through
+`services::playback`, `services::preview` and `services::progress`. Review crops are
+transient; persisted crop channels and later editor crop edits belong to the crop
+controls.
+
+Geometry: [Long video to shorts window](../../../../docs/product/ui/shorts.md).

@@ -1,5 +1,19 @@
 # Sounds tab
 
-Consumes the libraries sound library. Discover searches the provider when a credential exists, otherwise the saved local library; Saved always reads the local library and works offline. Searches use the commercial-only filter by default; the switch reruns the search without it. Every result shows author, duration, licence and precomputed attribution.
+Interface: `Sounds`, `SoundsView`, `SoundsMode`, `SoundsProblem`, `Client`, `CacheView`.
 
-Save and unsave are local-library operations outside project history. Preview uses the engine play/stop seam and an app-owned cpal sink holding one stream on a dedicated thread. Add copies the cached preview into project media and applies `sounds.add_to_timeline` as one undo step; an uncached add first runs the shared cache job with progress and Cancel and adds only after the preview publishes. Auth, quota, rate-limit, network, server, malformed-response, size, publication and no-audio-device failures are typed states with creator copy; a missing token is a local-only state. The panel changes Project JSON only through the add command.
+Consumes the libraries sound library. Discover searches the provider when a
+credential exists, otherwise the saved local library; Saved always reads the local
+library and works offline. Searches use the commercial-only filter by default; the
+switch reruns the search without it. Results page 30 at a time and every result shows
+author, duration, licence and precomputed attribution.
+
+Save and unsave are local-library operations outside project history. Preview uses the
+engine play/stop seam and an app-owned cpal sink holding one stream on a dedicated
+thread, capped at 120 seconds. Add copies the cached preview into project media and
+applies `sounds.add_to_timeline` as one undo step; an uncached add first runs the
+shared cache job with progress and Cancel and adds only after the preview publishes.
+
+Auth, quota, rate-limit, network, server, malformed-response, size, publication and
+no-audio-device failures are typed states with creator copy; a missing token is a
+local-only state. The panel changes project JSON only through the add command.

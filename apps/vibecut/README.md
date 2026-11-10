@@ -1,16 +1,13 @@
 # vibecut
 
-Native eframe/egui desktop frontend; wgpu presents render's shared CPU compositor. Owns device IO, the audio transport clock, retained preview frames,
-presentation state, stable automation IDs, screenshots, catalog and preferences.
-Engine owns all project edits, job scheduling and aggregate byte accounting;
-render owns every pixel, audio conversion, sample grid and channel mix rule.
+Native eframe/egui desktop frontend; wgpu presents render's shared CPU compositor.
+Owns device IO, the audio transport clock, retained preview frames, presentation
+state, stable automation IDs, screenshots, the catalog and preferences. Engine
+owns every project edit, job scheduling and aggregate byte accounting; render owns
+every pixel, audio conversion, sample grid and channel mix rule.
 
-## Run
-
-Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
-`FFMPEG_DIR`, `PKG_CONFIG_PATH` and native library path, as used by
-[workspace verification](../../docs/engineering/verification.md).
-The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
+Build and provisioning: [verification](../../docs/engineering/verification.md). The
+desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 
 Each module's contract is its README.
 
@@ -66,14 +63,24 @@ Each module's contract is its README.
 | `subtitles.rs` / `subtitles/` | [Subtitles](src/subtitles/README.md) |
 | `workspace.rs` | [Windows and budgets](src/workspace/README.md) |
 
+## Checks
+
+`cargo test -p vibecut` asserts widget and engine state and writes no image. `cargo
+xtask ui-audit [SCENE...]` renders named scenes offscreen through the automation IDs
+at 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
+`index.html` beside each `.spikes/ui-reference/` counterpart; it waits for every
+async effect preview to settle, opens no native window and never runs in
+`cargo xtask ci`. Device performance is recorded from observed native runs only.
+
+`--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples and
+one window screenshot, then closes, using the production device, jobs, renderer and
+frontend. `--headless-smoke NEW_DIRECTORY` starts the real workspace, creates an
+editor and draws three egui frames without a window, graphics device or audio
+output, then joins jobs and exits; it refuses an existing directory.
+
 ## Platforms and evidence
 
-The runtime PNG supplies the window/Dock icon; Windows resources embed the committed ICO via embed-resource. `packaging/macos-app.sh` stages the macOS installer. [Native distribution](../../packaging/README.md) owns both installers, source receipts, signing, replacement and runtime verification. The shared FFmpeg dependency is LGPL; see the [distribution and replacement rules](../../docs/engineering/open-source.md#ffmpeg-distribution). Native layered appearance and clean-host release acceptance need separate evidence.
-
-`cargo test -p vibecut` asserts widget and engine state only and writes no image. `cargo xtask ui-audit [SCENE...]` renders named scenes offscreen through the automation IDs at 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an `index.html` beside each `.spikes/ui-reference/` counterpart. It waits for every async effect preview to settle before capturing, so repeated runs of one revision produce identical files. It opens no native window and never runs in `cargo xtask ci`, which is the handoff check. Device performance (A/V lag, underruns, peak RSS) is recorded only from observed native runs, never from tests.
-
-`--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples and one fresh window screenshot, then closes. It uses the production device, engine jobs, renderer and frontend, and sends no media remotely.
-
-## Distribution startup
-
-`--headless-smoke NEW_DIRECTORY` starts the real workspace, creates an editor and draws three egui frames without a window, graphics device or audio output, then joins jobs and exits. It refuses an existing directory so it cannot consume recovery data. [Packaging](../../packaging/README.md) owns its clean-runner use and the native-device verification limits.
+The runtime PNG supplies the window and Dock icon; Windows resources embed the
+committed ICO through embed-resource. [Native distribution](../../packaging/README.md)
+owns both installers, source receipts, signing, replacement and runtime verification.
+The shared FFmpeg dependency is LGPL ([distribution rules](../../docs/engineering/open-source.md#ffmpeg-distribution)).

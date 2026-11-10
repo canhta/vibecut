@@ -1,11 +1,29 @@
 # Subtitles
 
-Presents the captions panel: cue editing, translation staging and export requests over engine's subtitle owners.
+Interface: `Subtitles`, `Options`, `TaskEvents`.
 
-The spoken-language select lists Auto plus every language the configured ASR adapters accept. Auto is the default; a project's explicit choice is stored in `Options::project_sources`, so another project starts from Auto. Auto runs the local language detector first and passes the detected tag explicitly to every recognition request.
+Presents the captions panel: cue editing, translation staging and export requests over
+engine's subtitle owners. Requests the panel cannot apply itself are queued for the frame.
 
-A silent clip returns `NoSpeech`; a mean recognized-word confidence below the engine floor returns `LowConfidence`. Both name the likely wrong language, and an explicit-language run offers one click to retry the same source with Auto (Auto never offers it).
+The spoken-language select lists Auto plus every language the configured ASR adapters
+accept. Auto is the default; a project's explicit choice is stored in
+`Options::project_sources`, so another project starts from Auto. Auto runs the local
+language detector first and passes the detected tag explicitly to every recognition
+request.
 
-`subtitles.split` cuts at the playhead. In a cue field, Enter cuts at the caret's nearest word boundary, Shift+Enter inserts a line break, and Backspace at the start or Delete at the end merges with the previous or next cue. Unspaced scripts cut on grapheme boundaries; separated scripts only between words. With native ASR word timings the source-language cut time is the end of the word before the caret; otherwise the span divides at the caret's text fraction, and the playhead split snaps to the nearest native word edge. Empty or zero-length results are refused. Split and each merge commit one engine command, one undo step.
+A silent clip returns `NoSpeech`; a mean recognized-word confidence below the engine
+floor returns `LowConfidence`. Both name the likely wrong language, and an
+explicit-language run offers one click to retry the same source with Auto (Auto never
+offers it).
 
-Import accepts SRT/VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue per line with no timings, serialized by captions.
+`subtitles.split` cuts at the playhead. In a cue field, Enter cuts at the caret's nearest
+word boundary, Shift+Enter inserts a line break, and Backspace at the start or Delete at
+the end merges with the previous or next cue. Unspaced scripts cut on grapheme
+boundaries; separated scripts only between words. With native ASR word timings the
+source-language cut time is the end of the word before the caret; otherwise the span
+divides at the caret's text fraction, and the playhead split snaps to the nearest native
+word edge. Empty or zero-length results are refused. Split and each merge commit one
+engine command, one undo step.
+
+Import accepts SRT and VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue
+per line with no timings, serialized by captions.

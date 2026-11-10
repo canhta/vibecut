@@ -1,9 +1,20 @@
 # Captions panel
 
-The Captions tab owns `subtitles` presentation over engine's capability catalog, ASR/checkpoint workflow, translation windows and export jobs. Opening a picker constructs no adapter and downloads no model. Local Whisper is the initial choice, Gipformer appears only for Vietnamese, OpenAI and ElevenLabs are remote ASR choices, OpenAI and Anthropic are translation choices. Settings persist in preferences; approval, transcripts and the session glossary do not.
+Interface: `show`, `queue_requests`.
 
-SRT/VTT imports keep the file's content identity as an internal SourceAsset and insert asset and caption item in one undoable batch. Generate targets one selected media item, clips source cues to its source range and inserts at its output start. Translation stages a snapshot and applies one content command only against the original Session revision; a changed provider or language cancels the pending run, and denial, cancellation, stale results and failures apply nothing. `ai_task` coalesces progress and holds one exact upload request whose modal survives tab switches. Disclosures show provider/model, languages, payload size, duration, cost and the provider's HTTPS policy links. Models on a missing bundle opens the model manager.
+The Captions tab mounts the [subtitles](../../subtitles/README.md) panel inside the
+assets area. Opening a picker constructs no adapter and downloads no model. Settings
+persist in preferences; approval, transcripts and the session glossary do not. Requests
+the panel cannot apply itself are queued and drained by the frame after the tab
+returns.
 
-Cue times seek in output coordinates. Shift extends a range from a cue identity (after a merge the surviving selection is the anchor); Cmd/Ctrl toggles. Text edits keep independent language edit/provenance flags and normalize through captions. Drafts commit on leaving a field, switching tabs, and on cue, page, item, language and timing actions; unrelated project edits keep them, and a concurrent change to the same caption keeps a copyable draft until explicit reload. Focused text never triggers timeline shortcuts. Split uses the playhead time and whole graphemes; merge needs adjacent cues with matching languages. One-frame nudges refuse overlaps and item-boundary crossings atomically. All edits are registered engine commands in the shared history.
+Cue times seek in output coordinates. Shift extends a range from a cue identity (after
+a merge the surviving selection is the anchor); Cmd/Ctrl toggles. Text edits keep
+independent language edit and provenance flags and normalize through captions. Drafts
+commit on leaving a field, switching tabs, and on cue, page, item, language and timing
+actions; unrelated project edits keep them, and a concurrent change to the same
+caption keeps a copyable draft until explicit reload. Focused text never triggers
+timeline shortcuts. All edits are registered engine commands in the shared history.
 
-Lists page at 50 cues; imports cap at 16 MiB and 10,000 cues, text at 64 KiB per field, glossary at 128 entries. Reading-speed warnings follow LanguageProfile data. The bundled common-Chinese font subset is the egui fallback.
+Cue, import, text and glossary limits belong to [captions](../../../../../crates/captions/README.md).
+Design: [captions workflow](../../../../../docs/product/ui/editor.md#captions-workflow).
