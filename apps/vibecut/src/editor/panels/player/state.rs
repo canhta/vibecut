@@ -16,6 +16,8 @@ pub(crate) struct State {
     pub(in crate::editor) texture: preview::FrameTexture,
     /// Armed chroma-key eyedropper, cleared by its pick, Escape or a selection change.
     pub(in crate::editor) key_color_pick: Option<KeyPick>,
+    /// Last view state read from the session metadata.
+    pub(in crate::editor) last_view: project::ViewState,
 }
 impl State {
     pub(in crate::editor) fn new(fit: bool, zoom: f64) -> Self {
@@ -33,6 +35,7 @@ impl State {
             timecode_error: None,
             texture: preview::FrameTexture::default(),
             key_color_pick: None,
+            last_view: project::ViewState::default(),
         }
     }
 }

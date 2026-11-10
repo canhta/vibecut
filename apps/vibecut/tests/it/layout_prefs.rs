@@ -162,7 +162,7 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
                 }),
             );
         harness.run_steps(3);
-        let header = harness.state().panels["header"];
+        let header = harness.state().panels()["header"];
         let export = widget(&harness, "file.export").rect;
         assert_eq!(header.height(), 36.0);
         assert_eq!(export.size(), egui::vec2(67.0, 22.0));
@@ -171,7 +171,7 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
         assert!(
             (widget(&harness, "project.rename").rect.center().x - header.center().x).abs() < 0.5
         );
-        let panels = &harness.state().panels;
+        let panels = &harness.state().panels();
         assert_eq!(panels["media"].left() - header.left(), 9.0);
         assert_eq!(panels["media"].top(), header.bottom());
         assert_eq!(panels["preview"].left() - panels["media"].right(), 7.0);
@@ -222,9 +222,9 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
     let store = PreferenceStore::new(dir.path().join("preferences.json"));
     let mut harness = build(editor(Preferences::default()));
     harness.run_steps(3);
-    let full_width = harness.state().panels["media"].width()
-        + harness.state().panels["preview"].width()
-        + harness.state().panels["inspector"].width();
+    let full_width = harness.state().panels()["media"].width()
+        + harness.state().panels()["preview"].width()
+        + harness.state().panels()["inspector"].width();
     drag(&mut harness, "layout.media", egui::vec2(10_000.0, 0.0));
     let wide = harness.state().preferences.panels;
     assert!((wide[0] - 0.40).abs() < f32::EPSILON);
@@ -245,7 +245,7 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
     let restored = store.load().unwrap();
     let mut restarted = build(editor(restored.clone()));
     restarted.run_steps(3);
-    let media = restarted.state().panels["media"].width();
+    let media = restarted.state().panels()["media"].width();
     assert!(
         (media - full_width * restored.panels[0]).abs() < 1.0,
         "restored left width {media} should match {}",
@@ -312,7 +312,7 @@ fn hostile_window_sizes_keep_finite_nonnegative_panel_geometry() {
             drag(&mut harness, "layout.media", egui::vec2(10_000.0, 0.0));
             drag(&mut harness, "layout.timeline", egui::vec2(0.0, -10_000.0));
         }
-        for (id, rect) in &harness.state().panels {
+        for (id, rect) in harness.state().panels() {
             assert!(
                 rect.is_finite() && rect.width() >= 0.0 && rect.height() >= 0.0,
                 "{size:?} {id}: {rect:?}"

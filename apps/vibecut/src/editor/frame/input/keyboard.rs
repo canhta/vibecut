@@ -66,8 +66,8 @@ impl Editor {
         // The shortcuts dialog records the next chord itself and owns Escape.
         // Capture before panels so a recorded key cannot also press a focused
         // control in the same frame.
-        if self.shortcuts_open {
-            if self.shortcut_recording.is_some() {
+        if self.frame.shortcuts_open {
+            if self.frame.shortcut_recording.is_some() {
                 let _ = self.capture_shortcut(ctx);
             } else if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.close_shortcuts();
@@ -81,7 +81,7 @@ impl Editor {
         }
         let context = self.dispatch_context(ctx);
         let outcome = {
-            let keymap = &self.keymap;
+            let keymap = &self.frame.keymap;
             ctx.input_mut(|input| keymap.take(input, context))
         };
         match outcome {
@@ -98,13 +98,13 @@ impl Editor {
         DispatchContext {
             overlay_open: self.subtitles.as_ref().is_some_and(|s| s.modal_open())
                 || self.timeline.scenes.is_open()
-                || self.shortcuts_open
+                || self.frame.shortcuts_open
                 || self.dialogs.export.is_open()
                 || self.dialogs.models.is_open(),
             // There is no Editor while a project is loading; the workspace shows
             // its own progress surface and dispatches no actions.
             project_loading: false,
-            recording: self.recording_active,
+            recording: self.frame.recording_active,
             text_input: self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
                 || ctx.text_edit_focused()
                 || self.frame.rename.is_some()
@@ -120,10 +120,10 @@ impl Editor {
         false
     }
     pub fn set_recording_active(&mut self, active: bool) {
-        self.recording_active = active;
+        self.frame.recording_active = active;
     }
     pub fn recording_active(&self) -> bool {
-        self.recording_active
+        self.frame.recording_active
     }
 }
 

@@ -1254,7 +1254,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         "timeline actions use the measured 24x24 icon-only hit box, got {:?}",
         split.rect
     );
-    let timeline = harness.state().panels["timeline"];
+    let timeline = harness.state().panels()["timeline"];
     assert!(
         (split.rect.min.y - timeline.top() - 4.0).abs() < 0.5,
         "timeline toolbar uses its measured 32 px row within the full panel slot"
@@ -1903,9 +1903,9 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
             harness.run_steps(3);
             let button = widget(&harness, "text.insert");
             assert!(
-                harness.state().panels["media"].contains_rect(button),
+                harness.state().panels()["media"].contains_rect(button),
                 "{locale:?} at {width}: {button:?} outside {:?}",
-                harness.state().panels["media"]
+                harness.state().panels()["media"]
             );
             let before = count(harness.state());
             let project = harness.state().session.project().clone();
@@ -1936,7 +1936,7 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
         .get(By::new().predicate(|n| n.author_id() == Some("text.insert")))
         .click();
     harness.run_steps(3);
-    let panel = harness.state().panels["inspector"];
+    let panel = harness.state().panels()["inspector"];
     harness
         .input_mut()
         .events

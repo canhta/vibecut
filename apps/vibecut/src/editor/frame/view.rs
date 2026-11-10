@@ -1,6 +1,7 @@
 //! Composes the editor window.
 use crate::editor::{
-    Command, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
+    Command, Editor, Icon, Id, Rect, Text, Vec2, actions, drag_panel, egui, error_detail, i18n,
+    icons, theme,
 };
 
 impl Editor {
@@ -45,8 +46,8 @@ impl Editor {
         Self::theme(ui.ctx(), self.preferences.dark);
         crate::kit::install_editor_density(ui.ctx());
         ui.style_mut().interaction.selectable_labels = false;
-        self.widgets.clear();
-        self.panels.clear();
+        self.frame.widgets.clear();
+        self.frame.panels.clear();
         self.tick();
         // History and external commands can remove what the timeline is editing.
         self.timeline.forget_missing(&self.session);
@@ -105,7 +106,7 @@ impl Editor {
             ("inspector", right),
             ("timeline", timeline),
         ] {
-            self.panels.insert(id, area);
+            self.frame.panels.insert(id, area);
             let fill = if id == "header" {
                 theme::window(self.preferences.dark)
             } else {
@@ -199,12 +200,13 @@ impl Editor {
             .properties
             .scrub
             .as_ref()
-            .is_some_and(|scrub| !self.widgets.contains_key(&scrub.target.widget_id()))
+            .is_some_and(|scrub| !self.frame.widgets.contains_key(&scrub.target.widget_id()))
         {
             self.finish_scrub(false);
         }
         if self.properties.reorder.as_ref().is_some_and(|drag| {
             !self
+                .frame
                 .widgets
                 .contains_key(&format!("effects.row.{}.handle", drag.effect))
         }) {
@@ -226,7 +228,8 @@ impl Editor {
         self.properties = properties;
         for widget in self.properties.take_widgets() {
             self.remember_with_icon(widget.id.clone(), widget.icon, &widget.response);
-            if let (Some(tooltip), Some(state)) = (widget.tooltip, self.widgets.get_mut(&widget.id))
+            if let (Some(tooltip), Some(state)) =
+                (widget.tooltip, self.frame.widgets.get_mut(&widget.id))
             {
                 state.tooltip = Some(tooltip);
             }
@@ -281,7 +284,7 @@ impl Editor {
                     response,
                 } => {
                     self.remember_with_icon(&id, icon, &response);
-                    if let Some(widget) = self.widgets.get_mut(&id) {
+                    if let Some(widget) = self.frame.widgets.get_mut(&id) {
                         widget.tooltip = tooltip;
                     }
                 }
@@ -347,7 +350,7 @@ impl Editor {
         let actions = super::show(&mut frame, &cx, ui);
         drop(cx);
         self.frame = frame;
-        for (id, icon, response) in std::mem::take(&mut self.frame.widgets) {
+        for (id, icon, response) in std::mem::take(&mut self.frame.painted) {
             self.remember_with_icon(id, icon, &response);
         }
         for action in actions {
@@ -363,5 +366,61 @@ impl Editor {
                 }
             }
         }
+    }
+    /// Record one painted control for automation reads.
+    pub(in crate::editor) fn remember(&mut self, id: impl Into<String>, response: &egui::Response) {
+        self.frame.widgets.remember(id, response);
+    }
+    /// Record one painted control with the icon its tooltip shows.
+    pub(in crate::editor) fn remember_with_icon(
+        &mut self,
+        id: impl Into<String>,
+        icon: Option<&'static str>,
+        response: &egui::Response,
+    ) {
+        self.frame.widgets.remember_with_icon(id, icon, response);
+    }
+    /// One icon-only control that records its action and shortcut in a tooltip.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::editor) fn icon_only(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        icon: Icon,
+        label: &str,
+        shortcut: Option<&str>,
+        selected: Option<bool>,
+        enabled: bool,
+    ) -> bool {
+        let enabled = enabled && actions::action(id).is_none_or(|_| self.action_enabled(id));
+        let locale = self.preferences.locale;
+        let tooltip = shortcut.map_or_else(
+            || label.to_owned(),
+            |key| {
+                i18n::format(
+                    locale,
+                    Text::ActionShortcut,
+                    &[("action", label), ("shortcut", key)],
+                )
+            },
+        );
+        let is_selected = selected.unwrap_or(false);
+        let response = ui
+            .add_enabled_ui(enabled, |ui| {
+                crate::kit::icon_button(ui, id, icon, &tooltip, is_selected)
+            })
+            .inner;
+        response.widget_info(|| {
+            if let Some(selected) = selected {
+                egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, selected, &tooltip)
+            } else {
+                egui::WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip)
+            }
+        });
+        self.remember_with_icon(id, Some(icon.name()), &response);
+        if let Some(state) = self.frame.widgets.get_mut(id) {
+            state.tooltip = Some(tooltip);
+        }
+        enabled && response.clicked()
     }
 }

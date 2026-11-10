@@ -435,7 +435,7 @@ fn search_filter_save_preview_and_add_use_the_sounds_contract() {
     assert!(has_widget(&harness, "sounds.preview.1"));
     assert!(has_widget(&harness, "sounds.save.1"));
     assert!(has_widget(&harness, "sounds.add.1"));
-    let panel = harness.state().panels["media"];
+    let panel = harness.state().panels()["media"];
     for id in ["sounds.preview.1", "sounds.save.1", "sounds.add.1"] {
         assert!(
             panel.intersects(widget_rect(&harness, id)),

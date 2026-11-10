@@ -25,7 +25,7 @@ impl Editor {
                         widget.glyph.map(|glyph| glyph.name()),
                         &widget.response,
                     );
-                    if let Some(state) = self.widgets.get_mut(&widget.id) {
+                    if let Some(state) = self.frame.widgets.get_mut(&widget.id) {
                         state.tooltip = widget.tooltip;
                     }
                 }

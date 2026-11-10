@@ -275,9 +275,9 @@ impl Editor {
                     .transport(Transport::End, self.session.project().clone())?,
                 UiAction::Undo | UiAction::Redo => {
                     let preference_changed = if action == UiAction::Undo {
-                        self.preference_history.undo(&mut self.preferences)
+                        self.frame.preference_history.undo(&mut self.preferences)
                     } else {
-                        self.preference_history.redo(&mut self.preferences)
+                        self.frame.preference_history.redo(&mut self.preferences)
                     };
                     if !preference_changed {
                         self.session.apply(if action == UiAction::Undo {

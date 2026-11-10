@@ -16,14 +16,14 @@ mod state;
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 use state::{
     AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
-    PreferenceCommand, PreferenceHistory, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT,
-    SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
-    TEXT_SIZE_SCRUB, Toast,
+    PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
+    SHORTCUT_TITLE_SIZE, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, Toast,
 };
 pub use state::{
     AssetInspection, AssetState, Editor, Inspection, PreviewAxis, PreviewGuide, ShortcutRow,
-    ShortcutTab, ShortcutsInspection, TextCaret, WidgetState,
+    ShortcutTab, ShortcutsInspection, TextCaret,
 };
+pub use widgets::WidgetState;
 
 mod timing;
 use timing::{display_short_time, display_time};
@@ -99,6 +99,24 @@ impl Editor {
     pub(crate) fn fonts(ctx: &egui::Context) {
         crate::kit::install_fonts(ctx);
     }
+    pub(in crate::editor) fn tr(&self, key: Text) -> &'static str {
+        i18n::text(self.preferences.locale, key)
+    }
+    pub(in crate::editor) fn accent(&self) -> Color32 {
+        theme::accent(self.preferences.dark)
+    }
+    pub(in crate::editor) fn panel_fill(&self) -> Color32 {
+        theme::panel(self.preferences.dark)
+    }
+    pub(in crate::editor) fn control_fill(&self) -> Color32 {
+        theme::field(self.preferences.dark)
+    }
+    pub(in crate::editor) fn border(&self) -> Color32 {
+        theme::border(self.preferences.dark)
+    }
+    pub(in crate::editor) fn secondary(&self) -> Color32 {
+        theme::secondary(self.preferences.dark)
+    }
     /// Inject the catalog command adapter. Production opens it lazily; tests
     /// and audits supply a recording fake.
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
@@ -146,9 +164,6 @@ impl Editor {
         let selection = session.selection().clone();
         let preferences_fit = preferences.preview_fit;
         let preferences_zoom = preferences.preview_zoom;
-        let keymap = Keymap::resolve(&preferences.keybindings);
-        let keybinding_issues = keymap.issues().to_vec();
-        let keymap_source = preferences.keybindings.clone();
         let project = session.project().data().id;
         let media = timeline::Media::new(playback.budget().clone());
         let timeline_lanes: Vec<ItemId> = preferences
@@ -159,15 +174,13 @@ impl Editor {
             .copied()
             .map(ItemId)
             .collect();
+        let mut player = panels::player::State::new(preferences_fit, preferences_zoom);
+        player.last_view = view;
+        let frame = frame::State::new(&preferences);
         Self {
             session,
             playback,
             preferences,
-            preference_history: PreferenceHistory::default(),
-            keymap,
-            keymap_source,
-            keybinding_issues,
-            recording_active: false,
             overlay_open: false,
             selection,
             selection_scopes: SelectionScopes::default(),
@@ -175,11 +188,8 @@ impl Editor {
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),
             effect_drag: None,
-            last_view: view,
-            widgets: BTreeMap::new(),
-            panels: BTreeMap::new(),
-            frame: frame::State::default(),
-            player: panels::player::State::new(preferences_fit, preferences_zoom),
+            frame,
+            player,
             timeline: {
                 let mut state = timeline::State::new(zoom, scroll);
                 state.restore_lanes(timeline_lanes);
@@ -208,10 +218,6 @@ impl Editor {
             media_reveal: None,
             media_delete_confirm: None,
             dialogs: dialogs::State::default(),
-            shortcuts_open: false,
-            shortcut_tab: ShortcutTab::Timeline,
-            shortcut_recording: None,
-            shortcut_error: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
             pending_imports: BTreeMap::new(),
@@ -225,6 +231,10 @@ impl Editor {
             font_backend: None,
             requests: Vec::new(),
         }
+    }
+    /// Panel rectangles from the last painted frame, for automation reads.
+    pub fn panels(&self) -> &BTreeMap<&'static str, Rect> {
+        &self.frame.panels
     }
     /// Attach the engine autosave owner without duplicating its Session.
     pub fn persisted(
@@ -243,7 +253,7 @@ impl Editor {
         let media_highlight = self.media_reveal.map(|reveal| reveal.asset);
         let media_delete_pending = self.media_delete_confirm.clone().unwrap_or_default();
         Ok(Inspection {
-            widgets: self.widgets.values().cloned().collect(),
+            widgets: self.frame.widgets.values().cloned().collect(),
             view: "editor",
             playing: self.playback.playing(),
             position: self.playback.position()?,
@@ -359,7 +369,7 @@ impl Editor {
                 .map(panels::player::crop::Dialog::inspect),
             subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
-            keybinding_issues: self.keybinding_issues.clone(),
+            keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.picker.as_ref().map(|p| p.color),
             eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
@@ -368,7 +378,7 @@ impl Editor {
                 .font_picker
                 .inspect(&self.preferences.font_picker),
             text_caret: self.player.transform.text_caret(),
-            shortcuts: self.shortcuts_open.then(|| {
+            shortcuts: self.frame.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
                 let rows = actions::actions()
                     .iter()
@@ -395,9 +405,9 @@ impl Editor {
                     })
                     .collect();
                 ShortcutsInspection {
-                    tab: self.shortcut_tab,
-                    recording: self.shortcut_recording.map(str::to_owned),
-                    error: self.shortcut_error.clone(),
+                    tab: self.frame.shortcut_tab,
+                    recording: self.frame.shortcut_recording.map(str::to_owned),
+                    error: self.frame.shortcut_error.clone(),
                     rows,
                 }
             }),

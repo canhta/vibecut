@@ -12,7 +12,8 @@ impl Editor {
         if before != after {
             // An editing mode must not shadow the project edit's next Undo.
             if key != "ripple" {
-                self.preference_history
+                self.frame
+                    .preference_history
                     .record(PreferenceCommand::new(key, before, after));
             }
             if key == "keybindings" {

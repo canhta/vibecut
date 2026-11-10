@@ -188,7 +188,7 @@ impl Editor {
         }
         let stored = self.session.metadata().view;
         // Other adapters can issue the engine view command between frontend actions.
-        if stored != self.last_view {
+        if stored != self.player.last_view {
             let zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
                 .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM))
                 as f32;
@@ -201,7 +201,7 @@ impl Editor {
                 self.playback.playing(),
                 self.session.project().clone(),
             )?;
-            self.last_view = stored;
+            self.player.last_view = stored;
         }
         let view = project::ViewState {
             zoom: f64::from(self.timeline.zoom()) / f64::from(DEFAULT_ZOOM),
@@ -216,7 +216,7 @@ impl Editor {
                 playhead: view.playhead,
             })?;
         }
-        self.last_view = view;
+        self.player.last_view = view;
         Ok(())
     }
     pub(in crate::editor) fn seek_to(&mut self, at: Tick) {

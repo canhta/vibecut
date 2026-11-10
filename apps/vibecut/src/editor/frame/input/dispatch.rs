@@ -251,14 +251,14 @@ impl Editor {
                 action: UiAction::Undo,
                 ..
             } => {
-                self.preference_history.can_undo()
+                self.frame.preference_history.can_undo()
                     || engine::CommandKind::Undo.enabled(&self.session)
             }
             ActionTarget::Ui {
                 action: UiAction::Redo,
                 ..
             } => {
-                self.preference_history.can_redo()
+                self.frame.preference_history.can_redo()
                     || engine::CommandKind::Redo.enabled(&self.session)
             }
             ActionTarget::Ui {

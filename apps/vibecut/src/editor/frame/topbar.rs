@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
-    state.widgets.clear();
+    state.painted.clear();
     let mut actions = Vec::new();
     let tr = |key| i18n::text(cx.locale, key);
     let rect = ui.max_rect();
@@ -41,7 +41,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 .align(Align2::CENTER_CENTER),
         );
         state
-            .widgets
+            .painted
             .push(("project.rename.input", None, response.clone()));
         if state.rename_focus {
             response.request_focus();
@@ -67,7 +67,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 .truncate(),
             )
             .on_hover_text(tr(Text::ProjectsRenameTitle));
-        state.widgets.push((
+        state.painted.push((
             "project.rename",
             Some(Icon::PencilSimple.name()),
             response.clone(),
@@ -93,7 +93,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         kit::size::EXPORT_WIDTH,
     );
     state
-        .widgets
+        .painted
         .push(("file.export", Some(Icon::Export.name()), response.clone()));
     if response.clicked() {
         actions.push(Action::Activate("file.export"));
@@ -138,7 +138,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 })
                 .inner;
             state
-                .widgets
+                .painted
                 .push((id, Some(icon.name()), response.clone()));
             if response.clicked() {
                 actions.push(Action::Activate(id));
@@ -147,7 +147,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         }
     });
     state
-        .widgets
+        .painted
         .push(("window.menu", Some(Icon::SlidersHorizontal.name()), menu));
     actions
 }

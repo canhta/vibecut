@@ -628,10 +628,10 @@ fn retry_widget_recovers_after_a_transient_panic_and_clears_its_error_state() {
         .find(|widget| widget.id == "preview.retry")
         .unwrap();
     assert!(
-        harness.state().panels["preview"].contains_rect(retry.rect),
+        harness.state().panels()["preview"].contains_rect(retry.rect),
         "Retry must be inside the player panel: {:?} versus {:?}",
         retry.rect,
-        harness.state().panels["preview"]
+        harness.state().panels()["preview"]
     );
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("preview.retry")))

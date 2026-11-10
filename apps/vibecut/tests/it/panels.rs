@@ -241,7 +241,7 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
     ) || id.starts_with("inspector.text_")
     {
         for _ in 0..12 {
-            let panel = harness.state().panels["inspector"];
+            let panel = harness.state().panels()["inspector"];
             let top = widget_rect(harness, "inspector.tab.text").bottom() + 8.0;
             let viewport = egui::Rect::from_min_max(
                 egui::pos2(panel.left() + 12.0, top),
@@ -455,7 +455,7 @@ fn color_picker_is_a_popover_left_of_the_properties_panel() {
     harness.run_steps(3);
     select(&mut harness, fixture.graphic);
     click(&mut harness, "inspector.graphic_fill");
-    let panel = harness.state().panels["inspector"];
+    let panel = harness.state().panels()["inspector"];
     let picker = harness
         .state()
         .inspect()
@@ -1918,7 +1918,7 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
         "the popover opens below the field"
     );
     assert!(
-        search.left() >= harness.state().panels["inspector"].left(),
+        search.left() >= harness.state().panels()["inspector"].left(),
         "the popover stays inside the properties panel"
     );
     let star = widget_rect(&harness, "fonts.favorite.Inter");

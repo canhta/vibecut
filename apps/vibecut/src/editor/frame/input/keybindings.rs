@@ -35,23 +35,16 @@ impl Editor {
     /// Open the shortcuts dialog. Rows read the live effective bindings, so a
     /// command or undo elsewhere is reflected on the next frame.
     pub fn open_shortcuts(&mut self) {
-        self.shortcuts_open = true;
-        self.shortcut_tab = ShortcutTab::Timeline;
-        self.shortcut_recording = None;
-        self.shortcut_error = None;
+        self.frame.open_shortcuts();
     }
     pub(in crate::editor) fn close_shortcuts(&mut self) {
-        self.shortcuts_open = false;
-        self.shortcut_recording = None;
-        self.shortcut_error = None;
+        self.frame.close_shortcuts();
     }
     pub fn shortcut_tab(&self) -> ShortcutTab {
-        self.shortcut_tab
+        self.frame.shortcut_tab
     }
     pub fn set_shortcut_tab(&mut self, tab: ShortcutTab) {
-        self.shortcut_tab = tab;
-        self.shortcut_recording = None;
-        self.shortcut_error = None;
+        self.frame.set_shortcut_tab(tab);
     }
     /// Record one chord for an action. The dialog calls this after a key press;
     /// tests also use it for chord text no egui key event can produce.
@@ -61,12 +54,12 @@ impl Editor {
             serde_json::json!({"action": action, "bindings": [chord]}),
         ) {
             Ok(()) => {
-                self.shortcut_error = None;
-                self.shortcut_recording = None;
+                self.frame.shortcut_error = None;
+                self.frame.shortcut_recording = None;
                 Ok(())
             }
             Err(error) => {
-                self.shortcut_error = Some(self.shortcut_error_message(&error));
+                self.frame.shortcut_error = Some(self.shortcut_error_message(&error));
                 Err(error)
             }
         }
@@ -99,7 +92,7 @@ impl Editor {
     /// without closing the dialog; the returned bool tells the dialog that this
     /// frame's Escape was consumed by the recording gesture.
     pub(in crate::editor) fn capture_shortcut(&mut self, ctx: &egui::Context) -> bool {
-        let Some(action) = self.shortcut_recording else {
+        let Some(action) = self.frame.shortcut_recording else {
             return false;
         };
         let mut pressed = None;
@@ -129,8 +122,8 @@ impl Editor {
             }
         });
         if cancel {
-            self.shortcut_recording = None;
-            self.shortcut_error = None;
+            self.frame.shortcut_recording = None;
+            self.frame.shortcut_error = None;
             return true;
         }
         if let Some((key, modifiers)) = pressed {
@@ -149,10 +142,10 @@ impl Editor {
     }
     /// Rebuild only when the persisted map changes, including direct test edits.
     pub(in crate::editor) fn sync_keymap(&mut self) {
-        if self.keymap_source != self.preferences.keybindings {
-            self.keymap = Keymap::resolve(&self.preferences.keybindings);
-            self.keybinding_issues = self.keymap.issues().to_vec();
-            self.keymap_source = self.preferences.keybindings.clone();
+        if self.frame.keymap_source != self.preferences.keybindings {
+            self.frame.keymap = Keymap::resolve(&self.preferences.keybindings);
+            self.frame.keybinding_issues = self.frame.keymap.issues().to_vec();
+            self.frame.keymap_source = self.preferences.keybindings.clone();
         }
     }
 }

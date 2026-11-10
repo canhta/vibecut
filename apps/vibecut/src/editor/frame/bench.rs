@@ -45,7 +45,7 @@ impl<A, M> Scene<A, M> {
             // A dialog state the editor's facade writes runs the editor loop
             // that advances its jobs, exactly as the frame does before painting.
             self.editor.tick();
-            self.editor.widgets.clear();
+            self.editor.frame.widgets.clear();
         }
         if self.area.is_none()
             && let Some(host) = self.host

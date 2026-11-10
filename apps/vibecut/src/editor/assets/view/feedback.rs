@@ -11,6 +11,7 @@ impl Editor {
             return;
         }
         let rect = self
+            .frame
             .panels
             .get("media")
             .copied()

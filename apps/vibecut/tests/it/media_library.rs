@@ -571,7 +571,7 @@ fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
         vibecut::panels::AssetsTab::Media
     );
     assert_eq!(inspection.media_highlight, Some(AssetId(30)));
-    let media_panel = harness.state().panels["media"];
+    let media_panel = harness.state().panels()["media"];
     assert!(
         widget_rect(&harness, "media.asset.30").intersects(media_panel),
         "reveal scrolls the asset into the media panel"

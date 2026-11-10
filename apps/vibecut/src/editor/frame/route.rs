@@ -53,7 +53,8 @@ impl Editor {
         self.timeline = state;
         for widget in widgets {
             self.remember_with_icon(widget.id.clone(), widget.icon, &widget.response);
-            if let (Some(tooltip), Some(state)) = (widget.tooltip, self.widgets.get_mut(&widget.id))
+            if let (Some(tooltip), Some(state)) =
+                (widget.tooltip, self.frame.widgets.get_mut(&widget.id))
             {
                 state.tooltip = Some(tooltip);
             }

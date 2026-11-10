@@ -2,22 +2,11 @@
 
 use super::{
     Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, EyedropperState, Icon,
-    ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView, PathBuf,
-    Playback, Preferences, Rect, SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason,
+    ImportFailure, ImportQueue, ItemId, KeybindingIssue, MediaSort, MediaView, PathBuf, Playback,
+    Preferences, SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason, WidgetState,
     actions, egui, theme,
 };
 
-#[derive(Clone, Debug)]
-pub struct WidgetState {
-    pub id: String,
-    pub enabled: bool,
-    pub focused: bool,
-    pub rect: Rect,
-    /// Embedded Phosphor name for a button that carries an icon.
-    pub icon: Option<&'static str>,
-    /// Action and shortcut shown for icon-only controls.
-    pub tooltip: Option<String>,
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AssetState {
     Probing,
@@ -429,12 +418,6 @@ pub struct Editor {
     pub session: crate::lifecycle::EditorSession,
     pub playback: Playback,
     pub preferences: Preferences,
-    pub(super) preference_history: PreferenceHistory,
-    pub(super) keymap: Keymap,
-    pub(super) keymap_source: actions::KeybindingPreferences,
-    pub(super) keybinding_issues: Vec<KeybindingIssue>,
-    /// Voiceover recording owner (p1-parity/86) sets this; global keys wait.
-    pub(super) recording_active: bool,
     /// Workspace-owned dialogs take keyboard priority over the editor's sheets.
     pub(crate) overlay_open: bool,
     pub selection: BTreeSet<ItemId>,
@@ -443,9 +426,6 @@ pub struct Editor {
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
-    pub(super) last_view: project::ViewState,
-    pub(super) widgets: BTreeMap<String, WidgetState>,
-    pub panels: BTreeMap<&'static str, Rect>,
     pub(super) frame: super::frame::State,
     pub(super) player: super::panels::player::State,
     pub(super) timeline: super::timeline::State,
@@ -474,10 +454,6 @@ pub struct Editor {
     pub(super) media_reveal: Option<MediaReveal>,
     pub(super) media_delete_confirm: Option<Vec<AssetId>>,
     pub(super) dialogs: super::dialogs::State,
-    pub(super) shortcuts_open: bool,
-    pub(super) shortcut_tab: ShortcutTab,
-    pub(super) shortcut_recording: Option<&'static str>,
-    pub(super) shortcut_error: Option<String>,
     pub(super) asset_states: BTreeMap<AssetId, AssetState>,
     pub(super) thumbnails: BTreeMap<AssetId, engine::thumbnails::RetainedThumbnail>,
     pub(super) pending_imports: BTreeMap<AssetId, PathBuf>,

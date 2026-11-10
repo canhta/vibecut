@@ -1129,7 +1129,7 @@ fn player_footer_stays_on_one_row_in_both_languages() {
             },
         ));
         let play = widget(&h, "transport.play").rect;
-        let panel = h.state().panels["preview"];
+        let panel = h.state().panels()["preview"];
         assert!((widget(&h, "preview.menu").rect.center().y - panel.top() - 21.0).abs() < 1.0);
         assert!(
             (widget(&h, "preview.fullscreen").rect.center().y - panel.bottom() + 22.0).abs() < 1.0

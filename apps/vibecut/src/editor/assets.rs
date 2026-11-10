@@ -97,11 +97,11 @@ impl Editor {
         icons::install(ui.ctx());
         Self::theme(ui.ctx(), self.preferences.dark);
         crate::kit::install_editor_density(ui.ctx());
-        self.widgets.clear();
+        self.frame.widgets.clear();
         self.tick();
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, self.panel_fill());
-        self.panels.insert("media", ui.max_rect());
+        self.frame.panels.insert("media", ui.max_rect());
         self.show_assets(ui);
         self.import_overlay(ui.ctx());
     }
