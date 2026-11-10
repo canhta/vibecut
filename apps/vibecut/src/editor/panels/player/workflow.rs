@@ -1,13 +1,12 @@
 //! Applies player transport requests.
 use crate::editor::{
     DEFAULT_ZOOM, Editor, Error, FrameRate, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick,
-    Vec2, display_time, drop_frame, egui,
+    Vec2, display_time, egui,
 };
 use crate::services::preview;
 
 pub(super) fn format_timecode(at: Tick, rate: FrameRate) -> String {
-    time::format_timecode(at, rate, drop_frame(rate))
-        .unwrap_or_else(|_| display_time(at.max(Tick::ZERO)))
+    time::format_timecode(at, rate).unwrap_or_else(|_| display_time(at.max(Tick::ZERO)))
 }
 
 impl Editor {
@@ -50,7 +49,7 @@ impl Editor {
         };
         let duration = self.session.project().duration();
         let rate = self.session.project().data().canvas.fps;
-        match time::parse_timecode(&edit.text, rate, drop_frame(rate)) {
+        match time::parse_timecode(&edit.text, rate) {
             Ok(at) if at >= Tick::ZERO && at <= duration => {
                 if let Err(error) =
                     self.dispatch("playback.seek", serde_json::json!({"time": at.0}))

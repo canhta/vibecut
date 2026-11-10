@@ -170,12 +170,7 @@ fn render(
 }
 
 fn timecode(project: &Project, at: Tick) -> Result<String> {
-    let rate = project.data().canvas.fps;
-    let drop_frame = matches!(
-        rate,
-        time::FrameRate::FPS_29_97 | time::FrameRate::FPS_59_94
-    );
-    Ok(time::format_timecode(at, rate, drop_frame)?)
+    Ok(time::format_timecode(at, project.data().canvas.fps)?)
 }
 
 fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {

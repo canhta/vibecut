@@ -24,8 +24,8 @@ use super::{
     MAX_ZOOM, MIN_ZOOM_FLOOR, PADDING_MAX_RATIO, PADDING_MIN_AT_ZOOM_PERCENT, PADDING_MIN_RATIO,
     RULER_HEIGHT, RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Result, Rounding, SCROLLBAR,
     SnapCandidate, SnapSource, SourceRange, TOOLBAR_HEIGHT, TRACK_GAP, Text, Tick, TrackId,
-    TrackKind, Vec2, ZOOM_ANCHOR_THRESHOLD, display_label, display_time, drop_frame, egui, icons,
-    snap_point, theme,
+    TrackKind, Vec2, ZOOM_ANCHOR_THRESHOLD, display_label, display_time, egui, icons, snap_point,
+    theme,
 };
 
 use layout::{BookmarkView, ItemView, TimelineLayout, TrackRow};

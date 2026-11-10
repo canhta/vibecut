@@ -1197,13 +1197,9 @@ fn byte_offset(text: &str, chars: usize) -> Option<usize> {
         .chain(std::iter::once(text.len()))
         .nth(chars)
 }
-/// Player timecode (same formatter and drop-frame rule as the transport).
+/// Player timecode (same formatter as the transport).
 fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
-    let drop = matches!(
-        rate,
-        time::FrameRate::FPS_29_97 | time::FrameRate::FPS_59_94
-    );
-    time::format_timecode(tick, rate, drop)
+    time::format_timecode(tick, rate)
         .unwrap_or_else(|_| i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
 }
 fn stage_text(stage: Option<Stage>) -> Text {

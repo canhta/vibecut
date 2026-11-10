@@ -1,9 +1,6 @@
 //! Formats editor time on the shared tick grid.
-use super::{FrameRate, Tick};
+use super::Tick;
 
-pub(in crate::editor) fn drop_frame(rate: FrameRate) -> bool {
-    matches!(rate, FrameRate::FPS_29_97 | FrameRate::FPS_59_94)
-}
 pub(in crate::editor) fn display_time(at: Tick) -> String {
     let s = at.seconds().max(0.0);
     format!(

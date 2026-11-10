@@ -722,9 +722,8 @@ fn timecode_round_trips_at_every_supported_rate_and_invalid_text_is_restored() {
             project(rate, 640, 360, false),
             Preferences::default(),
         ));
-        let drop = matches!(rate, FrameRate::FPS_29_97 | FrameRate::FPS_59_94);
-        let label = time::format_timecode(rate.tick_of(90).unwrap(), rate, drop).unwrap();
-        let target = time::parse_timecode(&label, rate, drop).unwrap();
+        let label = time::format_timecode(rate.tick_of(90).unwrap(), rate).unwrap();
+        let target = time::parse_timecode(&label, rate).unwrap();
         type_timecode(&mut h, &label);
         assert_eq!(
             h.state().inspect().unwrap().position,

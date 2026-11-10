@@ -26,7 +26,7 @@ pub use state::{
 };
 
 mod timing;
-use timing::{display_short_time, display_time, drop_frame};
+use timing::{display_short_time, display_time};
 
 use crate::color_picker::{ColorTarget, EyedropperState, Picker};
 use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes, shared_fields};
