@@ -23,6 +23,34 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
+Tiers of the table, arrows pointing at the dependency. Edges implied by a path are omitted and `testkit` (dev-only) is left out; the table owns the edges.
+
+```mermaid
+flowchart BT
+  media --> time
+  captions --> time
+  project --> media
+  project --> captions
+  ai --> media
+  ai --> captions
+  render --> project
+  render --> text
+  engine --> render
+  engine --> ai
+  libraries --> engine
+  shorts --> engine
+  eval[clip-eval] --> shorts
+  cli[vibecut-cli] --> shorts
+  cli --> libraries
+  app[vibecut] --> cli
+  subgraph apps
+    cli; app
+  end
+  subgraph core[headless core]
+    time; text; media; captions; project; ai; render; engine; libraries; shorts; eval
+  end
+```
+
 ## Contracts
 
 Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owners:
@@ -56,6 +84,17 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 
 Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
+
+```mermaid
+flowchart LR
+  ui[Desktop UI] --> registry
+  cli[CLI] --> registry
+  mcp[MCP and control sessions] --> control[control: admission, revision, receipt] --> registry
+  registry[command registry] --> session[Session: transaction, history]
+  session --> project[(Project)]
+  registry --> jobs[job runner] --> work[media, render, AI execution]
+  jobs -. result as a command .-> session
+```
 
 ## Languages
 

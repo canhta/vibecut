@@ -30,6 +30,19 @@ Lowest first; imports go down only.
 | Features | `subtitles/`, `analysis/`, `artifacts/` |
 | Control | `control/`: admission and dispatch; may call every feature |
 
+```mermaid
+flowchart TB
+  control[Control: control/] --> features
+  subgraph features[Features: never import each other]
+    subtitles; analysis; artifacts
+  end
+  features --> substrate
+  subgraph substrate[Substrate]
+    runtime; store; providers; transcript
+  end
+  substrate --> kernel[Kernel: session/]
+```
+
 Features register commands through the registry; the kernel never names a feature. The layer table is enforced from `xtask/modules.toml`.
 
 ## Libraries (`crates/libraries/src`)
@@ -47,6 +60,25 @@ Lowest first; imports go down only, and a window never names another window.
 | Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs |
 | Frame | `editor/frame/`, `actions/`, `preferences/`, `workspace/`, `control/` |
 | Composition root | App wiring, window registry, control attach |
+
+```mermaid
+flowchart TB
+  root[Composition root: wiring, window registry, control attach] --> frame
+  frame[Frame: editor/frame, actions, preferences, workspace, control] --> areas
+  subgraph areas[Windows and areas: never import each other]
+    home; shorts; assets; player; properties; timeline; dialogs
+  end
+  areas --> services[Services: job progress, pickers, shared window services]
+  services --> foundation[Foundation: kit, i18n, input, appearance]
+```
+
+```mermaid
+flowchart LR
+  input[egui input] --> show["area show(State, project view)"]
+  show -- actions --> frame[frame routes]
+  frame -- command --> session[engine Session]
+  session -- project change --> show
+```
 
 An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`.
 
