@@ -613,7 +613,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 .to_vec(),
         };
         let mut plain = grade.clone();
-        plain.extend(chroma_key_passes(project::Color([0, 255, 0, 255]), 40.0, 0.0).unwrap());
+        plain.extend(chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap());
         plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
         let mut mixed = plain.clone();
         mixed.insert(1, mirror(1.0, 0.0));
