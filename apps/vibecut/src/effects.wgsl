@@ -141,6 +141,30 @@ fn tint(@builtin(global_invocation_id) id: vec3<u32>) {
     let e = encoded_rgb(c);
     dst[i] = decoded_premultiplied(e + (mapped - e) * clamp(weights[6], 0.0, 1.0), px.a);
 }
+// Mirrors levels_pixel; weights = input black/white, output black/white, exponent.
+@compute @workgroup_size(8, 8)
+fn levels(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let e = encoded_rgb(straight_rgb(px));
+    let span = max(weights[1] - weights[0], 1e-3);
+    let fraction = clamp((e - vec3<f32>(weights[0])) / span, vec3<f32>(0.0), vec3<f32>(1.0));
+    let mapped = vec3<f32>(weights[2]) + pow(fraction, vec3<f32>(weights[4])) * (weights[3] - weights[2]);
+    dst[i] = decoded_premultiplied(mapped, px.a);
+}
+// Mirrors strobe_pixel; weights = encoded RGB, original-picture fraction.
+// The evaluator alone gates time. Mixed colour is already linear: do not decode it again.
+@compute @workgroup_size(8, 8)
+fn strobe(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let colour = vec3<f32>(eotf(weights[0]), eotf(weights[1]), eotf(weights[2]));
+    let mixed = colour + (straight_rgb(px) - colour) * clamp(weights[3], 0.0, 1.0);
+    let rgb = clamp(mixed, vec3<f32>(0.0), vec3<f32>(1.0)) * px.a;
+    dst[i] = vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(px.a)), px.a);
+}
 fn ramp(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
