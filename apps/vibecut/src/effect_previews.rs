@@ -205,6 +205,11 @@ impl EffectPreviews {
             entry.desired = self.visible.then_some(self.sequence);
             entry.effect = effect.clone();
             entry.animations = animations.clone();
+            if let Err(error) = effect.validate() {
+                entry.failure = Some(error.to_string());
+                entry.desired = None;
+                return;
+            }
             if self.visible {
                 self.deferred.push_back(kind.to_owned());
             }

@@ -1490,7 +1490,10 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
 #[test]
 fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
     use vibecut::effect_previews::EffectPreviews;
-    for failure in [0, 1, 2] {
+    for (failure, retry) in [0, 1, 2]
+        .into_iter()
+        .flat_map(|failure| [(failure, false), (failure, true)])
+    {
         let budget = ByteBudget::new(16 << 20).unwrap();
         let adapter = Arc::new(PreviewGate::new(true, Some(failure)));
         let cache =
@@ -1501,12 +1504,26 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
             .filter(|d| d.shelf.in_library())
         {
             let mut effect = definition.instance(definition.id);
-            if definition.id == "tint" {
+            if definition.id == "tint" && !retry {
                 effect.params.clear();
             } // Validation still refuses behind a full queue.
             previews.ensure(definition.id, &effect, &project::Animations::default());
         }
-        assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
+        let tint = project::effect_definition("tint").unwrap().instance("tint");
+        let mut malformed = tint.clone();
+        malformed.params.clear();
+        let refusal = project::Error::Invalid("effect parameter set").to_string();
+        if retry {
+            // Four valid jobs still fill the runner; the older valid deferred
+            // head must hit QueueFull before the existing tint retry is reached.
+            previews.retry("tint", &malformed, &project::Animations::default());
+        }
+        assert_eq!(
+            previews.status("tint"),
+            Some(EffectPreviewStatus::Failed),
+            "failure {failure}, retry {retry}"
+        );
+        assert_eq!(previews.failure("tint"), Some(refusal.as_str()));
         previews.settle(std::time::Duration::from_secs(10)).unwrap();
         for (kind, status) in previews.statuses() {
             assert_eq!(
@@ -1529,8 +1546,41 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
             "terminal errors are not transient admission"
         );
         assert!(previews.failure("blur").is_some());
+        if retry {
+            previews.retry("tint", &tint, &project::Animations::default());
+            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            let last_good = previews.image("tint").unwrap();
+            // Refuse the same malformed retry with a last-good image present,
+            // behind four queued valid refreshes and an older deferred head.
+            for kind in [
+                "black_white",
+                "channel_mix",
+                "color_pass",
+                "color_replace",
+                "extract",
+            ] {
+                previews.retry(
+                    kind,
+                    &project::effect_definition(kind).unwrap().instance(kind),
+                    &project::Animations::default(),
+                );
+            }
+            previews.retry("tint", &malformed, &project::Animations::default());
+            assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
+            assert_eq!(previews.failure("tint"), Some(refusal.as_str()));
+            assert!(Arc::ptr_eq(&last_good, &previews.image("tint").unwrap()));
+            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            // No refused generation retains a desired frame/job after draining.
+            previews.settle(std::time::Duration::ZERO).unwrap();
+            previews.retry("tint", &tint, &project::Animations::default());
+            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Ready));
+            assert!(previews.failure("tint").is_none());
+            assert_eq!(previews.image("tint").unwrap(), last_good);
+        }
         drop(previews);
         assert_eq!(budget.snapshot().unwrap().used, 0);
+        eprintln!("permanent admission: failure={failure} existing_retry={retry} passed");
     }
 }
 
