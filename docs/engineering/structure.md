@@ -17,7 +17,7 @@ What is inside a crate or app and which way imports point. Crates and their cont
 
 - Modules and types use [GLOSSARY](../../GLOSSARY.md) terms, singular. A new concept enters the glossary first.
 - Providers are `<family>/<operation>` (`providers/anthropic/translate`).
-- Test helpers live in `tests/it/support.rs` and `tests/it/support/`; helpers shared across crates live in `testkit`. Tests are named by behaviour; app test files have no `_ui` suffix.
+- Test helpers live in `tests/it/support.rs` and `tests/it/support/`; helpers shared across crates live in `testkit`. Tests are named by behaviour; app test files have no `_ui` suffix. A test module covers one command family or one workflow (`tests/it/session/ripple.rs`); a new test goes into its family's module, and no module collects unrelated families.
 
 ## Engine (`crates/engine/src`)
 
