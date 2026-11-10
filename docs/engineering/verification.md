@@ -21,6 +21,8 @@ Commit only green, with the smallest check that covers the change. Compile throu
 
 Reuse receipts for identical source and a compatible toolchain, configuration, environment and oracle set; cite their exact revision, command, named nonzero tests and result. Review is inspection of the changed diff and evidence, with reruns for an actual gap, contradiction or changed behaviour. A conflict-free rebase alone does not invalidate a receipt. A necessary prerequisite failure gets its narrow fix and failed-test rerun, not an unrelated suite sweep. Document checks need no test count.
 
+Include behavioural consumers and test adapters in a contract-change census: a compile check cannot prove changed error, fallback or cancellation semantics. Run their affected named cases even when the caller types still compile.
+
 ## AI model integrations
 
 - Provider adapters: test contracts, consent and failure paths offline, plus one bounded live smoke per provider (`VIBECUT_LIVE_AI=1`, keys, synthetic input, `#[ignore]`). Provider accuracy is not ours to gate.
@@ -58,6 +60,8 @@ Inject codecs, providers and OS boundaries (file pickers, dropped files) at thei
 Comparison validity and product acceptance are separate gates. Verify matching logical size, crop/origin, scale, state and compared region before interpreting a metric; invalid inputs are non-comparable, never a pass. Correct inputs and rerun only the comparison, retaining the original artifacts and result. Valid results still obey the thresholds and before/after criterion above; a design-peer decision or acceptance change must be explicit, not inferred from an invalid capture or an inspected side-by-side.
 
 ## Fixtures
+
+Prepare the suite's executable, native-runtime and oracle prerequisites in the intended target/profile before running it. Reuse compatible verified artifacts; a missing prerequisite is failed setup, never a passing skip. Diagnose it before another suite run.
 
 Generate synthetic media with `testkit::oracle::generate` into `target/fixtures/`. Goldens fix canvas, rate, fonts and CPU rendering. Re-bless only after looking at the image, with a reason.
 

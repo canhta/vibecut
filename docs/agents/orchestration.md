@@ -6,7 +6,7 @@ Rules for the coordinator and workers. Private host facts and tooling pointers l
 
 | Role | Does |
 |---|---|
-| Coordinator (Claude) | Plans with the maintainer, admits assignments, reviews and merges independent work, releases settled resources |
+| Coordinator | Plans with the maintainer, admits assignments, reviews and merges independent work, releases settled resources |
 | opencode | Implements slices whose contracts, errors and limits are decided |
 | Codex | Decides unresolved technical contracts and implements work requiring design judgement |
 | Maintainer | Product decisions, credentials, hardware, assets, outward-facing actions |
