@@ -1,6 +1,6 @@
 //! Presents explicit upload consent scope.
 use engine::EditError;
-use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
+use engine::providers::{Approval, CatalogOperation, ConsentPrompt, Cost, UploadRequest};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
@@ -19,6 +19,7 @@ impl ConsentPrompt for CliConsent {
             CatalogOperation::Transcribe => "transcribe",
             CatalogOperation::Translate => "translate",
             CatalogOperation::SuggestClips => "suggest_clips",
+            CatalogOperation::GenerateChapters => "generate_chapters",
         };
         let _ = writeln!(
             io::stderr(),
@@ -44,6 +45,53 @@ impl ConsentPrompt for CliConsent {
             );
             Err(EditError::ConsentRequired)
         }
+    }
+}
+
+/// The CLI approval for providers without a per-run dialog. `--yes-upload`
+/// approves the exact scope printed by [`CliConsent`]; otherwise it refuses.
+pub(crate) struct CliApproval {
+    prompt: CliConsent,
+}
+impl CliApproval {
+    pub(crate) fn new(yes_upload: bool) -> Self {
+        Self {
+            prompt: CliConsent::new(yes_upload),
+        }
+    }
+}
+impl Approval for CliApproval {
+    fn approve(
+        &mut self,
+        scope: &ai::Scope,
+        estimate: &ai::CostEstimate,
+        _: bool,
+    ) -> Result<Option<ai::Consent>, ai::Error> {
+        let endpoint = match scope.provider.location() {
+            ai::Location::Remote { base_url, .. } => base_url.as_str().to_owned(),
+            ai::Location::Local { model_ref, .. } => model_ref.as_str().to_owned(),
+        };
+        let upload_bytes = u64::try_from(scope.texts.first().map_or(0, |text| text.as_str().len()))
+            .map_err(|_| ai::Error::Payload)?;
+        let request = UploadRequest {
+            operation: CatalogOperation::GenerateChapters,
+            provider: scope.provider.id().as_str().into(),
+            model: scope.provider.model().as_str().into(),
+            languages: scope.source_language.as_str().into(),
+            audio_seconds: 0.0,
+            upload_bytes,
+            cost: Cost::from(estimate),
+            terms: vec![("endpoint", endpoint)],
+        };
+        self.prompt
+            .approve(&request)
+            .map_err(|_| ai::Error::ConsentRequired)?;
+        let budget = match estimate {
+            ai::CostEstimate::Free => ai::Money::new("USD", 0)?,
+            ai::CostEstimate::UpperBound(money) => money.clone(),
+            ai::CostEstimate::Unknown => return Err(ai::Error::Cost),
+        };
+        Ok(Some(ai::Consent::grant(scope.clone(), budget)?))
     }
 }
 

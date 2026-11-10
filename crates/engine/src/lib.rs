@@ -3,10 +3,10 @@ pub mod control;
 mod session;
 pub(crate) use session::transitions;
 pub use session::{
-    Availability, Command, CommandKind, CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR,
-    Effect, Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle,
-    Move, NewItem, Outcome, Placement, TrackPlacement, TranscriptCue, TranscriptView,
-    TranscriptWord, TrimEdge, WordId, lifecycle, registry,
+    Availability, ChapterSidecars, Command, CommandKind, CommandSpec, CreatedId, CueId,
+    DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement,
+    KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement, TranscriptCue,
+    TranscriptView, TranscriptWord, TrimEdge, WordId, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
@@ -26,6 +26,7 @@ pub mod subtitles;
 pub mod transcript;
 pub use transcript::translation;
 mod analysis;
+pub use analysis::chapters;
 pub use analysis::loudness;
 pub use analysis::pause_candidates;
 pub use analysis::scene_detection;

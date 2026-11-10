@@ -416,6 +416,7 @@ impl JobRunner {
                     JobKind::Transcribe
                         | JobKind::Translate
                         | JobKind::SuggestClips
+                        | JobKind::GenerateChapters
                         | JobKind::DownloadModel
                         | JobKind::SoundDownload
                         | JobKind::DownloadFont

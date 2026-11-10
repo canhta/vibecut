@@ -162,6 +162,7 @@ dependencies = [
  "prost",
  "rayon",
  "rustfft",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -6497,6 +6498,7 @@ dependencies = [
 name = "vibecut-cli"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "base64 0.23.1",
  "engine",
  "interprocess",

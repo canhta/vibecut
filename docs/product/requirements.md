@@ -29,6 +29,7 @@ The user picks the provider for every AI feature:
 |---|---|
 | Transcription | whisper.cpp and Gipformer (local), OpenAI, ElevenLabs |
 | Translation, clip suggestion | OpenAI, Anthropic (clips also: local heuristics) |
+| Chapters, title and description | OpenAI, Anthropic |
 | Dubbing voices | OpenAI, ElevenLabs |
 
 Each run uses one provider. A fallback runs only when the user configured it.

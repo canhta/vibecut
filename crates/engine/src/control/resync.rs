@@ -17,6 +17,7 @@ impl From<JobSnapshot> for JobView {
             error: s.error.as_deref().map(ErrorCode::from_error),
             result: None,
             pauses: None,
+            chapters: None,
         }
     }
 }

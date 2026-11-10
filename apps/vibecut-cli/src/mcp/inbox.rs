@@ -6,6 +6,7 @@ use engine::{
     ByteBudget, EditError, Session,
     control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
+    providers::ChapterAccess,
 };
 use serde_json::{Value, json};
 use std::{
@@ -34,6 +35,9 @@ pub struct Inbox {
     /// The same caches the CLI control session lends to media generation jobs.
     /// The desktop attaches one instance shared with its timeline displays.
     media: Option<Arc<Mutex<MediaAccess>>>,
+    /// The chapter adapter and human consent the desktop already owns. An inbox
+    /// without it refuses `chapters.generate` with `consent_required`.
+    chapters: Option<Arc<ChapterAccess>>,
 }
 impl Inbox {
     pub(super) fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), CliError> {
@@ -74,6 +78,7 @@ impl Inbox {
                 runner,
                 grants,
                 media,
+                chapters: None,
             },
         ))
     }
@@ -81,6 +86,12 @@ impl Inbox {
     /// Lend the process media caches the desktop already owns.
     pub fn attach_media(&mut self, media: Arc<Mutex<MediaAccess>>) {
         self.media = Some(media);
+    }
+
+    /// Lend the process chapter adapter and the human approval it consults.
+    /// Without it an agent cannot start a chapter upload.
+    pub fn attach_chapters(&mut self, chapters: Arc<ChapterAccess>) {
+        self.chapters = Some(chapters);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -190,11 +201,20 @@ impl Inbox {
             projects,
             media,
             grants,
+            chapters,
             ..
         } = self;
         let runner = projects.get_mut(&id).ok_or(EditError::SessionGone)?;
         session.observe_jobs(runner);
-        Self::execute_with(runner, grants, media.as_deref(), session, value, publish)
+        Self::execute_with(
+            runner,
+            grants,
+            media.as_deref(),
+            chapters.as_deref(),
+            session,
+            value,
+            publish,
+        )
     }
 
     fn execute(
@@ -207,14 +227,24 @@ impl Inbox {
             runner,
             media,
             grants,
+            chapters,
             ..
         } = self;
-        Self::execute_with(runner, grants, media.as_deref(), session, value, publish)
+        Self::execute_with(
+            runner,
+            grants,
+            media.as_deref(),
+            chapters.as_deref(),
+            session,
+            value,
+            publish,
+        )
     }
     fn execute_with(
         runner: &mut JobRunner,
         grants: &Grants,
         media: Option<&Mutex<MediaAccess>>,
+        chapters: Option<&ChapterAccess>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
@@ -226,6 +256,7 @@ impl Inbox {
             policy: grants,
             fonts: None,
             media,
+            chapters,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;

@@ -139,6 +139,41 @@ fn project_metadata_and_source_aliases_publish_neither_file() {
 }
 
 #[test]
+fn directory_export_derives_the_project_name_and_refuses_existing_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = project();
+    let before = serde_json::to_vec(project.data()).unwrap();
+    let paths =
+        chapter_sidecars::write_to_directory(&project, &[], dir.path(), &document()).unwrap();
+    assert_eq!(paths.text, dir.path().join("Mục lục.txt"));
+    assert_eq!(paths.json, dir.path().join("Mục lục.json"));
+    assert_eq!(
+        ChapterDocument::from_json(&std::fs::read(&paths.json).unwrap()).unwrap(),
+        document()
+    );
+    assert_eq!(serde_json::to_vec(project.data()).unwrap(), before);
+
+    let again = chapter_sidecars::write_to_directory(&project, &[], dir.path(), &document());
+    assert!(matches!(again, Err(EditError::Invalid(_))));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+
+    std::fs::remove_file(&paths.text).unwrap();
+    std::fs::remove_file(&paths.json).unwrap();
+    let existing = dir.path().join("Mục lục.json");
+    std::fs::write(&existing, b"previous json").unwrap();
+    let refused = chapter_sidecars::write_to_directory(&project, &[], dir.path(), &document());
+    assert!(matches!(refused, Err(EditError::Invalid(_))));
+    assert!(!dir.path().join("Mục lục.txt").exists());
+    assert_eq!(std::fs::read(&existing).unwrap(), b"previous json");
+
+    let missing = dir.path().join("missing");
+    assert!(matches!(
+        chapter_sidecars::write_to_directory(&project, &[], &missing, &document()),
+        Err(EditError::Invalid(_))
+    ));
+}
+
+#[test]
 fn existing_sidecars_are_preserved_without_overwrite_authorization() {
     let dir = tempfile::tempdir().unwrap();
     let stem = dir.path().join("Mục lục");

@@ -1793,6 +1793,7 @@ impl Backend for FakeFonts {
             error: None,
             result: None,
             pauses: None,
+            chapters: None,
         })
     }
     fn cancel(&mut self, _: &mut Session, _: JobId) -> vibecut::Result<()> {

@@ -152,6 +152,7 @@ pub(crate) fn control(
             policy: &policy,
             fonts: fonts.as_ref(),
             media: media.as_ref(),
+            chapters: None,
         };
         // The engine owns save admission and its receipt; the closure only
         // publishes the bytes through the project owner.

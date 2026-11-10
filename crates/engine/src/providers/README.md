@@ -1,6 +1,6 @@
 # Providers
 
-Interface: `Providers`, `Credentials`, `ConsentPrompt`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
+Interface: `Providers`, `Credentials`, `ConsentPrompt`, `ChapterAccess`, `ChapterProvider`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
 
 ## Provider selection and fallback
 
@@ -9,6 +9,12 @@ Interface: `Providers`, `Credentials`, `ConsentPrompt`, `provider_options`, `mod
 Composition implements `providers::Approval` to show provider identity, its policy link, exact payload and cost at setup and again immediately before a fallback executes. The callback receives `fallback=true` for the renewed prompt; a remote attempt without its own exact consent token cannot upload. Approval errors stop the run. Clip windows are all approved before a provider's first IO; partial results from a failed provider are discarded. Local heuristics are an explicitly configured `ClipSuggester`, never an implicit recovery path.
 
 `ProviderOutput` keeps the exact successful provider configuration beside its output; serializable outputs preserve this provenance in job result bytes. Callers store the complete envelope and include the entire selection and request settings in cache keys. Recognition keeps its sample-coordinate model, including text-only results when timing is unavailable. The functions do not mutate projects; translation results go through the registered edit command. Clip provider outputs preserve AI-owned ordered source segments, resolved source-order ranks and summed duration; consumers use the [AI clip contract](../../../ai/src/clips/README.md#transcript-clip-suggestions).
+
+## Chapter generation
+
+`ChapterProvider` is the user's explicit chapter provider and model (`openai/chapters` with `gpt-6-luna`, `anthropic/chapters` with `claude-sonnet-5-5`), listed by `provider_options` and resolved by `choose_chapter`; there is no fallback. `ChapterAccess::open(provider, credentials, approval)` builds that adapter once and `ChapterAccess::new(generator, approval)` lends an already built one. Composition roots construct one access per process and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with `Inbox::attach_chapters`.
+
+`ChapterAccess::prepare(input)` binds the complete canonical transcript, the provider configuration, the operation and a bounded cost estimate into an `ai::Scope`, then asks the composition's `Approval` for the exact token. `Approval` is where the human decision lives: a prompt shows provider, model, payload and cost; `StoredConsent::grant(provider, budget)` records an already-given human approval and only returns a token for that exact configuration, leaving a higher estimate to the token's cost check; no token means `ConsentRequired` and no adapter call. The access never constructs consent on its own and never retries or switches provider.
 
 ## Local model transfers
 

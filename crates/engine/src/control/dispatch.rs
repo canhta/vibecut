@@ -14,6 +14,7 @@ impl From<ProviderOption> for ProviderView {
                 CatalogOperation::Transcribe => "transcribe",
                 CatalogOperation::Translate => "translate",
                 CatalogOperation::SuggestClips => "suggest_clips",
+                CatalogOperation::GenerateChapters => "generate_chapters",
             }
             .into(),
             provider: p.id.into(),
@@ -116,6 +117,13 @@ impl Session {
                         runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
                     )?);
                 }
+                if snapshot.kind == JobKind::GenerateChapters
+                    && snapshot.state == JobState::Completed
+                {
+                    snapshot.chapters = Some(Box::new(crate::chapters::decode(
+                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
+                    )?));
+                }
                 if matches!(
                     snapshot.kind,
                     JobKind::GenerateWaveform | JobKind::GenerateClipThumbnails
@@ -217,6 +225,36 @@ impl Session {
                     revision: self.revision(),
                     paths: Vec::new(),
                 })
+            }
+            Command::ChaptersGenerate {
+                language,
+                max_chapters,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let access = caller.chapters.ok_or(EditError::ConsentRequired)?;
+                let request =
+                    crate::chapters::ChapterRequest::new(self.project(), language, max_chapters)?;
+                let job = request.submit(runner, access)?;
+                Ok(ControlResult::JobAccepted {
+                    job: job.id,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::ChaptersExportSidecars { dir, document } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let protected = self.protected_paths().to_vec();
+                let paths = crate::chapter_sidecars::write_to_directory(
+                    self.project(),
+                    &protected,
+                    &dir,
+                    &document,
+                )?;
+                Ok(ControlResult::ChapterSidecars { paths })
             }
             Command::JobCancel { job } => {
                 runner.cancel_job(job)?;

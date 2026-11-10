@@ -4,6 +4,7 @@
 //! shared publication owner: a private same-directory temporary file is synced and
 //! renamed only after project/source alias admission. Each file is atomic; a failure
 //! before its fence preserves the previous destination and removes staging.
+pub use crate::ChapterSidecars;
 use crate::{EditError, Result};
 use ai::chapters::ChapterDocument;
 use project::Project;
@@ -11,13 +12,6 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
 };
-
-/// The `.txt` and `.json` files derived from one sidecar stem.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChapterSidecars {
-    pub text: PathBuf,
-    pub json: PathBuf,
-}
 
 /// `<stem>.txt` and `<stem>.json`, preserving a native file name exactly.
 pub fn sidecar_paths(stem: &Path) -> Result<ChapterSidecars> {
@@ -53,6 +47,50 @@ pub fn write(
         overwrite,
         &project::atomic::Fs,
     )
+}
+
+/// Publish both sidecars into an existing directory under the project name.
+///
+/// The pair always refuses an existing file; no caller can authorize replacement.
+pub fn write_to_directory(
+    project: &Project,
+    protected: &[PathBuf],
+    directory: &Path,
+    document: &ChapterDocument,
+) -> Result<ChapterSidecars> {
+    if !directory.is_dir() {
+        return Err(EditError::Invalid("chapter sidecar directory"));
+    }
+    let name = crate::default_file_name(project.data().name.as_str(), "json");
+    let stem = directory.join(name.trim_end_matches(".json"));
+    let paths = sidecar_paths(&stem)?;
+    if paths.text.exists() || paths.json.exists() {
+        return Err(EditError::Invalid("chapter sidecar destination exists"));
+    }
+    write(
+        project,
+        protected,
+        &PublishHooks,
+        &stem,
+        document,
+        project::atomic::Overwrite::Refuse,
+    )
+}
+
+struct PublishHooks;
+struct NoLease;
+impl render::Reservation for NoLease {}
+impl render::ExecutionHooks for PublishHooks {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn reserve(
+        &self,
+        _: render::MemoryKind,
+        _: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        Ok(Box::new(NoLease))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

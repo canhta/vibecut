@@ -39,7 +39,10 @@ Usage:
                      [--aspect 9:16] [--translate-provider <id>] [--overwrite]
                      [--allow-degraded]]
                     [--yes-upload]
-  vibecut-cli providers [--operation transcribe|translate|clips] [--language <tag>]
+  vibecut-cli chapters <project> --language vi|en|zh|zh-Hans|zh-Hant
+                     [--max-chapters 10] [--provider openai|anthropic] [--model <id>]
+                     [--export <dir>] [--yes-upload]
+  vibecut-cli providers [--operation transcribe|translate|clips|chapters] [--language <tag>]
   vibecut-cli sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]
   vibecut-cli sounds save <library> <sound-json>
   vibecut-cli sounds unsave <library> <id>

@@ -1,5 +1,7 @@
 //! Opens the chosen provider adapters with their model leases.
-use super::catalog::{CatalogOperation, TranscriptionProvider, TranslationProvider, catalog_model};
+use super::catalog::{
+    CatalogOperation, ChapterProvider, TranscriptionProvider, TranslationProvider, catalog_model,
+};
 use super::consent::{Cost, UploadRequest};
 use crate::EditError;
 use crate::cache::{ArtifactCache, ModelLease};
@@ -430,6 +432,51 @@ pub(crate) fn build_translator(
                 TranslatorKind::Anthropic(Arc::new(value)),
                 ai::anthropic::TRANSLATION_MODE.into(),
             ))
+        }
+    }
+}
+/// Build the selected chapter adapter; the exact configuration is what the
+/// chapter consent scope binds.
+pub(crate) fn open_chapter(
+    chapter: &ChapterProvider,
+    credentials: &Credentials,
+) -> Result<Arc<dyn ai::chapters::ChapterGenerator>, EditError> {
+    match chapter {
+        ChapterProvider::OpenAi { model } => {
+            let config = ai::ProviderConfig::new(
+                "openai".into(),
+                model.as_str().into(),
+                ai::chapters::OPENAI_SETTINGS.into(),
+                Location::Remote {
+                    backend: ai::openai::BACKEND.into(),
+                    base_url: ai::openai::BASE_URL.into(),
+                    auth_ref: "OPENAI_API_KEY".into(),
+                },
+            )?;
+            let value = ai::chapters::OpenAiChapterGenerator::new(
+                config,
+                credentials.openai()?.clone(),
+                Arc::new(UreqTransport::new()),
+            )?;
+            Ok(Arc::new(value))
+        }
+        ChapterProvider::Anthropic { model } => {
+            let config = ai::ProviderConfig::new(
+                "anthropic".into(),
+                model.as_str().into(),
+                ai::chapters::ANTHROPIC_SETTINGS.into(),
+                Location::Remote {
+                    backend: ai::anthropic::BACKEND.into(),
+                    base_url: ai::anthropic::BASE_URL.into(),
+                    auth_ref: "ANTHROPIC_API_KEY".into(),
+                },
+            )?;
+            let value = ai::chapters::AnthropicChapterGenerator::new(
+                config,
+                credentials.anthropic()?.clone(),
+                Arc::new(UreqTransport::new()),
+            )?;
+            Ok(Arc::new(value))
         }
     }
 }

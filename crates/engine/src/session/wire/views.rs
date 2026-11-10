@@ -101,6 +101,7 @@ pub enum JobKind {
     Transcribe,
     Translate,
     SuggestClips,
+    GenerateChapters,
     AnalyzeShots,
     DetectScenes,
     AnalyzeSpeechActivity,
@@ -188,6 +189,15 @@ impl std::fmt::Debug for PreviewFrame {
             .field("height", &self.height)
             .finish_non_exhaustive()
     }
+}
+
+/// The published `.txt` and `.json` chapter sidecar paths.
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub struct ChapterSidecars {
+    pub text: PathBuf,
+    pub json: PathBuf,
 }
 
 /// One reviewed output-time span. Candidate queries produce these; reviewed-span

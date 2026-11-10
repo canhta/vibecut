@@ -23,9 +23,10 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
                     "transcribe" => CatalogOperation::Transcribe,
                     "translate" => CatalogOperation::Translate,
                     "clips" => CatalogOperation::SuggestClips,
+                    "chapters" => CatalogOperation::GenerateChapters,
                     _ => {
                         return Err(CliError::Usage(
-                            "--operation must be transcribe, translate or clips".into(),
+                            "--operation must be transcribe, translate, clips or chapters".into(),
                         ));
                     }
                 };
@@ -98,6 +99,7 @@ fn provider_option_json(option: &ProviderOption) -> Value {
             CatalogOperation::Transcribe => "transcribe",
             CatalogOperation::Translate => "translate",
             CatalogOperation::SuggestClips => "suggest_clips",
+            CatalogOperation::GenerateChapters => "generate_chapters",
         },
         "location": if option.local { "local" } else { "remote" },
         "models": option.models,

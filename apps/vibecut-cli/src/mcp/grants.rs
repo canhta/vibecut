@@ -36,6 +36,16 @@ impl Grants {
         if overwrite || !path.is_absolute() || path.file_name().is_none() {
             return Err(EditError::Permission);
         }
+        // A directory-publishing command (chapter sidecars) names its files itself;
+        // the client may only select the one granted directory.
+        if path.is_dir() {
+            let selected = std::fs::canonicalize(path).map_err(|_| EditError::Permission)?;
+            return if &selected == root {
+                Ok(())
+            } else {
+                Err(EditError::Permission)
+            };
+        }
         let parent = path.parent().ok_or(EditError::Permission)?;
         // Only resolve a directory explicitly selected by the human.
         // Resolving an arbitrary client parent first could touch an
@@ -68,7 +78,7 @@ impl Policy for Grants {
             Some(GrantClass::Agent) => Ok(()),
             Some(GrantClass::Output) => {
                 let (path, overwrite) = command.published_path().ok_or(EditError::Permission)?;
-                self.output_path(path, overwrite, project)
+                self.output_path(&path, overwrite, project)
             }
             Some(GrantClass::Human) | None => Err(EditError::Permission),
         }

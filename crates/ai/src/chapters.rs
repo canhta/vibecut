@@ -85,7 +85,7 @@ impl ChapterInput {
     /// Refuses empty, unsupported, unordered or oversized transcripts before consent.
     pub fn validate(&self) -> Result<(), ChapterRefusal> {
         let settings = &self.settings;
-        if !supported_language(&settings.language) {
+        if !supports_language(&settings.language) {
             return Err(ChapterRefusal::UnsupportedLanguage);
         }
         if settings.duration <= Tick::ZERO || !(1..=MAX_CHAPTERS).contains(&settings.max_chapters) {
@@ -178,14 +178,14 @@ impl ChapterInput {
 }
 
 /// One chapter start, snapped to the selected transcript segment's cue boundary.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Chapter {
     pub start: Tick,
     pub segment_id: NfcText,
     pub title: NfcText,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChapterTranslation {
     pub language: LanguageTag,
@@ -194,9 +194,10 @@ pub struct ChapterTranslation {
     /// One translated title per source chapter, in source order.
     pub chapters: Vec<NfcText>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The wire shape of a validated chapter document; `ChapterDocument` admits it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ChapterDocumentData {
+pub struct ChapterDocumentData {
     schema_version: u32,
     language: LanguageTag,
     duration: Tick,
@@ -207,8 +208,9 @@ struct ChapterDocumentData {
     translations: Vec<ChapterTranslation>,
 }
 /// Versioned chapter sidecar document; construction and deserialization validate it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "ChapterDocumentData", into = "ChapterDocumentData")]
+#[schemars(with = "ChapterDocumentData")]
 pub struct ChapterDocument(ChapterDocumentData);
 impl ChapterDocument {
     pub fn new(
@@ -301,7 +303,7 @@ impl ChapterDocumentData {
         if self.schema_version != SCHEMA_VERSION {
             return Err(ChapterRefusal::SchemaVersion);
         }
-        if !supported_language(&self.language) {
+        if !supports_language(&self.language) {
             return Err(ChapterRefusal::UnsupportedLanguage);
         }
         if self.duration <= Tick::ZERO
@@ -329,7 +331,7 @@ impl ChapterDocumentData {
         let mut languages = BTreeSet::new();
         for translation in &self.translations {
             if translation.language == self.language
-                || !supported_language(&translation.language)
+                || !supports_language(&translation.language)
                 || !languages.insert(&translation.language)
                 || !valid_title(&translation.title)
                 || !valid_description(&translation.description)
@@ -429,7 +431,7 @@ pub fn translate_chapters(
     hooks: &dyn ExecutionHooks,
 ) -> Result<ChapterDocument, Error> {
     document.validate()?;
-    if target_language == *document.language() || !supported_language(&target_language) {
+    if target_language == *document.language() || !supports_language(&target_language) {
         return Err(ChapterRefusal::InvalidTranslation.into());
     }
     let mut window = crate::TranslationWindow {
@@ -496,7 +498,8 @@ pub fn translate_chapters(
     .map_err(Into::into)
 }
 
-fn supported_language(language: &LanguageTag) -> bool {
+/// Whether chapter generation accepts this transcript language.
+pub fn supports_language(language: &LanguageTag) -> bool {
     ["vi", "en", "zh", "zh-Hans", "zh-Hant"].contains(&language.as_str())
 }
 fn valid_title(text: &NfcText) -> bool {

@@ -5,6 +5,7 @@ mod state;
 pub(crate) mod wire;
 pub use failures::{FontError, SoundError};
 pub use state::{JobTarget, Session};
+pub use wire::ChapterSidecars;
 pub(crate) use wire::budget;
 mod command_facts;
 mod commands;

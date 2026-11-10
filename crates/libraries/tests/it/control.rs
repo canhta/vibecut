@@ -76,6 +76,7 @@ fn control<'a>(
             policy: &Allow,
             fonts,
             media: None,
+            chapters: None,
         },
         r,
     )

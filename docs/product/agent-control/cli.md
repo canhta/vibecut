@@ -24,6 +24,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli cut <project> --remove-pauses [--min-pause-ms N] [--pad-ms N] [--crossfade-ms N] [--dry-run]` | List detected pauses, or remove them as one undoable edit |
 | `vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]` | List cue/word output times, or delete a measured word range as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
+| `vibecut-cli chapters <project> --language <tag> [--max-chapters N] [--export <dir>]` | Generate reviewed chapters, title and description, and optionally export the sidecars |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
@@ -60,6 +61,10 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 `exec <project> timeline.filler_candidates '{"language":"vi","include_markers":false}'` lists the active scene's visible lexicon filler occurrences in output ticks. Each carries a stable `id` (`filler:<item>:<cue>:<source word start>`), its caption item and retained cue, output `range`, `kind` (`filled_pause` or `discourse_marker`) and `edited_cue`; it writes nothing. Filled pauses are the default and `include_markers: true` adds discourse markers. A language without a shipped lexicon refuses with a typed error instead of returning an empty list, and cues without measured words contribute no candidates.
 
 `exec <project> timeline.remove_fillers '{"ids":["filler:4:cue-1:0"],"confirm_edited":false}'` cuts those candidates through the shared word-span cutter and saves one undoable edit. Every id must still name a visible candidate of the active scene, so an id made stale by a trim, cut, merge or text change refuses the whole edit; an empty or duplicate selection refuses too, and a candidate in an edited cue requires `confirm_edited: true`. The cut ripples the timeline like `transcript.delete_range`, and cue text and word timings stay untouched.
+
+## Chapters
+
+`chapters <project> --language vi|en|zh|zh-Hans|zh-Hant [--max-chapters 10] [--provider openai|anthropic] [--model <id>] [--export <dir>] [--yes-upload]` runs the engine's `GenerateChapters` job over the active scene's caption cues in output time. The provider and model are the user's explicit choice (OpenAI `gpt-6-luna` or Anthropic `claude-sonnet-5-5`; no fallback); `--yes-upload` approves the exact provider, payload and cost printed on stderr, while without it the run refuses with exit 5 before any request. Chapter starts snap to cue starts and increase inside the scene duration; an empty transcript, an unsupported language, cues without that language's text, overlapping or blank cues and a bound outside 1..=50 refuse with a typed reason and exit 5. `--export <dir>` publishes `<project>.txt` and `<project>.json` into an existing directory through the shared atomic publication owner; an existing file refuses and the project is never edited. The same two operations are registered as `chapters.generate {language, max_chapters}` and `chapters.export_sidecars {dir, document}`; the document from `job_status` is the (possibly edited) one exported. `providers --operation chapters` lists the two providers offline.
 
 ## Transcript deletion
 

@@ -70,61 +70,67 @@ impl Session {
     ///
     /// Returns an error when a retained item's mapping or range is unrepresentable.
     pub fn transcript(&self) -> Result<TranscriptView> {
-        let scene = self.project().data().scene();
-        let mut cues = Vec::new();
-        for track in scene.timeline.iter() {
-            for item in &track.items {
-                let ItemParams::Caption(params) = &item.content else {
+        view(self.project().data())
+    }
+}
+
+/// Cues and measured words of the active scene in output time, for owners that
+/// hold project data rather than a Session.
+pub(crate) fn view(data: &ProjectData) -> Result<TranscriptView> {
+    let scene = data.scene();
+    let mut cues = Vec::new();
+    for track in scene.timeline.iter() {
+        for item in &track.items {
+            let ItemParams::Caption(params) = &item.content else {
+                continue;
+            };
+            let words = item.word_spans()?;
+            for cue in &params.cues.cues {
+                let Some(range) = item.source_range.intersect(cue.range) else {
                     continue;
                 };
-                let words = item.word_spans()?;
-                for cue in &params.cues.cues {
-                    let Some(range) = item.source_range.intersect(cue.range) else {
-                        continue;
-                    };
-                    let output = SourceRange::new(
-                        item.output_time_of(range.start())?,
-                        item.output_time_of(range.end())?,
-                    )?;
-                    if output.start() >= output.end() {
-                        continue;
-                    }
-                    let tokens = cue.words();
-                    let protected = cue.source_text().is_some_and(|text| text.edited);
-                    let cue_words = words
-                        .iter()
-                        .filter(|word| word.cue == cue.id)
-                        .map(|word| TranscriptWord {
-                            id: WordId {
-                                item: item.id,
-                                cue: cue.id.clone(),
-                                word: word.index,
-                            },
-                            text: tokens.get(word.index).map(|token| token.text.clone()),
-                            output: word.output,
-                            protected,
-                            locked: track.locked,
-                        })
-                        .collect();
-                    cues.push(TranscriptCue {
-                        item: item.id,
-                        track: track.id,
-                        id: cue.id.clone(),
-                        output,
-                        texts: cue.texts.clone(),
+                let output = SourceRange::new(
+                    item.output_time_of(range.start())?,
+                    item.output_time_of(range.end())?,
+                )?;
+                if output.start() >= output.end() {
+                    continue;
+                }
+                let tokens = cue.words();
+                let protected = cue.source_text().is_some_and(|text| text.edited);
+                let cue_words = words
+                    .iter()
+                    .filter(|word| word.cue == cue.id)
+                    .map(|word| TranscriptWord {
+                        id: WordId {
+                            item: item.id,
+                            cue: cue.id.clone(),
+                            word: word.index,
+                        },
+                        text: tokens.get(word.index).map(|token| token.text.clone()),
+                        output: word.output,
                         protected,
                         locked: track.locked,
-                        words: cue_words,
-                    });
-                }
+                    })
+                    .collect();
+                cues.push(TranscriptCue {
+                    item: item.id,
+                    track: track.id,
+                    id: cue.id.clone(),
+                    output,
+                    texts: cue.texts.clone(),
+                    protected,
+                    locked: track.locked,
+                    words: cue_words,
+                });
             }
         }
-        cues.sort_by_key(|cue| cue.output.start());
-        Ok(TranscriptView {
-            scene: scene.id,
-            cues,
-        })
     }
+    cues.sort_by_key(|cue| cue.output.start());
+    Ok(TranscriptView {
+        scene: scene.id,
+        cues,
+    })
 }
 
 /// Every measured word of a scene, sorted by output start then identity.

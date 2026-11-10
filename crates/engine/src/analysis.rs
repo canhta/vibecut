@@ -13,6 +13,7 @@ pub use shot_analysis::{
     AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, Scene,
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
+pub mod chapters;
 mod loudness_workflow;
 pub mod pause_candidates;
 pub mod speech_activity;

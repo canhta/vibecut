@@ -1,12 +1,14 @@
 //! Verifies the owning module interface.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
+use engine::providers::ChapterAccess;
 use engine::{
     ByteBudget, Command, EditError, Session,
     control::{self, Policy},
 };
 use rmcp::ServiceExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::oneshot;
@@ -248,6 +250,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("transcript.merge_cues", Effect::Edit, true, true),
         ("timeline.filler_candidates", Effect::Read, true, true),
         ("timeline.remove_fillers", Effect::Edit, true, true),
+        ("chapters.generate", Effect::JobControl, true, true),
+        ("chapters.export_sidecars", Effect::FilePublish, true, false),
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),
@@ -377,7 +381,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
                 .replace("$output", encoded_root.trim_matches('"')),
         )
         .unwrap();
-        if effect == Effect::FilePublish {
+        if effect == Effect::FilePublish && params.get("path").is_some() {
             params["path"] = json!(root.path().join("output"));
         }
         let command: Command =
@@ -475,4 +479,101 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
     inbox.retain_projects(|id| id == project::ProjectId(2));
     assert!(!inbox.projects.contains_key(&project::ProjectId(1)));
     assert!(inbox.projects.contains_key(&project::ProjectId(2)));
+}
+
+struct NoChapters {
+    config: ai::ProviderConfig,
+}
+impl ai::chapters::ChapterGenerator for NoChapters {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::chapters::MODE.into(),
+            operation: ai::Operation::GenerateChapters,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::chapters::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "chapters-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn propose(
+        &self,
+        _: &ai::chapters::ChapterInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+        Err(ai::Error::Unsupported)
+    }
+}
+#[test]
+fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
+    let (_handler, mut inbox) =
+        Inbox::new(Grants::default(), ByteBudget::new(64 << 20).unwrap()).unwrap();
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(1), "chapters".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let config = ai::ProviderConfig::new(
+        "openai".into(),
+        ai::chapters::OPENAI_MODEL.into(),
+        ai::chapters::OPENAI_SETTINGS.into(),
+        ai::Location::Remote {
+            backend: ai::openai::BACKEND.into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "OPENAI_API_KEY".into(),
+        },
+    )
+    .unwrap();
+    let request = |revision, key: &str| {
+        json!({
+            "command": "chapters.generate",
+            "params": {"language": "vi", "max_chapters": 4},
+            "base_rev": revision,
+            "idempotency_key": key,
+            "request_id": key,
+        })
+    };
+    let revision = session.revision();
+    let response = inbox
+        .execute_project(
+            &mut session,
+            request(json!(revision), "chapters-denied"),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    assert_eq!(response.pointer("/value/status"), Some(&json!("error")));
+    assert_eq!(response.pointer("/value/value"), Some(&json!("permission")));
+
+    inbox.attach_chapters(Arc::new(ChapterAccess::new(
+        Arc::new(NoChapters {
+            config: config.clone(),
+        }),
+        Box::new(engine::providers::StoredConsent::grant(
+            config,
+            ai::Money::new("USD", 0).unwrap(),
+        )),
+    )));
+    let revision = session.revision();
+    let response = inbox
+        .execute_project(
+            &mut session,
+            request(json!(revision), "chapters-granted"),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    assert_eq!(response.pointer("/value/status"), Some(&json!("error")));
+    assert_eq!(response.pointer("/value/value"), Some(&json!("refused")));
 }

@@ -301,6 +301,7 @@ impl Media {
                 policy: &EditorPolicy,
                 fonts: None,
                 media: Some(access.as_ref()),
+                chapters: None,
             },
             runner,
         )?;

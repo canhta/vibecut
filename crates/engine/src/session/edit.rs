@@ -591,6 +591,8 @@ pub(crate) fn apply(
         | Command::TimelineSetRipple { .. }
         | Command::PauseCandidates { .. }
         | Command::FillerCandidates { .. }
+        | Command::ChaptersGenerate { .. }
+        | Command::ChaptersExportSidecars { .. }
         | Command::GenerateWaveform { .. }
         | Command::GenerateClipThumbnails { .. }
         | Command::TimelinePreview { .. }

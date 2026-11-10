@@ -258,6 +258,7 @@ impl SnapshotDialog {
                 policy: &Allow,
                 fonts: None,
                 media: None,
+                chapters: None,
             },
             runner,
         )?;

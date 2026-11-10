@@ -88,6 +88,7 @@ impl EngineBackend {
                 policy: &Allow,
                 fonts: Some(&access),
                 media: None,
+                chapters: None,
             },
             runner,
         )?;

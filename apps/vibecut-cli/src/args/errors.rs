@@ -102,6 +102,7 @@ fn edit_code(error: &EditError) -> (&'static str, u8) {
         EditError::ModelMissing(_) | EditError::RunnerMissing | EditError::CredentialMissing(_) => {
             ("setup", 4)
         }
+        EditError::Ai(ai::Error::Chapters(_)) => ("rejected", 5),
         EditError::Ai(_) => ("ai", 4),
         EditError::JobFailure(error) => edit_code(error),
         EditError::ConsentRequired | EditError::AutoLanguageUnsupported => ("rejected", 5),

@@ -36,6 +36,8 @@ Publication uses the [shared publication owner](../runtime/staged_publication/RE
 
 Publication is per file: after a failure the previous destination survives and no staging remains; a failure while publishing the second file leaves the first complete file and the prior second file, never a partial file. The project is not mutated. `sidecar_paths` exposes the derived names for preflight presentation.
 
+`chapter_sidecars::write_to_directory` is the registered `chapters.export_sidecars {dir, document}` operation: it derives the stem from the project name with the shared portable file-name owner, refuses a missing directory or either existing file before writing, and always publishes with atomic no-clobber (there is no overwrite flag). The document is the possibly edited `ChapterDocument` returned by `chapters.generate`, so the exported title, description and chapter titles are exactly the reviewed text. The CLI command uses the same function; the active project and metadata paths are passed as protected paths and the project is never mutated.
+
 ## Effect thumbnails
 
 `effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail` jobs through the runner. The desktop's `GpuEffects::thumbnails` constructs it using the same offscreen GPU adapter as preview. Callers supply an accounted, downsampled working-space source image and registered `EffectParams`; the result is straight sRGB RGBA8 at the input dimensions. Maximum edge is 320 pixels, with 32 LRU entries (at most 12.5 MiB), charged to the runner's shared byte budget. The cache belongs to one adapter lifetime; keys hash source pixels, geometry and canonical typed params. Consumers request on source or param changes; there is no timer or fixed cadence.

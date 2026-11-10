@@ -3,6 +3,8 @@ mod subtitle;
 pub(super) use subtitle::run as subtitle;
 mod clips;
 pub(super) use clips::run as clips;
+mod chapters;
+pub(super) use chapters::run as chapters;
 mod providers;
 pub(super) use providers::run as providers;
 mod model;

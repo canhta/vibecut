@@ -2,7 +2,7 @@
 mod consent;
 mod progress;
 mod result;
-pub(crate) use consent::{CliConsent, cost_json, cost_label};
+pub(crate) use consent::{CliApproval, CliConsent, cost_json, cost_label};
 pub(crate) use progress::{CliProgress, progress_percent, stage_name, wait_for_job};
 pub use result::Output;
 pub(crate) use result::{hex, json_path, tick_json};

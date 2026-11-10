@@ -21,6 +21,7 @@ tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "ma
 interprocess = { version = "2.4.7", features = ["tokio"] }
 base64.workspace = true
 engine.workspace = true
+ai.workspace = true
 media.workspace = true
 project.workspace = true
 render.workspace = true

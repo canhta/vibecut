@@ -2,7 +2,7 @@
 mod chapters;
 pub mod chapter_sidecars {
     //! Publishes chapter and description sidecars.
-    pub use super::chapters::{ChapterSidecars, sidecar_paths, write};
+    pub use super::chapters::{ChapterSidecars, sidecar_paths, write, write_to_directory};
 }
 mod frame_thumbnails;
 pub mod thumbnails {

@@ -43,6 +43,7 @@ fn caller(policy: &dyn Policy) -> Caller<'_> {
         policy,
         fonts: None,
         media: None,
+        chapters: None,
     }
 }
 fn runner() -> JobRunner {
@@ -144,6 +145,7 @@ fn submit_media(
         policy: &Allow,
         fonts: None,
         media: Some(media),
+        chapters: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::JobAccepted { job, .. } => job,
@@ -165,6 +167,7 @@ fn media_status(
         policy: &Allow,
         fonts: None,
         media: Some(media),
+        chapters: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::Job { snapshot } => snapshot,
@@ -645,6 +648,9 @@ fn with_source_audio(seed: &Session) -> Session {
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
+        Value::String(s) if s == "$output" => {
+            *s = root.to_str().unwrap().to_owned();
+        }
         Value::String(s) if s.starts_with("$output/") => {
             *s = root
                 .join(s.trim_start_matches("$output/"))
@@ -743,6 +749,83 @@ fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     panic!("job deadline");
 }
 
+/// Offline chapter adapter used by the registry and control conformance tests.
+struct FixtureChapters {
+    config: ai::ProviderConfig,
+}
+impl ai::chapters::ChapterGenerator for FixtureChapters {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::chapters::MODE.into(),
+            operation: ai::Operation::GenerateChapters,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::chapters::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "chapters-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn propose(
+        &self,
+        input: &ai::chapters::ChapterInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+        let first = input.segments.first().ok_or(ai::Error::Schema)?;
+        let mut chapters = vec![ai::chapters::ChapterProposalEntry {
+            start_segment_id: first.id.clone(),
+            title: "Opening".into(),
+        }];
+        if input.segments.len() > 1
+            && let Some(last) = input.segments.last()
+        {
+            chapters.push(ai::chapters::ChapterProposalEntry {
+                start_segment_id: last.id.clone(),
+                title: "Closing".into(),
+            });
+        }
+        Ok(ai::chapters::ChapterProposal {
+            title: "Chapters".into(),
+            description: "Generated chapters.".into(),
+            chapters,
+        })
+    }
+}
+fn fixture_chapters() -> engine::providers::ChapterAccess {
+    let config = ai::ProviderConfig::new(
+        "openai".into(),
+        ai::chapters::OPENAI_MODEL.into(),
+        ai::chapters::OPENAI_SETTINGS.into(),
+        ai::Location::Remote {
+            backend: ai::openai::BACKEND.into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "OPENAI_API_KEY".into(),
+        },
+    )
+    .unwrap();
+    engine::providers::ChapterAccess::new(
+        Arc::new(FixtureChapters {
+            config: config.clone(),
+        }),
+        Box::new(engine::providers::StoredConsent::grant(
+            config,
+            ai::Money::new("USD", 0).unwrap(),
+        )),
+    )
+}
+
 #[test]
 fn registry_examples_validate_and_dispatch_without_an_id_table() {
     let root = tempfile::tempdir().unwrap();
@@ -751,6 +834,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     write_wav(&wav, 8_000);
     write_png(&png);
     let media = Mutex::new(media_access(root.path()));
+    let chapters = fixture_chapters();
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -851,6 +935,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     policy: &Allow,
                     fonts: Some(&fonts),
                     media: Some(&media),
+                    chapters: Some(&chapters),
                 },
                 &mut r,
             )
@@ -1157,6 +1242,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 policy: &Allow,
                 fonts: None,
                 media: None,
+                chapters: None,
             },
             &mut r,
         )
@@ -1617,6 +1703,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
     assert_eq!(
         job_control,
         [
+            "chapters.generate",
             "fonts.download",
             "job_cancel",
             "media.generate_clip_thumbnails",
@@ -1744,6 +1831,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         ids(&|s| s.grant == Some(GrantClass::Output)),
         [
             "burn_subtitles",
+            "chapters.export_sidecars",
             "export",
             "export_subtitles",
             "preview.snapshot"
@@ -1787,6 +1875,165 @@ fn deterministic_catalog_and_schema_document_receipts() {
             spec.id
         );
     }
+}
+
+#[test]
+fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
+    let root = tempfile::tempdir().unwrap();
+    let mut s = with_words(&seed());
+    let mut r = runner();
+    let chapters = fixture_chapters();
+    let allow = Allow;
+    let before = serde_json::to_vec(s.project().data()).unwrap();
+
+    // An agent transport without a lent chapter access cannot upload.
+    let req = request(
+        &s,
+        "chapters.generate",
+        json!({"language":"en","max_chapters":2}),
+        "chapters-denied",
+    );
+    error(
+        s.control_request(
+            req,
+            Caller {
+                principal: "local-mcp",
+                external: true,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: None,
+            },
+            &mut r,
+        )
+        .unwrap(),
+        ErrorCode::Permission,
+    );
+
+    let req = request(
+        &s,
+        "chapters.generate",
+        json!({"language":"en","max_chapters":2}),
+        "chapters",
+    );
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: Some(&chapters),
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::JobAccepted { job, .. } = value else {
+        panic!("{value:?}");
+    };
+    finish(&mut r, job);
+    let req = request(&s, "job_status", json!({"job":job.0}), "chapters-status");
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: Some(&chapters),
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::Job { snapshot } = value else {
+        panic!("{value:?}");
+    };
+    let document = snapshot.chapters.clone().unwrap();
+    assert_eq!(document.language().as_str(), "en");
+    assert_eq!(document.chapters().len(), 2);
+    assert_eq!(document.chapters()[0].start, Tick::ZERO);
+    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);
+
+    let edited = ai::chapters::ChapterDocument::new(
+        document.language().clone(),
+        document.duration(),
+        "Reviewed title".into(),
+        document.description().clone(),
+        document.chapters().to_vec(),
+        Vec::new(),
+    )
+    .unwrap();
+    let params = json!({
+        "dir": root.path(),
+        "document": serde_json::to_value(&edited).unwrap(),
+    });
+    let req = request(
+        &s,
+        "chapters.export_sidecars",
+        params.clone(),
+        "chapters-export",
+    );
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: None,
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::ChapterSidecars { paths } = value else {
+        panic!("{value:?}");
+    };
+    assert!(paths.text.exists());
+    assert!(paths.json.exists());
+    let json = std::fs::read(&paths.json).unwrap();
+    assert_eq!(
+        ai::chapters::ChapterDocument::from_json(&json)
+            .unwrap()
+            .title()
+            .as_str(),
+        "Reviewed title"
+    );
+    assert!(
+        std::fs::read_to_string(&paths.text)
+            .unwrap()
+            .starts_with("Reviewed title")
+    );
+    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);
+
+    let req = request(
+        &s,
+        "chapters.export_sidecars",
+        params,
+        "chapters-export-again",
+    );
+    error(
+        s.control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: None,
+            },
+            &mut r,
+        )
+        .unwrap(),
+        ErrorCode::Refused,
+    );
+    r.shutdown();
 }
 
 #[test]
@@ -2876,6 +3123,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         policy: &Allow,
         fonts: None,
         media: Some(&media),
+        chapters: None,
     };
     error(
         wave_session
@@ -2896,6 +3144,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             policy: &Allow,
             fonts: None,
             media: Some(&media),
+            chapters: None,
         };
         error(
             thumbnail_session

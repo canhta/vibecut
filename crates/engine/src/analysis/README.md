@@ -1,6 +1,6 @@
 # Analysis
 
-Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `AnalysisRequest`, `AnalysisJob`.
+Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapters`, `AnalysisRequest`, `AnalysisJob`.
 
 `audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains. `audio.clear_loudness {scope}` removes it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and ordering only. See [loudness normalization](#loudness-normalization).
 
@@ -61,3 +61,9 @@ The job holds no artifact cache: an engine Session owns none, so a repeated quer
 | `crossfade_ms` | 20 | equal to the pad so the equal-power fade pair consumes only retained silence; the curve is project's `FadeCurve::EqualPower` default |
 
 `pad_ms` is kept silence on each side of a cut, and `crossfade_ms` must not exceed it, so a join never attenuates a speech frame. Settings admit 0..=10 s; the result is bounded at 4,096 spans and 1 MiB. An inaudible timeline completes with zero spans rather than refusing, so an empty project and a project without audio share one state. Limits: one day and 96 MiB workspace per source window, 40 MiB decode, the same as Speech activity.
+
+## Chapter generation
+
+`chapters::ChapterRequest::new(project, language, max_chapters)` reads every caption cue of the active scene that carries text in `language`, maps its range to output time through `Item::output_time_of` and builds the validated `ai::chapters::ChapterInput`: segment id `<item>:<cue>`, cue text and output range; settings carry the requested language, the 1..=50 chapter bound and the scene duration. Cues whose text is missing in that language are skipped, so a project with only another language refuses `EmptyTranscript`. An unsupported language, an empty transcript, a zero/oversized bound, overlapping or blank cues and an oversized payload refuse through `ai::chapters::ChapterRefusal` before any job or provider work.
+
+`submit` asks the lent [`ChapterAccess`](../providers/README.md#chapter-generation) for the exact consent token (scope, estimate and provider configuration) and only then queues one network `GenerateChapters` job. The job snapshots the input, calls `ai::chapters::generate_chapters` with the job context as its execution hooks (progress and cancellation), bounds the result at 1 MiB and decodes it through the versioned `ChapterDocument::from_json` validator. `chapters.generate {language, max_chapters}` accepts exactly this request; `job_status` publishes the completed document in `JobView.chapters`. A caller without a lent access refuses `ConsentRequired`; a declined approval refuses before the adapter or credential is used. The job has no artifact cache and never mutates the project.

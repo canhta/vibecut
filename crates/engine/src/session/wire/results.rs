@@ -30,6 +30,9 @@ pub enum ControlResult {
     Fillers {
         candidates: Vec<FillerCandidate>,
     },
+    ChapterSidecars {
+        paths: super::ChapterSidecars,
+    },
     JobAccepted {
         job: JobId,
         revision: Revision,
@@ -65,6 +68,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Fonts { .. } => "fonts",
             Self::Font { .. } => "font",
             Self::Fillers { .. } => "fillers",
+            Self::ChapterSidecars { .. } => "chapter_sidecars",
             Self::JobAccepted { .. } => "job_accepted",
             Self::Job { .. } => "job",
             Self::Snapshot { .. } => "snapshot",
@@ -87,4 +91,6 @@ pub struct JobView {
     pub result: Option<PreviewResult>,
     /// Pause candidates, present on a completed `analyze_pauses` job.
     pub pauses: Option<PauseCandidates>,
+    /// Chapter document, present on a completed `generate_chapters` job.
+    pub chapters: Option<Box<ai::chapters::ChapterDocument>>,
 }

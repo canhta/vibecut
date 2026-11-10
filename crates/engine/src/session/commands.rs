@@ -287,10 +287,12 @@ pub fn lifecycle(id: &str) -> Option<Lifecycle> {
     CommandKind::from_id(id)?.lifecycle()
 }
 impl Command {
-    /// The output file and whether it may replace an existing one, for the commands
-    /// that publish a file. A new publishing command must be added here; the registry
-    /// test refuses a `FilePublish` declaration whose example yields none.
-    pub fn published_path(&self) -> Option<(&std::path::Path, bool)> {
+    /// The published file or directory and whether it may replace an existing one,
+    /// for the commands that publish output. A new publishing command must be added
+    /// here; the registry test refuses a `FilePublish` declaration whose example
+    /// yields none. A directory names its own files and is refused by the output
+    /// grant unless it is the granted directory.
+    pub fn published_path(&self) -> Option<(std::path::PathBuf, bool)> {
         match self {
             Self::Export {
                 path, overwrite, ..
@@ -300,8 +302,9 @@ impl Command {
             }
             | Self::BurnSubtitles {
                 path, overwrite, ..
-            } => Some((path, *overwrite)),
-            Self::Snapshot { path, .. } => Some((path, false)),
+            } => Some((path.clone(), *overwrite)),
+            Self::Snapshot { path, .. } => Some((path.clone(), false)),
+            Self::ChaptersExportSidecars { dir, .. } => Some((dir.clone(), false)),
             _ => None,
         }
     }
@@ -440,6 +443,8 @@ commands! {
     TranscriptMergeCues, "transcript.merge_cues", "Merge transcript cues", Edit { cue_ids: Vec<CueId> } => Words, serde_json::json!({"cue_ids":[{"item":4,"cue":"cue-1"},{"item":4,"cue":"cue-2"}]}), available = CaptionItem;
     FillerCandidates, "timeline.filler_candidates", "List filler candidates", Read { language: captions::LanguageTag, include_markers: bool } => Words, serde_json::json!({"language":"en","include_markers":false}), available = CaptionItem;
     RemoveFillers, "timeline.remove_fillers", "Remove reviewed fillers", Edit { ids: Vec<NfcText>, confirm_edited: bool } => Words, serde_json::json!({"ids":["filler:4:cue-1:0"],"confirm_edited":false}), available = CaptionItem;
+    ChaptersGenerate, "chapters.generate", "Generate chapters", JobControl { language: captions::LanguageTag, max_chapters: usize } => Words, serde_json::json!({"language":"en","max_chapters":10}), grant = Agent;
+    ChaptersExportSidecars, "chapters.export_sidecars", "Export chapter sidecars", FilePublish { dir: std::path::PathBuf, document: ai::chapters::ChapterDocument } => Words, serde_json::json!({"dir":"$output","document":{"schema_version":1,"language":"en","duration":254016000000_i64,"title":"Opening","description":"A conversation about the work.","chapters":[{"start":0,"segment_id":"4:cue-1","title":"Opening"}]}});
     MoveItem, "move_item", "Move item", Edit { item: ItemId, track: TrackId, start: Tick } => Timeline, serde_json::json!({"item":1,"track":3,"start":0}), available = UnlockedItem;
     MoveItems, "move_items", "Move items", Edit { moves: Vec<Move> } => Timeline, serde_json::json!({"moves":[{"item":1,"track":3,"start":0}]}), available = UnlockedItem;
     TimelineMoveItems, "timeline.move_items", "Move timeline group", Edit { items: Vec<ItemId>, delta: Tick, #[serde(default)] placement: Option<Placement> } => Timeline, serde_json::json!({"items":[1],"delta":0,"placement":null}), available = UnlockedItem;
