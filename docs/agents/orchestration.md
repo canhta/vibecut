@@ -27,7 +27,7 @@ Rules for the coordinator and workers. Hosts and commands: `.scratch/process/orc
 
 - One worktree per ticket, branch `<type>/<milestone>-<NN>-<slug>` from `origin/main` (`<type>` is the Conventional Commits type). Implementer, reviewer and builds stay on one host.
 - OS-specific work goes to that OS's host; everything else to the host with the most headroom.
-- Dispatch more only while at most one build waits, free memory is at least 30%, load is under twice the core count and no worker reports waiting. Never two live tickets on the same files.
+- Dispatch more only while at most one build waits, free memory is at least 30%, load is under twice the core count and no worker reports waiting. Never two live tickets changing the same function, type or doc section. Two live tickets may share a file where each only adds to it (a command declaration line, a test table row or test function, an i18n key, a module list entry, a README table row); the later merge rebases. Generated files (`crates/engine/catalog.digest`, `docs/product/agent-control/commands.md`) are never merged by hand: on conflict, take either side and rerun `cargo xtask catalog`.
 - Compile only through `cargo xtask build -- <command>`; never set `CARGO_TARGET_DIR` ([xtask](../../xtask/README.md#build-slots)).
 - Remote workers get the ticket inline (`--spec-file`), write reports to their worktree's `.scratch/<milestone>/`, and are dispatched `max 1`. The coordinator pulls reports before cleanup.
 
