@@ -1,7 +1,7 @@
 //! Shape wipes driven by a scalar field: the incoming clip appears where `field < T(p)`.
 use super::pixels::{FRAC_PI_2, PI, TAU, angle_deg, angle_dir, centre, mix, px, smoothstep};
 use super::{Out, Tx};
-use crate::{Error, Result};
+use crate::{Error, ExecutionHooks, Result, check};
 
 /// Edge styling read from the shared wipe parameters.
 #[derive(Clone, Copy, Debug)]
@@ -12,24 +12,38 @@ pub(super) struct Style {
     aa: f32,
 }
 impl Style {
-    fn of(t: &Tx) -> Result<Self> {
-        let aa = [0.5, 1., 1.75, 2.5][t.params.choice("antialias")?.min(3) as usize]
-            * t.scale.clamp(0.25, 1.);
+    /// Working-pixel feather/border widths and AA extent, with premultiplied
+    /// linear border colour. Shape consumers use their scaled softness, zero
+    /// border and AA=1; no catalogue parameters are synthesized here.
+    pub(super) fn new(feather: f32, border: f32, border_color: [f32; 4], aa: f32) -> Result<Self> {
+        let alpha = border_color[3];
+        if [feather, border, aa]
+            .iter()
+            .any(|v| !v.is_finite() || *v < 0.)
+            || !(feather + border + 2. * aa + 1.).is_finite()
+            || border_color
+                .iter()
+                .any(|v| !v.is_finite() || !(0. ..=1.).contains(v))
+            || border_color[..3].iter().any(|v| *v > alpha)
+        {
+            return Err(Error::Invalid("transition wipe style"));
+        }
         Ok(Self {
-            feather: px(t, "feather")?,
-            border: px(t, "border_width")?,
-            border_color: t.params.color("border_color")?,
+            feather,
+            border,
+            border_color,
             aa,
         })
     }
-    /// The grain wipe's softer edge: two working pixels of feather and full anti-aliasing.
-    pub(super) fn for_grain(t: &Tx, border: f32, border_color: [f32; 4]) -> Self {
-        Self {
-            feather: 2. * t.scale,
-            border,
-            border_color,
-            aa: 1.,
-        }
+    fn of(t: &Tx) -> Result<Self> {
+        let aa = [0.5, 1., 1.75, 2.5][t.params.choice("antialias")?.min(3) as usize]
+            * t.scale.clamp(0.25, 1.);
+        Self::new(
+            px(t, "feather")?,
+            px(t, "border_width")?,
+            t.params.color("border_color")?,
+            aa,
+        )
     }
     fn margin(self) -> f32 {
         self.border + self.feather + 2. * self.aa + 1.
@@ -48,7 +62,9 @@ fn coverage(style: &Style, d: f32) -> (f32, f32) {
     (kb, ko.max(kb))
 }
 
-fn wipe_px(style: &Style, a: [f32; 4], b: [f32; 4], d: f32) -> [f32; 4] {
+/// Composite at signed distance in working pixels (negative reveals incoming).
+/// A sibling's custom sweep must call this through Out::paint for cancellation.
+pub(super) fn wipe_px(style: &Style, a: [f32; 4], b: [f32; 4], d: f32) -> [f32; 4] {
     let (kb, ko) = coverage(style, d);
     std::array::from_fn(|k| {
         a.get(k).copied().unwrap_or(0.) * (1. - ko)
@@ -58,10 +74,16 @@ fn wipe_px(style: &Style, a: [f32; 4], b: [f32; 4], d: f32) -> [f32; 4] {
 }
 
 /// Min/max of `field` over a coarse grid covering the frame.
-fn field_range(w: f32, h: f32, field: &(impl Fn(f32, f32) -> f32 + Sync)) -> (f32, f32) {
+fn field_range(
+    w: f32,
+    h: f32,
+    field: &(impl Fn(f32, f32) -> f32 + Sync),
+    hooks: &dyn ExecutionHooks,
+) -> Result<(f32, f32)> {
     let n = 48;
     let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
     for j in 0..=n {
+        check(hooks)?;
         for i in 0..=n {
             let v = field(w * i as f32 / n as f32, h * j as f32 / n as f32);
             if v.is_finite() {
@@ -70,7 +92,7 @@ fn field_range(w: f32, h: f32, field: &(impl Fn(f32, f32) -> f32 + Sync)) -> (f3
             }
         }
     }
-    if lo.is_finite() { (lo, hi) } else { (0., 1.) }
+    Ok(if lo.is_finite() { (lo, hi) } else { (0., 1.) })
 }
 
 /// The sweeping wipe: incoming where `field < T(p)`, field in pixels.
@@ -81,7 +103,7 @@ pub(super) fn field_wipe(
     out: &mut Out,
 ) -> Result<()> {
     let (w, h) = (t.width as f32, t.height as f32);
-    let (lo, hi) = field_range(w, h, &field);
+    let (lo, hi) = field_range(w, h, &field, out.hooks())?;
     let margin = style.margin() + (hi - lo) * 0.01;
     let thr = lo - margin + t.progress * (hi - lo + 2. * margin);
     out.paint(move |x, y| {
@@ -92,6 +114,28 @@ pub(super) fn field_wipe(
             field(x as f32 + 0.5, y as f32 + 0.5) - thr,
         )
     })
+}
+
+/// Shape metric in the caller's coordinate units: circle, square, diamond,
+/// star, heart, triangle, hexagon (catalogue choices 0..=6). A value below R
+/// lies inside the shape of radius R. Callers validate the choice and coordinates.
+pub(super) fn shape_dist(shape: u32, x: f32, y: f32) -> f32 {
+    let r = (x * x + y * y).sqrt();
+    let theta = (-y).atan2(x);
+    let polygon = |n: f32, rotation: f32| {
+        let segment = TAU / n;
+        let a = (theta - rotation).rem_euclid(segment) - segment / 2.;
+        r * a.cos() / (PI / n).cos()
+    };
+    match shape {
+        1 => x.abs().max(y.abs()),
+        2 => (x.abs() + y.abs()) * std::f32::consts::FRAC_1_SQRT_2,
+        3 => star_dist(x, y, 5, 0.45),
+        4 => r / (0.5 * (1. - theta.sin()) + 0.08) * 0.5,
+        5 => polygon(3., FRAC_PI_2 - PI / 3.),
+        6 => polygon(6., 0.),
+        _ => r,
+    }
 }
 
 fn star_dist(x: f32, y: f32, n: u32, inner: f32) -> f32 {
@@ -208,7 +252,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
         "stair_wipe" => {
             let (dx, dy) = angle_dir(angle_deg(t, "angle")?);
             let n = t.params.num("plateaus")?.round().clamp(1., 64.);
-            let (lo, hi) = field_range(w, h, &|x: f32, y: f32| -x * dy + y * dx);
+            let (lo, hi) = field_range(w, h, &|x: f32, y: f32| -x * dy + y * dx, out.hooks())?;
             let span = (hi - lo).max(1.);
             let step = w.max(h) * 0.35 / n.max(1.);
             field_wipe(
@@ -225,12 +269,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
         }
         "circle_reveal" => {
             let (cx, cy) = centre(t)?;
-            field_wipe(
-                t,
-                style,
-                move |x, y| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt(),
-                out,
-            )
+            field_wipe(t, style, move |x, y| shape_dist(0, x - cx, y - cy), out)
         }
         "box_reveal" => {
             let (cx, cy) = centre(t)?;
@@ -307,7 +346,7 @@ fn stretch(t: &Tx, out: &mut Out) -> Result<()> {
     };
     let (w, h) = (t.width as f32, t.height as f32);
     let length = px(t, "stretch")?.max(1.);
-    let (lo, hi) = field_range(w, h, &|x: f32, y: f32| x * dx + y * dy);
+    let (lo, hi) = field_range(w, h, &|x: f32, y: f32| x * dx + y * dy, out.hooks())?;
     let edge = lo - length + t.progress * (hi - lo + 2. * length);
     out.paint(move |x, y| {
         let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
@@ -334,16 +373,11 @@ fn neon_edge(t: &Tx, out: &mut Out) -> Result<()> {
     let col = t.params.color("color")?;
     let amount = t.params.fraction("amount")?;
     let (w, h) = (t.width as f32, t.height as f32);
-    let (lo, hi) = field_range(w, h, &|x: f32, y: f32| x * dx + y * dy);
+    let (lo, hi) = field_range(w, h, &|x: f32, y: f32| x * dx + y * dy, out.hooks())?;
     let margin = glow * 0.5 + 2.;
     let thr = lo - margin + t.progress * (hi - lo + 2. * margin);
     let fade = (t.progress * 10.).min((1. - t.progress) * 10.).min(1.);
-    let style = Style {
-        feather: 0.,
-        border: 0.,
-        border_color: [0.; 4],
-        aa: 0.5 * t.scale.clamp(0.25, 1.),
-    };
+    let style = Style::new(0., 0., [0.; 4], 0.5 * t.scale.clamp(0.25, 1.))?;
     out.paint(move |x, y| {
         let d = (x as f32 + 0.5) * dx + (y as f32 + 0.5) * dy - thr;
         let base = wipe_px(&style, t.outgoing_at(x, y), t.incoming_at(x, y), d);

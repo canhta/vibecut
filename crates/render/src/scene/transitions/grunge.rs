@@ -198,11 +198,12 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
         "rough_edge" => {
             let seed = t.params.seed("seed")?;
             let scale = super::pixels::px(t, "scale")?.max(4.);
-            let style = Style::for_grain(
-                t,
+            let style = Style::new(
+                2. * t.scale,
                 super::pixels::px(t, "edge_width")?,
                 t.params.color("edge_color")?,
-            );
+                1.,
+            )?;
             field_wipe(
                 t,
                 style,
