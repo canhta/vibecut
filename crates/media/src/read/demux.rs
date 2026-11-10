@@ -370,8 +370,9 @@ mod import_regressions {
         ) else {
             return;
         };
-        let expected = crate::thumbnail_at(
-            &path,
+        let asset = crate::SourceAsset::import(crate::AssetId(1), path.clone()).unwrap();
+        let expected = crate::thumbnail(
+            &asset,
             Tick::ZERO,
             crate::THUMBNAIL_MAX_EDGE,
             Arc::new(AtomicBool::new(false)),

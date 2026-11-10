@@ -16,7 +16,7 @@ use crate::source::MfccAnchor;
 
 /// Mono sample rate used by the vision models.
 pub const VISION_SAMPLE_RATE: u32 = 16_000;
-/// Cepstral coefficients returned by [`mfcc_range`].
+/// Cepstral coefficients returned by [`mfcc_range_with_progress`].
 pub const MFCC_COEFFICIENTS: usize = 13;
 
 const MFCC_HOP_SAMPLES: i64 = 160;
@@ -69,28 +69,9 @@ pub enum MfccProgress {
 /// the range; no manual retry is required. Analysis-range and individual
 /// preparation-slice work obey the audio decode/byte limits. Total first-pass
 /// work is linear in the unindexed prefix, independent of the requested output
-/// size. Use [`mfcc_range_with_progress`] to observe preparation checkpoints.
+/// size. `progress` observes preparation checkpoints.
 /// Resampling keeps the global phase and one second of preroll.
 /// A sub-chunk range still yields the frames that start inside it.
-pub fn mfcc_range(
-    asset: &SourceAsset,
-    range: SourceRange,
-    limits: &VisionPrepLimits,
-    cancel: Arc<AtomicBool>,
-    frame: impl FnMut(MfccFrame) -> Result<()>,
-) -> Result<()> {
-    mfcc_range_with_progress(asset, range, limits, cancel, |_| Ok(()), frame)
-}
-
-/// Compute [`mfcc_range`] with preparation checkpoints for an analysis job.
-///
-/// A cold distant range automatically makes one sequential pass, building exact
-/// anchors in bounded slices before serving the requested windows. Preparation
-/// checkpoints preserve the reader/decoder state and report the exact source
-/// cursor; no caller retry or enlarged range budget is required. All work is
-/// cancellable and memory is bounded. A callback error stops the pass immediately.
-/// Already prepared ranges enter `Analyzing` directly. Jobs should reuse the
-/// source asset and submit ranges in source order to share this initial pass.
 pub fn mfcc_range_with_progress(
     asset: &SourceAsset,
     range: SourceRange,

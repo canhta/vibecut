@@ -3,7 +3,7 @@
 
 use media::{
     DecodePreference, MediaError, PacketReader, StreamKind, THUMBNAIL_MAX_EDGE, VideoDecoder,
-    VideoFrame, VideoReader, thumbnail_at, thumbnails_at,
+    VideoFrame, VideoReader, thumbnail, thumbnails_at,
 };
 use std::path::Path;
 use std::sync::{
@@ -215,9 +215,10 @@ fn thumbnail_pass_matches_one_decode_per_position() {
     )
     .unwrap();
     assert_eq!(pass.len(), positions.len());
+    let asset = media::SourceAsset::import(media::AssetId(1), path.clone()).unwrap();
     let mut frames = Vec::new();
     for (index, at) in positions.iter().enumerate() {
-        let single = thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+        let single = thumbnail(&asset, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
         assert_eq!(pass[index].0, *at);
         assert_eq!(pass[index].1, single, "tile at {at:?}");
         frames.push(single.frame);
@@ -258,8 +259,9 @@ fn thumbnail_pass_refuses_hostile_positions_and_cancels_between_frames() {
     }
     // A position past the last frame refuses exactly like one call per position.
     let past = Tick(TICKS_PER_SECOND * 10);
+    let asset = media::SourceAsset::import(media::AssetId(2), path.clone()).unwrap();
     assert!(matches!(
-        thumbnail_at(&path, past, THUMBNAIL_MAX_EDGE, available.clone()),
+        thumbnail(&asset, past, THUMBNAIL_MAX_EDGE, available.clone()),
         Err(MediaError::Unsupported("video has no decodable frame"))
     ));
     assert!(matches!(

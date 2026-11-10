@@ -794,7 +794,7 @@ fn tile_interval_is_one_sixteen_by_nine_tile() {
     assert!(tile_interval(39, 71.5).is_ok());
 }
 
-/// The generated strip's cached frames are exactly what one `thumbnail_at`
+/// The generated strip's cached frames are exactly what one `thumbnail`
 /// call per position returns, including inside reordered GOPs.
 #[test]
 fn generated_tiles_match_one_decode_per_position() {
@@ -824,7 +824,7 @@ fn generated_tiles_match_one_decode_per_position() {
             .unwrap()
             .expect("published tile");
         let expected =
-            media::thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+            media::thumbnail(&asset, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
         assert_eq!(cached.frame, expected.frame, "tile at {at:?}");
         assert_eq!(
             (cached.width, cached.height),

@@ -10,17 +10,14 @@ mod vision;
 mod write;
 
 pub use audio::{
-    AudioChunk, AudioResampler, AudioSampleFormat, BucketPeak, PEAK_BUCKET_SAMPLES,
-    PEAK_SUMMARY_MAX_BYTES, PeakSummary, SPEECH_SAMPLE_RATE, SpeechEnergyWindow,
-    SpeechExtractSettings, SpeechWindow, analyze_speech_energy, extract_speech_audio,
-    extract_speech_audio_with, extract_speech_audio_with_cancel,
-    extract_speech_windows_with_cancel, peak_summary,
+    AudioResampler, AudioSampleFormat, BucketPeak, PEAK_BUCKET_SAMPLES, PEAK_SUMMARY_MAX_BYTES,
+    PeakSummary, SPEECH_SAMPLE_RATE, SpeechEnergyWindow, SpeechExtractSettings, SpeechWindow,
+    analyze_speech_energy, extract_speech_windows_with_cancel, peak_summary,
 };
 pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use read::{
     AudioDecoder, AudioFrame, DecodePreference, PacketReader, RgbaConverter, THUMBNAIL_MAX_EDGE,
-    Thumbnail, VideoDecoder, VideoFrame, VideoReader, probe, thumbnail, thumbnail_at,
-    thumbnail_at_with_read_bytes, thumbnails_at,
+    Thumbnail, VideoDecoder, VideoFrame, VideoReader, probe, thumbnail, thumbnails_at,
 };
 pub use source::{
     AssetAvailability, AssetData, AssetId, AudioInfo, CodecParameters, ColorInfo, ContentHash,
@@ -31,7 +28,7 @@ pub use source::{
 pub use vision::{
     FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor, MFCC_COEFFICIENTS, MfccFrame, MfccProgress,
     VISION_SAMPLE_RATE, VisionFrame, VisionPrepLimits, decode_frame_at, decode_shot_frames,
-    mfcc_range, mfcc_range_with_progress,
+    mfcc_range_with_progress,
 };
 pub use write::{
     AudioEncoder, AudioEncoderSettings, Container, EncodePreference, H264Profile, MuxSink, Muxer,

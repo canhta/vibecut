@@ -1,41 +1,15 @@
-//! Splits a speech range into bounded upload chunks and PCM windows.
+//! Splits a speech range into bounded PCM windows.
 
-use crate::{
-    AudioEncoder, AudioEncoderSettings, AudioFrame, Container, MediaError, Muxer, Result,
-    SourceAsset,
-};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-};
+use crate::{MediaError, Result, SourceAsset};
+use std::sync::{Arc, atomic::AtomicBool};
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 use super::extract::{
     ENERGY_FRAME_SAMPLES, SPEECH_SAMPLE_RATE, decode_speech, mean_square, samples_to_ticks,
 };
 
-const ENCODE_FRAME_SAMPLES: usize = 16_384;
 const SILENCE_RMS: f64 = 1e-4;
-const DEFAULT_MAX_BYTES: u64 = 24_000_000;
-const BYTE_HEADROOM: u64 = 64 << 10;
-const SIZE_MARGIN_DIVISOR: usize = 20;
 const SEARCH_SAMPLES: usize = 2 * SPEECH_SAMPLE_RATE as usize;
-const DEFAULT_BIT_RATE: usize = 48_000;
-
-/// One uploaded speech file and the exact source interval it represents.
-#[derive(Clone, Debug)]
-pub struct AudioChunk {
-    /// Finished m4a path inside the requested output directory.
-    pub path: PathBuf,
-    /// Exact source ticks decoded into this file.
-    pub source_range: SourceRange,
-    /// Ticks shared with the preceding chunk; zero for the first chunk.
-    pub overlap: Tick,
-    /// Energy hint: false when the chunk is effectively silent, not a VAD result.
-    pub speech_detected: bool,
-}
 
 /// One mono 16 kHz PCM invocation window in absolute source ticks.
 #[derive(Clone, Debug)]
@@ -50,69 +24,26 @@ pub struct SpeechWindow {
     pub speech_detected: bool,
 }
 
-/// Bounds for [`extract_speech_audio_with`]. The OpenAI transcription endpoint
-/// accepts at most 25 MB per file, so the default keeps one megabyte of headroom.
+/// Bounds for [`extract_speech_windows_with_cancel`].
 #[derive(Clone, Debug)]
 pub struct SpeechExtractSettings {
-    /// Hard upper bound for one finished file.
-    pub max_bytes: u64,
-    /// Hard upper bound for one chunk's audio duration.
+    /// Hard upper bound for one window's audio duration.
     pub max_duration: Tick,
-    /// Audio repeated at the start of the next chunk.
+    /// Audio repeated at the start of the next window.
     pub overlap: Tick,
-    /// AAC-LC bit rate in bits per second.
-    pub bit_rate: usize,
 }
 impl Default for SpeechExtractSettings {
     fn default() -> Self {
         Self {
-            max_bytes: DEFAULT_MAX_BYTES,
             max_duration: Tick(600 * TICKS_PER_SECOND),
             overlap: Tick(2 * TICKS_PER_SECOND),
-            bit_rate: DEFAULT_BIT_RATE,
         }
     }
 }
 
-/// Extract a source range into default settings: 24 MB, 10 minutes, 2 s overlap.
-pub fn extract_speech_audio(
-    asset: &SourceAsset,
-    range: SourceRange,
-    out_dir: impl AsRef<Path>,
-) -> Result<Vec<AudioChunk>> {
-    extract_speech_audio_with(asset, range, out_dir, &SpeechExtractSettings::default())
-}
-
-/// Extract with explicit bounds. Existing `speech-NNNN.m4a` files are replaced.
-pub fn extract_speech_audio_with(
-    asset: &SourceAsset,
-    range: SourceRange,
-    out_dir: impl AsRef<Path>,
-    settings: &SpeechExtractSettings,
-) -> Result<Vec<AudioChunk>> {
-    extract_files(
-        asset,
-        range,
-        out_dir.as_ref(),
-        settings,
-        Arc::new(AtomicBool::new(false)),
-    )
-}
-
-/// Extract with a cancellation token checked between packets and resampled frames.
-pub fn extract_speech_audio_with_cancel(
-    asset: &SourceAsset,
-    range: SourceRange,
-    out_dir: impl AsRef<Path>,
-    settings: &SpeechExtractSettings,
-    cancel: Arc<AtomicBool>,
-) -> Result<Vec<AudioChunk>> {
-    extract_files(asset, range, out_dir.as_ref(), settings, cancel)
-}
-
-/// Stream bounded mono 16 kHz PCM windows in the same speech-safe boundaries as
-/// [`extract_speech_audio`], without producing an encoded file. Each callback runs
-/// before decoding continues; at most one window of PCM is retained by this crate.
+/// Stream bounded mono 16 kHz PCM windows in speech-safe boundaries without
+/// producing an encoded file. Each callback runs before decoding continues; at
+/// most one window of PCM is retained by this crate.
 pub fn extract_speech_windows_with_cancel(
     asset: &SourceAsset,
     range: SourceRange,
@@ -122,7 +53,6 @@ pub fn extract_speech_windows_with_cancel(
 ) -> Result<()> {
     let plan = Plan::new(settings)?;
     let mut sink = PcmSink {
-        start: None,
         overlap: Tick::ZERO,
         samples: Vec::new(),
         energy: 0.0,
@@ -133,31 +63,12 @@ pub fn extract_speech_windows_with_cancel(
     extract_windows(asset, range, plan, cancel, &mut sink)
 }
 
-fn extract_files(
-    asset: &SourceAsset,
-    range: SourceRange,
-    out_dir: &Path,
-    settings: &SpeechExtractSettings,
-    cancel: Arc<AtomicBool>,
-) -> Result<Vec<AudioChunk>> {
-    let plan = Plan::new(settings)?;
-    fs::create_dir_all(out_dir)?;
-    let mut sink = FileSink {
-        out_dir,
-        settings,
-        current: None,
-        chunks: Vec::new(),
-    };
-    extract_windows(asset, range, plan, cancel, &mut sink)?;
-    Ok(sink.chunks)
-}
-
-fn extract_windows(
+fn extract_windows<F: FnMut(SpeechWindow) -> Result<()>>(
     asset: &SourceAsset,
     range: SourceRange,
     plan: Plan,
     cancel: Arc<AtomicBool>,
-    sink: &mut dyn Sink,
+    sink: &mut PcmSink<F>,
 ) -> Result<()> {
     let mut chunker = Chunker::new(plan, sink);
     decode_speech(asset, range, &cancel, &mut |samples, tick| {
@@ -176,26 +87,15 @@ struct Plan {
 }
 impl Plan {
     fn new(settings: &SpeechExtractSettings) -> Result<Self> {
-        if settings.max_bytes <= BYTE_HEADROOM + 4096
-            || !(16_000..=128_000).contains(&settings.bit_rate)
-            || settings.max_duration <= Tick::ZERO
-            || settings.overlap < Tick::ZERO
-        {
+        if settings.max_duration <= Tick::ZERO || settings.overlap < Tick::ZERO {
             return Err(MediaError::Invalid("speech extract settings"));
         }
-        let duration_samples = usize::try_from(
+        let target = usize::try_from(
             settings
                 .max_duration
                 .to_units(i64::from(SPEECH_SAMPLE_RATE), Rounding::Floor)?,
         )
         .map_err(|_| MediaError::Invalid("speech chunk duration"))?;
-        let usable = settings.max_bytes - BYTE_HEADROOM;
-        let byte_seconds = usable.saturating_mul(8) / settings.bit_rate as u64;
-        let byte_samples =
-            usize::try_from(byte_seconds.saturating_mul(u64::from(SPEECH_SAMPLE_RATE)))
-                .unwrap_or(usize::MAX);
-        let byte_samples = byte_samples - byte_samples / SIZE_MARGIN_DIVISOR;
-        let target = duration_samples.min(byte_samples);
         let overlap_samples = usize::try_from(
             settings
                 .overlap
@@ -220,58 +120,7 @@ impl Plan {
     }
 }
 
-/// Receives bounded windows so file and PCM consumers share one split policy.
-trait Sink {
-    fn begin(&mut self, index: usize, start: Tick, overlap: Tick) -> Result<()>;
-    fn feed(&mut self, samples: &[f32]) -> Result<()>;
-    fn commit(&mut self, start: Tick, end: Tick) -> Result<()>;
-    fn count(&self) -> usize;
-}
-
-struct FileSink<'a> {
-    out_dir: &'a Path,
-    settings: &'a SpeechExtractSettings,
-    current: Option<ChunkWriter>,
-    chunks: Vec<AudioChunk>,
-}
-impl Sink for FileSink<'_> {
-    fn begin(&mut self, index: usize, _start: Tick, overlap: Tick) -> Result<()> {
-        self.current = Some(ChunkWriter::new(
-            index,
-            self.out_dir,
-            overlap,
-            self.settings,
-        )?);
-        Ok(())
-    }
-    fn feed(&mut self, samples: &[f32]) -> Result<()> {
-        self.current
-            .as_mut()
-            .ok_or(MediaError::Invalid("speech chunk state"))?
-            .feed(samples)
-    }
-    fn commit(&mut self, start: Tick, end: Tick) -> Result<()> {
-        let writer = self
-            .current
-            .take()
-            .ok_or(MediaError::Invalid("speech chunk state"))?;
-        let overlap = writer.overlap;
-        let (path, speech_detected) = writer.finish(self.settings.max_bytes)?;
-        self.chunks.push(AudioChunk {
-            path,
-            source_range: SourceRange::new(start, end)?,
-            overlap,
-            speech_detected,
-        });
-        Ok(())
-    }
-    fn count(&self) -> usize {
-        self.chunks.len()
-    }
-}
-
 struct PcmSink<F> {
-    start: Option<Tick>,
     overlap: Tick,
     samples: Vec<f32>,
     energy: f64,
@@ -279,15 +128,14 @@ struct PcmSink<F> {
     windows: usize,
     window: F,
 }
-impl<F: FnMut(SpeechWindow) -> Result<()>> Sink for PcmSink<F> {
-    fn begin(&mut self, _index: usize, start: Tick, overlap: Tick) -> Result<()> {
-        self.start = Some(start);
+impl<F: FnMut(SpeechWindow) -> Result<()>> PcmSink<F> {
+    fn begin(&mut self, overlap: Tick) {
         self.overlap = overlap;
         self.samples.clear();
         self.energy = 0.0;
         self.sample_count = 0;
-        Ok(())
     }
+
     fn feed(&mut self, samples: &[f32]) -> Result<()> {
         self.samples.extend_from_slice(samples);
         self.energy += samples
@@ -300,6 +148,7 @@ impl<F: FnMut(SpeechWindow) -> Result<()>> Sink for PcmSink<F> {
             .ok_or(MediaError::TooLarge("speech window samples"))?;
         Ok(())
     }
+
     fn commit(&mut self, start: Tick, end: Tick) -> Result<()> {
         let speech_detected =
             self.sample_count > 0 && (self.energy / self.sample_count as f64).sqrt() >= SILENCE_RMS;
@@ -309,28 +158,27 @@ impl<F: FnMut(SpeechWindow) -> Result<()>> Sink for PcmSink<F> {
             samples: std::mem::take(&mut self.samples),
             speech_detected,
         };
-        self.start = None;
         self.windows += 1;
         (self.window)(window)
     }
+
     fn count(&self) -> usize {
         self.windows
     }
 }
 
-struct Chunker<'a> {
+struct Chunker<'a, F> {
     plan: Plan,
     pending: Vec<f32>,
     pending_start: Option<Tick>,
     expected_input: Option<Tick>,
     fed: usize,
     current_start: Option<Tick>,
-    sink: &'a mut dyn Sink,
-    next_index: usize,
+    sink: &'a mut PcmSink<F>,
 }
-impl<'a> Chunker<'a> {
-    fn new(plan: Plan, sink: &'a mut dyn Sink) -> Self {
-        Self {
+impl<'a, F: FnMut(SpeechWindow) -> Result<()>> Chunker<'a, F> {
+    fn new(plan: Plan, sink: &'a mut PcmSink<F>) -> Self {
+        Chunker {
             plan,
             pending: Vec::new(),
             pending_start: None,
@@ -338,7 +186,6 @@ impl<'a> Chunker<'a> {
             fed: 0,
             current_start: None,
             sink,
-            next_index: 0,
         }
     }
 
@@ -435,14 +282,13 @@ impl<'a> Chunker<'a> {
         let start = self
             .pending_start
             .ok_or(MediaError::Invalid("speech chunk start"))?;
-        let overlap = if self.next_index == 0 {
+        let overlap = if self.sink.count() == 0 {
             Tick::ZERO
         } else {
             self.plan.overlap_ticks
         };
-        self.sink.begin(self.next_index, start, overlap)?;
+        self.sink.begin(overlap);
         self.current_start = Some(start);
-        self.next_index += 1;
         Ok(())
     }
 
@@ -526,150 +372,13 @@ fn choose_split(pending: &[f32], fed: usize, lo: usize, hi: usize) -> Result<usi
     Ok(best)
 }
 
-struct ChunkWriter {
-    encoder: AudioEncoder,
-    muxer: Muxer,
-    output: OutputFile,
-    overlap: Tick,
-    fed: usize,
-    energy: f64,
-    samples: usize,
-    scratch: Vec<f32>,
-}
-impl ChunkWriter {
-    fn new(
-        index: usize,
-        out_dir: &Path,
-        overlap: Tick,
-        settings: &SpeechExtractSettings,
-    ) -> Result<Self> {
-        let encoder = AudioEncoder::new(AudioEncoderSettings {
-            sample_rate: SPEECH_SAMPLE_RATE,
-            channels: 1,
-            bit_rate: settings.bit_rate,
-            webm: false,
-        })?;
-        let output = OutputFile::new(out_dir, index)?;
-        let mut muxer = Muxer::create(&output.temp, Container::Mp4)?;
-        muxer.add_parameters(&encoder.parameters(), encoder.time_base())?;
-        Ok(Self {
-            encoder,
-            muxer,
-            output,
-            overlap,
-            fed: 0,
-            energy: 0.0,
-            samples: 0,
-            scratch: Vec::new(),
-        })
-    }
-
-    fn feed(&mut self, samples: &[f32]) -> Result<()> {
-        let mut offset = 0;
-        while offset < samples.len() {
-            let count = (samples.len() - offset).min(ENCODE_FRAME_SAMPLES);
-            let slice = samples
-                .get(offset..offset + count)
-                .ok_or(MediaError::Invalid("speech encode bounds"))?;
-            let pts = samples_to_ticks(self.fed as i64)?;
-            self.scratch.clear();
-            self.scratch.extend_from_slice(slice);
-            let frame = AudioFrame::from_planar_f32(
-                pts,
-                SPEECH_SAMPLE_RATE,
-                std::slice::from_ref(&self.scratch),
-            )?;
-            for packet in self.encoder.encode(&frame)? {
-                self.muxer.write_packet(0, &packet)?;
-            }
-            self.energy += slice
-                .iter()
-                .map(|sample| f64::from(*sample) * f64::from(*sample))
-                .sum::<f64>();
-            self.samples += count;
-            self.fed = self
-                .fed
-                .checked_add(count)
-                .ok_or(MediaError::TooLarge("speech samples"))?;
-            offset += count;
-        }
-        Ok(())
-    }
-
-    fn finish(self, max_bytes: u64) -> Result<(PathBuf, bool)> {
-        let Self {
-            mut encoder,
-            mut muxer,
-            output,
-            energy,
-            samples,
-            ..
-        } = self;
-        for packet in encoder.flush()? {
-            muxer.write_packet(0, &packet)?;
-        }
-        muxer.finish()?;
-        if fs::metadata(&output.temp)?.len() > max_bytes {
-            return Err(MediaError::TooLarge("encoded speech chunk bytes"));
-        }
-        let speech_detected = samples > 0 && (energy / samples as f64).sqrt() >= SILENCE_RMS;
-        Ok((output.commit()?, speech_detected))
-    }
-}
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct OutputFile {
-    temp: PathBuf,
-    final_path: PathBuf,
-    committed: bool,
-}
-impl OutputFile {
-    fn new(dir: &Path, index: usize) -> Result<Self> {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        Ok(Self {
-            temp: dir.join(format!(
-                ".speech-{index:04}-{}-{sequence}.part",
-                std::process::id()
-            )),
-            final_path: dir.join(format!("speech-{index:04}.m4a")),
-            committed: false,
-        })
-    }
-
-    fn commit(mut self) -> Result<PathBuf> {
-        // Same-directory rename replaces atomically and preserves the old file on failure.
-        fs::rename(&self.temp, &self.final_path)?;
-        self.committed = true;
-        Ok(self.final_path.clone())
-    }
-}
-impl Drop for OutputFile {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = fs::remove_file(&self.temp);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{OutputFile, Plan, SpeechExtractSettings, choose_split};
+    use super::{Plan, SpeechExtractSettings, choose_split};
     use time::{Rounding, Tick};
 
     fn seconds(value: i64) -> Tick {
         Tick::from_units(value, 1, Rounding::Nearest).unwrap()
-    }
-
-    #[test]
-    fn failed_publication_preserves_existing_chunk() {
-        let directory = tempfile::tempdir().unwrap();
-        let output = OutputFile::new(directory.path(), 0).unwrap();
-        std::fs::write(&output.final_path, b"previous chunk").unwrap();
-        let final_path = output.final_path.clone();
-        // A staging file lost before publication must not delete an older result.
-        assert!(output.commit().is_err());
-        assert_eq!(std::fs::read(&final_path).unwrap(), b"previous chunk");
     }
 
     #[test]
@@ -693,11 +402,16 @@ mod tests {
             ..SpeechExtractSettings::default()
         };
         assert!(Plan::new(&small).is_err());
-        let no_bit_rate = SpeechExtractSettings {
-            bit_rate: 0,
+        let empty = SpeechExtractSettings {
+            max_duration: Tick::ZERO,
             ..SpeechExtractSettings::default()
         };
-        assert!(Plan::new(&no_bit_rate).is_err());
+        assert!(Plan::new(&empty).is_err());
+        let negative = SpeechExtractSettings {
+            overlap: Tick(-1),
+            ..SpeechExtractSettings::default()
+        };
+        assert!(Plan::new(&negative).is_err());
     }
 
     #[test]

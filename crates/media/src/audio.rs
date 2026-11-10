@@ -1,4 +1,5 @@
-//! Extracts speech audio, resamples continuous audio spans and prepares upload chunks.
+//! Streams bounded speech windows, measures speech energy, summarizes source
+//! peaks and resamples continuous audio spans.
 
 mod chunk;
 mod energy;
@@ -6,11 +7,7 @@ mod extract;
 mod peaks;
 mod resample;
 
-pub use chunk::{
-    AudioChunk, SpeechExtractSettings, SpeechWindow, extract_speech_audio,
-    extract_speech_audio_with, extract_speech_audio_with_cancel,
-    extract_speech_windows_with_cancel,
-};
+pub use chunk::{SpeechExtractSettings, SpeechWindow, extract_speech_windows_with_cancel};
 pub use energy::{SpeechEnergyWindow, analyze_speech_energy};
 pub use extract::SPEECH_SAMPLE_RATE;
 pub use peaks::{

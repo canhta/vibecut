@@ -16,6 +16,5 @@ pub use face::{FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor};
 pub use frame::{VisionFrame, decode_frame_at, decode_shot_frames};
 pub use limits::VisionPrepLimits;
 pub use mfcc::{
-    MFCC_COEFFICIENTS, MfccFrame, MfccProgress, VISION_SAMPLE_RATE, mfcc_range,
-    mfcc_range_with_progress,
+    MFCC_COEFFICIENTS, MfccFrame, MfccProgress, VISION_SAMPLE_RATE, mfcc_range_with_progress,
 };

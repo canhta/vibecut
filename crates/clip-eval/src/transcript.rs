@@ -73,7 +73,7 @@ pub fn load(context: &LoadContext<'_>, budget: &mut Budget) -> Result<CachedTran
         return Ok(cached(transcript, asr_path, true, "cache"));
     }
     if transcribe {
-        let prepared = asr::prepare(source, language, source_sha, out_dir, budget)?;
+        let prepared = asr::prepare(source, language, source_sha, budget)?;
         let cache_path = asr::cache_path(out_dir, source_sha);
         write_cache(&cache_path, &prepared.transcript)?;
         return Ok(CachedTranscript {

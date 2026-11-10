@@ -8,7 +8,7 @@
 
 use media::{
     AssetId, FaceBox, MediaError, MfccProgress, SourceAsset, VisionFrame, VisionPrepLimits,
-    decode_frame_at, decode_shot_frames, mfcc_range, mfcc_range_with_progress,
+    decode_frame_at, decode_shot_frames, mfcc_range_with_progress,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -108,10 +108,17 @@ fn collect_mfcc(
     cancel: Arc<AtomicBool>,
 ) -> Vec<media::MfccFrame> {
     let mut frames = Vec::new();
-    mfcc_range(asset, range, limits, cancel, |frame| {
-        frames.push(frame);
-        Ok(())
-    })
+    mfcc_range_with_progress(
+        asset,
+        range,
+        limits,
+        cancel,
+        |_| Ok(()),
+        |frame| {
+            frames.push(frame);
+            Ok(())
+        },
+    )
     .unwrap();
     frames
 }
@@ -323,11 +330,12 @@ fn mfcc_range_is_globally_anchored() {
         },
     ] {
         assert!(matches!(
-            mfcc_range(
+            mfcc_range_with_progress(
                 &source,
                 SourceRange::new(Tick::ZERO, seconds(1.0)).unwrap(),
                 &limits,
                 cancel(),
+                |_| Ok(()),
                 |_| Ok(()),
             ),
             Err(MediaError::TooLarge(_))
@@ -663,11 +671,12 @@ fn mfcc_range_is_globally_anchored() {
 fn mfcc_cancellation_stops_between_frames() {
     let source = asset(&mfcc_fixture(), 3);
     let token = cancel();
-    let result = mfcc_range(
+    let result = mfcc_range_with_progress(
         &source,
         SourceRange::new(Tick::ZERO, seconds(1.0)).unwrap(),
         &VisionPrepLimits::default(),
         token.clone(),
+        |_| Ok(()),
         |_| {
             token.store(true, Ordering::Relaxed);
             Ok(())

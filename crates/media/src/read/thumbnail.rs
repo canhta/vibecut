@@ -21,7 +21,7 @@ const MAX_THUMBNAIL_EDGE: u32 = 1024;
 /// Native thumbnail/recovery image and scratch ceiling (separate from playback).
 pub(crate) const MAX_SOURCE_PIXELS: u64 = 1 << 21;
 /// Source bytes one sampled frame's decode leg may read: the same allowance a
-/// single [`thumbnail_at`] call gets for one frame.
+/// single [`thumbnail`] call gets for one frame.
 const PASS_LEG_BYTES: u64 = 64 << 20;
 const MAGIC: &[u8; 8] = b"VTMB0001";
 
@@ -103,27 +103,20 @@ pub fn thumbnail(
     max_edge: u32,
     cancelled: Arc<AtomicBool>,
 ) -> Result<Thumbnail> {
-    thumbnail_at(asset.path(), at, max_edge, cancelled)
-}
-
-/// Decode one frame from `path`. `at == 0` reads the first frame; any later
-/// position seeks to the preceding keyframe and decodes forward to that frame.
-pub fn thumbnail_at(
-    path: &Path,
-    at: Tick,
-    max_edge: u32,
-    cancelled: Arc<AtomicBool>,
-) -> Result<Thumbnail> {
-    thumbnail_at_with_read_bytes(path, at, max_edge, cancelled).map(|(thumbnail, _)| thumbnail)
+    let mut decoded = None;
+    sample_positions(asset.path(), &[at], max_edge, cancelled, |_, image| {
+        decoded = Some(image);
+    })?;
+    decoded.ok_or(MediaError::Unsupported("video has no decodable frame"))
 }
 
 /// Decode one frame per ascending source position from one sequential pass.
 ///
 /// The reader opens and seeks once, then decodes forward; each position
-/// receives the first frame at or after it, the same frame [`thumbnail_at`]
+/// receives the first frame at or after it, the same frame [`thumbnail`]
 /// returns for that position. `sample` receives positions in order before the
 /// next frame is decoded. Each leg may read at most the 64 MiB a single
-/// [`thumbnail_at`] call may; a longer leg, a position past the last frame, a
+/// [`thumbnail`] call may; a longer leg, a position past the last frame, a
 /// non-ascending or empty list and cancellation are typed errors.
 pub fn thumbnails_at(
     path: &Path,
@@ -135,26 +128,10 @@ pub fn thumbnails_at(
     sample_positions(path, positions, max_edge, cancelled, sample).map(|_| ())
 }
 
-/// Same as [`thumbnail_at`], also reporting how many source bytes the first
-/// frame needed. Used to prove bounded reads on large files.
-pub fn thumbnail_at_with_read_bytes(
-    path: &Path,
-    at: Tick,
-    max_edge: u32,
-    cancelled: Arc<AtomicBool>,
-) -> Result<(Thumbnail, u64)> {
-    let mut decoded = None;
-    let bytes = sample_positions(path, &[at], max_edge, cancelled, |_, image| {
-        decoded = Some(image);
-    })?;
-    let thumbnail = decoded.ok_or(MediaError::Unsupported("video has no decodable frame"))?;
-    Ok((thumbnail, bytes))
-}
-
-/// The one open/seek/decode loop behind [`thumbnail_at`] and
-/// [`thumbnails_at`]: open once, seek once, decode forward and hand each
-/// ascending position the first frame at or after it. Returns the source bytes
-/// read when the first frame was delivered.
+/// The one open/seek/decode loop behind [`thumbnail`] and [`thumbnails_at`]:
+/// open once, seek once, decode forward and hand each ascending position the
+/// first frame at or after it. Returns the source bytes read when the first
+/// frame was delivered.
 fn sample_positions(
     path: &Path,
     positions: &[Tick],
@@ -318,6 +295,52 @@ mod tests {
         // Pixel changes are still a valid payload; geometry stays authoritative.
         assert!(Thumbnail::decode(&wrong).is_ok());
     }
+
+    #[test]
+    fn first_frame_read_stays_bounded_on_a_large_source() {
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
+            "metadata bounds",
+            "metadata-large.mp4",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=1280x720:rate=30:duration=12",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "0",
+                "-pix_fmt",
+                "yuv420p",
+            ],
+        ) else {
+            return;
+        };
+        let length = std::fs::metadata(&path).unwrap().len();
+        assert!(length > 1 << 20, "large fixture is only {length} bytes");
+        let mut image = None;
+        let bytes = sample_positions(
+            &path,
+            &[Tick::ZERO],
+            THUMBNAIL_MAX_EDGE,
+            Arc::new(AtomicBool::new(false)),
+            |_, thumbnail| image = Some(thumbnail),
+        )
+        .unwrap();
+        assert!(
+            bytes < length,
+            "first-frame thumbnail read {bytes} of {length} bytes"
+        );
+        let image = image.expect("first frame");
+        assert!(image.width <= THUMBNAIL_MAX_EDGE);
+        assert!(image.height <= THUMBNAIL_MAX_EDGE);
+        // Packed output is bounded independently of input file length; native
+        // source allocations are admitted separately.
+        assert!(image.pixels.len() <= 320 * 320 * 4);
+    }
 }
 
 /// Manual timing harness for a real interview cut: one thumbnail per tile of a
@@ -379,8 +402,9 @@ mod benchmark {
         );
 
         let mark = Instant::now();
+        let asset = crate::SourceAsset::import(crate::AssetId(1), path.clone()).unwrap();
         for at in &positions {
-            thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+            thumbnail(&asset, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
         }
         eprintln!("per-tile public path: {:.2?}", mark.elapsed());
 

@@ -54,8 +54,6 @@ pub fn transcribe(
             Rounding::Floor,
         )?,
         overlap: Tick::ZERO,
-        max_bytes: WORK_BYTES,
-        bit_rate: 48_000,
     };
     let full_range = SourceRange::new(Tick::ZERO, duration)?;
     let fingerprint = NfcText::from(hex(&asset.content_hash().0));
@@ -185,8 +183,6 @@ impl Providers {
         let settings = SpeechExtractSettings {
             max_duration: end,
             overlap: Tick::ZERO,
-            max_bytes: WORK_BYTES,
-            bit_rate: 48_000,
         };
         let mut detected = None;
         let mut failure = None;

@@ -1,6 +1,6 @@
 //! Opt-in ElevenLabs Scribe preparation of a real transcript.
 //!
-//! This is upstream of the clip pipeline: it decodes bounded speech chunks,
+//! This is upstream of the clip pipeline: it decodes bounded speech windows,
 //! transcribes each with the already-admitted Scribe adapter, assembles absolute
 //! source coordinates and caches the resulting captions transcript.
 use crate::budget::Budget;
@@ -14,19 +14,15 @@ use ai::{
 use captions::{
     LanguageProfile, LanguageRegistry, LanguageTag, NfcText, TimingSpans, Transcript, Word,
 };
-use media::{
-    AssetId, AudioDecoder, PacketReader, SourceAsset, SpeechExtractSettings,
-    extract_speech_audio_with,
-};
+use media::{AssetId, SourceAsset, SpeechExtractSettings, extract_speech_windows_with_cancel};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Instant;
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 const SAMPLE_RATE: u32 = 16_000;
 const MAX_PCM_BYTES: u64 = 64 * 1024 * 1024;
 const CHUNK_SECONDS: i64 = 15 * 60;
-const BIT_RATE: usize = 64_000;
 
 struct NoHooks;
 impl ExecutionHooks for NoHooks {
@@ -51,7 +47,6 @@ pub fn prepare(
     source: &Path,
     language: &LanguageTag,
     source_sha: &str,
-    out_dir: &Path,
     budget: &mut Budget,
 ) -> Result<Prepared> {
     let started = Instant::now();
@@ -76,67 +71,83 @@ pub fn prepare(
         .ok_or_else(|| Error::Options("source duration is unknown".into()))?;
     let range = SourceRange::new(Tick::ZERO, duration)?;
     let settings = SpeechExtractSettings {
-        max_bytes: 24_000_000,
         max_duration: Tick(CHUNK_SECONDS * TICKS_PER_SECOND),
         overlap: Tick::ZERO,
-        bit_rate: BIT_RATE,
     };
-    let chunk_dir = out_dir
-        .join("cache/asr")
-        .join(source_sha.get(..16).unwrap_or(source_sha));
-    let chunks = extract_speech_audio_with(&asset, range, &chunk_dir, &settings)?;
-    let mut recognitions = Vec::with_capacity(chunks.len());
+    let mut recognitions = Vec::new();
     let mut cost_micros = 0u64;
     let mut notes = Vec::new();
-    for chunk in &chunks {
-        let decoded = decode_chunk(&chunk.path)?;
-        let expected = expected_samples(chunk.source_range)?;
-        let samples = fit_samples(decoded, expected, &mut notes);
-        let start = samples_from_tick(chunk.source_range.start())?;
-        let end = start
-            .checked_add(u64::try_from(samples.len()).map_err(|_| Error::Payload)?)
-            .ok_or(Error::Payload)?;
-        let sample_range = SampleRange::new(start, end)?;
-        if sample_range.len().saturating_mul(4) > MAX_PCM_BYTES {
-            return Err(Error::Payload);
-        }
-        let scope = Scope {
-            provider: transcriber.config().clone(),
-            operation: Operation::Transcribe,
-            payload_fingerprint: format!("asr:{source_sha}").into(),
-            mode: "file".into(),
-            texts: Vec::new(),
-            source_language: language.clone(),
-            target_language: None,
-            source_samples: sample_range,
-            sample_rate: SAMPLE_RATE,
-            max_bytes: sample_range
-                .len()
-                .checked_mul(2)
-                .and_then(|bytes| bytes.checked_add(44))
-                .ok_or(Error::Payload)?,
-        };
-        let estimate = estimate_micros(&transcriber.estimate(&scope))?;
-        budget.reserve(estimate)?;
-        cost_micros = cost_micros.saturating_add(estimate);
-        let consent = Consent::grant(scope.clone(), Money::new("USD", estimate)?)?;
-        let request = Request {
-            scope: &scope,
-            consent: Some(&consent),
-        };
-        let audio = AudioWindow {
-            samples: &samples,
-            range: sample_range,
-            sample_rate: SAMPLE_RATE,
-        };
-        recognitions.push(ai::transcribe(
-            &transcriber,
-            audio,
-            &request,
-            None,
-            &NoHooks,
-        )?);
+    let mut failure = None;
+    let mut windows = 0usize;
+    let extraction = extract_speech_windows_with_cancel(
+        &asset,
+        range,
+        &settings,
+        Arc::new(AtomicBool::new(false)),
+        |window| {
+            windows += 1;
+            let prepared = (|| -> Result<()> {
+                let expected = expected_samples(window.source_range)?;
+                let samples = fit_samples(window.samples, expected, &mut notes);
+                let start = samples_from_tick(window.source_range.start())?;
+                let end = start
+                    .checked_add(u64::try_from(samples.len()).map_err(|_| Error::Payload)?)
+                    .ok_or(Error::Payload)?;
+                let sample_range = SampleRange::new(start, end)?;
+                if sample_range.len().saturating_mul(4) > MAX_PCM_BYTES {
+                    return Err(Error::Payload);
+                }
+                let scope = Scope {
+                    provider: transcriber.config().clone(),
+                    operation: Operation::Transcribe,
+                    payload_fingerprint: format!("asr:{source_sha}").into(),
+                    mode: "file".into(),
+                    texts: Vec::new(),
+                    source_language: language.clone(),
+                    target_language: None,
+                    source_samples: sample_range,
+                    sample_rate: SAMPLE_RATE,
+                    max_bytes: sample_range
+                        .len()
+                        .checked_mul(2)
+                        .and_then(|bytes| bytes.checked_add(44))
+                        .ok_or(Error::Payload)?,
+                };
+                let estimate = estimate_micros(&transcriber.estimate(&scope))?;
+                budget.reserve(estimate)?;
+                cost_micros = cost_micros.saturating_add(estimate);
+                let consent = Consent::grant(scope.clone(), Money::new("USD", estimate)?)?;
+                let request = Request {
+                    scope: &scope,
+                    consent: Some(&consent),
+                };
+                let audio = AudioWindow {
+                    samples: &samples,
+                    range: sample_range,
+                    sample_rate: SAMPLE_RATE,
+                };
+                recognitions.push(ai::transcribe(
+                    &transcriber,
+                    audio,
+                    &request,
+                    None,
+                    &NoHooks,
+                )?);
+                Ok(())
+            })();
+            match prepared {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    failure = Some(error);
+                    Err(media::MediaError::Cancelled)
+                }
+            }
+        },
+    );
+    if let Some(error) = failure {
+        return Err(error);
     }
+    extraction?;
     let recognition = ai::assemble(recognitions, &NoHooks)?;
     let mut transcript = recognition.to_transcript()?;
     let registry = LanguageRegistry::standard()?;
@@ -157,7 +168,7 @@ pub fn prepare(
         transcript,
         cost_micros,
         wall_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        chunks: chunks.len(),
+        chunks: windows,
         notes,
     })
 }
@@ -214,40 +225,6 @@ fn span_words(spans: &TimingSpans, profile: &LanguageProfile) -> Result<Option<V
     } else {
         Ok(Some(words))
     }
-}
-
-fn decode_chunk(path: &Path) -> Result<Vec<f32>> {
-    let mut reader = PacketReader::open(path)?;
-    let stream = reader
-        .probe()
-        .streams
-        .iter()
-        .find(|stream| stream.kind == media::StreamKind::Audio)
-        .cloned()
-        .ok_or(media::MediaError::NoAudioStream)?;
-    let mut decoder = AudioDecoder::new(&stream)?;
-    let mut samples = Vec::new();
-    while let Some(packet) = reader.next_packet()? {
-        for frame in decoder.decode(&packet)? {
-            append(&frame, &mut samples)?;
-        }
-    }
-    for frame in decoder.flush()? {
-        append(&frame, &mut samples)?;
-    }
-    Ok(samples)
-}
-
-fn append(frame: &media::AudioFrame, samples: &mut Vec<f32>) -> Result<()> {
-    if frame.sample_rate() != SAMPLE_RATE || frame.channels() != 1 {
-        return Err(Error::Options("ASR chunk is not mono 16 kHz".into()));
-    }
-    let planes = frame.planar_f32()?;
-    let mono = planes
-        .first()
-        .ok_or_else(|| Error::Options("ASR chunk has no samples".into()))?;
-    samples.extend_from_slice(mono);
-    Ok(())
 }
 
 fn expected_samples(range: SourceRange) -> Result<usize> {
@@ -346,33 +323,5 @@ mod tests {
         assert_eq!(words.len(), 1);
         assert_eq!(words[0].text.as_str(), "Hello!");
         assert_eq!(words[0].range, Some(range));
-    }
-
-    #[test]
-    fn extracted_chunk_decodes_to_the_requested_sample_grid() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("speech.wav");
-        crate::label::write_synthetic_wav(&source, 3.0).unwrap();
-        if media::probe(&source).is_err() {
-            eprintln!("skipping: ffmpeg is unavailable");
-            return;
-        }
-        let asset = SourceAsset::import(AssetId(1), source).unwrap();
-        let range = SourceRange::new(Tick::ZERO, Tick(3 * TICKS_PER_SECOND)).unwrap();
-        let settings = SpeechExtractSettings {
-            max_bytes: 1_000_000,
-            max_duration: Tick(3 * TICKS_PER_SECOND),
-            overlap: Tick::ZERO,
-            bit_rate: BIT_RATE,
-        };
-        let chunks = extract_speech_audio_with(&asset, range, dir.path(), &settings).unwrap();
-        assert_eq!(chunks.len(), 1);
-        let chunk = chunks.first().unwrap();
-        let decoded = decode_chunk(&chunk.path).unwrap();
-        let expected = expected_samples(chunk.source_range).unwrap();
-        let mut notes = Vec::new();
-        let fitted = fit_samples(decoded, expected, &mut notes);
-        assert_eq!(fitted.len(), expected);
-        assert!(fitted.iter().all(|sample| sample.is_finite()));
     }
 }

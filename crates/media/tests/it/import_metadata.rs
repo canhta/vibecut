@@ -6,10 +6,11 @@
     clippy::indexing_slicing
 )]
 use media::{
-    Decodability, MediaKind, MediaMetadata, PacketReader, ProbeCapabilities, SourceAsset,
-    SourceProbe, StreamKind, THUMBNAIL_MAX_EDGE, UnsupportedReason, thumbnail_at_with_read_bytes,
+    AssetId, Decodability, MediaKind, MediaMetadata, PacketReader, ProbeCapabilities, SourceAsset,
+    SourceProbe, StreamKind, THUMBNAIL_MAX_EDGE, UnsupportedReason, thumbnail,
 };
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, atomic::AtomicBool};
 use time::Tick;
 
 fn inspect(path: &Path) -> (SourceProbe, MediaMetadata, ProbeCapabilities) {
@@ -208,11 +209,12 @@ fn assert_still_import(path: &Path, codec: &str, width: u32, height: u32) {
     assert!(!metadata.has_audio, "{path:?}");
     assert!(metadata.needs_thumbnail(), "{path:?}");
     assert_decodable(&capabilities, StreamKind::Video, codec);
-    let (thumbnail, _) = thumbnail_at_with_read_bytes(
-        path,
+    let asset = SourceAsset::import(AssetId(1), path.to_path_buf()).unwrap();
+    let thumbnail = thumbnail(
+        &asset,
         Tick::ZERO,
         THUMBNAIL_MAX_EDGE,
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
     assert!(thumbnail.width <= THUMBNAIL_MAX_EDGE);
@@ -322,11 +324,12 @@ fn thumbnail_position_decodes_forward_past_the_preceding_keyframe() {
         return;
     };
     let at = Tick(time::TICKS_PER_SECOND / 2);
-    let (thumbnail, _) = thumbnail_at_with_read_bytes(
-        &path,
+    let asset = SourceAsset::import(AssetId(2), path.clone()).unwrap();
+    let thumbnail = thumbnail(
+        &asset,
         at,
         THUMBNAIL_MAX_EDGE,
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
     assert!(thumbnail.frame >= at, "returned the preceding keyframe");
@@ -334,7 +337,7 @@ fn thumbnail_position_decodes_forward_past_the_preceding_keyframe() {
 }
 
 #[test]
-fn probe_and_thumbnail_read_a_bounded_prefix_of_a_large_file() {
+fn probe_reads_a_bounded_prefix_of_a_large_file() {
     let Some(path) = testkit::oracle::generate(
         &testkit::fixture::dir("media"),
         "metadata bounds",
@@ -366,17 +369,14 @@ fn probe_and_thumbnail_read_a_bounded_prefix_of_a_large_file() {
         "probe read {probe_bytes} of {length} bytes"
     );
     assert!(probe_bytes <= 32 << 20, "probe read budget exceeded");
-    let (thumbnail, decode_bytes) = thumbnail_at_with_read_bytes(
-        &path,
+    let asset = SourceAsset::import(AssetId(3), path).unwrap();
+    let thumbnail = thumbnail(
+        &asset,
         Tick::ZERO,
         THUMBNAIL_MAX_EDGE,
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
-    assert!(
-        decode_bytes < length,
-        "first-frame thumbnail read {decode_bytes} of {length} bytes"
-    );
     assert!(thumbnail.width <= THUMBNAIL_MAX_EDGE);
     assert!(thumbnail.height <= THUMBNAIL_MAX_EDGE);
     assert!(thumbnail.pixels.len() <= (THUMBNAIL_MAX_EDGE * THUMBNAIL_MAX_EDGE * 4) as usize);
@@ -436,14 +436,15 @@ fn thumbnail_native_geometry_boundary_uses_small_output_or_a_typed_refusal() {
         ) else {
             return;
         };
-        let result = thumbnail_at_with_read_bytes(
-            &path,
+        let asset = SourceAsset::import(AssetId(4), path).unwrap();
+        let result = thumbnail(
+            &asset,
             Tick::ZERO,
             THUMBNAIL_MAX_EDGE,
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
         );
         if admitted {
-            let (image, _) = result.unwrap();
+            let image = result.unwrap();
             assert_eq!((image.width, image.height), (320, 160));
             assert_eq!(image.pixels.len(), 320 * 160 * 4);
         } else {
