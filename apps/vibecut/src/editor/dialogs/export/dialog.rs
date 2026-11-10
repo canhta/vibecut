@@ -1,6 +1,7 @@
 //! Presents one export job and its saved choices.
 use super::settings;
 use crate::i18n;
+use crate::progress::job_progress;
 use crate::{
     Error, Result, egui,
     i18n::{Locale, Text},
@@ -10,7 +11,7 @@ use engine::{
     ByteBudget,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{
-        CancelToken, JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock,
+        CancelToken, JobId, JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock,
     },
 };
 pub use render::{OutputOptions, RangeChoice, SceneChoice};
@@ -916,22 +917,6 @@ fn export_failure(error: &engine::EditError) -> Text {
         E::Render(R::Text(_) | R::Raster(_)) => Text::ExportTextFailure,
         _ => Text::ExportFailure,
     }
-}
-
-/// The export and shorts surfaces render the same engine stages and fraction.
-pub(crate) fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Locale) {
-    let stage = match snapshot.stage {
-        JobStage::Queued | JobStage::Starting => Text::ExportQueued,
-        JobStage::Admit => Text::ExportAdmit,
-        JobStage::Render => Text::ExportRender,
-        JobStage::Mix => Text::ExportMix,
-        JobStage::Encode => Text::ExportEncode,
-        JobStage::Finalize => Text::ExportFinalize,
-        JobStage::Publish => Text::ExportPublish,
-        _ => Text::ExportProgress,
-    };
-    ui.label(i18n::text(locale, stage));
-    ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
 }
 
 impl Drop for ExportDialog {

@@ -95,7 +95,7 @@ pub trait Generator: Send + Sync + 'static {
         cancel: &Cancellation,
     ) -> engine::Result<ReviewSource>;
 }
-pub use crate::editor::dialogs::models::ai_task::TaskEvents;
+pub use crate::ai_task::TaskEvents;
 pub(super) struct Generating {
     pub(super) id: JobId,
     pub(super) runner_cancel: CancelToken,

@@ -114,7 +114,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
                             ui.label(state.tr(failure_text(error)));
                         }
                         if !terminal(snapshot.state) {
-                            crate::export::job_progress(ui, &snapshot, state.preferences.locale);
+                            crate::progress::job_progress(ui, &snapshot, state.preferences.locale);
                         }
                     }
                 });

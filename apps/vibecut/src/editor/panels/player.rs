@@ -1,7 +1,5 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
-pub mod playback;
-pub mod preview;
 mod snap;
 mod state;
 mod text;

@@ -2,9 +2,9 @@
 
 use crate::editor::{
     ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, PREFERENCE_COMMAND,
-    Preferences, Result, SelectionScopes, TICKS_PER_SECOND, Text, Tick, UiAction, ZOOM_STEP,
-    actions, media_panel,
+    Preferences, Result, SelectionScopes, Text, UiAction, ZOOM_STEP, actions, media_panel,
 };
+use crate::playback::Transport;
 use crate::preview;
 
 impl Editor {
@@ -81,7 +81,6 @@ impl Editor {
     ) -> Result<()> {
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
-        let playing = self.playback.playing();
         if id == "timeline.delete"
             && self.selection_scopes.active(&self.selection)
                 == crate::selection::SelectionScope::Keyframes
@@ -251,24 +250,30 @@ impl Editor {
                         queue.cancel();
                     }
                 }
-                UiAction::Play => self.playback.seek(
-                    if at >= duration { Tick::ZERO } else { at },
-                    !playing,
-                    self.session.project().clone(),
-                )?,
+                UiAction::Play => self
+                    .playback
+                    .transport(Transport::Play, self.session.project().clone())?,
                 UiAction::Pause => self
                     .playback
-                    .seek(at, false, self.session.project().clone())?,
-                UiAction::BackSecond => {
-                    self.seek((at - Tick(TICKS_PER_SECOND)).max(Tick::ZERO))?;
-                }
-                UiAction::ForwardSecond => {
-                    self.seek((at + Tick(TICKS_PER_SECOND)).min(duration))?;
-                }
-                UiAction::FrameBack => self.step_frames(-1)?,
-                UiAction::FrameForward => self.step_frames(1)?,
-                UiAction::Start => self.seek(Tick::ZERO)?,
-                UiAction::End => self.seek(duration)?,
+                    .transport(Transport::Pause, self.session.project().clone())?,
+                UiAction::BackSecond => self
+                    .playback
+                    .transport(Transport::BackSecond, self.session.project().clone())?,
+                UiAction::ForwardSecond => self
+                    .playback
+                    .transport(Transport::ForwardSecond, self.session.project().clone())?,
+                UiAction::FrameBack => self
+                    .playback
+                    .transport(Transport::FrameBack, self.session.project().clone())?,
+                UiAction::FrameForward => self
+                    .playback
+                    .transport(Transport::FrameForward, self.session.project().clone())?,
+                UiAction::Start => self
+                    .playback
+                    .transport(Transport::Start, self.session.project().clone())?,
+                UiAction::End => self
+                    .playback
+                    .transport(Transport::End, self.session.project().clone())?,
                 UiAction::Undo | UiAction::Redo => {
                     let preference_changed = if action == UiAction::Undo {
                         self.preference_history.undo(&mut self.preferences)

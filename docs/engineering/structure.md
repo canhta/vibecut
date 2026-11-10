@@ -56,7 +56,7 @@ Lowest first; imports go down only, and a window never names another window.
 | Layer | Holds |
 |---|---|
 | Foundation | `kit/`, `i18n/`, `input/`, `appearance.rs`; no engine knowledge |
-| Services | Job progress, pickers, shared window services |
+| Services | `playback/`, `preview/`, `crop/`, `ai_task/`, `progress/`: job progress, pickers, shared window services |
 | Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs |
 | Frame | `editor/frame/`, `actions/`, `preferences/`, `workspace/`, `control/` |
 | Composition root | App wiring, window registry, control attach |

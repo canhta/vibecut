@@ -666,9 +666,7 @@ fn canvas(
     }
     remember(cx, actions, "preview.canvas", r.clone());
     if empty {
-        state.texture = None;
-        state.texture_key = None;
-        state.texture_owner = None;
+        state.texture.clear();
         return;
     }
     let scale = state.view.scale(stage.size(), size);
@@ -682,32 +680,16 @@ fn canvas(
         egui::vec2(size[0] as f32 * scale, size[1] as f32 * scale),
     );
     if let Some(frame) = cx.playback.frame() {
-        let key = (frame.epoch, frame.at);
-        if state.texture_key != Some(key) {
-            if let Some(texture) = &mut state.texture {
-                texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);
-            } else {
-                state.texture = Some(ui.ctx().load_texture(
-                    "preview.frame",
-                    frame.image.clone(),
-                    egui::TextureOptions::LINEAR,
-                ));
-            }
-            state.texture_key = Some(key);
-            state.texture_owner = Some(frame.clone());
-        }
-        if let Some(texture) = &state.texture {
+        if let Some(texture) = state.texture.update(ui.ctx(), "preview.frame", frame) {
             ui.painter().with_clip_rect(stage).image(
-                texture.id(),
+                texture,
                 displayed,
                 Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                 kit::image_tint(),
             );
         }
     } else {
-        state.texture = None;
-        state.texture_key = None;
-        state.texture_owner = None;
+        state.texture.clear();
         kit::tinted(
             kit::Icon::ArrowClockwise,
             kit::icon::DENSE,

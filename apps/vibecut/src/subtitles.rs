@@ -2,7 +2,7 @@
 mod editing;
 mod view;
 mod workflow;
-pub use crate::editor::dialogs::models::ai_task::TaskEvents;
+pub use crate::ai_task::TaskEvents;
 use crate::{Error, Result, egui, i18n::Text};
 use captions::{LanguageTag, NfcText};
 use engine::{

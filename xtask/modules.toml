@@ -118,18 +118,20 @@ groups = ["foundation"]
 name = "shell"
 groups = ["shell"]
 
+# Shared services sit below the windows and areas that call them.
+[[crate.layer]]
+name = "services"
+groups = ["player", "progress"]
+
 [[crate.layer]]
 name = "features"
 groups = [
     "home",
     "shorts",
     "assets",
-    "player",
     "properties",
     "timeline",
     "captions",
-    "export",
-    "models",
 ]
 
 [[crate.layer]]
@@ -151,6 +153,26 @@ group = "foundation"
 [[crate.module]]
 name = "appearance"
 group = "foundation"
+
+[[crate.module]]
+name = "playback"
+group = "player"
+
+[[crate.module]]
+name = "preview"
+group = "player"
+
+[[crate.module]]
+name = "crop"
+group = "player"
+
+[[crate.module]]
+name = "ai_task"
+group = "progress"
+
+[[crate.module]]
+name = "progress"
+group = "progress"
 
 [[crate.module]]
 name = "actions"

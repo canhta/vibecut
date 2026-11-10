@@ -3,7 +3,7 @@
 //! Zoom/pan is app state over retained preview frames; it never enters the
 //! project. Snapshot publication is the engine's `preview.snapshot` command,
 //! dispatched through control admission so the app adds no render logic.
-use crate::{Error, Result, egui};
+use crate::{Error, Result, egui, playback::Frame};
 use engine::{
     ByteBudget, EditError, Session,
     control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue},
@@ -147,6 +147,59 @@ impl View {
 
     pub fn recenter(&mut self) {
         self.offset = egui::Vec2::ZERO;
+    }
+}
+
+/// The rendered frame uploaded as a texture, keyed by the playback epoch and
+/// tick it shows. One upload per new frame; the retained frame keeps the
+/// pixels alive while the texture refers to them.
+#[derive(Default)]
+pub struct FrameTexture {
+    texture: Option<egui::TextureHandle>,
+    key: Option<(u64, Tick)>,
+    owner: Option<Arc<Frame>>,
+}
+
+impl FrameTexture {
+    /// The texture for `frame`, uploaded only when the frame changed.
+    pub fn update(
+        &mut self,
+        ctx: &egui::Context,
+        name: &str,
+        frame: &Arc<Frame>,
+    ) -> Option<egui::TextureId> {
+        let key = (frame.epoch, frame.at);
+        if self.key != Some(key) {
+            if let Some(texture) = &mut self.texture {
+                texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);
+            } else {
+                self.texture = Some(ctx.load_texture(
+                    name,
+                    frame.image.clone(),
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+            self.key = Some(key);
+            self.owner = Some(frame.clone());
+        }
+        self.texture.as_ref().map(egui::TextureHandle::id)
+    }
+
+    /// The retained upload, for surfaces that paint another preview over it.
+    pub fn handle(&self) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref()
+    }
+
+    /// The tick of the last uploaded frame, independent of decode-ahead.
+    pub fn presented(&self) -> Option<Tick> {
+        self.key.map(|(_, at)| at)
+    }
+
+    /// Drop the upload and its retained frame (no frame yet or an empty project).
+    pub fn clear(&mut self) {
+        self.texture = None;
+        self.key = None;
+        self.owner = None;
     }
 }
 

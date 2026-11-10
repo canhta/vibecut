@@ -14,7 +14,7 @@ impl Editor {
             ripple: self.preferences.ripple,
             preferences: &self.preferences,
             playback: &self.playback,
-            preview: self.player.texture.as_ref(),
+            preview: self.player.texture.handle(),
             keybindings: &self.preferences.keybindings,
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,

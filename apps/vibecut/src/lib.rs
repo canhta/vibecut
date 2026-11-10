@@ -1,9 +1,11 @@
 //! Composes the desktop application from its public interfaces.
 pub mod actions;
+pub mod ai_task;
 pub mod appearance;
 pub mod capture;
 pub mod color_picker;
 pub mod control;
+pub mod crop;
 mod editor;
 pub mod effect_previews;
 pub mod effects;
@@ -15,7 +17,10 @@ mod kit;
 pub mod lifecycle;
 pub mod media_panel;
 pub mod panels;
+pub mod playback;
 pub mod preferences;
+pub mod preview;
+pub mod progress;
 pub mod selection;
 pub mod shorts;
 pub mod snapping;
@@ -23,7 +28,6 @@ pub mod subtitles;
 pub mod workspace;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
-pub use editor::panels::player::{crop, playback, preview};
 pub use editor::properties::font_picker;
 pub use editor::{
     AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor, Inspection,

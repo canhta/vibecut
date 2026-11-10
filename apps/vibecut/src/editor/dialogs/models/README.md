@@ -26,5 +26,5 @@ Production instantiates the manager lazily on first open. `Editor::open_model`
 opens it on a missing model; `Editor::set_model_manager` injects another
 cache/transport composition for tests and `cargo xtask ui-audit`.
 
-`ai_task` coalesces desktop AI progress and holds one exact per-upload consent
-request for the active workflow.
+The AI task progress and per-upload consent service lives in
+[`ai_task`](../../../ai_task/README.md).

@@ -1,386 +1,404 @@
-//! Transient source-normalized crop interaction; project owns the contract.
-mod dialog;
+//! Crop dialog over the shared crop control and the item crop patch.
 
-use crate::{Error, Result, egui};
-pub use dialog::{Aspect, Inspection};
-pub(crate) use dialog::{Dialog, available, open, show};
+use crate::{
+    Result,
+    crop::control,
+    editor::{Desk, Editor},
+    egui,
+    i18n::{self, Locale, Text},
+    kit as theme,
+    kit::Icon,
+};
+use project::ItemId;
 
-/// Smallest crop edge, as a fraction of the source, so a handle never collapses
-/// the rectangle.
-const MIN_SIZE: f64 = 0.05;
-/// Pointer distance to an edge or corner that resizes instead of moving.
-const HANDLE_DISTANCE: f32 = 10.0;
-/// Drawn handle square, centred on its edge or corner.
-const HANDLE_SIZE: f32 = 8.0;
-
-/// Largest source rectangle matching a portrait 9:16 output, initially centered.
-/// The dimensions are source pixels; zero sizes and non-finite input refuse.
-pub fn portrait(width: f64, height: f64) -> Result<project::Crop> {
-    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-        return Err(Error::Invalid("crop source dimensions"));
-    }
-    let aspect = width / height;
-    let (w, h) = if aspect > 9.0 / 16.0 {
-        (9.0 / 16.0 / aspect, 1.0)
-    } else {
-        (1.0, aspect / (9.0 / 16.0))
-    };
-    let crop = project::Crop {
-        x: (1.0 - w) / 2.0,
-        y: (1.0 - h) / 2.0,
-        width: w,
-        height: h,
-    };
-    if !crop.valid() {
-        return Err(Error::Invalid("normalized rectangle"));
-    }
-    Ok(crop)
-}
-
-/// What the pointer grabbed at the start of a crop gesture.
+/// Aspect shapes the dialog offers, in the reference order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Grab {
-    Move,
-    Left,
-    Right,
-    Top,
-    Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
+pub enum Aspect {
+    Custom,
+    Original,
+    NineSixteen,
+    Square,
+    ThreeFour,
+    SixteenNine,
+    FourThree,
+    TwoOne,
 }
 
-impl Grab {
-    fn cursor(self) -> egui::CursorIcon {
+impl Aspect {
+    const ALL: [Self; 8] = [
+        Self::Custom,
+        Self::Original,
+        Self::NineSixteen,
+        Self::Square,
+        Self::ThreeFour,
+        Self::SixteenNine,
+        Self::FourThree,
+        Self::TwoOne,
+    ];
+
+    fn label(self) -> Text {
         match self {
-            Self::Move => egui::CursorIcon::Grab,
-            Self::Left | Self::Right => egui::CursorIcon::ResizeHorizontal,
-            Self::Top | Self::Bottom => egui::CursorIcon::ResizeVertical,
-            Self::TopLeft | Self::BottomRight => egui::CursorIcon::ResizeNwSe,
-            Self::TopRight | Self::BottomLeft => egui::CursorIcon::ResizeNeSw,
+            Self::Custom => Text::CropCustom,
+            Self::Original => Text::CropOriginal,
+            Self::NineSixteen => Text::CropAspect9x16,
+            Self::Square => Text::CropAspect1x1,
+            Self::ThreeFour => Text::CropAspect3x4,
+            Self::SixteenNine => Text::CropAspect16x9,
+            Self::FourThree => Text::CropAspect4x3,
+            Self::TwoOne => Text::CropAspect2x1,
         }
     }
-    fn left(self) -> bool {
-        matches!(self, Self::Left | Self::TopLeft | Self::BottomLeft)
-    }
-    fn right(self) -> bool {
-        matches!(self, Self::Right | Self::TopRight | Self::BottomRight)
-    }
-    fn top(self) -> bool {
-        matches!(self, Self::Top | Self::TopLeft | Self::TopRight)
-    }
-    fn bottom(self) -> bool {
-        matches!(self, Self::Bottom | Self::BottomLeft | Self::BottomRight)
-    }
-}
 
-/// Drag a crop rectangle inside the normalized source bounds. The pointer moves
-/// the whole rectangle from its inside, or resizes it from an edge or corner;
-/// both stay inside the frame and above the minimum size. A `ratio` lock is the
-/// crop's width/height in source pixels (so corners keep their shape anchored at
-/// the opposite corner and edges grow the other axis around its centre); `None`
-/// resizes freely. Caller retains the gesture-entry rectangle and commits a
-/// single undo step on drag stop. Keyboard arrows move by 1% (Shift: 10%);
-/// `texture` paints the source frame under the box when the caller has one.
-/// Render consumes the returned rectangle.
-pub fn control(
-    ui: &mut egui::Ui,
-    id: &str,
-    crop: &mut project::Crop,
-    aspect: f32,
-    ratio: Option<f64>,
-    texture: Option<&egui::TextureHandle>,
-    label: &str,
-) -> Result<egui::Response> {
-    if !crop.valid() {
-        return Err(Error::Invalid("normalized rectangle"));
-    }
-    if !aspect.is_finite() || aspect <= 0.0 {
-        return Err(Error::Invalid("crop source aspect"));
-    }
-    let lock = ratio.map(|ratio| ratio / f64::from(aspect));
-    if lock.is_some_and(|lock| !lock.is_finite() || lock <= 0.0) {
-        return Err(Error::Invalid("crop ratio lock"));
-    }
-    let size = egui::vec2(ui.available_width(), ui.available_width() / aspect);
-    if !size.x.is_finite() || !size.y.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
-        return Err(Error::Invalid("crop control bounds"));
-    }
-    let (bounds, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-    response.ctx.accesskit_node_builder(response.id, |node| {
-        node.set_author_id(id);
-        node.set_label(label);
-        node.add_action(egui::accesskit::Action::Focus);
-    });
-    if response.clicked() {
-        response.request_focus();
-    }
-    let grab_id = response.id.with("grab");
-    if response.drag_started() {
-        // The press origin is where the user aimed; the drag threshold has
-        // already eaten a few pixels before the frame runs.
-        let origin = ui
-            .input(|i| i.pointer.press_origin())
-            .or_else(|| response.interact_pointer_pos());
-        if let Some(origin) = origin {
-            let grab = grab_at(origin, crop_rect(bounds, *crop));
-            ui.ctx().data_mut(|data| data.insert_temp(grab_id, grab));
+    fn id(self) -> &'static str {
+        match self {
+            Self::Custom => "crop.aspect.custom",
+            Self::Original => "crop.aspect.original",
+            Self::NineSixteen => "crop.aspect.9x16",
+            Self::Square => "crop.aspect.1x1",
+            Self::ThreeFour => "crop.aspect.3x4",
+            Self::SixteenNine => "crop.aspect.16x9",
+            Self::FourThree => "crop.aspect.4x3",
+            Self::TwoOne => "crop.aspect.2x1",
         }
     }
-    let grab = ui
-        .ctx()
-        .data(|data| data.get_temp::<Grab>(grab_id))
-        .unwrap_or(Grab::Move);
-    let mut delta = response.drag_delta();
-    if response.has_focus() {
-        let step = if ui.input(|i| i.modifiers.shift) {
-            0.1
+
+    /// Width divided by height in output pixels; `None` for Custom, which keeps
+    /// the current box.
+    fn ratio(self) -> Option<f64> {
+        Some(match self {
+            Self::Custom => return None,
+            Self::Original => return None,
+            Self::NineSixteen => 9.0 / 16.0,
+            Self::Square => 1.0,
+            Self::ThreeFour => 3.0 / 4.0,
+            Self::SixteenNine => 16.0 / 9.0,
+            Self::FourThree => 4.0 / 3.0,
+            Self::TwoOne => 2.0,
+        })
+    }
+
+    /// The shape lock in source pixels for the control; Custom resizes freely
+    /// and Original keeps the whole source frame.
+    fn lock(self, aspect: f64) -> Option<f64> {
+        match self {
+            Self::Custom => None,
+            Self::Original => Some(aspect),
+            _ => self.ratio(),
+        }
+    }
+
+    /// Largest centred rectangle of this shape inside a source of `aspect`.
+    /// Original keeps the whole frame; Custom leaves the box untouched.
+    fn crop(self, aspect: f64) -> Option<project::Crop> {
+        if self == Self::Custom {
+            return None;
+        }
+        if self == Self::Original {
+            return Some(project::Crop::default());
+        }
+        let ratio = self.ratio()? / aspect;
+        let (width, height) = if ratio >= 1.0 {
+            (1.0, 1.0 / ratio)
         } else {
-            0.01
+            (ratio, 1.0)
         };
-        ui.input(|i| {
-            if i.key_pressed(egui::Key::ArrowLeft) {
-                delta.x -= bounds.width() * step;
-            }
-            if i.key_pressed(egui::Key::ArrowRight) {
-                delta.x += bounds.width() * step;
-            }
-            if i.key_pressed(egui::Key::ArrowUp) {
-                delta.y -= bounds.height() * step;
-            }
-            if i.key_pressed(egui::Key::ArrowDown) {
-                delta.y += bounds.height() * step;
-            }
-        });
+        Some(project::Crop {
+            x: (1.0 - width) / 2.0,
+            y: (1.0 - height) / 2.0,
+            width,
+            height,
+        })
     }
-    if delta != egui::Vec2::ZERO {
-        let dx = f64::from(delta.x / bounds.width());
-        let dy = f64::from(delta.y / bounds.height());
-        resize(crop, grab, dx, dy, lock);
+
+    /// The shape a rectangle already has, so reopening a crop shows its ratio.
+    /// Only the shape matters, not where the box sits.
+    fn of(crop: project::Crop, aspect: f64) -> Self {
+        let actual = crop.width / crop.height * aspect;
+        Self::ALL
+            .into_iter()
+            .find(|choice| {
+                choice
+                    .lock(aspect)
+                    .is_some_and(|lock| (actual - lock).abs() / lock <= 1e-3)
+            })
+            .unwrap_or(Self::Custom)
     }
-    if response.drag_stopped() {
-        ui.ctx().data_mut(|data| data.remove::<Grab>(grab_id));
+}
+
+/// Read-only dialog state for automation; the project itself stays untouched
+/// until Apply.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Inspection {
+    pub item: ItemId,
+    pub aspect: Aspect,
+    pub crop: project::Crop,
+}
+
+/// The clip the dialog edits and the source shape its ratios resolve against.
+struct Target {
+    item: ItemId,
+    aspect: f64,
+    original: Option<project::Crop>,
+}
+
+/// The single selected video or image clip, with its source pixel aspect.
+fn target(editor: &Editor) -> Option<Target> {
+    let id = crate::editor::properties::single(&editor.selection)?;
+    let project = editor.session.project();
+    let data = project.data();
+    let item = data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == id)?;
+    let project::ItemParams::Video(params) = &item.content else {
+        return None;
+    };
+    let asset = data
+        .assets
+        .iter()
+        .find(|asset| Some(asset.id()) == item.source_asset)?;
+    let video = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|stream| stream.video.as_ref())?;
+    if video.width == 0 || video.height == 0 {
+        return None;
     }
-    if !response.dragged()
-        && let Some(pos) = response.hover_pos()
-    {
-        ui.ctx()
-            .set_cursor_icon(grab_at(pos, crop_rect(bounds, *crop)).cursor());
-    }
-    let selected = crop_rect(bounds, *crop);
-    let painter = ui.painter();
-    painter.rect_filled(bounds, 4.0, ui.visuals().extreme_bg_color);
-    if let Some(texture) = texture {
-        let uv = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
-        painter.image(texture.id(), bounds, uv, egui::Color32::WHITE);
-    }
-    // Keep the source frame readable when no decoded frame is available yet.
-    painter.rect_stroke(
-        bounds,
-        4.0,
-        egui::Stroke::new(1.0, ui.visuals().weak_text_color()),
-        egui::StrokeKind::Inside,
-    );
-    // Dim what the crop leaves out, so the kept region reads as the frame.
-    let scrim = egui::Color32::from_black_alpha(150);
-    for region in [
-        egui::Rect::from_min_max(bounds.min, egui::pos2(bounds.right(), selected.top())),
-        egui::Rect::from_min_max(egui::pos2(bounds.left(), selected.bottom()), bounds.max),
-        egui::Rect::from_min_max(
-            egui::pos2(bounds.left(), selected.top()),
-            egui::pos2(selected.left(), selected.bottom()),
-        ),
-        egui::Rect::from_min_max(
-            egui::pos2(selected.right(), selected.top()),
-            egui::pos2(bounds.right(), selected.bottom()),
-        ),
-    ] {
-        if region.width() > 0.0 && region.height() > 0.0 {
-            painter.rect_filled(region, 0.0, scrim);
+    let aspect = f64::from(video.width) / f64::from(video.height);
+    aspect.is_finite().then_some(Target {
+        item: id,
+        aspect,
+        original: params.crop,
+    })
+}
+
+/// Transient dialog over one clip's existing crop.
+pub(crate) struct Dialog {
+    item: ItemId,
+    original: Option<project::Crop>,
+    crop: project::Crop,
+    aspect: Aspect,
+}
+
+impl Dialog {
+    /// Open on the clip's current crop, or the full frame when it has none.
+    fn new(target: Target) -> Self {
+        let crop = target.original.unwrap_or_default();
+        Self {
+            item: target.item,
+            original: target.original,
+            crop,
+            aspect: Aspect::of(crop, target.aspect),
         }
     }
-    for t in [1.0 / 3.0, 2.0 / 3.0] {
-        let stroke = egui::Stroke::new(1.0, ui.visuals().weak_text_color());
-        painter.line_segment(
-            [
-                selected.lerp_inside(egui::vec2(t, 0.0)),
-                selected.lerp_inside(egui::vec2(t, 1.0)),
-            ],
-            stroke,
-        );
-        painter.line_segment(
-            [
-                selected.lerp_inside(egui::vec2(0.0, t)),
-                selected.lerp_inside(egui::vec2(1.0, t)),
-            ],
-            stroke,
-        );
-    }
-    painter.rect_stroke(
-        selected,
-        0.0,
-        egui::Stroke::new(2.0, ui.visuals().selection.bg_fill),
-        egui::StrokeKind::Inside,
-    );
-    for centre in [
-        selected.left_top(),
-        selected.center_top(),
-        selected.right_top(),
-        selected.right_center(),
-        selected.right_bottom(),
-        selected.center_bottom(),
-        selected.left_bottom(),
-        selected.left_center(),
-    ] {
-        let handle = egui::Rect::from_center_size(centre, egui::Vec2::splat(HANDLE_SIZE));
-        painter.rect_filled(handle, 1.0, egui::Color32::WHITE);
-        painter.rect_stroke(
-            handle,
-            1.0,
-            egui::Stroke::new(1.0, ui.visuals().extreme_bg_color),
-            egui::StrokeKind::Outside,
-        );
-    }
-    Ok(response.on_hover_text(label))
-}
 
-/// The rectangle `crop` occupies inside the widget bounds.
-fn crop_rect(bounds: egui::Rect, crop: project::Crop) -> egui::Rect {
-    egui::Rect::from_min_size(
-        bounds.min
-            + egui::vec2(
-                bounds.width() * crop.x as f32,
-                bounds.height() * crop.y as f32,
-            ),
-        egui::vec2(
-            bounds.width() * crop.width as f32,
-            bounds.height() * crop.height as f32,
-        ),
-    )
-}
-
-/// Which edge or corner the pointer is on; anywhere else moves the rectangle.
-fn grab_at(pos: egui::Pos2, rect: egui::Rect) -> Grab {
-    if !rect.expand(HANDLE_DISTANCE).contains(pos) {
-        return Grab::Move;
+    pub(crate) fn inspect(&self) -> Inspection {
+        Inspection {
+            item: self.item,
+            aspect: self.aspect,
+            crop: self.crop,
+        }
     }
-    let left = (pos.x - rect.left()).abs() <= HANDLE_DISTANCE;
-    let right = (pos.x - rect.right()).abs() <= HANDLE_DISTANCE;
-    let top = (pos.y - rect.top()).abs() <= HANDLE_DISTANCE;
-    let bottom = (pos.y - rect.bottom()).abs() <= HANDLE_DISTANCE;
-    match (left, right, top, bottom) {
-        (true, _, true, _) => Grab::TopLeft,
-        (_, true, true, _) => Grab::TopRight,
-        (true, _, _, true) => Grab::BottomLeft,
-        (_, true, _, true) => Grab::BottomRight,
-        (true, _, _, _) => Grab::Left,
-        (_, true, _, _) => Grab::Right,
-        (_, _, true, _) => Grab::Top,
-        (_, _, _, true) => Grab::Bottom,
-        _ => Grab::Move,
+
+    /// The patch Apply writes: absent when the box is the whole frame.
+    fn patch(&self) -> Option<project::Crop> {
+        (self.crop != project::Crop::default()).then_some(self.crop)
     }
 }
 
-/// Apply one gesture delta, keeping the rectangle inside the frame and above
-/// the minimum size on every axis. `lock` fixes the width/height shape in
-/// normalized source units.
-fn resize(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64, lock: Option<f64>) {
-    if grab == Grab::Move {
-        crop.x = (crop.x + dx).clamp(0.0, 1.0 - crop.width);
-        crop.y = (crop.y + dy).clamp(0.0, 1.0 - crop.height);
+/// Open the dialog for the selected clip; a non-croppable target refuses.
+pub(crate) fn open(editor: &mut Editor) -> Result<()> {
+    let target = target(editor).ok_or(crate::Error::Unsupported("crop target"))?;
+    editor.player.crop = Some(Dialog::new(target));
+    Ok(())
+}
+
+/// Whether the current selection has a source frame the dialog can show.
+pub(crate) fn available(editor: &Editor) -> bool {
+    target(editor).is_some()
+}
+
+enum Action {
+    Apply,
+}
+
+#[derive(Default)]
+struct Output {
+    widgets: Vec<(&'static str, egui::Response)>,
+    action: Option<Action>,
+    close: bool,
+}
+
+/// Draw the open dialog over the frame's context. Every gesture stays in the
+/// dialog; only Apply reaches the engine, as one undo step.
+pub(crate) fn show(editor: &mut Editor, ctx: &egui::Context) {
+    let Some(mut dialog) = editor.player.crop.take() else {
+        return;
+    };
+    let Some(target) = target(editor) else {
+        return;
+    };
+    if target.item != dialog.item {
         return;
     }
-    match lock {
-        Some(lock) => resize_locked(crop, grab, dx, dy, lock),
-        None => resize_free(crop, grab, dx, dy),
+    let texture = editor.player.texture.handle().cloned();
+    let output = dialog.ui(
+        ctx,
+        editor.preferences.locale,
+        editor.preferences.dark,
+        target.aspect,
+        texture.as_ref(),
+    );
+    for (id, response) in output.widgets {
+        editor.remember(id, &response);
     }
-}
-
-/// Free resize: the dragged edge or corner moves on its own axis.
-fn resize_free(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64) {
-    if grab.left() {
-        let right = crop.x + crop.width;
-        crop.x = (crop.x + dx).clamp(0.0, right - MIN_SIZE);
-        crop.width = right - crop.x;
-    } else if grab.right() {
-        crop.width = (crop.width + dx).clamp(MIN_SIZE, 1.0 - crop.x);
+    if output.close {
+        return;
     }
-    if grab.top() {
-        let bottom = crop.y + crop.height;
-        crop.y = (crop.y + dy).clamp(0.0, bottom - MIN_SIZE);
-        crop.height = bottom - crop.y;
-    } else if grab.bottom() {
-        crop.height = (crop.height + dy).clamp(MIN_SIZE, 1.0 - crop.y);
-    }
-}
-
-/// Ratio-locked resize. Corners keep the opposite corner anchored; edges move
-/// the dragged edge and grow or shrink the other axis around its centre. The
-/// frame wins over both the pointer and the minimum size.
-fn resize_locked(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64, lock: f64) {
-    let right = crop.x + crop.width;
-    let bottom = crop.y + crop.height;
-    let middle = (crop.x + crop.width / 2.0, crop.y + crop.height / 2.0);
-    let horizontal = if grab.left() {
-        crop.width - dx
-    } else {
-        crop.width + dx
-    };
-    let vertical = if grab.top() {
-        (crop.height - dy) * lock
-    } else {
-        (crop.height + dy) * lock
-    };
-    let wanted = if (grab.left() || grab.right()) && (grab.top() || grab.bottom()) {
-        // A corner follows whichever axis the pointer moved more.
-        if dx.abs() >= dy.abs() {
-            horizontal
-        } else {
-            vertical
+    match output.action {
+        Some(Action::Apply) => {
+            if let Err(error) = dialog.apply(&mut editor.desk()) {
+                editor.desk().fail(error.to_string());
+                editor.player.crop = Some(dialog);
+            }
         }
-    } else if grab.left() || grab.right() {
-        horizontal
-    } else {
-        vertical
-    };
-    let min = MIN_SIZE.max(MIN_SIZE * lock);
-    let max = if grab.left() && grab.top() {
-        right.min(bottom * lock)
-    } else if grab.right() && grab.top() {
-        (1.0 - crop.x).min(bottom * lock)
-    } else if grab.left() && grab.bottom() {
-        right.min((1.0 - crop.y) * lock)
-    } else if grab.right() && grab.bottom() {
-        (1.0 - crop.x).min((1.0 - crop.y) * lock)
-    } else if grab.left() {
-        right.min(lock)
-    } else if grab.right() {
-        (1.0 - crop.x).min(lock)
-    } else if grab.top() {
-        (bottom * lock).min(1.0)
-    } else {
-        ((1.0 - crop.y) * lock).min(1.0)
-    };
-    // An extreme lock can leave less room than the minimum; the frame wins.
-    let width = if max < min {
-        max.max(0.0)
-    } else {
-        wanted.clamp(min, max)
-    };
-    let height = width / lock;
-    let centred = |at: f64, extent: f64| (at - extent / 2.0).clamp(0.0, 1.0 - extent);
-    crop.x = match grab {
-        Grab::TopLeft | Grab::BottomLeft | Grab::Left => right - width,
-        Grab::Top | Grab::Bottom => centred(middle.0, width),
-        _ => crop.x,
-    };
-    crop.y = match grab {
-        Grab::TopLeft | Grab::TopRight | Grab::Top => bottom - height,
-        Grab::Left | Grab::Right => centred(middle.1, height),
-        _ => crop.y,
-    };
-    crop.width = width;
-    crop.height = height;
+        None => editor.player.crop = Some(dialog),
+    }
+}
+
+impl Dialog {
+    /// One documented crop patch, or no history entry when the box is unchanged.
+    fn apply(&self, desk: &mut Desk<'_>) -> Result<()> {
+        let patch = self.patch();
+        if patch == self.original {
+            return Ok(());
+        }
+        desk.run(
+            "timeline.set_item_param",
+            serde_json::json!({"item": self.item, "patch": {"field": "crop", "value": patch}}),
+            false,
+        )?;
+        desk.sync();
+        Ok(())
+    }
+
+    fn ui(
+        &mut self,
+        ctx: &egui::Context,
+        locale: Locale,
+        dark: bool,
+        source_aspect: f64,
+        texture: Option<&egui::TextureHandle>,
+    ) -> Output {
+        let mut output = Output::default();
+        let tr = |key| i18n::text(locale, key);
+        let frame = egui::Frame::window(&ctx.global_style())
+            .corner_radius(12)
+            .inner_margin(24);
+        let margin = frame.total_margin();
+        let modal = egui::Modal::new(egui::Id::unique("crop.dialog"))
+            .frame(frame)
+            .show(ctx, |ui| {
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+                ui.set_width(680.0_f32.min(ctx.content_rect().width() - 48.0) - margin.sum().x);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(tr(Text::CropTitle)).strong().size(18.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close = crate::kit::icon_button(
+                            ui,
+                            "crop.close",
+                            Icon::X,
+                            tr(Text::CloseScenes),
+                            false,
+                        );
+                        if close.clicked() {
+                            output.close = true;
+                        }
+                        output.widgets.push(("crop.close", close));
+                    });
+                });
+                ui.add_space(16.0);
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(200.0);
+                        ui.label(egui::RichText::new(tr(Text::CropAspectRatio)).strong());
+                        ui.add_space(8.0);
+                        let combo = egui::ComboBox::from_id_salt(egui::Id::unique("crop.aspect"))
+                            .width(200.0)
+                            .height(300.0)
+                            .selected_text(tr(self.aspect.label()))
+                            .show_ui(ui, |ui| {
+                                for aspect in Aspect::ALL {
+                                    let response = ui.selectable_label(
+                                        self.aspect == aspect,
+                                        tr(aspect.label()),
+                                    );
+                                    if response.clicked() {
+                                        if let Some(crop) = aspect.crop(source_aspect) {
+                                            self.crop = crop;
+                                        }
+                                        self.aspect = aspect;
+                                    }
+                                    output.widgets.push((aspect.id(), response));
+                                }
+                            });
+                        output.widgets.push(("crop.aspect", combo.response));
+                    });
+                    ui.add_space(24.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(430.0);
+                        match control(
+                            ui,
+                            "crop.preview",
+                            &mut self.crop,
+                            source_aspect as f32,
+                            self.aspect.lock(source_aspect),
+                            texture,
+                            tr(Text::CropPreview),
+                        ) {
+                            Ok(response) => {
+                                output.widgets.push(("crop.preview", response));
+                            }
+                            Err(error) => {
+                                ui.colored_label(theme::error_text(dark), error.to_string());
+                            }
+                        }
+                    });
+                });
+                ui.add_space(16.0);
+                ui.separator();
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let apply = ui.add(
+                            egui::Button::new(
+                                egui::RichText::new(tr(Text::CropApply))
+                                    .color(theme::on_accent(dark)),
+                            )
+                            .fill(theme::accent(dark))
+                            .min_size(egui::vec2(90.0, 34.0)),
+                        );
+                        if apply.clicked() {
+                            output.action = Some(Action::Apply);
+                        }
+                        output.widgets.push(("crop.apply", apply));
+                        ui.add_space(8.0);
+                        let reset =
+                            ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::CropReset)));
+                        if reset.clicked() {
+                            self.crop = project::Crop::default();
+                            self.aspect = Aspect::Original;
+                        }
+                        output.widgets.push(("crop.reset", reset));
+                    });
+                });
+            });
+        if modal.should_close() {
+            output.close = true;
+        }
+        output
+    }
 }

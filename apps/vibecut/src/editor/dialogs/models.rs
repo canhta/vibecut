@@ -1,5 +1,4 @@
 //! Keeps the model manager state alongside the requests it returns.
-pub(crate) mod ai_task;
 pub mod model_manager;
 mod state;
 #[cfg(test)]

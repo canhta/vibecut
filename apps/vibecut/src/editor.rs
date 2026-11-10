@@ -405,7 +405,7 @@ impl Editor {
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
     pub fn presented_frame(&self) -> Option<Tick> {
-        self.player.texture_key.map(|(_, at)| at)
+        self.player.texture.presented()
     }
     /// Replace the UI timer clock in tests; production uses the system clock.
     /// Set it before raising a timed state so its deadline uses this clock.

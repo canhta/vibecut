@@ -14,11 +14,27 @@ use std::{
     },
     time::Duration,
 };
-use time::{Rounding, Tick};
+use time::{Rounding, TICKS_PER_SECOND, Tick};
 
 const RING_FRAMES: usize = 65536;
 const BLOCK: usize = 1024;
 const MAX_FRAMES: usize = 4;
+
+/// One transport request from a player's controls or keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transport {
+    /// Toggle play; starting at the end restarts from zero.
+    Play,
+    Pause,
+    /// Absolute position, clamped to the timeline.
+    Seek(Tick),
+    BackSecond,
+    ForwardSecond,
+    FrameBack,
+    FrameForward,
+    Start,
+    End,
+}
 
 /// Render's source seam is injected; production uses the same FileSources as export.
 pub trait Sources: Send + Sync + 'static {
@@ -407,6 +423,36 @@ impl Playback {
     /// from work produced for a superseded project.
     pub fn generation(&self) -> u64 {
         self.port.epoch.load(Ordering::Acquire)
+    }
+    /// Apply one transport request against `project`, the immutable snapshot the
+    /// preview renders. Play toggles, an end-position play restarts from zero,
+    /// and every seek stays inside the timeline.
+    pub fn transport(&mut self, transport: Transport, project: Arc<project::Project>) -> Result<()> {
+        let duration = project.duration();
+        let at = self.position()?.clamp(Tick::ZERO, duration);
+        let frame = project
+            .data()
+            .canvas
+            .fps
+            .frame_duration()
+            .ok()
+            .filter(|frame| *frame > Tick::ZERO)
+            .unwrap_or(Tick(1));
+        let (at, playing) = match transport {
+            Transport::Play => (if at >= duration { Tick::ZERO } else { at }, !self.playing()),
+            Transport::Pause => (at, false),
+            Transport::Seek(at) => (at.clamp(Tick::ZERO, duration), self.playing()),
+            Transport::BackSecond => (
+                (at - Tick(TICKS_PER_SECOND)).max(Tick::ZERO),
+                self.playing(),
+            ),
+            Transport::ForwardSecond => ((at + Tick(TICKS_PER_SECOND)).min(duration), self.playing()),
+            Transport::FrameBack => ((at - frame).clamp(Tick::ZERO, duration), self.playing()),
+            Transport::FrameForward => ((at + frame).clamp(Tick::ZERO, duration), self.playing()),
+            Transport::Start => (Tick::ZERO, self.playing()),
+            Transport::End => (duration, self.playing()),
+        };
+        self.seek(at, playing, project)
     }
     pub fn seek(&mut self, at: Tick, playing: bool, project: Arc<project::Project>) -> Result<()> {
         if at < Tick::ZERO || at > project.duration() {

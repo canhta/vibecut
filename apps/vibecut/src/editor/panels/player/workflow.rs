@@ -1,5 +1,5 @@
 //! Applies player transport requests.
-use super::preview;
+use crate::preview;
 use crate::editor::{
     DEFAULT_ZOOM, Editor, Error, FrameRate, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick,
     Vec2, display_time, drop_frame, egui,
@@ -224,17 +224,6 @@ impl Editor {
         if let Err(error) = self.seek(at) {
             self.desk().fail(error.to_string());
         }
-    }
-    pub(in crate::editor) fn step_frames(&mut self, frames: i64) -> Result<()> {
-        let frame = self.frame_ticks();
-        let at = self.playback.position()?;
-        self.seek(
-            (at + Tick(frame.0.saturating_mul(frames)))
-                .clamp(Tick::ZERO, self.session.project().duration()),
-        )
-    }
-    pub(in crate::editor) fn frame_ticks(&self) -> Tick {
-        crate::editor::frame::frame_ticks(&self.session)
     }
     /// Shared transport and preview surface for dedicated review windows.
     pub fn preview_ui(&mut self, ui: &mut egui::Ui) {

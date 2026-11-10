@@ -1,8 +1,6 @@
 //! Retains preview-only view state between presented frames.
-use super::{crop, preview};
-use crate::{egui, i18n::Text, playback::Frame};
-use std::sync::Arc;
-use time::Tick;
+use super::crop;
+use crate::{egui, i18n::Text, preview};
 pub(crate) struct State {
     pub(in crate::editor) failed: bool,
     pub(in crate::editor) snapshot_failed: bool,
@@ -15,9 +13,7 @@ pub(crate) struct State {
     pub(in crate::editor) transform: super::transform::State,
     pub(in crate::editor) timecode_edit: Option<TimecodeEdit>,
     pub(in crate::editor) timecode_error: Option<Text>,
-    pub(in crate::editor) texture: Option<egui::TextureHandle>,
-    pub(in crate::editor) texture_key: Option<(u64, Tick)>,
-    pub(in crate::editor) texture_owner: Option<Arc<Frame>>,
+    pub(in crate::editor) texture: preview::FrameTexture,
     /// Armed chroma-key eyedropper, cleared by its pick, Escape or a selection change.
     pub(in crate::editor) key_color_pick: Option<KeyPick>,
 }
@@ -35,9 +31,7 @@ impl State {
             transform: super::transform::State::default(),
             timecode_edit: None,
             timecode_error: None,
-            texture: None,
-            texture_key: None,
-            texture_owner: None,
+            texture: preview::FrameTexture::default(),
             key_color_pick: None,
         }
     }

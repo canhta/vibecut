@@ -6,7 +6,6 @@ mod state;
 mod tests;
 mod view;
 
-pub(crate) use dialog::job_progress;
 pub use dialog::{
     ExportDialog, ExportFormat, ExportInspection, ExportOptions, ExportPhase, ExportQuality,
     OutputOptions, RangeChoice, SaveRequest, SceneChoice, default_file_name, sanitize_file_name,

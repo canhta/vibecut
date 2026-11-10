@@ -448,7 +448,7 @@ impl Subtitles {
                         .as_ref()
                         .and_then(|(id, _)| self.runner.snapshot(*id))
                     {
-                        crate::export::job_progress(ui, &job, locale);
+                        crate::progress::job_progress(ui, &job, locale);
                     } else {
                         ui.label(controls.tr(if snapshot.cancelling {
                             Text::ShortsCancelling
