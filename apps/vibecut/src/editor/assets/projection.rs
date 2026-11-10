@@ -102,6 +102,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
                 } else {
                     definition.name
                 },
+                shelf: definition.shelf,
                 status,
                 texture: editor.effect_textures.get(definition.id).cloned(),
             });

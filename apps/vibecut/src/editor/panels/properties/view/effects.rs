@@ -1,8 +1,8 @@
 //! Renders effect parameters.
 use super::Panel;
 use crate::editor::properties::{
-    Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
-    Vec2, effect_scrub_spec, egui, icons, read, theme,
+    Action, BUTTON_ICON, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget,
+    Text, Tick, Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
 impl Panel<'_, '_> {
@@ -165,14 +165,34 @@ impl Panel<'_, '_> {
                     if let Ok(definition) = effect.definition() {
                         let at = self.effect_time(item);
                         for parameter in definition.params {
-                            if let Some(current) = read::effect_param_value_at(
-                                self.cx.session.project(),
-                                item,
-                                &effect.id,
-                                parameter.id,
-                                at,
-                            ) {
-                                self.effect_scrub_field(ui, item, &effect.id, parameter, current);
+                            match parameter.kind {
+                                project::EffectParamKind::Float { .. }
+                                | project::EffectParamKind::Angle => {
+                                    if let Some(current) = read::effect_param_value_at(
+                                        self.cx.session.project(),
+                                        item,
+                                        &effect.id,
+                                        parameter.id,
+                                        at,
+                                    ) {
+                                        self.effect_scrub_field(
+                                            ui, item, &effect.id, parameter, current,
+                                        );
+                                    }
+                                }
+                                project::EffectParamKind::Choice { .. }
+                                | project::EffectParamKind::Bool => {
+                                    if let Some(value) = effect.value(parameter.id) {
+                                        self.effect_discrete_field(
+                                            ui, item, &effect.id, parameter, *value,
+                                        );
+                                    }
+                                }
+                                project::EffectParamKind::Color if parameter.animatable => {
+                                    self.effect_color_field(ui, item, &effect.id, parameter.id);
+                                }
+                                project::EffectParamKind::Color
+                                | project::EffectParamKind::Point => {}
                             }
                         }
                     }
@@ -217,6 +237,191 @@ impl Panel<'_, '_> {
             self.state.reorder = None;
         }
     }
+    fn effect_color_field(&mut self, ui: &mut egui::Ui, item: ItemId, effect: &str, key: &str) {
+        let label = match key {
+            "target" => Text::EffectTargetColour,
+            "replace" => Text::EffectReplacementColour,
+            "black" => Text::EffectDarkColour,
+            "white" => Text::EffectLightColour,
+            "color" => {
+                if read::item(self.cx.session.project(), item)
+                    .and_then(|i| i.effects.iter().find(|e| e.id == effect))
+                    .is_some_and(|e| e.kind == "strobe")
+                {
+                    Text::EffectFlashColour
+                } else {
+                    Text::EffectKeptColour
+                }
+            }
+            _ => return,
+        };
+        let Some((start, _)) = read::range_of(self.cx.session.project(), item) else {
+            return;
+        };
+        let target = ColorTarget::EffectColor {
+            item,
+            effect: effect.into(),
+            key: key.into(),
+            time: self.cx.playhead.saturating_sub(start),
+        };
+        let project = self.cx.session.project();
+        let inside = target.inside(project);
+        let locked = read::item_locked(project, item);
+        let editable = !locked && (inside || !target.rgb_keys(project, false));
+        let row = Rect::from_min_size(
+            ui.next_widget_position(),
+            Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
+        );
+        let id = format!("effects.{effect}.param.{key}");
+        ui.add_enabled_ui(editable, |ui| {
+            self.color_row(ui, &id, label, target.clone())
+        })
+        .response
+        .on_disabled_hover_text(self.tr(if locked {
+            Text::EffectLocked
+        } else {
+            Text::EffectKeyframeTime
+        }));
+        let exists = target.rgb_keys(project, true);
+        let key_id = format!("{id}.keyframe");
+        let rect = Rect::from_min_size(
+            egui::pos2(
+                row.left() + super::VALUE_COLUMN - theme::size::CONTROL - theme::space::XS,
+                row.top(),
+            ),
+            Vec2::new(theme::size::CONTROL, row.height()),
+        );
+        let mut strip = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let response = strip
+            .add_enabled_ui(!locked && inside, |ui| {
+                crate::kit::icon_button(
+                    ui,
+                    &key_id,
+                    Icon::Diamond,
+                    self.tr(if exists {
+                        Text::RemoveKeyframe
+                    } else {
+                        Text::AddKeyframe
+                    }),
+                    exists,
+                )
+            })
+            .inner
+            .on_disabled_hover_text(self.tr(if locked {
+                Text::EffectLocked
+            } else {
+                Text::EffectKeyframeTime
+            }));
+        self.remember_with_icon(key_id, Some(Icon::Diamond.name()), &response);
+        if response.clicked() {
+            match target.toggle_rgb(project) {
+                Ok(command) => {
+                    self.actions.extend(self.state.close_picker());
+                    self.actions.push(Action::ColorCommit {
+                        command,
+                        recent: self.cx.preferences.recent_colors.clone(),
+                    });
+                }
+                Err(error) => self.fail(error),
+            }
+        }
+    }
+    fn effect_discrete_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        parameter: &project::EffectParamDefinition,
+        current: project::EffectValue,
+    ) {
+        let label = match parameter.id {
+            "channel" => Text::EffectChannel,
+            "reverse" => Text::EffectReverse,
+            "solid" => Text::EffectSolidColour,
+            "invert" => Text::MaskInvert,
+            _ => return,
+        };
+        let id = format!("effects.{effect}.param.{}", parameter.id);
+        let locked = read::item_locked(self.cx.session.project(), item);
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(label));
+        value_ui.add_enabled_ui(!locked, |ui| {
+            match (parameter.kind, current) {
+                (project::EffectParamKind::Bool, project::EffectValue::Bool(mut value)) => {
+                    // The admitted Properties checkbox box is 12 logical pixels.
+                    ui.spacing_mut().icon_width = 12.0;
+                    let response = ui.add(egui::Checkbox::without_text(&mut value));
+                    response
+                        .ctx
+                        .accesskit_node_builder(response.id, |node| node.set_label(self.tr(label)));
+                    self.remember(id.clone(), &response);
+                    if response.changed() {
+                        self.set_effect_param(
+                            item,
+                            effect,
+                            parameter.id,
+                            if value { 1.0 } else { 0.0 },
+                        );
+                    }
+                }
+                (
+                    project::EffectParamKind::Choice { options },
+                    project::EffectValue::Choice(index),
+                ) => {
+                    // No guessed index for missing data; invalid storage is read-only.
+                    let Some(option) = options.get(index as usize) else {
+                        return;
+                    };
+                    ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                    let response =
+                        egui::ComboBox::from_id_salt(Id::unique(format!("{id}.item.{}", item.0)))
+                            .selected_text(self.effect_choice_label(option))
+                            .width(ui.available_width().min(super::appearance::FIELD_COLUMN))
+                            .show_ui(ui, |ui| {
+                                for (at, option) in options.iter().enumerate() {
+                                    let response = ui.selectable_label(
+                                        index as usize == at,
+                                        self.effect_choice_label(option),
+                                    );
+                                    self.remember(format!("{id}.{at}"), &response);
+                                    if response.clicked() {
+                                        if index as usize != at {
+                                            self.set_effect_param(
+                                                item,
+                                                effect,
+                                                parameter.id,
+                                                at as f64,
+                                            );
+                                        }
+                                        ui.close();
+                                    }
+                                }
+                            })
+                            .response;
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::ComboBox, !locked, self.tr(label))
+                    });
+                    self.remember(id.clone(), &response);
+                }
+                _ => {}
+            }
+        });
+    }
+
+    fn effect_choice_label(&self, option: &'static str) -> &'static str {
+        match option {
+            "Red" => self.tr(Text::EffectRed),
+            "Green" => self.tr(Text::EffectGreen),
+            "Blue" => self.tr(Text::EffectBlue),
+            "Alpha" => self.tr(Text::Alpha),
+            _ => option,
+        }
+    }
+
     pub(super) fn effect_scrub_field(
         &mut self,
         ui: &mut egui::Ui,

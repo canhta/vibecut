@@ -611,6 +611,36 @@ const SCENES: &[Scene] = &[
         build: inspector_blend,
     },
     Scene {
+        name: "inspector-effects",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects"),
+    },
+    Scene {
+        name: "inspector-effects-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-vi"),
+    },
+    Scene {
+        name: "inspector-effects-colours",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-colours"),
+    },
+    Scene {
+        name: "inspector-effects-colours-picker",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-colours-picker"),
+    },
+    Scene {
+        name: "inspector-effects-threshold",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-threshold"),
+    },
+    Scene {
         name: "inspector-video",
         reference_dark: None,
         reference_light: None,
@@ -1778,8 +1808,34 @@ fn capture_columns(editor: &mut Editor) -> Result<(), Failure> {
 }
 
 fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness, Failure> {
-    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    let (mut editor, item) = media_editor(
+        theme,
+        if tab.ends_with("-vi") {
+            Locale::Vi
+        } else {
+            Locale::En
+        },
+    )?;
     capture_columns(&mut editor)?;
+    let colour_picker = tab == "effects-colours-picker";
+    let tab = if tab.starts_with("effects") {
+        let kinds: &[&str] = if tab == "effects-threshold" {
+            &["extract"]
+        } else if tab.starts_with("effects-colours") {
+            &["tint", "strobe"]
+        } else {
+            &["invert", "color_pass", "color_replace"]
+        };
+        for kind in kinds {
+            editor.session.apply(Command::AddEffect {
+                item,
+                effect: project::effect_definition(kind)?.instance(*kind),
+            })?;
+        }
+        "effects"
+    } else {
+        tab
+    };
     editor.selection = [item].into_iter().collect();
     editor
         .preferences
@@ -1787,6 +1843,11 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
+    if colour_picker {
+        app.get(By::new().predicate(|node| node.author_id() == Some("effects.tint.param.black")))
+            .click();
+        app.run_steps(3);
+    }
     Ok(app)
 }
 
@@ -2575,7 +2636,9 @@ fn main() -> Result<(), Failure> {
             let image = opaque(image, vibecut::window_color(theme.dark()));
             let file = format!("{variant}@{}x.png", scale as u32);
             image.save(output.join(&file))?;
-            if (scene.name.starts_with("assets-") || scene.name.starts_with("export-"))
+            if (scene.name.starts_with("assets-")
+                || scene.name.starts_with("export-")
+                || scene.name.starts_with("inspector-effects"))
                 && scale == 1.0
             {
                 let geometry:Vec<_>=app.state().inspect()?.widgets.into_iter().map(|widget|serde_json::json!({

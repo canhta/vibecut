@@ -293,13 +293,7 @@ fn validate(data: &ProjectData) -> Result<()> {
                 if !effect_ids.insert(&effect.id) {
                     return Err(Error::Invalid("duplicate effect id"));
                 }
-                for key in effect.definition()?.animated_ids() {
-                    if let Some(param) = item.animations.get(&effect.param_path(key)?)
-                        && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
-                    {
-                        return Err(Error::Invalid("effect animation must be scalar"));
-                    }
-                }
+                effect.validate_animations(&item.animations)?;
             }
             if item.masks.len() > 1024 {
                 return Err(Error::TooLarge("item masks"));

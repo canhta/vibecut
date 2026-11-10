@@ -12,6 +12,39 @@ budget, cancellation, invalid-data and other errors propagate. Empty pass lists
 return exact working pixels through the same accounted ownership. Copies reserve
 through the caller's hooks before allocation.
 
+EffectFrame resolves one typed value per parameter at real item-local time. Missing
+animation uses static straight sRGB bytes divided directly by255. Animated colours use
+existing independent linear-light RGBA channels and their explicit base, including
+zero-key overrides. Wrong kinds and nonfinite samples refuse; finite overshoot clamps.
+Only sampled RGB casts to f32 at the shared sRGB transfer, then widens into the frame's
+encoded f64 RGBA representation; widening does not restore precision. Alpha stays f64,
+and uniforms cast encoded RGB to f32 without byte quantization. E1 colour operations
+use RGB only and preserve image coverage under alpha keys; chroma-key colour stays static.
+
+The existing per-instance plan reservation covers these bounded resolved values as
+well as pass storage: the catalogue has at most12 parameters and pixel kinds emit one
+pass; Image's area bound limits admitted Blur to203 iterations/406 passes against the
+reserved512 pass/kernel slots. No additional image, unreserved image copy or kernel
+is introduced by colour interpolation.
+
+The pixel-local colour references unpremultiply once and re-premultiply at the exit.
+Monochrome uses linear Rec.709 luma; levels, gamma, posterisation, channel mixing
+and RGB inversion operate on encoded sRGB. Keep Colour compares encoded RGB
+distance and greys rejected pixels with linear luma. Swap Colour either substitutes
+the encoded replacement or retains input HSL lightness. Two-tone maps encoded
+linear-luma between its encoded endpoints. Threshold writes linear black/white
+coverage-colour while preserving alpha. Strobe gates at real item-local time and
+mixes its decoded colour with the original in linear light. Other than Alpha
+Invert, these operations preserve input alpha.
+
+Invert's blend is the original-picture fraction. Alpha Invert blends coverage
+between its complement and the original, preserving straight colour; undefined
+colour at zero input alpha is black. RGB is re-premultiplied by that blended alpha,
+including transparent input. Levels retains raw normalized input bounds in its
+uniforms and floors only their difference in the pixel equation, so equal or
+reversed authored bounds remain admissible. Independent expected working pixels
+establish colour correctness; packed-byte fingerprints only detect regressions.
+
 The registry also names an optional content-time remap per kind. `ContentTime` receives an `EffectFrame` resolved at real item-local time and a separate evolving content coordinate, both in ticks, and returns `Result<Tick>` with typed parameter/time failures. Each remap composes the preceding content coordinate while every frame and keyframe lookup keeps the original real clock. `content_time` applies the enabled effects' remaps in stack order before the item's content is fetched: only the media, text or sticker frame is held at the returned item-local time (clamped into the item's range), while transform, crop, opacity and every parameter keep the real time, and audio is unaffected. Without a remap the time is unchanged, so transition handles outside an item's extent keep sampling exactly. `EffectFrame.fine` carries the renderer's preview flag; a coarse evaluation may lower sample counts, iterations or scales only, never geometry, colour mapping or which pixels are affected.
 
 `image_ops.rs` owns the shared primitives the ports use: an edge-aware bilinear sample and a gaussian blur at a given sigma over the same kernel builder, plus the box downsample and bilinear upsample pair. Sampling uses texel-index coordinates: integers address exact texels. Image-edge geometry places pixel centres at `x+0.5` / `y+0.5` and subtracts 0.5 exactly once after mapping, before lookup (mirror and upsample alike). Each reserves its transients through the hooks and checks cancellation per row chunk.

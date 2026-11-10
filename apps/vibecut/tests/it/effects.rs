@@ -186,7 +186,8 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             ([30, 60, 200, 255], 75.0, 50.0),
             ([128, 128, 128, 255], 40.0, 0.0),
         ] {
-            let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
+            let passes =
+                chroma_key_passes(key.map(|v| f64::from(v) / 255.0), intensity, shadow).unwrap();
             let inputs = || EffectInputs {
                 input: &image,
                 coverage: None,
@@ -880,7 +881,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 .to_vec(),
         };
         let mut plain = grade.clone();
-        plain.extend(chroma_key_passes(project::Color([0, 255, 0, 255]), 40.0, 0.0).unwrap());
+        plain.extend(chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap());
         plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
         let mut mixed = plain.clone();
         mixed.insert(1, mirror(1.0, 0.0));

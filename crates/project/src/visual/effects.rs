@@ -1,6 +1,6 @@
 //! Persisted effect instances and the parameter model; evaluation and devices
 //! belong to render/apps.
-use crate::{AnimationPath, Color, Error, Result};
+use crate::{AnimationPath, Animations, Color, Error, Param, ParamValue, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -110,7 +110,7 @@ pub struct EffectParamDefinition {
     pub name: &'static str,
     pub kind: EffectParamKind,
     pub default: EffectValue,
-    /// Scalar channels (float, angle) may carry keyframes.
+    /// Float, angle and declared linear RGBA channels may carry keyframes.
     pub animatable: bool,
 }
 impl EffectParamDefinition {
@@ -221,7 +221,7 @@ impl EffectInstance {
     pub fn value(&self, id: &str) -> Option<&EffectValue> {
         self.params.get(id)
     }
-    /// Animation path of one scalar parameter, mirroring the catalog key.
+    /// Animation path of one parameter, mirroring the catalog key.
     pub fn param_path(&self, key: &str) -> Result<AnimationPath> {
         AnimationPath::new(format!("effects.{}.params.{key}", self.id))
     }
@@ -266,6 +266,21 @@ impl EffectInstance {
         };
         param.check(&next)?;
         self.params.insert(id.to_owned(), next);
+        Ok(())
+    }
+
+    pub(crate) fn validate_animations(&self, animations: &Animations) -> Result<()> {
+        for definition in self.definition()?.params.iter().filter(|p| p.animatable) {
+            let Some(param) = animations.get(&self.param_path(definition.id)?) else {
+                continue;
+            };
+            match (definition.kind, param) {
+                (EffectParamKind::Float { .. } | EffectParamKind::Angle, Param::Value(channel))
+                    if matches!(channel.base(), ParamValue::Scalar(_)) => {}
+                (EffectParamKind::Color, Param::Color(_)) => {}
+                _ => return Err(Error::Invalid("effect animation type")),
+            }
+        }
         Ok(())
     }
 

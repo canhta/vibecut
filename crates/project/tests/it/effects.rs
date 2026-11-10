@@ -91,8 +91,10 @@ fn definitions_are_well_formed_and_their_defaults_validate() {
             );
             param.check(&param.default).unwrap();
             assert!(
-                !param.animatable || param.scalar_range().is_some(),
-                "{}.{} animates a non-scalar",
+                !param.animatable
+                    || param.scalar_range().is_some()
+                    || param.kind == EffectParamKind::Color,
+                "{}.{} animates an unsupported kind",
                 definition.id,
                 param.id
             );
@@ -105,6 +107,119 @@ fn definitions_are_well_formed_and_their_defaults_validate() {
         }
     }
     assert!(effect_definition("nope").is_err());
+}
+
+#[test]
+fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
+    // Source effect.rs f/fs definitions: hard ranges are independent of slider ranges.
+    let mut rows = vec![
+        ("color_pass", "similarity", 10.0, (0.0, 100.0), (0.0, 100.0)),
+        (
+            "color_replace",
+            "similarity",
+            10.0,
+            (0.0, 100.0),
+            (0.0, 100.0),
+        ),
+        ("extract", "black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("extract", "white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("extract", "softness", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("gamma_correction", "gamma", 10.0, (1.0, 28.0), (1.0, 28.0)),
+        ("invert", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("levels", "in_black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "in_white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "out_black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "out_white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "gamma", 100.0, (10.0, 1000.0), (10.0, 300.0)),
+        ("posterize", "levels", 7.0, (2.0, 255.0), (2.0, 32.0)),
+        ("strobe", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("strobe", "duration", 0.05, (0.0, 30.0), (0.0, 1.0)),
+        ("strobe", "period", 0.5, (0.0, 30.0), (0.0, 2.0)),
+        ("tint", "amount", 100.0, (0.0, 100.0), (0.0, 100.0)),
+    ];
+    for id in [
+        "rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc",
+    ] {
+        let default = if matches!(id, "rr" | "gg" | "bb") {
+            100.0
+        } else {
+            0.0
+        };
+        rows.push(("channel_mix", id, default, (-200.0, 200.0), (-200.0, 200.0)));
+    }
+    for (kind, id, default, hard, soft) in rows {
+        let def = effect_definition(kind).unwrap();
+        let p = def.param(id).unwrap();
+        assert_eq!(p.default, EffectValue::Scalar(default), "{kind}.{id}");
+        assert_eq!(
+            p.kind,
+            EffectParamKind::Float {
+                min: hard.0,
+                max: hard.1,
+                soft_min: soft.0,
+                soft_max: soft.1
+            },
+            "{kind}.{id}"
+        );
+        assert!(p.animatable, "{kind}.{id}");
+        for value in [hard.0, hard.1] {
+            def.instance("one")
+                .with(id, EffectValue::Scalar(value))
+                .unwrap();
+        }
+        for value in [hard.0 - 0.01, hard.1 + 0.01] {
+            assert!(
+                def.instance("one")
+                    .with(id, EffectValue::Scalar(value))
+                    .is_err(),
+                "{kind}.{id} {value}"
+            );
+        }
+    }
+    for (kind, id, value) in [
+        ("color_pass", "reverse", EffectValue::Bool(false)),
+        ("color_replace", "solid", EffectValue::Bool(false)),
+        ("extract", "invert", EffectValue::Bool(false)),
+        ("invert", "channel", EffectValue::Choice(0)),
+        (
+            "color_pass",
+            "color",
+            EffectValue::Color(Color([255, 0, 0, 255])),
+        ),
+        (
+            "color_replace",
+            "target",
+            EffectValue::Color(Color([255, 0, 0, 255])),
+        ),
+        (
+            "color_replace",
+            "replace",
+            EffectValue::Color(Color([0, 0, 255, 255])),
+        ),
+        ("strobe", "color", EffectValue::Color(Color([255; 4]))),
+        ("tint", "black", EffectValue::Color(Color([0, 0, 0, 255]))),
+        ("tint", "white", EffectValue::Color(Color([255; 4]))),
+    ] {
+        let def = effect_definition(kind).unwrap();
+        let p = def.param(id).unwrap();
+        assert_eq!(p.default, value, "{kind}.{id}");
+        assert!(
+            p.animatable == matches!(p.kind, EffectParamKind::Color),
+            "source animation kind, {kind}.{id}"
+        );
+        def.instance("one").with(id, value).unwrap();
+    }
+    let channel = effect_definition("invert")
+        .unwrap()
+        .param("channel")
+        .unwrap();
+    assert_eq!(
+        channel.kind,
+        EffectParamKind::Choice {
+            options: &["RGB", "Red", "Green", "Blue", "Alpha"]
+        }
+    );
+    assert!(effect_definition("black_white").unwrap().params.is_empty());
 }
 
 #[test]
@@ -177,4 +292,102 @@ fn instances_round_trip_through_json_with_typed_values() {
             "legacy": true
         }));
     assert!(parsed.is_err(), "unknown fields refuse");
+}
+
+#[test]
+fn effect_colour_animation_requires_linear_composites() {
+    use time::{SourceRange, Tick};
+    let candidate = |effect: EffectInstance, path: AnimationPath, param: Param| {
+        let mut data = super::project::empty().into_data();
+        let mut animations = Animations::default();
+        animations.set(path, param).unwrap();
+        data.scene_mut().timeline.main.items.push(Item {
+            id: ItemId(1),
+            start: Tick::ZERO,
+            source_range: SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
+            source_asset: None,
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: vec![],
+            effects: vec![effect],
+            animations,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([255; 4]),
+            }),
+        });
+        data
+    };
+    for (kind, key) in [
+        ("color_pass", "color"),
+        ("color_replace", "target"),
+        ("color_replace", "replace"),
+        ("tint", "black"),
+        ("tint", "white"),
+        ("strobe", "color"),
+    ] {
+        let effect = effect_definition(kind).unwrap().instance("one");
+        let path = effect.param_path(key).unwrap();
+        for (value, accepted) in [
+            (ParamValue::Color([0.5, 0.0, 0.5, 0.25]), true),
+            (ParamValue::Scalar(0.5), false),
+            (ParamValue::Bool(true), false),
+            (ParamValue::Text("#FF0000".into()), false),
+        ] {
+            let data = candidate(
+                effect.clone(),
+                path.clone(),
+                Param::new(value.clone()).unwrap(),
+            );
+            let result = Project::new(data);
+            assert_eq!(result.is_ok(), accepted, "{kind}.{key}: {value:?}");
+            if !accepted {
+                assert!(matches!(result, Err(Error::Invalid(_))));
+            }
+        }
+        assert!(effect.definition().unwrap().param(key).unwrap().animatable);
+        // The same composite remains valid after its final independent key is deleted.
+        let mut param = Param::new(ParamValue::Color([0.2, 0.3, 0.4, 0.5])).unwrap();
+        let channel = param.channel_mut(Some(ColorComponent::R)).unwrap();
+        channel
+            .put(Keyframe::new(Tick(1), ParamValue::Scalar(0.9)))
+            .unwrap();
+        channel.remove(Tick(1)).unwrap();
+        let project = Project::new(candidate(effect, path.clone(), param)).unwrap();
+        let item = &project.data().scene().timeline.main.items[0];
+        assert_eq!(
+            item.animations.value_at(&path, Tick(90)).unwrap(),
+            Some(ParamValue::Color([0.2, 0.3, 0.4, 0.5]))
+        );
+    }
+    let blur = effect_definition("blur").unwrap().instance("one");
+    assert!(matches!(
+        Project::new(candidate(
+            blur.clone(),
+            blur.param_path("intensity").unwrap(),
+            Param::new(ParamValue::Color([0.5; 4])).unwrap()
+        )),
+        Err(Error::Invalid(_))
+    ));
+    let key = effect_definition("chroma_key").unwrap().instance("one");
+    assert!(
+        !key.definition()
+            .unwrap()
+            .param("key_color")
+            .unwrap()
+            .animatable
+    );
+    // Unresolved extension namespaces retain their admission instead of becoming effect parsers.
+    Project::new(candidate(
+        key,
+        AnimationPath::new("params.unrelated").unwrap(),
+        Param::new(ParamValue::Bool(true)).unwrap(),
+    ))
+    .unwrap();
+    for raw in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.01, 1.01] {
+        assert!(matches!(
+            Param::new(ParamValue::Color([raw, 0.0, 0.0, 1.0])),
+            Err(Error::Invalid(_))
+        ));
+    }
 }
