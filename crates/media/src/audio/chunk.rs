@@ -386,7 +386,6 @@ mod tests {
         let settings = SpeechExtractSettings {
             max_duration: seconds(30),
             overlap: seconds(2),
-            ..SpeechExtractSettings::default()
         };
         let plan = Plan::new(&settings).unwrap();
         assert!(plan.target <= 30 * 16_000);
@@ -399,7 +398,6 @@ mod tests {
         let small = SpeechExtractSettings {
             overlap: seconds(2),
             max_duration: seconds(4),
-            ..SpeechExtractSettings::default()
         };
         assert!(Plan::new(&small).is_err());
         let empty = SpeechExtractSettings {

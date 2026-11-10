@@ -39,7 +39,7 @@ impl Violation {
 }
 
 pub fn check(root: &Path) -> Result<(), String> {
-    let tracked = tracked(root, &["*.md"])?;
+    let tracked = markdown(root)?;
     let mut violations = BTreeSet::new();
     violations.extend(index::check(root, &tracked)?);
     violations.extend(map::check(root)?);
@@ -85,6 +85,14 @@ fn tracked(root: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
         files.push(path.to_owned());
     }
     files.sort();
+    Ok(files)
+}
+
+/// Every tracked Markdown page. Filtering in Rust keeps the gate independent of
+/// the git build's pathspec glob rules, which differ between hosted runners.
+fn markdown(root: &Path) -> Result<Vec<String>, String> {
+    let mut files = tracked(root, &[])?;
+    files.retain(|path| path.ends_with(".md"));
     Ok(files)
 }
 
