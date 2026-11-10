@@ -9,4 +9,3 @@ text	assets/icons/phosphor/README.md	tracker id `p1-parity/06`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/09`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/117`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/54`
-text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/20`

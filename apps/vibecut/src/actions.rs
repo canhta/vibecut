@@ -364,8 +364,8 @@ pub fn keyboard_guide_table() -> String {
                 (commands, "—".to_owned())
             }
             ActionTarget::Ui { owner, .. } => ("—".to_owned(), owner.to_owned()),
-            ActionTarget::Pending { owner, ticket } => {
-                ("—".to_owned(), format!("{owner} (unavailable; `{ticket}`)"))
+            ActionTarget::Pending { owner, .. } => {
+                ("—".to_owned(), format!("{owner} (unavailable)"))
             }
         };
         text.push_str(&format!(
