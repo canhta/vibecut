@@ -12,4 +12,4 @@ Audio encoding admits up to eight channels and caps its FIFO at 131,072 samples 
 
 The native build backports upstream PSSH iterative cleanup and linear append fixes under [ADR 0002](../../../../docs/adr/0002-desktop-media-and-time.md).
 
-`cargo xtask ffmpeg` resolves and builds the SDK in the external user cache; `cargo xtask ci` configures it for workspace checks. Direct Cargo invocations need `FFMPEG_DIR` and the platform's runtime library search path. See the [development workflow](../../../../docs/engineering/workflows.md#upgrade-policy).
+FFmpeg provisioning, including the direct Cargo environment, is owned by the [development workflow](../../../../docs/engineering/workflows.md#ffmpeg-provisioning).
