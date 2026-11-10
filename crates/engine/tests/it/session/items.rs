@@ -1207,7 +1207,10 @@ fn crop_position_channels_need_a_crop_stay_in_frame_and_follow_split_duplicate_a
     add(&mut s, vec![key(0, 0.0), key(80, 0.5)]).unwrap();
     let at = |s: &Session, id: ItemId, t: i64| {
         let item = get_id(s, id);
-        let crop = crop_of(item).at(&item.animations, Tick(t)).unwrap();
+        let crop = crop_of(item)
+            .expect("the animated item is a video clip")
+            .at(&item.animations, Tick(t))
+            .unwrap();
         (crop.x, crop.y)
     };
     assert_eq!(at(&s, clip, 40), (0.25, 0.0), "linear between keys");
@@ -1267,9 +1270,10 @@ fn crop_position_channels_need_a_crop_stay_in_frame_and_follow_split_duplicate_a
     .unwrap();
 }
 
-fn crop_of(item: &Item) -> project::Crop {
+/// The crop carried by a video item, `None` for any other item kind.
+fn crop_of(item: &Item) -> Option<project::Crop> {
     let ItemParams::Video(p) = &item.content else {
-        panic!("video item");
+        return None;
     };
-    p.crop.unwrap()
+    p.crop
 }

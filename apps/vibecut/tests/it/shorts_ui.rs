@@ -214,8 +214,10 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
     }
-    let mut options = vibecut::export::ExportOptions::default();
-    options.include_audio = false;
+    let options = vibecut::export::ExportOptions {
+        include_audio: false,
+        ..Default::default()
+    };
     let mut dialog = vibecut::export::ExportDialog::new(
         playback.budget().clone(),
         playback.render_state().unwrap(),

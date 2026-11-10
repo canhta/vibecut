@@ -48,7 +48,7 @@ Child builds receive their reserved Cargo jobs and clear `RUSTC_WRAPPER`. No ext
 
 Successful exact `cargo xtask ci [--require-oracles]` commands leave receipts in `ci-receipts`, keyed by Git tree and oracle mode. Only trees clean before waiting, after admission and after execution qualify, including untracked files. An identical clean tree reuses its receipt across rebases. Receipts are local evidence and do not replace environment-specific release checks.
 
-Windows `ci` links and runs ai's standalone `whisper` and `gipformer` library tests before the default-feature workspace suite.
+Windows `ci` and `test` link and run ai's standalone `whisper` and `gipformer` library tests before the default-feature workspace suite; both commands run that one suite, so the platform coverage does not depend on which aggregate invoked it.
 
 ## FFmpeg
 

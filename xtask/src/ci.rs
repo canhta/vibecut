@@ -1,4 +1,5 @@
-//! Hosted-CI verification: the full aggregate check, refused inside linked worktrees.
+//! Hosted-CI verification and the one workspace test suite, refused inside
+//! linked worktrees.
 use crate::{cargo_check, ffmpeg, lint, process};
 use std::env;
 use std::ffi::OsStr;
@@ -9,7 +10,15 @@ const REFUSED: &str = "cargo xtask ci is for hosted CI; in a worktree run: cargo
 
 pub fn run(root: &Path, require_oracles: bool) -> Result<(), String> {
     guard(root, env::var_os("CI").as_deref())?;
-    let checks = ffmpeg::begin(require_oracles).and_then(|()| run_checks(root, require_oracles));
+    lint(root)?;
+    suite(root, require_oracles)
+}
+
+/// The one workspace test suite behind `cargo xtask test` and the aggregate
+/// `cargo xtask ci`. Both callers keep their own oracle mode and fixture
+/// receipt; the coverage, including the Windows feature builds, is the same.
+pub(crate) fn suite(root: &Path, required: bool) -> Result<(), String> {
+    let checks = ffmpeg::begin(required).and_then(|()| workspace_tests(root, required));
     let fixtures = ffmpeg::print_fixtures(root);
     checks.and(fixtures)
 }
@@ -34,8 +43,7 @@ fn git_path(root: &Path, key: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(text.trim_end_matches(['\r', '\n'])))
 }
 
-fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
-    lint(root)?;
+fn workspace_tests(root: &Path, required: bool) -> Result<(), String> {
     #[cfg(windows)]
     for feature in ["whisper", "gipformer"] {
         cargo_check(
@@ -49,10 +57,10 @@ fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
                 "--features",
                 feature,
             ],
-            require_oracles,
+            required,
         )?;
     }
-    cargo_check(root, &["test", "--workspace"], require_oracles)
+    cargo_check(root, &["test", "--workspace"], required)
 }
 
 #[cfg(test)]
@@ -101,11 +109,13 @@ mod tests {
         linked
     }
 
+    type Case<'a> = (&'a str, &'a Path, Option<&'a OsStr>, Result<(), &'a str>);
+
     #[test]
     fn guard_refuses_hosted_ci_in_a_linked_worktree_without_ci() {
         let main = repository();
         let linked = linked_worktree(main.path());
-        let cases: [(&str, &Path, Option<&OsStr>, Result<(), &str>); 4] = [
+        let cases: [Case; 4] = [
             ("linked worktree, CI unset", &linked, None, Err(REFUSED)),
             (
                 "linked worktree, CI empty",

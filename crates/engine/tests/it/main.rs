@@ -30,7 +30,7 @@ pub(crate) mod wire {
         }
     }
 
-    fn runner() -> JobRunner {
+    fn runner() -> Result<JobRunner> {
         JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
@@ -40,10 +40,9 @@ pub(crate) mod wire {
                 backoff: std::time::Duration::from_millis(1),
                 progress_interval: std::time::Duration::from_millis(10),
             },
-            ByteBudget::new(16 << 20).unwrap(),
+            ByteBudget::new(16 << 20)?,
             Arc::new(SystemClock::default()),
         )
-        .unwrap()
     }
 
     /// Run one command by id and JSON through admission, mapping the typed
@@ -61,7 +60,7 @@ pub(crate) mod wire {
             command: id.into(),
             params,
         };
-        let mut runner = runner();
+        let mut runner = runner()?;
         let response = s.control_request(
             request,
             Caller {

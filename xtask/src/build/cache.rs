@@ -631,10 +631,14 @@ impl Reserve {
             return Self::default();
         };
         match (
-            state["version"].as_u64(),
-            state["measured_bytes"].as_u64(),
-            state["peak_bytes"].as_u64(),
-            state["configuration"].as_str(),
+            state.get("version").and_then(serde_json::Value::as_u64),
+            state
+                .get("measured_bytes")
+                .and_then(serde_json::Value::as_u64),
+            state.get("peak_bytes").and_then(serde_json::Value::as_u64),
+            state
+                .get("configuration")
+                .and_then(serde_json::Value::as_str),
         ) {
             (Some(1), Some(measured), Some(peak), Some(configuration))
                 if peak >= measured

@@ -417,7 +417,7 @@ fn ordinary_prune_keeps_exact_capacity_and_make_room_evicts_at_most_one_verified
                 fs::canonicalize(&rows[4].0).unwrap().to_str().unwrap(),
             )
             .unwrap(),
-            _ => unreachable!(),
+            _ => panic!("{unknown}: unknown owner fixture"),
         }
         let _held = try_lock(open(&base.join("locks").join(&rows[2].2)).unwrap())
             .unwrap()

@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      require-oracles:
-        description: Require external ffmpeg/ffprobe and run media/render oracle tests
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -41,8 +36,11 @@ jobs:
       - name: Check formatting and repository policy
         run: cargo xtask checks
 
-  test:
-    name: test (macos-arm64)
+  # Clippy and the tests run as separate jobs on every platform: in one job a
+  # lint error fails the step before `cargo xtask test`, which hid every test
+  # result on main for five days.
+  clippy:
+    name: clippy (macos-arm64)
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -56,6 +54,54 @@ jobs:
         run: brew install ffmpeg
       - name: Check Clippy
         run: cargo xtask clippy
+
+  clippy-linux:
+    name: clippy (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+        with:
+          save-rust-cache: 'true'
+      - name: Install required media oracles
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Check Clippy
+        run: cargo xtask clippy
+
+  clippy-windows:
+    name: clippy (windows-x64, advisory)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+        with:
+          save-rust-cache: 'true'
+      - name: Check Clippy
+        shell: msys2 {0}
+        run: cargo xtask clippy
+
+  test:
+    name: test (macos-arm64)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+        with:
+          save-rust-cache: 'true'
+      - name: Install required media oracles
+        run: brew install ffmpeg
       - name: Build and run workspace tests with required oracles
         run: cargo xtask test
 
@@ -74,12 +120,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-      - name: Check Clippy
-        run: cargo xtask clippy
       - name: Build and run workspace tests with required oracles
         run: cargo xtask test
 
-  windows:
+  test-windows:
     name: test (windows-x64, advisory)
     runs-on: windows-latest
     continue-on-error: true
@@ -91,24 +135,18 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           save-rust-cache: 'true'
+      # Required-oracle mode reads PATH, so the system ffmpeg must exist before
+      # `cargo xtask test`, exactly as brew and apt provide it on the other hosts.
       - name: Install required media oracles
-        if: inputs.require-oracles
         run: choco install ffmpeg -y --no-progress
-      - name: Check workspace
+      - name: Build and run workspace tests with required oracles
         shell: msys2 {0}
-        env:
-          REQUIRE_ORACLES: ${{ inputs.require-oracles }}
-        run: |
-          if [ "$REQUIRE_ORACLES" = true ]; then
-            cargo xtask ci --require-oracles
-          else
-            cargo xtask ci
-          fi
+        run: cargo xtask test
 
   gate:
     name: CI gate
     if: always()
-    needs: [docs, lint, test, test-linux]
+    needs: [docs, lint, clippy, clippy-linux, test, test-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -122,6 +160,6 @@ jobs:
         run: |
           jq -e '
             . as $needs |
-            ["docs", "lint", "test", "test-linux"] |
+            ["docs", "lint", "clippy", "clippy-linux", "test", "test-linux"] |
             all(.[]; $needs[.].result == "success")
           ' <<< "$NEEDS_JSON"

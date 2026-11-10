@@ -45,7 +45,8 @@ fn scene(kind: &str) -> Project {
 }
 
 /// The exact midpoint frame between pure red and pure blue, in linear light.
-fn midpoint(kind: &str) -> [f32; 4] {
+/// `None` means the catalog kind has no golden yet.
+fn midpoint(kind: &str) -> Option<[f32; 4]> {
     let linear = |v: u8| {
         let c = f32::from(v) / 255.;
         if c <= 0.04045 {
@@ -55,11 +56,11 @@ fn midpoint(kind: &str) -> [f32; 4] {
         }
     };
     match kind {
-        "cross_dissolve" => [0.5, 0., 0.5, 1.],
-        "dip_to_black" => [0., 0., 0., 1.],
-        "dip_to_white" => [1.; 4],
-        "dip_to_color" => [linear(217), linear(51), linear(51), 1.],
-        other => panic!("{other}: add its midpoint here"),
+        "cross_dissolve" => Some([0.5, 0., 0.5, 1.]),
+        "dip_to_black" => Some([0., 0., 0., 1.]),
+        "dip_to_white" => Some([1.; 4]),
+        "dip_to_color" => Some([linear(217), linear(51), linear(51), 1.]),
+        _ => None,
     }
 }
 
@@ -113,10 +114,12 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
         let p = scene(def.kind);
         let h = Hooks::default();
         let mut r = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+        let mid =
+            midpoint(def.kind).expect("every catalog kind needs its midpoint golden in `midpoint`");
         for (at, expected) in [
             (79, [1., 0., 0., 1.]),
             (80, [1., 0., 0., 1.]),
-            (100, midpoint(def.kind)),
+            (100, mid),
             (120, [0., 0., 1., 1.]),
             (121, [0., 0., 1., 1.]),
         ] {

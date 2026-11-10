@@ -67,12 +67,6 @@ fn lint(root: &Path) -> Result<(), String> {
     clippy(root)
 }
 
-fn tests(root: &Path, args: &[&str], required: bool) -> Result<(), String> {
-    let checks = ffmpeg::begin(required).and_then(|()| cargo_check(root, args, required));
-    let fixtures = ffmpeg::print_fixtures(root);
-    checks.and(fixtures)
-}
-
 fn run() -> Result<ExitCode, String> {
     // Runtime, not env!: shared target dirs reuse this binary across worktrees.
     let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?;
@@ -125,7 +119,7 @@ fn run() -> Result<ExitCode, String> {
         ["checks"] => checks(root),
         ["clippy"] => clippy(root),
         ["lint"] => lint(root),
-        ["test"] => tests(root, &["test", "--workspace"], true),
+        ["test"] => ci::suite(root, true),
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => policy::edges::layers(root),
         ["assets"] => policy::assets::check(root),
