@@ -32,8 +32,8 @@
 | `subtitles.force` — Regenerate captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.dismiss` — Dismiss caption notice | Edit | — | — | subtitle editor workflow |
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
-| `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable; `p1-parity/20`) |
-| `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable; `p1-parity/20`) |
+| `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable) |
+| `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable) |
 | `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
