@@ -1,5 +1,5 @@
 //! Failures owned by provider selection, local adapter setup and upload consent.
-use crate::session::wire::ErrorCode;
+use crate::session::wire::{ErrorCode, Failure};
 
 /// A provider selection, local adapter setup or consent refusal.
 ///
@@ -17,15 +17,15 @@ pub enum Error {
     #[error("remote upload requires explicit consent")]
     ConsentRequired,
 }
-impl Error {
+impl Failure for Error {
     /// The wire class of this refusal, stated where the variant is declared.
-    pub(crate) fn code(&self) -> ErrorCode {
+    fn code(&self) -> ErrorCode {
         match self {
             Self::ConsentRequired => ErrorCode::Permission,
-            Self::ModelMissing(_)
-            | Self::RunnerMissing
-            | Self::CredentialMissing(_)
-            | Self::AutoLanguageUnsupported => ErrorCode::Refused,
+            Self::AutoLanguageUnsupported => ErrorCode::Refused,
+            Self::ModelMissing(_) | Self::RunnerMissing | Self::CredentialMissing(_) => {
+                ErrorCode::Setup
+            }
         }
     }
 }

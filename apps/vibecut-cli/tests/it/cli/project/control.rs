@@ -645,14 +645,14 @@ fn control_save_failure_is_receipted_and_retry_needs_fresh_key() {
         Some("save-fail"),
     );
     let failed = control.send(save_request.clone());
-    assert_eq!(response_error(&failed), "failed");
+    assert_eq!(response_error(&failed), "io");
     assert_eq!(failed["exit_code"], 7);
     // Project bytes publish before the metadata directory refuses the sidecar.
     let published = project::decode(&fs::read(&project).unwrap()).unwrap();
     assert_eq!(published.project.data().scene().timeline.track_count(), 2);
 
     let replay = control.send(save_request);
-    assert_eq!(response_error(&replay), "failed");
+    assert_eq!(response_error(&replay), "io");
     assert_eq!(replay["exit_code"], 7);
     assert_eq!(replay["rev_after"], failed["rev_after"]);
 
@@ -879,4 +879,29 @@ fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
         ),
         (10.0, 6.0, 8.0, -4.0)
     );
+}
+
+#[test]
+fn snapshot_io_class_preserves_control_exit_and_existing_parent_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("snapshot.vibecut");
+    overlay_project(&project, 64, 48, Tick(time::TICKS_PER_SECOND));
+    let parent = dir.path().join("parent-file");
+    fs::write(&parent, b"preserved").unwrap();
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("inspect", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap();
+    let response = control.send(control_request(
+        "snapshot",
+        "preview.snapshot",
+        json!({"time":0,"path":parent.join("frame.png")}),
+        Some(rev),
+        Some("snapshot"),
+    ));
+    assert_eq!(response_error(&response), "io");
+    assert_eq!(response["exit_code"], 7);
+    assert_eq!(response["rev_before"], response["rev_after"]);
+    assert_eq!(fs::read(&parent).unwrap(), b"preserved");
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 7, "{stderr}");
 }

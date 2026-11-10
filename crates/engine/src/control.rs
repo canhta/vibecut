@@ -3,15 +3,15 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Result, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, ControlResult, Cursor, ErrorCode, Event, FillerCandidate, FontEntry, FontLoad,
-    FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits, MAX_BATCH_COMMANDS,
-    MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES, MAX_KEY_BYTES,
-    MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE,
-    MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER,
-    MAX_TEXT_BYTES, OutputSpan, PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame,
-    PreviewResult, ProviderView, RECEIPT_RESERVATION, Request, Response, ResponseValue, Revision,
-    SavedSoundEntry, Snapshot, SoundEntry, SoundPage, SoundSource, bounded_json, contract_schema,
-    parse_frame, reference_markdown, registry_hash,
+    API_VERSION, ControlResult, Cursor, ErrorCode, Event, Failure, FillerCandidate, FontEntry,
+    FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
+    MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES,
+    MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS,
+    MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES,
+    MAX_SAFE_INTEGER, MAX_TEXT_BYTES, OutputSpan, PREVIEW_QUALITY, PauseCandidates, Payload,
+    PreviewFrame, PreviewResult, ProviderView, RECEIPT_RESERVATION, Request, Response,
+    ResponseValue, Revision, SavedSoundEntry, Snapshot, SoundEntry, SoundPage, SoundSource,
+    bounded_json, contract_schema, parse_frame, reference_markdown, registry_hash,
 };
 
 mod admission;

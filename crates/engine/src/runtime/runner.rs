@@ -1,4 +1,5 @@
 //! Caller-driven bounded scheduling of blocking domain execution.
+use crate::Failure;
 use crate::cache::CacheKey;
 use crate::{ByteBudget, ByteLease, ByteOwner, Command, EditError, JobTarget, Outcome, Session};
 use std::{
@@ -404,11 +405,7 @@ impl JobRunner {
             } else {
                 outcome
             };
-            let transient = match &outcome {
-                Err(EditError::NetworkTransient) => true,
-                Err(EditError::Ai(error)) => error.is_transient(),
-                _ => false,
-            };
+            let transient = outcome.as_ref().is_err_and(|error| error.transient());
             let retry = transient
                 && !pending.context.publication_started()
                 && pending.spec.class == ResourceClass::Network

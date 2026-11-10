@@ -1,5 +1,5 @@
 //! Failures of speech acquisition after provider selection.
-use crate::session::wire::ErrorCode;
+use crate::session::wire::{ErrorCode, Failure};
 
 /// A recognition result that refuses to insert cues.
 #[derive(Debug, thiserror::Error)]
@@ -9,9 +9,9 @@ pub enum Error {
     #[error("speech recognition confidence is too low")]
     LowConfidence,
 }
-impl Error {
+impl Failure for Error {
     /// The wire class of this refusal, stated where the variant is declared.
-    pub(crate) fn code(&self) -> ErrorCode {
+    fn code(&self) -> ErrorCode {
         match self {
             Self::NoSpeech | Self::LowConfidence => ErrorCode::Refused,
         }

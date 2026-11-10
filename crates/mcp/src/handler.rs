@@ -1,5 +1,6 @@
 //! Serves the MCP tool surface over the inbox queue.
 use super::{DEADLINE, Pending};
+use engine::Failure;
 use engine::control::{self};
 use rmcp::{
     ServerHandler,
@@ -227,7 +228,7 @@ impl ServerHandler for Handler {
                     } }
                     result
                 },
-                Ok(Err(error)) => CallToolResult::structured_error(json!({"error":{"code":control::ErrorCode::from_error(&error)}})),
+                Ok(Err(error)) => CallToolResult::structured_error(json!({"error":{"code":error.code()}})),
                 Err(_) => failure("session_gone_unknown_outcome"),
             }
         };

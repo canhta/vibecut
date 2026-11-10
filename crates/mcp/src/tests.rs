@@ -616,3 +616,61 @@ fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
     assert_eq!(response.pointer("/value/status"), Some(&json!("error")));
     assert_eq!(response.pointer("/value/value"), Some(&json!("refused")));
 }
+
+#[tokio::test]
+async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
+    let (handler, mut inbox) =
+        Inbox::new(Grants::default(), ByteBudget::new(2 << 30).unwrap()).unwrap();
+    let (server, client) = tokio::io::duplex(65536);
+    let (server_read, server_write) = tokio::io::split(server);
+    let task = tokio::spawn(async move {
+        handler
+            .serve(transport::Framed::new(server_read, server_write))
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let (read, mut write) = tokio::io::split(client);
+    let mut read = BufReader::new(read);
+    send(&mut write, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"failures","version":"1"}}})).await;
+    assert!(response(&mut read).await.get("result").is_some());
+    send(
+        &mut write,
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    )
+    .await;
+    for (index, (inner, code)) in [
+        (EditError::Limit, "limit"),
+        (EditError::StaleResult, "stale_result"),
+        (EditError::Io(std::io::Error::other("disk")), "io"),
+        (
+            EditError::Render(render::Error::Unavailable(Vec::new())),
+            "unavailable",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        send(&mut write, json!({"jsonrpc":"2.0","id":index+2,"method":"tools/call","params":{"name":"command_run","arguments":{"command":"inspect","params":{}}}})).await;
+        while inbox.receive.is_empty() {
+            tokio::task::yield_now().await;
+        }
+        inbox
+            .poll_projects(|_, _, _| {
+                Err(EditError::JobFailure(Arc::new(EditError::JobFailure(
+                    Arc::new(inner),
+                ))))
+            })
+            .unwrap();
+        let value = response(&mut read).await;
+        assert_eq!(
+            value.pointer("/result/structuredContent/error/code"),
+            Some(&json!(code))
+        );
+        assert_eq!(value.pointer("/result/isError"), Some(&json!(true)));
+    }
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+}

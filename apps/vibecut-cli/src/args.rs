@@ -28,6 +28,121 @@ mod exit_codes {
         );
         assert_eq!(CliError::Io(io::Error::other("")).exit_code(), 7);
     }
+    #[test]
+    fn engine_and_sound_diagnostics_keep_exact_labels_and_exits() {
+        use engine::{EditError as E, SoundError as S, providers::Error as P};
+        use std::sync::Arc;
+        type Case = (fn() -> E, (&'static str, u8));
+        macro_rules! row {
+            ($e:expr, $l:literal, $x:literal) => {
+                (|| $e, ($l, $x))
+            };
+        }
+        let cases: &[Case] = &[
+            row!(E::SchemaMismatch, "rejected", 5),
+            row!(E::SessionGone, "rejected", 5),
+            row!(E::StaleRevision, "rejected", 5),
+            row!(E::Permission, "rejected", 5),
+            row!(E::IdempotencyConflict, "rejected", 5),
+            row!(E::ReceiptCapacity, "rejected", 5),
+            row!(E::ResyncRequired, "rejected", 5),
+            row!(E::JobNotRetained, "rejected", 5),
+            row!(E::ControlIdentity, "rejected", 5),
+            row!(E::QueueFull, "job", 7),
+            row!(E::BudgetFull, "job", 7),
+            row!(E::Cancelled, "job", 7),
+            row!(E::WorkerPanicked, "job", 7),
+            row!(E::JobPoisoned, "job", 7),
+            row!(E::StaleResult, "job", 7),
+            row!(E::JobFailure(Arc::new(E::Limit)), "usage", 2),
+            row!(E::Render(render::Error::Cancelled), "render", 6),
+            row!(E::Media(media::MediaError::Cancelled), "media", 6),
+            row!(E::Ai(ai::Error::Auth), "ai", 4),
+            row!(E::Sounds(S::NoCredentials), "setup", 4),
+            row!(E::Io(io::Error::other("io")), "io", 7),
+            row!(E::UnknownCommand, "usage", 2),
+            row!(E::InvalidParams, "usage", 2),
+            row!(E::EmptyProject, "rejected", 5),
+            row!(E::Panicked, "rejected", 5),
+            row!(E::TransactionActive, "rejected", 5),
+            row!(E::Project(project::Error::Busy), "busy", 3),
+            row!(E::Sounds(S::Auth), "auth", 4),
+            row!(E::Sounds(S::Quota), "quota", 4),
+            row!(
+                E::Sounds(S::RateLimit {
+                    retry_after_seconds: Some(3)
+                }),
+                "rate_limit",
+                4
+            ),
+            row!(E::Sounds(S::Network), "network", 7),
+            row!(E::Sounds(S::InvalidResponse), "sounds", 5),
+            row!(E::Sounds(S::Limit), "limit", 2),
+            row!(E::Sounds(S::NoAudioDevice), "audio_device", 4),
+            row!(E::Sounds(S::Cancelled), "cancelled", 7),
+            row!(E::Sounds(S::Io(io::Error::other("io"))), "io", 7),
+            row!(
+                E::Render(render::Error::Unavailable(Vec::new())),
+                "unavailable",
+                4
+            ),
+            row!(E::Project(project::Error::Conflict), "conflict", 3),
+        ];
+        for (make, expected) in cases {
+            for error in [
+                CliError::Engine(make()),
+                CliError::Job(Arc::new(make())),
+                CliError::Shorts(shorts::Error::Engine(make())),
+            ] {
+                assert_eq!(error.code(), *expected, "{error:?}");
+                let value = error.value();
+                assert_eq!(value["code"], expected.0);
+                assert_eq!(value["exit_code"], expected.1);
+            }
+        }
+        let sounds = [
+            (S::NoCredentials, ("setup", 4)),
+            (S::Auth, ("auth", 4)),
+            (S::Quota, ("quota", 4)),
+            (
+                S::RateLimit {
+                    retry_after_seconds: Some(3),
+                },
+                ("rate_limit", 4),
+            ),
+            (S::Network, ("network", 7)),
+            (S::Server, ("network", 7)),
+            (S::InvalidResponse, ("sounds", 5)),
+            (S::Limit, ("limit", 2)),
+            (S::NoAudioDevice, ("audio_device", 4)),
+            (S::NotCached, ("sounds", 5)),
+            (S::LibraryCorrupt, ("sounds", 5)),
+            (S::Cancelled, ("cancelled", 7)),
+            (S::Io(io::Error::other("io")), ("io", 7)),
+            (S::Media(media::MediaError::Cancelled), ("media", 6)),
+            (S::Project(project::Error::Busy), ("io", 7)),
+            (S::Invalid("input"), ("sounds", 5)),
+        ];
+        for (error, expected) in sounds {
+            assert_eq!(CliError::Sounds(error).code(), expected);
+        }
+        for (make, expected) in cases {
+            let inner = E::JobFailure(Arc::new(E::JobFailure(Arc::new(make()))));
+            assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
+        }
+        let model = E::JobFailure(Arc::new(E::Providers(P::ModelMissing("test-model"))));
+        assert_eq!(
+            CliError::Engine(model).value()["message"],
+            "local model test-model is not installed; run `vibecut-cli model download test-model`"
+        );
+        assert_eq!(
+            CliError::Engine(E::PersistenceFailed(Arc::new(E::Io(io::Error::other(
+                "disk"
+            )))))
+            .value()["message"],
+            "session persistence failed"
+        );
+    }
 }
 
 #[cfg(test)]

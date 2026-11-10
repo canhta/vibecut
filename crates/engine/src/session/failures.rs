@@ -1,5 +1,7 @@
 //! Finite failure records shared by `EditError` and the external-asset features.
 
+use super::wire::{ErrorCode, Failure};
+
 /// Font catalog failures that are not a load state.
 #[derive(Debug, thiserror::Error)]
 pub enum FontError {
@@ -70,6 +72,39 @@ impl From<ai::Error> for SoundError {
             ai::Error::Payload => Self::Limit,
             ai::Error::Cancelled => Self::Cancelled,
             _ => Self::InvalidResponse,
+        }
+    }
+}
+
+impl Failure for FontError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Unavailable
+            | Self::NotDownloadable
+            | Self::DownloadActive
+            | Self::Integrity
+            | Self::Response
+            | Self::Face(_)
+            | Self::Catalog => ErrorCode::Refused,
+        }
+    }
+}
+impl Failure for SoundError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::NoCredentials => ErrorCode::Setup,
+            Self::Auth => ErrorCode::Auth,
+            Self::Quota => ErrorCode::Quota,
+            Self::RateLimit { .. } => ErrorCode::RateLimit,
+            Self::Network | Self::Server => ErrorCode::Network,
+            Self::NoAudioDevice => ErrorCode::AudioDevice,
+            Self::Cancelled => ErrorCode::SoundCancelled,
+            Self::Limit => ErrorCode::SoundLimit,
+            Self::InvalidResponse | Self::NotCached | Self::LibraryCorrupt | Self::Invalid(_) => {
+                ErrorCode::Sounds
+            }
+            Self::Io(_) | Self::Project(_) => ErrorCode::SoundIo,
+            Self::Media(_) => ErrorCode::Media,
         }
     }
 }

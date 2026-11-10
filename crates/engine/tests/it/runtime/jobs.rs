@@ -967,3 +967,69 @@ fn unpinned_cache_must_not_permanently_starve_admitted_job() {
         "idle runner never reclaims any of nine unpinned persistent entries"
     );
 }
+
+#[test]
+fn classified_failures_reach_job_resync_without_broadening_retries() {
+    use EditError as E;
+    use engine::control::{ErrorCode as C, Payload};
+    type Case = (fn() -> E, C, bool);
+    let cases: &[Case] = &[
+        (
+            || E::JobFailure(Arc::new(E::JobFailure(Arc::new(E::Limit)))),
+            C::Limit,
+            false,
+        ),
+        (
+            || E::JobFailure(Arc::new(E::StaleResult)),
+            C::StaleResult,
+            false,
+        ),
+        (
+            || E::JobFailure(Arc::new(E::Io(std::io::Error::other("disk")))),
+            C::Io,
+            false,
+        ),
+        (
+            || E::JobFailure(Arc::new(E::Render(render::Error::Unavailable(Vec::new())))),
+            C::Unavailable,
+            false,
+        ),
+        (
+            || E::JobFailure(Arc::new(E::NetworkTransient)),
+            C::Job,
+            false,
+        ),
+        (
+            || {
+                E::Sounds(engine::SoundError::RateLimit {
+                    retry_after_seconds: Some(3),
+                })
+            },
+            C::RateLimit,
+            false,
+        ),
+        (|| E::Io(std::io::Error::other("io")), C::Io, false),
+        (|| E::Ai(ai::Error::Incomplete), C::Ai, false),
+        (|| E::NetworkTransient, C::Job, true),
+    ];
+    for &(make, code, seal) in cases {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let mut s = crate::support::control::session();
+        let mut cursor = s.snapshot_and_subscribe(&r).unwrap().cursor;
+        let (id, _) = r
+            .submit(spec(ResourceClass::Network), move |context| {
+                if seal {
+                    context.begin_publication()?;
+                }
+                Err(make())
+            })
+            .unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        let state = s.snapshot_and_subscribe(&r).unwrap();
+        assert_eq!(state.jobs[0].error, Some(code));
+        assert!(s.events(&mut cursor).unwrap().iter().any(|event| matches!(&event.payload, Payload::JobChanged { snapshot } if snapshot.id == id && snapshot.error == Some(code))));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
