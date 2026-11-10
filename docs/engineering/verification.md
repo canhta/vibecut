@@ -12,6 +12,7 @@ Commit only green, with the smallest check that covers the change. Compile throu
 | Rust, handoff | `cargo test -p <crate>` for every edited crate, plus `cargo xtask checks`. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
 | Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
 | Fix round, merge conflict | Edited crates' tests (plus the reviewer's reproductions) |
+| Rebase without conflict | Nothing is rerun; merge |
 | Clean rebase | Reuse the receipt |
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
 | `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
