@@ -22,6 +22,10 @@ Blocked by: - | NN, <milestone>/NN
 
 `Assignee` names the agent tool and model that implement the ticket as `ide/model`, for example `opencode/deepseek-v4.1-flash`, `codex/gpt-6.1-sol` or `claudecode/claude-sonnet-5-5`. `Blocked by` holds ticket ids only; put any condition or note in the body.
 
+`claimed` means the current active assignment, including explicitly admitted planning; it is not a lifetime claim on a worker, checkout or parent feature. Keep a broad parent `open` with its acceptance retained while a source leaf is active. A paused assignment records its precise condition in the body and is `blocked` when intervention is needed; a queued but otherwise ready leaf is `open`. Only unmerged code/contract tickets go in `Blocked by`; resource admission, scheduling and human evidence conditions stay in the body.
+
+Use the body to record delivery stage without new status values: **planning** (no source admission), **implemented** (published SHA and receipt), **reviewed** (verdict and remaining acceptance), **merged** (main SHA). A staged approval on unfinished WIP remains explicitly accepted-unmerged, not resolved or shipping. Retain its refs, evidence and next integration boundary. Resolve only the delivered leaf after merge; resolve its parent only after all acceptance. Keep one current task/dispatch identity distinct from settled history and paused/uncertain assignments; uncertain liveness never proves exit.
+
 Priority follows the [delivery order](../product/requirements.md#scope): P0 foundation, P1 core editor, P2 AI editing and agent control, P3 Home, P4 long video to shorts; a defect takes the priority of the feature it breaks. Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
 
 Ready order: highest priority, then most open tickets transitively blocked, then lowest number; a blocking view ranks unresolved tickets by unresolved transitive dependents. Claiming, resolving and routing follow [orchestration](orchestration.md).

@@ -8,16 +8,18 @@ Commit only green, with the smallest check that covers the change. Compile throu
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
-| Rust, while iterating | `cargo test -p <crate>` for the crate being edited |
-| Rust, handoff | `cargo test -p <crate>` for every edited crate, plus `cargo xtask checks`. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
+| Rust, while iterating | Focused named behaviour tests in the affected crate; use a narrow compile check only when needed to diagnose compilation |
+| Rust, handoff | Once on final source, `cargo test -p <crate>` for each behaviour-edited crate, plus `cargo xtask checks`. Enumerated mechanical contract callers get the narrow compile check needed for atomic correctness; coordinator owns the final public-signature gate. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
 | Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
-| Fix round, merge conflict | Edited crates' tests (plus the reviewer's reproductions) |
+| Fix round, merge conflict | Focused reproduction and affected edited-crate final suite for changed source; retain unaffected receipts |
 | Rebase without conflict | Nothing is rerun; merge |
 | Merge of a change to a public type or signature | `cargo xtask build -- cargo check --workspace --all-targets` once on the rebased branch, by the coordinator |
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
 | `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
 
 `cargo xtask ci [--require-oracles]` runs `checks`, `clippy` and workspace tests, and refuses inside a linked worktree unless `CI` is set (hosted runners set it), naming the local commands instead. Required oracle mode fails on a missing or pre-6.0 `ffmpeg`/`ffprobe` and on any skipped oracle test; skips never count as acceptance.
+
+Reuse receipts for identical source and a compatible toolchain, configuration, environment and oracle set; cite their exact revision, command, named nonzero tests and result. Review is inspection of the changed diff and evidence, with reruns for an actual gap, contradiction or changed behaviour. A conflict-free rebase alone does not invalidate a receipt. A necessary prerequisite failure gets its narrow fix and failed-test rerun, not an unrelated suite sweep. Document checks need no test count.
 
 ## AI model integrations
 
@@ -53,6 +55,8 @@ Inject codecs, providers and OS boundaries (file pickers, dropped files) at thei
 - `cargo xtask ui-compare OURS.png REFERENCE.png [--region X,Y,W,H] [--out DIR]` scores edge-structure error (whole region default limit 0.02, worst 32 px tile 0.15). Inputs must share the logical size (references are 1727×1029; halve 2x captures first). Report the whole-region error before and after for each changed region; it must fall. The side-by-side, not the score, judges layout.
 - Real-app checks attach in the background ([MCP control](../product/agent-control/mcp.md#start-and-attach)); one native dialog smoke per milestone, with the maintainer's OK.
 
+Comparison validity and product acceptance are separate gates. Verify matching logical size, crop/origin, scale, state and compared region before interpreting a metric; invalid inputs are non-comparable, never a pass. Correct inputs and rerun only the comparison, retaining the original artifacts and result. Valid results still obey the thresholds and before/after criterion above; a design-peer decision or acceptance change must be explicit, not inferred from an invalid capture or an inspected side-by-side.
+
 ## Fixtures
 
 Generate synthetic media with `testkit::oracle::generate` into `target/fixtures/`. Goldens fix canvas, rate, fonts and CPU rendering. Re-bless only after looking at the image, with a reason.
@@ -65,5 +69,5 @@ Label each claim observed, source-documented, inferred or unverified, with comma
 
 Reports stay local; hand over paths. Open with `## TL;DR` (at most 10 lines: outcome, SHA or blocker, decisions, follow-ups).
 
-- Done: ticket, branch, SHAs, diff stat; each Must and Verify item mapped to its test or command and result; dependency lookups; follow-ups.
+- Done: compact ticket/branch/exact-SHA receipt, named behaviour and failure evidence mapped to admitted Must/Verify items, and remaining gates. Link retained exact-source receipts instead of restating or rerunning them; include dependency lookups only when relevant. Attach detailed raw, benchmark or native evidence when the change needs it; preserve failures, skips and platform limitations.
 - Review: ticket, SHA, findings with severity, `file:line`, reproduction and fix; verdict `approve` or `changes`. Correctness, security and data-loss findings block approval.
