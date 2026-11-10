@@ -430,10 +430,10 @@ fn localized_search_and_category_filter_keep_preview_tiles_available() {
     editor.preferences.locale = Locale::Vi;
     let mut h = build(editor);
     open(&mut h);
-    click(&mut h, "transitions.category.Dissolve");
+    click(&mut h, "transitions.category.Basic");
     assert_eq!(widget(&h, "transitions.category.all").rect.height(), 24.0);
     assert_eq!(
-        widget(&h, "transitions.category.Dissolve").rect.height(),
+        widget(&h, "transitions.category.Basic").rect.height(),
         24.0
     );
     click(&mut h, "assets.search");

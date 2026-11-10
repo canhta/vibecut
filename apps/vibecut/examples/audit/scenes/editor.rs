@@ -310,6 +310,30 @@ pub(super) fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failu
     app.run_steps(2);
     Ok(app)
 }
+/// The Transitions tab with an applicable cut selected, at the measured editor size.
+pub(super) fn editor_transitions(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, first) = media_editor(theme, Locale::En)?;
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Transitions;
+    let second = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .find(|item| item.id != first && item.source_asset.is_some())
+        .map(|item| item.id)
+        .ok_or("second video item")?;
+    editor.selection = [first, second].into_iter().collect();
+    // The transition panel is measured against the 1727x1029 desktop capture.
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
+    wait_for_presented(&mut app)?;
+    app.run_steps(4);
+    Ok(app)
+}
+
 pub(super) fn export_dialog(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, _) = media_editor(theme, Locale::En)?;
     editor.session.apply(Command::SetCanvas {

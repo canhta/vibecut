@@ -6,16 +6,26 @@ use super::{
 
 impl View<'_> {
     pub(super) fn transition_nav(&mut self, ui: &mut egui::Ui) {
-        let mut families = std::collections::BTreeSet::new();
-        let rows = std::iter::once((None, Text::Transitions)).chain(
-            project::TRANSITION_DEFINITIONS
-                .iter()
-                .filter_map(|definition| {
-                    families
-                        .insert(definition.family)
-                        .then_some((Some(definition.family), transition::family(definition)))
-                }),
-        );
+        const ORDER: &[&str] = &[
+            "Basic",
+            "Overlay",
+            "Light",
+            "Blur",
+            "Camera",
+            "3D",
+            "Slides",
+            "Wipes",
+            "Glitch & Distort",
+        ];
+        let mut shelves: Vec<&'static str> = Vec::new();
+        for definition in project::TRANSITION_DEFINITIONS {
+            if !shelves.contains(&definition.shelf) {
+                shelves.push(definition.shelf);
+            }
+        }
+        shelves.sort_by_key(|shelf| ORDER.iter().position(|known| known == shelf).unwrap_or(usize::MAX));
+        let rows = std::iter::once((None, Text::Transitions))
+            .chain(shelves.into_iter().map(|shelf| (Some(shelf), transition::shelf_label(shelf))));
         for (family, label) in rows {
             let selected = self.state.transition_family == family;
             let response = ui
@@ -64,7 +74,7 @@ impl View<'_> {
             .filter(|definition| {
                 self.state
                     .transition_family
-                    .is_none_or(|family| family == definition.family)
+                    .is_none_or(|shelf| shelf == definition.shelf)
             })
             .filter(|definition| {
                 self.tr(transition::name(definition))
@@ -72,15 +82,17 @@ impl View<'_> {
                     .contains(&query)
             })
             .collect();
-        if let Some(definition) = definitions.first() {
-            ui.painter().text(
-                area.min + Vec2::new(0.0, 36.0),
-                Align2::LEFT_TOP,
-                self.tr(transition::family(definition)),
-                FontId::proportional(theme::type_size::BODY),
-                theme::text(self.cx.preferences.dark),
-            );
-        }
+        let heading = self
+            .state
+            .transition_family
+            .map_or(Text::Transitions, |shelf| transition::shelf_label(shelf));
+        ui.painter().text(
+            area.min + Vec2::new(0.0, 36.0),
+            Align2::LEFT_TOP,
+            self.tr(heading),
+            FontId::proportional(theme::type_size::BODY),
+            theme::text(self.cx.preferences.dark),
+        );
         let width = theme::size::EFFECT_CARD;
         let columns = ((area.width() + theme::space::GRID) / (width + theme::space::GRID))
             .floor()
@@ -245,10 +257,6 @@ impl View<'_> {
             if retry.clicked() {
                 self.state.transition_previews.remove(kind);
             }
-        }
-        if active {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(84));
         }
         if response.hovered() || response.has_focus() {
             ui.painter().rect_stroke(

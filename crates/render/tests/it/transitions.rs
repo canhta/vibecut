@@ -761,3 +761,117 @@ fn print_oracle_rows() {
         println!("    (\"{}\", \"{}\"),", definition.kind, fingerprint(&im));
     }
 }
+
+/// A value pair that must move the picture away from the catalogue default.
+fn changed_values(param: &TransitionParamDef) -> Vec<TransitionValue> {
+    let different = |v: f64, default: f64| (v - default).abs() > 1e-9;
+    match param.kind {
+        TransitionParamKind::Float { min, max, default, .. } => [
+            default + (max - default) * 0.5,
+            default - (default - min) * 0.5,
+            max,
+            min,
+        ]
+        .into_iter()
+        .filter(|v| different(*v, default))
+        .map(TransitionValue::Float)
+        .collect(),
+        TransitionParamKind::Choice { options, default } => (0..options.len() as u32)
+            .filter(|n| *n != default)
+            .map(TransitionValue::Choice)
+            .collect(),
+        TransitionParamKind::Bool { default } => vec![TransitionValue::Bool(!default)],
+        TransitionParamKind::Color { .. } => vec![
+            TransitionValue::Color(Color([0, 0, 0, 255])),
+            TransitionValue::Color(Color([255, 0, 255, 255])),
+        ],
+        TransitionParamKind::Point { default } => [[0., 0.], [1., 1.]]
+            .into_iter()
+            .filter(|v| v != &default)
+            .map(TransitionValue::Point)
+            .collect(),
+        TransitionParamKind::Angle { default } => [default + 70., default - 70.]
+            .into_iter()
+            .map(TransitionValue::Angle)
+            .collect(),
+        TransitionParamKind::Seed { default } => [default.wrapping_add(1).min(9999), 0, 9999]
+            .into_iter()
+            .filter(|v| *v != default)
+            .map(TransitionValue::Seed)
+            .collect(),
+    }
+}
+
+#[test]
+fn every_parameter_changes_the_picture() {
+    let h = Hooks::default();
+    let (a, b) = oracle_frames(160, 90);
+    let progresses = [0.3f64, 0.5, 0.7];
+    let render = |kind: &str, params: &TransitionParams| {
+        progresses
+            .map(|progress| {
+                transitions::apply(kind, params, &a, &b, progress, 1., &h).unwrap_or_else(|error| {
+                    panic!("{kind} {progress}: {error:?}")
+                })
+            })
+    };
+    for definition in TRANSITION_DEFINITIONS {
+        let base = render(definition.kind, &TransitionParams::new());
+        for param in definition.params {
+            let mut best = 0f32;
+            for value in changed_values(param) {
+                let mut params = TransitionParams::from([(param.id.to_owned(), value)]);
+                if param.id == "border_color" {
+                    params.insert("border_width".into(), TransitionValue::Float(12.));
+                }
+                let frames = render(definition.kind, &params);
+                for (frame, base) in frames.iter().zip(&base) {
+                    best = best.max(mean_abs(frame, base));
+                }
+            }
+            assert!(
+                best > 1e-5,
+                "{} {} never changes the picture ({best})",
+                definition.kind,
+                param.id
+            );
+        }
+    }
+}
+
+/// Prints median wall time per catalogue kind at 1920x1080/30 fps, five reps after one warm-up.
+#[test]
+#[ignore = "cost report, not a gate"]
+fn transition_cost_at_1080p() {
+    let h = Hooks::default();
+    let (a, b) = oracle_frames(1920, 1080);
+    let mut rows: Vec<(f64, &str)> = Vec::new();
+    for definition in TRANSITION_DEFINITIONS {
+        let mut run = || {
+            transitions::apply(
+                definition.kind,
+                &TransitionParams::new(),
+                &a,
+                &b,
+                0.5,
+                1.,
+                &h,
+            )
+            .unwrap();
+        };
+        run();
+        let mut samples: Vec<f64> = (0..5)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                run();
+                start.elapsed().as_secs_f64() * 1000.
+            })
+            .collect();
+        samples.sort_by(|a, b| a.total_cmp(b));
+        rows.push((samples[2], definition.kind));
+    }
+    rows.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (ms, kind) in &rows {
+        println!("{ms:8.2} ms  {kind}");
+    }
+}

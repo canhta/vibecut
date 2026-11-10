@@ -400,6 +400,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: editor_media,
     },
     Scene {
+        name: "editor-transitions",
+        reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221731.png"),
+        reference_light: Some("capcut-desktop-2026-11-05/capcut-desktop-221731.png"),
+        build: editor_transitions,
+    },
+    Scene {
         name: "editor-menu",
         reference_dark: None,
         reference_light: None,
