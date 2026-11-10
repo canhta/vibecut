@@ -661,7 +661,7 @@ fn every_catalog_kind_has_an_evaluator_and_frames_carry_item_local_time() {
             .unwrap_or_else(|| panic!("{} has no evaluator", definition.id));
         let frame =
             EffectFrame::new(&none, &definition.instance("one"), Tick::ZERO, 64, 36).unwrap();
-        for pass in evaluate(&frame).unwrap() {
+        for pass in evaluate(&frame, &EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap()).unwrap() {
             validate_pass(&pass, 8, 4).unwrap();
         }
     }
@@ -979,8 +979,16 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
     use time::Tick;
     let hooks = Hooks::default();
     let view = effect_definition("hold_time").unwrap().instance("probe");
-    let passes =
-        |fine| evaluate_effect(&Animations::default(), &view, Tick::ZERO, 64, 36, fine).unwrap();
+    let passes = |fine| {
+        evaluate_effect(
+            &Animations::default(),
+            &view,
+            Tick::ZERO,
+            render::effects::EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap(),
+            fine,
+        )
+        .unwrap()
+    };
     // EffectFrame is fine by default, and the evaluator sees the renderer's flag.
     let frame = EffectFrame::new(&Animations::default(), &view, Tick::ZERO, 64, 36).unwrap();
     assert!(frame.fine);
@@ -1558,8 +1566,7 @@ fn effect_output_at(
         &project::Animations::default(),
         &instance,
         at,
-        source.len() as u32,
-        1,
+        render::effects::EffectGeometry::new([source.len() as u32, 1], [1.0, 1.0]).unwrap(),
         true,
     )
     .unwrap();
@@ -2045,8 +2052,7 @@ fn pixel_effects_that_are_identity_at_default_emit_no_pass() {
             &project::Animations::default(),
             &effect_instance(kind, &[]),
             time::Tick::ZERO,
-            13,
-            1,
+            render::effects::EffectGeometry::new([13, 1], [1.0, 1.0]).unwrap(),
             true,
         )
         .unwrap();
@@ -2113,7 +2119,12 @@ fn animated_pixel_parameters_clamp_to_their_hard_range() {
                     "{kind}.{}",
                     param.id
                 );
-                for pass in (evaluator(kind).unwrap())(&frame).unwrap() {
+                for pass in (evaluator(kind).unwrap())(
+                    &frame,
+                    &EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap(),
+                )
+                .unwrap()
+                {
                     validate_pass(&pass, 64, 36)
                         .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.id));
                 }
@@ -2301,7 +2312,13 @@ fn colour_output(
     let hooks = Hooks::default();
     let image = Image::from_working_pixels(1, 1, [source].into_iter(), &hooks)?;
     let below = Image::new(1, 1, [0.0; 4], &hooks)?;
-    let passes = evaluate_effect(animations, effect, at, 1, 1, fine)?;
+    let passes = evaluate_effect(
+        animations,
+        effect,
+        at,
+        render::effects::EffectGeometry::new([1, 1], [1.0, 1.0]).unwrap(),
+        fine,
+    )?;
     Ok(apply_effect(image, &passes, &below, &CpuEffects, &hooks)?.pixels()[0])
 }
 
@@ -2608,4 +2625,675 @@ fn effect_colour_bases_preserve_subbyte_precision_and_clamp_curves() {
         expected,
         "chroma colour stays static"
     );
+}
+
+// Independent f64 corner weights: no production sampler/evaluator/kernel as expected data.
+fn spatial_sample(pixels: &[[f64; 4]], [w, h]: [u32; 2], x: f64, y: f64) -> [f64; 4] {
+    let x = x.clamp(0.0, f64::from(w - 1));
+    let y = y.clamp(0.0, f64::from(h - 1));
+    let (ix, iy) = (x.floor() as u32, y.floor() as u32);
+    let (fx, fy) = (x.fract(), y.fract());
+    let mut out = [0.0; 4];
+    for (xx, wx) in [(ix, 1.0 - fx), ((ix + 1).min(w - 1), fx)] {
+        for (yy, wy) in [(iy, 1.0 - fy), ((iy + 1).min(h - 1), fy)] {
+            for k in 0..4 {
+                out[k] += pixels[(yy * w + xx) as usize][k] * wx * wy;
+            }
+        }
+    }
+    out
+}
+fn streak_expected(pixels: &[[f64; 4]], size: [u32; 2], [dx, dy]: [f64; 2]) -> Vec<[f64; 4]> {
+    let span = dx.hypot(dy);
+    if span < 0.5 {
+        return pixels.to_vec();
+    }
+    let n = span.ceil().clamp(2.0, 64.0) as usize;
+    (0..size[0] * size[1])
+        .map(|i| {
+            let mut out = [0.0; 4];
+            for tap in 0..n {
+                let fraction = tap as f64 / (n - 1) as f64 - 0.5;
+                let p = spatial_sample(
+                    pixels,
+                    size,
+                    f64::from(i % size[0]) + dx * fraction,
+                    f64::from(i / size[0]) + dy * fraction,
+                );
+                for k in 0..4 {
+                    out[k] += p[k] / n as f64;
+                }
+            }
+            out
+        })
+        .collect()
+}
+fn streak(length: f64, direction: f64) -> project::EffectInstance {
+    project::effect_definition("directional_blur")
+        .unwrap()
+        .instance("streak")
+        .with("length", EffectValue::Scalar(length))
+        .unwrap()
+        .with("direction", EffectValue::Scalar(direction))
+        .unwrap()
+}
+#[test]
+fn streak_taps_match_independent_impulse_checker_alpha_constants_and_boundaries() {
+    for size in [[9, 5], [1, 1], [1, 7], [7, 1]] {
+        for pattern in 0..3 {
+            let pixels: Vec<[f64; 4]> = (0..size[0] * size[1])
+                .map(|i| {
+                    let a = if pattern == 0 {
+                        if i == size[0] * size[1] / 2 { 0.5 } else { 0.0 }
+                    } else if pattern == 1 {
+                        if i % 2 == 0 { 0.25 } else { 1.0 }
+                    } else {
+                        0.5
+                    };
+                    [a, a * 0.5, a * 0.125, a]
+                })
+                .collect();
+            let hooks = Hooks::default();
+            let image = Image::from_working_pixels(
+                size[0],
+                size[1],
+                pixels.iter().map(|p| p.map(|v| v as f32)),
+                &hooks,
+            )
+            .unwrap();
+            for (length, angle, gains) in [
+                (0.0, 0.0, [1.0, 1.0]),
+                (0.2499, 0.0, [1.0, 1.0]),
+                (0.25, 0.0, [1.0, 1.0]),
+                (1.0, 90.0, [1.0, 1.0]),
+                (2.0, 45.0, [0.75, 1.5]),
+                (3.0, -360.0, [0.5, 0.5]),
+                (3.0, 360.0, [0.25, 0.25]),
+                (31.5, 0.0, [1.0, 1.0]),
+                (32.1, 90.0, [1.0, 1.0]),
+                (1000.0, 45.0, [1.0, 1.0]),
+            ] {
+                let mut outputs = Vec::new();
+                for fine in [true, false] {
+                    let passes = evaluate_effect(
+                        &project::Animations::default(),
+                        &streak(length, angle),
+                        time::Tick::ZERO,
+                        EffectGeometry::new(size, gains).unwrap(),
+                        fine,
+                    )
+                    .unwrap();
+                    let out = apply_effect(
+                        Image::from_working_pixels(
+                            image.width(),
+                            image.height(),
+                            image.pixels().iter().copied(),
+                            &hooks,
+                        )
+                        .unwrap(),
+                        &passes,
+                        &image,
+                        &CpuEffects,
+                        &hooks,
+                    )
+                    .unwrap();
+                    let a = angle.to_radians();
+                    let expected = streak_expected(
+                        &pixels,
+                        size,
+                        [
+                            2.0 * length * a.sin() * gains[0],
+                            -2.0 * length * a.cos() * gains[1],
+                        ],
+                    );
+                    for (actual, expected) in out.pixels().iter().zip(expected) {
+                        assert_working_pixel(*actual, expected, "Streak taps");
+                    }
+                    outputs.push(out);
+                }
+                assert_eq!(outputs[0].pixels(), outputs[1].pixels());
+                if length < 0.25 {
+                    assert_eq!(outputs[0].pixels(), image.pixels());
+                }
+            }
+        }
+    }
+}
+#[test]
+fn streak_geometry_extent_raw_pass_budget_and_cancellation_refuse_without_leaks() {
+    for (size, gains) in [
+        ([0, 4], [1.0, 1.0]),
+        ([8193, 8193], [1.0, 1.0]),
+        ([8, 4], [0.0, 1.0]),
+        ([8, 4], [-1.0, 1.0]),
+        ([8, 4], [f64::NAN, 1.0]),
+        ([8, 4], [1.0, f64::INFINITY]),
+    ] {
+        assert!(EffectGeometry::new(size, gains).is_err());
+    }
+    assert!(matches!(
+        evaluate_effect(
+            &project::Animations::default(),
+            &streak(1000.0, 90.0),
+            time::Tick::ZERO,
+            EffectGeometry::new([8, 4], [f64::MAX, 1.0]).unwrap(),
+            true
+        ),
+        Err(Error::Invalid("effect spatial extent"))
+    ));
+    let hooks = Hooks::default();
+    let image = Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap();
+    let tiny = Hooks {
+        limit: 0,
+        ..Default::default()
+    };
+    for v in [
+        [1.0, 2.0, 1.0],
+        [1.0, 2.0, 2.5],
+        [1.0, 2.0, 65.0],
+        [f32::INFINITY, 0.0, 2.0],
+        [0.0, f32::NAN, 2.0],
+    ] {
+        let pass = EffectPass::Sample {
+            entry_point: "streak_blur",
+            uniforms: v.map(Uniform::Float).to_vec(),
+        };
+        assert!(matches!(
+            apply_effect(
+                Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+                &[pass],
+                &image,
+                &CpuEffects,
+                &tiny
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(tiny.requested.load(Ordering::SeqCst), 0);
+    }
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &streak(4.0, 90.0),
+        time::Tick::ZERO,
+        EffectGeometry::new([8, 4], [1.0, 1.0]).unwrap(),
+        true,
+    )
+    .unwrap();
+    assert!(matches!(
+        apply_effect(
+            Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+            &passes,
+            &image,
+            &CpuEffects,
+            &tiny
+        ),
+        Err(Error::Budget { .. })
+    ));
+    hooks.state.store(1, Ordering::SeqCst);
+    assert!(matches!(
+        CpuEffects.apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                below: &image,
+                coverage: None
+            },
+            &hooks
+        ),
+        Err(Error::Cancelled)
+    ));
+    hooks.state.store(0, Ordering::SeqCst);
+    drop(image);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}
+
+struct SpatialSource {
+    size: [u32; 2],
+    calls: usize,
+    missing: bool,
+    last: Option<time::Tick>,
+}
+impl SourceProvider for SpatialSource {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(self.missing.then_some(UnavailableReason::Missing))
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        at: time::Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        self.last = Some(at);
+        self.calls += 1;
+        let [w, hg] = self.size;
+        Image::from_working_pixels(
+            w,
+            hg,
+            (0..w * hg).map(|i| {
+                let a = if i % w < w / 2 { 0.5 } else { 1.0 };
+                [
+                    if i % w < w / 2 { a } else { 0.0 },
+                    if i / w < hg / 2 { a * 0.5 } else { 0.0 },
+                    0.0,
+                    a,
+                ]
+            }),
+            h,
+        )
+        .map(Some)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, h)
+    }
+}
+#[test]
+fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units() {
+    use project::*;
+    // Probe is4x4; actual decoded raster400x200 must win, and only one decode occurs.
+    for (size, fit, crop, destination, gains) in [
+        (
+            [300, 300],
+            Fit::Cover,
+            Crop::default(),
+            Rect::default(),
+            [1.5, 1.5],
+        ),
+        (
+            [300, 300],
+            Fit::Contain,
+            Crop::default(),
+            Rect::default(),
+            [0.75, 0.75],
+        ),
+        (
+            [300, 300],
+            Fit::Stretch,
+            Crop::default(),
+            Rect::default(),
+            [0.75, 1.5],
+        ),
+        (
+            [300, 300],
+            Fit::Stretch,
+            Crop {
+                x: 0.25,
+                y: 0.0,
+                width: 0.5,
+                height: 1.0,
+            },
+            Rect::default(),
+            [1.5, 1.5],
+        ),
+        (
+            [37, 61],
+            Fit::Stretch,
+            Crop::default(),
+            Rect {
+                x: 0.1,
+                y: 0.2,
+                width: 0.8,
+                height: 0.6,
+            },
+            [37.0 * 0.8 / 400.0, 61.0 * 0.6 / 200.0],
+        ),
+    ] {
+        let mut data = content_scene(vec![]).into_data();
+        data.canvas.width = 300;
+        data.canvas.height = 300;
+        data.canvas.background = Color([0; 4]);
+        let plain = Project::new(data.clone()).unwrap();
+        data.scene_mut().timeline.main.items[0].effects = vec![streak(2.0, 45.0)];
+        let effected = Project::new(data).unwrap();
+        let mut settings = RenderSettings::from_project(&plain);
+        settings.width = size[0];
+        settings.height = size[1];
+        settings.placements.insert(
+            ItemId(1),
+            render::Placement {
+                crop,
+                destination,
+                fit,
+                ..Default::default()
+            },
+        );
+        let mut src = SpatialSource {
+            size: [400, 200],
+            calls: 0,
+            missing: false,
+            last: None,
+        };
+        let before = Renderer::new(&plain, settings.clone())
+            .unwrap()
+            .render_frame(time::Tick::ZERO, &mut src, &Hooks::default())
+            .unwrap();
+        let input: Vec<_> = before.pixels().iter().map(|p| p.map(f64::from)).collect();
+        let displacement = [
+            2.0_f64.sqrt() * 2.0 * gains[0],
+            -2.0_f64.sqrt() * 2.0 * gains[1],
+        ];
+        let expected = streak_expected(&input, size, displacement);
+        for preview in [false, true] {
+            src.calls = 0;
+            let mut renderer = Renderer::new(&effected, settings.clone()).unwrap();
+            let out = if preview {
+                renderer.preview_frame(time::Tick::ZERO, &mut src, &Hooks::default())
+            } else {
+                renderer.render_frame(time::Tick::ZERO, &mut src, &Hooks::default())
+            }
+            .unwrap();
+            assert_eq!(src.calls, 1);
+            for (a, b) in out.pixels().iter().zip(&expected) {
+                assert_working_pixel(*a, *b, "Streak scene geometry");
+            }
+        }
+        src.missing = true;
+        assert!(matches!(
+            Renderer::new(&effected, settings.clone())
+                .unwrap()
+                .render_frame(time::Tick::ZERO, &mut src, &Hooks::default()),
+            Err(render::Error::Unavailable(_))
+        ));
+        let missing = Renderer::new(&effected, settings)
+            .unwrap()
+            .preview_frame(time::Tick::ZERO, &mut src, &Hooks::default())
+            .unwrap();
+        assert!(missing.pixels().iter().all(|p| *p == [0.0; 4]));
+    }
+    let mut generated = crate::support::solid_project(1, 40, 20, [255, 0, 0, 128]).into_data();
+    generated.canvas.background = Color([0; 4]);
+    generated.scene_mut().timeline.overlays[0].items[0].effects = vec![streak(2.0, 90.0)];
+    let generated = Project::new(generated).unwrap();
+    let mut settings = RenderSettings::from_project(&generated);
+    settings.width = 20;
+    settings.height = 10;
+    settings.placements.insert(
+        ItemId(0),
+        render::Placement {
+            destination: Rect {
+                width: 0.5,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let out = Renderer::new(&generated, settings)
+        .unwrap()
+        .render_frame(
+            time::Tick::ZERO,
+            &mut crate::support::Empty,
+            &Hooks::default(),
+        )
+        .unwrap();
+    for (i, pixel) in out.pixels().iter().enumerate() {
+        let alpha = match i % 20 {
+            0..=8 => 128.0 / 255.0,
+            9..=10 => 64.0 / 255.0,
+            _ => 0.0,
+        };
+        assert_working_pixel(*pixel, [alpha, 0.0, 0.0, alpha], "generated canvas units");
+    }
+}
+
+#[test]
+fn streak_animated_crop_and_length_keep_real_time_before_later_transform() {
+    use project::*;
+    let hold = |id, rate| {
+        effect_definition("hold_time")
+            .unwrap()
+            .instance(id)
+            .with("rate", EffectValue::Scalar(rate))
+            .unwrap()
+    };
+    let mut data = content_scene(vec![
+        hold("first", 2.0),
+        hold("second", 3.0),
+        streak(0.0, 45.0),
+    ])
+    .into_data();
+    data.canvas.width = 40;
+    data.canvas.height = 20;
+    data.canvas.background = Color([0; 4]);
+    let item = &mut data.scene_mut().timeline.main.items[0];
+    if let ItemParams::Video(p) = &mut item.content {
+        p.crop = Some(Crop {
+            x: 0.0,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+    }
+    for (path, from, to) in [
+        ("crop.x", 0.0, 0.5),
+        ("effects.streak.params.length", 0.0, 20.0),
+    ] {
+        let mut first = Keyframe::new(time::Tick::ZERO, ParamValue::Scalar(from));
+        first.segment = Segment::Step;
+        item.animations
+            .set(
+                AnimationPath::new(path).unwrap(),
+                Param::Value(
+                    Channel::new(
+                        ParamValue::Scalar(from),
+                        vec![first, Keyframe::new(tick(3, 5), ParamValue::Scalar(to))],
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+    }
+    let effected = Project::new(data.clone()).unwrap();
+    data.scene_mut().timeline.main.items[0]
+        .effects
+        .retain(|e| e.kind != "directional_blur");
+    let plain = Project::new(data).unwrap();
+    let mut source = SpatialSource {
+        size: [400, 200],
+        calls: 0,
+        missing: false,
+        last: None,
+    };
+    let mut settings = RenderSettings::from_project(&plain);
+    settings.placements.insert(
+        ItemId(1),
+        render::Placement {
+            fit: Fit::Stretch,
+            ..Default::default()
+        },
+    );
+    for (at, displacement) in [
+        (tick(1, 10), [0.0, 0.0]),
+        (tick(4, 5), [5.6568542495, -2.8284271247]),
+    ] {
+        let input = Renderer::new(&plain, settings.clone())
+            .unwrap()
+            .render_frame(at, &mut source, &Hooks::default())
+            .unwrap();
+        let expected = streak_expected(
+            &input
+                .pixels()
+                .iter()
+                .map(|p| p.map(f64::from))
+                .collect::<Vec<_>>(),
+            [40, 20],
+            displacement,
+        );
+        let out = Renderer::new(&effected, settings.clone())
+            .unwrap()
+            .render_frame(at, &mut source, &Hooks::default())
+            .unwrap();
+        assert_eq!(
+            source.last,
+            Some(if at == tick(4, 5) {
+                tick(1, 3)
+            } else {
+                time::Tick::ZERO
+            })
+        );
+        for (p, e) in out.pixels().iter().zip(&expected) {
+            assert_working_pixel(*p, *e, "Streak real clock");
+        }
+        let mut transformed = effected.data().clone();
+        transformed.scene_mut().timeline.main.items[0]
+            .animations
+            .set(
+                AnimationPath::from(BuiltinPath::TransformPositionX),
+                Param::new(ParamValue::Scalar(1.0)).unwrap(),
+            )
+            .unwrap();
+        let transformed = Project::new(transformed).unwrap();
+        let shifted = Renderer::new(&transformed, settings.clone())
+            .unwrap()
+            .render_frame(at, &mut source, &Hooks::default())
+            .unwrap();
+        for y in 0..20 {
+            for x in 0..40 {
+                let p = shifted.pixels()[y * 40 + x];
+                let e = if x == 0 {
+                    [0.0; 4]
+                } else {
+                    expected[y * 40 + x - 1]
+                };
+                assert_working_pixel(p, e, "Streak later transform");
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "manual bounded Streak CPU cost at1080p"]
+fn measure_streak_1080p() {
+    let hooks = Hooks::default();
+    let input = Image::from_working_pixels(
+        1920,
+        1080,
+        (0..1920 * 1080).map(|i| [if i % 32 < 16 { 0.5 } else { 0.0 }, 0.0, 0.0, 0.5]),
+        &hooks,
+    )
+    .unwrap();
+    for (label, length) in [("identity", 0.0), ("typical", 8.0), ("hard", 1000.0)] {
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &streak(length, 45.0),
+            time::Tick::ZERO,
+            EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
+            true,
+        )
+        .unwrap();
+        let run = || {
+            CpuEffects
+                .apply(
+                    &input,
+                    &passes,
+                    EffectInputs {
+                        input: &input,
+                        below: &input,
+                        coverage: None,
+                    },
+                    &hooks,
+                )
+                .unwrap()
+        };
+        let start = std::time::Instant::now();
+        drop(run());
+        let cold = start.elapsed();
+        let start = std::time::Instant::now();
+        for _ in 0..2 {
+            drop(run());
+        }
+        let seconds = start.elapsed().as_secs_f64() / 2.0;
+        eprintln!(
+            "STREAK {label} 1920x1080 angle45 scale1 cold_s={} warm_mean_s={seconds} repetitions=2 mpix_per_s={} peak_charged_bytes={}",
+            cold.as_secs_f64(),
+            2.0736 / seconds,
+            hooks.peak.load(Ordering::SeqCst)
+        );
+    }
+    #[cfg(windows)]
+    {
+        let rss = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!("(Get-Process -Id {}).PeakWorkingSet64", std::process::id()),
+            ])
+            .output()
+            .unwrap();
+        eprintln!(
+            "STREAK peak_process_working_set_bytes={}",
+            String::from_utf8(rss.stdout).unwrap().trim()
+        );
+    }
+    drop(input);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn streak_cancels_inside_sample_rows_and_releases_partial_images() {
+    use std::sync::atomic::AtomicUsize;
+    struct Interrupt {
+        hooks: Hooks,
+        checks: AtomicUsize,
+    }
+    impl ExecutionHooks for Interrupt {
+        fn cancelled(&self) -> bool {
+            self.checks.fetch_add(1, Ordering::SeqCst) > 12
+        }
+        fn reserve(&self, k: MemoryKind, n: u64) -> Result<Box<dyn Reservation>> {
+            self.hooks.reserve(k, n)
+        }
+    }
+    let base = Hooks::default();
+    let image = Image::new(8, 8, [0.25; 4], &base).unwrap();
+    let interrupt = Interrupt {
+        hooks: base.clone(),
+        checks: AtomicUsize::new(0),
+    };
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &streak(20.0, 45.0),
+        time::Tick::ZERO,
+        EffectGeometry::new([8, 8], [1.0, 1.0]).unwrap(),
+        true,
+    )
+    .unwrap();
+    assert!(matches!(
+        CpuEffects.apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                below: &image,
+                coverage: None
+            },
+            &interrupt
+        ),
+        Err(Error::Cancelled)
+    ));
+    assert!(
+        interrupt.checks.load(Ordering::SeqCst) > 12,
+        "copies finish before row cancellation"
+    );
+    assert_eq!(
+        base.used.load(Ordering::SeqCst),
+        Image::bytes(8, 8).unwrap()
+    );
+    drop(image);
+    assert_eq!(base.used.load(Ordering::SeqCst), 0);
 }

@@ -45,6 +45,9 @@ Whole-project animation validation checks component values/keys and shared budge
 Chroma-key colour, choice, boolean and Point values remain static. No path/component
 shape or serialized meaning changes.
 
+Streak Blur animates direction (degrees) and length (full-resolution clip pixels).
+[The catalogue](effects_catalog.rs) owns ranges/defaults/shelf; render owns crop/fit axis conversion before transform.
+
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector`; it is off in every production build.
 
 ## Video transitions

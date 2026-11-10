@@ -1,5 +1,6 @@
 //! Renders the properties area: a 42 px tab strip, then collapsible sections of rows.
 
+use super::read;
 use super::{
     Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, egui, element_kind, theme,
 };
@@ -71,7 +72,33 @@ pub(in crate::editor) fn show(
     );
     ui.set_clip_rect(area);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
+    if let Some((item, ref id, time)) = panel.state.spatial_edit.clone() {
+        let exists = read::item(panel.cx.session.project(), item).is_some_and(|candidate| {
+            candidate
+                .effects
+                .iter()
+                .any(|e| id.starts_with(&format!("effects.{}.param.", e.id)))
+        });
+        if single(panel.cx.selection) != Some(item)
+            || time != panel.cx.playhead
+            || !exists
+            || read::item_locked(panel.cx.session.project(), item)
+        {
+            panel.actions.extend(panel.state.end_scrub(false));
+            panel.state.drafts.remove(id);
+            panel.state.focus = None;
+            panel.state.spatial_edit = None;
+        }
+    }
     panel.area(&mut ui, area);
+    if let Some((_, ref id, _)) = panel.state.spatial_edit.clone()
+        && !panel.state.widgets.iter().any(|widget| widget.id == *id)
+    {
+        panel.actions.extend(panel.state.end_scrub(false));
+        panel.state.drafts.remove(id);
+        panel.state.focus = None;
+        panel.state.spatial_edit = None;
+    }
     panel.picker_dialog(ui.ctx());
     panel.font_dialog(ui.ctx());
     panel.mask_dialog(ui.ctx());

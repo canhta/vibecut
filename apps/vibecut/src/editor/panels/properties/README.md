@@ -101,3 +101,9 @@ the panel; commands and agents keep the multi-mask engine. A locked track opens
 read-only.
 
 Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).
+
+Streak Blur uses a54x22 field with visible degree/pixel units. Its length drag spans
+0..20 at1px per2 pointer pixels; typed values admit0..1000 and display authored
+precision. Out-of-range input refuses. Direction admits+/-360 degrees. Zero-key
+bases stay authoritative; keyed edits affect real-local keys. Time, selection,
+lock, effect or panel changes cancel pending edits. Other controls retain behavior.

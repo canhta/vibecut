@@ -46,6 +46,7 @@ pub struct EffectPreviews {
     runner: JobRunner,
     cache: EffectThumbnails,
     source: Arc<render::Image>,
+    geometry: render::effects::EffectGeometry,
     entries: BTreeMap<String, Entry>,
     deferred: VecDeque<String>,
     visible: bool,
@@ -88,6 +89,10 @@ impl EffectPreviews {
             runner,
             cache,
             source,
+            geometry: render::effects::EffectGeometry::new(
+                [PREVIEW_WIDTH, PREVIEW_HEIGHT],
+                [1.0, 1.0],
+            )?,
             entries: BTreeMap::new(),
             deferred: VecDeque::new(),
             visible: true,
@@ -239,6 +244,7 @@ impl EffectPreviews {
             };
             match self.cache.submit(
                 &mut self.runner,
+                self.geometry,
                 self.source.clone(),
                 entry.effect.clone(),
                 entry.animations.clone(),

@@ -45,6 +45,7 @@ pub(in crate::editor) struct State {
     /// Project/Details switch shown while no single element is selected.
     details: bool,
     scrub: Option<ScrubDrag>,
+    spatial_edit: Option<(ItemId, String, Tick)>,
     reorder: Option<gesture::EffectReorder>,
     picker: Option<color_picker::Draft>,
     /// Project the open picker previews against; a different project closes it.
@@ -143,6 +144,7 @@ impl Default for State {
             uniform_scale: true,
             details: false,
             scrub: None,
+            spatial_edit: None,
             reorder: None,
             picker: None,
             color_base: None,

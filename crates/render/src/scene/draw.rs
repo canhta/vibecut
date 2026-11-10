@@ -73,6 +73,15 @@ impl Geometry {
         })
     }
 }
+/// Clip-pixel gains before draw's optional source half reductions.
+pub(super) fn clip_pixel_scale(
+    target: [u32; 2],
+    source: [u32; 2],
+    placement: Placement,
+) -> Result<[f64; 2]> {
+    let g = Geometry::new(target[0], target[1], source[0], source[1], placement)?;
+    Ok([g.dw / g.sw, g.dh / g.sh])
+}
 pub(super) fn horizontal_window(
     target_width: u32,
     target_height: u32,

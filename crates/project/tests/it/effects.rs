@@ -153,6 +153,13 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
         ("extract", "white", 255.0, (0.0, 255.0), (0.0, 255.0)),
         ("extract", "softness", 0.0, (0.0, 100.0), (0.0, 100.0)),
         ("gamma_correction", "gamma", 10.0, (1.0, 28.0), (1.0, 28.0)),
+        (
+            "directional_blur",
+            "length",
+            0.0,
+            (0.0, 1000.0),
+            (0.0, 20.0),
+        ),
         ("invert", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
         ("levels", "in_black", 0.0, (0.0, 255.0), (0.0, 255.0)),
         ("levels", "in_white", 255.0, (0.0, 255.0), (0.0, 255.0)),
@@ -476,6 +483,46 @@ fn effect_colour_animation_requires_linear_composites() {
         assert!(matches!(
             Param::new(ParamValue::Color([raw, 0.0, 0.0, 1.0])),
             Err(Error::Invalid(_))
+        ));
+    }
+}
+
+#[test]
+fn streak_angle_and_scalar_animation_refuse_wrong_types_atomically() {
+    let d = effect_definition("directional_blur").unwrap();
+    assert_eq!(d.shelf, EffectShelf::BlurDetail);
+    assert_eq!(d.param("direction").unwrap().kind, EffectParamKind::Angle);
+    assert!(d.param("direction").unwrap().animatable);
+    for (key, good, bad) in [
+        ("direction", 360.0, 360.01),
+        ("direction", -360.0, -360.01),
+        ("length", 1000.0, -0.01),
+    ] {
+        let mut effect = d.instance("streak");
+        effect.set_scalar(key, good).unwrap();
+        let before = effect.clone();
+        for value in [bad, f64::NAN, f64::INFINITY] {
+            assert!(effect.set_scalar(key, value).is_err());
+            assert_eq!(effect, before);
+        }
+        let mut data = project_with_effects(vec![effect.clone()])
+            .unwrap()
+            .into_data();
+        data.scene_mut()
+            .timeline
+            .iter_mut()
+            .find(|track| !track.items.is_empty())
+            .unwrap()
+            .items[0]
+            .animations
+            .set(
+                effect.param_path(key).unwrap(),
+                Param::new(ParamValue::Color([0.5; 4])).unwrap(),
+            )
+            .unwrap();
+        assert!(matches!(
+            Project::new(data),
+            Err(Error::Invalid("effect animation type"))
         ));
     }
 }

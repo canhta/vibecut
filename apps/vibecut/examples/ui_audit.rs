@@ -629,6 +629,18 @@ const SCENES: &[Scene] = &[
         build: inspector_blend,
     },
     Scene {
+        name: "inspector-effects-streak",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-streak"),
+    },
+    Scene {
+        name: "inspector-effects-streak-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-streak-vi"),
+    },
+    Scene {
         name: "inspector-effects",
         reference_dark: None,
         reference_light: None,
@@ -1884,10 +1896,13 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     )?;
     capture_columns(&mut editor)?;
     let tab = tab.strip_suffix("-vi").unwrap_or(tab);
+    let kinds_streak = tab == "effects-streak";
     let colour_picker = tab == "effects-colours-picker";
     let mixer_bottom = tab == "effects-mixer-bottom";
     let tab = if tab.starts_with("effects") {
-        let kinds: &[&str] = if tab == "effects-threshold" {
+        let kinds: &[&str] = if tab == "effects-streak" {
+            &["directional_blur"]
+        } else if tab == "effects-threshold" {
             &["extract"]
         } else if tab.starts_with("effects-mixer") {
             &["channel_mix"]
@@ -1901,7 +1916,14 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
         for kind in kinds {
             editor.session.apply(Command::AddEffect {
                 item,
-                effect: project::effect_definition(kind)?.instance(*kind),
+                effect: if *kind == "directional_blur" {
+                    project::effect_definition(kind)?
+                        .instance(*kind)
+                        .with("length", project::EffectValue::Scalar(125.0))?
+                        .with("direction", project::EffectValue::Scalar(45.0))?
+                } else {
+                    project::effect_definition(kind)?.instance(*kind)
+                },
             })?;
         }
         "effects"
@@ -1912,7 +1934,12 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     editor
         .preferences
         .set("properties_tabs", serde_json::json!({"video": tab}))?;
-    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    let size = if kinds_streak {
+        [1727.0, 1029.0]
+    } else {
+        CAPTURE_WINDOW
+    };
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, size);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
     if mixer_bottom {

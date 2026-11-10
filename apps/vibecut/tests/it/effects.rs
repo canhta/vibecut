@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use eframe::wgpu;
+use render::effects::EffectGeometry;
 use render::{effects::*, *};
 struct Hooks;
 struct Lease;
@@ -662,6 +663,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         let (job, _) = thumbnails
             .submit(
                 &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                 source.clone(),
                 project::effect_definition("blur")
                     .unwrap()
@@ -784,7 +786,14 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         } else {
             project::Animations::default()
         };
-        let passes = evaluate_effect(&animations, &effect, local, 320, 180, true).unwrap();
+        let passes = evaluate_effect(
+            &animations,
+            &effect,
+            local,
+            EffectGeometry::new([320, 180], [1.0, 1.0]).unwrap(),
+            true,
+        )
+        .unwrap();
         assert_eq!(passes.is_empty(), frame == 3, "actual evaluator phase");
         let expected = CpuEffects
             .apply(
@@ -803,6 +812,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         let (job, _) = cache
             .submit(
                 &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                 source.clone(),
                 effect.clone(),
                 animations,

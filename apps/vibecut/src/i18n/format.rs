@@ -7,6 +7,9 @@ use crate::{Error, Result};
 /// `None` selects the kind name; unknown identities use the definition's label.
 pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
     Some(match (kind, parameter) {
+        ("directional_blur", None) => Text::EffectStreakBlur,
+        ("directional_blur", Some("direction")) => Text::EffectDirection,
+        ("directional_blur", Some("length")) => Text::EffectLength,
         ("blur", None) => Text::EffectBlur,
         ("color_grade", None) => Text::EffectColorGrade,
         ("chroma_key", None) => Text::ChromaKey,

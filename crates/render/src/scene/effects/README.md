@@ -54,3 +54,10 @@ The desktop adapter keeps one pipeline per shader entry and binds the instance i
 Mirror admits centres only within the closed image-edge rectangle `[0,width] x [0,height]` and unit normals with components in `[-1,1]`, squared length within eight f32 epsilons of one. It refuses non-unit, near-zero, nonfinite and out-of-frame values as `Unsupported` before allocation, on CPU and GPU through the same admission function. With Image's area cap, reflection remains finite and inside the shader's signed index range; the sampler also checks neighbour arithmetic and returns transparent for nonfinite coordinates. No host-dependent bounds are used.
 
 Clamp repeats a border texel, Mirror reflects around the border texel, Wrap repeats across the opposite edge, and Transparent uses zero outside every axis, including singleton axes. A half-outside bilinear footprint gets half coverage; it never repeats a singleton texel in Transparent mode.
+
+`EffectGeometry` requires Image-admitted dimensions and positive finite axis gains
+(working pixels per full-resolution clip pixel). Scene resolves crop/fit before item
+transform; thumbnail callers supply author geometry. `evaluate_effect` consumes it;
+content remaps do not. Streak gathers2..64 Clamp taps in premultiplied RGBA and is
+identity below a .5-pixel span. Fine/coarse use equal effort. Unrepresentable extents
+are Invalid, malformed raw uniforms Unsupported; Blur keeps its own normalization.
