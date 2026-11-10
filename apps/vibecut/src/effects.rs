@@ -6,6 +6,7 @@ use render::{
 };
 use std::{
     borrow::Cow,
+    cell::Cell,
     collections::BTreeMap,
     sync::{Arc, mpsc},
     time::Duration,
@@ -16,8 +17,21 @@ struct ComputePass<'a> {
     entry_point: &'static str,
     horizontal: bool,
     values: Cow<'a, [f32]>,
-    /// Reads the instance input image as well as the previous pass output.
-    sample: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ReadImage {
+    Instance,
+    Below,
+}
+
+fn read_image(entry: &str) -> Result<Option<ReadImage>> {
+    match entry {
+        "gaussian" | "grade" | "chroma_key" => Ok(None),
+        "mirror" => Ok(Some(ReadImage::Instance)),
+        "blend" => Ok(Some(ReadImage::Below)),
+        _ => Err(Error::Unsupported("GPU shader inputs")),
+    }
 }
 
 pub struct GpuEffects {
@@ -117,17 +131,30 @@ impl GpuEffects {
             return Err(Error::Unsupported("GPU effect dimensions"));
         }
         inputs.validate(item)?;
+        let mut read = None;
         for pass in passes.clone() {
             if !self.pipelines.contains_key(pass.entry_point) {
                 return Err(Error::Unsupported("GPU shader entry"));
             }
+            if let Some(next) = read_image(pass.entry_point)? {
+                if read.is_some_and(|previous| previous != next) {
+                    return Err(Error::Unsupported("GPU auxiliary inputs"));
+                }
+                read = Some(next);
+            }
         }
-        // two working buffers, readback, below, coverage, one upload vector;
-        // plus per-pass uniforms/weights and conservative native buffer padding.
+        // Two working buffers, readback, one sequential upload vector;
+        // Sample or blend additionally needs one distinct readable image.
+        // Add per-pass uniforms/weights and conservative native buffer padding.
         let pass_bytes = (passes.len() as u64)
             .checked_mul(1024)
             .ok_or(Error::Invalid("GPU pass bytes"))?;
-        let lease = Arc::new(hooks.reserve(MemoryKind::Compositor, bytes * 7 + pass_bytes)?);
+        let working_bytes = bytes
+            .checked_mul(if read.is_some() { 5 } else { 4 })
+            .and_then(|bytes| bytes.checked_add(pass_bytes))
+            .ok_or(Error::Invalid("GPU working bytes"))?;
+        let lease = Arc::new(hooks.reserve(MemoryKind::Compositor, working_bytes)?);
+        let uploads = Cell::new(0_u32);
         let upload = |image: &Image| -> Result<wgpu::Buffer> {
             let mut data = Vec::new();
             data.try_reserve_exact(bytes as usize)?;
@@ -136,33 +163,41 @@ impl GpuEffects {
                     data.extend_from_slice(&v.to_le_bytes());
                 }
             }
-            Ok(self.buffer(
+            let buffer = self.buffer(
                 &data,
                 wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            ))
+            );
+            uploads.set(uploads.get() + 1);
+            Ok(buffer)
         };
         let mut a = upload(item)?;
-        // A sample pass also reads the image its effect instance started with;
-        // other runs leave binding 6 on the current image instead of uploading.
-        let instance = if passes.clone().any(|pass| pass.sample) {
-            Some(upload(inputs.input)?)
-        } else {
-            None
-        };
+        let auxiliary = match read {
+            Some(ReadImage::Instance) => Some(inputs.input),
+            Some(ReadImage::Below) => Some(inputs.below),
+            None => None,
+        }
+        .map(upload)
+        .transpose()?;
         let mut b = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("effect output"),
             size: bytes,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let below = upload(inputs.below)?;
-        let coverage = upload(inputs.coverage.unwrap_or(item))?;
         let download = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("effect readback"),
             size: bytes,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        tracing::debug!(
+            image_buffers = uploads.get() + 2,
+            image_uploads = uploads.get(),
+            reserved_bytes = working_bytes,
+            image_bytes = bytes,
+            passes = passes.len(),
+            "GPU image resources"
+        );
         let mut encoder = self.device.create_command_encoder(&Default::default());
         for pass in passes {
             if hooks.cancelled() {
@@ -180,14 +215,24 @@ impl GpuEffects {
             let params = self.buffer(&constants, wgpu::BufferUsages::UNIFORM);
             let weights: Vec<u8> = pass.values.iter().flat_map(|w| w.to_le_bytes()).collect();
             let weights = self.buffer(&weights, wgpu::BufferUsages::STORAGE);
+            let read = read_image(pass.entry_point)?;
+            let auxiliary = auxiliary.as_ref().unwrap_or(&a);
             let entries: Vec<_> = [
                 &a,
                 &b,
                 &weights,
                 &params,
-                &coverage,
-                &below,
-                instance.as_ref().unwrap_or(&a),
+                &a,
+                if read == Some(ReadImage::Below) {
+                    auxiliary
+                } else {
+                    &a
+                },
+                if read == Some(ReadImage::Instance) {
+                    auxiliary
+                } else {
+                    &a
+                },
             ]
             .into_iter()
             .enumerate()
@@ -277,7 +322,7 @@ impl GpuEffects {
 }
 impl EffectCompositor for GpuEffects {
     fn supports(&self, entry_point: &str) -> bool {
-        self.pipelines.contains_key(entry_point)
+        self.pipelines.contains_key(entry_point) && read_image(entry_point).is_ok()
     }
     fn composite(
         &self,
@@ -295,7 +340,6 @@ impl EffectCompositor for GpuEffects {
             entry_point: "blend",
             horizontal: false,
             values: Cow::Borrowed(&values),
-            sample: false,
         };
         let result = self.execute(
             item,
@@ -329,7 +373,6 @@ impl EffectCompositor for GpuEffects {
                 entry_point: pass.entry_point(),
                 horizontal: pass.horizontal(),
                 values: pass.values(),
-                sample: matches!(pass, EffectPass::Sample { .. }),
             }),
             inputs,
             hooks,

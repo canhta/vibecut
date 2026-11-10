@@ -464,3 +464,265 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         );
     }
 }
+
+#[test]
+fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
+    use project::BlendMode::Normal;
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    struct Meter {
+        budget: engine::ByteBudget,
+        requests: Mutex<Vec<u64>>,
+        cancel: AtomicBool,
+    }
+    impl Meter {
+        fn new(limit: u64) -> Self {
+            Self {
+                budget: engine::ByteBudget::new(limit).unwrap(),
+                requests: Mutex::new(Vec::new()),
+                cancel: AtomicBool::new(false),
+            }
+        }
+        fn take(&self) -> Vec<u64> {
+            std::mem::take(&mut *self.requests.lock().unwrap())
+        }
+    }
+    impl ExecutionHooks for Meter {
+        fn cancelled(&self) -> bool {
+            self.cancel.load(Ordering::SeqCst)
+        }
+        fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>> {
+            self.requests.lock().unwrap().push(bytes);
+            engine::ByteBudgetHooks::new(&self.budget, None).reserve(kind, bytes)
+        }
+    }
+    fn parity(a: &Image, b: &Image) {
+        assert_eq!((a.width(), a.height()), (b.width(), b.height()));
+        let max = a
+            .pixels()
+            .iter()
+            .zip(b.pixels())
+            .flat_map(|(a, b)| {
+                a.iter().zip(b).map(|(a, b)| {
+                    assert!(a.is_finite() && b.is_finite());
+                    (a - b).abs()
+                })
+            })
+            .fold(0.0f32, f32::max);
+        assert!(max <= 2e-5, "working-channel difference {max}");
+        eprintln!(
+            "liveness parity {}x{} max_abs={max:e}",
+            a.width(),
+            a.height()
+        );
+    }
+    use tracing_subscriber::prelude::*;
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .without_time()
+            .with_ansi(false)
+            .with_test_writer()
+            .with_filter(tracing_subscriber::filter::filter_fn(|meta| {
+                meta.target() == "vibecut::effects"
+            })),
+    );
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
+        Ok(adapter) if adapter.get_info().device_type != wgpu::DeviceType::Cpu => adapter,
+        other => {
+            assert!(
+                std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
+                "required native GPU unavailable: {other:?}"
+            );
+            eprintln!("SKIP: no native GPU");
+            return;
+        }
+    };
+    eprintln!("liveness GPU adapter: {:?}", adapter.get_info());
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+    eprintln!(
+        "liveness requested=default device_limits={:?}",
+        device.limits()
+    );
+    let gpu = pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap();
+    let bytes = Image::bytes(17, 9).unwrap();
+    let meter = Meter::new(6 * bytes + 1024);
+    let source = Image::new(17, 9, [0.2, 0.1, 0.3, 0.5], &meter).unwrap();
+    assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+    meter.take();
+    let grade = grade_passes(20.0, 0.0, 0.0, 0.0).unwrap();
+    let inputs = || EffectInputs {
+        input: &source,
+        below: &source,
+        coverage: None,
+    };
+    let out = gpu.apply(&source, &grade, inputs(), &meter).unwrap();
+    assert_eq!(meter.take(), [4 * bytes + 1024, bytes]);
+    assert_eq!(meter.budget.snapshot().unwrap().used, 2 * bytes);
+    parity(
+        &out,
+        &CpuEffects.apply(&source, &grade, inputs(), &Hooks).unwrap(),
+    );
+    drop(out);
+    assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+    eprintln!(
+        "budget boundary image_bytes={bytes} limit={} old_gpu_request={} new_gpu_request={} result_bytes={bytes}",
+        6 * bytes + 1024,
+        7 * bytes + 1024,
+        4 * bytes + 1024
+    );
+    drop(source);
+    assert_eq!(meter.budget.snapshot().unwrap().used, 0);
+    for (w, h) in [(17, 9), (1, 5), (5, 1), (1, 1)] {
+        let bytes = Image::bytes(w, h).unwrap();
+        let meter = Meter::new(64 * bytes + 65536);
+        let input = Image::from_working_pixels(
+            w,
+            h,
+            (0..w * h).map(|i| {
+                let a = if i % 3 == 1 { 0.0 } else { 0.5 };
+                [a * (i % 5) as f32 / 5.0, a * 0.3, a * 0.6, a]
+            }),
+            &Hooks,
+        )
+        .unwrap();
+        let other = Image::new(w, h, [0.1, 0.2, 0.4, 0.5], &Hooks).unwrap();
+        let zero = Image::new(w, h, [0.0; 4], &Hooks).unwrap();
+        let start = CpuEffects
+            .apply(
+                &input,
+                &grade,
+                EffectInputs {
+                    input: &input,
+                    below: &other,
+                    coverage: None,
+                },
+                &Hooks,
+            )
+            .unwrap();
+        assert_ne!(input.pixels(), start.pixels());
+        let mirror = |nx, ny| EffectPass::Sample {
+            entry_point: "mirror",
+            uniforms: [w as f32 / 2.0, h as f32 / 2.0, nx, ny]
+                .map(Uniform::Float)
+                .to_vec(),
+        };
+        let mut plain = grade.clone();
+        plain.extend(chroma_key_passes(project::Color([0, 255, 0, 255]), 40.0, 0.0).unwrap());
+        plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
+        let mut mixed = plain.clone();
+        mixed.insert(1, mirror(1.0, 0.0));
+        mixed.push(mirror(0.0, 1.0));
+        for (passes, extra) in [(plain, 0), (mixed, 1)] {
+            let reserved = (4 + extra) * bytes + 1024 * passes.len() as u64;
+            let mut current =
+                Image::from_working_pixels(w, h, start.pixels().iter().copied(), &Hooks).unwrap();
+            for step in 0..2 {
+                let frozen = if step == 0 { &input } else { &other };
+                let inputs = |different| EffectInputs {
+                    input: frozen,
+                    below: if different { &other } else { &zero },
+                    coverage: Some(if different { &other } else { &zero }),
+                };
+                let expected = CpuEffects
+                    .apply(&current, &passes, inputs(false), &Hooks)
+                    .unwrap();
+                for different in [false, true] {
+                    let actual = gpu
+                        .apply(&current, &passes, inputs(different), &meter)
+                        .unwrap();
+                    assert_eq!(meter.take(), [reserved, bytes]);
+                    parity(&actual, &expected);
+                    if different {
+                        current = actual;
+                    }
+                }
+            }
+        }
+        let mut below =
+            Image::from_working_pixels(w, h, other.pixels().iter().copied(), &Hooks).unwrap();
+        let mut expected =
+            Image::from_working_pixels(w, h, other.pixels().iter().copied(), &Hooks).unwrap();
+        CpuEffects
+            .composite(&mut expected, &start, 0.7, Normal, &Hooks)
+            .unwrap();
+        gpu.composite(&mut below, &start, 0.7, Normal, &meter)
+            .unwrap();
+        assert_eq!(meter.take(), [5 * bytes + 1024, bytes]);
+        parity(&below, &expected);
+        assert_ne!(below.pixels(), start.pixels());
+        drop(below);
+        assert_eq!(meter.budget.snapshot().unwrap().used, 0);
+        let bad = Image::new(w + 1, h, [0.0; 4], &Hooks).unwrap();
+        let valid = || EffectInputs {
+            input: &input,
+            below: &other,
+            coverage: Some(&zero),
+        };
+        for inputs in [
+            EffectInputs {
+                input: &bad,
+                ..valid()
+            },
+            EffectInputs {
+                below: &bad,
+                ..valid()
+            },
+            EffectInputs {
+                coverage: Some(&bad),
+                ..valid()
+            },
+        ] {
+            assert!(matches!(
+                gpu.apply(&start, &grade, inputs, &meter),
+                Err(Error::Invalid(_))
+            ));
+            assert!(meter.take().is_empty());
+        }
+        let tight = Meter::new(4 * bytes + 1023);
+        let inputs = || EffectInputs {
+            input: &input,
+            below: &other,
+            coverage: None,
+        };
+        assert!(matches!(
+            gpu.apply(&start, &grade, inputs(), &tight),
+            Err(Error::Budget { .. })
+        ));
+        assert_eq!(tight.take(), [4 * bytes + 1024]);
+        assert_eq!(tight.budget.snapshot().unwrap().used, 0);
+        let mut backdrop =
+            Image::from_working_pixels(w, h, other.pixels().iter().copied(), &Hooks).unwrap();
+        assert!(matches!(
+            gpu.composite(&mut backdrop, &start, 0.7, Normal, &tight),
+            Err(Error::Budget { .. })
+        ));
+        assert_eq!(backdrop.pixels(), other.pixels());
+        assert_eq!(tight.take(), [5 * bytes + 1024]);
+        meter.cancel.store(true, Ordering::SeqCst);
+        assert!(matches!(
+            gpu.apply(&start, &grade, inputs(), &meter),
+            Err(Error::Cancelled)
+        ));
+        assert!(matches!(
+            gpu.composite(&mut backdrop, &start, 0.7, Normal, &meter),
+            Err(Error::Cancelled)
+        ));
+        assert_eq!(backdrop.pixels(), other.pixels());
+        assert!(meter.take().is_empty());
+        meter.cancel.store(false, Ordering::SeqCst);
+        let blend = EffectPass::Pixel {
+            entry_point: "blend",
+            uniforms: vec![Uniform::Float(0.7), Uniform::Float(0.0)],
+        };
+        assert!(matches!(
+            gpu.apply(&start, &[blend], inputs(), &meter),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(meter.take().is_empty());
+    }
+}
