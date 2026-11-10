@@ -7,8 +7,8 @@
 )]
 use crate::support::control::{
     Allow, finish, fixture_chapters, font_access, media_access, ok, request, runner, seed, submit,
-    with_audio, with_source_audio, with_thumbnails, with_waveform, with_words, write_png,
-    write_wav,
+    with_audio, with_loudness, with_source_audio, with_thumbnails, with_video, with_waveform,
+    with_words, write_png, write_video, write_wav,
 };
 use engine::control::{self, Caller, ControlResult};
 use engine::jobs::{JobState, SystemClock};
@@ -46,8 +46,10 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     let root = tempfile::tempdir().unwrap();
     let wav = root.path().join("registry-waveform.wav");
     let png = root.path().join("registry-thumbnails.png");
+    let video = root.path().join("registry-scenes.mkv");
     write_wav(&wav, 8_000);
     write_png(&png);
+    write_video(&video);
     let media = Mutex::new(media_access(root.path()));
     let chapters = fixture_chapters();
     let mut exercised = std::collections::BTreeSet::new();
@@ -77,6 +79,8 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::SourceAudio => s = with_source_audio(&s),
             Fixture::Waveform => s = with_waveform(&s, &wav),
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
+            Fixture::Video => s = with_video(&s, &video),
+            Fixture::Loudness => s = with_loudness(&s, &wav),
             Fixture::Words => s = with_words(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
@@ -248,10 +252,12 @@ fn deterministic_catalog_and_schema_document_receipts() {
     assert_eq!(
         job_control,
         [
+            "audio.measure_loudness",
             "chapters.generate",
             "fillers.classify",
             "fonts.download",
             "job_cancel",
+            "media.detect_scenes",
             "media.generate_clip_thumbnails",
             "media.generate_waveform",
             "preview",

@@ -1,7 +1,7 @@
 # Control
 
 Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
-`snapshot_and_subscribe`; `Caller.chapters` lends the process `TextAccess`.
+`snapshot_and_subscribe`, `JobOutput`; `Caller.chapters` lends the process `TextAccess`.
 
 ## Control admission, revisions and receipts
 
@@ -58,6 +58,38 @@ display never decodes media or builds a cache key. Export starts the production 
 against its admitted immutable snapshot and returns job ID, revision and paths; `preview` accepts
 1..=4 exact output times, starts a CPU job and returns inline JPEG frames bounded by
 `MAX_PREVIEW_EDGE`, which `job_status` retains without consuming.
+
+## Job commands
+
+A command that starts a job is `JobControl`, declares `grant` explicitly and returns
+`JobAccepted { job, revision, paths }`. `job_status` returns a `JobView` whose single
+`output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`,
+`scenes`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
+the runner's retained bytes with one exhaustive `match` on `JobKind`, so a new kind does not
+compile until it names its output or states it has none. Reading does not consume the output; a
+completed job whose bytes were evicted refuses `job_not_retained`.
+
+- **Edits.** A job never edits the project over control. The caller reads `output` and sends an
+  ordinary edit command with `base_rev` = the `revision` from `JobAccepted`; a changed revision
+  refuses `stale_revision`. `audio.apply_loudness {gains}` is that edit for
+  `audio.measure_loudness`, and `media.detect_scenes` candidates are applied by the split
+  commands. When an output is too large to round-trip, the edit command names the finished job
+  instead of carrying the data; it is still an ordinary edit with `base_rev`, and it refuses when
+  the output was evicted or the target changed since the job started. `Session::apply_job_result`
+  is for in-process owners only.
+- **Lent implementations.** Engine declares the command and its output type. A workflow that
+  lives above `engine` is implemented by a crate above it and lent through one optional access
+  object per workflow family in `Caller` (`fonts`, `media`, `chapters`). Absent, a local workflow
+  refuses `Unsupported` and a remote-capable one refuses `ConsentRequired`.
+- **Grants and consent.** Local workflows are `grant = Agent`. A remote-capable workflow is
+  startable by an agent only when its access object already carries the human approval for that
+  provider, scope and cost ceiling; client JSON has no consent field. Disclosure text and links
+  stay with the access object's owner.
+- **Inputs and outputs.** A command names admitted project assets or items by id, never a source
+  path. A file output is a `FilePublish` command whose every path the trusted `Policy` authorizes.
+- **Process caches.** `MediaAccess` also serves `media.detect_scenes`: it submits against the
+  lent artifact cache and publishes the entry when `job_status` first sees the job completed.
+  Loudness measurement takes no cache.
 
 ## Control events and resynchronization
 

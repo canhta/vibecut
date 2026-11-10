@@ -7,10 +7,12 @@
 )]
 use crate::support::control::{
     Allow, Deny, caller, error, finish, fixture_chapters, key, media_access, ok, request, run,
-    runner, seed, session, submit, with_thumbnails, with_waveform, with_words, write_png,
-    write_wav,
+    runner, seed, session, submit, with_loudness, with_thumbnails, with_video, with_waveform,
+    with_words, write_png, write_video, write_wav,
 };
-use engine::control::{Caller, ControlResult, ErrorCode, MediaAccess, Payload, ResponseValue};
+use engine::control::{
+    Caller, ControlResult, ErrorCode, JobOutput, MediaAccess, Payload, ResponseValue,
+};
 use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
 use engine::{Command, Session};
 use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
@@ -187,7 +189,10 @@ fn job_acceptance_precedes_events_cancel_and_result_eviction_never_resubmit() {
         json!({"job":job.0}),
         "poll",
     )) {
-        ControlResult::Job { snapshot } => snapshot.result.unwrap(),
+        ControlResult::Job { snapshot } => match snapshot.output {
+            Some(JobOutput::Preview(result)) => result,
+            other => panic!("preview output: {other:?}"),
+        },
         _ => panic!("expected preview"),
     };
     let artifact = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -316,7 +321,9 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
     let ControlResult::Job { snapshot } = value else {
         panic!("{value:?}");
     };
-    let document = snapshot.chapters.clone().unwrap();
+    let Some(JobOutput::Chapters(document)) = snapshot.output.clone() else {
+        panic!("chapters output: {snapshot:?}");
+    };
     assert_eq!(document.language().as_str(), "en");
     assert_eq!(document.chapters().len(), 2);
     assert_eq!(document.chapters()[0].start, Tick::ZERO);
@@ -467,7 +474,10 @@ fn labelled_preview_preserves_production_picture_outside_the_label_band() {
         json!({"job":job.0}),
         "picture",
     )) {
-        ControlResult::Job { snapshot } => snapshot.result.unwrap(),
+        ControlResult::Job { snapshot } => match snapshot.output {
+            Some(JobOutput::Preview(result)) => result,
+            other => panic!("preview output: {other:?}"),
+        },
         _ => panic!("preview result"),
     };
     let decoded = image::load_from_memory(&result.frames[0].jpeg)
@@ -536,7 +546,10 @@ fn preview_four_frame_limit_is_executable_and_five_frames_start_no_job() {
         json!({"job":job.0}),
         "four-result",
     )) {
-        ControlResult::Job { snapshot } => snapshot.result.unwrap(),
+        ControlResult::Job { snapshot } => match snapshot.output {
+            Some(JobOutput::Preview(result)) => result,
+            other => panic!("preview output: {other:?}"),
+        },
         _ => panic!("preview result"),
     };
     assert_eq!(result.frames.len(), 4);
@@ -676,7 +689,9 @@ fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
     else {
         panic!("job_status result");
     };
-    let pauses = snapshot.pauses.unwrap();
+    let Some(JobOutput::Pauses(pauses)) = snapshot.output else {
+        panic!("pauses output");
+    };
     assert_eq!(pauses.analyzed_sources, 1);
     assert_eq!(pauses.spans.len(), 3, "{pauses:?}");
     for span in &pauses.spans {
@@ -703,7 +718,207 @@ fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
         panic!("job_status result");
     };
     assert_eq!(snapshot.state, engine::jobs::JobState::Cancelled);
-    assert!(snapshot.pauses.is_none());
+    assert!(snapshot.output.is_none());
+    r.shutdown();
+}
+/// `media.detect_scenes` returns its candidates through `job_status` without consuming them,
+/// publishes the cache entry once, and refuses what it cannot run before submitting.
+#[test]
+fn scene_detection_returns_candidates_warms_the_cache_and_refuses_bad_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("cut.mkv");
+    let wav = dir.path().join("voice.wav");
+    write_video(&video);
+    write_wav(&wav, 8_000);
+    let mut s = with_video(&seed(), &video);
+    let mut r = runner();
+    let media = Mutex::new(media_access(dir.path()));
+    let job = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "media.detect_scenes",
+        json!({"asset":97}),
+        "cold",
+    );
+    finish(&mut r, job);
+    let view = media_status(&mut s, &mut r, &media, job, "cold-status");
+    let Some(JobOutput::Scenes(first)) = view.output else {
+        panic!("scenes output: {view:?}");
+    };
+    assert_eq!(view.state, JobState::Completed);
+    assert_eq!(first.candidates.len(), 1, "{first:?}");
+    assert_eq!(first.candidates[0].at, Tick(time::TICKS_PER_SECOND));
+    assert_eq!(
+        first.candidates[0].kind,
+        engine::scene_detection::ChangeKind::HardCut
+    );
+    // Reading again returns the same retained output.
+    let again = media_status(&mut s, &mut r, &media, job, "cold-again");
+    assert!(matches!(again.output, Some(JobOutput::Scenes(ref second)) if *second == first));
+
+    // The first status published the entry: a warm run completes with the source gone.
+    std::fs::remove_file(&video).unwrap();
+    let warm = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "media.detect_scenes",
+        json!({"asset":97}),
+        "warm",
+    );
+    finish(&mut r, warm);
+    let view = media_status(&mut s, &mut r, &media, warm, "warm-status");
+    assert!(matches!(view.output, Some(JobOutput::Scenes(ref warmed)) if *warmed == first));
+
+    // Refusals happen before a job exists: missing asset, bad settings, no video, no cache.
+    let mut audio = with_waveform(&seed(), &wav);
+    let caller = |media| Caller {
+        principal: "test",
+        external: true,
+        policy: &Allow,
+        fonts: None,
+        media,
+        chapters: None,
+    };
+    for (key, id, params, with_media) in [
+        ("missing", "media.detect_scenes", json!({"asset":99}), true),
+        (
+            "threshold",
+            "media.detect_scenes",
+            json!({"asset":97,"settings":{"hard_threshold":2.0}}),
+            true,
+        ),
+        (
+            "audio-only",
+            "media.detect_scenes",
+            json!({"asset":97}),
+            true,
+        ),
+        (
+            "no-cache",
+            "media.detect_scenes",
+            json!({"asset":97}),
+            false,
+        ),
+    ] {
+        let target = if key == "audio-only" {
+            &mut audio
+        } else {
+            &mut s
+        };
+        let req = request(target, id, params, key);
+        error(
+            target
+                .control_request(req, caller(with_media.then_some(&media)), &mut r)
+                .unwrap(),
+            ErrorCode::Refused,
+        );
+    }
+    r.shutdown();
+}
+/// `audio.measure_loudness` measures without editing: its gains reach the project only
+/// through `audio.apply_loudness` bound to the revision the job started at.
+#[test]
+fn loudness_job_returns_gains_and_only_an_edit_at_the_started_revision_applies_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("voice.wav");
+    write_wav(&wav, 8_000);
+    let mut s = with_loudness(&seed(), &wav);
+    let mut r = runner();
+    let started = s.revision();
+    let before = project::encode(s.project(), false).unwrap();
+    let ControlResult::JobAccepted { job, revision, .. } = ok(run(
+        &mut s,
+        &mut r,
+        "audio.measure_loudness",
+        json!({}),
+        "measure",
+    )) else {
+        panic!("measure must return a job");
+    };
+    assert_eq!(revision, started);
+    finish(&mut r, job);
+    let ControlResult::Job { snapshot } = ok(run(
+        &mut s,
+        &mut r,
+        "job_status",
+        json!({"job":job.0}),
+        "status",
+    )) else {
+        panic!("job status");
+    };
+    let Some(JobOutput::Loudness(result)) = snapshot.output else {
+        panic!("loudness output");
+    };
+    assert!(result.master.is_some(), "{result:?}");
+    // The job edited nothing.
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    assert!(matches!(
+        engine::loudness::admit(s.project()),
+        Err(engine::EditError::LoudnessStale)
+    ));
+
+    // An edit after the job started makes the started revision stale.
+    ok(run(
+        &mut s,
+        &mut r,
+        "audio.set_master",
+        json!({"volume":-3.0,"muted":false}),
+        "trim",
+    ));
+    let mut stale = request(
+        &s,
+        "audio.apply_loudness",
+        json!({"gains":result.gains}),
+        "stale",
+    );
+    stale.base_rev = Some(started);
+    error(
+        s.control_request(stale, caller(&Allow), &mut r).unwrap(),
+        ErrorCode::StaleRevision,
+    );
+    // The master fader is outside the measured content, so the current revision applies.
+    ok(run(
+        &mut s,
+        &mut r,
+        "audio.apply_loudness",
+        json!({"gains":result.gains}),
+        "apply",
+    ));
+    engine::loudness::admit(s.project()).unwrap();
+
+    // No target set, and a cancelled job without output.
+    let mut untargeted = seed();
+    let req = request(&untargeted, "audio.measure_loudness", json!({}), "none");
+    error(
+        untargeted
+            .control_request(req, caller(&Allow), &mut r)
+            .unwrap(),
+        ErrorCode::Refused,
+    );
+    let ControlResult::JobAccepted { job, .. } = ok(run(
+        &mut s,
+        &mut r,
+        "audio.measure_loudness",
+        json!({}),
+        "cancel",
+    )) else {
+        panic!("measure must return a job");
+    };
+    r.cancel_job(job).unwrap();
+    finish(&mut r, job);
+    let ControlResult::Job { snapshot } = ok(run(
+        &mut s,
+        &mut r,
+        "job_status",
+        json!({"job":job.0}),
+        "cancelled",
+    )) else {
+        panic!("job status");
+    };
+    assert_eq!(snapshot.state, JobState::Cancelled);
+    assert!(snapshot.output.is_none());
     r.shutdown();
 }
 /// Generation commands warm the cache through an attached media access, cancel

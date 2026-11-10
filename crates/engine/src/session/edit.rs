@@ -605,6 +605,8 @@ pub(crate) fn apply(
         | Command::ChaptersGenerate { .. }
         | Command::ChaptersExportSidecars { .. }
         | Command::GenerateWaveform { .. }
+        | Command::DetectScenes { .. }
+        | Command::MeasureLoudness {}
         | Command::GenerateClipThumbnails { .. }
         | Command::TimelinePreview { .. }
         | Command::TimelineCommitPreview {}

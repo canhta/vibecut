@@ -108,7 +108,7 @@ fn fixture(root: &Path, name: &str) -> PathBuf {
     path
 }
 
-fn wait_for_media_job(client: &mut Client, job: &Value) {
+fn wait_for_media_job(client: &mut Client, job: &Value) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let status = client.call("job_status", json!({"job": job}), None, None);
@@ -116,7 +116,7 @@ fn wait_for_media_job(client: &mut Client, job: &Value) {
             .pointer("/value/value/snapshot/state")
             .and_then(Value::as_str)
         {
-            Some("completed") => return,
+            Some("completed") => return status,
             Some("failed" | "cancelled") => panic!("media job ended early: {status}"),
             _ => {}
         }
@@ -182,6 +182,75 @@ fn media_generation_runs_through_the_attached_mcp_caches() {
         let job = accepted.pointer("/value/value/job").unwrap().clone();
         wait_for_media_job(&mut client, &job);
         rev = accepted["rev_after"].clone();
+    }
+}
+
+/// A workflow job started over MCP returns its data through `job_status` as one tagged
+/// `output`; the agent turns it into an ordinary edit bound to the revision the job started at.
+#[test]
+fn workflow_jobs_return_their_output_and_the_agent_applies_it_as_an_edit() {
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let media = root.path().join("clip.mp4");
+    crate::media_fixture::generate_av(&media, 3);
+    let path = root.path().join("workflows.json");
+    crate::media_fixture::media_project(&path, &media, Some(&media));
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let rev = client.call("inspect", json!({}), None, None)["rev_after"].clone();
+    let targets = client.call(
+        "audio.set_loudness",
+        json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0}),
+        Some(&rev),
+        Some("targets"),
+    );
+    let rev = targets["rev_after"].clone();
+    // (key, command, params, output kind, a field the output must carry)
+    for (key, command, params, kind, field) in [
+        (
+            "scenes",
+            "media.detect_scenes",
+            json!({"asset":1}),
+            "scenes",
+            "candidates",
+        ),
+        (
+            "loudness",
+            "audio.measure_loudness",
+            json!({}),
+            "loudness",
+            "gains",
+        ),
+    ] {
+        let accepted = client.call(command, params, Some(&rev), Some(key));
+        assert_eq!(
+            accepted.pointer("/value/status"),
+            Some(&json!("result")),
+            "{accepted}"
+        );
+        let job = accepted.pointer("/value/value/job").unwrap().clone();
+        let started_at = accepted.pointer("/value/value/revision").unwrap().clone();
+        let status = wait_for_media_job(&mut client, &job);
+        let output = status.pointer("/value/value/snapshot/output").unwrap();
+        assert_eq!(output["kind"], kind, "{status}");
+        assert!(
+            output.get(field).is_some_and(|value| !value.is_null()),
+            "{status}"
+        );
+        if kind == "loudness" {
+            let applied = client.call(
+                "audio.apply_loudness",
+                json!({"gains": output["gains"]}),
+                Some(&started_at),
+                Some("apply"),
+            );
+            assert_eq!(
+                applied.pointer("/value/value/outcome/changed"),
+                Some(&json!(true)),
+                "{applied}"
+            );
+        }
     }
 }
 
@@ -426,7 +495,7 @@ fn headless_preview_returns_inline_jpeg_and_save_replays_publication_receipt() {
             && content.iter().any(|item| item["type"] == "image")
         {
             let frame = response
-                .pointer("/result/structuredContent/value/value/snapshot/result/frames/0")
+                .pointer("/result/structuredContent/value/value/snapshot/output/frames/0")
                 .unwrap();
             assert_eq!(frame["frame"], 0);
             assert!(

@@ -2,18 +2,14 @@
 use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
-use crate::output::wait_for_job;
-use crate::session::Context;
-use engine::Session;
-use engine::cache::ArtifactCache;
-use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use project::WriterLease;
+use crate::session::{Context, cli_runner, run_job};
+use engine::control::JobOutput;
+use engine::{Command, Session};
+use project::{LoudnessScope, WriterLease};
 use serde_json::json;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
 /// Set loudness targets, run the two-pass measurement job over the production
 /// mix graph, and store the gains: the next `export` applies them.
@@ -44,50 +40,36 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
     }
     let scopes = match (clip, master) {
-        (false, false) | (false, true) => vec!["master"],
-        (true, false) => vec!["clip"],
-        (true, true) => vec!["clip", "master"],
+        (false, false) | (false, true) => vec![LoudnessScope::Master],
+        (true, false) => vec![LoudnessScope::Clip],
+        (true, true) => vec![LoudnessScope::Clip, LoudnessScope::Master],
     };
     let mut lease = WriterLease::acquire(&project_path)?;
     let loaded = lease.load()?;
     let mut session = Session::new(loaded.project, 1)?;
     session.restore_metadata(lease.metadata())?;
     for scope in scopes {
-        session.execute(
-            "audio.set_loudness",
-            json!({"scope": scope, "target_lufs": target_lufs, "true_peak_db": true_peak_db}),
-        )?;
+        session.apply(Command::SetLoudness {
+            scope,
+            target_lufs,
+            true_peak_db,
+        })?;
     }
-    let budget = context.budget()?;
-    let (mut cache, _diagnostics) = ArtifactCache::open(
-        &engine::providers::default_cache_root()?,
-        budget.clone(),
-        128,
-    )?;
-    let mut runner = JobRunner::new(
-        RunnerConfig {
-            concurrency: [1; 3],
-            queue: 4,
-            retained: 4,
-            network_attempts: 1,
-            backoff: Duration::from_millis(100),
-            progress_interval: Duration::from_millis(20),
-        },
-        budget,
-        Arc::new(SystemClock::default()),
-    )?;
-    let job = engine::loudness::submit_loudness(
+    let mut runner = cli_runner(context.budget()?)?;
+    let finished = run_job(
+        &mut session,
         &mut runner,
-        &mut cache,
-        session.project().clone(),
-        || Box::new(render::FileSources::default()),
-    )?;
-    wait_for_job(&mut runner, job.id)?;
-    let result = job
-        .finish(&mut runner, &mut cache)?
-        .ok_or(CliError::Rejected("loudness job produced no result"))?;
+        None,
+        "audio.measure_loudness",
+        json!({}),
+    );
     runner.shutdown();
-    session.execute("audio.apply_loudness", json!({"gains": &result.gains}))?;
+    let Some(JobOutput::Loudness(result)) = finished?.output else {
+        return Err(CliError::Rejected("loudness job produced no result"));
+    };
+    session.apply(Command::ApplyLoudness {
+        gains: result.gains.clone(),
+    })?;
     lease.save(session.project().as_ref())?;
     session.saved()?;
     let mut metadata = session.metadata().clone();

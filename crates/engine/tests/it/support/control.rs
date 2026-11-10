@@ -276,6 +276,70 @@ pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     );
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The seed plus one real 2 s video asset (id 97): ten black frames, then ten white.
+pub(crate) fn with_video(seed: &Session, path: &Path) -> Session {
+    let mut data = seed.project().data().clone();
+    data.assets.push(
+        media::SourceAsset::import(media::AssetId(97), path.to_owned())
+            .expect("fixture video imports"),
+    );
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+/// The audible-clip seed with a real local wav behind asset 97 and a master target.
+pub(crate) fn with_loudness(seed: &Session, wav: &Path) -> Session {
+    let mut data = with_audio(seed).project().data().clone();
+    let slot = data
+        .assets
+        .iter()
+        .position(|asset| asset.id() == media::AssetId(97))
+        .unwrap();
+    data.assets[slot] = media::SourceAsset::import(media::AssetId(97), wav.to_owned())
+        .expect("fixture wav imports");
+    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    session
+        .apply(Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -14.0,
+            true_peak_db: -1.0,
+        })
+        .unwrap();
+    session
+}
+/// Twenty 64x64 frames at 10 fps through the oracle FFmpeg: black, then white from 1 s.
+pub(crate) fn write_video(path: &Path) {
+    use std::io::Write;
+    let mut child = testkit::oracle::command("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pixel_format",
+            "rgb24",
+            "-video_size",
+            "64x64",
+            "-framerate",
+            "10",
+            "-i",
+            "pipe:0",
+            "-c:v",
+            "ffv1",
+        ])
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for frame in 0..20 {
+        input
+            .write_all(&vec![if frame < 10 { 0 } else { 255 }; 64 * 64 * 3])
+            .unwrap();
+    }
+    drop(input);
+    assert!(child.wait().unwrap().success());
+}
 /// The seed plus one real still-image clip (item 6) for thumbnail command examples.
 pub(crate) fn with_thumbnails(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();

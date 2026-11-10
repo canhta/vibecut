@@ -1,4 +1,5 @@
 //! Deterministic source-time scene candidates; analysis never mutates a project.
+use crate::session::wire::{ChangeKind, DetectionResult, SceneCandidate};
 use crate::{
     Command, EditError, Session,
     cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
@@ -27,8 +28,8 @@ enum Discovery {
     ShotCuts,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct DetectionSettings {
     /// Normalized RGB mean absolute difference, 0.01..=1; histogram gate uses the same threshold.
     pub hard_threshold: f32,
@@ -48,30 +49,6 @@ impl Default for DetectionSettings {
             min_scene: Tick(TICKS_PER_SECOND / 2),
         }
     }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChangeKind {
-    HardCut,
-    Fade,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SceneCandidate {
-    /// Exact decoded source PTS; fade markers use the nearest observed midpoint (earlier on ties).
-    pub at: Tick,
-    /// Normalized measured change, a heuristic score rather than a calibrated probability.
-    pub confidence: f32,
-    pub kind: ChangeKind,
-}
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DetectionResult {
-    key: [u8; 32],
-    source: [u8; 32],
-    range: SourceRange,
-    pub candidates: Vec<SceneCandidate>,
-    pub decoded_frames: u64,
 }
 #[derive(Clone)]
 pub struct DetectionRequest {
@@ -194,27 +171,17 @@ impl DetectionRequest {
         })
     }
     fn decode(&self, bytes: &[u8]) -> Result<DetectionResult, EditError> {
-        if bytes.len() > MAX_BYTES {
-            return Err(EditError::CacheCorrupt);
-        }
-        let result: DetectionResult =
-            serde_json::from_slice(bytes).map_err(|_| EditError::CacheCorrupt)?;
+        let result = decode(bytes).map_err(|_| EditError::CacheCorrupt)?;
         if result.key != self.key.bytes()
             || result.source != self.asset.content_hash().0
             || result.range != self.range
-            || result.candidates.len() > MAX_MARKERS
-            || result.decoded_frames == 0
         {
             return Err(EditError::CacheCorrupt);
         }
         let mut previous = self.range.start();
         for c in &result.candidates {
-            if c.at <= previous
-                || c.at >= self.range.end()
-                || c.at - previous < self.settings.min_scene
+            if c.at - previous < self.settings.min_scene
                 || self.range.end() - c.at < self.settings.min_scene
-                || !c.confidence.is_finite()
-                || !(0.0..=1.).contains(&c.confidence)
             {
                 return Err(EditError::CacheCorrupt);
             }
@@ -285,7 +252,33 @@ impl DetectionRequest {
         })
     }
 }
+/// Decode and validate retained job bytes: bounded, strictly ordered candidates
+/// inside the detected range with finite confidences.
+pub fn decode(bytes: &[u8]) -> Result<DetectionResult, EditError> {
+    if bytes.len() > MAX_BYTES {
+        return Err(EditError::Invalid("scene detection result"));
+    }
+    let result: DetectionResult =
+        serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("scene detection result"))?;
+    if result.candidates.len() > MAX_MARKERS || result.decoded_frames == 0 {
+        return Err(EditError::Invalid("scene detection result"));
+    }
+    let mut previous = result.range.start();
+    for c in &result.candidates {
+        if c.at <= previous
+            || c.at >= result.range.end()
+            || !c.confidence.is_finite()
+            || !(0.0..=1.).contains(&c.confidence)
+        {
+            return Err(EditError::Invalid("scene detection result"));
+        }
+        previous = c.at;
+    }
+    Ok(result)
+}
 impl DetectionJob {
+    /// Validate the retained output against its request and publish the cache entry once.
+    /// The runner keeps the output, so `job_status` can return it until it is evicted.
     pub fn finish(
         &self,
         runner: &mut JobRunner,
@@ -303,9 +296,6 @@ impl DetectionJob {
                     .ok_or(EditError::JobNotRetained)?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
-                runner
-                    .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
                 Ok(Some(result))
             }
             _ => Ok(None),

@@ -16,12 +16,13 @@ Job progress, cancellation and byte admission belong to the [job runner](../runt
 it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and
 ordering only ([`LoudnessTarget`](../../../project/src/model/settings.rs)).
 
-`loudness::submit_loudness(runner, cache, project, sources)` queues one CPU `MeasureLoudness` job
-that runs render's two-pass planner over the production mix graph for the configured targets. It
-reports `Mix` progress, honours cancellation and surfaces failures as typed `JobFailure`. It
-never edits the project: `LoudnessJob::finish` validates the result (gains plus the measured
-numbers per clip and master), caches it as `ArtifactKind::Loudness`, and the caller applies it
-with `audio.apply_loudness`. The gains' key is `loudness::content_key`: a hash of the active
+`audio.measure_loudness {}` (`loudness::submit_loudness(runner, project, sources)`) queues one CPU
+`MeasureLoudness` job that runs render's two-pass planner over the production mix graph for the
+configured targets and refuses `Invalid` when none is set. It reports `Mix` progress, honours
+cancellation and surfaces failures as typed `JobFailure`. It takes no cache and never edits the
+project: `job_status` returns `output.kind = "loudness"` (the gains plus the measured numbers per
+clip and master, via `loudness::decode`) and the caller sends `audio.apply_loudness` with those
+gains. The gains' key is `loudness::content_key`: a hash of the active
 scene's audible items (timing, source content, volume/mute and their automation), track mutes,
 sample rate and both targets; the master fader is excluded because measurement ignores it.
 
@@ -34,9 +35,12 @@ content. Limits: `LoudnessGains::MAX_CLIPS` 4096 clips and a 1 MiB result.
 
 `scene_detection::DetectionRequest::new(asset, source_range, DetectionSettings)` produces
 source-time `SceneCandidate`s with exact decoded PTS, `HardCut`/`Fade` and a normalized
-measured-change confidence (not a calibrated probability). `submit` runs one local CPU
-`DetectScenes` job; `DetectionJob::finish` validates and caches complete output as
-`SceneDetection`. Keys bind source content, source range, all thresholds and the versioned
+measured-change confidence (not a calibrated probability). `media.detect_scenes {asset, settings}`
+runs one local CPU `DetectScenes` job over an admitted project asset's whole video through the lent
+`MediaAccess`; omitted `settings` fields take `DetectionSettings::default()`. `job_status` returns
+`output.kind = "scenes"` (`scene_detection::decode`), and `DetectionJob::finish`, run where control
+first sees the job completed, validates it against its request and caches complete output as
+`SceneDetection` without consuming the retained output. Keys bind source content, source range, all thresholds and the versioned
 recipe; a warm hit opens no source. Shot analysis invokes this same detector in its RGB-only
 hard-cut mode.
 
@@ -123,7 +127,7 @@ provider work.
 exact consent token and only then queues one network `GenerateChapters` job. The job bounds its
 result at 1 MiB and decodes it through the versioned `ChapterDocument::from_json` validator.
 `chapters.generate {language, max_chapters}` accepts exactly this request; `job_status` publishes
-the completed document in `JobView.chapters`. A caller without a lent access refuses
+the completed document in `JobView.output` (`chapters`). A caller without a lent access refuses
 `ConsentRequired`. The job has no artifact cache and never mutates the project.
 
 ## Filler classification
@@ -140,6 +144,6 @@ network path and never falls back to it.
 `submit` asks the lent `TextAccess::prepare_fillers` for the exact consent token and queues one
 network `ClassifyFillers` job. Each returned ID is mapped back to this job's visible word table,
 sorted by output start, bounded at 1 MiB, and an ID that does not exist in the sent transcript
-fails the job with the typed `InvalidSegments` reason. `job_status` publishes `JobView.fillers`;
+fails the job with the typed `InvalidSegments` reason. `job_status` publishes `JobView.output` (`fillers`);
 `timeline.remove_fillers` consumes the same IDs. A caller without a lent access refuses
 `ConsentRequired`. No artifact cache is used and the project is never mutated.

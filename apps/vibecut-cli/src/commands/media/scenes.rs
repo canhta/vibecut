@@ -2,17 +2,17 @@
 use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
-use crate::output::wait_for_job;
-use crate::session::Context;
-use crate::session::cli_runner;
-use engine::cache::ArtifactCache;
+use crate::session::{Context, cli_runner, run_job};
+use engine::control::{JobOutput, MediaAccess};
+use engine::{Command, Session};
+use serde_json::json;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use time::Tick;
 
 /// Detect scene-change candidates for a local video; never edits a project.
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
-    use engine::scene_detection::{DetectionRequest, DetectionSettings};
+    use engine::scene_detection::DetectionSettings;
     let mut args = args.into_iter();
     let path = args
         .next()
@@ -46,31 +46,35 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
     }
     let asset = media::SourceAsset::import(media::AssetId(1), std::fs::canonicalize(path)?)?;
-    let duration = asset.probe().duration.ok_or(CliError::Unsupported(
-        "scene input requires a known duration",
-    ))?;
-    let request = DetectionRequest::new(
-        asset,
-        time::SourceRange::new(Tick::ZERO, duration)?,
-        settings,
+    let id = asset.id();
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(0), String::new().into())?,
+        1,
     )?;
-    let budget = context.budget()?;
-    let (mut cache, _) = ArtifactCache::open(
-        &engine::providers::default_cache_root()?,
-        budget.clone(),
-        128,
-    )?;
-    let mut runner = cli_runner(budget)?;
-    let job = request.submit(&mut runner, &mut cache)?;
-    wait_for_job(&mut runner, job.id)?;
-    let result = job
-        .finish(&mut runner, &mut cache)?
-        .ok_or(CliError::Rejected("scene job produced no result"))?;
+    session.apply(Command::AddAsset { asset })?;
+    let media = std::sync::Mutex::new(MediaAccess::open(context.budget()?)?);
+    let mut runner = cli_runner(context.budget()?)?;
+    let finished = run_job(
+        &mut session,
+        &mut runner,
+        Some(&media),
+        "media.detect_scenes",
+        json!({"asset": id, "settings": settings}),
+    );
     runner.shutdown();
+    let Some(JobOutput::Scenes(result)) = finished?.output else {
+        return Err(CliError::Rejected("scene job produced no result"));
+    };
     let human = result
         .candidates
         .iter()
-        .map(|c| format!("{} {:?} {:.3}\n", c.at.0, c.kind, c.confidence))
+        .map(|c| {
+            format!(
+                "{} {:?} {:.3}
+",
+                c.at.0, c.kind, c.confidence
+            )
+        })
         .collect();
     Ok(Output::new(serde_json::to_value(result)?, human, false, 0))
 }

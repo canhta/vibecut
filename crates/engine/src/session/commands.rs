@@ -268,6 +268,10 @@ pub enum Fixture {
     Thumbnails,
     /// Timeline whose caption cue carries measured source words.
     Words,
+    /// Timeline plus one real local video asset, id 97, at least one second long.
+    Video,
+    /// Timeline plus one real audible clip, item 5, and a master loudness target.
+    Loudness,
     Library,
     History,
     Redo,
@@ -420,6 +424,7 @@ commands! {
     SetTransitionParam, "transition.set_param", "Set video transition parameter", Edit { transition: project::TransitionId, param: String, value: project::TransitionValue } => Transition, serde_json::json!({"transition":13,"param":"hold","value":{"type":"float","value":40.0}});
     RemoveTransition, "transition.remove", "Remove video transition", Edit { transition: project::TransitionId } => Transition, serde_json::json!({"transition":13});
     SetFade, "audio.set_fade", "Set audio fade", Edit { item: ItemId, edge: project::FadeEdge, duration: Tick, curve: project::FadeCurve } => Audio, serde_json::json!({"item":5,"edge":"in","duration":0,"curve":"equal_power"}), available = UnlockedItem;
+    MeasureLoudness, "audio.measure_loudness", "Measure loudness", JobControl {} => Loudness, serde_json::json!({}), grant = Agent;
     SetLoudness, "audio.set_loudness", "Set loudness target", Edit { scope: project::LoudnessScope, target_lufs: f32, true_peak_db: f32 } => Timeline, serde_json::json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0});
     ClearLoudness, "audio.clear_loudness", "Clear loudness target", Edit { scope: project::LoudnessScope } => Timeline, serde_json::json!({"scope":"master"});
     ApplyLoudness, "audio.apply_loudness", "Apply measured loudness gains", Edit { gains: project::LoudnessGains } => Timeline, serde_json::json!({"gains":{"key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"clip":[],"master_db":0.0}});
@@ -455,6 +460,7 @@ commands! {
     RemovePauses, "timeline.remove_pauses", "Remove reviewed pauses", Edit { spans: Vec<OutputSpan>, crossfade_ms: i64 } => Timeline, serde_json::json!({"spans":[{"start":63504000000_i64,"end":127008000000_i64}],"crossfade_ms":20});
     GenerateWaveform, "media.generate_waveform", "Generate source waveform", JobControl { asset: AssetId } => Waveform, serde_json::json!({"asset":97}), grant = Agent;
     GenerateClipThumbnails, "media.generate_clip_thumbnails", "Generate clip thumbnails", JobControl { item: ItemId, visible: TimeRange, pixels_per_second: f64 } => Thumbnails, serde_json::json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}), grant = Agent;
+    DetectScenes, "media.detect_scenes", "Detect scene changes", JobControl { asset: AssetId, #[serde(default)] settings: crate::scene_detection::DetectionSettings } => Video, serde_json::json!({"asset":97,"settings":{"hard_threshold":0.28,"fade_threshold":0.2,"fade_step":0.005,"min_scene":127008000000_i64}}), grant = Agent;
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimStart, "trim_start", "Trim start", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;

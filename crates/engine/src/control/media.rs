@@ -1,4 +1,4 @@
-//! Lends the process artifact caches media generation jobs read and publish through.
+//! Lends the process artifact caches media generation and analysis jobs read and publish through.
 use crate::{
     EditError,
     artifacts::thumbnail_strip::{
@@ -7,12 +7,13 @@ use crate::{
     artifacts::thumbnails::ThumbnailCache,
     cache::ArtifactCache,
     jobs::{JobId, JobRunner},
+    scene_detection::{DetectionJob, DetectionRequest, DetectionSettings},
     waveform::{self, WaveformJob, WaveformRequest, WaveformState},
 };
 use media::{SourceAsset, THUMBNAIL_MAX_EDGE};
 use project::Item;
 use std::collections::BTreeMap;
-use time::TimeRange;
+use time::{SourceRange, Tick, TimeRange};
 
 /// Entries each cache may retain; the CLI and desktop composition roots agree.
 const MAX_CACHE_ENTRIES: usize = 128;
@@ -24,6 +25,7 @@ pub struct MediaAccess {
     thumbnails: ThumbnailCache,
     waveforms: BTreeMap<JobId, WaveformJob>,
     strips: BTreeMap<JobId, ThumbnailStripJob>,
+    scenes: BTreeMap<JobId, DetectionJob>,
 }
 
 impl MediaAccess {
@@ -33,6 +35,7 @@ impl MediaAccess {
             thumbnails,
             waveforms: BTreeMap::new(),
             strips: BTreeMap::new(),
+            scenes: BTreeMap::new(),
         }
     }
 
@@ -122,6 +125,27 @@ impl MediaAccess {
         Ok(id)
     }
 
+    /// Submit scene detection over a source's whole video. A warm entry completes
+    /// without opening the source; the entry is published when `job_status` first
+    /// sees the job complete.
+    pub(crate) fn detect_scenes(
+        &mut self,
+        runner: &mut JobRunner,
+        asset: SourceAsset,
+        settings: DetectionSettings,
+    ) -> Result<JobId, EditError> {
+        self.retain(runner);
+        let duration = asset.probe().duration.ok_or(EditError::Unsupported(
+            "scene detection needs a known duration",
+        ))?;
+        let range = SourceRange::new(Tick::ZERO, duration)?;
+        let job =
+            DetectionRequest::new(asset, range, settings)?.submit(runner, &mut self.artifacts)?;
+        let id = job.id;
+        self.scenes.insert(id, job);
+        Ok(id)
+    }
+
     /// Publish a completed job's validated output. A job this owner no longer
     /// holds was already published or was not submitted here.
     pub(crate) fn finish(&mut self, runner: &mut JobRunner, job: JobId) -> Result<(), EditError> {
@@ -131,6 +155,9 @@ impl MediaAccess {
         if let Some(handle) = self.strips.remove(&job) {
             handle.finish(runner, &mut self.thumbnails)?;
         }
+        if let Some(handle) = self.scenes.remove(&job) {
+            handle.finish(runner, &mut self.artifacts)?;
+        }
         Ok(())
     }
 
@@ -138,11 +165,13 @@ impl MediaAccess {
     pub(crate) fn forget(&mut self, job: JobId) {
         self.waveforms.remove(&job);
         self.strips.remove(&job);
+        self.scenes.remove(&job);
     }
 
     fn retain(&mut self, runner: &JobRunner) {
         self.waveforms
             .retain(|id, _| runner.snapshot(*id).is_some());
         self.strips.retain(|id, _| runner.snapshot(*id).is_some());
+        self.scenes.retain(|id, _| runner.snapshot(*id).is_some());
     }
 }

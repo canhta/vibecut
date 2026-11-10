@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use engine::cache::ArtifactCache;
 use engine::jobs::*;
-use engine::loudness::{LoudnessJob, LoudnessResult, admit, submit_loudness};
+use engine::loudness::{LoudnessResult, admit, decode, submit_loudness};
 use engine::{ByteBudget, EditError, Session};
 use std::{
     sync::{
@@ -125,16 +124,16 @@ fn runner(budget: &ByteBudget) -> JobRunner {
     .unwrap()
 }
 
-fn finish(
-    runner: &mut JobRunner,
-    cache: &mut ArtifactCache,
-    job: &LoudnessJob,
-) -> Result<LoudnessResult, EditError> {
+fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EditError> {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         runner.tick().unwrap();
-        if let Some(result) = job.finish(runner, cache)? {
-            return Ok(result);
+        let snapshot = runner.snapshot(job).unwrap();
+        match snapshot.state {
+            JobState::Cancelled => return Err(EditError::Cancelled),
+            JobState::Failed => return Err(EditError::JobFailure(snapshot.error.unwrap())),
+            JobState::Completed => return decode(runner.output_bytes(job).unwrap()),
+            _ => {}
         }
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(1));
@@ -143,13 +142,12 @@ fn finish(
 
 fn submit(
     runner: &mut JobRunner,
-    cache: &mut ArtifactCache,
     session: &Session,
     tone: (f32, &Arc<AtomicUsize>, bool),
-) -> Result<LoudnessJob, EditError> {
+) -> Result<JobId, EditError> {
     let (level, reads, fail) = tone;
     let reads = reads.clone();
-    submit_loudness(runner, cache, session.project().clone(), move || {
+    submit_loudness(runner, session.project().clone(), move || {
         Box::new(Tone {
             level,
             reads: reads.clone(),
@@ -160,9 +158,7 @@ fn submit(
 
 #[test]
 fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
-    let dir = tempfile::tempdir().unwrap();
     let budget = ByteBudget::new(256 << 20).unwrap();
-    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
     let mut runner = runner(&budget);
     let reads = Arc::new(AtomicUsize::new(0));
     let mut session = session();
@@ -179,8 +175,8 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         Err(EditError::LoudnessStale)
     ));
 
-    let job = submit(&mut runner, &mut cache, &session, (0.1, &reads, false)).unwrap();
-    let result = finish(&mut runner, &mut cache, &job).unwrap();
+    let job = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();
+    let result = finish(&mut runner, job).unwrap();
     assert!(
         (f64::from(result.gains.master_db) - 6.0).abs() < 0.05,
         "-20 LUFS to -14"
@@ -191,13 +187,6 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         })
         .unwrap();
     admit(session.project()).unwrap();
-
-    // Identical content and targets reuse the cached measurement without decoding.
-    let before = reads.load(Ordering::SeqCst);
-    assert!(before > 0);
-    let again = submit(&mut runner, &mut cache, &session, (0.1, &reads, false)).unwrap();
-    assert_eq!(finish(&mut runner, &mut cache, &again).unwrap(), result);
-    assert_eq!(reads.load(Ordering::SeqCst), before);
 
     // The master fader trims after normalization and needs no remeasure; an
     // audible edit or a new target invalidates the gains, and undo restores them.
@@ -235,13 +224,11 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
 
 #[test]
 fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
-    let dir = tempfile::tempdir().unwrap();
     let budget = ByteBudget::new(256 << 20).unwrap();
-    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
     let mut runner = runner(&budget);
     let reads = Arc::new(AtomicUsize::new(0));
     let mut session = session();
-    assert!(submit(&mut runner, &mut cache, &session, (0.1, &reads, false)).is_err());
+    assert!(submit(&mut runner, &session, (0.1, &reads, false)).is_err());
     session
         .apply(engine::Command::SetLoudness {
             scope: project::LoudnessScope::Clip,
@@ -250,16 +237,16 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
         })
         .unwrap();
 
-    let failing = submit(&mut runner, &mut cache, &session, (0.1, &reads, true)).unwrap();
+    let failing = submit(&mut runner, &session, (0.1, &reads, true)).unwrap();
     assert!(matches!(
-        finish(&mut runner, &mut cache, &failing),
+        finish(&mut runner, failing),
         Err(EditError::JobFailure(error)) if matches!(*error, EditError::Render(render::Error::Invalid(_)))
     ));
 
-    let cancelled = submit(&mut runner, &mut cache, &session, (0.1, &reads, false)).unwrap();
-    cancelled.cancel.cancel();
+    let cancelled = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();
+    runner.cancel_job(cancelled).unwrap();
     assert!(matches!(
-        finish(&mut runner, &mut cache, &cancelled),
+        finish(&mut runner, cancelled),
         Err(EditError::Cancelled)
     ));
     assert_eq!(budget.snapshot().unwrap().used, 0);

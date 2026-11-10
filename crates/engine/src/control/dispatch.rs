@@ -1,5 +1,5 @@
 //! Executes admitted control commands.
-use super::Caller;
+use super::{Caller, output};
 use crate::jobs::{JobKind, JobRunner, JobState};
 use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
@@ -99,42 +99,11 @@ impl Session {
             Command::JobStatus { job } => {
                 let mut snapshot =
                     JobView::from(runner.snapshot(job).ok_or(EditError::JobNotRetained)?);
-                if snapshot.kind == JobKind::Preview
-                    && snapshot.state == JobState::Completed
-                    && runner.output_bytes(job).is_none()
-                {
-                    return Err(EditError::JobNotRetained);
-                }
-                if snapshot.kind == JobKind::Preview {
-                    snapshot.result = runner
-                        .output_bytes(job)
-                        .map(serde_json::from_slice)
-                        .transpose()
-                        .map_err(|_| EditError::InvalidParams)?;
-                }
-                if snapshot.kind == JobKind::AnalyzePauses && snapshot.state == JobState::Completed
-                {
-                    snapshot.pauses = Some(crate::pause_candidates::decode(
-                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
-                    )?);
-                }
-                if snapshot.kind == JobKind::GenerateChapters
-                    && snapshot.state == JobState::Completed
-                {
-                    snapshot.chapters = Some(Box::new(crate::chapters::decode(
-                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
-                    )?));
-                }
-                if snapshot.kind == JobKind::ClassifyFillers
-                    && snapshot.state == JobState::Completed
-                {
-                    snapshot.fillers = Some(crate::fillers::decode(
-                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
-                    )?);
-                }
                 if matches!(
                     snapshot.kind,
-                    JobKind::GenerateWaveform | JobKind::GenerateClipThumbnails
+                    JobKind::GenerateWaveform
+                        | JobKind::GenerateClipThumbnails
+                        | JobKind::DetectScenes
                 ) && let Some(media) = caller.media
                 {
                     let mut media = media.lock().map_err(|_| EditError::JobPoisoned)?;
@@ -143,6 +112,9 @@ impl Session {
                         JobState::Cancelled | JobState::Failed => media.forget(job),
                         _ => {}
                     }
+                }
+                if snapshot.state == JobState::Completed {
+                    snapshot.output = output::decode(snapshot.kind, runner.output_bytes(job))?;
                 }
                 Ok(ControlResult::Job { snapshot })
             }
@@ -204,6 +176,44 @@ impl Session {
                     .lock()
                     .map_err(|_| EditError::JobPoisoned)?
                     .generate_clip_thumbnails(runner, asset, &clip, visible, pixels_per_second)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::DetectScenes { asset, settings } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let asset = self
+                    .project()
+                    .data()
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset)
+                    .cloned()
+                    .ok_or(EditError::NoAsset(asset))?;
+                let media = caller
+                    .media
+                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                let job = media
+                    .lock()
+                    .map_err(|_| EditError::JobPoisoned)?
+                    .detect_scenes(runner, asset, settings)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::MeasureLoudness {} => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let job = crate::loudness::submit_loudness(runner, self.project().clone(), || {
+                    Box::new(render::FileSources::default())
+                })?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
