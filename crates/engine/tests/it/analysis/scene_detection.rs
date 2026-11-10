@@ -236,10 +236,11 @@ fn reviewed_subset_is_one_undo_step_and_refusals_are_atomic() {
     s.redo().unwrap();
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), applied);
     s.undo().unwrap();
-    s.execute(
-        "timeline.set_speed",
-        serde_json::json!({"items":[10],"speed":2.0,"maintain_pitch":true}),
-    )
+    s.apply(engine::Command::SetSpeed {
+        items: vec![ItemId(10)],
+        speed: time::Speed::from_f64(2.0).unwrap(),
+        maintain_pitch: true,
+    })
     .unwrap();
     let retimed = serde_json::to_vec(s.project().data()).unwrap();
     apply_reviewed(&mut s, ItemId(10), &result, &[0, 2]).unwrap();

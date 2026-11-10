@@ -541,15 +541,13 @@ impl crate::Session {
             _ => Err(EditError::Invalid("command is not an export command")),
         }
     }
-    /// Strict JSON entry point using the same registry and admission caps as edits.
+    /// Typed export entry point; the caller supplies the admitted command.
     pub fn execute_export(
         &self,
         runner: &mut JobRunner,
         input: CacheKey,
-        command_id: &str,
-        params: serde_json::Value,
+        command: crate::Command,
     ) -> Result<(JobId, CancelToken), EditError> {
-        let command = crate::session::wire::decode_command(command_id, params)?;
         self.submit_export_command(runner, input, command)
     }
 }

@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::{Command, EditError, NewItem, Placement, Session};
 use media::{AssetId, SourceAsset};
-use project::{ItemParams, Project, ProjectId};
+use project::{ItemParams, Project, ProjectId, SceneId};
 use time::{SourceRange, Tick};
 
 fn asset(id: u64, path: &str) -> SourceAsset {
@@ -65,7 +65,9 @@ fn unused_asset_removal_is_undoable_and_restores_the_exact_record() {
     let original = session.project().data().assets.clone();
     let history = session.history_len();
     session
-        .execute("media.remove", serde_json::json!({"assets":[1]}))
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(1)],
+        })
         .unwrap();
     assert_eq!(
         session.project().data().assets,
@@ -90,7 +92,9 @@ fn in_use_removal_refuses_with_the_exact_usage_and_changes_nothing() {
     let before = session.project().clone();
     let history = session.history_len();
     let error = session
-        .execute("media.remove", serde_json::json!({"assets":[1,2]}))
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(1), AssetId(2)],
+        })
         .unwrap_err();
     match error {
         EditError::AssetsInUse(usages) => {
@@ -110,7 +114,9 @@ fn in_use_removal_refuses_with_the_exact_usage_and_changes_nothing() {
 fn usage_in_another_scene_is_reported() {
     let mut session = session();
     let scene = match session
-        .execute("scene.create", serde_json::json!({"name":"Second"}))
+        .apply(Command::CreateScene {
+            name: "Second".into(),
+        })
         .unwrap()
         .created
         .first()
@@ -119,15 +125,15 @@ fn usage_in_another_scene_is_reported() {
         Some(engine::CreatedId::Scene(id)) => id,
         _ => panic!("scene"),
     };
-    session
-        .execute("scene.switch", serde_json::json!({"scene":scene}))
-        .unwrap();
+    session.apply(Command::SwitchScene { scene }).unwrap();
     let item = insert_video(&mut session, AssetId(2));
     session
-        .execute("scene.switch", serde_json::json!({"scene":0}))
+        .apply(Command::SwitchScene { scene: SceneId(0) })
         .unwrap();
     match session
-        .execute("media.remove", serde_json::json!({"assets":[2]}))
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(2)],
+        })
         .unwrap_err()
     {
         EditError::AssetsInUse(usages) => {
@@ -154,9 +160,7 @@ fn hostile_removal_lists_are_refused_without_mutating_history() {
             "oversized",
         ),
     ] {
-        let error = session
-            .execute("media.remove", serde_json::json!({"assets":assets}))
-            .unwrap_err();
+        let error = session.apply(Command::RemoveAssets { assets }).unwrap_err();
         match (expected, error) {
             ("empty", EditError::Invalid("media removal list")) => {}
             ("duplicate", EditError::Invalid("duplicate asset ID")) => {}
@@ -177,7 +181,9 @@ fn removing_a_referenced_asset_after_deleting_its_item_succeeds() {
         .apply(Command::Delete { items: vec![item] })
         .unwrap();
     session
-        .execute("media.remove", serde_json::json!({"assets":[1]}))
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(1)],
+        })
         .unwrap();
     assert_eq!(
         session

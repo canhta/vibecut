@@ -3,7 +3,6 @@ use engine::cache::ArtifactCache;
 use engine::jobs::*;
 use engine::loudness::{LoudnessJob, LoudnessResult, admit, submit_loudness};
 use engine::{ByteBudget, EditError, Session};
-use serde_json::json;
 use std::{
     sync::{
         Arc,
@@ -168,10 +167,11 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     let reads = Arc::new(AtomicUsize::new(0));
     let mut session = session();
     session
-        .execute(
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0}),
-        )
+        .apply(engine::Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -14.0,
+            true_peak_db: -1.0,
+        })
         .unwrap();
     // Targets alone are not exportable: gains must be measured first.
     assert!(matches!(
@@ -186,7 +186,9 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         "-20 LUFS to -14"
     );
     session
-        .execute("audio.apply_loudness", json!({"gains": result.gains}))
+        .apply(engine::Command::ApplyLoudness {
+            gains: result.gains.clone(),
+        })
         .unwrap();
     admit(session.project()).unwrap();
 
@@ -200,14 +202,17 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     // The master fader trims after normalization and needs no remeasure; an
     // audible edit or a new target invalidates the gains, and undo restores them.
     session
-        .execute("audio.set_master", json!({"volume":-3.0,"muted":false}))
+        .apply(engine::Command::SetMaster {
+            volume: -3.0,
+            muted: false,
+        })
         .unwrap();
     admit(session.project()).unwrap();
     session
-        .execute(
-            "timeline.set_item_param",
-            json!({"item":1,"patch":{"field":"volume","value":-3.0}}),
-        )
+        .apply(engine::Command::SetItemField {
+            item: project::ItemId(1),
+            patch: engine::ItemParamPatch::AudioGain(-3.0),
+        })
         .unwrap();
     assert!(matches!(
         admit(session.project()),
@@ -216,10 +221,11 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     session.undo().unwrap();
     admit(session.project()).unwrap();
     session
-        .execute(
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-16.0,"true_peak_db":-1.0}),
-        )
+        .apply(engine::Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -16.0,
+            true_peak_db: -1.0,
+        })
         .unwrap();
     assert!(matches!(
         admit(session.project()),
@@ -237,10 +243,11 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     let mut session = session();
     assert!(submit(&mut runner, &mut cache, &session, (0.1, &reads, false)).is_err());
     session
-        .execute(
-            "audio.set_loudness",
-            json!({"scope":"clip","target_lufs":-14.0,"true_peak_db":-1.0}),
-        )
+        .apply(engine::Command::SetLoudness {
+            scope: project::LoudnessScope::Clip,
+            target_lufs: -14.0,
+            true_peak_db: -1.0,
+        })
         .unwrap();
 
     let failing = submit(&mut runner, &mut cache, &session, (0.1, &reads, true)).unwrap();

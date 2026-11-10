@@ -137,7 +137,7 @@ fn transform_and_graph_edits_share_the_timeline_preview_transaction() {
             .time,
         frame(100)
     );
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), (0, 0));
 }
@@ -155,13 +155,20 @@ fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
     ] {
         assert!(registry().iter().find(|r| r.id == id).unwrap().enabled(&s));
     }
-    s.execute("keyframes.set_param",json!({"item":2,"path":"params.label","param":Param::new(ParamValue::Text("Một".into())).unwrap()})).unwrap();
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: AnimationPath::new("params.label").unwrap(),
+        param: Param::new(ParamValue::Text("Một".into())).unwrap(),
+    })
+    .unwrap();
     let mut label = Keyframe::new(Tick(0), ParamValue::Text("Hai".into()));
     label.segment = Segment::Step;
-    s.execute(
-        "keyframes.add",
-        json!({"item":2,"path":"params.label","component":null,"key":label}),
-    )
+    s.apply(Command::AddKeyframe {
+        item: ItemId(2),
+        path: AnimationPath::new("params.label").unwrap(),
+        component: None,
+        key: label,
+    })
     .unwrap();
     assert_eq!(
         item(&s, ItemId(2))
@@ -170,20 +177,34 @@ fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
             .unwrap(),
         Some(ParamValue::Text("Hai".into()))
     );
-    s.execute(
-        "keyframes.add",
-        json!({"item":2,"path":"opacity","component":null,"key":key(60,0.4)}),
-    )
+    s.apply(Command::AddKeyframe {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        key: key(60, 0.4),
+    })
     .unwrap();
-    s.execute(
-        "keyframes.retime",
-        json!({"item":2,"path":"opacity","component":null,"from":frame(60),"to":frame(80)}),
-    )
+    s.apply(Command::RetimeKeyframe {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        from: frame(60),
+        to: frame(80),
+    })
     .unwrap();
     let count = s.history_len().0;
     s.begin_gesture().unwrap();
     for dv in [0.1, 0.2, 0.3] {
-        s.execute("keyframes.set_handle",json!({"item":2,"path":"opacity","component":null,"time":frame(80),"side":"out","handle":{"dt":frame(10),"dv":dv},"tangent":"aligned"})).unwrap();
+        s.apply(Command::SetKeyframeHandle {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(80),
+            side: HandleSide::Out,
+            handle: Some(CurveHandle { dt: frame(10), dv }),
+            tangent: TangentMode::Aligned,
+        })
+        .unwrap();
     }
     s.commit_gesture().unwrap();
     assert_eq!(s.history_len().0, count + 1);
@@ -192,10 +213,12 @@ fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
     assert_ne!(s.project(), &changed);
     s.redo().unwrap();
     assert_eq!(s.project(), &changed);
-    s.execute(
-        "keyframes.remove",
-        json!({"item":2,"path":"opacity","component":null,"time":frame(80)}),
-    )
+    s.apply(Command::RemoveKeyframe {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        time: frame(80),
+    })
     .unwrap();
     while s.can_undo() {
         s.undo().unwrap();
@@ -211,10 +234,13 @@ fn toggle_at_adds_then_removes_one_key_and_keeps_the_base() {
     let mut s = session();
     let before = item(&s, ItemId(2)).animations.get(&path()).cloned();
     let time = frame(40);
-    s.execute(
-        "keyframes.toggle_at",
-        json!({"item":2,"path":"opacity","component":null,"time":time,"value":{"kind":"scalar","value":0.25}}),
-    )
+    s.apply(Command::ToggleKeyframe {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        time,
+        value: ParamValue::Scalar(0.25),
+    })
     .unwrap();
     let channel = item(&s, ItemId(2))
         .animations
@@ -231,10 +257,13 @@ fn toggle_at_adds_then_removes_one_key_and_keeps_the_base() {
             .map(|key| &key.value),
         Some(&ParamValue::Scalar(0.25))
     );
-    s.execute(
-        "keyframes.toggle_at",
-        json!({"item":2,"path":"opacity","component":null,"time":time,"value":{"kind":"scalar","value":0.9}}),
-    )
+    s.apply(Command::ToggleKeyframe {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        time,
+        value: ParamValue::Scalar(0.9),
+    })
     .unwrap();
     let channel = item(&s, ItemId(2))
         .animations
@@ -264,8 +293,7 @@ fn delete_selection_removes_every_listed_key_atomically() {
             time: frame(120),
         },
     ];
-    s.execute("keyframes.delete_selection", json!({"keys":keys}))
-        .unwrap();
+    s.apply(Command::DeleteKeyframes { keys }).unwrap();
     assert!(
         item(&s, ItemId(2))
             .animations
@@ -277,68 +305,102 @@ fn delete_selection_removes_every_listed_key_atomically() {
             .is_empty()
     );
     assert_eq!(s.history_len().0, history + 1);
-    let stale = json!({"keys":[{"item":2,"path":"opacity","component":null,"time":frame(0)}]});
-    assert!(s.execute("keyframes.delete_selection", stale).is_err());
+    let stale = Command::DeleteKeyframes {
+        keys: vec![engine::KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(0),
+        }],
+    };
+    assert!(s.apply(stale).is_err());
     assert_eq!(s.history_len().0, history + 1, "a stale list adds no step");
     s.undo().unwrap();
+    let key_ref = |item, time| engine::KeyframeRef {
+        item: ItemId(item),
+        path: path(),
+        component: None,
+        time,
+    };
     let hostile = [
-        ("empty selection", json!({"keys":[]})),
+        ("empty selection", Command::DeleteKeyframes { keys: vec![] }),
         (
             "duplicate entry refuses the whole list",
-            json!({"keys":[
-                {"item":2,"path":"opacity","component":null,"time":frame(0)},
-                {"item":2,"path":"opacity","component":null,"time":frame(0)},
-            ]}),
+            Command::DeleteKeyframes {
+                keys: vec![key_ref(2, frame(0)), key_ref(2, frame(0))],
+            },
         ),
         (
             "one stale entry spares the valid one",
-            json!({"keys":[
-                {"item":2,"path":"opacity","component":null,"time":frame(0)},
-                {"item":2,"path":"opacity","component":null,"time":frame(7)},
-            ]}),
+            Command::DeleteKeyframes {
+                keys: vec![key_ref(2, frame(0)), key_ref(2, frame(7))],
+            },
         ),
         (
             "unknown item",
-            json!({"keys":[{"item":99,"path":"opacity","component":null,"time":frame(0)}]}),
+            Command::DeleteKeyframes {
+                keys: vec![key_ref(99, frame(0))],
+            },
         ),
     ];
     let history = s.history_len().0;
     let project = s.project().clone();
-    for (case, args) in hostile {
-        assert!(
-            s.execute("keyframes.delete_selection", args).is_err(),
-            "{case}"
-        );
+    for (case, command) in hostile {
+        assert!(s.apply(command).is_err(), "{case}");
         assert_eq!(s.history_len().0, history, "{case}");
         assert_eq!(s.project(), &project, "{case}");
     }
-    s.execute("track.set_locked", json!({"track":2,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(2),
+        locked: true,
+    })
+    .unwrap();
     let locked = s.history_len().0;
     let project = s.project().clone();
-    let one = json!({"keys":[{"item":2,"path":"opacity","component":null,"time":frame(0)}]});
     assert!(
-        s.execute("keyframes.delete_selection", one).is_err(),
+        s.apply(Command::DeleteKeyframes {
+            keys: vec![key_ref(2, frame(0))]
+        })
+        .is_err(),
         "locked track"
     );
-    let toggle = json!({"item":2,"path":"opacity","component":null,"time":frame(40),"value":{"kind":"scalar","value":0.5}});
     assert!(
-        s.execute("keyframes.toggle_at", toggle).is_err(),
+        s.apply(Command::ToggleKeyframe {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(40),
+            value: ParamValue::Scalar(0.5),
+        })
+        .is_err(),
         "locked track"
     );
-    let extrapolate =
-        json!({"item":2,"path":"opacity","component":null,"before":"hold","after":"hold"});
     assert!(
-        s.execute("keyframes.set_extrapolation", extrapolate)
-            .is_err(),
+        s.apply(Command::SetKeyframeExtrapolation {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            before: Extrapolation::Hold,
+            after: Extrapolation::Hold,
+        })
+        .is_err(),
         "locked track"
     );
     assert_eq!((s.history_len().0, s.project()), (locked, &project));
-    s.execute("track.set_locked", json!({"track":2,"locked":false}))
-        .unwrap();
-    let wrong_kind = json!({"item":2,"path":"opacity","component":null,"time":frame(40),"value":{"kind":"bool","value":true}});
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(2),
+        locked: false,
+    })
+    .unwrap();
     assert!(
-        s.execute("keyframes.toggle_at", wrong_kind).is_err(),
+        s.apply(Command::ToggleKeyframe {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(40),
+            value: ParamValue::Bool(true),
+        })
+        .is_err(),
         "value kind mismatch"
     );
     assert_eq!(
@@ -357,10 +419,13 @@ fn delete_selection_removes_every_listed_key_atomically() {
 #[test]
 fn extrapolation_choice_persists_with_the_item_and_refuses_discrete_values() {
     let mut s = session();
-    s.execute(
-        "keyframes.set_extrapolation",
-        json!({"item":2,"path":"opacity","component":null,"before":"hold","after":"linear"}),
-    )
+    s.apply(Command::SetKeyframeExtrapolation {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        before: Extrapolation::Hold,
+        after: Extrapolation::Linear,
+    })
     .unwrap();
     let channel = item(&s, ItemId(2))
         .animations
@@ -376,16 +441,20 @@ fn extrapolation_choice_persists_with_the_item_and_refuses_discrete_values() {
     let decoded = project::decode(&encoded).unwrap();
     assert_eq!(decoded.project, **s.project());
     let bool_path = AnimationPath::new("muted").unwrap();
-    s.execute(
-        "keyframes.set_param",
-        json!({"item":2,"path":"muted","param":Param::new(ParamValue::Bool(true)).unwrap()}),
-    )
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: bool_path.clone(),
+        param: Param::new(ParamValue::Bool(true)).unwrap(),
+    })
     .unwrap();
     assert!(
-        s.execute(
-            "keyframes.set_extrapolation",
-            json!({"item":2,"path":"muted","component":null,"before":"linear","after":"hold"}),
-        )
+        s.apply(Command::SetKeyframeExtrapolation {
+            item: ItemId(2),
+            path: bool_path.clone(),
+            component: None,
+            before: Extrapolation::Linear,
+            after: Extrapolation::Hold,
+        })
         .is_err(),
         "a discrete channel holds outside its keys"
     );
@@ -532,10 +601,11 @@ fn item_from_project(p: &Project) -> &Item {
 fn scale_time_preserves_handles_values_serde_and_clean_undo() {
     let mut s = session();
     let original = s.project().clone();
-    s.execute(
-        "keyframes.scale_time",
-        json!({"item":2,"numerator":2,"denominator":1}),
-    )
+    s.apply(Command::ScaleKeyframeTime {
+        item: ItemId(2),
+        numerator: 2,
+        denominator: 1,
+    })
     .unwrap();
     let scaled = item(&s, ItemId(2));
     for n in 0..200 {
@@ -583,10 +653,10 @@ fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
     let original = s.project().clone();
     for mode in BlendMode::ALL {
         let before = s.project().clone();
-        s.execute(
-            "timeline.set_item_param",
-            json!({"item":2,"patch":{"field":"blendMode","value":mode}}),
-        )
+        s.apply(Command::SetItemField {
+            item: ItemId(2),
+            patch: engine::ItemParamPatch::BlendMode(mode),
+        })
         .unwrap();
         assert_eq!(item(&s, ItemId(2)).blend_mode, mode);
         if s.project() != &before {
@@ -599,14 +669,17 @@ fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
         let bytes = encode(s.project(), false).unwrap();
         assert_eq!(&decode(&bytes).unwrap().project, s.project().as_ref());
     }
-    s.execute(
-        "timeline.set_item_param",
-        json!({"item":2,"patch":{"field":"blendMode","value":"screen"}}),
-    )
+    s.apply(Command::SetItemField {
+        item: ItemId(2),
+        patch: engine::ItemParamPatch::BlendMode(BlendMode::Screen),
+    })
     .unwrap();
     let curved = item(&s, ItemId(2)).clone();
-    s.execute("trim_start", json!({"item":2,"at":frame(120)}))
-        .unwrap();
+    s.apply(Command::TrimStart {
+        item: ItemId(2),
+        at: frame(120),
+    })
+    .unwrap();
     assert_eq!(item(&s, ItemId(2)).blend_mode, BlendMode::Screen);
     for n in [0, 10, 50, 120] {
         near(
@@ -615,10 +688,11 @@ fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
         );
     }
     let trimmed = item(&s, ItemId(2)).clone();
-    s.execute(
-        "keyframes.scale_time",
-        json!({"item":2,"numerator":2,"denominator":1}),
-    )
+    s.apply(Command::ScaleKeyframeTime {
+        item: ItemId(2),
+        numerator: 2,
+        denominator: 1,
+    })
     .unwrap();
     assert_eq!(item(&s, ItemId(2)).blend_mode, BlendMode::Screen);
     for n in [0, 10, 50, 120] {
@@ -630,23 +704,35 @@ fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
     let before = s.project().clone();
     let history = s.history_len();
     for patch in [
-        json!({"field":"opacity","value":-0.01}),
-        json!({"field":"opacity","value":1.01}),
-        json!({"field":"blendMode","value":"unknown"}),
+        engine::ItemParamPatch::Opacity(-0.01),
+        engine::ItemParamPatch::Opacity(1.01),
     ] {
         assert!(
-            s.execute("timeline.set_item_param", json!({"item":2,"patch":patch}))
-                .is_err()
+            s.apply(Command::SetItemField {
+                item: ItemId(2),
+                patch
+            })
+            .is_err()
         );
         assert_eq!(s.project(), &before);
         assert_eq!(s.history_len(), history);
     }
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "timeline.set_item_param",
+            json!({"item":2,"patch":{"field":"blendMode","value":"unknown"}})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
     for opacity in [0., 0.5, 1.] {
         let before = s.project().clone();
-        s.execute(
-            "timeline.set_item_param",
-            json!({"item":2,"patch":{"field":"opacity","value":opacity}}),
-        )
+        s.apply(Command::SetItemField {
+            item: ItemId(2),
+            patch: engine::ItemParamPatch::Opacity(opacity),
+        })
         .unwrap();
         near(value(&item(&s, ItemId(2)).animations, Tick::ZERO), opacity);
         assert_eq!(
@@ -671,10 +757,10 @@ fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
     })
     .unwrap();
     assert!(
-        s.execute(
-            "timeline.set_item_param",
-            json!({"item":2,"patch":{"field":"opacity","value":0.5}})
-        )
+        s.apply(Command::SetItemField {
+            item: ItemId(2),
+            patch: engine::ItemParamPatch::Opacity(0.5)
+        })
         .is_err()
     );
     s.undo().unwrap();
@@ -685,19 +771,51 @@ fn invalid_key_edits_and_locked_tracks_are_wholly_atomic() {
     let mut s = session();
     let original = s.project().clone();
     for command in [
-        json!({"command":"keyframes.retime","params":{"item":2,"path":"opacity","component":null,"from":0,"to":frame(120)}}),
-        json!({"command":"keyframes.set_handle","params":{"item":2,"path":"opacity","component":null,"time":0,"side":"in","handle":{"dt":1,"dv":0.0},"tangent":"broken"}}),
-        json!({"command":"keyframes.scale_time","params":{"item":2,"numerator":1,"denominator":0}}),
-        json!({"command":"keyframes.add","params":{"item":999,"path":"opacity","component":null,"key":key(30,0.3)}}),
-        json!({"command":"keyframes.add","params":{"item":2,"path":"unknown","component":null,"key":key(30,0.3)}}),
+        Command::RetimeKeyframe {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            from: Tick(0),
+            to: frame(120),
+        },
+        Command::SetKeyframeHandle {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick(0),
+            side: HandleSide::In,
+            handle: Some(CurveHandle {
+                dt: Tick(1),
+                dv: 0.0,
+            }),
+            tangent: TangentMode::Broken,
+        },
+        Command::ScaleKeyframeTime {
+            item: ItemId(2),
+            numerator: 1,
+            denominator: 0,
+        },
+        Command::AddKeyframe {
+            item: ItemId(999),
+            path: path(),
+            component: None,
+            key: key(30, 0.3),
+        },
     ] {
-        let c: std::result::Result<Command, _> = serde_json::from_value(command);
-        if let Ok(c) = c {
-            assert!(s.apply(c).is_err());
-        }
+        assert!(s.apply(command).is_err());
         assert_eq!(s.project(), &original);
         assert_eq!(s.history_len(), (0, 0));
     }
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "keyframes.add",
+            json!({"item":2,"path":"unknown","component":null,"key":key(30,0.3)})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &original);
+    assert_eq!(s.history_len(), (0, 0));
     s.apply(Command::SetTrackFlags {
         track: TrackId(2),
         muted: false,
@@ -753,14 +871,22 @@ fn nullable_command_fields_are_still_required_in_json() {
     let mut s = session();
     let before = s.project().clone();
     assert!(
-        s.execute(
+        crate::wire::run(
+            &mut s,
             "keyframes.add",
             json!({"item":2,"path":"opacity","key":key(60,0.5)})
         )
         .is_err()
     );
     assert_eq!(s.project(), &before);
-    assert!(s.execute("keyframes.set_handle",json!({"item":2,"path":"opacity","component":null,"time":0,"side":"out","tangent":"broken"})).is_err());
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "keyframes.set_handle",
+            json!({"item":2,"path":"opacity","component":null,"time":0,"side":"out","tangent":"broken"})
+        )
+        .is_err()
+    );
     assert_eq!(s.project(), &before);
 }
 #[test]
@@ -836,10 +962,11 @@ fn text_background_channels_survive_trim_retime_and_the_file() {
         times(&s, &colour, Some(ColorComponent::B)),
         [frame(90), frame(390)]
     );
-    s.execute(
-        "keyframes.scale_time",
-        json!({"item":2,"numerator":2,"denominator":1}),
-    )
+    s.apply(Command::ScaleKeyframeTime {
+        item: ItemId(2),
+        numerator: 2,
+        denominator: 1,
+    })
     .unwrap();
     assert_eq!(times(&s, &offset, None), [frame(180), frame(780)]);
     let bytes = encode(s.project(), true).unwrap();

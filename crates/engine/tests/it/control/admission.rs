@@ -1105,7 +1105,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                 .unwrap();
                 autosave.save_as(root.path().join("saved.vibecut")).unwrap();
                 autosave.flush().unwrap();
-                autosave.execute(spec.id, params).unwrap();
+                autosave.apply(typed).unwrap();
                 autosave.flush().unwrap();
                 exercised.insert(spec.id);
                 continue;
@@ -1630,7 +1630,8 @@ fn strict_frame_parser_refuses_duplicate_truncated_hostile_and_unsafe_numbers() 
     let mut s = session();
     let rev = s.revision();
     assert!(
-        s.execute(
+        crate::wire::run(
+            &mut s,
             "bookmark.add",
             json!({"start":control::MAX_SAFE_INTEGER+1,"duration":0,"note":"x","color":[0,0,0,0]})
         )
@@ -2839,7 +2840,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
     let before = history.project().clone();
     let revision = history.revision();
     assert!(matches!(
-        history.execute("trim_end", json!({"item":1,"at":20})),
+        crate::wire::run(&mut history, "trim_end", json!({"item":1,"at":20})),
         Err(EditError::InvalidParams)
     ));
     assert_eq!(history.project(), &before);

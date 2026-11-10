@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use engine::{Command, CreatedId, EditError, Move, NewItem, Session, registry};
+use engine::{
+    Command, CreatedId, EditError, ItemParamPatch, Move, NewItem, Placement, Session, TrimEdge,
+    WordId, control::OutputSpan, registry,
+};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use proptest::prelude::*;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::Arc;
 use time::{SourceRange, Tick};
 
@@ -16,6 +19,15 @@ fn content() -> ItemParams {
     ItemParams::Overlay(OverlayParams {
         color: Color([1, 2, 3, 255]),
     })
+}
+fn transform_patch(field: project::TransformField, value: f64) -> ItemParamPatch {
+    match field {
+        project::TransformField::PositionX => ItemParamPatch::PositionX(value),
+        project::TransformField::PositionY => ItemParamPatch::PositionY(value),
+        project::TransformField::ScaleX => ItemParamPatch::ScaleX(value),
+        project::TransformField::ScaleY => ItemParamPatch::ScaleY(value),
+        project::TransformField::Rotate => ItemParamPatch::Rotate(value),
+    }
 }
 fn new_item(start: i64, duration: i64) -> NewItem {
     NewItem {
@@ -114,60 +126,81 @@ fn viewport_transform_text_preview_is_atomic_reversible_and_persistent() {
         .unwrap();
     assert_eq!(selected, ItemId(10));
     s.set_selection([selected].into()).unwrap();
-    let preview = |x: f64, text: &str| {
-        json!({"commands":[
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.positionX","value":x}}},
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.positionY","value":-25.0}}},
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleX","value":0.5}}},
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleY","value":0.75}}},
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.rotate","value":35.0}}},
-            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"text_content","value":text}}}
-        ]})
+    let preview = |x: f64, text: &str| Command::TimelinePreview {
+        commands: vec![
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::PositionX(x),
+            },
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::PositionY(-25.0),
+            },
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::ScaleX(0.5),
+            },
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::ScaleY(0.75),
+            },
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::Rotate(35.0),
+            },
+            Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::TextContent(text.into()),
+            },
+        ],
     };
     for x in [10., 40., -20.] {
-        s.execute(
-            "timeline.preview",
-            preview(x, "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"),
-        )
-        .unwrap();
+        s.apply(preview(x, "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"))
+            .unwrap();
     }
     assert_eq!(project::encode(s.project(), false).unwrap(), initial);
     assert_eq!(s.history_len(), (0, 0));
     let candidate = s.preview_project().unwrap().clone();
     for invalid in [
-        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":999,"patch":{"field":"transform.positionX","value":2.}}}]}),
-        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleX","value":0.}}}]}),
-        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"text_content","value":"tentative"}}},{"command":"undo","params":{}}]}),
+        Command::TimelinePreview {
+            commands: vec![Command::SetItemField {
+                item: ItemId(999),
+                patch: ItemParamPatch::PositionX(2.),
+            }],
+        },
+        Command::TimelinePreview {
+            commands: vec![Command::SetItemField {
+                item: ItemId(10),
+                patch: ItemParamPatch::ScaleX(0.),
+            }],
+        },
+        Command::TimelinePreview {
+            commands: vec![
+                Command::SetItemField {
+                    item: ItemId(10),
+                    patch: ItemParamPatch::TextContent("tentative".into()),
+                },
+                Command::Undo {},
+            ],
+        },
     ] {
-        assert!(s.execute("timeline.preview", invalid).is_err());
+        assert!(s.apply(invalid).is_err());
         assert_eq!(s.preview_project(), Some(&candidate));
         assert_eq!(project::encode(s.project(), false).unwrap(), initial);
     }
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), initial);
     assert_eq!(s.selection(), &[selected].into());
     assert_eq!(s.history_len(), (0, 0));
     // Reversing every edit to its original value produces no history entry.
-    s.execute("timeline.preview", preview(20., "draft"))
+    s.apply(preview(20., "draft")).unwrap();
+    s.apply(Command::TimelinePreview { commands: vec![] })
         .unwrap();
-    s.execute("timeline.preview", json!({"commands":[]}))
-        .unwrap();
-    assert!(
-        !s.execute("timeline.commit_preview", json!({}))
-            .unwrap()
-            .changed
-    );
+    assert!(!s.apply(Command::TimelineCommitPreview {}).unwrap().changed);
     assert_eq!(s.history_len(), (0, 0));
-    s.execute(
-        "timeline.preview",
-        preview(-20., "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"),
-    )
-    .unwrap();
-    assert!(
-        s.execute("timeline.commit_preview", json!({}))
-            .unwrap()
-            .changed
-    );
+    s.apply(preview(-20., "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"))
+        .unwrap();
+    assert!(s.apply(Command::TimelineCommitPreview {}).unwrap().changed);
     assert_eq!(s.history_len(), (1, 0));
     assert!(s.preview_project().is_none());
     let edited = project::encode(s.project(), false).unwrap();
@@ -198,11 +231,7 @@ fn viewport_transform_text_preview_is_atomic_reversible_and_persistent() {
         .locked = true;
     let mut locked = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let before = locked.project().clone();
-    assert!(
-        locked
-            .execute("timeline.preview", preview(25., "refused"))
-            .is_err()
-    );
+    assert!(locked.apply(preview(25., "refused")).is_err());
     assert_eq!(locked.project(), &before);
     assert!(locked.preview_project().is_none());
     assert_eq!(locked.history_len(), (0, 0));
@@ -212,15 +241,18 @@ fn viewport_transform_text_preview_is_atomic_reversible_and_persistent() {
 fn timeline_preview_isolated_replacement_commit_discard_and_history() {
     let mut s = session();
     let bytes = project::encode(s.project(), false).unwrap();
-    let preview = |delta| {
-        json!({"commands":[{"command":"timeline.move_items",
-        "params":{"items":[10,11],"delta":delta,"placement":{"mode":"track","track":2}}}]})
+    let preview = |delta| Command::TimelinePreview {
+        commands: vec![Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(11)],
+            delta: Tick(delta),
+            placement: Some(Placement::Track { track: TrackId(2) }),
+        }],
     };
-    s.execute("timeline.preview", preview(20)).unwrap();
+    s.apply(preview(20)).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
     assert_eq!(s.history_len(), (0, 0));
     assert!(s.take_change().is_none());
-    s.execute("timeline.preview", preview(5)).unwrap();
+    s.apply(preview(5)).unwrap();
     let candidate = s.preview_project().unwrap().clone();
     assert_eq!(
         candidate
@@ -235,15 +267,15 @@ fn timeline_preview_isolated_replacement_commit_discard_and_history() {
             .start,
         Tick(5)
     );
-    assert!(s.execute("timeline.preview", preview(-1)).is_err());
+    assert!(s.apply(preview(-1)).is_err());
     assert_eq!(s.preview_project(), Some(&candidate));
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
     assert_eq!(s.history_len(), (0, 0));
     assert!(s.preview_project().is_none());
     assert!(s.take_change().is_none());
-    s.execute("timeline.preview", preview(5)).unwrap();
-    s.execute("timeline.commit_preview", json!({})).unwrap();
+    s.apply(preview(5)).unwrap();
+    s.apply(Command::TimelineCommitPreview {}).unwrap();
     assert_eq!(s.history_len(), (1, 0));
     assert_eq!(s.project(), &candidate);
     let committed = project::encode(s.project(), false).unwrap();
@@ -270,60 +302,91 @@ fn timeline_preview_isolated_replacement_commit_discard_and_history() {
 fn timeline_groups_refuse_hostile_inputs_atomically() {
     let mut s = session();
     let before = s.project().clone();
-    for (command, params) in [
-        ("timeline.move_items", json!({"items":[],"delta":1})),
-        ("timeline.move_items", json!({"items":[10,10],"delta":1})),
-        ("timeline.move_items", json!({"items":[10,999],"delta":1})),
-        ("timeline.move_items", json!({"items":[10],"delta":-1})),
-        (
-            "timeline.move_items",
-            json!({"items":[10],"delta":-1,"placement":{"mode":"above","track":0}}),
-        ),
-        ("timeline.move_items", json!({"items":[10],"delta":30})),
-        (
-            "timeline.move_items",
-            json!({"items":[10],"delta":1,"placement":{"mode":"track","track":999}}),
-        ),
-        ("timeline.trim", json!({"items":[],"edge":"end","delta":1})),
-        (
-            "timeline.trim",
-            json!({"items":[10,10],"edge":"end","delta":1}),
-        ),
-        (
-            "timeline.trim",
-            json!({"items":[10,999],"edge":"end","delta":-1}),
-        ),
-        (
-            "timeline.trim",
-            json!({"items":[10,11],"edge":"start","delta":40}),
-        ),
-        (
-            "timeline.trim",
-            json!({"items":[10,11],"edge":"end","delta":21}),
-        ),
-        (
-            "timeline.trim",
-            json!({"items":[10],"edge":"invalid","delta":1}),
-        ),
-        (
-            "timeline.preview",
-            json!({"commands":[{"command":"undo","params":{}}]}),
-        ),
-        (
-            "timeline.preview",
-            json!({"commands":[{"command":"timeline.commit_preview","params":{}}]}),
-        ),
+    for command in [
+        Command::TimelineMoveItems {
+            items: vec![],
+            delta: Tick(1),
+            placement: None,
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(10)],
+            delta: Tick(1),
+            placement: None,
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(999)],
+            delta: Tick(1),
+            placement: None,
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10)],
+            delta: Tick(-1),
+            placement: None,
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10)],
+            delta: Tick(-1),
+            placement: Some(Placement::Above { track: TrackId(0) }),
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10)],
+            delta: Tick(30),
+            placement: None,
+        },
+        Command::TimelineMoveItems {
+            items: vec![ItemId(10)],
+            delta: Tick(1),
+            placement: Some(Placement::Track {
+                track: TrackId(999),
+            }),
+        },
+        Command::TimelineTrim {
+            items: vec![],
+            edge: TrimEdge::End,
+            delta: Tick(1),
+        },
+        Command::TimelineTrim {
+            items: vec![ItemId(10), ItemId(10)],
+            edge: TrimEdge::End,
+            delta: Tick(1),
+        },
+        Command::TimelineTrim {
+            items: vec![ItemId(10), ItemId(999)],
+            edge: TrimEdge::End,
+            delta: Tick(-1),
+        },
+        Command::TimelineTrim {
+            items: vec![ItemId(10), ItemId(11)],
+            edge: TrimEdge::Start,
+            delta: Tick(40),
+        },
+        Command::TimelineTrim {
+            items: vec![ItemId(10), ItemId(11)],
+            edge: TrimEdge::End,
+            delta: Tick(21),
+        },
+        Command::TimelinePreview {
+            commands: vec![Command::Undo {}],
+        },
+        Command::TimelinePreview {
+            commands: vec![Command::TimelineCommitPreview {}],
+        },
     ] {
-        assert!(
-            s.execute(command, params.clone()).is_err(),
-            "{command}: {params}"
-        );
+        assert!(s.apply(command.clone()).is_err(), "{command:?}");
         assert!(Arc::ptr_eq(s.project(), &before));
         assert_eq!(s.history_len(), (0, 0));
         assert!(!s.gesture_active());
     }
-    assert!(s.execute("timeline.commit_preview", json!({})).is_err());
-    assert!(s.execute("timeline.discard_preview", json!({})).is_err());
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "timeline.trim",
+            json!({"items":[10],"edge":"invalid","delta":1})
+        )
+        .is_err()
+    );
+    assert!(s.apply(Command::TimelineCommitPreview {}).is_err());
+    assert!(s.apply(Command::TimelineDiscardPreview {}).is_err());
     assert!(matches!(
         s.apply(Command::TimelineMoveItems {
             items: vec![ItemId(10); 100_001],
@@ -340,18 +403,26 @@ fn timeline_groups_refuse_hostile_inputs_atomically() {
         })
         .is_err()
     );
-    s.execute("track.set_locked", json!({"track":1,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
     let locked = s.project().clone();
     assert!(
-        s.execute("timeline.move_items", json!({"items":[10],"delta":1}))
-            .is_err()
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(10)],
+            delta: Tick(1),
+            placement: None
+        })
+        .is_err()
     );
     assert!(
-        s.execute(
-            "timeline.trim",
-            json!({"items":[10],"edge":"end","delta":-1})
-        )
+        s.apply(Command::TimelineTrim {
+            items: vec![ItemId(10)],
+            edge: TrimEdge::End,
+            delta: Tick(-1)
+        })
         .is_err()
     );
     assert_eq!(s.project(), &locked);
@@ -360,17 +431,24 @@ fn timeline_groups_refuse_hostile_inputs_atomically() {
 #[test]
 fn timeline_preview_reversal_preserves_redo_and_retires_created_tracks() {
     let mut s = session();
-    s.execute("timeline.move_items", json!({"items":[10,11],"delta":2}))
-        .unwrap();
+    s.apply(Command::TimelineMoveItems {
+        items: vec![ItemId(10), ItemId(11)],
+        delta: Tick(2),
+        placement: None,
+    })
+    .unwrap();
     s.undo().unwrap();
     let original = s.project().clone();
     let history = s.history_len();
     s.take_change();
-    let preview = |delta| {
-        json!({"commands":[{"command":"timeline.move_items",
-        "params":{"items":[10,11],"delta":delta}}]})
+    let preview = |delta| Command::TimelinePreview {
+        commands: vec![Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(11)],
+            delta: Tick(delta),
+            placement: None,
+        }],
     };
-    s.execute("timeline.preview", preview(4)).unwrap();
+    s.apply(preview(4)).unwrap();
     assert!(matches!(s.saved(), Err(EditError::TransactionActive)));
     assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
     assert!(matches!(
@@ -378,38 +456,40 @@ fn timeline_preview_reversal_preserves_redo_and_retires_created_tracks() {
         Err(EditError::TransactionActive)
     ));
     assert!(s.set_selection([ItemId(10)].into()).is_err());
-    s.execute("timeline.preview", preview(0)).unwrap();
-    assert!(
-        !s.execute("timeline.commit_preview", json!({}))
-            .unwrap()
-            .changed
-    );
+    s.apply(preview(0)).unwrap();
+    assert!(!s.apply(Command::TimelineCommitPreview {}).unwrap().changed);
     assert_eq!(s.project(), &original);
     assert_eq!(s.history_len(), history);
     assert!(s.can_redo());
     assert!(s.take_change().is_none());
-    let new_track = json!({"commands":[{"command":"timeline.move_items","params":{
-        "items":[10,11],"delta":1,"placement":{"mode":"above","track":0}}}]});
-    let retired = s
-        .execute("timeline.preview", new_track.clone())
-        .unwrap()
-        .created;
-    s.execute("timeline.discard_preview", json!({})).unwrap();
-    let fresh = s.execute("timeline.preview", new_track).unwrap().created;
+    let new_track = Command::TimelinePreview {
+        commands: vec![Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(11)],
+            delta: Tick(1),
+            placement: Some(Placement::Above { track: TrackId(0) }),
+        }],
+    };
+    let retired = s.apply(new_track.clone()).unwrap().created;
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
+    let fresh = s.apply(new_track).unwrap().created;
     assert_ne!(retired, fresh);
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(s.project(), &original);
     assert_eq!(s.history_len(), history);
     // An empty pointer gesture is promoted to a replacement preview and discards cleanly.
     s.begin_gesture().unwrap();
-    s.execute("timeline.preview", preview(1)).unwrap();
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(preview(1)).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(s.project(), &original);
     // A gesture that already staged an edit refuses: a replacement would drop it.
     s.begin_gesture().unwrap();
-    s.execute("timeline.move_items", json!({"items":[10,11],"delta":1}))
-        .unwrap();
-    assert!(s.execute("timeline.preview", preview(1)).is_err());
+    s.apply(Command::TimelineMoveItems {
+        items: vec![ItemId(10), ItemId(11)],
+        delta: Tick(1),
+        placement: None,
+    })
+    .unwrap();
+    assert!(s.apply(preview(1)).is_err());
     s.cancel_gesture().unwrap();
     assert_eq!(s.project(), &original);
 }
@@ -428,11 +508,11 @@ fn timeline_preview_wire_commit_validates_candidate_and_retains_failed_preview()
         })
         .unwrap();
         let candidate = s.preview_project().unwrap().clone();
-        assert!(s.execute(commit, json!({})).is_err());
+        assert!(crate::wire::run(&mut s, commit, json!({})).is_err());
         assert_eq!(s.project(), &before);
         assert_eq!(s.preview_project(), Some(&candidate));
         assert_eq!(s.history_len(), (0, 0));
-        s.execute("timeline.discard_preview", json!({})).unwrap();
+        s.apply(Command::TimelineDiscardPreview {}).unwrap();
         assert_eq!(s.project(), &before);
     }
 }
@@ -440,16 +520,17 @@ fn timeline_preview_wire_commit_validates_candidate_and_retains_failed_preview()
 #[test]
 fn timeline_group_new_track_and_main_origin_keep_common_delta() {
     for placement in [
-        json!({"mode":"above","track":0}),
-        json!({"mode":"below","track":1}),
+        Placement::Above { track: TrackId(0) },
+        Placement::Below { track: TrackId(1) },
     ] {
         let mut s = session();
         let before = s.project().clone();
         let outcome = s
-            .execute(
-                "timeline.move_items",
-                json!({"items":[10,11],"delta":5,"placement":placement}),
-            )
+            .apply(Command::TimelineMoveItems {
+                items: vec![ItemId(10), ItemId(11)],
+                delta: Tick(5),
+                placement: Some(placement),
+            })
             .unwrap();
         assert_eq!(outcome.created.len(), 1);
         assert_eq!(get(&s, 11).start.0 - get(&s, 10).start.0, 60);
@@ -458,11 +539,11 @@ fn timeline_group_new_track_and_main_origin_keep_common_delta() {
         assert_eq!(s.project(), &before);
         s.redo().unwrap();
         assert_eq!(s.project(), &candidate);
-        s.execute(
-            "timeline.move_items",
-            json!({"items":[10,11],"delta":50,
-        "placement":{"mode":"track","track":0}}),
-        )
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(11)],
+            delta: Tick(50),
+            placement: Some(Placement::Track { track: TrackId(0) }),
+        })
         .unwrap();
         assert_eq!(get(&s, 10).start, Tick(0));
         assert_eq!(get(&s, 11).start, Tick(60));
@@ -476,10 +557,17 @@ proptest! {
         delta in 0i64..1000, resize in 0i64..20, start_edge in any::<bool>()
     ) {
         let mut s = session();
-        s.execute("timeline.move_items", json!({"items":[10,11],"delta":delta})).unwrap();
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(10), ItemId(11)],
+            delta: Tick(delta),
+            placement: None,
+        }).unwrap();
         prop_assert_eq!(get(&s,11).start.0-get(&s,10).start.0,60);
-        s.execute("timeline.trim", json!({"items":[10,11],
-            "edge":if start_edge {"start"} else {"end"},"delta":if start_edge {resize} else {-resize}})).unwrap();
+        s.apply(Command::TimelineTrim {
+            items: vec![ItemId(10), ItemId(11)],
+            edge: if start_edge { TrimEdge::Start } else { TrimEdge::End },
+            delta: Tick(if start_edge { resize } else { -resize }),
+        }).unwrap();
         prop_assert_eq!(get(&s,11).start.0-get(&s,10).start.0,60);
         prop_assert_eq!(get(&s,10).duration().unwrap(), Tick(40-resize));
         prop_assert_eq!(get(&s,11).duration().unwrap(), Tick(40-resize));
@@ -497,19 +585,19 @@ fn transform_command_bounds_atomicity_undo_and_persistence() {
         for invalid in [min - 0.01, max + 0.01] {
             assert!(
                 session
-                    .execute(
-                        "timeline.set_item_param",
-                        json!({"item":10,"patch":{"field":field.path(),"value":invalid}})
-                    )
+                    .apply(Command::SetItemField {
+                        item: ItemId(10),
+                        patch: transform_patch(field, invalid),
+                    })
                     .is_err()
             );
             assert_eq!(session.project(), &before);
         }
         session
-            .execute(
-                "timeline.set_item_param",
-                json!({"item":10,"patch":{"field":field.path(),"value":max}}),
-            )
+            .apply(Command::SetItemField {
+                item: ItemId(10),
+                patch: transform_patch(field, max),
+            })
             .unwrap();
         assert_eq!(
             field
@@ -533,7 +621,9 @@ fn transform_command_bounds_atomicity_undo_and_persistence() {
         );
     }
     session
-        .execute("project.set_background", json!({"color":[12,34,56,78]}))
+        .apply(Command::SetBackground {
+            color: Color([12, 34, 56, 78]),
+        })
         .unwrap();
     assert_eq!(
         session.project().data().canvas.background,
@@ -588,10 +678,10 @@ fn crop_patch_is_validated_undoable_persisted_and_survives_trim_and_retime() {
         width: 0.5,
         height: 0.5,
     };
-    s.execute(
-        "timeline.set_item_param",
-        json!({"item":20,"patch":{"field":"crop","value":{"x":0.25,"y":0.25,"width":0.5,"height":0.5}}}),
-    )
+    s.apply(Command::SetItemField {
+        item: ItemId(20),
+        patch: ItemParamPatch::Crop(Some(centred)),
+    })
     .unwrap();
     assert_eq!(crop(&s), Some(centred));
     assert_eq!(s.history_len(), (1, 0));
@@ -660,20 +750,29 @@ fn crop_patch_is_validated_undoable_persisted_and_survives_trim_and_retime() {
         );
         assert_eq!(s.project(), &before);
     }
-    s.execute("trim_start", json!({"item":20,"at":50})).unwrap();
-    assert_eq!(crop(&s), Some(centred));
-    s.execute("trim_end", json!({"item":20,"at":400})).unwrap();
-    assert_eq!(crop(&s), Some(centred));
-    s.execute(
-        "timeline.set_speed",
-        json!({"items":[20],"speed":2.0,"maintain_pitch":true}),
-    )
+    s.apply(Command::TrimStart {
+        item: ItemId(20),
+        at: Tick(50),
+    })
     .unwrap();
     assert_eq!(crop(&s), Some(centred));
-    s.execute(
-        "timeline.set_item_param",
-        json!({"item":20,"patch":{"field":"crop","value":null}}),
-    )
+    s.apply(Command::TrimEnd {
+        item: ItemId(20),
+        at: Tick(400),
+    })
+    .unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    s.apply(Command::SetSpeed {
+        items: vec![ItemId(20)],
+        speed: time::Speed::from_f64(2.0).unwrap(),
+        maintain_pitch: true,
+    })
+    .unwrap();
+    assert_eq!(crop(&s), Some(centred));
+    s.apply(Command::SetItemField {
+        item: ItemId(20),
+        patch: ItemParamPatch::Crop(None),
+    })
     .unwrap();
     assert_eq!(crop(&s), None);
     let before = s.project().clone();
@@ -709,10 +808,11 @@ fn get_project_id(project: &Project, id: ItemId) -> &Item {
 fn all_commands_share_registry_and_strict_json_dispatch() {
     let mut s = Session::new(Project::empty(ProjectId(0), "".into()).unwrap(), 10).unwrap();
     let r = s
-        .execute(
-            "timeline.add_track",
-            json!({"name":"Tiếng", "kind":"video"}),
-        )
+        .apply(Command::AddTrack {
+            name: "Tiếng".into(),
+            kind: TrackKind::Video,
+            placement: Default::default(),
+        })
         .unwrap();
     assert_eq!(r.created, vec![CreatedId::Track(TrackId(1))]);
     assert_eq!(
@@ -728,20 +828,29 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
         "Tiếng"
     );
     let r = s
-        .execute(
-            "timeline.insert",
-            json!({"placement":{"mode":"track","track":1},"item":new_item(0,10)}),
-        )
+        .apply(Command::InsertItem {
+            placement: Placement::Track { track: TrackId(1) },
+            item: new_item(0, 10),
+        })
         .unwrap();
     assert_eq!(r.created, vec![CreatedId::Item(ItemId(2))]);
-    s.execute("move_item", json!({"item":2,"track":1,"start":10}))
-        .unwrap();
-    s.execute("set_item_param", json!({"item":2,"content":content()}))
-        .unwrap();
-    s.execute(
-        "bookmark.add",
-        json!({"start":1,"duration":0,"note":"ghi chú","color":[0,0,0,255]}),
-    )
+    s.apply(Command::MoveItem {
+        item: ItemId(2),
+        track: TrackId(1),
+        start: Tick(10),
+    })
+    .unwrap();
+    s.apply(Command::SetItemParam {
+        item: ItemId(2),
+        content: content(),
+    })
+    .unwrap();
+    s.apply(Command::BookmarkAdd {
+        start: Tick(1),
+        duration: Tick(0),
+        note: "ghi chú".into(),
+        color: Color([0, 0, 0, 255]),
+    })
     .unwrap();
     let asset = SourceAsset::try_from(AssetData {
         ephemeral: false,
@@ -755,24 +864,30 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
         },
     })
     .unwrap();
-    s.execute("import.add_asset", json!({"asset":asset}))
-        .unwrap();
-    s.execute("delete", json!({"items":[2]})).unwrap();
-    s.execute(
-        "track.set_flags",
-        json!({"track":1,"muted":true,"hidden":true,"locked":true}),
-    )
+    s.apply(Command::AddAsset { asset }).unwrap();
+    s.apply(Command::Delete {
+        items: vec![ItemId(2)],
+    })
+    .unwrap();
+    s.apply(Command::SetTrackFlags {
+        track: TrackId(1),
+        muted: true,
+        hidden: true,
+        locked: true,
+    })
     .unwrap();
     assert!(matches!(
         s.apply(Command::RemoveTrack { track: TrackId(1) }),
         Err(EditError::Locked(_))
     ));
-    s.execute(
-        "track.set_flags",
-        json!({"track":1,"muted":false,"hidden":false,"locked":false}),
-    )
+    s.apply(Command::SetTrackFlags {
+        track: TrackId(1),
+        muted: false,
+        hidden: false,
+        locked: false,
+    })
     .unwrap();
-    s.execute("track.remove", json!({"track":1})).unwrap();
+    s.apply(Command::RemoveTrack { track: TrackId(1) }).unwrap();
     for spec in registry() {
         assert!(!spec.label.is_empty());
         assert_eq!(registry().iter().filter(|r| r.id == spec.id).count(), 1);
@@ -780,7 +895,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     }
     let undo = registry().iter().find(|r| r.id == "undo").unwrap();
     assert!(undo.enabled(&s));
-    s.execute("undo", json!({})).unwrap();
+    s.apply(Command::Undo {}).unwrap();
     assert!(
         registry()
             .iter()
@@ -788,7 +903,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
             .unwrap()
             .enabled(&s)
     );
-    s.execute("redo", json!({})).unwrap();
+    s.apply(Command::Redo {}).unwrap();
 }
 #[test]
 fn split_trim_ripple_and_history_use_exact_source_and_output_coordinates() {
@@ -1392,7 +1507,7 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
             json!({"placement":{"mode":"track","track":1},"item":null}),
         ),
     ] {
-        assert!(s.execute(id, params).is_err(), "{id}");
+        assert!(crate::wire::run(&mut s, id, params).is_err(), "{id}");
         assert!(Arc::ptr_eq(&before, s.project()));
         assert_eq!(s.history_len(), (0, 0));
     }
@@ -1400,7 +1515,10 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     for _ in 0..40 {
         nested = json!([nested]);
     }
-    assert!(matches!(s.execute("batch", nested), Err(EditError::Limit)));
+    assert!(matches!(
+        crate::wire::run(&mut s, "batch", nested),
+        Err(EditError::Limit)
+    ));
     let command = Command::Batch {
         commands: vec![Command::Delete { items: vec![] }; 1025],
     };
@@ -1455,7 +1573,7 @@ proptest! {
     fn arbitrary_hostile_json_never_changes_state_on_error(id in ".{0,20}", text in ".{0,100}", value in any::<i64>()) {
         let mut s=session(); let before=s.project().clone();
         let params=json!({"item":value,"start":text,"track":value});
-        prop_assert!(s.execute(&id,params).is_err());
+        prop_assert!(crate::wire::run(&mut s, &id, params).is_err());
         prop_assert!(Arc::ptr_eq(&before,s.project()));
     }
 }
@@ -1670,7 +1788,7 @@ fn noops_preserve_redo_and_refusals_preserve_merge_state() {
     assert!(!s.apply(Command::Delete { items: vec![] }).unwrap().changed);
     s.apply_merged(drag(10), Some("gesture")).unwrap();
     assert_eq!(s.history_len(), (2, 0));
-    assert!(s.execute("bad", json!({})).is_err());
+    assert!(crate::wire::run(&mut s, "bad", json!({})).is_err());
     s.apply_merged(drag(20), Some("gesture")).unwrap();
     assert_eq!(s.history_len(), (2, 0));
     s.undo().unwrap();
@@ -1751,7 +1869,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     })
     .unwrap();
     let committed = s.project().clone();
-    s.execute("begin_gesture", json!({})).unwrap();
+    s.apply(Command::BeginGesture {}).unwrap();
     assert!(s.gesture_active());
     assert!(!s.can_undo());
     assert!(matches!(
@@ -1760,8 +1878,12 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     ));
     assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
     for start in 1..10 {
-        s.execute("move_item", json!({"item":10,"track":2,"start":start}))
-            .unwrap();
+        s.apply(Command::MoveItem {
+            item: ItemId(10),
+            track: TrackId(2),
+            start: Tick(start),
+        })
+        .unwrap();
     }
     assert_eq!(s.history_len(), (1, 0));
     assert!(s.take_change().is_none());
@@ -1776,7 +1898,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
         items: vec![ItemId(11)],
     })
     .unwrap();
-    s.execute("cancel_gesture", json!({})).unwrap();
+    s.apply(Command::CancelGesture {}).unwrap();
     assert!(Arc::ptr_eq(&redo_base, s.project()));
     assert!(s.can_redo());
     s.redo().unwrap();
@@ -1796,7 +1918,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     assert_eq!(s.history_len(), (1, 0));
     assert!(s.take_change().is_none());
     let final_preview = s.project().clone();
-    s.execute("commit_gesture", json!({})).unwrap();
+    s.apply(Command::CommitGesture {}).unwrap();
     assert_eq!(s.history_len(), (1, 0));
     assert!(Arc::ptr_eq(&s.take_change().unwrap(), &final_preview));
     s.undo().unwrap();
@@ -2308,11 +2430,22 @@ fn track_output_controls_enforce_kind_capabilities() {
             })
             .unwrap();
         for (command, field, allowed) in [
-            ("track.set_muted", "muted", mute_allowed),
-            ("track.set_hidden", "hidden", hide_allowed),
+            (
+                Command::SetTrackMuted { track, muted: true },
+                "muted",
+                mute_allowed,
+            ),
+            (
+                Command::SetTrackHidden {
+                    track,
+                    hidden: true,
+                },
+                "hidden",
+                hide_allowed,
+            ),
         ] {
             let before = s.project().clone();
-            let result = s.execute(command, json!({"track":track,(field):true}));
+            let result = s.apply(command);
             if allowed {
                 result.unwrap();
                 let value = s
@@ -2363,10 +2496,10 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
             .is_err()
     );
     assert_eq!(s.selection(), &both);
-    s.execute(
-        "timeline.set_item_param_many",
-        json!({"items":[10,11],"patch":{"field":"text_size","value":72}}),
-    )
+    s.apply(Command::SetItemParamMany {
+        items: vec![ItemId(10), ItemId(11)],
+        patch: ItemParamPatch::TextSize(72.0),
+    })
     .unwrap();
     let after = s.project().clone();
     assert_eq!(s.history_len(), (1, 0));
@@ -2713,10 +2846,10 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
     .unwrap();
     for (at, duration) in [(50, 10), (100, 20), (5, 4)] {
         let outcome = s
-            .execute(
-                "timeline.insert",
-                json!({"placement":{"mode":"auto"},"item":new_item(at,duration)}),
-            )
+            .apply(Command::InsertItem {
+                placement: Placement::Auto,
+                item: new_item(at, duration),
+            })
             .unwrap();
         assert_eq!(outcome.placements.len(), 1);
         assert_eq!(outcome.placements[0].track, TrackId(0));
@@ -3057,9 +3190,9 @@ fn imported_asset_is_one_undo_step_and_restores_the_exact_record() {
     })
     .unwrap();
     assert_eq!(s.project().data().assets, vec![asset.clone()]);
-    s.execute("undo", json!({})).unwrap();
+    s.apply(Command::Undo {}).unwrap();
     assert!(s.project().data().assets.is_empty());
-    s.execute("redo", json!({})).unwrap();
+    s.apply(Command::Redo {}).unwrap();
     assert_eq!(s.project().data().assets, vec![asset]);
 }
 
@@ -3126,15 +3259,14 @@ fn import_policy_ratchets_exact_rates_and_refuses_invalid_metadata_atomically() 
         data.canvas.fps = initial;
         let before = Project::new(data).unwrap();
         let mut s = Session::new(before.clone(), 10).unwrap();
-        s.execute(
-            "import.add_asset",
-            json!({"asset":policy_asset(1,format,incoming)}),
-        )
+        s.apply(Command::AddAsset {
+            asset: policy_asset(1, format, incoming),
+        })
         .unwrap();
         assert_eq!(s.project().data().canvas.fps, expected);
-        s.execute("undo", json!({})).unwrap();
+        s.apply(Command::Undo {}).unwrap();
         assert_eq!(s.project().as_ref(), &before);
-        s.execute("redo", json!({})).unwrap();
+        s.apply(Command::Redo {}).unwrap();
         assert_eq!(s.project().data().canvas.fps, expected);
         let frozen = s.project().clone();
         for rate in [
@@ -3145,10 +3277,7 @@ fn import_policy_ratchets_exact_rates_and_refuses_invalid_metadata_atomically() 
         ] {
             let mut asset = serde_json::to_value(policy_asset(2, "mp4", None)).unwrap();
             asset["probe"]["streams"][0]["frame_rate"] = rate;
-            assert!(
-                s.execute("import.add_asset", json!({"asset":asset}))
-                    .is_err()
-            );
+            assert!(crate::wire::run(&mut s, "import.add_asset", json!({"asset":asset})).is_err());
             assert_eq!(s.project(), &frozen);
         }
         // A valid probe rational without exact canvas ticks is refused, never rounded.
@@ -3206,7 +3335,7 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
         assert_eq!((data.canvas.width, data.canvas.height), even);
         assert_eq!(data.original_canvas_size, Some(size));
         assert_eq!(data.canvas.preset, Some(project::AspectPreset::Original));
-        s.execute("undo", json!({})).unwrap();
+        s.apply(Command::Undo {}).unwrap();
         assert_eq!(s.project().as_ref(), &before);
     }
     for format in ["mp4", "png_pipe"] {
@@ -3244,9 +3373,9 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
         let loaded = project::decode(&project::encode(&after, false).unwrap()).unwrap();
         assert_eq!(&loaded.project, after.as_ref());
         assert!(loaded.project.data().assets.first().unwrap().ephemeral());
-        s.execute("undo", json!({})).unwrap();
+        s.apply(Command::Undo {}).unwrap();
         assert_eq!(s.project().as_ref(), &before);
-        s.execute("redo", json!({})).unwrap();
+        s.apply(Command::Redo {}).unwrap();
         assert_eq!(s.project(), &after);
     }
     let mut data = Project::empty(ProjectId(1), "policy".into())
@@ -3274,9 +3403,9 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
         .is_err()
     );
     assert_eq!(s.project().as_ref(), &before);
-    s.execute("begin_gesture", json!({})).unwrap();
+    s.apply(Command::BeginGesture {}).unwrap();
     s.apply(policy_insert(2)).unwrap();
-    s.execute("cancel_gesture", json!({})).unwrap();
+    s.apply(Command::CancelGesture {}).unwrap();
     assert_eq!(s.project().as_ref(), &before);
     s.apply(Command::Batch {
         commands: vec![policy_insert(2), policy_insert(1)],
@@ -3304,9 +3433,9 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
             .width,
         1280
     );
-    s.execute("undo", json!({})).unwrap();
-    s.execute("undo", json!({})).unwrap();
-    s.execute("undo", json!({})).unwrap();
+    s.apply(Command::Undo {}).unwrap();
+    s.apply(Command::Undo {}).unwrap();
+    s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project().as_ref(), &before);
     // Any existing timeline item prevents canvas initialization.
     s.apply(Command::InsertItem {
@@ -3332,16 +3461,19 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
     let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let initial = s.project().clone();
     let mut steps = 0;
-    let mut commit = |s: &mut Session, command: &str, params: serde_json::Value| {
-        s.execute(command, params).unwrap();
+    let mut commit = |s: &mut Session, command: Command| {
+        s.apply(command).unwrap();
         steps += 1;
         assert_eq!(s.history_len().0, steps);
     };
 
     commit(
         &mut s,
-        "project.set_canvas",
-        json!({"width":1080,"height":1920,"preset":"9:16"}),
+        Command::SetCanvas {
+            width: 1080,
+            height: 1920,
+            preset: Some(project::AspectPreset::Portrait),
+        },
     );
     assert_eq!(
         (
@@ -3357,8 +3489,11 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
 
     commit(
         &mut s,
-        "project.set_canvas",
-        json!({"width":1000,"height":700}),
+        Command::SetCanvas {
+            width: 1000,
+            height: 700,
+            preset: None,
+        },
     );
     assert_eq!(s.project().data().canvas.preset, None);
     assert_eq!(
@@ -3371,8 +3506,11 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
 
     commit(
         &mut s,
-        "project.set_canvas",
-        json!({"width":1081,"height":721}),
+        Command::SetCanvas {
+            width: 1081,
+            height: 721,
+            preset: None,
+        },
     );
     assert_eq!(
         (
@@ -3388,19 +3526,32 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
             height: 722
         }
     );
-    commit(&mut s, "project.set_fps", json!({"num":48,"den":2}));
+    commit(&mut s, Command::SetFps { num: 48, den: 2 });
     assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_24);
-    commit(&mut s, "project.set_fps", json!({"num":24000,"den":1001}));
+    commit(
+        &mut s,
+        Command::SetFps {
+            num: 24000,
+            den: 1001,
+        },
+    );
     assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_23_976);
     assert_eq!(s.project().data().canvas.fps.label(), "23.976");
-    commit(&mut s, "project.set_fps", json!({"num":30000,"den":1001}));
+    commit(
+        &mut s,
+        Command::SetFps {
+            num: 30000,
+            den: 1001,
+        },
+    );
     assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_29_97);
     assert_eq!(s.project().data().canvas.fps.label(), "29.97");
 
     commit(
         &mut s,
-        "project.set_background",
-        json!({"color":[12,34,56,78]}),
+        Command::SetBackground {
+            color: Color([12, 34, 56, 78]),
+        },
     );
     assert_eq!(
         s.project().data().canvas.background,
@@ -3409,8 +3560,11 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
 
     commit(
         &mut s,
-        "project.set_canvas",
-        json!({"width":1080,"height":1920,"preset":"original"}),
+        Command::SetCanvas {
+            width: 1080,
+            height: 1920,
+            preset: Some(project::AspectPreset::Original),
+        },
     );
     assert_eq!(
         s.project().data().canvas.preset,
@@ -3445,10 +3599,11 @@ fn canvas_custom_sizes_commit_the_nearest_even_size() {
         let mut s =
             Session::new(Project::empty(ProjectId(1), "Canvas".into()).unwrap(), 10).unwrap();
         let initial = s.project().clone();
-        s.execute(
-            "project.set_canvas",
-            json!({"width":requested.0,"height":requested.1}),
-        )
+        s.apply(Command::SetCanvas {
+            width: requested.0,
+            height: requested.1,
+            preset: None,
+        })
         .unwrap();
         assert_eq!(
             (
@@ -3483,29 +3638,77 @@ fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
     });
     let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let before = s.project().clone();
-    for params in [
-        json!({"width":0,"height":1080}),
-        json!({"width":1920,"height":0}),
-        json!({"width":-1,"height":1080}),
-        json!({"width":67_108_865,"height":1}),
-        json!({"width":67_108_863,"height":1}),
-        json!({"width":8193,"height":8193}),
-        json!({"width":u32::MAX,"height":1}),
-        json!({"width":1,"height":u32::MAX}),
-        json!({"width":u32::MAX,"height":u32::MAX}),
-        json!({"width":1080,"height":1920,"preset":"16:9"}),
-        json!({"width":1080,"height":1920,"preset":"original"}),
+    for command in [
+        Command::SetCanvas {
+            width: 0,
+            height: 1080,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 1920,
+            height: 0,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 67_108_865,
+            height: 1,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 67_108_863,
+            height: 1,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 8193,
+            height: 8193,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: u32::MAX,
+            height: 1,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 1,
+            height: u32::MAX,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: u32::MAX,
+            height: u32::MAX,
+            preset: None,
+        },
+        Command::SetCanvas {
+            width: 1080,
+            height: 1920,
+            preset: Some(project::AspectPreset::Landscape),
+        },
+        Command::SetCanvas {
+            width: 1080,
+            height: 1920,
+            preset: Some(project::AspectPreset::Original),
+        },
     ] {
-        assert!(s.execute("project.set_canvas", params).is_err());
+        assert!(s.apply(command).is_err());
         assert_eq!(s.project(), &before);
     }
-    for params in [
-        json!({"num":0,"den":1}),
-        json!({"num":30,"den":0}),
-        json!({"num":-30,"den":1}),
-        json!({"num":17,"den":1}),
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "project.set_canvas",
+            json!({"width":-1,"height":1080})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    for command in [
+        Command::SetFps { num: 0, den: 1 },
+        Command::SetFps { num: 30, den: 0 },
+        Command::SetFps { num: -30, den: 1 },
+        Command::SetFps { num: 17, den: 1 },
     ] {
-        assert!(s.execute("project.set_fps", params).is_err());
+        assert!(s.apply(command).is_err());
         assert_eq!(s.project(), &before);
     }
 }
@@ -3526,10 +3729,11 @@ fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
         panic!("track id")
     };
     let outcome = s
-        .execute(
-            "timeline.add_track",
-            json!({"name":"Second","kind":"video"}),
-        )
+        .apply(Command::AddTrack {
+            name: "Second".into(),
+            kind: TrackKind::Video,
+            placement: Default::default(),
+        })
         .unwrap();
     let CreatedId::Track(b) = outcome.created[0] else {
         panic!("track id")
@@ -3538,17 +3742,23 @@ fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
     assert_eq!(s.project().data().scene().timeline.overlays[0].id, b);
 
     let original_main = s.project().data().scene().timeline.main.clone();
-    s.execute(
-        "track.rename",
-        json!({"track":original_main.id,"name":"Renamed main"}),
-    )
+    s.apply(Command::RenameTrack {
+        track: original_main.id,
+        name: "Renamed main".into(),
+    })
     .unwrap();
-    s.execute("track.rename", json!({"track":a,"name":"Rãnh đã đổi"}))
+    s.apply(Command::RenameTrack {
+        track: a,
+        name: "Rãnh đã đổi".into(),
+    })
+    .unwrap();
+    s.apply(Command::ReorderTrack { track: b, index: 1 })
         .unwrap();
-    s.execute("track.reorder", json!({"track":b,"index":1}))
-        .unwrap();
-    s.execute("track.set_locked", json!({"track":a,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: a,
+        locked: true,
+    })
+    .unwrap();
     let changed = s.project().clone();
     let overlays = &changed.data().scene().timeline.overlays;
     assert_eq!(overlays[0].id, a);
@@ -3587,88 +3797,132 @@ fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
 fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
     let mut s = Session::new(Project::empty(ProjectId(32), "Lock".into()).unwrap(), 20).unwrap();
     let outcome = s
-        .execute(
-            "timeline.add_track",
-            json!({"name":"Locked","kind":"video"}),
-        )
+        .apply(Command::AddTrack {
+            name: "Locked".into(),
+            kind: TrackKind::Video,
+            placement: Default::default(),
+        })
         .unwrap();
     let CreatedId::Track(track) = outcome.created[0] else {
         panic!("track id")
     };
     let item = new_item(0, 20);
     let outcome = s
-        .execute(
-            "timeline.insert",
-            json!({"placement":{"mode":"track","track":track},"item":item}),
-        )
+        .apply(Command::InsertItem {
+            placement: Placement::Track { track },
+            item,
+        })
         .unwrap();
     let CreatedId::Item(one) = outcome.created[0] else {
         panic!("item id")
     };
     let outcome = s
-        .execute(
-            "timeline.insert",
-            json!({"placement":{"mode":"track","track":0},"item":new_item(0,20)}),
-        )
+        .apply(Command::InsertItem {
+            placement: Placement::Track { track: TrackId(0) },
+            item: new_item(0, 20),
+        })
         .unwrap();
     let CreatedId::Item(other) = outcome.created[0] else {
         panic!("item id")
     };
-    s.execute("track.set_locked", json!({"track":track,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track,
+        locked: true,
+    })
+    .unwrap();
     let before = s.project().clone();
 
     let edits = [
-        (
-            "timeline.insert",
-            json!({"placement":{"mode":"track","track":track},"item":new_item(30,10)}),
-        ),
-        ("move_item", json!({"item":one,"track":track,"start":5})),
-        ("move_item", json!({"item":one,"track":0,"start":30})),
-        ("move_item", json!({"item":other,"track":track,"start":30})),
-        (
-            "move_items",
-            json!({"moves":[{"item":one,"track":track,"start":5}]}),
-        ),
-        ("split_at", json!({"item":one,"at":5})),
-        ("trim_start", json!({"item":one,"at":2})),
-        ("trim_end", json!({"item":one,"at":10})),
-        ("delete", json!({"items":[one]})),
-        ("ripple_delete", json!({"item":one})),
-        ("track.remove", json!({"track":track})),
-        (
-            "batch",
-            json!({"commands":[{"command":"track.rename","params":{"track":0,"name":"Must roll back"}},{"command":"delete","params":{"items":[one]}}]}),
-        ),
-        (
-            "set_item_param",
-            json!({"item":one,"content":{"kind":"overlay","params":{"color":[1,2,3,255]}}}),
-        ),
+        Command::InsertItem {
+            placement: Placement::Track { track },
+            item: new_item(30, 10),
+        },
+        Command::MoveItem {
+            item: one,
+            track,
+            start: Tick(5),
+        },
+        Command::MoveItem {
+            item: one,
+            track: TrackId(0),
+            start: Tick(30),
+        },
+        Command::MoveItem {
+            item: other,
+            track,
+            start: Tick(30),
+        },
+        Command::MoveItems {
+            moves: vec![Move {
+                item: one,
+                track,
+                start: Tick(5),
+            }],
+        },
+        Command::SplitAt {
+            item: one,
+            at: Tick(5),
+        },
+        Command::TrimStart {
+            item: one,
+            at: Tick(2),
+        },
+        Command::TrimEnd {
+            item: one,
+            at: Tick(10),
+        },
+        Command::Delete { items: vec![one] },
+        Command::RippleDelete { item: one },
+        Command::RemoveTrack { track },
+        Command::Batch {
+            commands: vec![
+                Command::RenameTrack {
+                    track: TrackId(0),
+                    name: "Must roll back".into(),
+                },
+                Command::Delete { items: vec![one] },
+            ],
+        },
+        Command::SetItemParam {
+            item: one,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([1, 2, 3, 255]),
+            }),
+        },
     ];
-    for (id, params) in edits {
+    for command in edits {
         assert!(
             matches!(
-                s.execute(id, params.clone()),
+                s.apply(command.clone()),
                 Err(EditError::Locked(found)) if found == track
             ),
-            "{id} did not refuse a locked track: {:?}",
-            s.execute(id, params)
+            "did not refuse a locked track: {command:?}"
         );
-        assert_eq!(s.project(), &before, "{id} changed a locked project");
+        assert_eq!(s.project(), &before, "changed a locked project");
     }
 
     // Selection, mute and the name remain editable while items are protected.
     s.set_selection([one].into_iter().collect()).unwrap();
     assert_eq!(s.selection().len(), 1);
-    s.execute("track.set_muted", json!({"track":track,"muted":true}))
+    s.apply(Command::SetTrackMuted { track, muted: true })
         .unwrap();
-    s.execute("track.rename", json!({"track":track,"name":"Still locked"}))
-        .unwrap();
+    s.apply(Command::RenameTrack {
+        track,
+        name: "Still locked".into(),
+    })
+    .unwrap();
     assert!(s.project().data().scene().timeline.overlays[0].locked);
-    s.execute("track.set_locked", json!({"track":track,"locked":false}))
-        .unwrap();
-    s.execute("move_item", json!({"item":one,"track":track,"start":5}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track,
+        locked: false,
+    })
+    .unwrap();
+    s.apply(Command::MoveItem {
+        item: one,
+        track,
+        start: Tick(5),
+    })
+    .unwrap();
 }
 
 #[test]
@@ -3689,8 +3943,11 @@ fn bookmark_move_is_one_undo_step_and_refuses_missing_or_negative_targets() {
         panic!("bookmark id")
     };
     let before = s.project().clone();
-    s.execute("bookmark.move", json!({"bookmark":bookmark,"start":40}))
-        .unwrap();
+    s.apply(Command::MoveBookmark {
+        bookmark,
+        start: Tick(40),
+    })
+    .unwrap();
     assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
     assert_eq!(s.history_len().0, 2);
     s.undo().unwrap();
@@ -3698,11 +3955,17 @@ fn bookmark_move_is_one_undo_step_and_refuses_missing_or_negative_targets() {
     s.redo().unwrap();
     assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
     assert!(matches!(
-        s.execute("bookmark.move", json!({"bookmark":bookmark,"start":-1})),
+        s.apply(Command::MoveBookmark {
+            bookmark,
+            start: Tick(-1)
+        }),
         Err(EditError::Invalid("bookmark start"))
     ));
     assert!(matches!(
-        s.execute("bookmark.move", json!({"bookmark":999,"start":0})),
+        s.apply(Command::MoveBookmark {
+            bookmark: project::BookmarkId(999),
+            start: Tick(0)
+        }),
         Err(EditError::Invalid("missing bookmark"))
     ));
     assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
@@ -3717,7 +3980,7 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
 
     // One off-frame tick snaps to the nearest frame and adds a default bookmark.
     let at = Tick(frame.0 * 2 + 1);
-    let outcome = s.execute("bookmark.toggle", json!({"at":at})).unwrap();
+    let outcome = s.apply(Command::ToggleBookmark { at }).unwrap();
     assert!(outcome.changed);
     let CreatedId::Bookmark(bookmark) = *outcome.created.first().unwrap() else {
         panic!("bookmark id")
@@ -3731,7 +3994,7 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
     assert_eq!(s.history_len(), (1, 0));
 
     // The same frame toggles it off; undo and redo restore each side exactly.
-    let outcome = s.execute("bookmark.toggle", json!({"at":at})).unwrap();
+    let outcome = s.apply(Command::ToggleBookmark { at }).unwrap();
     assert!(outcome.changed);
     assert!(outcome.created.is_empty());
     assert!(s.project().data().scene().bookmarks.is_empty());
@@ -3751,7 +4014,9 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
     .into_iter()
     .enumerate()
     {
-        let outcome = s.execute("bookmark.toggle", json!({"at":input})).unwrap();
+        let outcome = s
+            .apply(Command::ToggleBookmark { at: Tick(input) })
+            .unwrap();
         let CreatedId::Bookmark(id) = *outcome.created.first().unwrap() else {
             panic!("bookmark id")
         };
@@ -3790,21 +4055,36 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
     let mut previous = s.project().data().scene().bookmarks[0].clone();
 
     // Every field updates alone, and every update is one undo step.
-    for (index, (params, note, color, duration)) in [
+    for (index, (command, note, color, duration)) in [
         (
-            json!({"bookmark":bookmark,"note":"Intro"}),
+            Command::UpdateBookmark {
+                bookmark,
+                note: Some("Intro".into()),
+                color: None,
+                duration: None,
+            },
             "Intro",
             Color([1, 2, 3, 255]),
             Tick::ZERO,
         ),
         (
-            json!({"bookmark":bookmark,"color":[9,8,7,255]}),
+            Command::UpdateBookmark {
+                bookmark,
+                note: None,
+                color: Some(Color([9, 8, 7, 255])),
+                duration: None,
+            },
             "Intro",
             Color([9, 8, 7, 255]),
             Tick::ZERO,
         ),
         (
-            json!({"bookmark":bookmark,"duration":500}),
+            Command::UpdateBookmark {
+                bookmark,
+                note: None,
+                color: None,
+                duration: Some(Tick(500)),
+            },
             "Intro",
             Color([9, 8, 7, 255]),
             Tick(100),
@@ -3813,7 +4093,7 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
     .into_iter()
     .enumerate()
     {
-        s.execute("bookmark.update", params).unwrap();
+        s.apply(command).unwrap();
         let current = s.project().data().scene().bookmarks[0].clone();
         assert_eq!(current.note.as_str(), note, "row {index}");
         assert_eq!(current.color, color, "row {index}");
@@ -3839,8 +4119,7 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
     // Removal is one undo step and restores the exact bookmark.
     let before_remove = s.project().clone();
     let history = s.history_len();
-    s.execute("bookmark.remove", json!({"bookmark":bookmark}))
-        .unwrap();
+    s.apply(Command::RemoveBookmark { bookmark }).unwrap();
     assert!(s.project().data().scene().bookmarks.is_empty());
     assert_eq!(s.history_len(), (history.0 + 1, 0));
     s.undo().unwrap();
@@ -3863,8 +4142,13 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
     else {
         panic!("bookmark id")
     };
-    s.execute("bookmark.update", json!({"bookmark":tail,"duration":500}))
-        .unwrap();
+    s.apply(Command::UpdateBookmark {
+        bookmark: tail,
+        note: None,
+        color: None,
+        duration: Some(Tick(500)),
+    })
+    .unwrap();
     assert_eq!(s.project().data().scene().bookmarks[0].duration, Tick(40));
 }
 
@@ -3889,73 +4173,96 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
     };
     let before = s.project().clone();
     let history = s.history_len();
-    for (index, (id, params)) in [
-        ("bookmark.toggle", json!({"at":-1})),
-        ("bookmark.update", json!({"bookmark":999,"note":"x"})),
-        (
-            "bookmark.update",
-            json!({"bookmark":bookmark,"duration":-1}),
-        ),
-        ("bookmark.update", json!({"bookmark":bookmark})),
-        (
-            "bookmark.update",
-            json!({"bookmark":bookmark,"note":"Beat"}),
-        ),
-        (
-            "bookmark.update",
-            json!({"bookmark":bookmark,"color":[256,0,0,255]}),
-        ),
-        (
-            "bookmark.update",
-            json!({"bookmark":bookmark,"color":[-1,0,0,255]}),
-        ),
-        (
-            "bookmark.update",
-            json!({"bookmark":bookmark,"color":[0,0,0,1.5]}),
-        ),
-        ("bookmark.remove", json!({"bookmark":999})),
+    for (index, command) in [
+        Command::ToggleBookmark { at: Tick(-1) },
+        Command::UpdateBookmark {
+            bookmark: project::BookmarkId(999),
+            note: Some("x".into()),
+            color: None,
+            duration: None,
+        },
+        Command::UpdateBookmark {
+            bookmark,
+            note: None,
+            color: None,
+            duration: Some(Tick(-1)),
+        },
+        Command::UpdateBookmark {
+            bookmark,
+            note: None,
+            color: None,
+            duration: None,
+        },
+        Command::UpdateBookmark {
+            bookmark,
+            note: Some("Beat".into()),
+            color: None,
+            duration: None,
+        },
+        Command::RemoveBookmark {
+            bookmark: project::BookmarkId(999),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(s.apply(command).is_err(), "row {index} accepted");
+        assert_eq!(s.project(), &before, "row {index} changed the project");
+        assert_eq!(s.history_len(), history, "row {index} added history");
+    }
+    for (index, color) in [
+        [256.0, 0.0, 0.0, 255.0],
+        [-1.0, 0.0, 0.0, 255.0],
+        [0.0, 0.0, 0.0, 1.5],
     ]
     .into_iter()
     .enumerate()
     {
         assert!(
-            s.execute(id, params.clone()).is_err(),
-            "row {index}: {id} accepted {params}"
+            crate::wire::run(
+                &mut s,
+                "bookmark.update",
+                json!({"bookmark":bookmark,"color":color})
+            )
+            .is_err(),
+            "row {index} accepted an out-of-range colour"
         );
-        assert_eq!(
-            s.project(),
-            &before,
-            "row {index}: {id} changed the project"
-        );
-        assert_eq!(s.history_len(), history, "row {index}: {id} added history");
+        assert_eq!(s.project(), &before, "row {index} changed the project");
+        assert_eq!(s.history_len(), history, "row {index} added history");
     }
 
     // The project owner's 1 MiB text limit remains the only note bound.
     let oversized = "n".repeat((1 << 20) + 1);
     assert!(matches!(
-        s.execute(
-            "bookmark.update",
-            json!({"bookmark":bookmark,"note":oversized})
-        ),
+        s.apply(Command::UpdateBookmark {
+            bookmark,
+            note: Some(oversized.into()),
+            color: None,
+            duration: None,
+        }),
         Err(EditError::Project(project::Error::TooLarge("text")))
     ));
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), history);
 
     // A duration beyond the scene end clamps once, then the same request is a no-op.
-    s.execute(
-        "bookmark.update",
-        json!({"bookmark":bookmark,"duration":500}),
-    )
+    s.apply(Command::UpdateBookmark {
+        bookmark,
+        note: None,
+        color: None,
+        duration: Some(Tick(500)),
+    })
     .unwrap();
     assert_eq!(s.project().data().scene().bookmarks[0].duration, Tick(100));
     let changed = s.project().clone();
     let changed_history = s.history_len();
     assert!(matches!(
-        s.execute(
-            "bookmark.update",
-            json!({"bookmark":bookmark,"duration":500})
-        ),
+        s.apply(Command::UpdateBookmark {
+            bookmark,
+            note: None,
+            color: None,
+            duration: Some(Tick(500))
+        }),
         Err(EditError::Invalid("bookmark update"))
     ));
     assert_eq!(s.project(), &changed);
@@ -3963,9 +4270,12 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
 
     // A locked track cannot hide a scene-owned bookmark: scenes have no lock state.
     let frame = s.project().data().canvas.fps.tick_of(1).unwrap();
-    s.execute("track.set_locked", json!({"track":0,"locked":true}))
-        .unwrap();
-    s.execute("bookmark.toggle", json!({"at":frame.0})).unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(0),
+        locked: true,
+    })
+    .unwrap();
+    s.apply(Command::ToggleBookmark { at: frame }).unwrap();
     assert_eq!(s.project().data().scene().bookmarks.len(), 2);
 }
 
@@ -3999,17 +4309,20 @@ fn audio_reorder_is_screen_order_and_main_cannot_move() {
         panic!("track id")
     };
     assert_eq!(s.project().data().scene().timeline.audio[0].id, b);
-    s.execute("track.reorder", json!({"track":a,"index":0}))
+    s.apply(Command::ReorderTrack { track: a, index: 0 })
         .unwrap();
     assert_eq!(s.project().data().scene().timeline.audio[0].id, a);
     assert_eq!(s.project().data().scene().timeline.audio[1].id, b);
     let main = s.project().data().scene().timeline.main.id;
     assert!(matches!(
-        s.execute("track.reorder", json!({"track":main,"index":0})),
+        s.apply(Command::ReorderTrack {
+            track: main,
+            index: 0
+        }),
         Err(EditError::Invalid("main track cannot be moved"))
     ));
     assert!(matches!(
-        s.execute("track.reorder", json!({"track":a,"index":5})),
+        s.apply(Command::ReorderTrack { track: a, index: 5 }),
         Err(EditError::Invalid("track index"))
     ));
     assert!(
@@ -4067,32 +4380,42 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         }],
     });
     let mut session = Session::new(Project::new(data).unwrap(), 100).unwrap();
-    for (command, args) in [
-        (
-            "timeline.set_item_param",
-            json!({"item":20,"patch":{"field":"volume","value":-6.01}}),
-        ),
-        (
-            "timeline.set_item_param",
-            json!({"item":20,"patch":{"field":"muted","value":true}}),
-        ),
-        ("audio.set_master", json!({"volume":-1.25,"muted":true})),
-        (
-            "audio.set_loudness",
-            json!({"scope":"clip","target_lufs":-16.0,"true_peak_db":-2.0}),
-        ),
-        (
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0}),
-        ),
-        (
-            "audio.apply_loudness",
-            json!({"gains":{"key":vec![7; 32],"clip":[[20,3.5]],"master_db":-1.0}}),
-        ),
-        ("audio.clear_loudness", json!({"scope":"clip"})),
+    for command in [
+        Command::SetItemField {
+            item: ItemId(20),
+            patch: ItemParamPatch::AudioGain(-6.01),
+        },
+        Command::SetItemField {
+            item: ItemId(20),
+            patch: ItemParamPatch::AudioMuted(true),
+        },
+        Command::SetMaster {
+            volume: -1.25,
+            muted: true,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Clip,
+            target_lufs: -16.0,
+            true_peak_db: -2.0,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -14.0,
+            true_peak_db: -1.0,
+        },
+        Command::ApplyLoudness {
+            gains: project::LoudnessGains {
+                key: [7; 32],
+                clip: vec![(ItemId(20), 3.5)],
+                master_db: -1.0,
+            },
+        },
+        Command::ClearLoudness {
+            scope: project::LoudnessScope::Clip,
+        },
     ] {
         let before = session.project().clone();
-        session.execute(command, args).unwrap();
+        session.apply(command).unwrap();
         let after = session.project().clone();
         assert_ne!(before, after);
         session.undo().unwrap();
@@ -4107,69 +4430,86 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
     let loudness = &session.project().data().settings.loudness;
     assert!(loudness.clip.is_none() && loudness.master.is_some() && loudness.measured.is_none());
     // Invalid targets and gains refuse atomically.
-    for (command, args) in [
-        (
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-4.0,"true_peak_db":-1.0}),
-        ),
-        (
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-51.0,"true_peak_db":-1.0}),
-        ),
-        (
-            "audio.set_loudness",
-            json!({"scope":"master","target_lufs":-14.0,"true_peak_db":0.5}),
-        ),
-        (
-            "audio.set_loudness",
-            json!({"scope":"clip","target_lufs":-14.0,"true_peak_db":-21.0}),
-        ),
-        (
-            "audio.set_loudness",
-            json!({"scope":"clip","target_lufs":-14.001,"true_peak_db":-1.0}),
-        ),
-        (
-            "audio.apply_loudness",
-            json!({"gains":{"key":vec![0; 32],"clip":[],"master_db":61.0}}),
-        ),
-        (
-            "audio.apply_loudness",
-            json!({"gains":{"key":vec![0; 32],"clip":[[2,0.0],[1,0.0]],"master_db":0.0}}),
-        ),
+    for command in [
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -4.0,
+            true_peak_db: -1.0,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -51.0,
+            true_peak_db: -1.0,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -14.0,
+            true_peak_db: 0.5,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Clip,
+            target_lufs: -14.0,
+            true_peak_db: -21.0,
+        },
+        Command::SetLoudness {
+            scope: project::LoudnessScope::Clip,
+            target_lufs: -14.001,
+            true_peak_db: -1.0,
+        },
+        Command::ApplyLoudness {
+            gains: project::LoudnessGains {
+                key: [0; 32],
+                clip: vec![],
+                master_db: 61.0,
+            },
+        },
+        Command::ApplyLoudness {
+            gains: project::LoudnessGains {
+                key: [0; 32],
+                clip: vec![(ItemId(2), 0.0), (ItemId(1), 0.0)],
+                master_db: 0.0,
+            },
+        },
     ] {
         let before = session.project().clone();
-        assert!(session.execute(command, args).is_err());
+        assert!(session.apply(command).is_err());
         assert_eq!(session.project(), &before);
     }
     for value in [-60.01, 20.01, 0.001] {
         let before = session.project().clone();
         assert!(
             session
-                .execute("audio.set_master", json!({"volume":value,"muted":false}))
+                .apply(Command::SetMaster {
+                    volume: value,
+                    muted: false
+                })
                 .is_err()
         );
         assert!(
             session
-                .execute(
-                    "timeline.set_item_param",
-                    json!({"item":20,"patch":{"field":"volume","value":value}})
-                )
+                .apply(Command::SetItemField {
+                    item: ItemId(20),
+                    patch: ItemParamPatch::AudioGain(value)
+                })
                 .is_err()
         );
         assert_eq!(session.project(), &before);
     }
     for value in [-60.0, 20.0] {
         session
-            .execute("audio.set_master", json!({"volume":value,"muted":false}))
+            .apply(Command::SetMaster {
+                volume: value,
+                muted: false,
+            })
             .unwrap();
     }
     assert!(
-        session
-            .execute(
-                "timeline.set_item_param",
-                json!({"item":20,"patch":{"field":"audio_gain","value":0.0}})
-            )
-            .is_err()
+        crate::wire::run(
+            &mut session,
+            "timeline.set_item_param",
+            json!({"item":20,"patch":{"field":"audio_gain","value":0.0}})
+        )
+        .is_err()
     );
     let mut encoded: serde_json::Value =
         serde_json::from_slice(&project::encode(session.project(), false).unwrap()).unwrap();
@@ -4378,14 +4718,14 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
         "cues": serde_json::to_value(&cues).unwrap(),
     });
     let before = s.project().clone();
-    let outcome = s.execute("captions.import", params.clone()).unwrap();
+    let outcome = crate::wire::run(&mut s, "captions.import", params.clone()).unwrap();
     assert!(outcome.changed);
     assert_eq!(s.project().data().scene().timeline.track_count(), 4);
 
     let mut bad = params;
     bad["cues"][0]["range"]["end"] = json!(0);
     let after = s.project().clone();
-    assert!(s.execute("captions.import", bad).is_err());
+    assert!(crate::wire::run(&mut s, "captions.import", bad).is_err());
     assert_eq!(s.project(), &after);
     assert_ne!(after, before);
 
@@ -4642,7 +4982,7 @@ proptest! {
 fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     let (mut s, track, _) = ripple_fixture(&[40, 40, 40], 20);
     let before = project::encode(s.project(), false).unwrap();
-    s.execute("timeline.set_ripple", json!({"enabled":true}))
+    s.apply(Command::TimelineSetRipple { enabled: true })
         .unwrap();
     let preview = |at| Command::TimelinePreview {
         commands: vec![Command::TrimEnd {
@@ -4666,14 +5006,14 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     );
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
     assert!(matches!(
-        s.execute("timeline.set_ripple", json!({"enabled":false})),
+        s.apply(Command::TimelineSetRipple { enabled: false }),
         Err(EditError::TransactionActive)
     ));
     s.apply_with_ripple(preview(60), true).unwrap();
     assert_eq!(s.preview_project().unwrap().as_ref(), s.project().as_ref());
     s.apply_with_ripple(preview(40), true).unwrap();
     assert!(s.apply_with_ripple(preview(-1), true).is_err());
-    s.execute("timeline.discard_preview", json!({})).unwrap();
+    s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
     assert_eq!(s.history_len(), (0, 0));
     s.apply(Command::Delete {
@@ -4717,15 +5057,11 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
         Err(EditError::Locked(_))
     ));
     assert_eq!(project::encode(s.project(), false).unwrap(), locked);
+    assert!(crate::wire::run(&mut s, "timeline.set_ripple", json!({"enabled":"yes"})).is_err());
     assert!(
-        s.execute("timeline.set_ripple", json!({"enabled":"yes"}))
-            .is_err()
-    );
-    assert!(
-        s.execute(
-            "batch",
-            json!({"commands":[{"command":"timeline.set_ripple","params":{"enabled":false}}]})
-        )
+        s.apply(Command::Batch {
+            commands: vec![Command::TimelineSetRipple { enabled: false }]
+        })
         .is_err()
     );
 }
@@ -4733,7 +5069,7 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
 #[test]
 fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
     let (mut s, track, _) = ripple_fixture(&[10, 10, 10], 20);
-    s.execute("timeline.set_ripple", json!({"enabled":true}))
+    s.apply(Command::TimelineSetRipple { enabled: true })
         .unwrap();
     s.apply(Command::Batch {
         commands: vec![
@@ -4823,34 +5159,55 @@ fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
 
 #[test]
 fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
-    for (id, params, expected) in [
-        ("delete", json!({"items":[10]}), 20),
-        ("ripple_delete", json!({"item":10}), 20),
-        ("trim_end", json!({"item":10,"at":40}), 40),
-        ("trim_start", json!({"item":10,"at":40}), 60),
-        (
-            "timeline.trim",
-            json!({"items":[10],"edge":"end","delta":-20}),
-            40,
-        ),
-        ("move_item", json!({"item":10,"track":2,"start":10}), 50),
-        (
-            "move_items",
-            json!({"moves":[{"item":10,"track":2,"start":10}]}),
-            50,
-        ),
-        ("timeline.move_items", json!({"items":[10],"delta":-10}), 50),
+    for (operation, expected) in [
+        (0, 20),
+        (1, 20),
+        (2, 40),
+        (3, 60),
+        (4, 40),
+        (5, 50),
+        (6, 50),
+        (7, 50),
     ] {
         let (mut s, track, _) = ripple_fixture(&[40, 40], 20);
-        let mut params = params;
-        if let Some(value) = params.get_mut("track") {
-            *value = json!(track);
-        }
-        if let Some(value) = params.pointer_mut("/moves/0/track") {
-            *value = json!(track);
-        }
+        let command = match operation {
+            0 => Command::Delete {
+                items: vec![ItemId(10)],
+            },
+            1 => Command::RippleDelete { item: ItemId(10) },
+            2 => Command::TrimEnd {
+                item: ItemId(10),
+                at: Tick(40),
+            },
+            3 => Command::TrimStart {
+                item: ItemId(10),
+                at: Tick(40),
+            },
+            4 => Command::TimelineTrim {
+                items: vec![ItemId(10)],
+                edge: TrimEdge::End,
+                delta: Tick(-20),
+            },
+            5 => Command::MoveItem {
+                item: ItemId(10),
+                track,
+                start: Tick(10),
+            },
+            6 => Command::MoveItems {
+                moves: vec![Move {
+                    item: ItemId(10),
+                    track,
+                    start: Tick(10),
+                }],
+            },
+            _ => Command::TimelineMoveItems {
+                items: vec![ItemId(10)],
+                delta: Tick(-10),
+                placement: None,
+            },
+        };
         let before = project::encode(s.project(), false).unwrap();
-        s.execute_with_ripple(id, params, true).unwrap();
+        s.apply_with_ripple(command, true).unwrap();
         assert_eq!(
             ripple_layout(&s)
                 .iter()
@@ -4858,14 +5215,17 @@ fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
                 .unwrap()
                 .2,
             Tick(expected),
-            "{id}"
+            "operation {operation}"
         );
         s.apply(Command::Undo {}).unwrap();
         assert_eq!(project::encode(s.project(), false).unwrap(), before);
         assert!(
-            s.execute_with_ripple(
-                "move_item",
-                json!({"item":10,"track":track,"start":i64::MAX}),
+            s.apply_with_ripple(
+                Command::MoveItem {
+                    item: ItemId(10),
+                    track,
+                    start: Tick(i64::MAX)
+                },
                 true
             )
             .is_err()
@@ -4874,13 +5234,18 @@ fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
     }
     let (mut s, _, _) = ripple_fixture(&[], 0);
     assert!(
-        !s.execute_with_ripple("delete", json!({"items":[]}), true)
+        !s.apply_with_ripple(Command::Delete { items: vec![] }, true)
             .unwrap()
             .changed
     );
     let (mut s, _, _) = ripple_fixture(&[1], 0);
-    s.execute_with_ripple("delete", json!({"items":[10]}), true)
-        .unwrap();
+    s.apply_with_ripple(
+        Command::Delete {
+            items: vec![ItemId(10)],
+        },
+        true,
+    )
+    .unwrap();
     assert!(!ripple_layout(&s).iter().any(|row| row.1 == ItemId(10)));
 }
 
@@ -4888,12 +5253,14 @@ fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
 fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
     for (default, explicit) in [(false, true), (true, false)] {
         let (mut s, _, _) = ripple_fixture(&[40, 40], 20);
-        s.execute("timeline.set_ripple", json!({"enabled":default}))
+        s.apply(Command::TimelineSetRipple { enabled: default })
             .unwrap();
-        s.execute(
-            "timeline.edit",
-            json!({"commands":[{"command":"delete","params":{"items":[10]}}],"ripple":explicit}),
-        )
+        s.apply(Command::TimelineEdit {
+            commands: vec![Command::Delete {
+                items: vec![ItemId(10)],
+            }],
+            ripple: explicit,
+        })
         .unwrap();
         assert_eq!(
             ripple_layout(&s)
@@ -4911,7 +5278,7 @@ fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
             json!({"commands":[],"ripple":"yes"}),
             json!({"commands":[{"command":"undo","params":{}}],"ripple":true}),
         ] {
-            assert!(s.execute("timeline.edit", params).is_err());
+            assert!(crate::wire::run(&mut s, "timeline.edit", params).is_err());
             assert_eq!(project::encode(s.project(), false).unwrap(), before);
             assert_eq!(s.history_len(), history);
         }
@@ -4932,7 +5299,7 @@ fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
             if command == "timeline.edit" {
                 params["ripple"] = json!(true);
             }
-            assert!(s.execute(command, params).is_err());
+            assert!(crate::wire::run(&mut s, command, params).is_err());
             assert_eq!(project::encode(s.project(), false).unwrap(), before);
             assert_eq!(s.history_len(), history);
         }
@@ -5050,10 +5417,13 @@ fn remove_pauses_cuts_reviewed_spans_as_one_undo_step() {
     let before = project::encode(s.project(), false).unwrap();
     let revision = s.revision();
     let outcome = s
-        .execute(
-            "timeline.remove_pauses",
-            json!({"spans":[{"start":20,"end":60}],"crossfade_ms":0}),
-        )
+        .apply(Command::RemovePauses {
+            spans: vec![OutputSpan {
+                start: Tick(20),
+                end: Tick(60),
+            }],
+            crossfade_ms: 0,
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(s.history_len(), (1, 0));
@@ -5078,11 +5448,15 @@ fn remove_pauses_cuts_reviewed_spans_as_one_undo_step() {
     // A nested batch child still cuts through the ripple path.
     let mut batched = session();
     batched
-        .execute(
-            "batch",
-            json!({"commands":[{"command":"timeline.remove_pauses",
-                "params":{"spans":[{"start":20,"end":60}],"crossfade_ms":0}}]}),
-        )
+        .apply(Command::Batch {
+            commands: vec![Command::RemovePauses {
+                spans: vec![OutputSpan {
+                    start: Tick(20),
+                    end: Tick(60),
+                }],
+                crossfade_ms: 0,
+            }],
+        })
         .unwrap();
     assert_eq!(project::encode(batched.project(), false).unwrap(), edited);
 }
@@ -5092,37 +5466,40 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
     let mut s = session();
     let before = project::encode(s.project(), false).unwrap();
     let revision = s.revision();
+    let span = |start, end| OutputSpan {
+        start: Tick(start),
+        end: Tick(end),
+    };
     let mut cases = vec![
-        json!([]),
-        json!([{"start":100,"end":60}]),
-        json!([{"start":20,"end":60},{"start":10,"end":15}]),
-        json!([{"start":10,"end":50},{"start":40,"end":60}]),
-        json!([{"start":20,"end":20}]),
-        json!([{"start":-1,"end":10}]),
-        json!([{"start":0,"end":1000}]),
+        vec![],
+        vec![span(100, 60)],
+        vec![span(20, 60), span(10, 15)],
+        vec![span(10, 50), span(40, 60)],
+        vec![span(20, 20)],
+        vec![span(-1, 10)],
+        vec![span(0, 1000)],
     ];
-    let many: Vec<Value> = (0..=engine::control::MAX_PAUSE_SPANS)
-        .map(|index| json!({"start":index as i64 * 2,"end":index as i64 * 2 + 1}))
+    let many: Vec<OutputSpan> = (0..=engine::control::MAX_PAUSE_SPANS)
+        .map(|index| span(index as i64 * 2, index as i64 * 2 + 1))
         .collect();
-    cases.push(Value::Array(many));
+    cases.push(many);
     for spans in cases {
         assert!(
-            s.execute(
-                "timeline.remove_pauses",
-                json!({"spans":spans,"crossfade_ms":0})
-            )
-            .is_err(),
-            "{spans:?}"
+            s.apply(Command::RemovePauses {
+                spans,
+                crossfade_ms: 0
+            })
+            .is_err()
         );
         assert_eq!(project::encode(s.project(), false).unwrap(), before);
         assert_eq!(s.revision(), revision);
         assert_eq!(s.history_len(), (0, 0));
     }
     assert!(
-        s.execute(
-            "timeline.remove_pauses",
-            json!({"spans":[{"start":0,"end":10}],"crossfade_ms":10001})
-        )
+        s.apply(Command::RemovePauses {
+            spans: vec![span(0, 10)],
+            crossfade_ms: 10001
+        })
         .is_err()
     );
 
@@ -5172,20 +5549,20 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
     let before = project::encode(words.project(), false).unwrap();
     assert!(
         words
-            .execute(
-                "timeline.remove_pauses",
-                json!({"spans":[{"start":5,"end":15}],"crossfade_ms":0})
-            )
+            .apply(Command::RemovePauses {
+                spans: vec![span(5, 15)],
+                crossfade_ms: 0
+            })
             .is_err()
     );
     assert_eq!(project::encode(words.project(), false).unwrap(), before);
     // A span beside the word is allowed.
     assert!(
         words
-            .execute(
-                "timeline.remove_pauses",
-                json!({"spans":[{"start":20,"end":30}],"crossfade_ms":0})
-            )
+            .apply(Command::RemovePauses {
+                spans: vec![span(20, 30)],
+                crossfade_ms: 0
+            })
             .is_ok()
     );
 
@@ -5200,10 +5577,10 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
         .unwrap();
     let before = project::encode(locked.project(), false).unwrap();
     assert!(matches!(
-        locked.execute(
-            "timeline.remove_pauses",
-            json!({"spans":[{"start":20,"end":60}],"crossfade_ms":0})
-        ),
+        locked.apply(Command::RemovePauses {
+            spans: vec![span(20, 60)],
+            crossfade_ms: 0
+        }),
         Err(EditError::Locked(_))
     ));
     assert_eq!(project::encode(locked.project(), false).unwrap(), before);
@@ -5212,10 +5589,10 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
     let mut empty = Session::new(Project::empty(ProjectId(0), "".into()).unwrap(), 1).unwrap();
     assert!(
         empty
-            .execute(
-                "timeline.remove_pauses",
-                json!({"spans":[{"start":0,"end":10}],"crossfade_ms":0})
-            )
+            .apply(Command::RemovePauses {
+                spans: vec![span(0, 10)],
+                crossfade_ms: 0
+            })
             .is_err()
     );
 }
@@ -5224,16 +5601,19 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
 fn remove_pauses_keeps_five_clip_audio_video_aligned() {
     let mut s = five_clip_pairs();
     let before = project::encode(s.project(), false).unwrap();
-    let spans = |seconds: &[(i64, i64)]| -> Vec<Value> {
+    let spans = |seconds: &[(i64, i64)]| -> Vec<OutputSpan> {
         seconds
             .iter()
-            .map(|(start, end)| json!({"start":start * time::TICKS_PER_SECOND,"end":end * time::TICKS_PER_SECOND}))
+            .map(|(start, end)| OutputSpan {
+                start: Tick(start * time::TICKS_PER_SECOND),
+                end: Tick(end * time::TICKS_PER_SECOND),
+            })
             .collect()
     };
-    s.execute(
-        "timeline.remove_pauses",
-        json!({"spans":spans(&[(2, 3), (4, 5), (8, 10)]),"crossfade_ms":20}),
-    )
+    s.apply(Command::RemovePauses {
+        spans: spans(&[(2, 3), (4, 5), (8, 10)]),
+        crossfade_ms: 20,
+    })
     .unwrap();
     let data = s.project().data().clone();
     let starts = |kind: TrackKind| -> Vec<Tick> {
@@ -5527,10 +5907,13 @@ fn transcript_delete_cuts_a_word_across_a_clip_boundary_as_one_undo_step() {
     );
     let cue = s.transcript().unwrap().cues[0].clone();
     let outcome = s
-        .execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":cue.item,"cue":cue.id,"word":2}]}),
-        )
+        .apply(Command::TranscriptDeleteRange {
+            word_ids: vec![WordId {
+                item: cue.item,
+                cue: cue.id,
+                word: 2,
+            }],
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(s.history_len(), (1, 0), "one undo step per command");
@@ -5575,11 +5958,15 @@ fn transcript_delete_cuts_a_word_across_a_clip_boundary_as_one_undo_step() {
     // A nested batch child still cuts through the reviewed-span path.
     let mut batched = word_project(false, false);
     batched
-        .execute(
-            "batch",
-            json!({"commands":[{"command":"transcript.delete_range",
-                "params":{"word_ids":[{"item":4,"cue":"câu-1","word":2}]}}]}),
-        )
+        .apply(Command::Batch {
+            commands: vec![Command::TranscriptDeleteRange {
+                word_ids: vec![WordId {
+                    item: ItemId(4),
+                    cue: "câu-1".into(),
+                    word: 2,
+                }],
+            }],
+        })
         .unwrap();
     assert_eq!(project::encode(batched.project(), false).unwrap(), edited);
 }
@@ -5608,10 +5995,13 @@ fn transcript_delete_keeps_repeated_spans_and_trimmed_items_distinct() {
         ],
     });
     let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
-    s.execute(
-        "transcript.delete_range",
-        json!({"word_ids":[{"item":4,"cue":"câu-1","word":1}]}),
-    )
+    s.apply(Command::TranscriptDeleteRange {
+        word_ids: vec![WordId {
+            item: ItemId(4),
+            cue: "câu-1".into(),
+            word: 1,
+        }],
+    })
     .unwrap();
     let mut words: Vec<(u64, usize, i64, i64)> = s
         .transcript()
@@ -5648,36 +6038,41 @@ fn transcript_delete_keeps_repeated_spans_and_trimmed_items_distinct() {
 
 #[test]
 fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
-    let word = |item: u64, cue: &str, index: usize| json!({"item":item,"cue":cue,"word":index});
+    let word = |item: u64, cue: &str, index: usize| WordId {
+        item: ItemId(item),
+        cue: cue.into(),
+        word: index,
+    };
     let cases = vec![
-        json!([]),
-        json!([word(4, "câu-1", 0), word(4, "câu-1", 0)]),
-        json!([word(4, "câu-1", 9)]),
-        json!([word(4, "khác", 0)]),
-        json!([word(77, "câu-1", 0)]),
-        json!([word(4, "câu-1", usize::MAX)]),
-        json!([word(6, "câu-1", 0)]),
+        vec![],
+        vec![word(4, "câu-1", 0), word(4, "câu-1", 0)],
+        vec![word(4, "câu-1", 9)],
+        vec![word(4, "khác", 0)],
+        vec![word(77, "câu-1", 0)],
+        vec![word(4, "câu-1", usize::MAX)],
+        vec![word(6, "câu-1", 0)],
     ];
 
     let mut plain = word_project(false, false);
     let before = project::encode(plain.project(), false).unwrap();
     let revision = plain.revision();
     for word_ids in cases {
-        let params = json!({"word_ids": word_ids});
         assert!(
             plain
-                .execute("transcript.delete_range", params.clone())
+                .apply(Command::TranscriptDeleteRange {
+                    word_ids: word_ids.clone()
+                })
                 .is_err(),
-            "{params}"
+            "{word_ids:?}"
         );
         assert_unchanged(&plain, &before, &revision);
     }
 
-    let many: Vec<Value> = (0..=engine::control::MAX_COLLECTION)
+    let many: Vec<WordId> = (0..=engine::control::MAX_COLLECTION)
         .map(|index| word(4, "câu-1", index))
         .collect();
     assert!(matches!(
-        plain.execute("transcript.delete_range", json!({"word_ids":many})),
+        plain.apply(Command::TranscriptDeleteRange { word_ids: many }),
         Err(EditError::Limit)
     ));
     assert_unchanged(&plain, &before, &revision);
@@ -5687,10 +6082,9 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
     let before = project::encode(protected.project(), false).unwrap();
     let revision = protected.revision();
     assert!(matches!(
-        protected.execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]})
-        ),
+        protected.apply(Command::TranscriptDeleteRange {
+            word_ids: vec![word(4, "câu-1", 0)]
+        }),
         Err(EditError::Protected)
     ));
     assert_unchanged(&protected, &before, &revision);
@@ -5700,10 +6094,9 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
     let before = project::encode(locked.project(), false).unwrap();
     let revision = locked.revision();
     assert!(matches!(
-        locked.execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]})
-        ),
+        locked.apply(Command::TranscriptDeleteRange {
+            word_ids: vec![word(4, "câu-1", 0)]
+        }),
         Err(EditError::Locked(_))
     ));
     assert_unchanged(&locked, &before, &revision);
@@ -5736,10 +6129,13 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
     let before = project::encode(two_scenes.project(), false).unwrap();
     let revision = two_scenes.revision();
     assert!(matches!(
-        two_scenes.execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":90,"cue":"câu-2","word":0}]})
-        ),
+        two_scenes.apply(Command::TranscriptDeleteRange {
+            word_ids: vec![WordId {
+                item: ItemId(90),
+                cue: "câu-2".into(),
+                word: 0
+            }]
+        }),
         Err(EditError::SceneBoundary)
     ));
     assert_unchanged(&two_scenes, &before, &revision);
@@ -5750,10 +6146,13 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
         })
         .unwrap();
     two_scenes
-        .execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":90,"cue":"câu-2","word":0}]}),
-        )
+        .apply(Command::TranscriptDeleteRange {
+            word_ids: vec![WordId {
+                item: ItemId(90),
+                cue: "câu-2".into(),
+                word: 0,
+            }],
+        })
         .unwrap();
 }
 
@@ -5793,10 +6192,13 @@ proptest! {
             )],
         });
         let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
-        s.execute(
-            "transcript.delete_range",
-            json!({"word_ids":[{"item":4,"cue":"câu-1","word":0}]}),
-        ).unwrap();
+        s.apply(Command::TranscriptDeleteRange {
+            word_ids: vec![WordId {
+                item: ItemId(4),
+                cue: "câu-1".into(),
+                word: 0,
+            }],
+        }).unwrap();
         let frame = time::FrameRate::FPS_30.tick_of(1).unwrap();
         for track in s.project().data().scene().timeline.iter() {
             for item in &track.items {
@@ -5830,11 +6232,14 @@ fn transcript_merge_joins_adjacent_cues_as_one_undo_step() {
     let before = project::encode(s.project(), false).unwrap();
     let revision = s.revision();
     // Input order is irrelevant: the selected cues sort by time.
+    let cue_id = |item, cue: &str| engine::CueId {
+        item: ItemId(item),
+        cue: cue.into(),
+    };
     let outcome = s
-        .execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[{"item":4,"cue":"câu-2"},{"item":4,"cue":"câu-1"}]}),
-        )
+        .apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue_id(4, "câu-2"), cue_id(4, "câu-1")],
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(s.history_len(), (1, 0), "one undo step per merge");
@@ -5889,10 +6294,9 @@ fn transcript_merge_joins_adjacent_cues_as_one_undo_step() {
     );
 
     // A run of more than two adjacent cues is one merge.
-    s.execute(
-        "transcript.merge_cues",
-        json!({"cue_ids":[{"item":4,"cue":"câu-3"},{"item":4,"cue":"câu-1"}]}),
-    )
+    s.apply(Command::TranscriptMergeCues {
+        cue_ids: vec![cue_id(4, "câu-3"), cue_id(4, "câu-1")],
+    })
     .unwrap();
     let view = s.transcript().unwrap();
     assert_eq!(view.cues.len(), 1);
@@ -5909,10 +6313,18 @@ fn transcript_merge_joins_adjacent_cues_as_one_undo_step() {
 #[test]
 fn transcript_merge_joins_text_by_language_word_spacing() {
     let mut s = merge_project(false, false);
-    s.execute(
-        "transcript.merge_cues",
-        json!({"cue_ids":[{"item":4,"cue":"câu-2"},{"item":4,"cue":"câu-1"}]}),
-    )
+    s.apply(Command::TranscriptMergeCues {
+        cue_ids: vec![
+            engine::CueId {
+                item: ItemId(4),
+                cue: "câu-2".into(),
+            },
+            engine::CueId {
+                item: ItemId(4),
+                cue: "câu-1".into(),
+            },
+        ],
+    })
     .unwrap();
     // The merged cue carries several scripts; each language keeps its own rule.
     let merged = s
@@ -5942,15 +6354,26 @@ fn transcript_merge_after_a_trim_maps_through_the_retained_source() {
     let mut s = merge_project(false, false);
     let before = project::encode(s.project(), false).unwrap();
     let outcome = s
-        .execute(
-            "batch",
-            json!({"commands":[
-                {"command":"trim_start","params":{"item":4,"at":400}},
-                {"command":"transcript.merge_cues","params":{"cue_ids":[
-                    {"item":4,"cue":"câu-3"},{"item":4,"cue":"câu-2"}
-                ]}}
-            ]}),
-        )
+        .apply(Command::Batch {
+            commands: vec![
+                Command::TrimStart {
+                    item: ItemId(4),
+                    at: Tick(400),
+                },
+                Command::TranscriptMergeCues {
+                    cue_ids: vec![
+                        engine::CueId {
+                            item: ItemId(4),
+                            cue: "câu-3".into(),
+                        },
+                        engine::CueId {
+                            item: ItemId(4),
+                            cue: "câu-2".into(),
+                        },
+                    ],
+                },
+            ],
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(s.history_len(), (1, 0), "the batch is one undo step");
@@ -5982,48 +6405,51 @@ fn transcript_merge_after_a_trim_maps_through_the_retained_source() {
 
 #[test]
 fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_atomically() {
-    let cue = |item: u64, cue: &str| json!({"item":item,"cue":cue});
+    let cue = |item: u64, cue: &str| engine::CueId {
+        item: ItemId(item),
+        cue: cue.into(),
+    };
     let mut plain = merge_project(false, false);
     let before = project::encode(plain.project(), false).unwrap();
     let revision = plain.revision();
-    let mut refused = |cue_ids: Value| {
+    let mut refused = |cue_ids: Vec<engine::CueId>| {
         let error = plain
-            .execute("transcript.merge_cues", json!({"cue_ids": cue_ids}))
+            .apply(Command::TranscriptMergeCues { cue_ids })
             .unwrap_err();
         assert_unchanged(&plain, &before, &revision);
         error
     };
     assert!(matches!(
-        refused(json!([])),
+        refused(vec![]),
         EditError::Invalid("merge cue count")
     ));
     assert!(matches!(
-        refused(json!([cue(4, "câu-1")])),
+        refused(vec![cue(4, "câu-1")]),
         EditError::Invalid("merge cue count")
     ));
     assert!(matches!(
-        refused(json!([cue(4, "câu-1"), cue(4, "câu-1")])),
+        refused(vec![cue(4, "câu-1"), cue(4, "câu-1")]),
         EditError::Invalid("duplicate merge cue")
     ));
     assert!(matches!(
-        refused(json!([cue(4, "câu-1"), cue(4, "khác")])),
+        refused(vec![cue(4, "câu-1"), cue(4, "khác")]),
         EditError::Invalid("merge cue")
     ));
     assert!(matches!(
-        refused(json!([cue(77, "câu-1"), cue(4, "câu-1")])),
+        refused(vec![cue(77, "câu-1"), cue(4, "câu-1")]),
         EditError::NoItem(ItemId(77))
     ));
     assert!(matches!(
-        refused(json!([cue(4, "câu-1"), cue(4, "câu-3")])),
+        refused(vec![cue(4, "câu-1"), cue(4, "câu-3")]),
         EditError::CuesNotAdjacent
     ));
 
     // Over-budget selections refuse before resolving any cue.
-    let many: Vec<Value> = (0..=engine::control::MAX_COLLECTION)
+    let many: Vec<engine::CueId> = (0..=engine::control::MAX_COLLECTION)
         .map(|_| cue(4, "câu-1"))
         .collect();
     assert!(matches!(
-        plain.execute("transcript.merge_cues", json!({"cue_ids":many})),
+        plain.apply(Command::TranscriptMergeCues { cue_ids: many }),
         Err(EditError::Limit)
     ));
     assert_unchanged(&plain, &before, &revision);
@@ -6048,10 +6474,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(cross_track.project(), false).unwrap();
     let revision = cross_track.revision();
     assert!(matches!(
-        cross_track.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-1"), cue(8, "khác-1")]})
-        ),
+        cross_track.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-1"), cue(8, "khác-1")]
+        }),
         Err(EditError::CuesAcrossTracks)
     ));
     assert_unchanged(&cross_track, &bytes, &revision);
@@ -6075,10 +6500,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(cross_item.project(), false).unwrap();
     let revision = cross_item.revision();
     assert!(matches!(
-        cross_item.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-1"), cue(8, "khác-1")]})
-        ),
+        cross_item.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-1"), cue(8, "khác-1")]
+        }),
         Err(EditError::CuesAcrossItems)
     ));
     assert_unchanged(&cross_item, &bytes, &revision);
@@ -6088,10 +6512,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(protected.project(), false).unwrap();
     let revision = protected.revision();
     assert!(matches!(
-        protected.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
-        ),
+        protected.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-1"), cue(4, "câu-2")]
+        }),
         Err(EditError::Protected)
     ));
     assert_unchanged(&protected, &bytes, &revision);
@@ -6101,10 +6524,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(locked.project(), false).unwrap();
     let revision = locked.revision();
     assert!(matches!(
-        locked.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
-        ),
+        locked.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-1"), cue(4, "câu-2")]
+        }),
         Err(EditError::Locked(_))
     ));
     assert_unchanged(&locked, &bytes, &revision);
@@ -6122,10 +6544,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(untimed.project(), false).unwrap();
     let revision = untimed.revision();
     assert!(matches!(
-        untimed.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-2"), cue(4, "câu-3")]})
-        ),
+        untimed.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-2"), cue(4, "câu-3")]
+        }),
         Err(EditError::Invalid("merge cue word timings"))
     ));
     assert_unchanged(&untimed, &bytes, &revision);
@@ -6143,10 +6564,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(mixed.project(), false).unwrap();
     let revision = mixed.revision();
     assert!(matches!(
-        mixed.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
-        ),
+        mixed.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(4, "câu-1"), cue(4, "câu-2")]
+        }),
         Err(EditError::Invalid("merge cue source language"))
     ));
     assert_unchanged(&mixed, &bytes, &revision);
@@ -6179,10 +6599,9 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     let bytes = project::encode(two_scenes.project(), false).unwrap();
     let revision = two_scenes.revision();
     assert!(matches!(
-        two_scenes.execute(
-            "transcript.merge_cues",
-            json!({"cue_ids":[cue(90, "khác-2"), cue(4, "câu-1")]})
-        ),
+        two_scenes.apply(Command::TranscriptMergeCues {
+            cue_ids: vec![cue(90, "khác-2"), cue(4, "câu-1")]
+        }),
         Err(EditError::SceneBoundary)
     ));
     assert_unchanged(&two_scenes, &bytes, &revision);
@@ -6263,10 +6682,10 @@ fn remove_fillers_cuts_selected_candidates_as_one_undo_step() {
     let before = project::encode(s.project(), false).unwrap();
     let revision = s.revision();
     let outcome = s
-        .execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-1:0","filler:4:câu-2:800"],"confirm_edited":false}),
-        )
+        .apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-1:0".into(), "filler:4:câu-2:800".into()],
+            confirm_edited: false,
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(s.history_len(), (1, 0), "one undo step per removal");
@@ -6321,11 +6740,12 @@ fn remove_fillers_cuts_selected_candidates_as_one_undo_step() {
     // A nested batch child still cuts through the ripple path as one step.
     let mut batched = filler_project(false, false);
     batched
-        .execute(
-            "batch",
-            json!({"commands":[{"command":"timeline.remove_fillers",
-                "params":{"ids":["filler:4:câu-1:0","filler:4:câu-2:800"],"confirm_edited":false}}]}),
-        )
+        .apply(Command::Batch {
+            commands: vec![Command::RemoveFillers {
+                ids: vec!["filler:4:câu-1:0".into(), "filler:4:câu-2:800".into()],
+                confirm_edited: false,
+            }],
+        })
         .unwrap();
     assert_eq!(project::encode(batched.project(), false).unwrap(), edited);
 }
@@ -6335,22 +6755,22 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     let mut plain = filler_project(false, false);
     let before = project::encode(plain.project(), false).unwrap();
     let revision = plain.revision();
-    let mut refused = |ids: Value| {
+    let mut refused = |ids: Vec<engine::NfcText>| {
         let error = plain
-            .execute(
-                "timeline.remove_fillers",
-                json!({"ids": ids, "confirm_edited": false}),
-            )
+            .apply(Command::RemoveFillers {
+                ids,
+                confirm_edited: false,
+            })
             .unwrap_err();
         assert_unchanged(&plain, &before, &revision);
         error
     };
     assert!(matches!(
-        refused(json!([])),
+        refused(vec![]),
         EditError::Invalid("empty filler selection")
     ));
     assert!(matches!(
-        refused(json!(["filler:4:câu-1:0", "filler:4:câu-1:0"])),
+        refused(vec!["filler:4:câu-1:0".into(), "filler:4:câu-1:0".into()]),
         EditError::Invalid("duplicate filler")
     ));
     // A start that is not a measured word, an unknown cue, item and shape.
@@ -6363,20 +6783,20 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     ] {
         assert!(
             matches!(
-                refused(json!([id])),
+                refused(vec![id.into()]),
                 EditError::Invalid("stale filler candidate")
             ),
             "{id}"
         );
     }
-    let many: Vec<Value> = (0..=engine::control::MAX_COLLECTION)
-        .map(|_| json!("filler:4:câu-1:0"))
+    let many: Vec<engine::NfcText> = (0..=engine::control::MAX_COLLECTION)
+        .map(|_| "filler:4:câu-1:0".into())
         .collect();
     assert!(matches!(
-        plain.execute(
-            "timeline.remove_fillers",
-            json!({"ids": many, "confirm_edited": false})
-        ),
+        plain.apply(Command::RemoveFillers {
+            ids: many,
+            confirm_edited: false
+        }),
         Err(EditError::Limit)
     ));
     assert_unchanged(&plain, &before, &revision);
@@ -6386,18 +6806,18 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     let before = project::encode(protected.project(), false).unwrap();
     let revision = protected.revision();
     assert!(matches!(
-        protected.execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-2:800"],"confirm_edited":false})
-        ),
+        protected.apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-2:800".into()],
+            confirm_edited: false
+        }),
         Err(EditError::Protected)
     ));
     assert_unchanged(&protected, &before, &revision);
     protected
-        .execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-2:800"],"confirm_edited":true}),
-        )
+        .apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-2:800".into()],
+            confirm_edited: true,
+        })
         .unwrap();
     assert_eq!(protected.history_len(), (1, 0));
     assert_eq!(
@@ -6416,15 +6836,18 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     // A trim removes the word from the visible output, so its old id is stale.
     let mut trimmed = filler_project(false, false);
     trimmed
-        .execute("trim_start", json!({"item":4,"at":150}))
+        .apply(Command::TrimStart {
+            item: ItemId(4),
+            at: Tick(150),
+        })
         .unwrap();
     let bytes = project::encode(trimmed.project(), false).unwrap();
     let revision = trimmed.revision();
     assert!(matches!(
-        trimmed.execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-1:0"],"confirm_edited":false})
-        ),
+        trimmed.apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-1:0".into()],
+            confirm_edited: false
+        }),
         Err(EditError::Invalid("stale filler candidate"))
     ));
     assert_eq!(project::encode(trimmed.project(), false).unwrap(), bytes);
@@ -6433,13 +6856,16 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     // The visible part of the word keeps the same id.
     let mut clipped = filler_project(false, false);
     clipped
-        .execute("trim_start", json!({"item":4,"at":50}))
+        .apply(Command::TrimStart {
+            item: ItemId(4),
+            at: Tick(50),
+        })
         .unwrap();
     clipped
-        .execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-1:0"],"confirm_edited":false}),
-        )
+        .apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-1:0".into()],
+            confirm_edited: false,
+        })
         .unwrap();
 
     // A locked caption track refuses the whole edit.
@@ -6447,10 +6873,10 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
     let before = project::encode(locked.project(), false).unwrap();
     let revision = locked.revision();
     assert!(matches!(
-        locked.execute(
-            "timeline.remove_fillers",
-            json!({"ids":["filler:4:câu-1:0"],"confirm_edited":false})
-        ),
+        locked.apply(Command::RemoveFillers {
+            ids: vec!["filler:4:câu-1:0".into()],
+            confirm_edited: false
+        }),
         Err(EditError::Locked(_))
     ));
     assert_unchanged(&locked, &before, &revision);
@@ -6511,10 +6937,10 @@ fn remove_fillers_keeps_five_clip_audio_video_aligned() {
     let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let before = project::encode(s.project(), false).unwrap();
     let id = format!("filler:40:câu-1:{second}");
-    s.execute(
-        "timeline.remove_fillers",
-        json!({"ids":[id],"confirm_edited":false}),
-    )
+    s.apply(Command::RemoveFillers {
+        ids: vec![id.into()],
+        confirm_edited: false,
+    })
     .unwrap();
     assert_eq!(s.history_len(), (1, 0));
 

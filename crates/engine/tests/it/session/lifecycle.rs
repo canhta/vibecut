@@ -15,14 +15,17 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
     .unwrap();
     assert_eq!(session.project().data().canvas, project::Canvas::default());
     session
-        .execute("project.rename", json!({"name":"Tiếng Việt"}))
+        .apply(Command::RenameProject {
+            name: "Tiếng Việt".into(),
+        })
         .unwrap();
     let snapshot = session.project().clone();
     session
-        .execute(
-            "project.set_view_state",
-            json!({"zoom":2.0,"scroll":10.0,"playhead":50}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 2.0,
+            scroll: 10.0,
+            playhead: Tick(50),
+        })
         .unwrap();
     assert_eq!(session.project(), &snapshot);
     assert_eq!(session.history_len(), (1, 0));
@@ -38,14 +41,41 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
     );
     session.redo().unwrap();
     assert_eq!(session.project(), &snapshot);
-    for params in [
-        json!({"zoom":0,"scroll":0,"playhead":0}),
-        json!({"zoom":1,"scroll":-1,"playhead":0}),
-        json!({"zoom":1,"scroll":0,"playhead":-1}),
-        json!({"zoom":1,"scroll":0,"playhead":0,"extra":1}),
+    for view in [
+        ViewState {
+            zoom: 0.0,
+            scroll: 0.0,
+            playhead: Tick(0),
+        },
+        ViewState {
+            zoom: 1.0,
+            scroll: -1.0,
+            playhead: Tick(0),
+        },
+        ViewState {
+            zoom: 1.0,
+            scroll: 0.0,
+            playhead: Tick(-1),
+        },
     ] {
-        assert!(session.execute("project.set_view_state", params).is_err());
+        assert!(
+            session
+                .apply(Command::SetViewState {
+                    zoom: view.zoom,
+                    scroll: view.scroll,
+                    playhead: view.playhead,
+                })
+                .is_err()
+        );
     }
+    assert!(
+        crate::wire::run(
+            &mut session,
+            "project.set_view_state",
+            json!({"zoom":1,"scroll":0,"playhead":0,"extra":1})
+        )
+        .is_err()
+    );
     assert_eq!(session.history_len(), (1, 0));
     let metadata = session.metadata().clone();
     assert!(
@@ -102,10 +132,11 @@ fn autosave_metadata_survives_save_as_and_reopen() {
         Schedule::default(),
     )
     .unwrap();
-    a.execute(
-        "project.set_view_state",
-        json!({"zoom":2,"scroll":50,"playhead":3}),
-    )
+    a.apply(Command::SetViewState {
+        zoom: 2.0,
+        scroll: 50.0,
+        playhead: Tick(3),
+    })
     .unwrap();
     a.save_as(path.clone()).unwrap();
     a.flush().unwrap();
@@ -113,12 +144,13 @@ fn autosave_metadata_survives_save_as_and_reopen() {
     drop(a);
     let mut a = open();
     assert_eq!(a.session().metadata().view.zoom, 2.0);
-    a.execute(
-        "project.set_view_state",
-        json!({"zoom":4,"scroll":100,"playhead":6}),
-    )
+    a.apply(Command::SetViewState {
+        zoom: 4.0,
+        scroll: 100.0,
+        playhead: Tick(6),
+    })
     .unwrap();
-    a.execute("project.save", json!({})).unwrap();
+    a.apply(Command::SaveProject {}).unwrap();
     a.flush().unwrap();
     drop(a);
     let a = open();
@@ -186,12 +218,13 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
         })
         .unwrap();
     autosave
-        .execute(
-            "project.set_view_state",
-            json!({"zoom":1,"scroll":0,"playhead":frame.0*10}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 1.0,
+            scroll: 0.0,
+            playhead: Tick(frame.0 * 10),
+        })
         .unwrap();
-    autosave.execute("project.thumbnail", json!({})).unwrap();
+    autosave.apply(Command::ThumbnailProject {}).unwrap();
     let thumbnail = autosave.session().metadata().thumbnail.clone();
     assert_ne!(thumbnail, first);
     assert!(

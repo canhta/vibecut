@@ -3,9 +3,7 @@ use engine::{Command, CreatedId, Session};
 use project::{Color, Project, ProjectId, SceneId};
 use time::Tick;
 fn create(s: &mut Session, name: &str) -> SceneId {
-    let result = s
-        .execute("scene.create", serde_json::json!({"name":name}))
-        .unwrap();
+    let result = s.apply(Command::CreateScene { name: name.into() }).unwrap();
     match result.created.first() {
         Some(CreatedId::Scene(id)) => *id,
         _ => panic!("scene identity"),
@@ -25,13 +23,13 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
     assert_eq!(s.project().data().scenes.get(a).unwrap().name.as_str(), "A");
     s.redo().unwrap();
     let initial_history = s.history_len();
-    s.execute(
-        "project.set_view_state",
-        serde_json::json!({"zoom":2.0,"scroll":40.0,"playhead":0}),
-    )
+    s.apply(Command::SetViewState {
+        zoom: 2.0,
+        scroll: 40.0,
+        playhead: Tick(0),
+    })
     .unwrap();
-    s.execute("scene.switch", serde_json::json!({"scene":a}))
-        .unwrap();
+    s.apply(Command::SwitchScene { scene: a }).unwrap();
     assert_eq!(s.history_len(), initial_history);
     assert_eq!(s.metadata().view.zoom, 1.0);
     s.apply(Command::BookmarkAdd {
@@ -57,10 +55,11 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
     })
     .unwrap();
     let a_snapshot = s.project().data().scene().clone();
-    s.execute(
-        "project.set_view_state",
-        serde_json::json!({"zoom":3.0,"scroll":80.0,"playhead":0}),
-    )
+    s.apply(Command::SetViewState {
+        zoom: 3.0,
+        scroll: 80.0,
+        playhead: Tick(0),
+    })
     .unwrap();
     assert_eq!(s.project().duration(), Tick(100));
     s.apply(Command::SwitchScene { scene: b }).unwrap();

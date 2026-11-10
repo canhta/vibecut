@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use engine::{Command, EditError, Session};
+use engine::{Command, EditError, Placement, Session, TrimEdge};
 use project::{
     AnimationPath, Animations, AudioParams, Item, ItemId, ItemParams, Keyframe, Param, ParamValue,
     Project, ProjectId, Retime, Track, TrackId, TrackKind, VideoParams,
@@ -19,13 +19,17 @@ fn timeline_group_trim_refuses_unrepresentable_edges_and_source_exhaustion() {
     s.apply(set_speed(&[1, 2], 0.5, true)).unwrap();
     let before = s.project().clone();
     let history = s.history_len();
-    for (edge, delta) in [("start", 1), ("end", -1), ("end", 2000 * SECOND)] {
+    for (edge, delta) in [
+        (TrimEdge::Start, 1),
+        (TrimEdge::End, -1),
+        (TrimEdge::End, 2000 * SECOND),
+    ] {
         assert!(
-            s.execute(
-                "timeline.trim",
-                serde_json::json!({"items":[1,2],
-            "edge":edge,"delta":delta})
-            )
+            s.apply(Command::TimelineTrim {
+                items: vec![ItemId(1), ItemId(2)],
+                edge,
+                delta: Tick(delta),
+            })
             .is_err()
         );
         assert_eq!(s.project(), &before);
@@ -43,16 +47,34 @@ proptest::proptest! {
         let mut s = session(vec![video(1, 0, range(10*SECOND,30*SECOND))],
             vec![audio(2, 0, range(10*SECOND,30*SECOND))], false);
         s.apply(set_speed(&[1,2], rate, true)).unwrap();
-        s.execute("timeline.move_items", serde_json::json!({"items":[1,2],"delta":movement*SECOND})).unwrap();
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(1), ItemId(2)],
+            delta: Tick(movement * SECOND),
+            placement: None,
+        })
+        .unwrap();
         proptest::prop_assert_eq!(item(&s,1).start,Tick::ZERO);
         proptest::prop_assert_eq!(item(&s,2).start,Tick::ZERO);
         // Put the visual on a secondary track so horizontal movement is unconstrained.
-        s.execute("timeline.move_items", serde_json::json!({"items":[1],"delta":0,
-            "placement":{"mode":"above","track":0}})).unwrap();
-        s.execute("timeline.move_items", serde_json::json!({"items":[1,2],"delta":movement*SECOND})).unwrap();
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(1)],
+            delta: Tick(0),
+            placement: Some(Placement::Above { track: TrackId(0) }),
+        })
+        .unwrap();
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(1), ItemId(2)],
+            delta: Tick(movement * SECOND),
+            placement: None,
+        })
+        .unwrap();
         let delta = if start_edge {trim*FRAME} else {-trim*FRAME};
-        s.execute("timeline.trim", serde_json::json!({"items":[1,2],
-            "edge":if start_edge {"start"} else {"end"},"delta":delta})).unwrap();
+        s.apply(Command::TimelineTrim {
+            items: vec![ItemId(1), ItemId(2)],
+            edge: if start_edge { TrimEdge::Start } else { TrimEdge::End },
+            delta: Tick(delta),
+        })
+        .unwrap();
         let v = item(&s,1);
         let a = item(&s,2);
         proptest::prop_assert_eq!(v.start,a.start);

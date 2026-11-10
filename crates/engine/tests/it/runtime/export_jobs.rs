@@ -566,7 +566,19 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
             let preview =
                 engine::subtitle_file(session.project(), project::TrackId(2), format, &languages())
                     .unwrap();
-            let (id, _) = session.execute_export(&mut r, key(40+n as u8), "export_subtitles", serde_json::json!({"track":2, "format":format, "languages":languages(), "path":path, "overwrite":false})).unwrap();
+            let (id, _) = session
+                .execute_export(
+                    &mut r,
+                    key(40 + n as u8),
+                    engine::Command::ExportSubtitles {
+                        track: project::TrackId(2),
+                        format,
+                        languages: languages(),
+                        path: path.clone(),
+                        overwrite: false,
+                    },
+                )
+                .unwrap();
             let result = complete(&mut r, id);
             assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
             assert_eq!(std::fs::read_to_string(&path).unwrap(), preview.text);

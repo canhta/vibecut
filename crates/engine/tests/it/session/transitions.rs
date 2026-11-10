@@ -1,6 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use engine::{Command, Session};
-use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId};
+use engine::{Command, Move, Session};
+use project::{
+    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TrackId,
+    TransitionAlignment, TransitionId,
+};
 use serde_json::json;
 use time::{SourceRange, Tick};
 
@@ -30,12 +33,23 @@ pub(crate) fn session(with_transition: bool) -> Session {
         .collect();
     let mut s = Session::new(Project::new(d).unwrap(), 100).unwrap();
     if with_transition {
-        add(&mut s, "center", 40).unwrap();
+        add(&mut s, TransitionAlignment::Center, 40).unwrap();
     }
     s
 }
-fn add(s: &mut Session, alignment: &str, duration: i64) -> engine::Result<engine::Outcome> {
-    s.execute("transition.add", json!({"track":1,"from":10,"to":11,"kind":"cross_dissolve","duration":duration,"alignment":alignment}))
+fn add(
+    s: &mut Session,
+    alignment: TransitionAlignment,
+    duration: i64,
+) -> engine::Result<engine::Outcome> {
+    s.apply(Command::AddTransition {
+        track: TrackId(1),
+        from: ItemId(10),
+        to: ItemId(11),
+        kind: "cross_dissolve".into(),
+        duration: Tick(duration),
+        alignment,
+    })
 }
 fn tr(s: &Session) -> &project::Transition {
     &s.project().data().scene().timeline.transitions[0]
@@ -45,27 +59,32 @@ fn tr(s: &Session) -> &project::Transition {
 fn add_move_resize_remove_are_atomic_undoable_and_persisted() {
     let mut s = session(false);
     let before = s.project().clone();
-    let result = add(&mut s, "center", 40).unwrap();
+    let result = add(&mut s, TransitionAlignment::Center, 40).unwrap();
     let id = tr(&s).id.0;
     assert_eq!(
         result.created,
-        vec![engine::CreatedId::Transition(project::TransitionId(id))]
+        vec![engine::CreatedId::Transition(TransitionId(id))]
     );
     let added = s.project().clone();
     s.undo().unwrap();
     assert_eq!(s.project(), &before);
     s.redo().unwrap();
     assert_eq!(s.project(), &added);
-    for (cmd, params) in [
-        ("transition.move", json!({"transition":id,"start":85})),
-        (
-            "transition.set_duration",
-            json!({"transition":id,"duration":50}),
-        ),
-        ("transition.remove", json!({"transition":id})),
+    for command in [
+        Command::MoveTransition {
+            transition: TransitionId(id),
+            start: Tick(85),
+        },
+        Command::SetTransitionDuration {
+            transition: TransitionId(id),
+            duration: Tick(50),
+        },
+        Command::RemoveTransition {
+            transition: TransitionId(id),
+        },
     ] {
         let before = s.project().clone();
-        s.execute(cmd, params).unwrap();
+        s.apply(command).unwrap();
         let after = s.project().clone();
         assert_ne!(before, after);
         assert_eq!(
@@ -85,31 +104,45 @@ fn add_move_resize_remove_are_atomic_undoable_and_persisted() {
 fn spans_clamp_by_alignment_and_refuse_overlap_hostile_and_locked_edits() {
     let mut s = session(true);
     let id = tr(&s).id.0;
-    for (cmd, params) in [
-        (
-            "transition.add",
-            json!({"track":1,"from":10,"to":11,"kind":"cross_dissolve","duration":1,"alignment":"start"}),
-        ),
-        (
-            "transition.add",
-            json!({"track":1,"from":10,"to":12,"kind":"cross_dissolve","duration":10,"alignment":"center"}),
-        ),
-        (
-            "transition.add",
-            json!({"track":1,"from":11,"to":12,"kind":"spin_motion","duration":10,"alignment":"center"}),
-        ),
-        (
-            "transition.set_duration",
-            json!({"transition":id,"duration":0}),
-        ),
-        (
-            "transition.set_duration",
-            json!({"transition":id,"duration":-1}),
-        ),
-        ("transition.remove", json!({"transition":999})),
+    for command in [
+        Command::AddTransition {
+            track: TrackId(1),
+            from: ItemId(10),
+            to: ItemId(11),
+            kind: "cross_dissolve".into(),
+            duration: Tick(1),
+            alignment: TransitionAlignment::Start,
+        },
+        Command::AddTransition {
+            track: TrackId(1),
+            from: ItemId(10),
+            to: ItemId(12),
+            kind: "cross_dissolve".into(),
+            duration: Tick(10),
+            alignment: TransitionAlignment::Center,
+        },
+        Command::AddTransition {
+            track: TrackId(1),
+            from: ItemId(11),
+            to: ItemId(12),
+            kind: "spin_motion".into(),
+            duration: Tick(10),
+            alignment: TransitionAlignment::Center,
+        },
+        Command::SetTransitionDuration {
+            transition: TransitionId(id),
+            duration: Tick(0),
+        },
+        Command::SetTransitionDuration {
+            transition: TransitionId(id),
+            duration: Tick(-1),
+        },
+        Command::RemoveTransition {
+            transition: TransitionId(999),
+        },
     ] {
         let before = s.project().clone();
-        assert!(s.execute(cmd, params).is_err());
+        assert!(s.apply(command).is_err());
         assert_eq!(s.project(), &before);
     }
     for (start, expected) in [(i64::MIN, 60), (i64::MAX, 100)] {
@@ -120,11 +153,16 @@ fn spans_clamp_by_alignment_and_refuse_overlap_hostile_and_locked_edits() {
         .unwrap();
         assert_eq!(tr(&s).start, Tick(expected));
     }
-    s.execute("track.set_locked", json!({"track":1,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
     assert!(
-        s.execute("transition.remove", json!({"transition":id}))
-            .is_err()
+        s.apply(Command::RemoveTransition {
+            transition: TransitionId(id)
+        })
+        .is_err()
     );
     assert!(
         matches!(project::transition_definition("spin_motion"),Err(project::Error::UnsupportedTransition(kind)) if kind == "spin_motion")
@@ -134,25 +172,42 @@ fn spans_clamp_by_alignment_and_refuse_overlap_hostile_and_locked_edits() {
 #[test]
 fn clip_moves_trims_split_and_delete_revalidate_without_losing_history() {
     let mut s = session(true);
-    s.execute("split_at", json!({"item":10,"at":50})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(10),
+        at: Tick(50),
+    })
+    .unwrap();
     let outgoing = tr(&s).from;
     assert_ne!(outgoing, ItemId(10));
     assert_eq!((tr(&s).start, tr(&s).duration), (Tick(80), Tick(40)));
     let split = s.project().clone();
-    s.execute("trim_end", json!({"item":outgoing.0,"at":90}))
-        .unwrap();
+    s.apply(Command::TrimEnd {
+        item: outgoing,
+        at: Tick(90),
+    })
+    .unwrap();
     assert!(s.project().data().scene().timeline.transitions.is_empty());
     s.undo().unwrap();
     assert_eq!(s.project(), &split);
-    s.execute("trim_start", json!({"item":outgoing.0,"at":90}))
-        .unwrap();
+    s.apply(Command::TrimStart {
+        item: outgoing,
+        at: Tick(90),
+    })
+    .unwrap();
     assert_eq!(tr(&s).duration, Tick(21)); // odd centre: ten before, eleven after
     s.undo().unwrap();
-    s.execute("move_item", json!({"item":11,"track":1,"start":400}))
-        .unwrap();
+    s.apply(Command::MoveItem {
+        item: ItemId(11),
+        track: TrackId(1),
+        start: Tick(400),
+    })
+    .unwrap();
     assert!(s.project().data().scene().timeline.transitions.is_empty());
     s.undo().unwrap();
-    s.execute("delete", json!({"items":[11]})).unwrap();
+    s.apply(Command::Delete {
+        items: vec![ItemId(11)],
+    })
+    .unwrap();
     assert!(s.project().data().scene().timeline.transitions.is_empty());
 }
 
@@ -162,31 +217,43 @@ fn cancelled_gestures_failed_batches_and_reversal_restore_transitions() {
     let before = s.project().clone();
     let id = tr(&s).id.0;
     s.begin_gesture().unwrap();
-    s.execute("transition.move", json!({"transition":id,"start":90}))
-        .unwrap();
-    s.execute(
-        "transition.set_duration",
-        json!({"transition":id,"duration":80}),
-    )
+    s.apply(Command::MoveTransition {
+        transition: TransitionId(id),
+        start: Tick(90),
+    })
+    .unwrap();
+    s.apply(Command::SetTransitionDuration {
+        transition: TransitionId(id),
+        duration: Tick(80),
+    })
     .unwrap();
     s.cancel_gesture().unwrap();
     assert_eq!(s.project(), &before);
     assert!(
-        s.execute(
-            "batch",
-            json!({"commands":[
-                {"command":"transition.remove","params":{"transition":id}},
-                {"command":"transition.remove","params":{"transition":id}}
-            ]})
-        )
+        s.apply(Command::Batch {
+            commands: vec![
+                Command::RemoveTransition {
+                    transition: TransitionId(id)
+                },
+                Command::RemoveTransition {
+                    transition: TransitionId(id)
+                },
+            ]
+        })
         .is_err()
     );
     assert_eq!(s.project(), &before);
     s.begin_gesture().unwrap();
-    s.execute("transition.move", json!({"transition":id,"start":95}))
-        .unwrap();
-    s.execute("transition.move", json!({"transition":id,"start":80}))
-        .unwrap();
+    s.apply(Command::MoveTransition {
+        transition: TransitionId(id),
+        start: Tick(95),
+    })
+    .unwrap();
+    s.apply(Command::MoveTransition {
+        transition: TransitionId(id),
+        start: Tick(80),
+    })
+    .unwrap();
     s.commit_gesture().unwrap();
     assert_eq!(s.project(), &before);
 }
@@ -217,32 +284,50 @@ fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
 fn joint_moves_incoming_splits_and_cancelled_additions_keep_identity_and_cut() {
     let mut s = session(true);
     // Move the third clip away, leaving space for a joint translation of the cut.
-    s.execute("move_item", json!({"item":12,"track":1,"start":400}))
-        .unwrap();
-    s.execute(
-        "move_items",
-        json!({"moves":[{"item":10,"track":1,"start":50},{"item":11,"track":1,"start":150}]}),
-    )
+    s.apply(Command::MoveItem {
+        item: ItemId(12),
+        track: TrackId(1),
+        start: Tick(400),
+    })
+    .unwrap();
+    s.apply(Command::MoveItems {
+        moves: vec![
+            Move {
+                item: ItemId(10),
+                track: TrackId(1),
+                start: Tick(50),
+            },
+            Move {
+                item: ItemId(11),
+                track: TrackId(1),
+                start: Tick(150),
+            },
+        ],
+    })
     .unwrap();
     assert_eq!((tr(&s).start, tr(&s).duration), (Tick(130), Tick(40)));
-    s.execute("split_at", json!({"item":11,"at":160})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(11),
+        at: Tick(160),
+    })
+    .unwrap();
     assert_eq!(tr(&s).to, ItemId(11));
     assert_eq!((tr(&s).start, tr(&s).duration), (Tick(130), Tick(40)));
     let mut s = session(false);
     s.begin_gesture().unwrap();
-    add(&mut s, "center", 40).unwrap();
+    add(&mut s, TransitionAlignment::Center, 40).unwrap();
     let retired = tr(&s).id;
     s.cancel_gesture().unwrap();
-    add(&mut s, "center", 40).unwrap();
+    add(&mut s, TransitionAlignment::Center, 40).unwrap();
     assert!(tr(&s).id > retired);
     let loaded = project::decode(&project::encode(s.project(), false).unwrap())
         .unwrap()
         .project;
     let max_id = tr(&s).id;
     let mut s = Session::new(loaded, 100).unwrap();
-    s.execute("transition.remove", json!({"transition":max_id.0}))
+    s.apply(Command::RemoveTransition { transition: max_id })
         .unwrap();
-    add(&mut s, "center", 40).unwrap();
+    add(&mut s, TransitionAlignment::Center, 40).unwrap();
     assert!(tr(&s).id > max_id);
 }
 
@@ -259,15 +344,28 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
     anchor.source_range = SourceRange::new(Tick(100), Tick(110)).unwrap();
     data.scene_mut().timeline.main.items.insert(0, anchor);
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
-    add(&mut s, "center", 40).unwrap();
+    add(&mut s, TransitionAlignment::Center, 40).unwrap();
     let before = s.project().clone();
-    s.execute_with_ripple(
-        "move_items",
-        json!({"moves":[
-            {"item":10,"track":1,"start":50},
-            {"item":11,"track":1,"start":150},
-            {"item":12,"track":1,"start":250}
-        ]}),
+    s.apply_with_ripple(
+        Command::MoveItems {
+            moves: vec![
+                Move {
+                    item: ItemId(10),
+                    track: TrackId(1),
+                    start: Tick(50),
+                },
+                Move {
+                    item: ItemId(11),
+                    track: TrackId(1),
+                    start: Tick(150),
+                },
+                Move {
+                    item: ItemId(12),
+                    track: TrackId(1),
+                    start: Tick(250),
+                },
+            ],
+        },
         true,
     )
     .unwrap();
@@ -275,8 +373,21 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
     s.undo().unwrap();
     assert_eq!(s.project(), &before);
     let mut s = session(false);
-    s.execute("transition.add", json!({"track":1,"from":11,"to":12,"kind":"cross_dissolve","duration":40,"alignment":"center"})).unwrap();
-    s.execute_with_ripple("delete", json!({"items":[10]}), true)
-        .unwrap();
+    s.apply(Command::AddTransition {
+        track: TrackId(1),
+        from: ItemId(11),
+        to: ItemId(12),
+        kind: "cross_dissolve".into(),
+        duration: Tick(40),
+        alignment: TransitionAlignment::Center,
+    })
+    .unwrap();
+    s.apply_with_ripple(
+        Command::Delete {
+            items: vec![ItemId(10)],
+        },
+        true,
+    )
+    .unwrap();
     assert_eq!(tr(&s).start, Tick(80));
 }

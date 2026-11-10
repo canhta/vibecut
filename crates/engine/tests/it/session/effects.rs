@@ -1,8 +1,37 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::{Command, Session};
 use project::*;
-use serde_json::json;
 use time::{FrameRate, SourceRange, Tick};
+fn blur(id: &str, intensity: f64) -> EffectInstance {
+    EffectInstance {
+        id: id.into(),
+        enabled: true,
+        params: EffectParams::Blur { intensity },
+    }
+}
+fn grade(id: &str, brightness: f64, contrast: f64, saturation: f64, hue: f64) -> EffectInstance {
+    EffectInstance {
+        id: id.into(),
+        enabled: true,
+        params: EffectParams::ColorGrade {
+            brightness,
+            contrast,
+            saturation,
+            hue,
+        },
+    }
+}
+fn chroma(id: &str, key_color: Color, intensity: f64, shadow: f64) -> EffectInstance {
+    EffectInstance {
+        id: id.into(),
+        enabled: true,
+        params: EffectParams::ChromaKey {
+            key_color,
+            intensity,
+            shadow,
+        },
+    }
+}
 fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "Effects".into())
         .unwrap()
@@ -37,7 +66,11 @@ fn session() -> Session {
 fn registry_effect_edits_persist_and_undo_atomically() {
     let mut s = session();
     let before = s.project().clone();
-    s.execute("effects.add", json!({"item":2,"effect":{"id":"blur1","enabled":true,"params":{"kind":"blur","intensity":15.0}}})).unwrap();
+    s.apply(Command::AddEffect {
+        item: ItemId(2),
+        effect: blur("blur1", 15.0),
+    })
+    .unwrap();
     let added = s.project().clone();
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project(), &before);
@@ -45,19 +78,29 @@ fn registry_effect_edits_persist_and_undo_atomically() {
     assert_eq!(s.project(), &added);
     for bad in [-1.0, 101.0] {
         assert!(
-            s.execute(
-                "effects.update_param",
-                json!({"item":2,"effect":"blur1","key":"intensity","value":bad})
-            )
+            s.apply(Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "blur1".into(),
+                key: "intensity".into(),
+                value: bad,
+            })
             .is_err()
         );
         assert_eq!(s.project(), &added);
     }
-    assert!(s.execute("effects.add", json!({"item":2,"effect":{"id":"blur1","enabled":true,"params":{"kind":"blur","intensity":15.0}}})).is_err());
-    s.execute(
-        "effects.update_param",
-        json!({"item":2,"effect":"blur1","key":"intensity","value":35.0}),
-    )
+    assert!(
+        s.apply(Command::AddEffect {
+            item: ItemId(2),
+            effect: blur("blur1", 15.0),
+        })
+        .is_err()
+    );
+    s.apply(Command::UpdateEffectParam {
+        item: ItemId(2),
+        effect: "blur1".into(),
+        key: "intensity".into(),
+        value: 35.0,
+    })
     .unwrap();
     let path = AnimationPath::new("effects.blur1.params.intensity").unwrap();
     s.apply(Command::SetAnimatedParam {
@@ -71,8 +114,11 @@ fn registry_effect_edits_persist_and_undo_atomically() {
         &project::decode(&saved).unwrap().project,
         s.project().as_ref()
     );
-    s.execute("effects.remove", json!({"item":2,"effect":"blur1"}))
-        .unwrap();
+    s.apply(Command::RemoveEffect {
+        item: ItemId(2),
+        effect: "blur1".into(),
+    })
+    .unwrap();
     let item = s
         .project()
         .data()
@@ -90,8 +136,11 @@ fn registry_effect_edits_persist_and_undo_atomically() {
     assert_eq!(project::encode(s.project(), false).unwrap(), saved);
     let old = s.project().clone();
     assert!(
-        s.execute("effects.remove", json!({"item":2,"effect":"missing"}))
-            .is_err()
+        s.apply(Command::RemoveEffect {
+            item: ItemId(2),
+            effect: "missing".into()
+        })
+        .is_err()
     );
     assert_eq!(s.project(), &old);
     s.apply(Command::SetTrackFlags {
@@ -102,8 +151,11 @@ fn registry_effect_edits_persist_and_undo_atomically() {
     })
     .unwrap();
     assert!(
-        s.execute("effects.remove", json!({"item":2,"effect":"blur1"}))
-            .is_err()
+        s.apply(Command::RemoveEffect {
+            item: ItemId(2),
+            effect: "blur1".into()
+        })
+        .is_err()
     );
 }
 
@@ -114,21 +166,31 @@ fn item(s: &Session) -> &Item {
 fn stack_gestures_round_trip_and_refuse_invalid_orders() {
     let mut s = session();
     for id in ["a", "b"] {
-        s.execute("effects.add", json!({"item":2,"effect":{"id":id,"enabled":true,"params":{"kind":"blur","intensity":15.0}}})).unwrap();
+        s.apply(Command::AddEffect {
+            item: ItemId(2),
+            effect: blur(id, 15.0),
+        })
+        .unwrap();
     }
-    for (command, params) in [
-        ("effects.reorder", json!({"item":2,"order":["b","a"]})),
-        (
-            "effects.toggle",
-            json!({"item":2,"effect":"b","enabled":false}),
-        ),
-        (
-            "effects.update_param",
-            json!({"item":2,"effect":"a","key":"intensity","value":42.0}),
-        ),
+    for command in [
+        Command::ReorderEffects {
+            item: ItemId(2),
+            order: vec!["b".into(), "a".into()],
+        },
+        Command::ToggleEffect {
+            item: ItemId(2),
+            effect: "b".into(),
+            enabled: false,
+        },
+        Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "a".into(),
+            key: "intensity".into(),
+            value: 42.0,
+        },
     ] {
         let before = s.project().clone();
-        s.execute(command, params).unwrap();
+        s.apply(command).unwrap();
         let after = s.project().clone();
         s.undo().unwrap();
         assert_eq!(s.project(), &before);
@@ -138,41 +200,49 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
     let saved = project::encode(s.project(), false).unwrap();
     assert_eq!(project::decode(&saved).unwrap().project, **s.project());
     for order in [
-        json!([]),
-        json!(["a"]),
-        json!(["a", "a"]),
-        json!(["a", "missing"]),
-        json!(["a", "b", "c"]),
+        vec![],
+        vec!["a".into()],
+        vec!["a".into(), "a".into()],
+        vec!["a".into(), "missing".into()],
+        vec!["a".into(), "b".into(), "c".into()],
     ] {
         assert!(
-            s.execute("effects.reorder", json!({"item":2,"order":order}))
-                .is_err()
+            s.apply(Command::ReorderEffects {
+                item: ItemId(2),
+                order
+            })
+            .is_err()
         );
         assert_eq!(project::encode(s.project(), false).unwrap(), saved);
     }
     assert!(
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"a","key":"unknown","value":1})
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "a".into(),
+            key: "unknown".into(),
+            value: 1.0,
+        })
         .is_err()
     );
     s.begin_gesture().unwrap();
     for value in [3.0, 99.0, 20.0] {
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"a","key":"intensity","value":value}),
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "a".into(),
+            key: "intensity".into(),
+            value,
+        })
         .unwrap();
     }
     s.commit_gesture().unwrap();
     s.undo().unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), saved);
     s.begin_gesture().unwrap();
-    s.execute(
-        "effects.toggle",
-        json!({"item":2,"effect":"a","enabled":false}),
-    )
+    s.apply(Command::ToggleEffect {
+        item: ItemId(2),
+        effect: "a".into(),
+        enabled: false,
+    })
     .unwrap();
     s.cancel_gesture().unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), saved);
@@ -183,37 +253,65 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
         locked: true,
     })
     .unwrap();
-    for (command, params) in [
+    for (id, command) in [
         (
             "effects.add",
-            json!({"item":2,"effect":{"id":"c","enabled":true,"params":{"kind":"blur","intensity":15}}}),
+            Command::AddEffect {
+                item: ItemId(2),
+                effect: blur("c", 15.0),
+            },
         ),
-        ("effects.reorder", json!({"item":2,"order":["a","b"]})),
+        (
+            "effects.reorder",
+            Command::ReorderEffects {
+                item: ItemId(2),
+                order: vec!["a".into(), "b".into()],
+            },
+        ),
         (
             "effects.toggle",
-            json!({"item":2,"effect":"a","enabled":false}),
+            Command::ToggleEffect {
+                item: ItemId(2),
+                effect: "a".into(),
+                enabled: false,
+            },
         ),
-        ("effects.remove", json!({"item":2,"effect":"a"})),
+        (
+            "effects.remove",
+            Command::RemoveEffect {
+                item: ItemId(2),
+                effect: "a".into(),
+            },
+        ),
         (
             "effects.update_param",
-            json!({"item":2,"effect":"a","key":"intensity","value":5}),
+            Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "a".into(),
+                key: "intensity".into(),
+                value: 5.0,
+            },
         ),
     ] {
         assert!(
             !engine::registry()
                 .iter()
-                .find(|spec| spec.id == command)
+                .find(|spec| spec.id == id)
                 .unwrap()
                 .enabled(&s)
         );
-        assert!(s.execute(command, params).is_err());
+        assert!(s.apply(command).is_err());
     }
 }
 
 #[test]
 fn effect_keyframes_follow_trim_and_keyframe_time_scaling() {
     let mut s = session();
-    s.execute("effects.add",json!({"item":2,"effect":{"id":"a","enabled":true,"params":{"kind":"blur","intensity":15.0}}})).unwrap();
+    s.apply(Command::AddEffect {
+        item: ItemId(2),
+        effect: blur("a", 15.0),
+    })
+    .unwrap();
     let path = AnimationPath::new("effects.a.params.intensity").unwrap();
     s.apply(Command::SetAnimatedParam {
         item: ItemId(2),
@@ -485,31 +583,55 @@ fn audio_refuses_even_an_empty_effect_reorder() {
             .build(),
     );
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
-    for (command, params) in [
+    for (id, command) in [
         (
             "effects.add",
-            json!({"item":2,"effect":{"id":"a","enabled":true,"params":{"kind":"blur","intensity":15}}}),
+            Command::AddEffect {
+                item: ItemId(2),
+                effect: blur("a", 15.0),
+            },
         ),
-        ("effects.reorder", json!({"item":2,"order":[]})),
+        (
+            "effects.reorder",
+            Command::ReorderEffects {
+                item: ItemId(2),
+                order: vec![],
+            },
+        ),
         (
             "effects.toggle",
-            json!({"item":2,"effect":"a","enabled":false}),
+            Command::ToggleEffect {
+                item: ItemId(2),
+                effect: "a".into(),
+                enabled: false,
+            },
         ),
-        ("effects.remove", json!({"item":2,"effect":"a"})),
+        (
+            "effects.remove",
+            Command::RemoveEffect {
+                item: ItemId(2),
+                effect: "a".into(),
+            },
+        ),
         (
             "effects.update_param",
-            json!({"item":2,"effect":"a","key":"intensity","value":5}),
+            Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "a".into(),
+                key: "intensity".into(),
+                value: 5.0,
+            },
         ),
     ] {
         assert!(
             !engine::registry()
                 .iter()
-                .find(|spec| spec.id == command)
+                .find(|spec| spec.id == id)
                 .unwrap()
                 .enabled(&s)
         );
         assert!(matches!(
-            s.execute(command, params),
+            s.apply(command),
             Err(engine::EditError::Unsupported(_))
         ));
     }
@@ -518,17 +640,21 @@ fn audio_refuses_even_an_empty_effect_reorder() {
 #[test]
 fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
     let mut s = session();
-    let neutral = json!({"id":"color_grade","enabled":true,"params":{"kind":"color_grade","brightness":0.0,"contrast":0.0,"saturation":0.0,"hue":0.0}});
-    s.execute("effects.add", json!({"item":2,"effect":neutral}))
-        .unwrap();
+    s.apply(Command::AddEffect {
+        item: ItemId(2),
+        effect: grade("color_grade", 0.0, 0.0, 0.0, 0.0),
+    })
+    .unwrap();
     let added = s.project().clone();
     // Every control: both limits accepted, one step past either refused atomically.
     for key in ["brightness", "contrast", "saturation", "hue"] {
         for edge in [-50.0, 50.0] {
-            s.execute(
-                "effects.update_param",
-                json!({"item":2,"effect":"color_grade","key":key,"value":edge}),
-            )
+            s.apply(Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "color_grade".into(),
+                key: key.into(),
+                value: edge,
+            })
             .unwrap();
             s.apply(Command::Undo {}).unwrap();
             assert_eq!(s.project(), &added, "{key} {edge}");
@@ -536,29 +662,35 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
         let held = s.project().clone();
         for bad in [-50.5, 50.5, 1e300] {
             assert!(
-                s.execute(
-                    "effects.update_param",
-                    json!({"item":2,"effect":"color_grade","key":key,"value":bad})
-                )
+                s.apply(Command::UpdateEffectParam {
+                    item: ItemId(2),
+                    effect: "color_grade".into(),
+                    key: key.into(),
+                    value: bad,
+                })
                 .is_err()
             );
             assert_eq!(s.project(), &held);
         }
     }
     assert!(
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"color_grade","key":"intensity","value":1.0})
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "color_grade".into(),
+            key: "intensity".into(),
+            value: 1.0,
+        })
         .is_err()
     );
     // A drag gesture of many updates is a single undo step.
     s.begin_gesture().unwrap();
     for v in [5.0, 12.0, 20.0] {
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"color_grade","key":"contrast","value":v}),
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "color_grade".into(),
+            key: "contrast".into(),
+            value: v,
+        })
         .unwrap();
     }
     s.commit_gesture().unwrap();
@@ -578,9 +710,11 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
 #[test]
 fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
     let mut s = session();
-    let defaults = json!({"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}});
-    s.execute("effects.add", json!({"item":2,"effect":defaults}))
-        .unwrap();
+    s.apply(Command::AddEffect {
+        item: ItemId(2),
+        effect: chroma("chroma_key", Color([0, 255, 0, 255]), 40.0, 0.0),
+    })
+    .unwrap();
     let added = s.project().clone();
     // Both controls accept their limits and refuse one step beyond, atomically.
     for (key, edge) in [
@@ -589,10 +723,12 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
         ("shadow", 1.0),
         ("shadow", 100.0),
     ] {
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"chroma_key","key":key,"value":edge}),
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "chroma_key".into(),
+            key: key.into(),
+            value: edge,
+        })
         .unwrap();
         s.apply(Command::Undo {}).unwrap();
         assert_eq!(s.project(), &added, "{key} {edge}");
@@ -605,20 +741,24 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
         ("shadow", f64::NAN),
     ] {
         assert!(
-            s.execute(
-                "effects.update_param",
-                json!({"item":2,"effect":"chroma_key","key":key,"value":bad})
-            )
+            s.apply(Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "chroma_key".into(),
+                key: key.into(),
+                value: bad,
+            })
             .is_err(),
             "{key} {bad}"
         );
         assert_eq!(s.project(), &added);
     }
     // The picked colour is one packed sRGB scalar, so a pick is one command.
-    s.execute(
-        "effects.update_param",
-        json!({"item":2,"effect":"chroma_key","key":"key_color","value":0x11_22_33 as f64}),
-    )
+    s.apply(Command::UpdateEffectParam {
+        item: ItemId(2),
+        effect: "chroma_key".into(),
+        key: "key_color".into(),
+        value: 0x11_22_33 as f64,
+    })
     .unwrap();
     assert!(matches!(
         item(&s).effects[0].params,
@@ -628,29 +768,35 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
     assert_eq!(s.project(), &added);
     for bad in [-1.0, 16_777_216.0, 1.5, f64::NAN] {
         assert!(
-            s.execute(
-                "effects.update_param",
-                json!({"item":2,"effect":"chroma_key","key":"key_color","value":bad})
-            )
+            s.apply(Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "chroma_key".into(),
+                key: "key_color".into(),
+                value: bad,
+            })
             .is_err(),
             "{bad}"
         );
         assert_eq!(s.project(), &added);
     }
     assert!(
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"chroma_key","key":"contrast","value":1.0})
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "chroma_key".into(),
+            key: "contrast".into(),
+            value: 1.0,
+        })
         .is_err()
     );
     // A pick-and-drag gesture of many updates is a single undo step.
     s.begin_gesture().unwrap();
     for v in [5.0, 20.0, 30.0] {
-        s.execute(
-            "effects.update_param",
-            json!({"item":2,"effect":"chroma_key","key":"intensity","value":v}),
-        )
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "chroma_key".into(),
+            key: "intensity".into(),
+            value: v,
+        })
         .unwrap();
     }
     s.commit_gesture().unwrap();
@@ -670,10 +816,10 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
 #[test]
 fn chroma_key_intensity_and_shadow_keyframes_survive_trim() {
     let mut s = session();
-    s.execute(
-        "effects.add",
-        json!({"item":2,"effect":{"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}}}),
-    )
+    s.apply(Command::AddEffect {
+        item: ItemId(2),
+        effect: chroma("chroma_key", Color([0, 255, 0, 255]), 40.0, 0.0),
+    })
     .unwrap();
     let local = |n: i64| FrameRate::FPS_30.tick_of(n).unwrap();
     let intensity = AnimationPath::new("effects.chroma_key.params.intensity").unwrap();
@@ -684,10 +830,13 @@ fn chroma_key_intensity_and_shadow_keyframes_survive_trim() {
         (&shadow, 0, 0.0),
         (&shadow, 20, 80.0),
     ] {
-        s.execute(
-            "keyframes.toggle_at",
-            json!({"item":2,"path":path,"component":null,"time":local(n),"value":{"kind":"scalar","value":value}}),
-        )
+        s.apply(Command::ToggleKeyframe {
+            item: ItemId(2),
+            path: path.clone(),
+            component: None,
+            time: local(n),
+            value: ParamValue::Scalar(value),
+        })
         .unwrap();
     }
     let value = |s: &Session, path: &AnimationPath, t: Tick| match item(s)
@@ -700,8 +849,11 @@ fn chroma_key_intensity_and_shadow_keyframes_survive_trim() {
     };
     assert_eq!(value(&s, &intensity, local(0)), 10.0);
     assert_eq!(value(&s, &shadow, local(20)), 80.0);
-    s.execute("trim_start", json!({"item":2,"at":local(10)}))
-        .unwrap();
+    s.apply(Command::TrimStart {
+        item: ItemId(2),
+        at: local(10),
+    })
+    .unwrap();
     let trimmed = item(&s);
     for path in [&intensity, &shadow] {
         let keys = trimmed

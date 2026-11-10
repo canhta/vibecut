@@ -268,7 +268,9 @@ fn listing_uses_main_duration_and_active_scene_first_frame() {
     let mut lease = WriterLease::acquire(&path).unwrap();
     let mut session = engine::Session::new(lease.load().unwrap().project, 10).unwrap();
     session
-        .execute("scene.create", serde_json::json!({"name":"Active"}))
+        .apply(Command::CreateScene {
+            name: "Active".into(),
+        })
         .unwrap();
     let id = session
         .project()

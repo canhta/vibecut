@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use engine::Session;
+use engine::{Command, Session};
 use media::{AssetId, ContentHash};
 use project::{
-    AudioParams, Fade, FadeCurve, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId,
-    TrackKind,
+    AudioParams, Fade, FadeCurve, FadeEdge, Item, ItemId, ItemParams, Project, ProjectId, Track,
+    TrackId, TrackKind,
 };
 use serde_json::json;
 use time::{SourceRange, Tick};
@@ -74,12 +74,19 @@ fn fades(session: &Session, id: u64) -> project::Fades {
         })
         .unwrap()
 }
-fn set(session: &mut Session, edge: &str, duration: i64, curve: &str) -> engine::Result<()> {
+fn set(
+    session: &mut Session,
+    edge: FadeEdge,
+    duration: i64,
+    curve: FadeCurve,
+) -> engine::Result<()> {
     session
-        .execute(
-            "audio.set_fade",
-            json!({"item":20,"edge":edge,"duration":duration,"curve":curve}),
-        )
+        .apply(Command::SetFade {
+            item: ItemId(20),
+            edge,
+            duration: Tick(duration),
+            curve,
+        })
         .map(|_| ())
 }
 
@@ -87,7 +94,10 @@ fn set(session: &mut Session, edge: &str, duration: i64, curve: &str) -> engine:
 fn set_fade_is_undoable_redoable_and_persisted() {
     let mut s = session();
     assert_eq!(fades(&s, 20), project::Fades::default());
-    for (edge, duration, curve) in [("in", 300, "linear"), ("out", 200, "exponential")] {
+    for (edge, duration, curve) in [
+        (FadeEdge::In, 300, FadeCurve::Linear),
+        (FadeEdge::Out, 200, FadeCurve::Exponential),
+    ] {
         let before = s.project().clone();
         set(&mut s, edge, duration, curve).unwrap();
         let after = s.project().clone();
@@ -118,14 +128,14 @@ fn set_fade_is_undoable_redoable_and_persisted() {
 #[test]
 fn set_fade_clamps_to_clip_without_overlapping_the_other_edge() {
     let mut s = session();
-    set(&mut s, "out", 700, "equal_power").unwrap();
-    set(&mut s, "in", 5000, "equal_power").unwrap();
+    set(&mut s, FadeEdge::Out, 700, FadeCurve::EqualPower).unwrap();
+    set(&mut s, FadeEdge::In, 5000, FadeCurve::EqualPower).unwrap();
     assert_eq!(fades(&s, 20).fade_in.duration, Tick(300));
     assert_eq!(fades(&s, 20).fade_out.duration, Tick(700));
-    set(&mut s, "out", MAX_JSON, "linear").unwrap();
+    set(&mut s, FadeEdge::Out, MAX_JSON, FadeCurve::Linear).unwrap();
     assert_eq!(fades(&s, 20).fade_out.duration, Tick(700));
-    set(&mut s, "in", 0, "linear").unwrap();
-    set(&mut s, "out", MAX_JSON, "linear").unwrap();
+    set(&mut s, FadeEdge::In, 0, FadeCurve::Linear).unwrap();
+    set(&mut s, FadeEdge::Out, MAX_JSON, FadeCurve::Linear).unwrap();
     assert_eq!(fades(&s, 20).fade_out.duration, Tick(1000));
 }
 
@@ -134,34 +144,51 @@ fn set_fade_refuses_hostile_input_atomically() {
     let mut s = session();
     let before = s.project().clone();
     let history = s.history_len();
-    assert!(set(&mut s, "in", -1, "linear").is_err());
-    assert!(set(&mut s, "in", i64::MIN, "linear").is_err());
-    assert!(set(&mut s, "in", 10, "cubic").is_err());
-    assert!(set(&mut s, "middle", 10, "linear").is_err());
+    assert!(set(&mut s, FadeEdge::In, -1, FadeCurve::Linear).is_err());
+    assert!(set(&mut s, FadeEdge::In, i64::MIN, FadeCurve::Linear).is_err());
     assert!(
-        s.execute(
+        crate::wire::run(
+            &mut s,
             "audio.set_fade",
-            json!({"item":999,"edge":"in","duration":1,"curve":"linear"})
+            json!({"item":20,"edge":"in","duration":10,"curve":"cubic"})
         )
         .is_err()
     );
     assert!(
-        s.execute(
+        crate::wire::run(
+            &mut s,
+            "audio.set_fade",
+            json!({"item":20,"edge":"middle","duration":10,"curve":"linear"})
+        )
+        .is_err()
+    );
+    assert!(
+        s.apply(Command::SetFade {
+            item: ItemId(999),
+            edge: FadeEdge::In,
+            duration: Tick(1),
+            curve: FadeCurve::Linear,
+        })
+        .is_err()
+    );
+    assert!(
+        crate::wire::run(
+            &mut s,
             "audio.set_fade",
             json!({"item":20,"edge":"in","duration":1,"curve":"linear","extra":1})
         )
         .is_err()
     );
-    assert!(
-        s.execute("audio.set_fade", json!({"item":20,"edge":"in"}))
-            .is_err()
-    );
+    assert!(crate::wire::run(&mut s, "audio.set_fade", json!({"item":20,"edge":"in"})).is_err());
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), history);
-    s.execute("track.set_locked", json!({"track":8,"locked":true}))
-        .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(8),
+        locked: true,
+    })
+    .unwrap();
     let locked = s.project().clone();
-    assert!(set(&mut s, "in", 10, "linear").is_err());
+    assert!(set(&mut s, FadeEdge::In, 10, FadeCurve::Linear).is_err());
     assert_eq!(s.project(), &locked);
 }
 
@@ -212,11 +239,15 @@ fn envelope(session: &Session, rate: i64) -> Vec<f32> {
     }
     out
 }
-fn fade_edges(session: &mut Session, curve_in: &str, curve_out: &str) {
-    set(session, "in", 300, curve_in).unwrap();
-    set(session, "out", 400, curve_out).unwrap();
+fn fade_edges(session: &mut Session, curve_in: FadeCurve, curve_out: FadeCurve) {
+    set(session, FadeEdge::In, 300, curve_in).unwrap();
+    set(session, FadeEdge::Out, 400, curve_out).unwrap();
 }
-const CURVE_NAMES: [&str; 3] = ["equal_power", "linear", "exponential"];
+const CURVE_NAMES: [FadeCurve; 3] = [
+    FadeCurve::EqualPower,
+    FadeCurve::Linear,
+    FadeCurve::Exponential,
+];
 
 #[test]
 fn split_inside_a_fade_keeps_the_envelope_the_original_had() {
@@ -224,16 +255,24 @@ fn split_inside_a_fade_keeps_the_envelope_the_original_had() {
     // per sample so the curve is checked at exact integer positions.
     let rate = time::TICKS_PER_SECOND;
     let mut s = session();
-    fade_edges(&mut s, "linear", "exponential");
+    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
     let original = envelope(&s, rate);
     assert_eq!(original[75], 0.25);
-    s.execute("split_at", json!({"item":20,"at":150})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(150),
+    })
+    .unwrap();
     let cut = envelope(&s, rate);
     assert_eq!(cut[75], 0.25);
     assert_eq!(cut[150], 0.5);
     assert_eq!(original, cut);
     s.undo().unwrap();
-    s.execute("split_at", json!({"item":20,"at":800})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(800),
+    })
+    .unwrap();
     let cut = envelope(&s, rate);
     assert!((cut[799] - 0.11920292).abs() < 1e-6, "{}", cut[799]);
     assert_eq!(original, cut);
@@ -250,11 +289,15 @@ fn every_cut_of_every_curve_pair_replays_the_original_envelope() {
             // Inside the fade-in, at its end, in the body, at the fade-out start, inside it,
             // and one tick from either clip edge.
             for at in [1, 150, 299, 300, 301, 500, 599, 600, 601, 800, 999] {
-                s.execute("split_at", json!({"item":20,"at":at})).unwrap();
+                s.apply(Command::SplitAt {
+                    item: ItemId(20),
+                    at: Tick(at),
+                })
+                .unwrap();
                 assert_eq!(
                     original,
                     envelope(&s, rate),
-                    "{curve_in}/{curve_out} cut {at}"
+                    "{curve_in:?}/{curve_out:?} cut {at}"
                 );
                 s.undo().unwrap();
                 assert_eq!(original, envelope(&s, rate));
@@ -266,8 +309,12 @@ fn every_cut_of_every_curve_pair_replays_the_original_envelope() {
 #[test]
 fn a_cut_at_a_fade_boundary_gives_each_piece_only_its_own_fade() {
     let mut s = session();
-    fade_edges(&mut s, "linear", "exponential");
-    s.execute("split_at", json!({"item":20,"at":300})).unwrap();
+    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(300),
+    })
+    .unwrap();
     let ps = pieces(&s);
     let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
         panic!("two pieces")
@@ -277,7 +324,11 @@ fn a_cut_at_a_fade_boundary_gives_each_piece_only_its_own_fade() {
     assert_eq!(right.fade_in, Fade::default());
     assert_eq!(right.fade_out.window(), Tick(400));
     s.undo().unwrap();
-    s.execute("split_at", json!({"item":20,"at":600})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(600),
+    })
+    .unwrap();
     let ps = pieces(&s);
     let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
         panic!("two pieces")
@@ -290,8 +341,12 @@ fn a_cut_at_a_fade_boundary_gives_each_piece_only_its_own_fade() {
 #[test]
 fn a_split_keeps_the_whole_fade_and_the_consumed_part() {
     let mut s = session();
-    fade_edges(&mut s, "linear", "exponential");
-    s.execute("split_at", json!({"item":20,"at":150})).unwrap();
+    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(150),
+    })
+    .unwrap();
     let ps = pieces(&s);
     let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
         panic!("two pieces")
@@ -313,27 +368,50 @@ fn a_split_keeps_the_whole_fade_and_the_consumed_part() {
 fn trim_then_split_and_split_twice_stay_non_destructive() {
     let rate = time::TICKS_PER_SECOND;
     let mut s = session();
-    fade_edges(&mut s, "equal_power", "linear");
+    fade_edges(&mut s, FadeCurve::EqualPower, FadeCurve::Linear);
     // Trimming restarts the fades at the new edges (the clip is now 100..900).
-    s.execute("trim_start", json!({"item":20,"at":100}))
-        .unwrap();
-    s.execute("trim_end", json!({"item":20,"at":900})).unwrap();
+    s.apply(Command::TrimStart {
+        item: ItemId(20),
+        at: Tick(100),
+    })
+    .unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(20),
+        at: Tick(900),
+    })
+    .unwrap();
     let trimmed = envelope(&s, rate);
     for at in [150, 399, 500, 880] {
-        s.execute("split_at", json!({"item":20,"at":at})).unwrap();
+        s.apply(Command::SplitAt {
+            item: ItemId(20),
+            at: Tick(at),
+        })
+        .unwrap();
         assert_eq!(trimmed, envelope(&s, rate), "trim then cut {at}");
         s.undo().unwrap();
     }
     // Split twice: cut inside the fade-in, then cut each half again inside the fades.
-    s.execute("split_at", json!({"item":20,"at":250})).unwrap();
-    s.execute("split_at", json!({"item":20,"at":150})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(250),
+    })
+    .unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(150),
+    })
+    .unwrap();
     for (piece, at) in [(250, 700), (700, 850)] {
         let id = pieces(&s)
             .into_iter()
             .find(|p| p.1 == Tick(piece))
             .unwrap()
             .0;
-        s.execute("split_at", json!({"item":id,"at":at})).unwrap();
+        s.apply(Command::SplitAt {
+            item: ItemId(id),
+            at: Tick(at),
+        })
+        .unwrap();
     }
     assert_eq!(pieces(&s).len(), 5);
     assert_eq!(trimmed, envelope(&s, rate));
@@ -343,11 +421,19 @@ fn trim_then_split_and_split_twice_stay_non_destructive() {
 fn split_pieces_undo_redo_and_persist_with_their_envelope() {
     let rate = time::TICKS_PER_SECOND;
     let mut s = session();
-    fade_edges(&mut s, "exponential", "equal_power");
+    fade_edges(&mut s, FadeCurve::Exponential, FadeCurve::EqualPower);
     let original = envelope(&s, rate);
     let before = s.project().clone();
-    s.execute("split_at", json!({"item":20,"at":150})).unwrap();
-    s.execute("split_at", json!({"item":20,"at":75})).unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(150),
+    })
+    .unwrap();
+    s.apply(Command::SplitAt {
+        item: ItemId(20),
+        at: Tick(75),
+    })
+    .unwrap();
     let after = s.project().clone();
     s.undo().unwrap();
     s.undo().unwrap();
@@ -375,11 +461,15 @@ fn off_grid_cuts_at_real_sample_rates_replay_the_original_samples() {
             .into_iter()
             .zip(CURVE_NAMES.into_iter().cycle().skip(1))
         {
-            set(&mut s, "in", ms(30), curve_in).unwrap();
-            set(&mut s, "out", ms(30), curve_out).unwrap();
+            set(&mut s, FadeEdge::In, ms(30), curve_in).unwrap();
+            set(&mut s, FadeEdge::Out, ms(30), curve_out).unwrap();
             let original = envelope(&s, rate);
             for at in [ms(3), ms(30), ms(41), ms(72), ms(99)] {
-                s.execute("split_at", json!({"item":20,"at":at})).unwrap();
+                s.apply(Command::SplitAt {
+                    item: ItemId(20),
+                    at: Tick(at),
+                })
+                .unwrap();
                 assert_eq!(original, envelope(&s, rate), "rate {rate} cut {at}");
                 s.undo().unwrap();
             }
@@ -391,17 +481,28 @@ fn off_grid_cuts_at_real_sample_rates_replay_the_original_samples() {
 fn a_trim_that_would_overlap_the_fades_shrinks_the_trimmed_edge() {
     let rate = time::TICKS_PER_SECOND;
     let mut s = session();
-    fade_edges(&mut s, "equal_power", "linear");
+    fade_edges(&mut s, FadeCurve::EqualPower, FadeCurve::Linear);
     // Clip 100..500 is shorter than 300 + 400: the trimmed (out) edge yields.
-    s.execute("trim_start", json!({"item":20,"at":100}))
-        .unwrap();
-    s.execute("trim_end", json!({"item":20,"at":500})).unwrap();
+    s.apply(Command::TrimStart {
+        item: ItemId(20),
+        at: Tick(100),
+    })
+    .unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(20),
+        at: Tick(500),
+    })
+    .unwrap();
     let f = fades(&s, 20);
     assert_eq!(f.fade_in.window(), Tick(300));
     assert_eq!(f.fade_out.window(), Tick(100));
     let trimmed = envelope(&s, rate);
     for at in [200, 399, 450] {
-        s.execute("split_at", json!({"item":20,"at":at})).unwrap();
+        s.apply(Command::SplitAt {
+            item: ItemId(20),
+            at: Tick(at),
+        })
+        .unwrap();
         assert_eq!(trimmed, envelope(&s, rate), "cut {at}");
         s.undo().unwrap();
     }
@@ -414,8 +515,12 @@ fn a_trim_that_would_overlap_the_fades_shrinks_the_trimmed_edge() {
 fn trimming_to_the_current_edge_preserves_a_split_fade() {
     for (cut, command) in [(150, "trim_start"), (800, "trim_end")] {
         let mut s = session();
-        fade_edges(&mut s, "linear", "exponential");
-        s.execute("split_at", json!({"item":20,"at":cut})).unwrap();
+        fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
+        s.apply(Command::SplitAt {
+            item: ItemId(20),
+            at: Tick(cut),
+        })
+        .unwrap();
         let piece = pieces(&s)
             .into_iter()
             .find(|p| {
@@ -428,8 +533,14 @@ fn trimming_to_the_current_edge_preserves_a_split_fade() {
             .unwrap();
         let before = s.project().clone();
         let original = envelope(&s, time::TICKS_PER_SECOND);
-        s.execute(command, json!({"item":piece.0,"at":cut}))
-            .unwrap();
+        let trim = |s: &mut Session, item: ItemId, at: i64| {
+            if command == "trim_start" {
+                s.apply(Command::TrimStart { item, at: Tick(at) })
+            } else {
+                s.apply(Command::TrimEnd { item, at: Tick(at) })
+            }
+        };
+        trim(&mut s, ItemId(piece.0), cut).unwrap();
         let after = envelope(&s, time::TICKS_PER_SECOND);
         for (n, (original, after)) in original.iter().zip(&after).enumerate() {
             assert_eq!(original, after, "{command} cut {cut}, sample {n}");
@@ -442,16 +553,22 @@ fn trimming_to_the_current_edge_preserves_a_split_fade() {
 fn retime_fade_limits_and_split_use_output_time() {
     for (speed, clip) in [(0.5, 2000), (2.0, 500)] {
         let mut s = session();
-        s.execute(
-            "timeline.set_speed",
-            json!({"items":[20],"speed":speed,"maintain_pitch":true}),
-        )
+        s.apply(Command::SetSpeed {
+            items: vec![ItemId(20)],
+            speed: time::Speed::from_f64(speed).unwrap(),
+            maintain_pitch: true,
+        })
         .unwrap();
-        set(&mut s, "in", clip, "linear").unwrap();
+        set(&mut s, FadeEdge::In, clip, FadeCurve::Linear).unwrap();
         let before = fades(&s, 20);
         assert_eq!(before.fade_in.duration, Tick(clip));
         let cut = clip / 4;
-        let out = s.execute("split_at", json!({"item":20,"at":cut})).unwrap();
+        let out = s
+            .apply(Command::SplitAt {
+                item: ItemId(20),
+                at: Tick(cut),
+            })
+            .unwrap();
         let right_id = out
             .created
             .iter()

@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use engine::{Command, Session};
 use project::*;
-use serde_json::json;
 use time::{FrameRate, SourceRange, Tick};
 fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "Masks".into())
@@ -42,7 +41,11 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
     a.opacity = 0.5;
     a.stroke.width = 2.;
     a.stroke.align = StrokeAlign::Outside;
-    s.execute("masks.add", json!({"item":2,"mask":a})).unwrap();
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: a.clone(),
+    })
+    .unwrap();
     let added = s.project().clone();
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project(), &start);
@@ -71,14 +74,20 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
         .map(|m| m.id.clone())
         .collect();
     order.reverse();
-    s.execute("masks.reorder", json!({"item":2,"order":order}))
-        .unwrap();
+    s.apply(Command::ReorderMasks {
+        item: ItemId(2),
+        order,
+    })
+    .unwrap();
     let reordered = s.project().clone();
     let mut replacement = a.clone();
     replacement.shape = MaskShape::Star;
     replacement.inverted = true;
-    s.execute("masks.update", json!({"item":2,"mask":replacement}))
-        .unwrap();
+    s.apply(Command::UpdateMask {
+        item: ItemId(2),
+        mask: replacement,
+    })
+    .unwrap();
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project(), &reordered);
     s.apply(Command::Redo {}).unwrap();
@@ -94,8 +103,11 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
         &project::decode(&saved).unwrap().project,
         s.project().as_ref()
     );
-    s.execute("masks.remove", json!({"item":2,"mask":"a"}))
-        .unwrap();
+    s.apply(Command::RemoveMask {
+        item: ItemId(2),
+        mask: "a".into(),
+    })
+    .unwrap();
     assert!(
         s.project()
             .data()
@@ -113,24 +125,28 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
     );
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), saved);
-    for request in [
-        json!({"item":2,"mask":a}),
-        json!({"item":2,"mask":"missing"}),
+    for command in [
+        Command::AddMask {
+            item: ItemId(2),
+            mask: a,
+        },
+        Command::RemoveMask {
+            item: ItemId(2),
+            mask: "missing".into(),
+        },
     ] {
-        let command = if request.get("mask").unwrap().is_string() {
-            "masks.remove"
-        } else {
-            "masks.add"
-        };
         let before = s.project().clone();
-        assert!(s.execute(command, request).is_err());
+        assert!(s.apply(command).is_err());
         assert_eq!(s.project(), &before);
     }
     for order in [vec!["a".to_owned()], vec!["a".to_owned(); 13]] {
         let before = s.project().clone();
         assert!(
-            s.execute("masks.reorder", json!({"item":2,"order":order}))
-                .is_err()
+            s.apply(Command::ReorderMasks {
+                item: ItemId(2),
+                order
+            })
+            .is_err()
         );
         assert_eq!(s.project(), &before);
     }
@@ -184,8 +200,11 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
     .unwrap();
     let before = s.project().clone();
     assert!(
-        s.execute("masks.remove", json!({"item":2,"mask":"a"}))
-            .is_err()
+        s.apply(Command::RemoveMask {
+            item: ItemId(2),
+            mask: "a".into()
+        })
+        .is_err()
     );
     assert_eq!(s.project(), &before);
 }

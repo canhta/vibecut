@@ -44,6 +44,23 @@ impl Autosave {
 }
 
 impl Autosave {
+    /// Typed lifecycle dispatch: the declared route picks the persistence owner, and
+    /// completion of a save is acknowledged by tick().
+    pub fn apply(&mut self, command: crate::Command) -> Result<crate::Outcome> {
+        match command.lifecycle() {
+            Some(Lifecycle::Thumbnail) => {
+                self.refresh_thumbnail()?;
+                Ok(unchanged())
+            }
+            Some(Lifecycle::Save) => {
+                self.save()?;
+                Ok(unchanged())
+            }
+            Some(Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete) | None => {
+                self.session.apply(command)
+            }
+        }
+    }
     /// Dispatch a registry command; the declared lifecycle route picks the persistence
     /// owner, and completion of a save is acknowledged by tick().
     pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {

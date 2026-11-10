@@ -36,7 +36,7 @@ Transcribe, Translate and DownloadModel jobs in the Network class retry NetworkT
 
 Stages expose admission, rendering, mixing, encoding, finalization and publication. Cancellation uses the [shared publication fence](../runtime/staged_publication/README.md#completed-export-publication). Crash and power-loss durability are not established.
 
-`submit_export_with_sources` is the export job with an injected render source factory, constructed on the engine worker. `submit_export` supplies `FileSources`. Both share one scheduler, byte accounting, typed result and publication fence.
+`submit_export_with_sources` is the export job with an injected render source factory, constructed on the engine worker. `submit_export` supplies `FileSources`. Both share one scheduler, byte accounting, typed result and publication fence. `Session::execute_export(runner, key, Command)` submits one already-admitted export command; callers never decode JSON at this layer.
 
 ## Render kernel execution
 

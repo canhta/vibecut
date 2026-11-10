@@ -245,7 +245,19 @@ fn selection_context_and_explicit_json_force_preserve_user_edits_and_unselected_
     assert_eq!(w.after.len(), 1);
     assert_eq!(selected(&s, true).segments.len(), 2);
     for force in [false, true] {
-        s.execute("retranslate",json!({"item":0,"target_language":"en","texts":{"cue-1":"changed","cue-2":"changed"},"translation_ref":"openai/test","force":force})).unwrap();
+        s.apply(Command::Retranslate {
+            item: ItemId(0),
+            target_language: lang("en"),
+            texts: [
+                ("cue-1".into(), "changed".into()),
+                ("cue-2".into(), "changed".into()),
+            ]
+            .into_iter()
+            .collect(),
+            translation_ref: "openai/test".into(),
+            force,
+        })
+        .unwrap();
         assert_eq!(
             cues(&s)[1].texts[&lang("en")].text.as_str(),
             if force { "changed" } else { "user edit" }
@@ -254,7 +266,21 @@ fn selection_context_and_explicit_json_force_preserve_user_edits_and_unselected_
         assert_eq!(cues(&s)[3].texts[&lang("en")].text.as_str(), "user edit");
     }
     let before = s.project().clone();
-    assert!(s.execute("retranslate",json!({"item":0,"target_language":"en","texts":{"cue-1":"changed","missing":"bad"},"translation_ref":"test","force":true})).is_err());
+    assert!(
+        s.apply(Command::Retranslate {
+            item: ItemId(0),
+            target_language: lang("en"),
+            texts: [
+                ("cue-1".into(), "changed".into()),
+                ("missing".into(), "bad".into()),
+            ]
+            .into_iter()
+            .collect(),
+            translation_ref: "test".into(),
+            force: true,
+        })
+        .is_err()
+    );
     assert!(Arc::ptr_eq(s.project(), &before));
 }
 #[test]

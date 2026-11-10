@@ -376,13 +376,10 @@ fn removal_keeps_five_clips_aligned_and_joins_are_click_free() {
     let mut session = Session::new(five_clips(&audio, &video), 10).unwrap();
     let initial = project::encode(session.project(), false).unwrap();
     let outcome = session
-        .execute(
-            "timeline.remove_pauses",
-            serde_json::json!({
-                "spans": found.spans,
-                "crossfade_ms": settings.crossfade_ms,
-            }),
-        )
+        .apply(engine::Command::RemovePauses {
+            spans: found.spans.clone(),
+            crossfade_ms: settings.crossfade_ms,
+        })
         .unwrap();
     assert!(outcome.changed);
     assert_eq!(session.history_len(), (1, 0));
@@ -456,10 +453,10 @@ fn removal_keeps_five_clips_aligned_and_joins_are_click_free() {
     // A zero crossfade splices room tone and must show the discontinuity the check detects.
     let mut abrupt = Session::new(five_clips(&audio, &video), 10).unwrap();
     abrupt
-        .execute(
-            "timeline.remove_pauses",
-            serde_json::json!({"spans": found.spans, "crossfade_ms": 0}),
-        )
+        .apply(engine::Command::RemovePauses {
+            spans: found.spans.clone(),
+            crossfade_ms: 0,
+        })
         .unwrap();
     let abrupt_project = abrupt.project().clone();
     let abrupt_delta = joins
