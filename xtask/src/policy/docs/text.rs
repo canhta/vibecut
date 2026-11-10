@@ -147,7 +147,7 @@ fn forbidden(root: &Path) -> Result<BTreeSet<String>, String> {
     }
     args.push("--");
     args.push("*.md");
-    let out = crate::output(root, "git", &args)?;
+    let out = crate::process::output(root, "git", &args)?;
     match out.status.code() {
         Some(1) => Ok(BTreeSet::new()),
         Some(0) => {

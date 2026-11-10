@@ -5,7 +5,7 @@ use std::{
 };
 
 pub(super) fn clean_tree(root: &Path) -> Result<Option<String>, String> {
-    if !crate::checked(
+    if !crate::process::checked(
         root,
         "git",
         &["status", "--porcelain", "--untracked-files=normal"],
@@ -14,9 +14,13 @@ pub(super) fn clean_tree(root: &Path) -> Result<Option<String>, String> {
     {
         return Ok(None);
     }
-    String::from_utf8(crate::checked(root, "git", &["rev-parse", "HEAD^{tree}"])?)
-        .map(|tree| Some(tree.trim().to_owned()))
-        .map_err(|e| e.to_string())
+    String::from_utf8(crate::process::checked(
+        root,
+        "git",
+        &["rev-parse", "HEAD^{tree}"],
+    )?)
+    .map(|tree| Some(tree.trim().to_owned()))
+    .map_err(|e| e.to_string())
 }
 
 pub(super) fn receipt(

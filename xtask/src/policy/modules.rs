@@ -123,7 +123,7 @@ fn relative(root: &Path, path: &Path) -> String {
 }
 
 fn tracked(root: &Path) -> Result<Vec<String>, String> {
-    let out = crate::checked(
+    let out = crate::process::checked(
         root,
         "git",
         &["ls-files", "-z", "--", "apps", "crates", "xtask"],

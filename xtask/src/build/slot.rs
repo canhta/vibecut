@@ -119,7 +119,7 @@ pub(super) fn prepare(
         // entire switch, rather than admitting stale cross-worktree artifacts.
         let owner_file = locks.join(format!("slot-{number}.owner"));
         fs::write(&owner_file, b"").map_err(|e| e.to_string())?;
-        let manifests = crate::checked(root, "git", &["ls-files", "-z", "*/Cargo.toml"])?;
+        let manifests = crate::process::checked(root, "git", &["ls-files", "-z", "*/Cargo.toml"])?;
         let members: Vec<_> = paths(&manifests)?
             .iter()
             .filter_map(|path| path.parent()?.file_name()?.to_str())
@@ -157,7 +157,7 @@ pub(super) fn prepare(
                 }
             }
         }
-        let tracked = crate::checked(root, "git", &["ls-files", "-z"])?;
+        let tracked = crate::process::checked(root, "git", &["ls-files", "-z"])?;
         let now = SystemTime::now();
         for path in paths(&tracked)? {
             // The launcher has a per-worktree target and is already fresh.

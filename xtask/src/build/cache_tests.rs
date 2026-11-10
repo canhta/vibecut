@@ -13,13 +13,13 @@ fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headro
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     fs::create_dir_all(root.join("crates/example")).unwrap();
-    crate::checked(root, "git", &["init", "-q"]).unwrap();
+    crate::process::checked(root, "git", &["init", "-q"]).unwrap();
     fs::write(
         root.join("crates/example/Cargo.toml"),
         "[package]\nname = 'example'\n",
     )
     .unwrap();
-    crate::checked(root, "git", &["add", "."]).unwrap();
+    crate::process::checked(root, "git", &["add", "."]).unwrap();
     let base = root.join("cache");
     fs::create_dir_all(base.join("locks")).unwrap();
     let deps = base.join("target/slot-1/debug/deps");

@@ -2,7 +2,7 @@
 use std::path::{Path, PathBuf};
 
 pub fn main(root: &Path) -> Result<PathBuf, String> {
-    let bytes = crate::checked(
+    let bytes = crate::process::checked(
         root,
         "git",
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],

@@ -5,6 +5,7 @@ use super::environment::*;
 use super::fetch::*;
 use super::recipes::*;
 use super::verify::*;
+use super::{Version, inventory, parse_version};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -174,6 +175,35 @@ fn provisioning_paths_preserve_native_home_and_shell_arguments() {
             .unwrap();
         assert!(status.success());
     }
+}
+
+#[test]
+fn oracle_versions_and_fixture_inventory_are_explicit() {
+    assert_eq!(
+        parse_version("ffmpeg version 7.1.1 Copyright"),
+        Some(Version { major: 7, minor: 1 })
+    );
+    assert_eq!(
+        parse_version("ffmpeg version n6.0-static"),
+        Some(Version { major: 6, minor: 0 })
+    );
+    assert_eq!(parse_version("ffmpeg version N-123-gabc"), None);
+    assert_eq!(parse_version("not a version"), None);
+    let workspace = tempfile::Builder::new()
+        .prefix("vibecut-fixtures-")
+        .tempdir()
+        .unwrap();
+    let fixtures = workspace.path().join("target/fixtures/nested");
+    fs::create_dir_all(&fixtures).unwrap();
+    fs::write(fixtures.join("one.bin"), b"abc").unwrap();
+    let list = inventory(workspace.path()).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].relative, PathBuf::from("nested/one.bin"));
+    assert_eq!(list[0].bytes, 3);
+    assert_eq!(
+        list[0].sha256,
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
 }
 
 #[test]

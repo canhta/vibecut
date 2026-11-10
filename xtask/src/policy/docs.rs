@@ -71,7 +71,7 @@ pub fn check(root: &Path) -> Result<(), String> {
 fn tracked(root: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
     let mut args = vec!["ls-files", "-z", "--"];
     args.extend(paths);
-    let out = crate::checked(root, "git", &args)?;
+    let out = crate::process::checked(root, "git", &args)?;
     let mut files = Vec::new();
     for raw in out.split(|byte| *byte == 0) {
         if raw.is_empty() {

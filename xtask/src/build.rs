@@ -120,7 +120,7 @@ fn run_in(
         && receipt(root, &base, args)?.as_ref() == Some(&path)
     {
         fs::create_dir_all(base.join("ci-receipts")).map_err(|e| e.to_string())?;
-        let sha = String::from_utf8(crate::checked(
+        let sha = String::from_utf8(crate::process::checked(
             root,
             "git",
             &["rev-parse", "--short", "HEAD"],

@@ -300,7 +300,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
 
     // Exercise the actual wrapper command path, not just a process holding
     // a Slot: its controlled build child survives a launcher-only crash.
-    crate::checked(root, "git", &["init", "-q"]).unwrap();
+    crate::process::checked(root, "git", &["init", "-q"]).unwrap();
     for jobs in [None, Some("7")] {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
@@ -1413,7 +1413,7 @@ fn child_exit_or_kill_releases_slot_lease() {
     for label in ["wrapped", "killed"] {
         let directory = Directory::new();
         let root = &directory.0;
-        crate::checked(root, "git", &["init", "-q"]).unwrap();
+        crate::process::checked(root, "git", &["init", "-q"]).unwrap();
         let mut wrapper = Process(
             Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "build::tests::build_process", "--nocapture"])
@@ -1464,7 +1464,7 @@ fn launcher_death_and_detached_descendants_do_not_outlive_the_slot() {
     for label in ["wrapped", "detached"] {
         let directory = Directory::new();
         let root = &directory.0;
-        crate::checked(root, "git", &["init", "-q"]).unwrap();
+        crate::process::checked(root, "git", &["init", "-q"]).unwrap();
         let mut wrapper = Process(
             Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "build::tests::build_process", "--nocapture"])
@@ -1511,8 +1511,8 @@ fn launcher_death_and_detached_descendants_do_not_outlive_the_slot() {
 fn ci_receipts_require_exact_command_and_clean_tree_including_untracked_files() {
     let directory = Directory::new();
     let root = &directory.0;
-    crate::checked(root, "git", &["init", "-q"]).unwrap();
-    crate::checked(
+    crate::process::checked(root, "git", &["init", "-q"]).unwrap();
+    crate::process::checked(
         root,
         "git",
         &[
