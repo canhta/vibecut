@@ -1210,9 +1210,20 @@ fn preview_axis_playing_hover_preserves_prefilled_pcm_source_cursor_and_dsp() {
         Some(Tick(2 * TICKS_PER_SECOND)),
         None,
     ] {
+        let position = playback.position().unwrap();
         playback.set_hover(hover).unwrap();
+        assert_eq!(
+            playback.position().unwrap(),
+            position,
+            "pointer changes cannot jump a playing transport"
+        );
+        let submitted = actual.len() / 2;
         let mut samples = [0.0; 256];
         port.fill(&mut samples, 0);
+        assert_eq!(
+            playback.position().unwrap(),
+            Tick::from_units(submitted as i64, 48_000, time::Rounding::Nearest).unwrap()
+        );
         assert!(
             samples.iter().all(|sample| *sample != 0.0),
             "hover invalidated prefilled PCM"
