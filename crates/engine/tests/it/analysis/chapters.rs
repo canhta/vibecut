@@ -75,6 +75,7 @@ fn project() -> Arc<Project> {
             start: second(1),
             content: ItemParams::Caption(CaptionParams {
                 cues: captions::CueTrack {
+                    styles: Vec::new(),
                     cues: vec![
                         cue("cue-a", 0, 1, "en", "First"),
                         cue("cue-b", 1, 2, "en", "Second"),
