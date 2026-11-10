@@ -2,7 +2,7 @@
 
 Implementation reference: the structure reference's CPU transition kernels, adapted to the working-pixel contract (premultiplied linear RGBA f32, finite 0..=1, RGB at most alpha). `project` owns the ids, parameters and shelves; the parent [registry](../README.md#transition-kinds) owns the dispatcher and the endpoint contract.
 
-`pixels` provides the shared maths: clamped bilinear sampling, integer hash and fractal noise, light addition, motion/disc sampling kernels, and the three-box-pass Gaussian blur. Blur frames are bounded through the execution hooks and check cancellation per row group.
+`pixels` provides the shared maths: clamped bilinear sampling, integer hash and fractal noise, light addition, motion/disc sampling kernels, and the three-box-pass Gaussian blur. Gaussian radii are capped independently by each image axis and computed in f64. Frames and column scratch are reserved before allocation; rows read the immutable source without a scratch copy. Initialization and long rows check cancellation in bounded groups. Pixel extents that cannot be represented return a typed invalid-input error.
 
 | Child | Kinds |
 |---|---|

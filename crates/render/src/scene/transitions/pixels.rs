@@ -324,7 +324,11 @@ pub(super) fn centre(t: &Tx) -> Result<(f32, f32)> {
 
 /// A pixel-size parameter in the pixels of these frames.
 pub(super) fn px(t: &Tx, id: &str) -> Result<f32> {
-    Ok(t.params.num(id)?.max(0.) * t.scale)
+    let value = f64::from(t.params.num(id)?.max(0.)) * f64::from(t.scale);
+    if !value.is_finite() || value > f64::from(f32::MAX) {
+        return Err(Error::Invalid("transition pixel extent"));
+    }
+    Ok(value as f32)
 }
 
 /// An angle parameter in degrees.
@@ -368,17 +372,22 @@ pub(super) fn mixed(
 
 /// A Gaussian-blurred copy (box-pass approximation, sigma in pixels).
 pub(super) fn blurred(image: &Image, sigma: f32, hooks: &dyn ExecutionHooks) -> Result<Image> {
-    if !(sigma > 0.3) || !sigma.is_finite() {
+    check(hooks)?;
+    if !sigma.is_finite() || sigma < 0. {
+        return Err(Error::Invalid("transition blur radius"));
+    }
+    if sigma <= 0.3 {
         return image.copy(hooks);
     }
-    let radii = boxes_for_gauss(sigma.min(image.height.max(8) as f32 * 2.), 3);
+    let radii_x = boxes_for_gauss(sigma.min(image.width.max(8) as f32 * 2.));
+    let radii_y = boxes_for_gauss(sigma.min(image.height.max(8) as f32 * 2.));
     let mut source = image.copy(hooks)?;
     let mut destination = Image::new(image.width, image.height, [0.; 4], hooks)?;
-    for radius in &radii {
+    for radius in &radii_x {
         blur_rows(&source, &mut destination, *radius, hooks)?;
         std::mem::swap(&mut source, &mut destination);
     }
-    for radius in &radii {
+    for radius in &radii_y {
         blur_columns(&source, &mut destination, *radius, hooks)?;
         std::mem::swap(&mut source, &mut destination);
     }
@@ -386,22 +395,21 @@ pub(super) fn blurred(image: &Image, sigma: f32, hooks: &dyn ExecutionHooks) -> 
 }
 
 /// Box radii for an n-pass box blur approximating a Gaussian of sigma.
-fn boxes_for_gauss(sigma: f32, n: usize) -> Vec<usize> {
-    let wideal = ((12. * sigma * sigma / n as f32) + 1.).sqrt();
-    let mut wl = wideal.floor() as i32;
+fn boxes_for_gauss(sigma: f32) -> [usize; 3] {
+    // Axis caps are derived from Image's area bound. f64 avoids integer-square
+    // overflow even at the largest admitted axis, without a host-specific cap.
+    let sigma = f64::from(sigma);
+    let wideal = (4. * sigma * sigma + 1.).sqrt();
+    let mut wl = wideal.floor() as usize;
     if wl % 2 == 0 {
         wl -= 1;
     }
     let wu = wl + 2;
-    let mideal = (12. * sigma * sigma
-        - (n as i32 * wl * wl) as f32
-        - 4. * n as f32 * wl as f32
-        - 3. * n as f32)
-        / (-4. * wl as f32 - 4.);
-    let m = mideal.round() as i32;
-    (0..n as i32)
-        .map(|i| (((if i < m { wl } else { wu }) - 1) / 2).max(0) as usize)
-        .collect()
+    let lower = wl as f64;
+    let mideal = (12. * sigma * sigma - 3. * lower * lower - 12. * lower - 9.)
+        / (-4. * lower - 4.);
+    let m = mideal.round().clamp(0., 3.) as usize;
+    std::array::from_fn(|i| ((if i < m { wl } else { wu }) - 1) / 2)
 }
 
 /// Running box filter along rows with repeat-edge borders.
@@ -412,13 +420,11 @@ fn blur_rows(
     hooks: &dyn ExecutionHooks,
 ) -> Result<()> {
     let width = source.width as usize;
+    check(hooks)?;
     if radius == 0 || width == 0 {
         destination.pixels.copy_from_slice(&source.pixels);
         return Ok(());
     }
-    let mut row = Vec::new();
-    row.try_reserve_exact(width)?;
-    row.resize(width, [0.; 4]);
     let inverse = 1. / (2 * radius + 1) as f32;
     let clamp = |i: isize| i.clamp(0, width as isize - 1) as usize;
     for (y, (output, input)) in destination
@@ -430,21 +436,22 @@ fn blur_rows(
         if y % 8 == 0 {
             check(hooks)?;
         }
-        row.copy_from_slice(input);
         let mut acc = [0.; 4];
         for i in -(radius as isize)..=(radius as isize) {
-            let sample = row.get(clamp(i)).copied().unwrap_or([0.; 4]);
+            if i.rem_euclid(256) == 0 { check(hooks)?; }
+            let sample = input.get(clamp(i)).copied().unwrap_or([0.; 4]);
             for (a, v) in acc.iter_mut().zip(sample) {
                 *a += v;
             }
         }
         for (x, out) in output.iter_mut().enumerate() {
+            if x.is_multiple_of(4096) { check(hooks)?; }
             *out = working(scale4(acc, inverse));
-            let leaving = row
+            let leaving = input
                 .get(clamp(x as isize - radius as isize))
                 .copied()
                 .unwrap_or([0.; 4]);
-            let entering = row
+            let entering = input
                 .get(clamp(x as isize + radius as isize + 1))
                 .copied()
                 .unwrap_or([0.; 4]);
@@ -465,28 +472,35 @@ fn blur_columns(
 ) -> Result<()> {
     let width = source.width as usize;
     let height = source.height as usize;
+    check(hooks)?;
     if radius == 0 || height == 0 {
         destination.pixels.copy_from_slice(&source.pixels);
         return Ok(());
     }
+    let bytes = (width as u64).checked_mul(16).ok_or(Error::Invalid("transition scratch size"))?;
+    let _lease = hooks.reserve(MemoryKind::Compositor, bytes)?;
     let mut acc = Vec::new();
     acc.try_reserve_exact(width)?;
-    acc.resize(width, [0.; 4]);
+    while acc.len() < width {
+        check(hooks)?;
+        acc.resize((acc.len() + 4096).min(width), [0.; 4]);
+    }
     let clamp = |i: isize| i.clamp(0, height as isize - 1) as usize;
     for i in -(radius as isize)..=(radius as isize) {
+        if i.rem_euclid(8) == 0 { check(hooks)?; }
         let y = clamp(i);
         let row = source
             .pixels
             .get(y * width..y * width + width)
             .ok_or(Error::Invalid("transition blur row"))?;
-        for (a, v) in acc.iter_mut().zip(row) {
+        for (x, (a, v)) in acc.iter_mut().zip(row).enumerate() {
+            if x.is_multiple_of(4096) { check(hooks)?; }
             for (a, v) in a.iter_mut().zip(*v) {
                 *a += v;
             }
         }
     }
     let inverse = 1. / (2 * radius + 1) as f32;
-    let _lease = hooks.reserve(MemoryKind::Compositor, (width * 16) as u64)?;
     for y in 0..height {
         if y % 8 == 0 {
             check(hooks)?;
@@ -503,11 +517,13 @@ fn blur_columns(
             .pixels
             .get_mut(y * width..y * width + width)
             .ok_or(Error::Invalid("transition blur row"))?;
-        for ((out, a), (l, e)) in output
+        for (x, ((out, a), (l, e))) in output
             .iter_mut()
             .zip(acc.iter_mut())
             .zip(leaving.iter().zip(entering))
+            .enumerate()
         {
+            if x.is_multiple_of(4096) { check(hooks)?; }
             *out = working(scale4(*a, inverse));
             for (v, (l, e)) in a.iter_mut().zip(l.iter().zip(e)) {
                 *v = *v - l + e;

@@ -1120,6 +1120,59 @@ fn every_registered_kind_meets_the_endpoint_finite_deterministic_continuous_cont
 }
 
 #[test]
+fn gaussian_transitions_preserve_axes_and_bound_scratch_work() {
+    let h = Hooks::default();
+    for kind in ["soft_focus_fade", "bloom"] {
+        let param = if kind == "bloom" { "radius" } else { "blur" };
+        for (width, height, scale) in [(1920, 1, 1.), (1, 8192, 1024.)] {
+            let pixels: Vec<_> = (0..width * height)
+                .map(|n| if n < width * height / 2 { [0., 0., 0., 1.] } else { [1.; 4] })
+                .collect();
+            let a = Image::from_working_pixels(width, height, pixels.iter().copied(), &h).unwrap();
+            let transposed = Image::from_working_pixels(height, width, pixels.iter().copied(), &h).unwrap();
+            let params = TransitionParams::from([(param.into(), TransitionValue::Float(400.))]);
+            let run = |image: &Image| transitions::apply(kind, &params, image, image, 0.5, scale, &h).unwrap();
+            let (result, rotated) = (run(&a), run(&transposed));
+            assert!(mean_abs(&result, &rotated) < 2e-5, "{kind}: transpose preserves blur strength");
+            assert!(result.pixels().iter().flatten().all(|v| v.is_finite()));
+            if kind == "soft_focus_fade" && width == 1920 {
+                // Independent step-edge geometry: sigma is about 185 px, so
+                // a sample 100 px before the edge must receive substantial light.
+                assert!(result.pixels()[860][0] > 0.15);
+                assert!(result.pixels()[1060][0] < 0.85);
+                assert!(result.pixels().windows(2).all(|px| px[0][0] <= px[1][0] + 1e-5));
+            }
+        }
+    }
+    let (a, b) = (frame(8192, 1, true), frame(8192, 1, false));
+    let bytes = Image::bytes(8192, 1).unwrap();
+    // Destination + two blur images fit exactly; column scratch must be admitted too.
+    let budget = Hooks { limit: bytes * 3, ..Hooks::default() };
+    assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, 1., &budget), Err(Error::Budget { requested, .. }) if requested == bytes));
+    assert_eq!(budget.peak.load(Ordering::SeqCst), bytes * 3);
+    assert_eq!(budget.used.load(Ordering::SeqCst), 0);
+
+    struct ScratchCancel { inner: Hooks, reservations: AtomicUsize, checks: AtomicUsize, cancel_at: usize }
+    impl ExecutionHooks for ScratchCancel {
+        fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>> {
+            self.reservations.fetch_add(1, Ordering::SeqCst);
+            self.inner.reserve(kind, bytes)
+        }
+        fn cancelled(&self) -> bool {
+            self.reservations.load(Ordering::SeqCst) >= 4 && self.checks.fetch_add(1, Ordering::SeqCst) >= self.cancel_at
+        }
+    }
+    for cancel_at in [0, 2, 12] {
+        let hooks = ScratchCancel { inner: Hooks::default(), reservations: AtomicUsize::new(0), checks: AtomicUsize::new(0), cancel_at };
+        assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, 1., &hooks), Err(Error::Cancelled)));
+        assert_eq!(hooks.reservations.load(Ordering::SeqCst), 4, "cancel inside admitted scratch initialization");
+        assert_eq!(hooks.inner.peak.load(Ordering::SeqCst), bytes * 4);
+        assert_eq!(hooks.inner.used.load(Ordering::SeqCst), 0);
+    }
+    assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, f32::MAX, &h), Err(Error::Invalid(_))));
+}
+
+#[test]
 fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
     let h = Hooks::default();
     let (a, b) = (frame(8, 8, true), frame(8, 8, false));
