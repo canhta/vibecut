@@ -12,17 +12,90 @@ impl ExecutionHooks for Hooks {
         Ok(Box::new(Lease))
     }
 }
+fn pixel(entry_point: &'static str, values: &[f32]) -> EffectPass {
+    EffectPass::Pixel {
+        entry_point,
+        uniforms: values.iter().copied().map(Uniform::Float).collect(),
+    }
+}
+fn pixel_rows() -> Vec<EffectPass> {
+    let mut rows: Vec<_> = [1.0, 1e-6, 1e-3, 0.7, 2.8, 4.0]
+        .map(|g| pixel("gamma", &[g]))
+        .into();
+    for channel in 0..=4 {
+        for blend in [0.0, 0.35, 1.0] {
+            rows.push(pixel("invert", &[channel as f32, blend]));
+        }
+    }
+    // The pass validator admits fractional channel values, with CPU round-away ties.
+    for channel in [0.49, 0.5, 1.5, 3.5] {
+        rows.push(pixel("invert", &[channel, 0.35]));
+    }
+    rows
+}
+fn max_error(a: &Image, b: &Image) -> f32 {
+    assert_eq!((a.width(), a.height()), (b.width(), b.height()));
+    a.pixels()
+        .iter()
+        .zip(b.pixels())
+        .flat_map(|(a, b)| a.iter().zip(b))
+        .map(|(a, b)| {
+            assert!(a.is_finite() && b.is_finite());
+            (a - b).abs()
+        })
+        .fold(0.0, f32::max)
+}
+fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) {
+    let original = image.pixels().to_vec();
+    for pass in pixel_rows() {
+        assert!(gpu.supports(pass.entry_point()));
+        let inputs = || EffectInputs {
+            input: image,
+            coverage: None,
+            below: image,
+        };
+        let cpu = CpuEffects
+            .apply(image, &[pass.clone()], inputs(), &Hooks)
+            .unwrap();
+        // Direct adapter execution: Unsupported cannot be hidden by CPU retry.
+        let actual = gpu.apply(image, &[pass.clone()], inputs(), &Hooks).unwrap();
+        let max = max_error(&cpu, &actual);
+        assert!(max <= 2e-5, "{label} {pass:?} max_abs={max}");
+        for (out, src) in actual.pixels().iter().zip(image.pixels()) {
+            assert!(out[..3].iter().all(|v| *v >= 0.0 && *v <= out[3]));
+            let values = pass.values();
+            let alpha = if pass.entry_point() == "invert" && values[0].round() == 4.0 {
+                (1.0 - src[3]) * (1.0 - values[1]) + src[3] * values[1]
+            } else {
+                src[3]
+            };
+            assert!((out[3] - alpha).abs() <= 2e-5, "{pass:?} alpha");
+        }
+        if label.starts_with("scale") {
+            let values = pass.values();
+            if (pass.entry_point() == "gamma" && values[0] != 1.0)
+                || (pass.entry_point() == "invert" && values[1] != 1.0)
+            {
+                assert!(max_error(image, &actual) > 1e-5, "visible {pass:?}");
+            } else {
+                assert!(max_error(image, &actual) <= 2e-5, "identity {pass:?}");
+            }
+        }
+        eprintln!("pixel-parity {label} {pass:?} max_abs={max:e}");
+        assert_eq!(image.pixels(), original, "immutable input");
+    }
+}
 #[test]
 fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
-        Ok(adapter) => adapter,
-        Err(error) => {
+        Ok(adapter) if adapter.get_info().device_type != wgpu::DeviceType::Cpu => adapter,
+        other => {
             assert!(
                 std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
-                "required GPU unavailable: {error}"
+                "required native GPU unavailable: {other:?}"
             );
-            eprintln!("SKIP: no GPU adapter: {error}");
+            eprintln!("SKIP: no native GPU adapter: {other:?}");
             return;
         }
     };
@@ -32,6 +105,48 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
     );
+    for entry in [
+        "black_white",
+        "color_mix",
+        "gamma_unknown",
+        "levels",
+        "posterize",
+        "tint",
+    ] {
+        assert!(!gpu.supports(entry), "unadmitted {entry}");
+    }
+    // The public image boundary rejects HDR/out-of-gamut working pixels; decoded
+    // media must already satisfy that owner's premultiplied/clamped contract.
+    for color in [
+        [1.2, 0.0, 0.0, 1.0],
+        [-0.1, 0.0, 0.0, 1.0],
+        [0.4, 0.0, 0.0, 0.2],
+    ] {
+        assert!(matches!(
+            Image::new(1, 1, color, &Hooks),
+            Err(Error::Invalid(_))
+        ));
+    }
+    let edge_pixels = [
+        [0.0; 4],
+        [1.0; 4],
+        [0.0, 0.5, 0.25, 0.5],
+        [0.0031308, 0.0031307, 0.0031309, 1.0],
+        [1e-30, 0.5e-30, 0.0, 1e-30],
+        [1e-8, 0.5e-8, 0.0, 1e-8],
+        [1e-6, 0.5e-6, 0.0, 1e-6],
+        [0.49999997, 0.0, 0.25, 0.5],
+    ];
+    for (w, h) in [(1, 1), (1, 9), (9, 1), (17, 9)] {
+        let image = Image::from_working_pixels(
+            w,
+            h,
+            (0..w * h).map(|i| edge_pixels[i as usize % edge_pixels.len()]),
+            &Hooks,
+        )
+        .unwrap();
+        pixel_parity(&gpu, &image, &format!("edges-{w}x{h}"));
+    }
     // Actual device admission and transparent singleton footprints use the
     // same contract as the CPU, including the largest admitted frame centres.
     for (w, h) in [(8, 4), (1, 3), (3, 1), (1, 1)] {
@@ -137,6 +252,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             &Hooks,
         )
         .unwrap();
+        pixel_parity(&gpu, &image, &format!("scale-{scale}"));
         for intensity in [0.0, 15.0, 100.0] {
             let passes = blur_passes(intensity, w, h).unwrap();
             let inputs = || EffectInputs {
@@ -469,6 +585,104 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
 }
 
 #[test]
+#[ignore = "bounded native 1080p Gamma/Invert measurement; run explicitly on hardware"]
+fn gamma_invert_native_1080p_measurement() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    struct Meter {
+        budget: engine::ByteBudget,
+        peak: AtomicU64,
+    }
+    impl ExecutionHooks for Meter {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>> {
+            let lease = engine::ByteBudgetHooks::new(&self.budget, None).reserve(kind, bytes)?;
+            self.peak
+                .fetch_max(self.budget.snapshot().unwrap().used, Ordering::Relaxed);
+            Ok(lease)
+        }
+    }
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
+        .expect("measurement requires a native adapter");
+    assert_ne!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    eprintln!(
+        "measurement adapter={:?} profile=dev warmup=2 repetitions=7 size=1920x1080",
+        adapter.get_info()
+    );
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let start = std::time::Instant::now();
+    let gpu = pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap();
+    eprintln!(
+        "measurement pipeline_setup_ms={:.3}",
+        start.elapsed().as_secs_f64() * 1000.0
+    );
+    let meter = Meter {
+        budget: engine::ByteBudget::new(256 << 20).unwrap(),
+        peak: AtomicU64::new(0),
+    };
+    let input = Image::from_working_pixels(
+        1920,
+        1080,
+        (0..1920 * 1080).map(|i| {
+            let a = [0.0, 0.01, 0.5, 1.0][i as usize % 4];
+            [
+                a * (i % 19) as f32 / 19.0,
+                a * (i % 13) as f32 / 13.0,
+                a * 0.1,
+                a,
+            ]
+        }),
+        &meter,
+    )
+    .unwrap();
+    let bytes = Image::bytes(1920, 1080).unwrap();
+    let inputs = || EffectInputs {
+        input: &input,
+        coverage: None,
+        below: &input,
+    };
+    for pass in [pixel("gamma", &[0.7]), pixel("invert", &[0.0, 0.35])] {
+        assert!(gpu.supports(pass.entry_point()));
+        // Oracle remains outside timed/charged work; every timed result is verified.
+        let expected = CpuEffects
+            .apply(&input, &[pass.clone()], inputs(), &Hooks)
+            .unwrap();
+        for run in 0..9 {
+            let cpu: &dyn EffectCompositor = &CpuEffects;
+            let device: &dyn EffectCompositor = &gpu;
+            let order = if run % 2 == 0 {
+                [("cpu", cpu), ("gpu", device)]
+            } else {
+                [("gpu", device), ("cpu", cpu)]
+            };
+            for (kind, adapter) in order {
+                assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+                meter.peak.store(bytes, Ordering::Relaxed);
+                let start = std::time::Instant::now();
+                let output = adapter
+                    .apply(&input, &[pass.clone()], inputs(), &meter)
+                    .unwrap();
+                let ms = start.elapsed().as_secs_f64() * 1000.0;
+                let error = max_error(&expected, &output);
+                assert!(error <= 2e-5, "measurement {pass:?} {kind} error={error}");
+                let peak = meter.peak.load(Ordering::Relaxed);
+                eprintln!(
+                    "measurement entry={} kind={kind} run={run} warmup={} ms={ms:.3} max_abs={error:e} peak_charged_bytes={peak}",
+                    pass.entry_point(),
+                    run < 2
+                );
+                drop(output);
+                assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+            }
+        }
+    }
+    drop(input);
+    assert_eq!(meter.budget.snapshot().unwrap().used, 0);
+}
+
+#[test]
 fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     use project::BlendMode::Normal;
     use std::sync::{
@@ -583,6 +797,68 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     );
     drop(out);
     assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+    for pass in [pixel("gamma", &[0.7]), pixel("invert", &[4.0, 0.35])] {
+        let original = source.pixels().to_vec();
+        let out = gpu
+            .apply(&source, &[pass.clone()], inputs(), &meter)
+            .unwrap();
+        resources(meter.take(), bytes, 1, false);
+        parity(
+            &out,
+            &CpuEffects
+                .apply(&source, &[pass.clone()], inputs(), &Hooks)
+                .unwrap(),
+        );
+        drop(out);
+        assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+        let bad = Image::new(18, 9, [0.0; 4], &Hooks).unwrap();
+        assert!(matches!(
+            gpu.apply(
+                &source,
+                &[pass.clone()],
+                EffectInputs {
+                    input: &bad,
+                    ..inputs()
+                },
+                &meter
+            ),
+            Err(Error::Invalid(_))
+        ));
+        assert!(meter.take().is_empty(), "geometry before allocation");
+        let tight = Meter::new(1);
+        assert!(matches!(
+            gpu.apply(&source, &[pass.clone()], inputs(), &tight),
+            Err(Error::Budget { .. })
+        ));
+        assert_eq!(tight.budget.snapshot().unwrap().used, 0);
+        meter.cancel.store(true, Ordering::SeqCst);
+        assert!(matches!(
+            gpu.apply(&source, &[pass], inputs(), &meter),
+            Err(Error::Cancelled)
+        ));
+        assert!(meter.take().is_empty());
+        meter.cancel.store(false, Ordering::SeqCst);
+        assert_eq!(source.pixels(), original);
+    }
+    for pass in [
+        pixel("gamma", &[0.0]),
+        pixel("gamma", &[4.0001]),
+        pixel("gamma", &[f32::NAN]),
+        pixel("gamma", &[]),
+        pixel("invert", &[5.0, 0.0]),
+        pixel("invert", &[-0.1, 0.0]),
+        pixel("invert", &[0.0, -0.1]),
+        pixel("invert", &[0.0, 1.0001]),
+        pixel("invert", &[0.0, f32::INFINITY]),
+        pixel("invert", &[0.0]),
+        pixel("gamma_unknown", &[1.0]),
+    ] {
+        assert!(matches!(
+            gpu.apply(&source, &[pass], inputs(), &meter),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(meter.take().is_empty(), "invalid pass before allocation");
+    }
     eprintln!(
         "budget boundary image_bytes={bytes} limit={} old_gpu_request={} scratch_bytes={} scope_records=separately_reserved result_bytes={bytes}",
         6 * bytes + 4096,
@@ -777,6 +1053,17 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 .instance("grade")
                 .with("brightness", project::EffectValue::Scalar(30.0))
                 .unwrap(),
+            project::effect_definition("gamma_correction")
+                .unwrap()
+                .instance("gamma")
+                .with("gamma", project::EffectValue::Scalar(7.0))
+                .unwrap(),
+            project::effect_definition("invert")
+                .unwrap()
+                .instance("invert"),
+            project::effect_definition("posterize")
+                .unwrap()
+                .instance("cpu-only"),
         ],
         source_asset: None,
         start: time::Tick::ZERO,
@@ -883,6 +1170,8 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 .to_vec(),
         };
         let mut plain = grade.clone();
+        plain.push(pixel("gamma", &[0.7]));
+        plain.push(pixel("invert", &[3.0, 0.35]));
         plain.extend(chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap());
         plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
         let mut mixed = plain.clone();
