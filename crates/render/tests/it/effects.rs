@@ -914,9 +914,8 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
     use time::Tick;
     let hooks = Hooks::default();
     let view = effect_definition("hold_time").unwrap().instance("probe");
-    let passes = |fine| {
-        evaluate_effect(&Animations::default(), &view, Tick::ZERO, 64, 36, fine).unwrap()
-    };
+    let passes =
+        |fine| evaluate_effect(&Animations::default(), &view, Tick::ZERO, 64, 36, fine).unwrap();
     // EffectFrame is fine by default, and the evaluator sees the renderer's flag.
     let frame = EffectFrame::new(&Animations::default(), &view, Tick::ZERO, 64, 36).unwrap();
     assert!(frame.fine);

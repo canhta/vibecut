@@ -52,7 +52,13 @@ pub(super) fn sample(image: &Image, x: f32, y: f32, edge: Edge) -> [f32; 4] {
     };
     let corners = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
     std::array::from_fn(|k| {
-        let channel = |i: usize| corners.get(i).and_then(|c| c.get(k)).copied().unwrap_or(0.0);
+        let channel = |i: usize| {
+            corners
+                .get(i)
+                .and_then(|c| c.get(k))
+                .copied()
+                .unwrap_or(0.0)
+        };
         let [a, b, c, d] = [channel(0), channel(1), channel(2), channel(3)];
         let top = a + (b - a) * tx;
         let bottom = c + (d - c) * tx;
@@ -107,12 +113,7 @@ pub(super) fn upsample(
             let y = (start / stride + row) as f32 + 0.5;
             for (x, pixel) in pixels.iter_mut().enumerate() {
                 let x = x as f32 + 0.5;
-                *pixel = sample(
-                    image,
-                    x * scale_x - 0.5,
-                    y * scale_y - 0.5,
-                    Edge::Clamp,
-                );
+                *pixel = sample(image, x * scale_x - 0.5, y * scale_y - 0.5, Edge::Clamp);
             }
         }
         Ok(())
