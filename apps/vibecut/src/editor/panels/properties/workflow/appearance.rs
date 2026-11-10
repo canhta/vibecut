@@ -44,7 +44,10 @@ impl State {
         if let Some(draft) = self.picker.as_mut() {
             draft.picker.original = draft.picker.color;
         }
-        self.color_base = Some(desk.view().session.project().clone());
+        self.color_base = self
+            .picker
+            .as_ref()
+            .map(|_| desk.view().session.project().clone());
         desk.adopt_preferences(preferences);
         Ok(())
     }

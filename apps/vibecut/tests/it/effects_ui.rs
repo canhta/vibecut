@@ -1740,3 +1740,487 @@ fn discrete_effect_popups_follow_selection_removal_and_locked_tracks() {
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(harness.state().session.history_len(), history);
 }
+
+#[test]
+fn effect_rgb_pickers_edit_all_six_authoritative_bases_once() {
+    use project::{AnimationPath, ParamValue};
+    for (kind, key) in [
+        ("color_pass", "color"),
+        ("color_replace", "target"),
+        ("color_replace", "replace"),
+        ("tint", "black"),
+        ("tint", "white"),
+        ("strobe", "color"),
+    ] {
+        let f = fixture();
+        let video = f.video;
+        let mut editor = f.editor;
+        if matches!(kind, "tint" | "strobe") {
+            editor.preferences.locale = vibecut::i18n::Locale::Vi;
+        }
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition(kind).unwrap().instance("rgb"),
+            })
+            .unwrap();
+        add_effect(&mut editor.session, video, "untouched", false);
+        let mut h = build(editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        let id = format!("effects.rgb.param.{key}");
+        assert!(has_widget(&h, &id), "{kind}.{key}");
+        let path = AnimationPath::new(format!("effects.rgb.params.{key}")).unwrap();
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len().0;
+        click(&mut h, &id);
+        assert!(!has_widget(&h, "color.a"));
+        type_value(&mut h, "color.hex", "#8000FF");
+        assert_eq!(
+            h.state().session.history_len().0,
+            history + 1,
+            "{kind}.{key}"
+        );
+        let edited = item(&h, video);
+        assert_eq!(
+            edited.effects,
+            before.data().scene().timeline.main.items[0].effects,
+            "static storage stays fallback"
+        );
+        let Some(ParamValue::Color(rgba)) = edited.animations.value_at(&path, Tick::ZERO).unwrap()
+        else {
+            panic!("missing authoritative Color");
+        };
+        for (actual, expected) in rgba.into_iter().zip([0.2158605, 0.0, 1.0, 1.0]) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        assert_eq!(
+            render::color::at(&edited.animations, &path, Tick::ZERO, Color([0; 4])).unwrap(),
+            Color([128, 0, 255, 255])
+        );
+        let after = h.state().session.project().clone();
+        type_value(&mut h, "color.hex", "#8000FF");
+        assert_eq!(h.state().session.history_len().0, history + 1, "no-op");
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &before);
+        h.state_mut().activate("edit.redo").unwrap();
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &after);
+    }
+}
+
+#[test]
+fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
+    use project::{
+        AnimationPath, ColorComponent as C, CurveHandle, Extrapolation, Keyframe, Param,
+        ParamValue as V, Segment,
+    };
+    let f = fixture();
+    let video = f.video;
+    let mut editor = f.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb")
+                .with("duration", EffectValue::Scalar(30.0))
+                .unwrap(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetSpeed {
+            items: vec![video],
+            speed: time::Speed::from_f64(0.5).unwrap(),
+            maintain_pitch: false,
+        })
+        .unwrap();
+    let path = AnimationPath::new("effects.rgb.params.color").unwrap();
+    let mut param = Param::new(V::Color([0.2, 0.3, 0.4, 0.75])).unwrap();
+    for c in [C::R, C::G] {
+        for (t, value) in [(0, 0.123456789), (SECOND, 0.5), (2 * SECOND, 0.75)] {
+            let mut key = Keyframe::new(Tick(t), V::Scalar(value));
+            key.segment = Segment::Bezier;
+            key.incoming = Some(CurveHandle {
+                dt: Tick(-SECOND / 4),
+                dv: -0.02,
+            });
+            key.outgoing = Some(CurveHandle {
+                dt: Tick(SECOND / 4),
+                dv: 0.03,
+            });
+            param.channel_mut(Some(c)).unwrap().put(key).unwrap();
+        }
+        param
+            .channel_mut(Some(c))
+            .unwrap()
+            .set_extrapolation(Extrapolation::Linear, Extrapolation::Hold)
+            .unwrap();
+    }
+    param
+        .channel_mut(Some(C::A))
+        .unwrap()
+        .put(Keyframe::new(Tick(SECOND), V::Scalar(0.123456789)))
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: video,
+            path: path.clone(),
+            param: param.clone(),
+        })
+        .unwrap();
+    let mut h = build(editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        item(&h, video).source_time_at(Tick(SECOND)).unwrap(),
+        Tick(SECOND / 2)
+    );
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(
+        h.state().inspect().unwrap().color_preview,
+        Some(Color([188, 188, 170, 255]))
+    );
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    type_value(&mut h, "color.hex", "#FF00FF");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let edited = item(&h, video);
+    let updated = edited.animations.get(&path).unwrap();
+    assert_eq!(
+        updated.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    for c in [C::R, C::G] {
+        let original = param.channel(Some(c)).unwrap();
+        let current = updated.channel(Some(c)).unwrap();
+        assert_eq!(original.base(), current.base());
+        assert_eq!(original.extrapolation(), current.extrapolation());
+        for (a, b) in original.keys().iter().zip(current.keys()) {
+            if a.time != Tick(SECOND) {
+                assert_eq!(a, b);
+            } else {
+                let mut a = a.clone();
+                a.value = b.value.clone();
+                assert_eq!(&a, b);
+            }
+        }
+    }
+    assert_eq!(
+        updated.value_at(Tick(SECOND)).unwrap(),
+        V::Color([1.0, 0.0, 1.0, 0.123456789])
+    );
+    let budget = ByteBudget::new(1 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let image = render::Image::new(1, 1, [0.125, 0.125, 0.125, 0.25], &hooks).unwrap();
+    let effect = edited.effects.iter().find(|e| e.id == "rgb").unwrap();
+    let passes =
+        render::effects::evaluate_effect(&edited.animations, effect, Tick(SECOND), 1, 1, true)
+            .unwrap();
+    use render::effects::EffectCompositor;
+    let out = render::effects::CpuEffects
+        .apply(
+            &image,
+            &passes,
+            render::effects::EffectInputs {
+                input: &image,
+                below: &image,
+                coverage: None,
+            },
+            &hooks,
+        )
+        .unwrap();
+    for (a, b) in out.pixels()[0].into_iter().zip([0.25, 0.0, 0.25, 0.25]) {
+        assert!((a - b).abs() < 3e-6);
+    }
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(2);
+    let keyed = h.state().session.project().clone();
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let removed = item(&h, video);
+    let p = removed.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(
+            !p.channel(Some(c))
+                .unwrap()
+                .keys()
+                .iter()
+                .any(|k| k.time == Tick(SECOND))
+        );
+    }
+    assert_eq!(
+        p.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &keyed);
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(2);
+    // A fresh tick adds all RGB components as ONE composite edit, retaining alpha.
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let added = item(&h, video);
+    let p = added.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(
+            p.channel(Some(c))
+                .unwrap()
+                .keys()
+                .iter()
+                .any(|k| k.time == Tick(3 * SECOND))
+        );
+    }
+    assert_eq!(
+        p.channel(Some(C::A)).unwrap(),
+        param.channel(Some(C::A)).unwrap()
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn effect_rgb_zero_key_base_survives_static_changes_and_last_key_removal() {
+    use project::{AnimationPath, ColorComponent as C, Param, ParamValue as V};
+    let f = fixture();
+    let video = f.video;
+    let mut editor = f.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb"),
+        })
+        .unwrap();
+    let path = AnimationPath::new("effects.rgb.params.color").unwrap();
+    let mut base = Param::new(V::Color([0.123456789, 0.25, 0.5, 0.314159265])).unwrap();
+    base.channel_mut(Some(C::A))
+        .unwrap()
+        .put(project::Keyframe::new(Tick::ZERO, V::Scalar(0.314159265)))
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: video,
+            path: path.clone(),
+            param: base.clone(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::UpdateEffectParam {
+            item: video,
+            effect: "rgb".into(),
+            key: "color".into(),
+            value: 16711680.0,
+        })
+        .unwrap();
+    let mut h = build(editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(
+        h.state().inspect().unwrap().color_preview,
+        Some(Color([99, 137, 188, 255]))
+    );
+    type_value(&mut h, "color.hex", "#00FF00");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let edited = item(&h, video);
+    let param = edited.animations.get(&path).unwrap();
+    for c in [C::R, C::G, C::B] {
+        assert!(param.channel(Some(c)).unwrap().keys().is_empty());
+    }
+    assert_eq!(
+        param.value_at(Tick::ZERO).unwrap(),
+        V::Color([0.0, 1.0, 0.0, 0.314159265])
+    );
+    click(&mut h, "effects.rgb.param.color");
+    type_value(&mut h, "color.hex", "#0000FF");
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(V::Color([0.0, 0.0, 1.0, 0.314159265]))
+    );
+}
+
+#[test]
+fn effect_rgb_picker_cancels_stale_gestures_and_disables_keyed_edits_outside() {
+    for reason in ["escape", "selection", "remove", "lock", "time", "tab"] {
+        let f = fixture();
+        let video = f.video;
+        let image = f.image;
+        let main = f.main;
+        let mut editor = f.editor;
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition("strobe")
+                    .unwrap()
+                    .instance("rgb"),
+            })
+            .unwrap();
+        let mut h = build(editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        click(&mut h, "effects.rgb.param.color");
+        let slider = widget_rect(&h, "color.v.slider");
+        h.drag_at(slider.center());
+        h.run_steps(2);
+        h.hover_at(slider.left_center());
+        h.run_steps(2);
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        match reason {
+            "escape" => h.key_press(egui::Key::Escape),
+            "selection" => {
+                h.state_mut().selection = [image].into_iter().collect();
+            }
+            "remove" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::RemoveEffect {
+                        item: video,
+                        effect: "rgb".into(),
+                    })
+                    .unwrap();
+            }
+            "lock" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::SetTrackFlags {
+                        track: main,
+                        locked: true,
+                        muted: false,
+                        hidden: false,
+                    })
+                    .unwrap();
+            }
+            "time" => {
+                let project = h.state().session.project().clone();
+                h.state_mut()
+                    .playback
+                    .seek(Tick(SECOND), false, project)
+                    .unwrap();
+            }
+            "tab" => {
+                h.state_mut()
+                    .preferences
+                    .set("properties_tabs", serde_json::json!({"video":"transform"}))
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let expected = h.state().session.project().clone();
+        let expected_history = h.state().session.history_len();
+        h.run_steps(3);
+        h.drop_at(slider.left_center());
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &expected, "{reason}");
+        assert_eq!(
+            h.state().session.history_len(),
+            expected_history,
+            "{reason}"
+        );
+        assert_eq!(h.state().inspect().unwrap().color_preview, None, "{reason}");
+        if !matches!(reason, "lock" | "remove") {
+            assert_eq!(&expected, &before);
+            assert_eq!(expected_history, history);
+        }
+    }
+    let f = fixture();
+    let video = f.video;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb"),
+        })
+        .unwrap();
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    let widgets = h.state().inspect().unwrap().widgets;
+    for id in [
+        "effects.rgb.param.color",
+        "effects.rgb.param.color.keyframe",
+    ] {
+        assert!(!widgets.iter().find(|w| w.id == id).unwrap().enabled);
+    }
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "effects.rgb.param.color");
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick::ZERO, false, project)
+        .unwrap();
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color.keyframe");
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(2);
+    click(&mut h, "effects.rgb.param.color");
+    let history = h.state().session.history_len().0;
+    let slider = widget_rect(&h, "color.v.slider");
+    h.drag_at(slider.center());
+    h.run_steps(2);
+    h.hover_at(slider.left_center());
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history);
+    h.drop_at(slider.left_center());
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let path = project::AnimationPath::new("effects.rgb.params.color").unwrap();
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick(3 * SECOND))
+            .unwrap(),
+        Some(project::ParamValue::Color([0.0, 0.0, 0.0, 1.0]))
+    );
+}

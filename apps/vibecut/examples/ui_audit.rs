@@ -623,6 +623,18 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| inspector_video_tab(theme, scale, "effects-vi"),
     },
     Scene {
+        name: "inspector-effects-colours",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-colours"),
+    },
+    Scene {
+        name: "inspector-effects-colours-picker",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-colours-picker"),
+    },
+    Scene {
         name: "inspector-effects-threshold",
         reference_dark: None,
         reference_light: None,
@@ -1805,9 +1817,12 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
         },
     )?;
     capture_columns(&mut editor)?;
+    let colour_picker = tab == "effects-colours-picker";
     let tab = if tab.starts_with("effects") {
         let kinds: &[&str] = if tab == "effects-threshold" {
             &["extract"]
+        } else if tab.starts_with("effects-colours") {
+            &["tint", "strobe"]
         } else {
             &["invert", "color_pass", "color_replace"]
         };
@@ -1828,6 +1843,11 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
+    if colour_picker {
+        app.get(By::new().predicate(|node| node.author_id() == Some("effects.tint.param.black")))
+            .click();
+        app.run_steps(3);
+    }
     Ok(app)
 }
 

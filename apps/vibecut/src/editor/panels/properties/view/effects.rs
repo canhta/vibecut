@@ -1,8 +1,8 @@
 //! Renders effect parameters.
 use super::Panel;
 use crate::editor::properties::{
-    Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
-    Vec2, effect_scrub_spec, egui, icons, read, theme,
+    Action, BUTTON_ICON, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget,
+    Text, Tick, Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
 impl Panel<'_, '_> {
@@ -188,6 +188,9 @@ impl Panel<'_, '_> {
                                         );
                                     }
                                 }
+                                project::EffectParamKind::Color if parameter.animatable => {
+                                    self.effect_color_field(ui, item, &effect.id, parameter.id);
+                                }
                                 project::EffectParamKind::Color
                                 | project::EffectParamKind::Point => {}
                             }
@@ -232,6 +235,99 @@ impl Panel<'_, '_> {
             }
         } else if self.state.reorder.is_some() && ui.input(|input| input.pointer.any_released()) {
             self.state.reorder = None;
+        }
+    }
+    fn effect_color_field(&mut self, ui: &mut egui::Ui, item: ItemId, effect: &str, key: &str) {
+        let label = match key {
+            "target" => Text::EffectTargetColour,
+            "replace" => Text::EffectReplacementColour,
+            "black" => Text::EffectDarkColour,
+            "white" => Text::EffectLightColour,
+            "color" => {
+                if read::item(self.cx.session.project(), item)
+                    .and_then(|i| i.effects.iter().find(|e| e.id == effect))
+                    .is_some_and(|e| e.kind == "strobe")
+                {
+                    Text::EffectFlashColour
+                } else {
+                    Text::EffectKeptColour
+                }
+            }
+            _ => return,
+        };
+        let Some((start, _)) = read::range_of(self.cx.session.project(), item) else {
+            return;
+        };
+        let target = ColorTarget::EffectColor {
+            item,
+            effect: effect.into(),
+            key: key.into(),
+            time: self.cx.playhead.saturating_sub(start),
+        };
+        let project = self.cx.session.project();
+        let inside = target.inside(project);
+        let locked = read::item_locked(project, item);
+        let editable = !locked && (inside || !target.rgb_keys(project, false));
+        let row = Rect::from_min_size(
+            ui.next_widget_position(),
+            Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
+        );
+        let id = format!("effects.{effect}.param.{key}");
+        ui.add_enabled_ui(editable, |ui| {
+            self.color_row(ui, &id, label, target.clone())
+        })
+        .response
+        .on_disabled_hover_text(self.tr(if locked {
+            Text::EffectLocked
+        } else {
+            Text::EffectKeyframeTime
+        }));
+        let exists = target.rgb_keys(project, true);
+        let key_id = format!("{id}.keyframe");
+        let rect = Rect::from_min_size(
+            egui::pos2(
+                row.left() + super::VALUE_COLUMN - theme::size::CONTROL - theme::space::XS,
+                row.top(),
+            ),
+            Vec2::new(theme::size::CONTROL, row.height()),
+        );
+        let mut strip = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let response = strip
+            .add_enabled_ui(!locked && inside, |ui| {
+                crate::kit::icon_button(
+                    ui,
+                    &key_id,
+                    Icon::Diamond,
+                    self.tr(if exists {
+                        Text::RemoveKeyframe
+                    } else {
+                        Text::AddKeyframe
+                    }),
+                    exists,
+                )
+            })
+            .inner
+            .on_disabled_hover_text(self.tr(if locked {
+                Text::EffectLocked
+            } else {
+                Text::EffectKeyframeTime
+            }));
+        self.remember_with_icon(key_id, Some(Icon::Diamond.name()), &response);
+        if response.clicked() {
+            match target.toggle_rgb(project) {
+                Ok(command) => {
+                    self.actions.extend(self.state.close_picker());
+                    self.actions.push(Action::ColorCommit {
+                        command,
+                        recent: self.cx.preferences.recent_colors.clone(),
+                    });
+                }
+                Err(error) => self.fail(error),
+            }
         }
     }
     fn effect_discrete_field(

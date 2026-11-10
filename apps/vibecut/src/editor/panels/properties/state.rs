@@ -148,6 +148,8 @@ impl State {
         let color = target.color(project)?;
         self.color_base = Some(project.clone());
         let mut picker = crate::services::color_picker::Picker::new(color);
+        picker.opaque =
+            matches!(&target, ColorTarget::EffectColor { key, .. } if key != "key_color");
         // Hang off the panel's left edge, below its tab strip, unless a row anchors it.
         picker.anchor = anchor.or_else(|| {
             self.area.map(|panel| {
