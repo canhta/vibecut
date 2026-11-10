@@ -5298,6 +5298,79 @@ fn word_project(edited: bool, locked: bool) -> Session {
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 
+/// One source-language cue with an explicit text and measured word ranges.
+fn merge_cue(
+    id: &str,
+    start: i64,
+    end: i64,
+    text: &str,
+    words: &[(i64, i64)],
+    edited: bool,
+) -> captions::Cue {
+    let language = captions::LanguageTag::parse("vi").unwrap();
+    captions::Cue {
+        id: id.into(),
+        range: range(start, end),
+        source_lang: language.clone(),
+        texts: std::collections::BTreeMap::from([(
+            language,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
+        style: None,
+    }
+}
+
+/// One caption item with three adjacent measured-word cues and an English
+/// translation on each. The first cue's source text is optionally protected and
+/// the caption track is optionally locked.
+fn merge_project(edited: bool, locked: bool) -> Session {
+    let mut data = project().into_data();
+    word_asset(&mut data, 1200);
+    let mut cues = vec![
+        merge_cue("câu-1", 0, 400, "Một hai", &[(0, 100), (100, 200)], edited),
+        merge_cue(
+            "câu-2",
+            400,
+            900,
+            "ba bốn",
+            &[(400, 500), (500, 600)],
+            false,
+        ),
+        merge_cue("câu-3", 900, 1200, "năm", &[(900, 1000)], false),
+    ];
+    let english = captions::LanguageTag::parse("en").unwrap();
+    for (index, cue) in cues.iter_mut().enumerate() {
+        let text = match index {
+            0 => "one two",
+            1 => "three four",
+            _ => "five",
+        };
+        cue.texts.insert(
+            english.clone(),
+            captions::CueText {
+                text: text.into(),
+                edited: index == 1,
+                translation_ref: Some("translation/1".into()),
+            },
+        );
+    }
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(9),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked,
+        items: vec![caption_words_item(4, 0, (0, 1200), cues)],
+    });
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
 /// Word output ranges of the active scene keyed by cue word index.
 fn word_layout(session: &Session) -> Vec<(usize, i64, i64)> {
     let mut words: Vec<(usize, i64, i64)> = session
@@ -5630,4 +5703,339 @@ proptest! {
         prop_assert_eq!(words[0].output.duration().0, second_end - second_start);
         prop_assert_eq!(words[0].text.as_ref().unwrap().as_str(), "hai");
     }
+}
+
+// --- Transcript cue merges ------------------------------------------------
+
+#[test]
+fn transcript_merge_joins_adjacent_cues_as_one_undo_step() {
+    let mut s = merge_project(false, false);
+    let before = project::encode(s.project(), false).unwrap();
+    let revision = s.revision();
+    // Input order is irrelevant: the selected cues sort by time.
+    let outcome = s
+        .execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[{"item":4,"cue":"câu-2"},{"item":4,"cue":"câu-1"}]}),
+        )
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (1, 0), "one undo step per merge");
+    assert_ne!(s.revision(), revision);
+
+    let view = s.transcript().unwrap();
+    assert_eq!(view.cues.len(), 2, "cue-3 stays separate");
+    let merged = &view.cues[0];
+    assert_eq!(merged.id.as_str(), "câu-1", "the earliest cue keeps its id");
+    assert_eq!(merged.output, range(0, 900));
+    assert_eq!(
+        merged.texts[&captions::LanguageTag::parse("vi").unwrap()]
+            .text
+            .as_str(),
+        "Một hai ba bốn"
+    );
+    let english = &merged.texts[&captions::LanguageTag::parse("en").unwrap()];
+    assert_eq!(english.text.as_str(), "one two three four");
+    assert!(english.edited, "an edited translation stays edited");
+    assert_eq!(
+        english.translation_ref.as_ref().unwrap().as_str(),
+        "translation/1"
+    );
+    assert_eq!(
+        merged
+            .words
+            .iter()
+            .map(|word| (
+                word.id.word,
+                word.text.as_ref().unwrap().as_str(),
+                word.output
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, "Một", range(0, 100)),
+            (1, "hai", range(100, 200)),
+            (2, "ba", range(400, 500)),
+            (3, "bốn", range(500, 600)),
+        ],
+        "word timings concatenate in cue order"
+    );
+    assert_eq!(view.cues[1].id.as_str(), "câu-3");
+    assert_eq!(view.cues[1].output, range(900, 1200));
+
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    s.redo().unwrap();
+    assert_eq!(
+        s.transcript().unwrap().cues[0].output,
+        range(0, 900),
+        "redo restores the merge"
+    );
+
+    // A run of more than two adjacent cues is one merge.
+    s.execute(
+        "transcript.merge_cues",
+        json!({"cue_ids":[{"item":4,"cue":"câu-3"},{"item":4,"cue":"câu-1"}]}),
+    )
+    .unwrap();
+    let view = s.transcript().unwrap();
+    assert_eq!(view.cues.len(), 1);
+    assert_eq!(view.cues[0].output, range(0, 1200));
+    assert_eq!(view.cues[0].words.len(), 5);
+    assert_eq!(
+        view.cues[0].texts[&captions::LanguageTag::parse("vi").unwrap()]
+            .text
+            .as_str(),
+        "Một hai ba bốn năm"
+    );
+}
+
+#[test]
+fn transcript_merge_after_a_trim_maps_through_the_retained_source() {
+    let mut s = merge_project(false, false);
+    let before = project::encode(s.project(), false).unwrap();
+    let outcome = s
+        .execute(
+            "batch",
+            json!({"commands":[
+                {"command":"trim_start","params":{"item":4,"at":400}},
+                {"command":"transcript.merge_cues","params":{"cue_ids":[
+                    {"item":4,"cue":"câu-3"},{"item":4,"cue":"câu-2"}
+                ]}}
+            ]}),
+        )
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (1, 0), "the batch is one undo step");
+    let view = s.transcript().unwrap();
+    assert_eq!(view.cues.len(), 1, "the trim drops cue-1 before the merge");
+    assert_eq!(view.cues[0].id.as_str(), "câu-2");
+    assert_eq!(view.cues[0].output, range(400, 1200));
+    assert_eq!(
+        view.cues[0].texts[&captions::LanguageTag::parse("vi").unwrap()]
+            .text
+            .as_str(),
+        "ba bốn năm"
+    );
+    assert_eq!(
+        view.cues[0]
+            .words
+            .iter()
+            .map(|word| (word.id.word, word.output))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, range(400, 500)),
+            (1, range(500, 600)),
+            (2, range(900, 1000))
+        ]
+    );
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+}
+
+#[test]
+fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_atomically() {
+    let cue = |item: u64, cue: &str| json!({"item":item,"cue":cue});
+    let mut plain = merge_project(false, false);
+    let before = project::encode(plain.project(), false).unwrap();
+    let revision = plain.revision();
+    let mut refused = |cue_ids: Value| {
+        let error = plain
+            .execute("transcript.merge_cues", json!({"cue_ids": cue_ids}))
+            .unwrap_err();
+        assert_unchanged(&plain, &before, &revision);
+        error
+    };
+    assert!(matches!(
+        refused(json!([])),
+        EditError::Invalid("merge cue count")
+    ));
+    assert!(matches!(
+        refused(json!([cue(4, "câu-1")])),
+        EditError::Invalid("merge cue count")
+    ));
+    assert!(matches!(
+        refused(json!([cue(4, "câu-1"), cue(4, "câu-1")])),
+        EditError::Invalid("duplicate merge cue")
+    ));
+    assert!(matches!(
+        refused(json!([cue(4, "câu-1"), cue(4, "khác")])),
+        EditError::Invalid("merge cue")
+    ));
+    assert!(matches!(
+        refused(json!([cue(77, "câu-1"), cue(4, "câu-1")])),
+        EditError::NoItem(ItemId(77))
+    ));
+    assert!(matches!(
+        refused(json!([cue(4, "câu-1"), cue(4, "câu-3")])),
+        EditError::CuesNotAdjacent
+    ));
+
+    // Over-budget selections refuse before resolving any cue.
+    let many: Vec<Value> = (0..=engine::control::MAX_COLLECTION)
+        .map(|_| cue(4, "câu-1"))
+        .collect();
+    assert!(matches!(
+        plain.execute("transcript.merge_cues", json!({"cue_ids":many})),
+        Err(EditError::Limit)
+    ));
+    assert_unchanged(&plain, &before, &revision);
+
+    // Cues on different tracks refuse with a typed reason.
+    let mut data = plain.project().data().clone();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(11),
+        name: "Other captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![caption_words_item(
+            8,
+            0,
+            (0, 100),
+            vec![word_cue("khác-1", 0, 100, &[], false)],
+        )],
+    });
+    let mut cross_track = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let bytes = project::encode(cross_track.project(), false).unwrap();
+    let revision = cross_track.revision();
+    assert!(matches!(
+        cross_track.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-1"), cue(8, "khác-1")]})
+        ),
+        Err(EditError::CuesAcrossTracks)
+    ));
+    assert_unchanged(&cross_track, &bytes, &revision);
+
+    // Cues of two items on one track refuse too.
+    let mut data = plain.project().data().clone();
+    let item = caption_words_item(
+        8,
+        1200,
+        (0, 100),
+        vec![word_cue("khác-1", 0, 100, &[], false)],
+    );
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .find(|track| track.id == TrackId(9))
+        .unwrap()
+        .items
+        .push(item);
+    let mut cross_item = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let bytes = project::encode(cross_item.project(), false).unwrap();
+    let revision = cross_item.revision();
+    assert!(matches!(
+        cross_item.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-1"), cue(8, "khác-1")]})
+        ),
+        Err(EditError::CuesAcrossItems)
+    ));
+    assert_unchanged(&cross_item, &bytes, &revision);
+
+    // An edited source text protects every selected cue.
+    let mut protected = merge_project(true, false);
+    let bytes = project::encode(protected.project(), false).unwrap();
+    let revision = protected.revision();
+    assert!(matches!(
+        protected.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
+        ),
+        Err(EditError::Protected)
+    ));
+    assert_unchanged(&protected, &bytes, &revision);
+
+    // A locked caption track refuses the edit.
+    let mut locked = merge_project(false, true);
+    let bytes = project::encode(locked.project(), false).unwrap();
+    let revision = locked.revision();
+    assert!(matches!(
+        locked.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
+        ),
+        Err(EditError::Locked(_))
+    ));
+    assert_unchanged(&locked, &bytes, &revision);
+
+    // Mixed or broken word timing cannot be merged without losing alignment.
+    let mut data = merge_project(false, false).project().data().clone();
+    for track in data.scene_mut().timeline.iter_mut() {
+        for item in &mut track.items {
+            if let ItemParams::Caption(params) = &mut item.content {
+                params.cues.cues[2].word_ranges.clear();
+            }
+        }
+    }
+    let mut untimed = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let bytes = project::encode(untimed.project(), false).unwrap();
+    let revision = untimed.revision();
+    assert!(matches!(
+        untimed.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-2"), cue(4, "câu-3")]})
+        ),
+        Err(EditError::Invalid("merge cue word timings"))
+    ));
+    assert_unchanged(&untimed, &bytes, &revision);
+
+    // Different source languages cannot share one merged source text.
+    let mut data = merge_project(false, false).project().data().clone();
+    for track in data.scene_mut().timeline.iter_mut() {
+        for item in &mut track.items {
+            if let ItemParams::Caption(params) = &mut item.content {
+                params.cues.cues[1].source_lang = captions::LanguageTag::parse("zh").unwrap();
+            }
+        }
+    }
+    let mut mixed = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let bytes = project::encode(mixed.project(), false).unwrap();
+    let revision = mixed.revision();
+    assert!(matches!(
+        mixed.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(4, "câu-1"), cue(4, "câu-2")]})
+        ),
+        Err(EditError::Invalid("merge cue source language"))
+    ));
+    assert_unchanged(&mixed, &bytes, &revision);
+
+    // A cue is addressable only while its scene is active.
+    let mut data = merge_project(false, false).project().data().clone();
+    let mut other = data.scene().clone();
+    other.id = project::SceneId(7);
+    other.name = "Khác".into();
+    other.is_main = false;
+    other.timeline = Default::default();
+    other.timeline.main.id = TrackId(30);
+    other.timeline.insert_track(Track {
+        id: TrackId(20),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![caption_words_item(
+            90,
+            0,
+            (0, 100),
+            vec![word_cue("khác-2", 0, 100, &[], false)],
+        )],
+    });
+    let main = data.scene().clone();
+    data.scenes = project::Scenes::try_from(vec![main, other]).unwrap();
+    let mut two_scenes = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let bytes = project::encode(two_scenes.project(), false).unwrap();
+    let revision = two_scenes.revision();
+    assert!(matches!(
+        two_scenes.execute(
+            "transcript.merge_cues",
+            json!({"cue_ids":[cue(90, "khác-2"), cue(4, "câu-1")]})
+        ),
+        Err(EditError::SceneBoundary)
+    ));
+    assert_unchanged(&two_scenes, &bytes, &revision);
 }

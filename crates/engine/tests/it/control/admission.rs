@@ -497,7 +497,7 @@ fn media_access(root: &Path) -> MediaAccess {
     MediaAccess::new(artifacts, thumbnails)
 }
 
-/// The seed with measured words on its caption cue for transcript edit examples.
+/// The seed with two adjacent measured-word cues for transcript edit examples.
 fn with_words(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();
     for item in data
@@ -507,11 +507,31 @@ fn with_words(seed: &Session) -> Session {
         .flat_map(|track| &mut track.items)
     {
         if let ItemParams::Caption(params) = &mut item.content {
+            let language = captions::LanguageTag::parse("en").unwrap();
             let cue = params.cues.cues.first_mut().unwrap();
-            cue.texts.values_mut().next().unwrap().text = "Hello brave world".into();
-            cue.word_ranges = (0..3)
+            let end = cue.range.end();
+            cue.range = SourceRange::new(Tick::ZERO, Tick(500)).unwrap();
+            cue.texts.values_mut().next().unwrap().text = "Hello brave".into();
+            cue.word_ranges = (0..2)
                 .map(|index| SourceRange::new(Tick(index * 100), Tick(index * 100 + 100)).unwrap())
                 .collect();
+            params.cues.cues.push(captions::Cue {
+                id: "cue-2".into(),
+                range: SourceRange::new(Tick(500), end).unwrap(),
+                source_lang: language.clone(),
+                texts: [(
+                    language,
+                    captions::CueText {
+                        text: "world".into(),
+                        edited: false,
+                        translation_ref: None,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                word_ranges: vec![SourceRange::new(Tick(500), Tick(600)).unwrap()],
+                style: None,
+            });
         }
     }
     Session::new(Project::new(data).unwrap(), 10).unwrap()
@@ -1442,6 +1462,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "burn_subtitles",
                 "export_subtitles",
                 "transcript.delete_range",
+                "transcript.merge_cues",
             ][..],
         ),
         (

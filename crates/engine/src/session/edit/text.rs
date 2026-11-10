@@ -211,6 +211,208 @@ pub(super) fn execute_transcript_delete(
     )
 }
 
+/// Merges adjacent cues of one caption item into the earliest cue. Each language
+/// keeps its joined text, measured word timings concatenate in cue order, and the
+/// source cue track is rebuilt through the mapping owner so trimmed and repeated
+/// spans stay consistent. Any refused selection changes nothing.
+pub(super) fn execute_transcript_merge(
+    mut data: ProjectData,
+    cue_ids: Vec<crate::CueId>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    if cue_ids.len() < 2 {
+        return Err(EditError::Invalid("merge cue count"));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    if cue_ids.iter().any(|id| !unique.insert(id.clone())) {
+        return Err(EditError::Invalid("duplicate merge cue"));
+    }
+    let item_id = cue_ids
+        .first()
+        .ok_or(EditError::Invalid("merge cue count"))?
+        .item;
+    let (track_id, locked) = item_track(&data, item_id).ok_or_else(|| {
+        if item_in_other_scene(&data, item_id) {
+            EditError::SceneBoundary
+        } else {
+            EditError::NoItem(item_id)
+        }
+    })?;
+    for id in cue_ids.iter().skip(1) {
+        let (other, _) = item_track(&data, id.item).ok_or_else(|| {
+            if item_in_other_scene(&data, id.item) {
+                EditError::SceneBoundary
+            } else {
+                EditError::NoItem(id.item)
+            }
+        })?;
+        if other != track_id {
+            return Err(EditError::CuesAcrossTracks);
+        }
+        if id.item != item_id {
+            return Err(EditError::CuesAcrossItems);
+        }
+    }
+    if locked {
+        return Err(EditError::Locked(track_id));
+    }
+
+    let retained = sources.contains_key(&item_id);
+    let item = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == item_id)
+        .ok_or(EditError::NoItem(item_id))?;
+    let cues = if retained {
+        match sources.get_mut(&item_id) {
+            Some(source) => Arc::make_mut(source),
+            None => return Err(EditError::NoItem(item_id)),
+        }
+    } else {
+        let ItemParams::Caption(params) = &mut item.content else {
+            return Err(EditError::Invalid("merge requires caption item"));
+        };
+        &mut params.cues
+    };
+    merge_adjacent(cues, &cue_ids)?;
+    // Rebuild the visible view from the authoritative source track: clipping,
+    // repeated occurrences and fragment identities stay with the mapping owner.
+    set_range(item, item.source_range, Tick::ZERO, sources)?;
+    Ok(data)
+}
+
+/// Merge the selected cue identities inside one source cue track.
+fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Result<()> {
+    // Resolve identities to time-ordered references; input order is irrelevant.
+    let mut selected = Vec::with_capacity(cue_ids.len());
+    for id in cue_ids {
+        let index = cues
+            .cues
+            .iter()
+            .position(|cue| cue.id == id.cue)
+            .ok_or(EditError::Invalid("merge cue"))?;
+        let start = cues
+            .cues
+            .get(index)
+            .ok_or(EditError::Invalid("merge cue"))?
+            .range
+            .start();
+        selected.push((start, index));
+    }
+    selected.sort_by_key(|(start, _)| *start);
+    let selected: Vec<&captions::Cue> = selected
+        .iter()
+        .map(|(_, index)| cues.cues.get(*index).ok_or(EditError::Invalid("merge cue")))
+        .collect::<Result<_>>()?;
+    for pair in selected.windows(2) {
+        let [left, right] = pair else {
+            continue;
+        };
+        if left.range.end() != right.range.start() {
+            return Err(EditError::CuesNotAdjacent);
+        }
+    }
+    if selected
+        .iter()
+        .any(|cue| cue.source_text().is_some_and(|text| text.edited))
+    {
+        return Err(EditError::Protected);
+    }
+    let first = selected
+        .first()
+        .ok_or(EditError::Invalid("merge cue count"))?;
+    let source_lang = first.source_lang.clone();
+    if selected.iter().any(|cue| cue.source_lang != source_lang) {
+        return Err(EditError::Invalid("merge cue source language"));
+    }
+    let mut word_ranges = Vec::new();
+    if selected.iter().any(|cue| !cue.word_ranges.is_empty()) {
+        for cue in &selected {
+            if cue.word_ranges.is_empty() || cue.word_ranges.len() != cue.words().len() {
+                return Err(EditError::Invalid("merge cue word timings"));
+            }
+            word_ranges.extend_from_slice(&cue.word_ranges);
+        }
+    }
+    let mut texts = std::collections::BTreeMap::new();
+    let languages: std::collections::BTreeSet<_> = selected
+        .iter()
+        .flat_map(|cue| cue.texts.keys().cloned())
+        .collect();
+    for language in languages {
+        let mut text = String::new();
+        let mut edited = false;
+        let mut reference: Option<Option<captions::NfcText>> = None;
+        for cue in &selected {
+            let Some(value) = cue.texts.get(&language) else {
+                continue;
+            };
+            if !text.is_empty() && !value.text.as_str().is_empty() {
+                text.push(' ');
+            }
+            text.push_str(value.text.as_str());
+            edited |= value.edited;
+            match &reference {
+                None => reference = Some(value.translation_ref.clone()),
+                Some(current) if current == &value.translation_ref => {}
+                Some(_) => reference = Some(None),
+            }
+        }
+        texts.insert(
+            language,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: reference.flatten(),
+            },
+        );
+    }
+    let last = selected
+        .last()
+        .ok_or(EditError::Invalid("merge cue count"))?;
+    let range = SourceRange::new(first.range.start(), last.range.end())?;
+    let merged = captions::Cue {
+        id: first.id.clone(),
+        range,
+        source_lang,
+        texts,
+        word_ranges,
+        style: first.style.clone(),
+    };
+    drop(selected);
+    let selected: std::collections::BTreeSet<_> = cue_ids.iter().map(|id| id.cue.clone()).collect();
+    cues.cues.retain(|cue| !selected.contains(&cue.id));
+    let at = cues
+        .cues
+        .iter()
+        .position(|cue| cue.range.start() > range.start())
+        .unwrap_or(cues.cues.len());
+    cues.cues.insert(at, merged);
+    Ok(())
+}
+
+fn item_track(data: &ProjectData, id: ItemId) -> Option<(TrackId, bool)> {
+    data.scene().timeline.iter().find_map(|track| {
+        track
+            .items
+            .iter()
+            .any(|item| item.id == id)
+            .then_some((track.id, track.locked))
+    })
+}
+
+fn item_in_other_scene(data: &ProjectData, id: ItemId) -> bool {
+    let scene = data.scene().id;
+    data.scenes
+        .iter()
+        .filter(|other| other.id != scene)
+        .flat_map(|other| other.timeline.iter())
+        .flat_map(|track| &track.items)
+        .any(|item| item.id == id)
+}
+
 pub(super) fn execute_retranslate(
     mut data: ProjectData,
     id: ItemId,

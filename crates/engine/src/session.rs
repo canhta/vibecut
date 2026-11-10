@@ -16,7 +16,7 @@ pub use commands::{
 };
 mod edit;
 pub(crate) mod transcript;
-pub use transcript::{TranscriptCue, TranscriptView, TranscriptWord, WordId};
+pub use transcript::{CueId, TranscriptCue, TranscriptView, TranscriptWord, WordId};
 mod transition_rules;
 pub(crate) mod transitions {
     //! Maintains video transitions across candidate edits.

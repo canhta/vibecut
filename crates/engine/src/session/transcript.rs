@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::SourceRange;
 
+/// Stable address of one caption cue: its caption item and retained cue identity.
+/// Text and timing are never part of an address.
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct CueId {
+    pub item: ItemId,
+    pub cue: NfcText,
+}
+
 /// Stable address of one measured word: its item, retained cue and index in the
 /// cue's `word_ranges`. Text is never part of an address.
 #[derive(

@@ -1,6 +1,6 @@
 # Session
 
-Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `WordId`, `wire`.
+Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `CueId`, `WordId`, `wire`.
 
 ## Public entry points
 
@@ -16,7 +16,7 @@ Required nullable keyframe fields stay required; `NewItem.source_asset` may be o
 
 ## Transcript read model
 
-`Session::transcript()` returns the active scene's caption cues in output time, each with its item and track, source/target texts, `protected` (the cue's source text was explicitly edited) and `locked` (the owning track) flags, and its measured words. A `TranscriptWord` carries a `WordId` (`item`, retained `cue`, `word` index into the cue's ranges), the paired source token when token and timing counts agree, its output range and the same flags. It reads `Item::word_spans`, so a trimmed item clips its words instead of duplicating a source range, and repeated source spans produce one entry per item occurrence. The view is a read: it changes no project, revision or history. Selecting a `WordId` from another scene is addressable by the command path, which refuses it with `SceneBoundary` rather than cutting two timelines.
+`Session::transcript()` returns the active scene's caption cues in output time, each with its item and track, source/target texts, `protected` (the cue's source text was explicitly edited) and `locked` (the owning track) flags, and its measured words. A `TranscriptWord` carries a `WordId` (`item`, retained `cue`, `word` index into the cue's ranges), the paired source token when token and timing counts agree, its output range and the same flags. A `CueId` addresses one caption cue by `item` and retained `cue` for cue edits. It reads `Item::word_spans`, so a trimmed item clips its words instead of duplicating a source range, and repeated source spans produce one entry per item occurrence. The view is a read: it changes no project, revision or history. Selecting a `WordId` or `CueId` from another scene is addressable by the command path, which refuses it with `SceneBoundary` rather than cutting two timelines.
 
 ## Transactions, gestures and changes
 

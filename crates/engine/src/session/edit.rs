@@ -56,6 +56,11 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             {
                 return Err(EditError::Limit);
             }
+            Command::TranscriptMergeCues { cue_ids }
+                if cue_ids.len() > super::wire::MAX_COLLECTION =>
+            {
+                return Err(EditError::Limit);
+            }
             Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
@@ -320,6 +325,9 @@ pub(crate) fn apply(
         }
         Command::TranscriptDeleteRange { word_ids } => {
             data = text::execute_transcript_delete(data, word_ids, created, next, sources)?;
+        }
+        Command::TranscriptMergeCues { cue_ids } => {
+            data = text::execute_transcript_merge(data, cue_ids, sources)?;
         }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
