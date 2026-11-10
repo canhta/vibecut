@@ -4,14 +4,14 @@
 
 `Model::languages` is the supported language scope. An empty list means language-neutral weights that neither read nor produce language, such as vision detectors; `Model::language_neutral()` exposes it. It never means every language: `Model::matches_language` is false for neutral weights and `suggested_transcriber` requires a real match, so a vision entry is never an ASR model. Concrete lists: `whisper-large-v3-turbo` vi, en, zh; `gipformer-68m-rnnt-int8` vi; `whisper-small-dtw` vi, en, zh, zh-Hans, zh-Hant.
 
-Vision entries, both MIT and language-neutral:
+Vision entries in this table are MIT and language-neutral; the Apache-2.0 SFace entry is documented in [vision](../vision/README.md):
 
 | Model id | Upstream source | Files |
 |---|---|---|
 | `yunet-2026may` | `opencv/opencv_zoo` `48b10fa505aeb51fbd127fc60a5c660040e823b7`, `models/face_detection_yunet` | `face_detection_yunet_2026may.onnx`, 229,738 B, `ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0` |
 | `clip-vit-base-patch32` | `Xenova/clip-vit-base-patch32` `6b7c523703ae26e39be4b03774966f8571c7f523`; weights derived from MIT OpenAI CLIP | `vision_model.onnx` 351,685,709 B `fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40`; `text_model.onnx` 254,058,553 B `3f6571f5bad13a97c469c1622e1cfc4d9aef78b79fdbfcff804ca357bfada8cc`; `tokenizer.json` 2,224,119 B `f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd`; `config.json` 4,524 B `493ef57ff783e42d1530c91b53469b7fdf8db8a9c1408e86998fcb7899a4f495`; `preprocessor_config.json` 520 B `6f638fb9401a6d6296feff533ee7efe657b787c49f954f82f5906b36ef2a1b1f` |
 
-The CLIP text tower is registered so fixed prompt embeddings are reproducible, not for per-frame text inference. No derived embedding file is shipped: the two prompts are computed once on first use, cached by text-model hash + tokenizer hash + prompt text. Tokenize with the pinned `tokenizer.json`, pad or truncate with id 49,407 to 77 ids, run `text_model.onnx` with `input_ids` `[N,77]` int64 and L2-normalize each projected embedding. Prompts: `a screenshot of a computer screen` and `a photograph of a person`. Image embeddings come from `vision_model.onnx` with the pinned 224x224 RGB mean/std; screen probability is `14.3 * (image · text)` with a 0.5 threshold. The consuming adapter owns this wiring.
+The CLIP text tower is registered so the two fixed prompt embeddings can be derived once per loaded bundle; it is not used for per-frame text inference. No derived embedding file is shipped. The [vision contract](../vision/README.md) and its `tract`/`decisions` modules own the prompts and the screen-score recipe.
 
 ## Light-ASD export recipe (entry intentionally absent)
 

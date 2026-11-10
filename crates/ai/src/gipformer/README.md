@@ -16,4 +16,4 @@ The native runtime runs outside the application process because it can write pat
 
 Native RNNT token start points have no durations. The adapter keeps raw lexical bytes in ordinal order with explicit missing ranges and advertises no timing. It preserves the leading BPE space; any other difference from the runtime's text is an error. `Recognition::to_transcript` returns `TimingUnavailable` until an explicitly selected aligner supplies speech ranges; shared assembly then handles correspondence, forced provenance and tick conversion. Neither adjacent starts nor chunk ends become speech ends. Native timing MAE is unavailable.
 
-Tests: `cargo test -p ai` includes Unix fake-process tests for OS pipe/kill/join behavior. The ignored `local_gipformer` test needs pinned weights and local speech. `cargo run --release -p ai --example local_gipformer -- MODEL_DIRECTORY RUNNER cpu THREADS AUDIO_F32LE...` benchmarks several inputs on one loaded model and prints JSONL recognition output. Performance, quality and accelerator acceptance need separate measurements.
+Performance, quality and accelerator acceptance need separate measurements.

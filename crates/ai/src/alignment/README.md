@@ -12,6 +12,6 @@ Captions owns normalization and Unicode grouping. English words, Vietnamese syll
 
 One invocation per loaded adapter; engine schedules concurrency. Runtime ownership uses a nonblocking lock; contention or poisoning returns Inference. Cancellation is checked during mel framing, each encoder/decoder block and each DTW row; an in-flight matrix operation finishes first, then the adapter returns Cancelled and discards output. The settings fingerprint hashes all model metadata, runtime policy and language profiles.
 
-Opt-in `candle_alignment` test needs `VIBECUT_CANDLE_MODEL_DIR`, `VIBECUT_ALIGN_PCM` and `VIBECUT_ALIGN_SEGMENTS`. The `local_alignment` example takes model directory, f32le PCM, language, segments JSON, output JSON and source offset in samples. CPU output proves integration only; there is no accuracy gate, and accelerator/Windows runtime is unverified (see the AI integration verification policy).
+CPU output proves integration only; there is no accuracy gate, and accelerator/Windows runtime is unverified (see the AI integration verification policy).
 
-Candle/tokenizers impose transitive version limits; skips, parent constraints and removal conditions live in [deny.toml](../../../../deny.toml). Remove each skip when its parent unifies with the workspace version.
+Candle/tokenizers impose transitive version limits; skips, parent constraints and removal conditions live in [deny.toml](../../../../deny.toml).

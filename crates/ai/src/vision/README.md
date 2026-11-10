@@ -4,7 +4,7 @@
 
 `TractVision::with_reidentification` attaches a loaded adapter; its model, alignment recipe, runtime and thread fingerprint then enter the vision bundle fingerprint and engine cache key. `VisionDetector::embedding` returns None when unavailable. YuNet `FaceBox::landmarks` keeps its five points in prepared pixels; missing landmarks stay explicit. Threshold decisions belong to engine.
 
-SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attribution). Weights stay in the user cache, never bundled. `examples/face_embedding.rs` is an offline tensor smoke/latency and pair-score harness.
+SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attribution). Weights stay in the user cache, never bundled.
 
 ## Local vision detectors
 
@@ -24,4 +24,4 @@ A bounded LRU holds 3..=12 plans keyed by graph and external-data hashes, exact 
 
 `aggregate_speakers` combines shot-local track chunk probabilities, averages overlap, smooths +/-2 observed frames and picks the highest track mean at >=0.4, else `NoVisibleSpeaker`; ties take the lowest track ID. Limits per shot: 64 tracks, 512 distinct chunks, 9000 frame coordinates. Duplicate chunk identities are rejected and gaps never filled. `SceneResult::unknown()` records absent classification; model errors propagate rather than becoming unknown. `ShotResult::new` validates bounded boxes, visible-speaker probability and scene consistency. Engine owns shot boundaries, track identity, cross-shot persistence and result caching.
 
-Tests: `cargo test -p ai --test it vision::`. The ignored `real_model_parity_and_exact_tails` needs `VIBECUT_VISION_MODELS` (catalog-named YuNet/CLIP files plus six ASD files) and `VIBECUT_VISION_CORPUS` (private tensors and ORT references); it checks 30/30 face counts, 30/30 speaker shot verdicts across 121 chunks, 50/50 CLIP labels and every exact tail 37..=75. Windows execution is unverified.
+Windows execution is unverified.
