@@ -7,6 +7,7 @@ mod runtime;
 mod session;
 mod store;
 mod subtitles;
+mod support;
 mod transcript;
 
 /// The single wire-semantic helper for tests whose assertion is a decode or

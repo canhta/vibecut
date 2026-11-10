@@ -1,0 +1,285 @@
+//! Session fixtures shared by the command-family tests.
+#![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+use engine::{NewItem, Session};
+use media::{AssetId, ContentHash, SourceAsset};
+use project::{
+    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
+};
+use time::{SourceRange, Tick};
+
+pub(crate) fn range(a: i64, b: i64) -> SourceRange {
+    SourceRange::new(Tick(a), Tick(b)).unwrap()
+}
+pub(crate) fn content() -> ItemParams {
+    ItemParams::Overlay(OverlayParams {
+        color: Color([1, 2, 3, 255]),
+    })
+}
+pub(crate) fn new_item(start: i64, duration: i64) -> NewItem {
+    NewItem {
+        animations: Default::default(),
+        source_asset: None,
+        source_range: range(100, 100 + duration),
+        start: Tick(start),
+        retime: Default::default(),
+        content: content(),
+    }
+}
+pub(crate) fn project() -> Project {
+    let mut data = Project::empty(ProjectId(0), "Tiếng Việt".into())
+        .unwrap()
+        .into_data();
+    for id in [1, 0] {
+        data.scene_mut().timeline.insert_track(Track {
+            id: TrackId(id + 1),
+            name: "track".into(),
+            kind: TrackKind::Video,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: Vec::new(),
+        });
+    }
+    data.scene_mut()
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items = vec![
+        Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(10),
+            source_asset: None,
+            source_range: range(100, 140),
+            start: Tick(0),
+            content: content(),
+        },
+        Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(11),
+            source_asset: None,
+            source_range: range(200, 240),
+            start: Tick(60),
+            content: content(),
+        },
+    ];
+    Project::new(data).unwrap()
+}
+pub(crate) fn session() -> Session {
+    Session::new(project(), 1000).unwrap()
+}
+pub(crate) fn get(s: &Session, id: u64) -> &Item {
+    get_project(s.project(), id)
+}
+pub(crate) fn get_project(project: &Project, id: u64) -> &Item {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == ItemId(id))
+        .unwrap()
+}
+pub(crate) fn get_id(s: &Session, id: ItemId) -> &Item {
+    get(s, id.0)
+}
+pub(crate) fn get_project_id(project: &Project, id: ItemId) -> &Item {
+    get_project(project, id.0)
+}
+// Pause removal: reviewed output-time spans cut every track and close their tails.
+
+pub(crate) fn pause_audio_asset() -> SourceAsset {
+    let duration = Tick(12 * time::TICKS_PER_SECOND);
+    testkit::source::asset(1, std::env::temp_dir().join("pause-audio.wav"))
+        .format("wav")
+        .duration(duration)
+        .content_hash(ContentHash::from_bytes(b"pause audio"))
+        .stream(
+            testkit::source::audio()
+                .codec("pcm_f32le")
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(duration)
+                .build(),
+        )
+        .build()
+}
+pub(crate) fn pause_video_asset() -> SourceAsset {
+    let duration = Tick(12 * time::TICKS_PER_SECOND);
+    testkit::source::asset(2, std::env::temp_dir().join("pause-video.mp4"))
+        .format("mp4")
+        .duration(duration)
+        .content_hash(ContentHash::from_bytes(b"pause video"))
+        .stream(
+            testkit::source::video()
+                .time_base(media::TimeBase::new(1, 30000).unwrap())
+                .duration(duration)
+                .size(64, 36)
+                .build(),
+        )
+        .build()
+}
+pub(crate) fn five_clip_pairs() -> Session {
+    let edge = |seconds: i64| Tick(seconds * time::TICKS_PER_SECOND);
+    let edges = [0, 2, 4, 6, 8, 12];
+    let mut data = project().into_data();
+    data.assets = vec![pause_audio_asset(), pause_video_asset()];
+    data.scene_mut().timeline.overlays.clear();
+    data.scene_mut().timeline.audio.clear();
+    data.scene_mut().timeline.main.items = edges
+        .windows(2)
+        .enumerate()
+        .map(|(index, pair)| {
+            let start = pair.first().copied().unwrap_or_default();
+            let end = pair.last().copied().unwrap_or_default();
+            Item {
+                hidden: false,
+                blend_mode: Default::default(),
+                retime: Default::default(),
+                masks: Vec::new(),
+                effects: Vec::new(),
+                animations: Default::default(),
+                id: ItemId(index as u64 + 1),
+                source_asset: Some(AssetId(2)),
+                source_range: range(edge(start).0, edge(end).0),
+                start: edge(start),
+                content: ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
+                    source_audio_enabled: false,
+                    volume: 0.0,
+                    muted: false,
+                    crop: None,
+                }),
+            }
+        })
+        .collect();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(5),
+        name: "Audio".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: edges
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| {
+                let start = pair.first().copied().unwrap_or_default();
+                let end = pair.last().copied().unwrap_or_default();
+                Item {
+                    hidden: false,
+                    blend_mode: Default::default(),
+                    retime: Default::default(),
+                    masks: Vec::new(),
+                    effects: Vec::new(),
+                    animations: Default::default(),
+                    id: ItemId(index as u64 + 11),
+                    source_asset: Some(AssetId(1)),
+                    source_range: range(edge(start).0, edge(end).0),
+                    start: edge(start),
+                    content: ItemParams::Audio(project::AudioParams {
+                        fades: Default::default(),
+                        volume: 0.0,
+                        muted: false,
+                        source: Default::default(),
+                    }),
+                }
+            })
+            .collect(),
+    });
+    Session::new(Project::new(data).unwrap(), 100).unwrap()
+}
+// --- Transcript word cuts -------------------------------------------------
+
+pub(crate) fn word_cue(
+    id: &str,
+    start: i64,
+    end: i64,
+    words: &[(i64, i64)],
+    edited: bool,
+) -> captions::Cue {
+    let language = captions::LanguageTag::parse("vi").unwrap();
+    let text = ["Một", "hai", "ba", "bốn"]
+        .get(..words.len())
+        .unwrap_or_default()
+        .join(" ");
+    captions::Cue {
+        id: id.into(),
+        range: range(start, end),
+        source_lang: language.clone(),
+        texts: std::collections::BTreeMap::from([(
+            language,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
+        style: None,
+    }
+}
+pub(crate) fn caption_words_item(
+    id: u64,
+    start: i64,
+    source: (i64, i64),
+    cues: Vec<captions::Cue>,
+) -> Item {
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(id),
+        source_asset: Some(AssetId(7)),
+        source_range: range(source.0, source.1),
+        start: Tick(start),
+        content: ItemParams::Caption(project::CaptionParams {
+            cues: captions::CueTrack {
+                styles: Vec::new(),
+                cues,
+            },
+        }),
+    }
+}
+pub(crate) fn clip_item(id: u64, start: i64, source: (i64, i64)) -> Item {
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: ItemId(id),
+        source_asset: None,
+        source_range: range(source.0, source.1),
+        start: Tick(start),
+        content: content(),
+    }
+}
+pub(crate) fn word_asset(data: &mut project::ProjectData, duration: i64) {
+    data.assets.push(
+        testkit::source::asset(7, std::env::temp_dir().join("transcript-words.mp4"))
+            .format("mp4")
+            .duration(Tick(duration))
+            .content_hash(ContentHash::from_bytes(b"words"))
+            .build(),
+    );
+}
+pub(crate) fn assert_unchanged(s: &Session, bytes: &[u8], revision: &engine::control::Revision) {
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    assert_eq!(&s.revision(), revision);
+    assert_eq!(s.history_len(), (0, 0));
+}

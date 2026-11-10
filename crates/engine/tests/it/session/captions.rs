@@ -1,0 +1,658 @@
+#![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+use crate::support::session::{get, project, range, session};
+use engine::{Command, CreatedId, Session};
+use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
+use project::{Color, Item, ItemId, ItemParams, Project, Track, TrackId, TrackKind};
+use proptest::prelude::*;
+use serde_json::json;
+use std::sync::Arc;
+use time::Tick;
+
+#[test]
+fn caption_splits_and_trims_reuse_mapping_and_preserve_source_text_metadata() {
+    let mut s = Session::new(caption_project(), 10).unwrap();
+    let ItemParams::Caption(params) = &get(&s, 1).content else {
+        panic!("caption")
+    };
+    let cue = params.cues.cues[0].clone();
+    let original = s.project().clone();
+    let outcome = s
+        .apply(Command::SplitAt {
+            item: ItemId(1),
+            at: Tick(1050),
+        })
+        .unwrap();
+    let CreatedId::Item(right) = *outcome.created.first().unwrap() else {
+        panic!("item ID")
+    };
+    for (id, expected) in [(ItemId(1), range(110, 150)), (right, range(150, 190))] {
+        let ItemParams::Caption(params) = &get(&s, id.0).content else {
+            panic!("caption")
+        };
+        let clipped = params.cues.cues.first().unwrap();
+        assert_eq!(clipped.range, expected);
+        assert_eq!(clipped.id, cue.id);
+        assert_eq!(clipped.texts, cue.texts);
+        assert_eq!(clipped.source_lang, cue.source_lang);
+    }
+    s.apply(Command::TrimEnd {
+        item: ItemId(1),
+        at: Tick(1020),
+    })
+    .unwrap();
+    let ItemParams::Caption(params) = &get(&s, 1).content else {
+        panic!("caption")
+    };
+    assert_eq!(params.cues.cues.first().unwrap().range, range(110, 120));
+    assert_eq!(params.cues.cues.first().unwrap().id, cue.id);
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&original, s.project()));
+}
+fn caption_project() -> Project {
+    use captions::{Cue, CueText, CueTrack, LanguageTag};
+    use project::CaptionParams;
+    use std::collections::BTreeMap;
+    let mut data = project().into_data();
+    data.scene_mut().timeline.overlays.clear();
+    data.assets.push(
+        SourceAsset::try_from(AssetData {
+            ephemeral: false,
+            id: AssetId(1),
+            path: std::env::temp_dir().join("caption source"),
+            content_hash: ContentHash([0; 32]),
+            probe: SourceProbe {
+                format: "fixture".into(),
+                duration: None,
+                streams: vec![],
+            },
+        })
+        .unwrap(),
+    );
+    let lang = LanguageTag::parse("vi").unwrap();
+    let cue = Cue {
+        id: "source/0".into(),
+        range: range(110, 190),
+        source_lang: lang.clone(),
+        texts: BTreeMap::from([(
+            lang,
+            CueText {
+                text: "Tiếng Việt".into(),
+                edited: true,
+                translation_ref: Some("ref".into()),
+            },
+        )]),
+        word_ranges: Vec::new(),
+        style: None,
+    };
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(1),
+            source_asset: Some(AssetId(1)),
+            source_range: range(100, 200),
+            start: Tick(1000),
+            content: ItemParams::Caption(CaptionParams {
+                cues: CueTrack {
+                    styles: Vec::new(),
+                    cues: vec![cue.clone()],
+                },
+            }),
+        }],
+    });
+    Project::new(data).unwrap()
+}
+fn caption_trim(start: bool, at: i64) -> Command {
+    if start {
+        Command::TrimStart {
+            item: ItemId(1),
+            at: Tick(at),
+        }
+    } else {
+        Command::TrimEnd {
+            item: ItemId(1),
+            at: Tick(at),
+        }
+    }
+}
+#[test]
+fn caption_drag_inward_and_back_preserves_original_content_and_redo() {
+    for start in [false, true] {
+        // Exercise partial clipping and a preview that removes the cue entirely.
+        for inward in if start { [1050, 1095] } else { [1050, 1005] } {
+            let mut s = Session::new(caption_project(), 10).unwrap();
+            let original = s.project().clone();
+            s.apply(Command::BookmarkAdd {
+                start: Tick(0),
+                duration: Tick(0),
+                note: "redo".into(),
+                color: Color([0, 0, 0, 255]),
+            })
+            .unwrap();
+            let redo = s.project().clone();
+            s.undo().unwrap();
+            s.take_change();
+            s.begin_gesture().unwrap();
+            s.apply(caption_trim(start, inward)).unwrap();
+            s.apply(caption_trim(start, if start { 1000 } else { 1100 }))
+                .unwrap();
+            assert_eq!(s.project().data(), original.data());
+            assert!(!s.commit_gesture().unwrap().changed);
+            assert_eq!(s.history_len(), (0, 1));
+            assert!(s.take_change().is_none());
+            s.redo().unwrap();
+            assert_eq!(s.project().data(), redo.data());
+        }
+    }
+}
+#[test]
+fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
+    for start in [false, true] {
+        for mode in ["gesture", "group", "batch", "merged"] {
+            let mut s = Session::new(caption_project(), 10).unwrap();
+            let original = s.project().clone();
+            let inward = if start { 1095 } else { 1005 };
+            let outward = if start { 1020 } else { 1080 };
+            let mut direct = Session::new(caption_project(), 10).unwrap();
+            direct.apply(caption_trim(start, outward)).unwrap();
+            let drag = |s: &mut Session| -> engine::Result<()> {
+                for at in [inward, outward] {
+                    if mode == "merged" {
+                        s.apply_merged(caption_trim(start, at), Some("trim"))?;
+                    } else {
+                        s.apply(caption_trim(start, at))?;
+                    }
+                }
+                Ok(())
+            };
+            match mode {
+                "gesture" => {
+                    s.begin_gesture().unwrap();
+                    drag(&mut s).unwrap();
+                    assert!(s.take_change().is_none());
+                    s.cancel_gesture().unwrap();
+                    assert_eq!(s.project().data(), original.data());
+                    assert_eq!(s.history_len(), (0, 0));
+                    assert!(s.take_change().is_none());
+                    s.begin_gesture().unwrap();
+                    drag(&mut s).unwrap();
+                    assert!(s.commit_gesture().unwrap().changed);
+                }
+                "group" => s.transaction(drag).unwrap(),
+                "batch" => {
+                    s.apply(Command::Batch {
+                        commands: vec![caption_trim(start, inward), caption_trim(start, outward)],
+                    })
+                    .unwrap();
+                }
+                _ => drag(&mut s).unwrap(),
+            }
+            assert_eq!(s.project().data(), direct.project().data());
+            assert_eq!(s.history_len(), (1, 0));
+            assert!(s.take_change().is_some());
+            s.undo().unwrap();
+            assert_eq!(s.project().data(), original.data());
+            s.redo().unwrap();
+            assert_eq!(s.project().data(), direct.project().data());
+            // A boundary discards transient source retention: later independent
+            // edits cannot resurrect content discarded by the committed trim.
+            s.end_merge();
+            s.apply(caption_trim(start, if start { 1000 } else { 1100 }))
+                .unwrap();
+            let ItemParams::Caption(params) = &get(&s, 1).content else {
+                panic!("caption")
+            };
+            let ItemParams::Caption(expected) = &get(&direct, 1).content else {
+                panic!("caption")
+            };
+            assert_eq!(params, expected);
+        }
+    }
+}
+#[test]
+fn explicit_caption_edits_replace_retained_gesture_content_and_refusals_roll_back() {
+    for group in [false, true] {
+        let mut s = Session::new(caption_project(), 10).unwrap();
+        let run = |s: &mut Session| -> engine::Result<()> {
+            s.apply(caption_trim(false, 1050))?;
+            let mut content = get(s, 1).content.clone();
+            let ItemParams::Caption(params) = &mut content else {
+                panic!("caption")
+            };
+            let lang = captions::LanguageTag::parse("en").unwrap();
+            params.cues.cues[0].texts.insert(
+                lang,
+                captions::CueText {
+                    text: "Edited translation".into(),
+                    edited: true,
+                    translation_ref: Some("new".into()),
+                },
+            );
+            // The replacement must not survive a refused batch.
+            assert!(
+                s.apply(Command::Batch {
+                    commands: vec![
+                        Command::SetItemParam {
+                            item: ItemId(1),
+                            content: content.clone()
+                        },
+                        Command::Delete {
+                            items: vec![ItemId(999)]
+                        },
+                    ]
+                })
+                .is_err()
+            );
+            s.apply(caption_trim(false, 1100))?;
+            assert_eq!(s.project().data(), caption_project().data());
+            s.apply(caption_trim(false, 1050))?;
+            s.apply(Command::SetItemParam {
+                item: ItemId(1),
+                content: content.clone(),
+            })?;
+            s.apply(caption_trim(false, 1100))?;
+            assert_eq!(get(s, 1).content, content);
+            Ok(())
+        };
+        if group {
+            s.transaction(run).unwrap();
+        } else {
+            s.begin_gesture().unwrap();
+            run(&mut s).unwrap();
+            s.commit_gesture().unwrap();
+        }
+    }
+}
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+#[test]
+    fn caption_gesture_previews_depend_only_on_final_edge(
+        start in any::<bool>(),
+        edges in prop::collection::vec(1001i64..1100, 1..40),
+    ) {
+        let mut s = Session::new(caption_project(), 10).unwrap();
+        s.begin_gesture().unwrap();
+        for at in &edges {
+            s.apply(caption_trim(start, *at)).unwrap();
+            let mut direct = Session::new(caption_project(), 10).unwrap();
+            direct.apply(caption_trim(start, *at)).unwrap();
+            prop_assert_eq!(s.project().data(), direct.project().data());
+        }
+        let committed = s.project().clone();
+        s.commit_gesture().unwrap();
+        s.undo().unwrap();
+        let original = caption_project();
+        prop_assert_eq!(s.project().data(), original.data());
+        s.redo().unwrap();
+        prop_assert_eq!(s.project().data(), committed.data());
+    }
+}
+#[test]
+fn merged_caption_roundtrip_and_equal_content_replacement() {
+    let mut s = Session::new(caption_project(), 10).unwrap();
+    let original = s.project().clone();
+    for at in [1005, 1100] {
+        s.apply_merged(caption_trim(false, at), Some("trim"))
+            .unwrap();
+    }
+    assert_eq!(s.project().data(), original.data());
+    s.end_merge();
+    s.begin_gesture().unwrap();
+    s.apply(caption_trim(false, 1050)).unwrap();
+    let replacement = get(&s, 1).content.clone();
+    assert!(
+        !s.apply(Command::SetItemParam {
+            item: ItemId(1),
+            content: replacement.clone(),
+        })
+        .unwrap()
+        .changed
+    );
+    s.apply(caption_trim(false, 1100)).unwrap();
+    assert_eq!(get(&s, 1).content, replacement);
+    s.commit_gesture().unwrap();
+}
+fn ass_style() -> captions::CueStyle {
+    captions::CueStyle {
+        font_family: "Arial".into(),
+        font_size_ratio: 0.05,
+        primary_color: [255, 255, 255, 255],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0, 0, 0, 0],
+        border_style: 1,
+        alignment: captions::CueAlignment {
+            numpad: 2,
+            horizontal: captions::HorizontalAlignment::Center,
+            vertical: captions::VerticalAlignment::Bottom,
+        },
+        margin_left_ratio: 0.0,
+        margin_right_ratio: 0.0,
+        margin_vertical_ratio: 0.0,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    }
+}
+fn ass_asset() -> SourceAsset {
+    SourceAsset::try_from(AssetData {
+        ephemeral: true,
+        id: AssetId(30),
+        path: std::env::temp_dir().join("captions.ass"),
+        content_hash: ContentHash::from_bytes(b"ass"),
+        probe: SourceProbe {
+            format: "ass".into(),
+            duration: Some(Tick(254_016_000_000)),
+            streams: Vec::new(),
+        },
+    })
+    .unwrap()
+}
+fn ass_import() -> Command {
+    Command::ImportCaptions {
+        asset: ass_asset(),
+        language: captions::LanguageTag::parse("en").unwrap(),
+        start: Tick(100),
+        track: None,
+        name: Some("Imported captions".into()),
+        styles: vec![ass_style()],
+        cues: vec![
+            captions::AssCue {
+                range: range(0, 254_016_000_000),
+                text: "Hello".into(),
+                style: captions::CueStyleId(0),
+            },
+            captions::AssCue {
+                range: range(508_032_000_000, 762_048_000_000),
+                text: "World".into(),
+                style: captions::CueStyleId(0),
+            },
+        ],
+    }
+}
+#[test]
+fn captions_import_is_one_undo_step_and_persists_style() {
+    let mut s = session();
+    let before = s.history_len();
+    let outcome = s.apply(ass_import()).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (before.0 + 1, 0));
+    assert_eq!(outcome.placements.len(), 1);
+    assert!(
+        outcome
+            .created
+            .iter()
+            .any(|id| matches!(id, CreatedId::Track(_)))
+    );
+    assert!(
+        outcome
+            .created
+            .iter()
+            .any(|id| matches!(id, CreatedId::Item(_)))
+    );
+
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap();
+    let ItemParams::Caption(params) = &item.content else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.cues.len(), 2);
+    assert_eq!(
+        params.cues.cues[0]
+            .texts
+            .values()
+            .next()
+            .unwrap()
+            .text
+            .as_str(),
+        "Hello"
+    );
+    assert_eq!(params.cues.styles.len(), 1);
+    assert_eq!(params.cues.cues[0].style, Some(captions::CueStyleId(0)));
+    assert_eq!(
+        params
+            .cues
+            .style_of(&params.cues.cues[0])
+            .unwrap()
+            .font_family
+            .as_str(),
+        "Arial"
+    );
+    assert_eq!(item.start, Tick(100));
+    assert_eq!(item.source_range, range(0, 762_048_000_000));
+
+    let encoded = project::encode(s.project().as_ref(), false).unwrap();
+    let loaded = project::decode(&encoded).unwrap();
+    assert_eq!(loaded.project, **s.project());
+    let ItemParams::Caption(reloaded) = &loaded
+        .project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap()
+        .content
+    else {
+        panic!("expected caption item")
+    };
+    assert_eq!(reloaded.cues.cues[0].style, Some(captions::CueStyleId(0)));
+    assert_eq!(
+        reloaded.cues.style_of(&reloaded.cues.cues[0]).unwrap(),
+        &ass_style()
+    );
+
+    s.apply(Command::Undo {}).unwrap();
+    assert!(
+        !s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .any(|track| track.kind == TrackKind::Text)
+    );
+    assert!(
+        !s.project()
+            .data()
+            .assets
+            .iter()
+            .any(|asset| asset.id() == AssetId(30))
+    );
+
+    s.apply(Command::Redo {}).unwrap();
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap();
+    let ItemParams::Caption(params) = &item.content else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.styles, vec![ass_style()]);
+    assert_eq!(params.cues.cues[0].style, Some(captions::CueStyleId(0)));
+}
+#[test]
+fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
+    let mut s = session();
+    let command = ass_import();
+    let Command::ImportCaptions {
+        asset,
+        language,
+        start,
+        track,
+        name,
+        styles,
+        cues,
+    } = command
+    else {
+        panic!("expected import command")
+    };
+    let params = json!({
+        "asset": serde_json::to_value(&asset).unwrap(),
+        "language": language.as_str(),
+        "start": start.0,
+        "track": track,
+        "name": name,
+        "styles": serde_json::to_value(&styles).unwrap(),
+        "cues": serde_json::to_value(&cues).unwrap(),
+    });
+    let before = s.project().clone();
+    let outcome = crate::wire::run(&mut s, "captions.import", params.clone()).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.project().data().scene().timeline.track_count(), 4);
+
+    let mut bad = params.clone();
+    bad["cues"][0]["range"]["end"] = json!(0);
+    let after = s.project().clone();
+    assert!(crate::wire::run(&mut s, "captions.import", bad).is_err());
+    assert_eq!(s.project(), &after);
+    assert_ne!(after, before);
+
+    // A cue that names a style outside the table, or a style the model would
+    // refuse, leaves the project untouched.
+    let mut dangling = params.clone();
+    dangling["cues"][0]["style"] = json!(7);
+    let after = s.project().clone();
+    assert!(s.execute("captions.import", dangling).is_err());
+    assert_eq!(s.project(), &after);
+    let mut invalid = params.clone();
+    invalid["styles"][0]["font_size_ratio"] = json!(0.0);
+    assert!(s.execute("captions.import", invalid).is_err());
+    assert_eq!(s.project(), &after);
+
+    // Hostile placement, count and style bursts are refused whole, never a
+    // panic or an unsaveable project.
+    let make = |count: usize, start: Tick| {
+        let Command::ImportCaptions {
+            asset,
+            language,
+            track,
+            name,
+            ..
+        } = ass_import()
+        else {
+            panic!("expected import command")
+        };
+        let cues = (0..count)
+            .map(|index| captions::AssCue {
+                range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
+                text: format!("line {index}").into(),
+                style: captions::CueStyleId(0),
+            })
+            .collect();
+        Command::ImportCaptions {
+            asset,
+            language,
+            start,
+            track,
+            name,
+            styles: vec![ass_style()],
+            cues,
+        }
+    };
+    let make_unique_styles = |count: usize| {
+        let Command::ImportCaptions {
+            asset,
+            language,
+            track,
+            name,
+            ..
+        } = ass_import()
+        else {
+            panic!("expected import command")
+        };
+        let styles: Vec<_> = (0..count)
+            .map(|index| captions::CueStyle {
+                font_size_ratio: 0.001 + index as f32 * 0.0001,
+                ..ass_style()
+            })
+            .collect();
+        let cues = (0..count)
+            .map(|index| captions::AssCue {
+                range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
+                text: format!("line {index}").into(),
+                style: captions::CueStyleId(index as u16),
+            })
+            .collect();
+        Command::ImportCaptions {
+            asset,
+            language,
+            start: Tick(0),
+            track,
+            name,
+            styles,
+            cues,
+        }
+    };
+    for (count, start) in [(1, Tick(i64::MAX - 10)), (1, Tick(-1))] {
+        let mut fresh = session();
+        let untouched = fresh.project().clone();
+        assert!(
+            fresh.apply(make(count, start)).is_err(),
+            "{count} cues at {start:?}"
+        );
+        assert_eq!(fresh.project(), &untouched);
+    }
+    let mut fresh = session();
+    fresh.apply(make(20_000, Tick(0))).unwrap();
+    let encoded = project::encode(fresh.project().as_ref(), false).unwrap();
+    let loaded = project::decode(&encoded).unwrap();
+    let ItemParams::Caption(params) = &loaded
+        .project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap()
+        .content
+    else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.cues.len(), 20_000);
+    assert_eq!(params.cues.styles.len(), 1);
+    assert!(
+        params
+            .cues
+            .cues
+            .iter()
+            .all(|cue| cue.style == Some(captions::CueStyleId(0)))
+    );
+
+    let mut fresh = session();
+    let untouched = fresh.project().clone();
+    assert!(matches!(
+        fresh.apply(make_unique_styles(captions::MAX_CUE_STYLES + 1)),
+        Err(engine::EditError::Limit)
+    ));
+    assert_eq!(fresh.project(), &untouched);
+    assert!(matches!(
+        session().apply(make(captions::ass::MAX_ASS_CUES + 1, Tick(0))),
+        Err(engine::EditError::Limit)
+    ));
+}

@@ -1,13 +1,24 @@
 //! Behaviour coverage for session.
-mod commands;
+mod bookmarks;
+mod canvas;
+mod captions;
 mod effects;
 mod fades;
+mod fillers;
+mod history;
+mod items;
 mod keyframes;
 mod lifecycle;
 mod masks;
 mod media;
+mod pauses;
+mod preview;
+mod registry;
 mod retime;
+mod ripple;
 mod scenes;
+mod tracks;
 mod transcript;
+mod transform;
 mod transitions;
 pub(crate) use transitions::session as transition_session;
