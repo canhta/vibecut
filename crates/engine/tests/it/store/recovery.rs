@@ -4,9 +4,9 @@
     reason = "test fixtures and assertions"
 )]
 use engine::{
-    ByteBudget, Command, EditError, Session,
+    ByteBudget, Command, EditError, Failure, Session,
     jobs::Clock,
-    recovery::{Autosave, Schedule, discover},
+    recovery::{Autosave, Error as RecoveryError, Schedule, discover},
 };
 use project::{Project, ProjectId, TrackKind};
 use std::{
@@ -171,7 +171,10 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
         Schedule::default(),
     )
     .unwrap();
-    assert!(matches!(a.save(), Err(EditError::SaveAsRequired)));
+    assert!(matches!(
+        a.save(),
+        Err(EditError::Recovery(RecoveryError::SaveAsRequired))
+    ));
     let destination = dir.path().join("recovered.vibecut");
     a.save_as(destination.clone()).unwrap();
     saved(&mut a);
@@ -541,10 +544,17 @@ fn busy(path: &Path) {
         Err(project::Error::Busy)
     ));
 }
-fn project_cause(error: &EditError) -> Option<&project::Error> {
-    match error {
-        EditError::Project(error) => Some(error),
-        EditError::PersistenceFailed(error) => project_cause(error),
+fn project_cause<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a project::Error> {
+    if let Some(error) = error.downcast_ref::<EditError>() {
+        return match error {
+            EditError::Project(error) => Some(error),
+            EditError::Recovery(error) => project_cause(error),
+            _ => None,
+        };
+    }
+    match error.downcast_ref::<RecoveryError>()? {
+        RecoveryError::Project(error) => Some(error),
+        RecoveryError::PersistenceFailed(error) => project_cause(error.as_ref()),
         _ => None,
     }
 }
@@ -912,29 +922,54 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
     let source = dir.path().join("source.vibecut");
     seed(&source);
     let before = fs::read(&source).unwrap();
+    let clock = Arc::new(TestClock::default());
+    let budget = ByteBudget::new(1).unwrap();
     let mut a = Autosave::open(
         &dir.path().join("journals"),
         &source,
         10,
-        ByteBudget::new(1).unwrap(),
-        Arc::new(TestClock::default()),
+        budget.clone(),
+        clock.clone(),
         Schedule::default(),
     )
     .unwrap();
     edit(&mut a);
     let error = a.save().unwrap_err();
-    fn too_large(error: &EditError) -> bool {
-        match error {
-            EditError::ArtifactTooLarge => true,
-            EditError::PersistenceFailed(error) => too_large(error),
-            _ => false,
+    fn too_large(error: &(dyn std::error::Error + 'static)) -> bool {
+        if let Some(error) = error.downcast_ref::<EditError>() {
+            return match error {
+                EditError::ArtifactTooLarge => true,
+                EditError::Recovery(error) => too_large(error),
+                _ => false,
+            };
         }
+        matches!(error.downcast_ref::<RecoveryError>(), Some(RecoveryError::PersistenceFailed(error)) if too_large(error.as_ref()))
     }
     assert!(too_large(&error));
+    assert_eq!(error.code(), engine::control::ErrorCode::Budget);
+    assert!(!error.transient());
+    a.tick().unwrap(); // Explicit save admission is correctable, without a sticky cause.
+    assert_eq!(budget.snapshot().unwrap().limited_used(), 0);
     busy(&source);
     assert_eq!(fs::read(&source).unwrap(), before);
     assert!(a.is_dirty());
     assert!(a.saved_receipt().is_none());
+    // The same real submission refusal on the automatic path becomes sticky.
+    clock.set(800);
+    let error = a.tick().unwrap_err();
+    assert!(too_large(&error));
+    assert_eq!(error.code(), engine::control::ErrorCode::Budget);
+    let EditError::Recovery(RecoveryError::PersistenceFailed(cause)) = error else {
+        panic!("automatic refusal must retain its typed cause");
+    };
+    let EditError::Recovery(RecoveryError::PersistenceFailed(repeated)) = a.tick().unwrap_err()
+    else {
+        panic!("automatic refusal must remain sticky");
+    };
+    assert!(Arc::ptr_eq(&cause, &repeated));
+    assert_eq!(budget.snapshot().unwrap().limited_used(), 0);
+    busy(&source);
+    assert_eq!(fs::read(&source).unwrap(), before);
 }
 
 #[cfg(unix)]

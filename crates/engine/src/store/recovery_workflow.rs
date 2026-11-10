@@ -3,7 +3,8 @@ use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{
     Clock, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
 };
-use crate::{ByteBudget, EditError, JobTarget, Result, Session};
+use crate::session::wire::{ErrorCode, Failure};
+use crate::{ByteBudget, EditError, JobTarget, Session};
 use project::{Project, SaveReceipt, WriterLease};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,6 +20,49 @@ const MAX_META: u64 = 2 * 1024 * 1024;
 const WORK_BYTES: u64 = 40 * 1024 * 1024;
 const JOURNAL: &str = "journal.json";
 const JOURNAL_VERSION: u32 = 2;
+
+/// Recovery diagnostics retain typed causes without exposing project content.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("recovery candidate is corrupt or incomplete")]
+    Corrupt,
+    #[error("persistence operation is already active")]
+    Busy,
+    #[error("recovered or never-saved work requires save-as")]
+    SaveAsRequired,
+    #[error("session persistence failed")]
+    PersistenceFailed(#[source] Arc<dyn Failure + 'static>),
+    #[error("project candidate rejected")]
+    Project(#[from] project::Error),
+    #[error("job/cache IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("command limit exceeded")]
+    Limit,
+    #[error("invalid edit: {0}")]
+    Invalid(&'static str),
+    #[error("unsupported edit: {0}")]
+    Unsupported(&'static str),
+}
+impl Failure for Error {
+    fn code(&self) -> ErrorCode {
+        use ErrorCode as C;
+        match self {
+            Self::PersistenceFailed(cause) => cause.code(),
+            Self::Limit => C::Limit,
+            Self::Io(_) | Self::Project(project::Error::Io(_)) => C::Io,
+            Self::Project(project::Error::Busy) => C::Busy,
+            Self::Project(project::Error::Conflict) => C::Conflict,
+            Self::Project(project::Error::Media(_)) => C::Media,
+            Self::Corrupt
+            | Self::Busy
+            | Self::SaveAsRequired
+            | Self::Invalid(_)
+            | Self::Unsupported(_)
+            | Self::Project(_) => C::Refused,
+        }
+    }
+}
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Event-loop deadlines; the caller must tick at least as often as its desired latency.
 #[derive(Clone, Copy)]
@@ -58,7 +102,7 @@ pub struct Candidate {
 /// Corrupt candidates have a typed diagnostic; lock/IO failures retain their source.
 pub struct Discovery {
     pub candidates: Vec<Candidate>,
-    pub diagnostics: Vec<EditError>,
+    pub diagnostics: Vec<Error>,
 }
 struct SessionLock(File);
 // The runner accepts reusable Fn tasks. Take ownership for IO, returning it on
@@ -115,9 +159,9 @@ pub struct Autosave {
     last_change: Duration,
     flight: Option<Flight>,
     pending_save: Option<PathBuf>,
-    failure: Option<Arc<EditError>>,
+    failure: Option<Arc<dyn Failure + 'static>>,
     #[cfg(test)]
-    fault: Option<fn() -> Result<()>>,
+    fault: Option<fn() -> crate::Result<()>>,
 }
 impl Autosave {
     /// Never-saved or recovered work; save() requires an explicit save-as.
@@ -128,7 +172,7 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         Self::with_writer(root, session, None, budget, clock, schedule)
     }
 }
@@ -144,7 +188,7 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         let writer = WriterLease::acquire(path)?;
         let mut session = Session::new(writer.load()?.project, history_limit)?;
         let mut metadata = writer.metadata();
@@ -169,7 +213,7 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         let saved_path = writer.as_ref().map(|w| w.path().to_owned());
         if schedule.debounce.is_zero()
             || schedule.max_dirty_age < schedule.debounce
@@ -182,7 +226,7 @@ impl Autosave {
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
-            return Err(EditError::RecoveryCorrupt);
+            return Err(Error::Corrupt.into());
         }
         // Atomic mkdir avoids timestamp/pid reuse and never adopts an old directory.
         static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -202,7 +246,7 @@ impl Autosave {
             .open(directory.join("lock"))?;
         file.try_lock().map_err(|e| match e {
             TryLockError::Error(e) => lock_error(e),
-            TryLockError::WouldBlock => EditError::RecoveryBusy,
+            TryLockError::WouldBlock => Error::Busy,
         })?;
         let file = SessionLock(file);
         let runner = JobRunner::new(
@@ -411,7 +455,28 @@ mod tests {
     }
     #[test]
     fn disk_full_and_worker_unwind_remain_typed_and_preserve_published_work() {
-        for fault in [disk_full as fn() -> Result<()>, unwind] {
+        use crate::control::{self, Caller, Payload, Policy, ResponseValue};
+        struct Allow;
+        impl Policy for Allow {
+            fn authorize(&self, _: &crate::Command, _: &Project) -> crate::Result<()> {
+                Ok(())
+            }
+        }
+        let caller = || Caller {
+            principal: "recovery-test",
+            external: true,
+            policy: &Allow,
+            fonts: None,
+            sounds: None,
+            media: None,
+            chapters: None,
+        };
+        for (fault, code) in [
+            (disk_full as fn() -> crate::Result<()>, ErrorCode::Io),
+            (unwind, ErrorCode::WorkerFailure),
+            (cancelled, ErrorCode::Cancelled),
+            (worker_stale, ErrorCode::StaleResult),
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let mut a = open(dir.path());
             a.flush().unwrap();
@@ -425,16 +490,67 @@ mod tests {
                 .unwrap();
             a.fault = Some(fault);
             let error = a.flush().unwrap_err();
-            fn cause(e: &EditError) -> &EditError {
-                match e {
-                    EditError::PersistenceFailed(e) => cause(e),
-                    other => other,
+            fn cause<'a>(e: &'a (dyn std::error::Error + 'static)) -> &'a EditError {
+                if let Some(error) = e.downcast_ref::<EditError>() {
+                    return match error {
+                        EditError::Recovery(error) => cause(error),
+                        other => other,
+                    };
                 }
+                let Some(Error::PersistenceFailed(error)) = e.downcast_ref::<Error>() else {
+                    panic!("expected the original stored failure");
+                };
+                cause(error.as_ref())
             }
-            assert!(matches!(
-                cause(&error),
-                EditError::Io(_) | EditError::WorkerPanicked
-            ));
+            match cause(&error) {
+                EditError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::StorageFull),
+                EditError::WorkerPanicked => assert_eq!(code, ErrorCode::WorkerFailure),
+                EditError::Cancelled => assert_eq!(code, ErrorCode::Cancelled),
+                EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
+                _ => panic!("lost the typed worker cause"),
+            }
+            assert_eq!(error.code(), code);
+            assert!(!error.transient());
+            let shared = a.failure.as_ref().unwrap().clone();
+            let EditError::Recovery(Error::PersistenceFailed(repeated)) = a.tick().unwrap_err()
+            else {
+                panic!("worker failures, including nested stale results, must remain sticky");
+            };
+            assert!(Arc::ptr_eq(&shared, &repeated));
+            assert_eq!(a.budget.snapshot().unwrap().limited_used(), 0);
+
+            // Feed the actual failed worker result through control admission,
+            // receipt replay and event emission, without a second publication.
+            let project = a.session.project().clone();
+            let revision = a.session.revision();
+            let history = a.session.history_len();
+            let mut cursor = a.session.snapshot_and_subscribe(&a.runner).unwrap().cursor;
+            let request = control::Request {
+                api_version: control::API_VERSION,
+                registry_hash: Some(control::registry_hash().into()),
+                session_id: a.session.session_id().into(),
+                request_id: "persistence-fault".into(),
+                idempotency_key: Some("fault".into()),
+                base_rev: Some(revision.clone()),
+                command: "project.save".into(),
+                params: serde_json::json!({}),
+            };
+            let response = a
+                .session
+                .control_lifecycle_save(request.clone(), caller(), |_, _| Err(error))
+                .unwrap();
+            assert!(matches!(response.value, ResponseValue::Error(observed) if observed == code));
+            let replay = a
+                .session
+                .control_lifecycle_save(request, caller(), |_, _| panic!("replayed publication"))
+                .unwrap();
+            assert!(matches!(replay.value, ResponseValue::Error(observed) if observed == code));
+            assert_eq!(a.session.project(), &project);
+            assert_eq!(a.session.revision(), revision);
+            assert_eq!(a.session.history_len(), history);
+            assert!(
+                matches!(a.session.events(&mut cursor).unwrap().as_slice(), [control::Event { payload: Payload::CommandError { code: observed, .. }, .. }] if *observed == code)
+            );
             assert!(a.is_dirty());
             assert!(a.tick().is_err());
             assert!(
@@ -452,17 +568,23 @@ mod tests {
             assert_eq!(discover(dir.path()).unwrap().candidates.len(), 1);
         }
     }
-    fn disk_full() -> Result<()> {
+    fn disk_full() -> crate::Result<()> {
         Err(std::io::Error::from(std::io::ErrorKind::StorageFull).into())
     }
-    fn unwind() -> Result<()> {
+    fn unwind() -> crate::Result<()> {
         panic!("injected persistence unwind")
+    }
+    fn cancelled() -> crate::Result<()> {
+        Err(EditError::Cancelled)
+    }
+    fn worker_stale() -> crate::Result<()> {
+        Err(EditError::StaleResult)
     }
     #[test]
     fn unsupported_lock_is_not_misclassified_as_a_dead_session() {
         assert!(matches!(
             lock_error(std::io::ErrorKind::Unsupported.into()),
-            EditError::Unsupported("session locking")
+            Error::Unsupported("session locking")
         ));
     }
     #[test]

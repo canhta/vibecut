@@ -8,7 +8,7 @@ mod recovery_workflow;
 pub mod recovery {
     //! Owns recoverable persistent sessions.
     pub use super::recovery_workflow::{
-        Autosave, Candidate, Discovery, Journal, Schedule, discover,
+        Autosave, Candidate, Discovery, Error, Journal, Result, Schedule, discover,
     };
 }
 mod cover_image;

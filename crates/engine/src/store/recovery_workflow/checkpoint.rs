@@ -1,9 +1,9 @@
 //! Publishes scheduled recoverable checkpoints.
 use super::{
-    Arc, ArtifactKind, Autosave, CacheKey, EditError, Flight, JOURNAL, JOURNAL_VERSION, JobBytes,
-    JobKind, JobSpec, JobState, Journal, KeyInputs, MAX_META, MAX_PROJECT, Mutex, Path, PathBuf,
-    Project, PumpFailure, ResourceClass, Result, SaveFlight, SaveSlot, SaveWork, SystemTime,
-    UNIX_EPOCH, WORK_BYTES, WorkingSave, WriterLease, clear, fs, read_bounded,
+    Arc, ArtifactKind, Autosave, CacheKey, EditError, Error, Flight, JOURNAL, JOURNAL_VERSION,
+    JobBytes, JobKind, JobSpec, JobState, Journal, KeyInputs, MAX_META, MAX_PROJECT, Mutex, Path,
+    PathBuf, Project, PumpFailure, ResourceClass, Result, SaveFlight, SaveSlot, SaveWork,
+    SystemTime, UNIX_EPOCH, WORK_BYTES, WorkingSave, WriterLease, clear, fs, read_bounded,
 };
 fn publish(
     directory: &Path,
@@ -25,20 +25,20 @@ fn publish(
         timestamp_unix_ms: u64::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_err(|_| EditError::Invalid("system clock"))?
+                .map_err(|_| Error::Invalid("system clock"))?
                 .as_millis(),
         )
-        .map_err(|_| EditError::Limit)?,
+        .map_err(|_| Error::Limit)?,
         snapshot: path
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or(EditError::RecoveryCorrupt)?
+            .ok_or(Error::Corrupt)?
             .to_owned(),
     };
-    let bytes = serde_json::to_vec(&journal)
-        .map_err(|_| EditError::Unsupported("journal path encoding"))?;
+    let bytes =
+        serde_json::to_vec(&journal).map_err(|_| Error::Unsupported("journal path encoding"))?;
     if bytes.len() as u64 > MAX_META {
-        return Err(EditError::Limit);
+        return Err(Error::Limit);
     }
     project::atomic_write(&directory.join(JOURNAL), &bytes)?;
     Ok(())
@@ -50,17 +50,21 @@ impl Drop for WorkingSave {
         }
     }
 }
-fn save_on_worker(slot: &SaveSlot, project: &Project, metadata: &project::Metadata) -> Result<()> {
+fn save_on_worker(
+    slot: &SaveSlot,
+    project: &Project,
+    metadata: &project::Metadata,
+) -> crate::Result<()> {
     let work = slot
         .lock()
         .map_err(|_| EditError::JobPoisoned)?
         .take()
-        .ok_or(EditError::RecoveryBusy)?;
+        .ok_or(Error::Busy)?;
     let mut active = WorkingSave {
         slot: slot.clone(),
         work: Some(work),
     };
-    let work = active.work.as_mut().ok_or(EditError::RecoveryBusy)?;
+    let work = active.work.as_mut().ok_or(Error::Busy)?;
     work.receipt = Some(if let Some(source) = &work.source {
         source.save_to(&mut work.writer, project)?
     } else {
@@ -77,7 +81,7 @@ impl From<EditError> for PumpFailure {
 }
 
 impl Autosave {
-    pub(super) fn observe(&mut self) -> Result<()> {
+    pub(super) fn observe(&mut self) -> crate::Result<()> {
         if self.session.transaction_active() {
             return Ok(());
         }
@@ -103,18 +107,18 @@ impl Autosave {
 impl Autosave {
     /// Nonblocking event-loop pump. A failed job is sticky: no later publication
     /// can rotate away the last confirmed snapshot. Errors must be presented.
-    pub fn tick(&mut self) -> Result<()> {
+    pub fn tick(&mut self) -> crate::Result<()> {
         if let Some(e) = &self.failure {
-            return Err(EditError::PersistenceFailed(e.clone()));
+            return Err(Error::PersistenceFailed(e.clone()).into());
         }
         match self.pump() {
             Ok(()) => Ok(()),
             Err(PumpFailure::Admission(error)) => Err(error),
             Err(PumpFailure::Persistence(EditError::StaleResult)) => Err(EditError::StaleResult),
             Err(PumpFailure::Persistence(error)) => {
-                let error = Arc::new(error);
+                let error: Arc<dyn crate::Failure> = Arc::new(error);
                 self.failure = Some(error.clone());
-                Err(EditError::PersistenceFailed(error))
+                Err(Error::PersistenceFailed(error).into())
             }
         }
     }
@@ -132,12 +136,10 @@ impl Autosave {
                 .ok_or(EditError::WorkerPanicked)?;
             match state.state {
                 JobState::Failed | JobState::Cancelled => {
-                    return Err(EditError::PersistenceFailed(
-                        state
-                            .error
-                            .unwrap_or_else(|| Arc::new(EditError::WorkerPanicked)),
-                    )
-                    .into());
+                    let cause = state
+                        .error
+                        .unwrap_or_else(|| Arc::new(EditError::WorkerPanicked));
+                    return Err(EditError::from(Error::PersistenceFailed(cause)).into());
                 }
                 JobState::Completed => {
                     let f = self.flight.take().ok_or(EditError::WorkerPanicked)?;
@@ -203,7 +205,10 @@ impl Autosave {
             && self.pending_save.is_some()
             && !self.session.transaction_active()
         {
-            let path = self.pending_save.take().ok_or(EditError::RecoveryBusy)?;
+            let path = self
+                .pending_save
+                .take()
+                .ok_or_else(|| EditError::from(Error::Busy))?;
             if let Err(error) = self.start(Some(path)) {
                 return Err(if self.flight.is_none() {
                     PumpFailure::Admission(error)
@@ -238,7 +243,7 @@ impl Autosave {
 }
 
 impl Autosave {
-    pub(super) fn start(&mut self, save_path: Option<PathBuf>) -> Result<()> {
+    pub(super) fn start(&mut self, save_path: Option<PathBuf>) -> crate::Result<()> {
         self.start_task(save_path, false)
     }
 }
@@ -248,9 +253,9 @@ impl Autosave {
         &mut self,
         save_path: Option<PathBuf>,
         clear_journal: bool,
-    ) -> Result<()> {
+    ) -> crate::Result<()> {
         if self.flight.is_some() {
-            return Err(EditError::RecoveryBusy);
+            return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
             return Err(EditError::TransactionActive);
@@ -288,7 +293,7 @@ impl Autosave {
                 project = Arc::new(snapshot.fork()?);
             }
             let writer = if in_place {
-                self.writer.take().ok_or(EditError::RecoveryBusy)?
+                self.writer.take().ok_or(Error::Busy)?
             } else {
                 WriterLease::acquire(&path)?
             };
