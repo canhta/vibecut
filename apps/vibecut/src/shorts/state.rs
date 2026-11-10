@@ -1034,11 +1034,15 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
 
 pub(super) fn failure_text(error: &engine::EditError) -> Text {
     match error {
-        engine::EditError::ModelMissing(_) | engine::EditError::RunnerMissing => {
-            Text::ShortsModelMissing
+        engine::EditError::Providers(
+            engine::providers::Error::ModelMissing(_) | engine::providers::Error::RunnerMissing,
+        ) => Text::ShortsModelMissing,
+        engine::EditError::Providers(engine::providers::Error::CredentialMissing(_)) => {
+            Text::ShortsCredentialsMissing
         }
-        engine::EditError::CredentialMissing(_) => Text::ShortsCredentialsMissing,
-        engine::EditError::ConsentRequired => Text::ShortsConsentRequired,
+        engine::EditError::Providers(engine::providers::Error::ConsentRequired) => {
+            Text::ShortsConsentRequired
+        }
         engine::EditError::BudgetFull | engine::EditError::Render(render::Error::Budget { .. }) => {
             Text::ShortsMemory
         }

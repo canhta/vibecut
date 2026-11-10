@@ -1,5 +1,5 @@
 //! Maps typed CLI refusals to stable process diagnostics.
-use engine::EditError;
+use engine::{EditError, providers, transcript};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
@@ -66,16 +66,25 @@ impl CliError {
         let line = if json_output {
             json!({"status": "error", "error": self.value()}).to_string()
         } else {
-            format!("error: {self}")
+            format!("error: {}", self.message())
         };
         let _ = writeln!(io::stderr(), "{line}");
+    }
+    /// The setup hint is the CLI's own text; the kernel names no command.
+    fn message(&self) -> String {
+        match self {
+            Self::Engine(error) => edit_message(error),
+            Self::Job(error) => edit_message(error),
+            Self::Shorts(shorts::Error::Engine(error)) => edit_message(error),
+            _ => self.to_string(),
+        }
     }
     /// One typed error object for both stderr envelopes and batch job results.
     pub(crate) fn value(&self) -> Value {
         let (code, exit) = self.code();
         let mut error = json!({
             "code": code,
-            "message": self.to_string(),
+            "message": self.message(),
             "exit_code": exit,
         });
         if let Some(list) = self.unavailable() {
@@ -98,18 +107,35 @@ impl CliError {
     }
 }
 
+fn edit_message(error: &EditError) -> String {
+    match error {
+        EditError::Providers(providers::Error::ModelMissing(id)) => {
+            format!("local model {id} is not installed; run `vibecut-cli model download {id}`")
+        }
+        EditError::JobFailure(error) => edit_message(error),
+        _ => error.to_string(),
+    }
+}
+
 fn edit_code(error: &EditError) -> (&'static str, u8) {
     match error {
         EditError::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
         EditError::Render(_) => ("render", 6),
         EditError::Media(_) => ("media", 6),
-        EditError::ModelMissing(_) | EditError::RunnerMissing | EditError::CredentialMissing(_) => {
-            ("setup", 4)
-        }
+        EditError::Providers(
+            providers::Error::ModelMissing(_)
+            | providers::Error::RunnerMissing
+            | providers::Error::CredentialMissing(_),
+        ) => ("setup", 4),
         EditError::Ai(ai::Error::Chapters(_)) => ("rejected", 5),
         EditError::Ai(_) => ("ai", 4),
         EditError::JobFailure(error) => edit_code(error),
-        EditError::ConsentRequired | EditError::AutoLanguageUnsupported => ("rejected", 5),
+        EditError::Providers(
+            providers::Error::ConsentRequired | providers::Error::AutoLanguageUnsupported,
+        ) => ("rejected", 5),
+        EditError::Transcript(transcript::Error::NoSpeech | transcript::Error::LowConfidence) => {
+            ("rejected", 5)
+        }
         EditError::Project(project::Error::Busy) => ("busy", 3),
         EditError::Project(project::Error::Conflict) => ("conflict", 3),
         EditError::Project(project::Error::Io(_)) => ("io", 7),

@@ -2,6 +2,7 @@
 mod adapters;
 mod catalog;
 mod consent;
+mod error;
 mod selection;
 mod text;
 pub use adapters::{Credentials, Providers, Runtime};
@@ -15,6 +16,7 @@ pub use catalog::{
 };
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest};
+pub use error::Error;
 pub use selection::{
     Approval, ClipAttempt, ProviderOutput, TranscriptionAttempt, TranslationAttempt, suggest_clips,
     transcribe, translate,

@@ -1,7 +1,16 @@
 # Providers
 
-Interface: `Providers`, `Credentials`, `ConsentPrompt`, `TextAccess`, `TextProvider`,
+Interface: `Providers`, `Credentials`, `Error`, `ConsentPrompt`, `TextAccess`, `TextProvider`,
 `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
+
+## Failures
+
+`Error` owns setup, capability and consent refusals: a missing local model or Gipformer runner, a
+missing provider credential, auto-detection on a provider that is not local whisper.cpp, and a
+remote upload without consent. Display states the fact only, never a command to run: the CLI adds
+its `vibecut-cli model download <id>` hint and the desktop renders its own text from the variant.
+Callers that still return the kernel union wrap it as `EditError::Providers`; the wire maps consent
+to `Permission` and every other variant to `Refused`.
 
 ## Provider selection and fallback
 

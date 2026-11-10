@@ -3,6 +3,7 @@ use super::catalog::{
     CatalogOperation, TextProvider, TranscriptionProvider, TranslationProvider, catalog_model,
 };
 use super::consent::{Cost, UploadRequest};
+use super::error::Error;
 use crate::EditError;
 use crate::cache::{ArtifactCache, ModelLease};
 use ai::transport::{ApiKey, UreqTransport};
@@ -66,20 +67,23 @@ impl Credentials {
     }
     /// Resolve the configured OpenAI credential for a selected adapter or refuse.
     pub fn openai(&self) -> Result<&ApiKey, EditError> {
-        self.openai
+        Ok(self
+            .openai
             .as_ref()
-            .ok_or(EditError::CredentialMissing("OPENAI_API_KEY"))
+            .ok_or(Error::CredentialMissing("OPENAI_API_KEY"))?)
     }
     pub(crate) fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
-        self.elevenlabs
+        Ok(self
+            .elevenlabs
             .as_ref()
-            .ok_or(EditError::CredentialMissing("ELEVENLABS_API_KEY"))
+            .ok_or(Error::CredentialMissing("ELEVENLABS_API_KEY"))?)
     }
     /// Resolve the configured Anthropic credential for a selected adapter or refuse.
     pub fn anthropic(&self) -> Result<&ApiKey, EditError> {
-        self.anthropic
+        Ok(self
+            .anthropic
             .as_ref()
-            .ok_or(EditError::CredentialMissing("ANTHROPIC_API_KEY"))
+            .ok_or(Error::CredentialMissing("ANTHROPIC_API_KEY"))?)
     }
 }
 impl Default for Runtime {
@@ -137,12 +141,12 @@ impl Providers {
                 let metadata = catalog_model(model)?;
                 let lease = cache
                     .model(&metadata, &IdleHooks)?
-                    .ok_or(EditError::ModelMissing("whisper-large-v3-turbo"))?;
+                    .ok_or(Error::ModelMissing("whisper-large-v3-turbo"))?;
                 let path = lease.file(
                     &metadata
                         .files
                         .first()
-                        .ok_or(EditError::ModelMissing("whisper-large-v3-turbo"))?
+                        .ok_or(Error::ModelMissing("whisper-large-v3-turbo"))?
                         .name,
                 )?;
                 let device = if runtime.use_gpu {
@@ -168,11 +172,11 @@ impl Providers {
                 let metadata = catalog_model(model)?;
                 let lease = cache
                     .model(&metadata, &IdleHooks)?
-                    .ok_or(EditError::ModelMissing("gipformer-68m-rnnt-int8"))?;
+                    .ok_or(Error::ModelMissing("gipformer-68m-rnnt-int8"))?;
                 let runner = runtime
                     .gipformer_runner
                     .as_deref()
-                    .ok_or(EditError::RunnerMissing)?;
+                    .ok_or(Error::RunnerMissing)?;
                 let value = ai::gipformer::Gipformer::load(
                     &metadata,
                     lease.directory(),
@@ -534,7 +538,7 @@ fn load_aligner(
         let metadata = ai::models::alignment_model()?;
         let lease = cache
             .model(&metadata, &IdleHooks)?
-            .ok_or(EditError::ModelMissing("whisper-small-dtw"))?;
+            .ok_or(Error::ModelMissing("whisper-small-dtw"))?;
         let value = ai::alignment::CandleAligner::load(&metadata, lease.directory(), &IdleHooks)?;
         leases.push(lease);
         Ok(Arc::new(value))

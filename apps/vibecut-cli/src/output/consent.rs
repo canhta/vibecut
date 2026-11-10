@@ -44,7 +44,7 @@ impl ConsentPrompt for CliConsent {
                 io::stderr(),
                 "consent: refused; pass --yes-upload to authorize this exact scope"
             );
-            Err(EditError::ConsentRequired)
+            Err(engine::providers::Error::ConsentRequired.into())
         }
     }
 }

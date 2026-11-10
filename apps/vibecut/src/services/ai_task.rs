@@ -58,7 +58,7 @@ impl ConsentPrompt for TaskEvents {
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),
                 Ok(false) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(engine::EditError::ConsentRequired);
+                    return Err(engine::providers::Error::ConsentRequired.into());
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }

@@ -2,6 +2,7 @@
 mod checkpoints;
 mod cue_translation;
 mod cues;
+mod error;
 mod operation;
 mod speech;
 mod translation_run;
@@ -14,6 +15,7 @@ pub use cue_translation::{
 };
 pub use cues::build_session;
 pub(crate) use cues::caption_item_id;
+pub use error::Error;
 pub use operation::{Cancellation, Progress, SilentProgress, Stage, Transcription};
 pub(crate) use speech::media_duration;
 pub use speech::transcribe;

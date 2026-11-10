@@ -747,3 +747,50 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
     assert_eq!(history.history_len(), (0, 1));
     assert_integer_candidate_refusal(&mut history, &mut r, "redo", json!({}));
 }
+
+#[test]
+fn provider_and_transcript_refusals_keep_their_wire_class() {
+    let cases = [
+        (
+            EditError::Providers(engine::providers::Error::ConsentRequired),
+            ErrorCode::Permission,
+        ),
+        (
+            EditError::Providers(engine::providers::Error::ModelMissing(
+                "whisper-large-v3-turbo",
+            )),
+            ErrorCode::Refused,
+        ),
+        (
+            EditError::Providers(engine::providers::Error::RunnerMissing),
+            ErrorCode::Refused,
+        ),
+        (
+            EditError::Providers(engine::providers::Error::CredentialMissing(
+                "OPENAI_API_KEY",
+            )),
+            ErrorCode::Refused,
+        ),
+        (
+            EditError::Providers(engine::providers::Error::AutoLanguageUnsupported),
+            ErrorCode::Refused,
+        ),
+        (
+            EditError::Transcript(engine::transcript::Error::NoSpeech),
+            ErrorCode::Refused,
+        ),
+        (
+            EditError::Transcript(engine::transcript::Error::LowConfidence),
+            ErrorCode::Refused,
+        ),
+    ];
+    for (error, code) in cases {
+        assert_eq!(ErrorCode::from_error(&error), code, "{error:?}");
+    }
+    let kernel = EditError::Providers(engine::providers::Error::ModelMissing(
+        "whisper-large-v3-turbo",
+    ))
+    .to_string();
+    assert!(kernel.contains("whisper-large-v3-turbo"), "{kernel}");
+    assert!(!kernel.contains("vibecut-cli"), "{kernel}");
+}

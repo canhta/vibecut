@@ -544,7 +544,7 @@ pub(crate) fn fake_fonts_download(
     accepted: bool,
 ) -> engine::Result<engine::jobs::JobId> {
     if !accepted {
-        return Err(engine::EditError::ConsentRequired);
+        return Err(engine::providers::Error::ConsentRequired.into());
     }
     Ok(submit(runner))
 }

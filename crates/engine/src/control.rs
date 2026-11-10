@@ -71,7 +71,7 @@ pub struct Caller<'a> {
     pub media: Option<&'a std::sync::Mutex<MediaAccess>>,
     /// The process transcript-text adapter and the human approval it consults.
     /// Without it `chapters.generate` and `fillers.classify` refuse with
-    /// [`crate::EditError::ConsentRequired`].
+    /// [`crate::providers::Error::ConsentRequired`].
     pub chapters: Option<&'a crate::providers::TextAccess>,
 }
 

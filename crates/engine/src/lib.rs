@@ -130,20 +130,10 @@ pub enum EditError {
     Sounds(#[from] SoundError),
     #[error("font catalog operation failed")]
     Font(#[from] FontError),
-    #[error("local model {0} is not installed; run `vibecut-cli model download {0}`")]
-    ModelMissing(&'static str),
-    #[error("local Gipformer runner is not installed")]
-    RunnerMissing,
-    #[error("provider {0} requires its API key")]
-    CredentialMissing(&'static str),
-    #[error("auto language detection requires the local whisper.cpp provider")]
-    AutoLanguageUnsupported,
-    #[error("no speech recognized")]
-    NoSpeech,
-    #[error("speech recognition confidence is too low")]
-    LowConfidence,
-    #[error("remote upload requires explicit consent")]
-    ConsentRequired,
+    #[error(transparent)]
+    Providers(#[from] providers::Error),
+    #[error(transparent)]
+    Transcript(#[from] transcript::Error),
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),
     #[error("unknown command")]

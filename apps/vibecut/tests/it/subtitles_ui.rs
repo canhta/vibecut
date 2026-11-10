@@ -751,16 +751,18 @@ impl Workflow for GenerateWorkflow {
             return LocalWorkflow.run(work, budget, events, cancel);
         };
         if self.missing {
-            return Err(engine::EditError::ModelMissing("whisper-large-v3-turbo"));
+            return Err(engine::providers::Error::ModelMissing("whisper-large-v3-turbo").into());
         }
         match self.failure {
             Some(GenerateFailure::NoSpeech) if options.source != "auto" => {
-                return Err(engine::EditError::NoSpeech);
+                return Err(engine::transcript::Error::NoSpeech.into());
             }
             Some(GenerateFailure::LowConfidence) if options.source != "auto" => {
-                return Err(engine::EditError::LowConfidence);
+                return Err(engine::transcript::Error::LowConfidence.into());
             }
-            Some(GenerateFailure::Silent) => return Err(engine::EditError::NoSpeech),
+            Some(GenerateFailure::Silent) => {
+                return Err(engine::transcript::Error::NoSpeech.into());
+            }
             _ => {}
         }
         engine::transcript::Progress::stage(events, engine::transcript::Stage::Transcribe);

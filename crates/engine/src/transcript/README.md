@@ -1,7 +1,7 @@
 # Transcript
 
 Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session`,
-`wait_for_job`, `Cancellation`, `Progress`, `translation`.
+`wait_for_job`, `Cancellation`, `Error`, `Progress`, `translation`.
 
 Acquires source-timed cues from the user's chosen providers, shared by
 [subtitles](../subtitles/README.md) and the [shorts crate](../../../shorts/README.md):
@@ -15,7 +15,10 @@ whisper.cpp adapter; composition roots pass the detected tag explicitly, so dete
 hidden fallback inside `transcribe`. A run with no speech returns `NoSpeech`. When every
 recognized word carries confidence and their mean is below the fixed floor, `transcribe` returns
 `LowConfidence` instead of inserting cues for a likely wrong language; providers without
-confidence data never produce this refusal.
+confidence data never produce this refusal. Both are `transcript::Error`: the acquisition stage
+constructs them, so they are not provider-selection failures. `AutoLanguageUnsupported` stays a
+`providers::Error` because it refuses a provider capability, and callers that still return the
+kernel union wrap either type in `EditError`.
 
 The desktop consumes `SubtitleTranslator` without opening an ASR adapter or model lease.
 `translate_selected` composes the translation window, request disclosure, `TranslationRun`

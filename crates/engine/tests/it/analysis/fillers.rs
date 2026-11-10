@@ -355,7 +355,9 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     let mut runner = runner();
     assert!(matches!(
         request.submit(&mut runner, &access),
-        Err(EditError::ConsentRequired)
+        Err(EditError::Providers(
+            engine::providers::Error::ConsentRequired
+        ))
     ));
     assert_eq!(classifier.calls.load(Ordering::SeqCst), 0);
 

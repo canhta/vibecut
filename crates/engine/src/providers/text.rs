@@ -8,6 +8,7 @@
 //! is used.
 use super::adapters::{Credentials, open_chapter, open_filler};
 use super::catalog::TextProvider;
+use super::error::Error;
 use super::selection::Approval;
 use crate::EditError;
 use ai::chapters::{ChapterGenerator, ChapterInput};
@@ -176,10 +177,11 @@ impl TextAccess {
     }
 
     fn approve(&self, scope: &Scope, estimate: &CostEstimate) -> Result<Consent, EditError> {
-        self.approval
+        Ok(self
+            .approval
             .lock()
             .map_err(|_| EditError::JobPoisoned)?
             .approve(scope, estimate, false)?
-            .ok_or(EditError::ConsentRequired)
+            .ok_or(Error::ConsentRequired)?)
     }
 }

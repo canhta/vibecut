@@ -1,5 +1,6 @@
 //! Discloses each remote upload before it is approved.
 use super::catalog::CatalogOperation;
+use super::error::Error;
 use crate::EditError;
 use ai::{CostEstimate, Money};
 /// A provider disclosure shown before any remote byte leaves the machine.
@@ -67,7 +68,7 @@ impl From<&CostEstimate> for Cost {
 }
 impl ConsentPrompt for DenyUploads {
     fn approve(&self, _: &UploadRequest) -> Result<(), EditError> {
-        Err(EditError::ConsentRequired)
+        Err(Error::ConsentRequired.into())
     }
 }
 impl ConsentPrompt for AllowAll {

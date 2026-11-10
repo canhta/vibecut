@@ -461,7 +461,10 @@ fn remote_upload_is_refused_without_consent() {
         &engine::transcript::Cancellation::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, engine::EditError::ConsentRequired));
+    assert!(matches!(
+        error,
+        engine::EditError::Providers(engine::providers::Error::ConsentRequired)
+    ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
 }
 
@@ -511,7 +514,9 @@ fn missing_remote_credentials_are_typed() {
     .unwrap();
     assert!(matches!(
         error,
-        engine::EditError::CredentialMissing("OPENAI_API_KEY")
+        engine::EditError::Providers(engine::providers::Error::CredentialMissing(
+            "OPENAI_API_KEY"
+        ))
     ));
 }
 

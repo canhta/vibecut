@@ -112,6 +112,10 @@ fn auto_detection_does_not_require_cloud_translation_credentials() {
     assert_eq!(error["error"]["code"], "setup");
     let message = error["error"]["message"].as_str().unwrap();
     assert!(message.contains("whisper-large-v3-turbo"), "{message}");
+    assert!(
+        message.contains("vibecut-cli model download whisper-large-v3-turbo"),
+        "the CLI owns the setup hint: {message}"
+    );
     assert!(!message.contains("OPENAI_API_KEY"), "{message}");
     assert!(!message.contains("ANTHROPIC_API_KEY"), "{message}");
 }

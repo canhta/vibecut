@@ -552,7 +552,9 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
 
     assert!(matches!(
         store.submit_download(&mut runner, "Gate Sample", false),
-        Err(EditError::ConsentRequired)
+        Err(EditError::Providers(
+            engine::providers::Error::ConsentRequired
+        ))
     ));
     for refused in ["Inter", "Not In Catalog", ""] {
         assert!(matches!(

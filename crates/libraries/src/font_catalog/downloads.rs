@@ -24,7 +24,7 @@ impl FontStore {
         accepted: bool,
     ) -> Result<(JobId, CancelToken)> {
         if !accepted {
-            return Err(EditError::ConsentRequired);
+            return Err(engine::providers::Error::ConsentRequired.into());
         }
         let g = self
             .google_family(family.trim())

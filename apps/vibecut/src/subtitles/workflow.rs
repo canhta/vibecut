@@ -115,7 +115,7 @@ impl Workflow for LocalWorkflow {
                 let language = if options.source == "auto" {
                     let detected = providers.detect_language(&asset, duration, cancel)?;
                     if !super::SOURCE_LANGUAGES.contains(&detected.as_str()) {
-                        return Err(EditError::LowConfidence);
+                        return Err(engine::transcript::Error::LowConfidence.into());
                     }
                     detected
                 } else {

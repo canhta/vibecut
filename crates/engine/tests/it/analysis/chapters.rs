@@ -442,7 +442,9 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     );
     assert!(matches!(
         request.submit(&mut runner, &denied),
-        Err(EditError::ConsentRequired)
+        Err(EditError::Providers(
+            engine::providers::Error::ConsentRequired
+        ))
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 

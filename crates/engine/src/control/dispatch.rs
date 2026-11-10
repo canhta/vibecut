@@ -241,7 +241,9 @@ impl Session {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
-                let access = caller.chapters.ok_or(EditError::ConsentRequired)?;
+                let access = caller
+                    .chapters
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
                 let request =
                     crate::chapters::ChapterRequest::new(self.project(), language, max_chapters)?;
                 let job = request.submit(runner, access)?;
@@ -258,7 +260,9 @@ impl Session {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
-                let access = caller.chapters.ok_or(EditError::ConsentRequired)?;
+                let access = caller
+                    .chapters
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
                 let request =
                     crate::fillers::FillerRequest::new(self.project(), language, include_markers)?;
                 let job = request.submit(runner, access)?;

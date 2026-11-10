@@ -595,16 +595,26 @@ impl Subtitles {
                 self.fail(error.clone());
                 return;
             }
-            engine::EditError::ModelMissing(id) => {
+            engine::EditError::Providers(engine::providers::Error::ModelMissing(id)) => {
                 self.missing_model = Some((*id).into());
                 Text::ShortsModelMissing
             }
-            engine::EditError::CredentialMissing(_) => Text::ShortsCredentialsMissing,
-            engine::EditError::RunnerMissing => Text::SubRunnerMissing,
-            engine::EditError::AutoLanguageUnsupported => Text::SubAutoUnsupported,
-            engine::EditError::NoSpeech => Text::SubNoSpeech,
-            engine::EditError::LowConfidence => Text::SubLowConfidence,
-            engine::EditError::ConsentRequired => Text::ShortsConsentRequired,
+            engine::EditError::Providers(engine::providers::Error::CredentialMissing(_)) => {
+                Text::ShortsCredentialsMissing
+            }
+            engine::EditError::Providers(engine::providers::Error::RunnerMissing) => {
+                Text::SubRunnerMissing
+            }
+            engine::EditError::Providers(engine::providers::Error::AutoLanguageUnsupported) => {
+                Text::SubAutoUnsupported
+            }
+            engine::EditError::Providers(engine::providers::Error::ConsentRequired) => {
+                Text::ShortsConsentRequired
+            }
+            engine::EditError::Transcript(engine::transcript::Error::NoSpeech) => Text::SubNoSpeech,
+            engine::EditError::Transcript(engine::transcript::Error::LowConfidence) => {
+                Text::SubLowConfidence
+            }
             engine::EditError::StaleResult => Text::SubStale,
             engine::EditError::Cancelled => Text::ShortsJobCancelled,
             _ => Text::SubFailed,

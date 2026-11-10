@@ -54,7 +54,10 @@ impl ErrorCode {
             EditError::SchemaMismatch => Self::SchemaMismatch,
             EditError::SessionGone => Self::SessionGone,
             EditError::StaleRevision | EditError::StaleResult => Self::StaleRevision,
-            EditError::Permission | EditError::ConsentRequired => Self::Permission,
+            EditError::Permission => Self::Permission,
+            // Each substrate type declares its own wire class; the kernel only delegates.
+            EditError::Providers(error) => error.code(),
+            EditError::Transcript(error) => error.code(),
             EditError::IdempotencyConflict => Self::IdempotencyConflict,
             EditError::ReceiptCapacity => Self::ReceiptCapacity,
             EditError::ResyncRequired => Self::ResyncRequired,

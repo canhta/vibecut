@@ -1,10 +1,11 @@
 //! Transcribes the speech windows of one source into source-timed cues.
 use super::checkpoints::{hex, transcribe_window};
+use super::error::Error as TranscriptError;
 use super::operation::{Cancellation, Progress, Stage, Transcription};
 use crate::EditError;
 use crate::cache::ArtifactCache;
 use crate::jobs::JobRunner;
-use crate::providers::{ConsentPrompt, Cost, IdleHooks, Providers};
+use crate::providers::{ConsentPrompt, Cost, Error as ProviderError, IdleHooks, Providers};
 use ai::SampleRange;
 use captions::LanguageTag;
 use captions::{Cue, NfcText, SegmentRules, SegmentedCue, Transcript};
@@ -110,7 +111,7 @@ pub fn transcribe(
     }
     cancel.checkpoint()?;
     if recognitions.is_empty() {
-        return Err(EditError::NoSpeech);
+        return Err(TranscriptError::NoSpeech.into());
     }
 
     cancel.checkpoint()?;
@@ -118,7 +119,7 @@ pub fn transcribe(
     let recognition = ai::assemble(recognitions, &IdleHooks)?;
     let transcript = recognition.to_transcript()?;
     if mean_confidence(&transcript).is_some_and(|mean| mean < MIN_MEAN_CONFIDENCE) {
-        return Err(EditError::LowConfidence);
+        return Err(TranscriptError::LowConfidence.into());
     }
     cancel.checkpoint()?;
     progress.stage(Stage::Segment);
@@ -130,7 +131,7 @@ pub fn transcribe(
         .map(|SegmentedCue { cue, .. }| cue)
         .collect();
     if cues.is_empty() {
-        return Err(EditError::LowConfidence);
+        return Err(TranscriptError::LowConfidence.into());
     }
     Ok(Transcription {
         source_language: source_language.clone(),
@@ -169,7 +170,7 @@ impl Providers {
         let whisper = self
             .transcriber
             .whisper()
-            .ok_or(EditError::AutoLanguageUnsupported)?;
+            .ok_or(ProviderError::AutoLanguageUnsupported)?;
         let end = duration.min(Tick::from_seconds_f64(
             MIN_CAPTION_SECONDS as f64,
             Rounding::Floor,
@@ -222,7 +223,7 @@ impl Providers {
             Err(error) => return Err(error.into()),
         }
         cancel.checkpoint()?;
-        detected.ok_or(EditError::NoSpeech)
+        Ok(detected.ok_or(TranscriptError::NoSpeech)?)
     }
 }
 
