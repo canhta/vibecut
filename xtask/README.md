@@ -12,7 +12,7 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the lau
 | `checks`, `docs`, `layers`, `assets` | Repository policy; one forbidden-name scan covers tracked files and branch commit messages before `docs`, which includes the docs index, README module maps, tracker-free Markdown, relative links and anchors that resolve, and no reference-checkout source paths, against only-shrinking `xtask/docs-baseline.txt`; `checks` also checks formatting and the integration-test entry point |
 | `modules` | Module structure gate: no `mod.rs`, responsibility docs, banned names (tests included), folder width and intra-crate layer direction from `xtask/modules.toml` (crate and `[[crate.folder]]` tables), with only-shrinking `xtask/modules-baseline.txt` |
 | `catalog` | Regenerate `crates/engine/catalog.digest` and `docs/product/agent-control/commands.md` from the registry (the engine `control_catalog` example) |
-| `clippy`, `test`, `lint`, `ci [--require-oracles]` | Individual or aggregate [verification](../docs/engineering/verification.md) |
+| `clippy`, `test`, `lint`, `ci [--require-oracles]` | Individual or aggregate [verification](../docs/engineering/verification.md); `ci` refuses in a linked worktree unless `CI` is set |
 | `ffmpeg [--target PLATFORM]`, `ffmpeg --cache-key` | Resolve/provision native media dependencies and cache identity |
 | `media-bench`, `clip-eval SET [OPTIONS]` | Media and labelled clip-pipeline measurements |
 | `new-crate NAME` | Scaffold a core library already admitted in the architecture table |

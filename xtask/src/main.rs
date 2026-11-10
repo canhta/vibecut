@@ -1,6 +1,7 @@
 //! Workspace checks and admitted crate scaffolding.
 mod build;
 mod checkout;
+mod ci;
 mod distribution;
 mod ffmpeg;
 mod i18n;
@@ -22,12 +23,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn ci(root: &Path, require_oracles: bool) -> Result<(), String> {
-    let checks = ffmpeg::begin(require_oracles).and_then(|()| run_checks(root, require_oracles));
-    let fixtures = ffmpeg::print_fixtures(root);
-    checks.and(fixtures)
 }
 
 fn cargo_check(root: &Path, args: &[&str], require_oracles: bool) -> Result<(), String> {
@@ -76,27 +71,6 @@ fn tests(root: &Path, args: &[&str], required: bool) -> Result<(), String> {
     let checks = ffmpeg::begin(required).and_then(|()| cargo_check(root, args, required));
     let fixtures = ffmpeg::print_fixtures(root);
     checks.and(fixtures)
-}
-
-fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
-    lint(root)?;
-    #[cfg(windows)]
-    for feature in ["whisper", "gipformer"] {
-        cargo_check(
-            root,
-            &[
-                "test",
-                "-p",
-                "ai",
-                "--lib",
-                "--no-default-features",
-                "--features",
-                feature,
-            ],
-            require_oracles,
-        )?;
-    }
-    cargo_check(root, &["test", "--workspace"], require_oracles)
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -168,8 +142,8 @@ fn run() -> Result<ExitCode, String> {
         ["ui-audit"] => ui_audit::run(root, &[]),
         ["ui-audit", scenes @ ..] => ui_audit::run(root, scenes),
         ["ui-compare", ..] => measure::ui_compare(root, args.get(1..).unwrap_or(&[])),
-        ["ci"] => ci(root, false),
-        ["ci", "--require-oracles"] => ci(root, true),
+        ["ci"] => ci::run(root, false),
+        ["ci", "--require-oracles"] => ci::run(root, true),
         _ => Err(
             "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|build-cap --json|prune [--make-room] [--dry-run]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
                 .into(),

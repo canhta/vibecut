@@ -17,7 +17,7 @@ Commit only green, with the smallest check that covers the change. Compile throu
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
 | `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
 
-`cargo xtask ci [--require-oracles]` runs `checks`, `clippy` and workspace tests. Required oracle mode fails on a missing or pre-6.0 `ffmpeg`/`ffprobe` and on any skipped oracle test; skips never count as acceptance.
+`cargo xtask ci [--require-oracles]` runs `checks`, `clippy` and workspace tests, and refuses inside a linked worktree unless `CI` is set (hosted runners set it), naming the local commands instead. Required oracle mode fails on a missing or pre-6.0 `ffmpeg`/`ffprobe` and on any skipped oracle test; skips never count as acceptance.
 
 ## AI model integrations
 
