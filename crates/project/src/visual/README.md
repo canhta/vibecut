@@ -32,6 +32,12 @@ Built-in kinds: `blur` has `intensity` 0–100 (default 15, animatable). `color_
 
 `EffectInstance::set_scalar` validates a registered parameter id and value before replacing the parameter; unknown ids and invalid values keep the previous parameter.
 
+Pixel-local monochrome, channel mixing, selective colour, threshold, gamma,
+inversion, levels, posterisation, strobe and two-tone definitions use the same typed
+parameter admission. Their hard/soft ranges, insertion defaults and scalar animation
+flags live in [the catalogue](effects_catalog.rs). Colour, choice and boolean values
+remain static; declaring a colour parameter does not add colour interpolation.
+
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector` so render's tests prove the content-time and preview-quality seams through the real evaluation path. It is off in every production build; nothing else in this crate refers to it.
 
 ## Video transitions

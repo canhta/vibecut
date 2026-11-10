@@ -451,7 +451,8 @@ static PIXEL_OPS: [PixelOp; 13] = [
             v.get(..3)
                 .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
                 && v.get(3).is_some_and(|sim| (0.0..=1.2).contains(sim))
-                && v.get(4).is_some_and(|reverse| (0.0..=1.0).contains(reverse))
+                && v.get(4)
+                    .is_some_and(|reverse| (0.0..=1.0).contains(reverse))
         },
         apply: color_pass_pixel,
     },
@@ -461,8 +462,7 @@ static PIXEL_OPS: [PixelOp; 13] = [
         valid: |v| {
             v.get(0).is_some_and(|sim| (0.0..=1.2).contains(sim))
                 && v.get(1).is_some_and(|solid| (0.0..=1.0).contains(solid))
-                && v
-                    .get(2..8)
+                && v.get(2..8)
                     .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
         },
         apply: color_replace_pixel,
@@ -532,7 +532,7 @@ static PIXEL_OPS: [PixelOp; 13] = [
     },
 ];
 
-/// Straight linear colour and alpha of a premultiplied working pixel; opaque
+/// Straight linear colour and alpha of a premultiplied working pixel; transparent
 /// black for a fully transparent one so every op keeps its contract.
 fn straight(pixel: [f32; 4]) -> ([f32; 3], f32) {
     let alpha = pixel[3];
@@ -575,7 +575,11 @@ fn hsl(rgb: [f32; 3]) -> [f32; 3] {
         return [0.0, 0.0, l];
     }
     let d = high - low;
-    let s = if l > 0.5 { d / (2.0 - high - low) } else { d / (high + low) };
+    let s = if l > 0.5 {
+        d / (2.0 - high - low)
+    } else {
+        d / (high + low)
+    };
     let h = if high == r {
         (g - b) / d + if g < b { 6.0 } else { 0.0 }
     } else if high == g {
@@ -589,7 +593,11 @@ fn hsl_color(h: f32, s: f32, l: f32) -> [f32; 3] {
     if s <= 0.0 {
         return [l, l, l];
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let channel = |mut t: f32| {
         t = t.rem_euclid(1.0);
@@ -603,11 +611,7 @@ fn hsl_color(h: f32, s: f32, l: f32) -> [f32; 3] {
             p
         }
     };
-    [
-        channel(h + 1.0 / 3.0),
-        channel(h),
-        channel(h - 1.0 / 3.0),
-    ]
+    [channel(h + 1.0 / 3.0), channel(h), channel(h - 1.0 / 3.0)]
 }
 /// Rec. 709 luma of the straight linear colour replaces every channel.
 pub fn black_white_pixel(pixel: [f32; 4], _: &[f32]) -> [f32; 4] {
@@ -619,10 +623,6 @@ pub fn black_white_pixel(pixel: [f32; 4], _: &[f32]) -> [f32; 4] {
 pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let channel = uniform(values, 0).round().clamp(0.0, 4.0) as u32;
     let blend = uniform(values, 1).clamp(0.0, 1.0);
-    let alpha = pixel[3];
-    if alpha <= 0.0 {
-        return pixel;
-    }
     if channel == 4 {
         // Coverage inverts and blends back by `blend`; the picture keeps its
         // straight colour, re-premultiplied by the new alpha.
@@ -630,12 +630,15 @@ pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
         let out = (1.0 - alpha) * (1.0 - blend) + alpha * blend;
         return premultiply(c, out);
     }
+    if pixel[3] <= 0.0 {
+        return pixel;
+    }
     let (c, alpha) = straight(pixel);
     let e = encoded_color(c);
     let inverted = e.map(|v| 1.0 - v);
     let mixed = [0, 1, 2].map(|k| {
         if channel == 0 || channel == k as u32 + 1 {
-            e[k] + (inverted[k] - e[k]) * blend
+            inverted[k] + (e[k] - inverted[k]) * blend
         } else {
             e[k]
         }
@@ -723,7 +726,7 @@ pub fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
             + uniform(values, row + 1) * e[1]
             + uniform(values, row + 2) * e[2]
             + uniform(values, row + 3))
-            .clamp(0.0, 1.0)
+        .clamp(0.0, 1.0)
     });
     premultiply(decoded_color(mixed), alpha)
 }
@@ -1198,9 +1201,7 @@ fn channel_mix(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
     const GAINS: [&str; 12] = [
         "rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc",
     ];
-    const IDENTITY: [f32; 12] = [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-    ];
+    const IDENTITY: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let mut values = [0.0f32; 12];
     for (value, id) in values.iter_mut().zip(GAINS) {
         *value = (frame.scalar(id)? / 100.0) as f32;
@@ -1274,7 +1275,11 @@ fn levels(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
     let out_black = frame.scalar("out_black")?;
     let out_white = frame.scalar("out_white")?;
     let gamma = frame.scalar("gamma")?;
-    if in_black == 0.0 && in_white == 255.0 && out_black == 0.0 && out_white == 255.0 && gamma == 100.0
+    if in_black == 0.0
+        && in_white == 255.0
+        && out_black == 0.0
+        && out_white == 255.0
+        && gamma == 100.0
     {
         return Ok(Vec::new());
     }
@@ -1282,7 +1287,7 @@ fn levels(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         "levels",
         vec![
             Uniform::Float((in_black / 255.0) as f32),
-            Uniform::Float(((in_white / 255.0).max(in_black / 255.0 + 1e-3)) as f32),
+            Uniform::Float((in_white / 255.0) as f32),
             Uniform::Float((out_black / 255.0) as f32),
             Uniform::Float((out_white / 255.0) as f32),
             Uniform::Float((100.0 / gamma.max(1.0)) as f32),

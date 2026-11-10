@@ -108,6 +108,119 @@ fn definitions_are_well_formed_and_their_defaults_validate() {
 }
 
 #[test]
+fn pixel_catalogue_keeps_source_numeric_admission_and_static_colour_types() {
+    // Source effect.rs f/fs definitions: hard ranges are independent of slider ranges.
+    let mut rows = vec![
+        ("color_pass", "similarity", 10.0, (0.0, 100.0), (0.0, 100.0)),
+        (
+            "color_replace",
+            "similarity",
+            10.0,
+            (0.0, 100.0),
+            (0.0, 100.0),
+        ),
+        ("extract", "black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("extract", "white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("extract", "softness", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("gamma_correction", "gamma", 10.0, (1.0, 28.0), (1.0, 28.0)),
+        ("invert", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("levels", "in_black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "in_white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "out_black", 0.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "out_white", 255.0, (0.0, 255.0), (0.0, 255.0)),
+        ("levels", "gamma", 100.0, (10.0, 1000.0), (10.0, 300.0)),
+        ("posterize", "levels", 7.0, (2.0, 255.0), (2.0, 32.0)),
+        ("strobe", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("strobe", "duration", 0.05, (0.0, 30.0), (0.0, 1.0)),
+        ("strobe", "period", 0.5, (0.0, 30.0), (0.0, 2.0)),
+        ("tint", "amount", 100.0, (0.0, 100.0), (0.0, 100.0)),
+    ];
+    for id in [
+        "rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc",
+    ] {
+        let default = if matches!(id, "rr" | "gg" | "bb") {
+            100.0
+        } else {
+            0.0
+        };
+        rows.push(("channel_mix", id, default, (-200.0, 200.0), (-200.0, 200.0)));
+    }
+    for (kind, id, default, hard, soft) in rows {
+        let def = effect_definition(kind).unwrap();
+        let p = def.param(id).unwrap();
+        assert_eq!(p.default, EffectValue::Scalar(default), "{kind}.{id}");
+        assert_eq!(
+            p.kind,
+            EffectParamKind::Float {
+                min: hard.0,
+                max: hard.1,
+                soft_min: soft.0,
+                soft_max: soft.1
+            },
+            "{kind}.{id}"
+        );
+        assert!(p.animatable, "{kind}.{id}");
+        for value in [hard.0, hard.1] {
+            def.instance("one")
+                .with(id, EffectValue::Scalar(value))
+                .unwrap();
+        }
+        for value in [hard.0 - 0.01, hard.1 + 0.01] {
+            assert!(
+                def.instance("one")
+                    .with(id, EffectValue::Scalar(value))
+                    .is_err(),
+                "{kind}.{id} {value}"
+            );
+        }
+    }
+    for (kind, id, value) in [
+        ("color_pass", "reverse", EffectValue::Bool(false)),
+        ("color_replace", "solid", EffectValue::Bool(false)),
+        ("extract", "invert", EffectValue::Bool(false)),
+        ("invert", "channel", EffectValue::Choice(0)),
+        (
+            "color_pass",
+            "color",
+            EffectValue::Color(Color([255, 0, 0, 255])),
+        ),
+        (
+            "color_replace",
+            "target",
+            EffectValue::Color(Color([255, 0, 0, 255])),
+        ),
+        (
+            "color_replace",
+            "replace",
+            EffectValue::Color(Color([0, 0, 255, 255])),
+        ),
+        ("strobe", "color", EffectValue::Color(Color([255; 4]))),
+        ("tint", "black", EffectValue::Color(Color([0, 0, 0, 255]))),
+        ("tint", "white", EffectValue::Color(Color([255; 4]))),
+    ] {
+        let def = effect_definition(kind).unwrap();
+        let p = def.param(id).unwrap();
+        assert_eq!(p.default, value, "{kind}.{id}");
+        assert!(
+            !p.animatable,
+            "colour interpolation remains an open contract, {kind}.{id}"
+        );
+        def.instance("one").with(id, value).unwrap();
+    }
+    let channel = effect_definition("invert")
+        .unwrap()
+        .param("channel")
+        .unwrap();
+    assert_eq!(
+        channel.kind,
+        EffectParamKind::Choice {
+            options: &["RGB", "Red", "Green", "Blue", "Alpha"]
+        }
+    );
+    assert!(effect_definition("black_white").unwrap().params.is_empty());
+}
+
+#[test]
 fn instances_refuse_wrong_parameter_sets_and_set_scalar_is_atomic() {
     let blur = effect_definition("blur").unwrap().instance("blur1");
     let mut unknown_kind = blur.clone();

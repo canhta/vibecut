@@ -1335,6 +1335,7 @@ fn mirror_refuses_extreme_geometry_before_allocating_and_keeps_admitted_results_
             ),
             Err(Error::Invalid("effect input dimensions"))
         ));
+    }
 }
 
 const PIXEL_EFFECTS: [&str; 11] = [
@@ -1369,16 +1370,15 @@ fn effect_instance(kind: &str, params: &[(&str, EffectValue)]) -> project::Effec
     instance
 }
 
-fn effect_output_at(kind: &str, params: &[(&str, EffectValue)], at: time::Tick) -> Vec<[f32; 4]> {
+fn effect_output_at(
+    kind: &str,
+    params: &[(&str, EffectValue)],
+    at: time::Tick,
+    source: &[[f32; 4]],
+) -> Vec<[f32; 4]> {
     let hooks = Hooks::default();
-    let source = effect_chart();
-    let image = Image::from_working_pixels(
-        source.len() as u32,
-        1,
-        source.iter().copied(),
-        &hooks,
-    )
-    .unwrap();
+    let image =
+        Image::from_working_pixels(source.len() as u32, 1, source.iter().copied(), &hooks).unwrap();
     let instance = effect_instance(kind, params);
     let passes = evaluate_effect(
         &project::Animations::default(),
@@ -1409,7 +1409,426 @@ fn effect_output_at(kind: &str, params: &[(&str, EffectValue)], at: time::Tick) 
 }
 
 fn effect_output(kind: &str, params: &[(&str, EffectValue)]) -> Vec<[f32; 4]> {
-    effect_output_at(kind, params, time::Tick::ZERO)
+    effect_output_at(kind, params, time::Tick::ZERO, &effect_chart())
+}
+
+// Independent f64 sRGB equations, not render's transfer functions or packing LUT.
+fn oracle_decode(v: f64) -> f64 {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+fn oracle_encode(v: f64) -> f64 {
+    if v <= 0.0031308 {
+        v * 12.92
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    }
+}
+fn oracle_pixel(encoded: [f64; 3], alpha: f64) -> [f64; 4] {
+    let [r, g, b] = encoded.map(|v| oracle_decode(v) * alpha);
+    [r, g, b, alpha]
+}
+fn assert_working_pixel(actual: [f32; 4], expected: [f64; 4], context: &str) {
+    for (channel, (actual, expected)) in actual.into_iter().zip(expected).enumerate() {
+        assert!(
+            (f64::from(actual) - expected).abs() <= 3e-6,
+            "{context} channel {channel}: {actual} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn pixel_equations_match_independent_colour_examples() {
+    use EffectValue::{Bool as B, Color as C, Scalar as S};
+    // Each expected encoded output is calculated independently of evaluated passes.
+    // Nonlinear luma operations explicitly cross into linear light below.
+    let input = [0.2, 0.4, 0.6];
+    let luma = 0.2126 * oracle_decode(input[0])
+        + 0.7152 * oracle_decode(input[1])
+        + 0.0722 * oracle_decode(input[2]);
+    let grey = oracle_encode(luma);
+    let levels = [0.25_f64, 0.5, 0.75].map(|v| 0.1 + ((v - 0.2) / 0.6).sqrt() * 0.8);
+    let mut rows = vec![
+        ("black_white", vec![], input, [grey; 3]),
+        (
+            "gamma_correction",
+            vec![("gamma", S(20.0))],
+            input,
+            [0.04, 0.16, 0.36],
+        ),
+        (
+            "gamma_correction",
+            vec![("gamma", S(5.0))],
+            input,
+            input.map(f64::sqrt),
+        ),
+        (
+            "posterize",
+            vec![("levels", S(5.0))],
+            [0.12, 0.38, 0.88],
+            [0.0, 0.5, 1.0],
+        ),
+        (
+            "posterize",
+            vec![("levels", S(5.0))],
+            [0.374, 0.376, 0.874],
+            [0.25, 0.5, 0.75],
+        ),
+        (
+            "levels",
+            vec![
+                ("in_black", S(51.0)),
+                ("in_white", S(204.0)),
+                ("out_black", S(25.5)),
+                ("out_white", S(229.5)),
+                ("gamma", S(200.0)),
+            ],
+            [0.25, 0.5, 0.75],
+            levels,
+        ),
+        (
+            "levels",
+            vec![("out_black", S(255.0)), ("out_white", S(0.0))],
+            input,
+            [0.8, 0.6, 0.4],
+        ),
+        // Equal/reversed input bounds use a .001 span without emitting white > 1.
+        (
+            "levels",
+            vec![("in_black", S(255.0)), ("in_white", S(255.0))],
+            [1.0; 3],
+            [0.0; 3],
+        ),
+        (
+            "levels",
+            vec![("in_black", S(255.0)), ("in_white", S(0.0))],
+            input,
+            [0.0; 3],
+        ),
+        (
+            "channel_mix",
+            vec![
+                ("rr", S(50.0)),
+                ("rg", S(25.0)),
+                ("rb", S(-50.0)),
+                ("rc", S(20.0)),
+                ("gr", S(100.0)),
+                ("gg", S(0.0)),
+                ("bg", S(50.0)),
+                ("bb", S(50.0)),
+                ("bc", S(10.0)),
+            ],
+            input,
+            [0.1, 0.2, 0.6],
+        ),
+        (
+            "channel_mix",
+            vec![("rc", S(25.0)), ("gc", S(50.0)), ("bc", S(75.0))],
+            [0.0; 3],
+            [0.25, 0.5, 0.75],
+        ),
+        // Valid hard-range gains produce out-of-gamut colour; the operation clips it.
+        (
+            "channel_mix",
+            vec![
+                ("rr", S(200.0)),
+                ("rg", S(200.0)),
+                ("gg", S(-200.0)),
+                ("bb", S(200.0)),
+                ("bc", S(200.0)),
+            ],
+            input,
+            [1.0, 0.0, 1.0],
+        ),
+        (
+            "color_pass",
+            vec![("similarity", S(50.0))],
+            [0.6, 0.2, 0.0],
+            [0.6, 0.2, 0.0],
+        ),
+        (
+            "color_pass",
+            vec![("similarity", S(0.0)), ("color", C(Color([0, 0, 0, 255])))],
+            [0.0; 3],
+            [0.0; 3],
+        ),
+        // Source f32 encoding of linear red is just below the exact key red;
+        // at zero distance tolerance it is rejected rather than silently snapped.
+        (
+            "color_pass",
+            vec![("similarity", S(0.0))],
+            [1.0, 0.0, 0.0],
+            [oracle_encode(0.2126); 3],
+        ),
+        (
+            "color_pass",
+            vec![("similarity", S(0.0)), ("reverse", B(true))],
+            input,
+            input,
+        ),
+        // Source HSL replacement retains L=.3 or .7 and sets hue/saturation to blue.
+        (
+            "color_replace",
+            vec![("similarity", S(100.0))],
+            [0.6, 0.0, 0.0],
+            [0.0, 0.0, 0.6],
+        ),
+        (
+            "color_replace",
+            vec![("similarity", S(100.0))],
+            [1.0, 0.4, 0.4],
+            [0.4, 0.4, 1.0],
+        ),
+        (
+            "color_replace",
+            vec![("similarity", S(100.0)), ("solid", B(true))],
+            [0.6, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            "color_replace",
+            vec![("similarity", S(0.0)), ("solid", B(true))],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ),
+        ("color_replace", vec![("similarity", S(0.0))], input, input),
+        // d=.555 is halfway through [.51,.6], smoothstep=.5.
+        (
+            "color_replace",
+            vec![("similarity", S(50.0)), ("solid", B(true))],
+            [0.445, 0.0, 0.0],
+            [0.2225, 0.0, 0.5],
+        ),
+        (
+            "tint",
+            vec![
+                ("black", C(Color([255, 0, 0, 255]))),
+                ("white", C(Color([0, 0, 255, 255]))),
+                ("amount", S(25.0)),
+            ],
+            input,
+            [
+                0.75 * input[0] + 0.25 * (1.0 - grey),
+                0.75 * input[1],
+                0.75 * input[2] + 0.25 * grey,
+            ],
+        ),
+        ("tint", vec![("amount", S(0.0))], input, input),
+    ];
+    for channel in 0..4 {
+        for blend in [0.0, 30.0, 100.0] {
+            let expected = std::array::from_fn(|k| {
+                if channel == 0 || channel == k + 1 {
+                    (1.0 - input[k]) * (1.0 - blend / 100.0) + input[k] * blend / 100.0
+                } else {
+                    input[k]
+                }
+            });
+            rows.push((
+                "invert",
+                vec![
+                    ("channel", EffectValue::Choice(channel as u32)),
+                    ("blend", S(blend)),
+                ],
+                input,
+                expected,
+            ));
+        }
+    }
+    for (kind, params, encoded, expected) in rows {
+        for alpha in [0.0, 0.25, 0.5, 1.0] {
+            let source = [oracle_pixel(encoded, alpha).map(|v| v as f32)];
+            let actual = effect_output_at(kind, &params, time::Tick::ZERO, &source)[0];
+            assert_working_pixel(
+                actual,
+                oracle_pixel(expected, alpha),
+                &format!("{kind} {params:?} a={alpha}"),
+            );
+            assert_eq!(actual[3], source[0][3], "{kind} preserves coverage");
+        }
+    }
+    // Outside Keep Colour's distance sphere becomes linear-luma grey, or stays on reverse.
+    for reverse in [false, true] {
+        let encoded = [0.4, 0.6, 0.0];
+        let source = [oracle_pixel(encoded, 0.5).map(|v| v as f32)];
+        let l = 0.2126 * oracle_decode(0.4) + 0.7152 * oracle_decode(0.6);
+        let expected = if reverse {
+            oracle_pixel(encoded, 0.5)
+        } else {
+            [l * 0.5, l * 0.5, l * 0.5, 0.5]
+        };
+        let output = effect_output_at(
+            "color_pass",
+            &[("similarity", S(50.0)), ("reverse", B(reverse))],
+            time::Tick::ZERO,
+            &source,
+        );
+        assert_working_pixel(output[0], expected, "Keep Colour outside sphere");
+    }
+}
+
+#[test]
+fn alpha_invert_blends_coverage_and_repremultiplies_the_same_colour() {
+    let rows = [
+        ([0.2, 0.1, 0.05, 0.25], 0.0, [0.6, 0.3, 0.15, 0.75]),
+        ([0.2, 0.1, 0.05, 0.25], 50.0, [0.4, 0.2, 0.1, 0.5]),
+        ([0.2, 0.1, 0.05, 0.25], 100.0, [0.2, 0.1, 0.05, 0.25]),
+        ([0.0; 4], 0.0, [0.0, 0.0, 0.0, 1.0]),
+        ([0.0; 4], 50.0, [0.0, 0.0, 0.0, 0.5]),
+        ([0.0; 4], 100.0, [0.0; 4]),
+        ([0.8, 0.4, 0.2, 1.0], 0.0, [0.0; 4]),
+        ([0.8, 0.4, 0.2, 1.0], 50.0, [0.4, 0.2, 0.1, 0.5]),
+        ([0.8, 0.4, 0.2, 1.0], 100.0, [0.8, 0.4, 0.2, 1.0]),
+    ];
+    for (input, blend, expected) in rows {
+        let output = effect_output_at(
+            "invert",
+            &[
+                ("channel", EffectValue::Choice(4)),
+                ("blend", EffectValue::Scalar(blend)),
+            ],
+            time::Tick::ZERO,
+            &[input],
+        );
+        assert_working_pixel(output[0], expected, "Alpha Invert");
+    }
+}
+
+#[test]
+fn threshold_matches_strict_cutoffs_and_independent_feather_values() {
+    use EffectValue::{Bool as B, Scalar as S};
+    for (black, white, softness, encoded, inside) in [
+        (0.0, 255.0, 0.0, 0.0, 0.0),
+        // The source f32 sRGB equation encodes linear white just below 1, so
+        // it is inside the upper 255 cutoff (not an exact encoded endpoint).
+        (0.0, 255.0, 0.0, 1.0, 1.0),
+        (90.0, 160.0, 0.0, 90.0 / 255.0 - 0.00005, 0.0),
+        (90.0, 160.0, 0.0, 90.0 / 255.0 + 0.00005, 1.0),
+        (90.0, 160.0, 0.0, 160.0 / 255.0 - 0.00005, 1.0),
+        (90.0, 160.0, 0.0, 160.0 / 255.0 + 0.00005, 0.0),
+        (51.0, 204.0, 0.0, 0.5, 1.0),
+        (51.0, 204.0, 50.0, 0.15, 0.0),
+        (51.0, 204.0, 50.0, 0.25, 0.05 / 0.1001),
+        (51.0, 204.0, 50.0, 0.5, 1.0),
+        (51.0, 204.0, 50.0, 0.75, 0.05 / 0.1001),
+        (204.0, 51.0, 50.0, 0.5, 0.0),
+    ] {
+        for invert in [false, true] {
+            let source = [oracle_pixel([encoded; 3], 0.25).map(|v| v as f32)];
+            let out = effect_output_at(
+                "extract",
+                &[
+                    ("black", S(black)),
+                    ("white", S(white)),
+                    ("softness", S(softness)),
+                    ("invert", B(invert)),
+                ],
+                time::Tick::ZERO,
+                &source,
+            );
+            // Threshold's result is already linear black/white, not decoded grey.
+            let v = if invert { 1.0 - inside } else { inside } * 0.25;
+            assert_working_pixel(out[0], [v, v, v, 0.25], "Threshold feather/cutoff");
+        }
+    }
+}
+
+#[test]
+fn strobe_uses_real_local_ticks_and_linear_original_picture_blend() {
+    use EffectValue::{Color as C, Scalar as S};
+    let input = oracle_pixel([0.2, 0.4, 0.6], 0.5);
+    let source = [input.map(|v| v as f32)];
+    let params = [
+        ("color", C(Color([255, 0, 0, 255]))),
+        ("blend", S(40.0)),
+        ("duration", S(0.125)),
+        ("period", S(0.5)),
+    ];
+    for (at, active) in [
+        (time::Tick::ZERO, true),
+        (tick(1, 8).saturating_sub(time::Tick(1)), true),
+        (tick(1, 8), false),
+        (tick(1, 2).saturating_sub(time::Tick(1)), false),
+        (tick(1, 2), true),
+    ] {
+        let expected = if active {
+            [0.3 + input[0] * 0.4, input[1] * 0.4, input[2] * 0.4, 0.5]
+        } else {
+            input
+        };
+        let out = effect_output_at("strobe", &params, at, &source);
+        assert_working_pixel(out[0], expected, "Strobe timing/linear blend");
+    }
+    for (duration, period, at, active) in [
+        (0.0, 0.5, time::Tick::ZERO, false),
+        (0.0005, 0.0, tick(1, 1000), true),
+        (0.0005, 0.0, tick(3, 4000), false),
+    ] {
+        let params = [("duration", S(duration)), ("period", S(period))];
+        let out = effect_output_at("strobe", &params, at, &source);
+        assert_working_pixel(
+            out[0],
+            if active { [0.5; 4] } else { input },
+            "Strobe zero duration/period floor",
+        );
+    }
+}
+
+#[test]
+fn pixel_parameters_refuse_hostile_static_values_without_mutation() {
+    for kind in PIXEL_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for param in definition.params {
+            if let Some((min, max)) = param.scalar_range() {
+                for value in [
+                    min - 1.0,
+                    max + 1.0,
+                    f64::NAN,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                ] {
+                    let mut instance = definition.instance("one");
+                    let before = instance.clone();
+                    assert!(
+                        matches!(
+                            instance.set_scalar(param.id, value),
+                            Err(project::Error::Invalid(_))
+                        ),
+                        "{kind}.{} admitted {value}",
+                        param.id
+                    );
+                    assert_eq!(instance, before);
+                }
+            } else {
+                assert!(
+                    definition
+                        .instance("one")
+                        .with(param.id, EffectValue::Point([0.0, 0.0]))
+                        .is_err(),
+                    "{kind}.{} accepted another type",
+                    param.id
+                );
+            }
+        }
+    }
+    // Working-pixel ingress refuses out-of-gamut/nonfinite pixels; effects must not
+    // weaken Image's admission to invent an invalid working image for this test.
+    for pixel in [
+        [1.1, 0.0, 0.0, 1.0],
+        [-0.1, 0.0, 0.0, 1.0],
+        [0.6, 0.0, 0.0, 0.5],
+        [0.0, 0.0, 0.0, 1.1],
+        [f32::NAN, 0.0, 0.0, 1.0],
+        [f32::INFINITY, 0.0, 0.0, 1.0],
+    ] {
+        assert!(matches!(
+            Image::from_working_pixels(1, 1, std::iter::once(pixel), &Hooks::default()),
+            Err(Error::Invalid("working pixel"))
+        ));
+    }
 }
 
 /// A value each parameter has not: the other hard bound, the next option, the
@@ -1430,15 +1849,17 @@ fn changed_value(param: &project::EffectParamDefinition) -> EffectValue {
         } else {
             0.0
         }),
-        EffectParamKind::Choice { options } => EffectValue::Choice(
-            (param.default.choice().unwrap() + 1) % options.len() as u32,
-        ),
+        EffectParamKind::Choice { options } => {
+            EffectValue::Choice((param.default.choice().unwrap() + 1) % options.len() as u32)
+        }
         EffectParamKind::Bool => EffectValue::Bool(!param.default.flag().unwrap()),
-        EffectParamKind::Color => EffectValue::Color(if param.default.color() == Some(Color([255, 0, 0, 255])) {
-            Color([0, 255, 255, 255])
-        } else {
-            Color([255, 0, 0, 255])
-        }),
+        EffectParamKind::Color => {
+            EffectValue::Color(if param.default.color() == Some(Color([255, 0, 0, 255])) {
+                Color([0, 255, 255, 255])
+            } else {
+                Color([255, 0, 0, 255])
+            })
+        }
         EffectParamKind::Point => EffectValue::Point([1.0, 1.0]),
     }
 }
@@ -1456,7 +1877,11 @@ fn pixel_effects_that_are_identity_at_default_emit_no_pass() {
         )
         .unwrap();
         assert!(passes.is_empty(), "{kind} emits an identity pass");
-        assert_eq!(effect_output(kind, &[]), effect_chart(), "{kind} is identity");
+        assert_eq!(
+            effect_output(kind, &[]),
+            effect_chart(),
+            "{kind} is identity"
+        );
     }
 }
 
@@ -1468,18 +1893,20 @@ fn every_pixel_effect_parameter_changes_the_picture() {
     for kind in PIXEL_EFFECTS {
         let definition = project::effect_definition(kind).unwrap();
         for param in definition.params {
-            let at = if matches!(param.id, "duration" | "period") {
-                idle
-            } else {
-                time::Tick::ZERO
+            let at = match (kind, param.id) {
+                ("strobe", "duration") => idle,
+                // Default .5s period fires here, changed 30s period is idle.
+                ("strobe", "period") => tick(1, 2),
+                _ => time::Tick::ZERO,
             };
-            let base = effect_output_at(kind, &[], at);
-            let changed = effect_output_at(kind, &[(param.id, changed_value(param))], at);
-            assert_ne!(
-                changed, base,
-                "{kind}.{} changed nothing",
-                param.id
+            let base = effect_output_at(kind, &[], at, &effect_chart());
+            let changed = effect_output_at(
+                kind,
+                &[(param.id, changed_value(param))],
+                at,
+                &effect_chart(),
             );
+            assert_ne!(changed, base, "{kind}.{} changed nothing", param.id);
         }
     }
 }
@@ -1494,18 +1921,20 @@ fn animated_pixel_parameters_clamp_to_their_hard_range() {
                 let mut animations = project::Animations::default();
                 animations
                     .set(
-                        project::AnimationPath::new(format!(
-                            "effects.one.params.{}",
-                            param.id
-                        ))
-                        .unwrap(),
+                        project::AnimationPath::new(format!("effects.one.params.{}", param.id))
+                            .unwrap(),
                         project::Param::new(project::ParamValue::Scalar(raw)).unwrap(),
                     )
                     .unwrap();
                 let instance = definition.instance("one");
                 let frame =
                     EffectFrame::new(&animations, &instance, time::Tick::ZERO, 64, 36).unwrap();
-                assert_eq!(frame.scalar(param.id).unwrap(), expected, "{kind}.{}", param.id);
+                assert_eq!(
+                    frame.scalar(param.id).unwrap(),
+                    expected,
+                    "{kind}.{}",
+                    param.id
+                );
                 for pass in (evaluator(kind).unwrap())(&frame).unwrap() {
                     validate_pass(&pass, 64, 36)
                         .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.id));
@@ -1521,17 +1950,14 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
         let definition = project::effect_definition(kind).unwrap();
         for high in [false, true] {
             let mut params = Vec::new();
-            let mut values = Vec::new();
             for param in definition.params {
                 let value = match param.kind {
                     project::EffectParamKind::Float { min, max, .. } => {
                         project::EffectValue::Scalar(if high { max } else { min })
                     }
-                    project::EffectParamKind::Angle => project::EffectValue::Scalar(if high {
-                        ANGLE_MAX
-                    } else {
-                        -ANGLE_MAX
-                    }),
+                    project::EffectParamKind::Angle => {
+                        project::EffectValue::Scalar(if high { ANGLE_MAX } else { -ANGLE_MAX })
+                    }
                     project::EffectParamKind::Choice { options } => {
                         project::EffectValue::Choice(if high {
                             options.len() as u32 - 1
@@ -1540,22 +1966,19 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
                         })
                     }
                     project::EffectParamKind::Bool => project::EffectValue::Bool(high),
-                    project::EffectParamKind::Color => {
-                        project::EffectValue::Color(if high {
-                            Color([255, 255, 255, 255])
-                        } else {
-                            Color([0, 0, 0, 255])
-                        })
-                    }
+                    project::EffectParamKind::Color => project::EffectValue::Color(if high {
+                        Color([255, 255, 255, 255])
+                    } else {
+                        Color([0, 0, 0, 255])
+                    }),
                     project::EffectParamKind::Point => {
                         project::EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
                     }
                 };
                 params.push((param.id, value));
-                values.push(value);
             }
             let output = effect_output(kind, &params);
-            for pixel in &output {
+            for (pixel, source) in output.iter().zip(effect_chart()) {
                 assert!(
                     pixel.iter().all(|v| v.is_finite() && *v >= 0.0),
                     "{kind} {high} {pixel:?}"
@@ -1564,18 +1987,24 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
                     pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6),
                     "{kind} {high} {pixel:?}"
                 );
+                assert!(pixel[3] <= 1.0, "{kind} {high} {pixel:?}");
+                if kind != "invert" || !high {
+                    assert_eq!(pixel[3], source[3], "{kind} preserves alpha");
+                } else {
+                    // The all-high row selects Alpha with 100% original picture.
+                    assert_working_pixel(*pixel, source.map(f64::from), "Alpha Invert blend100");
+                }
             }
         }
     }
 }
 
-/// One rendered-frame oracle row per ported entry: fixed parameters on the
-/// chart, FNV-1a of the packed sRGB RGBA8 bytes. Re-bless only after looking at
-/// the frame.
+/// Regression signatures of the packed chart, not independent adaptation oracles.
+/// Bless only after the independent equation rows pass and the artifacts are viewed.
 #[test]
 fn pixel_effect_oracle_rows() {
     let rows: [(&str, Vec<(&str, EffectValue)>, u64); 11] = [
-        ("black_white", vec![], 0),
+        ("black_white", vec![], 0xed1fade70be90ac9),
         (
             "channel_mix",
             vec![
@@ -1584,12 +2013,12 @@ fn pixel_effect_oracle_rows() {
                 ("br", EffectValue::Scalar(100.0)),
                 ("bb", EffectValue::Scalar(0.0)),
             ],
-            0,
+            0x996d26e2ef89db9b,
         ),
         (
             "color_pass",
             vec![("similarity", EffectValue::Scalar(40.0))],
-            0,
+            0xba9a2c5032d7ff78,
         ),
         (
             "color_replace",
@@ -1598,7 +2027,7 @@ fn pixel_effect_oracle_rows() {
                 ("target", EffectValue::Color(Color([0, 0, 255, 255]))),
                 ("replace", EffectValue::Color(Color([255, 0, 0, 255]))),
             ],
-            0,
+            0x921bc1a126b7b3ab,
         ),
         (
             "extract",
@@ -1607,17 +2036,17 @@ fn pixel_effect_oracle_rows() {
                 ("white", EffectValue::Scalar(200.0)),
                 ("softness", EffectValue::Scalar(20.0)),
             ],
-            0,
+            0xd55208ec5ff4c981,
         ),
         (
             "gamma_correction",
             vec![("gamma", EffectValue::Scalar(20.0))],
-            0,
+            0xa4a42cbe7fe537d5,
         ),
         (
             "invert",
             vec![("blend", EffectValue::Scalar(30.0))],
-            0,
+            0xd386f19aab25df7b,
         ),
         (
             "levels",
@@ -1626,31 +2055,37 @@ fn pixel_effect_oracle_rows() {
                 ("in_white", EffectValue::Scalar(220.0)),
                 ("gamma", EffectValue::Scalar(150.0)),
             ],
-            0,
+            0x74d098ac863127be,
         ),
-        ("posterize", vec![("levels", EffectValue::Scalar(5.0))], 0),
+        (
+            "posterize",
+            vec![("levels", EffectValue::Scalar(5.0))],
+            0xa97c91d97e8655f8,
+        ),
         (
             "strobe",
             vec![
                 ("color", EffectValue::Color(Color([255, 210, 0, 255]))),
                 ("blend", EffectValue::Scalar(40.0)),
             ],
-            0,
+            0xef2c2ad47d878f97,
         ),
-        ("tint", vec![("amount", EffectValue::Scalar(60.0))], 0),
+        (
+            "tint",
+            vec![("amount", EffectValue::Scalar(60.0))],
+            0xdfee605bbb004c81,
+        ),
     ];
     let hooks = Hooks::default();
     let mut actual = Vec::new();
     for (kind, params, expected) in rows {
         let output = effect_output(kind, &params);
-        let image = Image::from_working_pixels(
-            output.len() as u32,
-            1,
-            output.iter().copied(),
-            &hooks,
-        )
-        .unwrap();
+        let image =
+            Image::from_working_pixels(output.len() as u32, 1, output.iter().copied(), &hooks)
+                .unwrap();
         let bytes = image.rgba8(13, &hooks).unwrap();
+        let artifact = testkit::fixture::dir("effect-pixels").join(format!("{kind}.rgba"));
+        std::fs::write(&artifact, &bytes.bytes).unwrap();
         let checksum = bytes.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
             (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
         });
