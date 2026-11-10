@@ -5,7 +5,7 @@ use crate::editor::{
     Result, Text, Tick, UiAction, actions,
 };
 use crate::i18n;
-use crate::preview;
+use crate::services::preview;
 
 impl Editor {
     fn split_targets(&self) -> Vec<ItemId> {

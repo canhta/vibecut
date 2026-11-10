@@ -8,7 +8,7 @@ use crate::{
     egui::{self, Align2, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2},
     i18n::Text,
     kit::{self, Icon},
-    playback::Transport,
+    services::playback::Transport,
     shorts::{Action, Context, Decision},
 };
 use time::{TICKS_PER_SECOND, Tick};
@@ -500,7 +500,8 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     if let Some(frame) = short.playback.frame() {
         let [w, h] = frame.image.size;
         if let Some(texture) = short.frame.update(ui.ctx(), "shorts.frame", frame) {
-            let scale = crate::preview::fit_scale(vec2(video_w, video_h), [w as u32, h as u32]);
+            let scale =
+                crate::services::preview::fit_scale(vec2(video_w, video_h), [w as u32, h as u32]);
             let shown =
                 Rect::from_center_size(video.center(), vec2(w as f32 * scale, h as f32 * scale));
             painter.with_clip_rect(video).image(

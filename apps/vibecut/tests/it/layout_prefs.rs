@@ -11,8 +11,8 @@ use std::{
 };
 use vibecut::{
     Editor, PREFERENCE_COMMAND, egui,
-    playback::{Files, Playback},
     preferences::{DEFAULT_PANELS, PreferenceStore, Preferences},
+    services::playback::{Files, Playback},
 };
 
 fn editor(preferences: Preferences) -> Editor {

@@ -1,9 +1,9 @@
 //! Applies player transport requests.
-use crate::preview;
 use crate::editor::{
     DEFAULT_ZOOM, Editor, Error, FrameRate, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick,
     Vec2, display_time, drop_frame, egui,
 };
+use crate::services::preview;
 
 pub(super) fn format_timecode(at: Tick, rate: FrameRate) -> String {
     time::format_timecode(at, rate, drop_frame(rate))

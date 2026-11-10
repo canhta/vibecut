@@ -15,8 +15,8 @@ use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     CropAspect, Editor, egui,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

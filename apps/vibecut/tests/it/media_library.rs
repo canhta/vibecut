@@ -27,8 +27,8 @@ use vibecut::{
     Editor, egui,
     import::{ImportProbe, ThumbnailSource},
     media_panel::{MediaSort, MediaSortKey, MediaSortOrder, MediaView},
-    playback::{Files, Playback},
     preferences::{PreferenceStore, Preferences},
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

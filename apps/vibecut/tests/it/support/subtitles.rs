@@ -8,8 +8,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
     panels::AssetsTab,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 pub fn lang(tag: &str) -> LanguageTag {
     LanguageTag::parse(tag).unwrap()

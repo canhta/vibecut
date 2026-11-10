@@ -2,10 +2,13 @@
 use crate::{
     Error, Result,
     appearance::Look,
-    crop, egui,
+    egui,
     i18n::{self, Locale, Text},
-    playback::{Files, Playback, Sources, Transport},
-    preview,
+    services::{
+        crop,
+        playback::{Files, Playback, Sources, Transport},
+        preview,
+    },
 };
 use engine::ClipSourceSegment;
 use engine::{
@@ -96,7 +99,7 @@ pub trait Generator: Send + Sync + 'static {
         cancel: &Cancellation,
     ) -> engine::Result<ReviewSource>;
 }
-pub use crate::ai_task::TaskEvents;
+pub use crate::services::ai_task::TaskEvents;
 pub(super) struct Generating {
     pub(super) id: JobId,
     pub(super) runner_cancel: CancelToken,
@@ -864,7 +867,9 @@ impl State {
             } else {
                 Tick::ZERO
             };
-            preview.playback.seek(at, false, session.project().clone())?;
+            preview
+                .playback
+                .seek(at, false, session.project().clone())?;
             preview.playback.set_render_settings(settings)?;
             preview.session = session;
         } else {

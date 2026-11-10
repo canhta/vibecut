@@ -2,12 +2,12 @@
 
 use crate::{
     Result,
-    crop::control,
     editor::{Desk, Editor},
     egui,
     i18n::{self, Locale, Text},
     kit as theme,
     kit::Icon,
+    services::crop::control,
 };
 use project::ItemId;
 

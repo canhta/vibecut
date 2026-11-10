@@ -3,7 +3,8 @@
 //! Zoom/pan is app state over retained preview frames; it never enters the
 //! project. Snapshot publication is the engine's `preview.snapshot` command,
 //! dispatched through control admission so the app adds no render logic.
-use crate::{Error, Result, egui, playback::Frame};
+use super::playback::Frame;
+use crate::{Error, Result, egui};
 use engine::{
     ByteBudget, EditError, Session,
     control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue},
@@ -173,11 +174,8 @@ impl FrameTexture {
             if let Some(texture) = &mut self.texture {
                 texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);
             } else {
-                self.texture = Some(ctx.load_texture(
-                    name,
-                    frame.image.clone(),
-                    egui::TextureOptions::LINEAR,
-                ));
+                self.texture =
+                    Some(ctx.load_texture(name, frame.image.clone(), egui::TextureOptions::LINEAR));
             }
             self.key = Some(key);
             self.owner = Some(frame.clone());

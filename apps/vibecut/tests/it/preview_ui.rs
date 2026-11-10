@@ -21,9 +21,9 @@ use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Text,
-    playback::{Files, Playback},
     preferences::{PreferenceStore, Preferences},
-    preview,
+    services::playback::{Files, Playback},
+    services::preview,
 };
 
 fn overlay(id: u64) -> Item {

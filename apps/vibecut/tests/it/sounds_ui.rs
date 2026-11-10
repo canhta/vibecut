@@ -28,8 +28,8 @@ use std::{
 };
 use vibecut::{
     Client, Editor, Sounds, SoundsMode, SoundsProblem, egui,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 fn result(id: u64, licence: &str) -> SoundResult {

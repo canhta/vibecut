@@ -3,7 +3,8 @@ use super::{Action, Context, State, state::TimecodeEdit};
 use crate::{
     egui::{self, Align2, FontId, Rect, Sense, Vec2},
     i18n::Text,
-    kit, preview,
+    kit,
+    services::preview,
 };
 use time::Tick;
 

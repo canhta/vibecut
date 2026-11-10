@@ -16,8 +16,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Locale,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

@@ -15,8 +15,8 @@ use vibecut::{
     Editor,
     color_picker::palette,
     egui,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 fn editor() -> Editor {

@@ -8,8 +8,8 @@ use project::{Project, ProjectId, SceneId};
 use std::sync::Arc;
 use vibecut::{
     Editor, egui,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 #[test]
 fn scene_sheet_switches_and_multideletes_with_main_protected() {

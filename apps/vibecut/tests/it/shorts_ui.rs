@@ -161,73 +161,75 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         session.project().data().scene().timeline.main.items.len(),
         2
     );
+    // Typed session edits after handoff, then the services preview still renders.
     let budget = ByteBudget::new(512 << 20).unwrap();
     let mut playback =
-        vibecut::playback::Playback::new(&session, budget, Arc::new(Pixels)).unwrap();
+        vibecut::services::playback::Playback::new(&session, budget, Arc::new(Pixels)).unwrap();
     playback.set_render_settings(settings.clone()).unwrap();
-    let mut editor = vibecut::Editor::new(session, playback, Default::default());
-    for command in ["edit.undo", "edit.redo"] {
-        editor.activate(command).unwrap();
+    for undo in [true, false] {
+        if undo {
+            session.undo().unwrap();
+        } else {
+            session.redo().unwrap();
+        }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while editor.playback.frame().is_none() && editor.playback.error().is_none() {
-            editor.tick();
+        while playback.frame().is_none() && playback.error().is_none() {
+            playback.poll().unwrap();
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
-        assert!(editor.playback.error().is_none());
+        assert!(playback.error().is_none());
     }
     if !testkit::oracle::require("Shorts editor crop export") {
         return;
     }
-    // Export through the real editor dialog after handoff and edit undo/redo.
-    // Small output keeps the encoded-frame oracle bounded; crop coordinates stay
+    // Export through the shared export job after handoff and typed edits. Small
+    // output keeps the encoded-frame oracle bounded; crop coordinates stay
     // source-normalized, identical to the full-size portrait project.
-    let mut data = editor.session.project().data().clone();
+    let mut data = session.project().data().clone();
     data.canvas.width = 64;
     data.canvas.height = 114;
-    let session = engine::Session::new(project::Project::new(data).unwrap(), 100).unwrap();
-    let mut playback = vibecut::playback::Playback::new(
+    let mut session = engine::Session::new(project::Project::new(data).unwrap(), 100).unwrap();
+    let mut settings = settings;
+    settings.width = 64;
+    settings.height = 114;
+    let mut playback = vibecut::services::playback::Playback::new(
         &session,
         ByteBudget::new(512 << 20).unwrap(),
         Arc::new(Spatial),
     )
     .unwrap();
-    let mut settings = settings;
-    settings.width = 64;
-    settings.height = 114;
     playback.set_render_settings(settings).unwrap();
-    let mut editor = vibecut::Editor::new(session, playback, Default::default());
-    editor.preferences.export.include_audio = false;
-    editor.activate("file.export").unwrap();
-    let last = editor.session.project().data().scene().timeline.main.items[1].id;
-    editor.selection = std::collections::BTreeSet::from([last]);
-    editor.activate("timeline.delete").unwrap();
-    editor.activate("edit.undo").unwrap();
-    editor.activate("edit.redo").unwrap();
+    // Delete, undo and redo are typed commands on the handed-off session.
+    let last = session.project().data().scene().timeline.main.items[1].id;
+    session
+        .apply(engine::Command::Delete { items: vec![last] })
+        .unwrap();
+    session.undo().unwrap();
+    session.redo().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while editor.playback.frame().is_none() {
-        editor.tick();
-        assert!(editor.playback.error().is_none());
+    while playback.frame().is_none() {
+        playback.poll().unwrap();
+        assert!(playback.error().is_none());
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
     }
-    editor
-        .export_dialog()
-        .unwrap()
-        .set_sources(Arc::new(Spatial))
-        .unwrap();
+    let mut options = vibecut::export::ExportOptions::default();
+    options.include_audio = false;
+    let mut dialog = vibecut::export::ExportDialog::new(
+        playback.budget().clone(),
+        playback.render_state().unwrap(),
+    )
+    .unwrap();
+    dialog.set_sources(Arc::new(Spatial)).unwrap();
+    let project = session.project().clone();
+    dialog.start(project.clone(), options).unwrap();
     let output = tempfile::tempdir().unwrap();
     let path = output.path().join("off-center.mp4");
-    let mut exported = crate::gpu::builder()
-        .with_size(egui::vec2(1440.0, 1000.0))
-        .build_ui_state(|ui, a: &mut vibecut::Editor| a.ui(ui), editor);
-    exported.run_steps(3);
-    exported.get(by("export.run")).click();
-    exported.run_steps(2);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
-        exported.state_mut().tick();
-        let state = exported.state().export_state().unwrap().inspect();
+        dialog.tick(&project, options).unwrap();
+        let state = dialog.inspect();
         if state
             .job
             .as_ref()
@@ -246,15 +248,12 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         assert!(std::time::Instant::now() < deadline, "crop export timeout");
         std::thread::yield_now();
     }
-    exported
-        .state_mut()
-        .export_picked_file(path.clone())
-        .unwrap();
+    dialog.save_to(path.clone(), Vec::new()).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
-        exported.state_mut().tick();
-        let state = exported.state().export_state().unwrap().inspect();
-        if !state.open {
+        dialog.tick(&project, options).unwrap();
+        let state = dialog.inspect();
+        if state.saved.is_some() {
             break;
         }
         assert_ne!(
@@ -435,7 +434,7 @@ fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
         (10.0, f64::INFINITY),
         (f64::MAX, f64::MIN_POSITIVE),
     ] {
-        assert!(vibecut::crop::portrait(width, height).is_err());
+        assert!(vibecut::services::crop::portrait(width, height).is_err());
     }
     // A corner drag keeps the portrait crop's 9:16 source shape.
     let crop = h.state().reviews()[0].crop;
@@ -697,7 +696,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
 }
 
 struct Spatial;
-impl vibecut::playback::Sources for Spatial {
+impl vibecut::services::playback::Sources for Spatial {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         Box::new(Spatial)
     }

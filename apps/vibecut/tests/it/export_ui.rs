@@ -4,8 +4,8 @@ use egui_kittest::kittest::Queryable;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Duration, Instant};
 use vibecut::egui;
-use vibecut::playback::Sources;
 use vibecut::preferences::Preferences;
+use vibecut::services::playback::Sources;
 
 fn project(empty: bool, source: bool) -> project::Project {
     let mut d = project::Project::empty(project::ProjectId(18), "Xuất video".into())

@@ -1,4 +1,4 @@
-﻿#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 //! Model-manager evidence that needs a whole window, the app owner or the repo tree.
 use ai::{
     models::{Model, ModelFile},
@@ -21,8 +21,8 @@ use std::{
 use vibecut::{
     Editor, egui,
     model_manager::ModelManager,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 type Request = (String, Vec<(String, String)>);

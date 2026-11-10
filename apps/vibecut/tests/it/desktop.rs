@@ -14,8 +14,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Locale,
-    playback::{Files, Playback},
     preferences::{PreferenceStore, Preferences},
+    services::playback::{Files, Playback},
 };
 fn session() -> Session {
     let mut session =
@@ -358,7 +358,7 @@ fn preference_store_roundtrips_locale_and_refuses_hostile_size() {
 }
 
 struct PanickingSources;
-impl vibecut::playback::Sources for PanickingSources {
+impl vibecut::services::playback::Sources for PanickingSources {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         panic!("injected worker failure")
     }
@@ -565,7 +565,7 @@ fn transparent_canvas_preview_matches_black_backed_render() {
 }
 
 struct PanicOnce(std::sync::atomic::AtomicBool);
-impl vibecut::playback::Sources for PanicOnce {
+impl vibecut::services::playback::Sources for PanicOnce {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         if self.0.swap(false, std::sync::atomic::Ordering::SeqCst) {
             panic!("transient worker panic");
@@ -664,7 +664,7 @@ impl GatedFailure {
         self.wake.notify_all();
     }
 }
-impl vibecut::playback::Sources for GatedFailure {
+impl vibecut::services::playback::Sources for GatedFailure {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         match self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
             0 => {
@@ -830,7 +830,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
     }
     struct Factory(Arc<Gate>);
     struct Source(Arc<Gate>);
-    impl vibecut::playback::Sources for Factory {
+    impl vibecut::services::playback::Sources for Factory {
         fn create(&self) -> Box<dyn render::SourceProvider> {
             Box::new(Source(self.0.clone()))
         }

@@ -1,6 +1,6 @@
 //! Retains preview-only view state between presented frames.
 use super::crop;
-use crate::{egui, i18n::Text, preview};
+use crate::{egui, i18n::Text, services::preview};
 pub(crate) struct State {
     pub(in crate::editor) failed: bool,
     pub(in crate::editor) snapshot_failed: bool,

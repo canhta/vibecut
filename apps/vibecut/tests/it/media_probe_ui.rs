@@ -23,8 +23,8 @@ use time::Tick;
 use vibecut::{
     Editor, egui,
     import::{ImportProbe, ThumbnailSource},
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = time::TICKS_PER_SECOND;

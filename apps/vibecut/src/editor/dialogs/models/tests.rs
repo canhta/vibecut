@@ -3,8 +3,8 @@
 use super::model_manager::{ModelManager, ModelProblem};
 use crate::editor::frame::bench::Bench;
 use crate::editor::{Editor, egui};
-use crate::playback::{Files, Playback};
 use crate::preferences::Preferences;
+use crate::services::playback::{Files, Playback};
 use ai::{
     models::{Model, ModelFile},
     transport::{DownloadTransport, HttpStreamResponse},

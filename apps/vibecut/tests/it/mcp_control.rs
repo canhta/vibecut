@@ -351,10 +351,10 @@ fn caption_editor() -> vibecut::Editor {
             },
         })
         .unwrap();
-    let playback = vibecut::playback::Playback::new(
+    let playback = vibecut::services::playback::Playback::new(
         &session,
         ByteBudget::new(256 << 20).unwrap(),
-        std::sync::Arc::new(vibecut::playback::Files),
+        std::sync::Arc::new(vibecut::services::playback::Files),
     )
     .unwrap();
     let mut preferences = vibecut::preferences::Preferences {

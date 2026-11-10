@@ -13,8 +13,8 @@ use shorts::clip_boundaries::ClipBoundarySettings;
 use std::sync::{Arc, Mutex};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    playback::Sources,
     preferences::Preferences,
+    services::playback::Sources,
     shorts::{Candidate, GenerationRequest, Generator, ReviewSource, State as Shorts, TaskEvents},
 };
 pub fn tick(n: i64) -> Tick {

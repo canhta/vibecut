@@ -23,8 +23,8 @@ use vibecut::{
     Editor, egui,
     font_picker::{Backend, Status},
     panels::{AssetsTab, ElementKind, PropertiesTab},
-    playback::{Files, Playback},
     preferences::{FontTab, PreferenceStore, Preferences},
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

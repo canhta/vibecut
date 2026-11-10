@@ -35,8 +35,8 @@ use vibecut::{
     i18n::Locale,
     import::ImportProbe,
     model_manager::ModelManager,
-    playback::{Files, Playback, Sources},
     preferences::Preferences,
+    services::playback::{Files, Playback, Sources},
     workspace::Workspace,
 };
 
@@ -2554,7 +2554,7 @@ fn shorts_scene(
     scene: &str,
 ) -> Result<AppHarness, Failure> {
     use vibecut::{
-        playback::Sources,
+        services::playback::Sources,
         shorts::{Decision, State as Shorts},
     };
     static ASSET: std::sync::OnceLock<SourceAsset> = std::sync::OnceLock::new();

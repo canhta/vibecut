@@ -4,8 +4,8 @@ use crate::editor::{
     ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, PREFERENCE_COMMAND,
     Preferences, Result, SelectionScopes, Text, UiAction, ZOOM_STEP, actions, media_panel,
 };
-use crate::playback::Transport;
-use crate::preview;
+use crate::services::playback::Transport;
+use crate::services::preview;
 
 impl Editor {
     /// All control inputs (including tests/agents) use the same action path.

@@ -20,7 +20,7 @@ use crate::{
 
 /// Read-only composition inputs shared by editor areas.
 pub(crate) struct Context<'a> {
-    pub(crate) playback: &'a crate::playback::Playback,
+    pub(crate) playback: &'a crate::services::playback::Playback,
     pub(crate) keybindings: &'a crate::actions::KeybindingPreferences,
     pub(crate) session: &'a engine::Session,
     pub(crate) selection: &'a std::collections::BTreeSet<project::ItemId>,

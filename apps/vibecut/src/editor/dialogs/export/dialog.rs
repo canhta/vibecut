@@ -1,7 +1,7 @@
 //! Presents one export job and its saved choices.
 use super::settings;
 use crate::i18n;
-use crate::progress::job_progress;
+use crate::services::progress::job_progress;
 use crate::{
     Error, Result, egui,
     i18n::{Locale, Text},
@@ -10,9 +10,7 @@ use crate::{
 use engine::{
     ByteBudget,
     cache::{ArtifactKind, CacheKey, KeyInputs},
-    jobs::{
-        CancelToken, JobId, JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock,
-    },
+    jobs::{CancelToken, JobId, JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock},
 };
 pub use render::{OutputOptions, RangeChoice, SceneChoice};
 use serde::{Deserialize, Serialize};
@@ -138,9 +136,9 @@ pub struct ExportDialog {
     refused: Option<(Arc<project::Project>, bool)>,
     empty: bool,
     error: Option<Arc<Error>>,
-    render_state: Arc<crate::playback::RenderState>,
+    render_state: Arc<crate::services::playback::RenderState>,
     runner: JobRunner,
-    sources: Arc<dyn crate::playback::Sources>,
+    sources: Arc<dyn crate::services::playback::Sources>,
     job: Option<(JobId, CancelToken)>,
     snapshot: Option<JobSnapshot>,
     cancelling: bool,
@@ -159,9 +157,11 @@ pub struct ExportDialog {
     publication_fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 }
 impl ExportDialog {
-    pub(crate) fn new(
+    /// One export job: the caller's byte budget and the shared render state, no
+    /// editor. The dialog owns its runner and temporary output.
+    pub fn new(
         budget: ByteBudget,
-        render_state: Arc<crate::playback::RenderState>,
+        render_state: Arc<crate::services::playback::RenderState>,
     ) -> Result<Self> {
         Ok(Self {
             open: false,
@@ -183,7 +183,7 @@ impl ExportDialog {
                 budget,
                 Arc::new(SystemClock::default()),
             )?,
-            sources: Arc::new(crate::playback::Files),
+            sources: Arc::new(crate::services::playback::Files),
             job: None,
             snapshot: None,
             cancelling: false,
@@ -203,7 +203,10 @@ impl ExportDialog {
         })
     }
     /// Inject only the render source boundary; scheduling stays with engine.
-    pub fn set_sources(&mut self, sources: Arc<dyn crate::playback::Sources>) -> Result<()> {
+    pub fn set_sources(
+        &mut self,
+        sources: Arc<dyn crate::services::playback::Sources>,
+    ) -> Result<()> {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }

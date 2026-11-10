@@ -14,8 +14,8 @@ use vibecut::{
     Editor, egui,
     i18n::Locale,
     panels::AssetsTab,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

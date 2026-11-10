@@ -7,8 +7,8 @@ use crate::{
     kit::{self as icons, Icon},
     lifecycle::EditorAction,
     lifecycle::fresh,
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 use engine::{
     ByteBudget, EditError, Session,

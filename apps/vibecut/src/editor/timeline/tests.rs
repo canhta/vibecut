@@ -175,7 +175,7 @@ impl VisualQuery for FakeVisuals {
 /// Everything `show` reads, owned by the test so the panel can be driven alone.
 struct Rig {
     session: Session,
-    playback: crate::playback::Playback,
+    playback: crate::services::playback::Playback,
     selection: BTreeSet<ItemId>,
     disabled: BTreeSet<&'static str>,
     preferences: crate::preferences::Preferences,
@@ -235,10 +235,10 @@ impl Rig {
         };
         let first = insert(SECOND, 3 * SECOND);
         let second = insert(5 * SECOND, 7 * SECOND);
-        let playback = crate::playback::Playback::new(
+        let playback = crate::services::playback::Playback::new(
             &session,
             engine::ByteBudget::new(64 << 20).unwrap(),
-            std::sync::Arc::new(crate::playback::Files),
+            std::sync::Arc::new(crate::services::playback::Files),
         )
         .unwrap();
         Self {
@@ -320,10 +320,10 @@ impl Rig {
             Some(engine::CreatedId::Item(id)) => *id,
             _ => panic!("item"),
         };
-        let playback = crate::playback::Playback::new(
+        let playback = crate::services::playback::Playback::new(
             &session,
             engine::ByteBudget::new(64 << 20).unwrap(),
-            std::sync::Arc::new(crate::playback::Files),
+            std::sync::Arc::new(crate::services::playback::Files),
         )
         .unwrap();
         Self {

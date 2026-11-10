@@ -141,7 +141,7 @@ impl AudioPort {
 /// Each consumer freezes settings against the same immutable project snapshot;
 /// removed items are filtered without losing their placements for undo/redo.
 #[derive(Default)]
-pub(crate) struct RenderState(Mutex<Option<Arc<render::RenderSettings>>>);
+pub struct RenderState(Mutex<Option<Arc<render::RenderSettings>>>);
 impl RenderState {
     pub(crate) fn settings(&self, project: &project::Project) -> Result<render::RenderSettings> {
         let retained = self.0.lock().map_err(|_| Error::Poisoned)?.clone();
@@ -239,7 +239,8 @@ impl Playback {
         *request.render_state.0.lock().map_err(|_| Error::Poisoned)? = Some(Arc::new(settings));
         self.seek(self.position()?, false, request.project)
     }
-    pub(crate) fn render_state(&self) -> Result<Arc<RenderState>> {
+    /// The shared placement/crop render state the preview and an export job use.
+    pub fn render_state(&self) -> Result<Arc<RenderState>> {
         Ok(read_request(&self.request)?.render_state)
     }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
@@ -427,7 +428,11 @@ impl Playback {
     /// Apply one transport request against `project`, the immutable snapshot the
     /// preview renders. Play toggles, an end-position play restarts from zero,
     /// and every seek stays inside the timeline.
-    pub fn transport(&mut self, transport: Transport, project: Arc<project::Project>) -> Result<()> {
+    pub fn transport(
+        &mut self,
+        transport: Transport,
+        project: Arc<project::Project>,
+    ) -> Result<()> {
         let duration = project.duration();
         let at = self.position()?.clamp(Tick::ZERO, duration);
         let frame = project
@@ -439,14 +444,19 @@ impl Playback {
             .filter(|frame| *frame > Tick::ZERO)
             .unwrap_or(Tick(1));
         let (at, playing) = match transport {
-            Transport::Play => (if at >= duration { Tick::ZERO } else { at }, !self.playing()),
+            Transport::Play => (
+                if at >= duration { Tick::ZERO } else { at },
+                !self.playing(),
+            ),
             Transport::Pause => (at, false),
             Transport::Seek(at) => (at.clamp(Tick::ZERO, duration), self.playing()),
             Transport::BackSecond => (
                 (at - Tick(TICKS_PER_SECOND)).max(Tick::ZERO),
                 self.playing(),
             ),
-            Transport::ForwardSecond => ((at + Tick(TICKS_PER_SECOND)).min(duration), self.playing()),
+            Transport::ForwardSecond => {
+                ((at + Tick(TICKS_PER_SECOND)).min(duration), self.playing())
+            }
             Transport::FrameBack => ((at - frame).clamp(Tick::ZERO, duration), self.playing()),
             Transport::FrameForward => ((at + frame).clamp(Tick::ZERO, duration), self.playing()),
             Transport::Start => (Tick::ZERO, self.playing()),

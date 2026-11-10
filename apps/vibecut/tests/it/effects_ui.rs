@@ -17,8 +17,8 @@ use vibecut::{
     Editor,
     effect_previews::EffectPreviewStatus,
     egui,
-    playback::{Files, Playback},
     preferences::{PreferenceStore, Preferences},
+    services::playback::{Files, Playback},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;
@@ -1299,13 +1299,13 @@ fn chroma_key_eyedropper_samples_the_rendered_preview_frame() {
         let canvas = &harness.state().session.project().data().canvas;
         [canvas.width, canvas.height]
     };
-    let scale = vibecut::preview::fit_scale(stage.size(), canvas);
+    let scale = vibecut::services::preview::fit_scale(stage.size(), canvas);
     let displayed = egui::Rect::from_center_size(
         stage.center(),
         egui::vec2(canvas[0] as f32, canvas[1] as f32) * scale,
     );
     let pos = displayed.center();
-    let expected = vibecut::preview::sample_color(
+    let expected = vibecut::services::preview::sample_color(
         &harness.state().playback.frame().unwrap().image,
         displayed,
         pos,

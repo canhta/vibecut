@@ -1,6 +1,6 @@
 # Editor player
 
-Owns the preview panel: its chrome, transport toolbar, timecode field, zoom controls, transform handles, inline text and the crop dialog. The playback service, preview view/upload and snapshot boundary are crate services (`playback`, `preview`, `crop`) this panel calls.
+Owns the preview panel: its chrome, transport toolbar, timecode field, zoom controls, transform handles, inline text and the crop dialog. The playback transport, preview view/upload and snapshot boundary, and the crop model are crate services (`services::playback`, `services::preview`, `services::crop`) this panel calls.
 
 `transform` draws the selected item's four corner and two side scale handles and its rotation grip below the box from `render::viewport` geometry, then turns pointer gestures into `timeline.set_item_param` patches inside `timeline.preview`. One drop publishes one `timeline.commit_preview` step; Escape or a gesture that returns to its origin discards the candidate. Hidden and locked items expose no handles and cannot be hit. Handle face, hit target, grip gap and colours come from `kit` tokens.
 

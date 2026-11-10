@@ -197,7 +197,8 @@ impl Preferences {
         self.validate_sections()?;
         self.validate_properties_tabs()?;
         if !self.preview_zoom.is_finite()
-            || !(f64::from(crate::preview::MIN_ZOOM)..=f64::from(crate::preview::MAX_ZOOM))
+            || !(f64::from(crate::services::preview::MIN_ZOOM)
+                ..=f64::from(crate::services::preview::MAX_ZOOM))
                 .contains(&self.preview_zoom)
         {
             return Err(Error::Invalid("preview zoom"));
@@ -205,7 +206,7 @@ impl Preferences {
         if self
             .snapshot_directory
             .as_ref()
-            .is_some_and(|path| path.as_os_str().len() > crate::preview::MAX_PATH_BYTES)
+            .is_some_and(|path| path.as_os_str().len() > crate::services::preview::MAX_PATH_BYTES)
         {
             return Err(Error::Invalid("snapshot directory"));
         }

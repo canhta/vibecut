@@ -27,4 +27,4 @@ opens it on a missing model; `Editor::set_model_manager` injects another
 cache/transport composition for tests and `cargo xtask ui-audit`.
 
 The AI task progress and per-upload consent service lives in
-[`ai_task`](../../../ai_task/README.md).
+[`services`](../../../services/README.md).

@@ -160,8 +160,8 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::Bench;
     use crate::editor::{BTreeSet, Editor, ItemId, egui, properties};
-    use crate::playback::{Files, Playback};
     use crate::preferences::Preferences;
+    use crate::services::playback::{Files, Playback};
     use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, TrackPlacement};
     use project::{ItemParams, Project, ProjectId, TrackKind};
     use std::sync::Arc;

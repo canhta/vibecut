@@ -46,8 +46,8 @@ use crate::{
     kit::{self as icons, Icon},
     media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
-    playback::Playback,
     preferences::{Preferences, drag_panel},
+    services::playback::Playback,
 };
 use engine::{
     Command, CreatedId, ItemParamPatch, NewItem, Session,

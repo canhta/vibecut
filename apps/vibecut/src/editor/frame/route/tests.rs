@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::{
-    playback::{Files, Playback},
     preferences::Preferences,
+    services::playback::{Files, Playback},
 };
 use engine::{ByteBudget, CreatedId, NewItem};
 use project::{Project, ProjectId, TrackId, TrackKind};
