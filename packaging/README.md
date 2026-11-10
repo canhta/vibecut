@@ -20,11 +20,11 @@ cargo xtask build -- cargo xtask dist package --os macos --arch aarch64 \
 
 The macOS `.pkg` contains `/Applications/VibeCut.app` and the CLI symlink under `/usr/local/bin`. Signed releases distribute a DMG with the app, Applications link and `install-cli.sh`, which adds `~/.local/bin/vibecut-cli`. The Windows ZIP contains a per-user installer/uninstaller; restart the terminal after installing its PATH entry. Neither platform deletes projects or preferences.
 
-On Windows use matching MSVC/Windows SDK developer tools and architecture-matched MSYS2 CLANG64 or CLANGARM64, as described in [provisioning](../docs/engineering/workflows.md#ffmpeg-provisioning). Run Cargo directly there; shared build admission is Unix-only. Use `--os windows --arch x86_64` or `aarch64`. PE machine/subsystem admission and `dumpbin /dependents` reject wrong architectures and missing non-system DLLs; FFmpeg cannot be satisfied from System32. Shared libraries live beside both EXEs. A successful build does not establish Windows install, signing or runtime acceptance.
+On Windows use matching MSVC/Windows SDK developer tools and architecture-matched MSYS2 CLANG64 or CLANGARM64, as described in [provisioning](../docs/engineering/workflows.md#ffmpeg-provisioning). Use `--os windows --arch x86_64` or `aarch64`. PE machine/subsystem admission and `dumpbin /dependents` reject wrong architectures and missing non-system DLLs; FFmpeg cannot be satisfied from System32. Shared libraries live beside both EXEs. A successful build does not establish Windows install, signing or runtime acceptance.
 
 ## Hosted builds and releases
 
-`build.yml` runs on every main push and manual dispatch, cancelling older runs of the same ref. `distribution.yml` builds native macOS arm64 and x86_64 (`macos-15-intel`), merges both into universal, and attempts native Windows x64 and arm64. Windows jobs are advisory until p0-core/44. Each native row provisions FFmpeg through `setup-build` and its versioned cache. Distributions expire after seven days; intermediate native inputs after three.
+`build.yml` runs on every main push and manual dispatch, cancelling older runs of the same ref. `distribution.yml` builds native macOS arm64 and x86_64 (`macos-15-intel`), merges both into universal, and attempts native Windows x64 and arm64. Windows jobs are advisory. Each native row provisions FFmpeg through `setup-build` and its versioned cache. Distributions expire after seven days; intermediate native inputs after three.
 
 Packages move to separate fresh VMs without Rust, media caches or media provisioning. These VMs run an architecture-matched standalone Rust xtask helper from the build VM, then install the downloaded package. The installed CLI runs `--version`, creates a 64×64 two-second synthetic overlay project through the registry, exports MP4, and checks its duration and video stream. The app runs `--headless-smoke NEW_DIRECTORY`, creates its workspace and editor and draws three egui frames without a window, graphics device or audio output. Universal packages run on both Apple Silicon and Intel. This proves startup, frontend and export behaviour only; native GPU/device behaviour needs separate evidence.
 
@@ -42,14 +42,14 @@ For a local package with identities already in the keychain, use `VIBECUT_MAC_SI
 
 Notarization failures fetch Apple's submission log before credential cleanup and report only numeric status codes and fixed diagnostic categories. Stapling and validation retry ticket-service exit 68 up to six times within three minutes per operation; other failures stop immediately. Retries never substitute for an Accepted submission or successful ticket validation.
 
-Windows signing uses `VIBECUT_WINDOWS_CERT_SHA1` and `VIBECUT_WINDOWS_TIMESTAMP_URL`, signs DLLs, CLI, app and installer scripts, and verifies them with SignTool/PowerShell. Certificate acquisition stays with the maintainer and Windows release policy with p0-core/44.
+Windows signing uses `VIBECUT_WINDOWS_CERT_SHA1` and `VIBECUT_WINDOWS_TIMESTAMP_URL`, signs DLLs, CLI, app and installer scripts, and verifies them with SignTool/PowerShell. Certificate acquisition and Windows release policy stay with the maintainer.
 
 ```sh
 cargo xtask build -- cargo xtask dist smoke --installed target/package-macos/root/Applications/VibeCut.app \
   --output target/package-smoke
 ```
 
-The default smoke opens no window. `--signed` also checks the app signature, Gatekeeper and staple. `--observe` runs the native eight-second observation and screenshot path; request the maintainer's screen before using it locally. Its signed macOS mode records actual mapped FFmpeg paths with `lsof`. `--media PATH` probes an external synthetic fixture before the generated export. On clean Windows, install using `install.ps1`, smoke the installed directory, inspect module paths with PowerShell `Get-Process`/`Modules`, then uninstall. All loaded FFmpeg DLLs must stay beside the EXEs, including from unrelated working directories. MCP stdio installation belongs to p2-platform/02; no passing MCP smoke is claimed. The receipt keeps `release_acceptance: false`: these checks grant neither maintainer release approval nor native device/hardware acceptance.
+The default smoke opens no window. `--signed` also checks the app signature, Gatekeeper and staple. `--observe` runs the native eight-second observation and screenshot path; request the maintainer's screen before using it locally. Its signed macOS mode records actual mapped FFmpeg paths with `lsof`. `--media PATH` probes an external synthetic fixture before the generated export. On clean Windows, install using `install.ps1`, smoke the installed directory, inspect module paths with PowerShell `Get-Process`/`Modules`, then uninstall. All loaded FFmpeg DLLs must stay beside the EXEs, including from unrelated working directories. MCP stdio installation belongs to [MCP control](../docs/product/agent-control/mcp.md); no passing MCP smoke is claimed. The receipt keeps `release_acceptance: false`: these checks grant neither maintainer release approval nor native device/hardware acceptance.
 
 ## Library replacement and recovery
 
