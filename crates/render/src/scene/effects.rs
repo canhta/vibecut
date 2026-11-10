@@ -1,6 +1,6 @@
 //! Device-free evaluated passes, shared by CPU and app GPU adapters.
 use crate::{Error, ExecutionHooks, Image, Result, check};
-use project::{Animations, EffectInstance, EffectValue, Item, ParamValue};
+use project::{Animations, EffectInstance, EffectParamKind, EffectValue, Item, Param, ParamValue};
 use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
@@ -320,12 +320,20 @@ pub fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
 /// chroma-distance tolerance and 0 emits no pass; shadow restores pixels darker
 /// than the key. Stages follow the implementation reference's matte and spill
 /// stages; the observed UI exposes no spill control, so removal is inherent.
+/// `key_color` is finite straight encoded sRGB RGBA in 0..=1; alpha is unused.
+/// Invalid colour/control values refuse before allocating a pass list.
 pub fn chroma_key_passes(
-    key_color: project::Color,
+    key_color: [f64; 4],
     intensity: f64,
     shadow: f64,
 ) -> Result<Vec<EffectPass>> {
     let range = project::CHROMA_KEY_MIN..=project::CHROMA_KEY_MAX;
+    if key_color
+        .iter()
+        .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+    {
+        return Err(Error::Invalid("chroma key colour"));
+    }
     if [intensity, shadow]
         .iter()
         .any(|v| !v.is_finite() || !range.contains(v))
@@ -335,17 +343,10 @@ pub fn chroma_key_passes(
     if intensity == 0.0 {
         return Ok(Vec::new());
     }
-    // Project colours are straight sRGB bytes; the pass compares sRGB-encoded
-    // pixels, so the key needs no transfer conversion here.
-    let encoded = |byte: u8| f32::from(byte) / 255.0;
     Ok(vec![EffectPass::Pixel {
         entry_point: "chroma_key",
         uniforms: vec![
-            Uniform::Color([
-                encoded(key_color.0[0]),
-                encoded(key_color.0[1]),
-                encoded(key_color.0[2]),
-            ]),
+            color_uniform(key_color),
             Uniform::Float((intensity / 100.0) as f32),
             Uniform::Float((shadow / 100.0) as f32),
         ],
@@ -1018,6 +1019,26 @@ pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ResolvedValue {
+    Scalar(f64),
+    Choice(u32),
+    Bool(bool),
+    Color([f64; 4]),
+    Point([f64; 2]),
+}
+impl From<EffectValue> for ResolvedValue {
+    fn from(value: EffectValue) -> Self {
+        match value {
+            EffectValue::Scalar(v) => Self::Scalar(v),
+            EffectValue::Choice(v) => Self::Choice(v),
+            EffectValue::Bool(v) => Self::Bool(v),
+            EffectValue::Color(v) => Self::Color(v.0.map(|v| f64::from(v) / 255.0)),
+            EffectValue::Point(v) => Self::Point(v),
+        }
+    }
+}
+
 /// What an evaluator sees: its parameters at item-local time (keyframes
 /// resolved, scalars clamped to the definition's hard range), the item-local
 /// time itself for time-driven effects, the output size and the quality the
@@ -1032,10 +1053,12 @@ pub struct EffectFrame {
     /// number of scales; it never changes geometry, colour mapping, parameter meaning
     /// or which pixels are affected, and its output stays close to the fine one.
     pub fine: bool,
-    params: BTreeMap<&'static str, EffectValue>,
+    params: BTreeMap<&'static str, ResolvedValue>,
 }
 impl EffectFrame {
-    /// Resolve `effect`'s parameters against `animations` at item-local time `local`.
+    /// Resolve parameters at real item-local ticks; a content remap never changes this clock.
+    /// Missing paths use static values; present zero-key composites keep their own bases.
+    /// Wrong animation kinds/nonfinite samples refuse. Finite scalar/colour overshoot clamps.
     pub fn new(
         animations: &Animations,
         effect: &EffectInstance,
@@ -1049,15 +1072,47 @@ impl EffectFrame {
             let stored = effect
                 .value(param.id)
                 .ok_or(Error::Invalid("effect parameter"))?;
-            let value = match (param.animatable, param.scalar_range()) {
-                (true, Some((min, max))) => {
-                    match animations.value_at(&effect.param_path(param.id)?, local)? {
-                        Some(ParamValue::Scalar(v)) => EffectValue::Scalar(v.clamp(min, max)),
-                        Some(_) => return Err(Error::Invalid("effect animation type")),
-                        None => *stored,
+            param.check(stored)?;
+            let path = param
+                .animatable
+                .then(|| effect.param_path(param.id))
+                .transpose()?;
+            let animated = path
+                .as_ref()
+                .and_then(|path| animations.get(path).map(|p| (path, p)));
+            let value = match (param.kind, animated) {
+                (_, None) => ResolvedValue::from(*stored),
+                (
+                    EffectParamKind::Float { .. } | EffectParamKind::Angle,
+                    Some((path, Param::Value(channel))),
+                ) if matches!(channel.base(), ParamValue::Scalar(_)) => {
+                    let Some(ParamValue::Scalar(v)) = animations.value_at(path, local)? else {
+                        return Err(Error::Invalid("effect animation type"));
+                    };
+                    if !v.is_finite() {
+                        return Err(Error::Invalid("effect animation value"));
                     }
+                    let (min, max) = param
+                        .scalar_range()
+                        .ok_or(Error::Invalid("effect scalar range"))?;
+                    ResolvedValue::Scalar(v.clamp(min, max))
                 }
-                _ => *stored,
+                (EffectParamKind::Color, Some((path, Param::Color(_)))) => {
+                    let Some(ParamValue::Color(mut rgba)) = animations.value_at(path, local)?
+                    else {
+                        return Err(Error::Invalid("effect animation type"));
+                    };
+                    if rgba.iter().any(|v| !v.is_finite()) {
+                        return Err(Error::Invalid("effect animation colour"));
+                    }
+                    for v in &mut rgba[..3] {
+                        // The shared transfer is f32; only sampled RGB crosses this boundary.
+                        *v = f64::from(crate::image::oetf(v.clamp(0.0, 1.0) as f32, 13));
+                    }
+                    rgba[3] = rgba[3].clamp(0.0, 1.0);
+                    ResolvedValue::Color(rgba)
+                }
+                _ => return Err(Error::Invalid("effect animation type")),
             };
             params.insert(param.id, value);
         }
@@ -1070,35 +1125,42 @@ impl EffectFrame {
             params,
         })
     }
-    fn get(&self, id: &str) -> Result<&EffectValue> {
+    fn get(&self, id: &str) -> Result<&ResolvedValue> {
         self.params
             .get(id)
             .ok_or(Error::Invalid("effect parameter"))
     }
     pub fn scalar(&self, id: &str) -> Result<f64> {
-        self.get(id)?
-            .scalar()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Scalar(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn choice(&self, id: &str) -> Result<u32> {
-        self.get(id)?
-            .choice()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Choice(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn flag(&self, id: &str) -> Result<bool> {
-        self.get(id)?
-            .flag()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Bool(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
-    pub fn color(&self, id: &str) -> Result<project::Color> {
-        self.get(id)?
-            .color()
-            .ok_or(Error::Invalid("effect parameter"))
+    /// Straight encoded sRGB RGBA, each component in 0..=1; wrong kind/id refuses.
+    /// Animated RGB uses the shared f32 transfer once, without byte quantization.
+    pub fn color(&self, id: &str) -> Result<[f64; 4]> {
+        match self.get(id)? {
+            ResolvedValue::Color(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
     pub fn point(&self, id: &str) -> Result<[f64; 2]> {
-        self.get(id)?
-            .point()
-            .ok_or(Error::Invalid("effect parameter"))
+        match self.get(id)? {
+            ResolvedValue::Point(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
     }
 }
 
@@ -1148,14 +1210,9 @@ fn pixel(entry_point: &'static str, uniforms: Vec<Uniform>) -> EffectPass {
         uniforms,
     }
 }
-/// A project colour as the straight sRGB floats a pass uniform holds.
-fn color_uniform(color: project::Color) -> Uniform {
-    let [r, g, b, _] = color.0;
-    Uniform::Color([
-        f32::from(r) / 255.0,
-        f32::from(g) / 255.0,
-        f32::from(b) / 255.0,
-    ])
+/// A resolved straight sRGB colour; alpha is intentionally unused by these RGB ops.
+fn color_uniform([r, g, b, _]: [f64; 4]) -> Uniform {
+    Uniform::Color([r as f32, g as f32, b as f32])
 }
 
 fn blur(frame: &EffectFrame) -> Result<Vec<EffectPass>> {

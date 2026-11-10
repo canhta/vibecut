@@ -76,7 +76,7 @@ const fn colour(id: &'static str, name: &'static str, default: Color) -> EffectP
         name,
         kind: EffectParamKind::Color,
         default: EffectValue::Color(default),
-        animatable: false,
+        animatable: true,
     }
 }
 /// Colour grade controls share one range and neutral default (0 = identity).

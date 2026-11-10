@@ -12,6 +12,21 @@ budget, cancellation, invalid-data and other errors propagate. Empty pass lists
 return exact working pixels through the same accounted ownership. Copies reserve
 through the caller's hooks before allocation.
 
+EffectFrame resolves one typed value per parameter at real item-local time. Missing
+animation uses static straight sRGB bytes divided directly by255. Animated colours use
+existing independent linear-light RGBA channels and their explicit base, including
+zero-key overrides. Wrong kinds and nonfinite samples refuse; finite overshoot clamps.
+Only sampled RGB casts to f32 at the shared sRGB transfer, then widens into the frame's
+encoded f64 RGBA representation; widening does not restore precision. Alpha stays f64,
+and uniforms cast encoded RGB to f32 without byte quantization. E1 colour operations
+use RGB only and preserve image coverage under alpha keys; chroma-key colour stays static.
+
+The existing per-instance plan reservation covers these bounded resolved values as
+well as pass storage: the catalogue has at most12 parameters and pixel kinds emit one
+pass; Image's area bound limits admitted Blur to203 iterations/406 passes against the
+reserved512 pass/kernel slots. No additional image, unreserved image copy or kernel
+is introduced by colour interpolation.
+
 The pixel-local colour references unpremultiply once and re-premultiply at the exit.
 Monochrome uses linear Rec.709 luma; levels, gamma, posterisation, channel mixing
 and RGB inversion operate on encoded sRGB. Keep Colour compares encoded RGB

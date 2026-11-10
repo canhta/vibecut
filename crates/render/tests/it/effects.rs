@@ -385,7 +385,7 @@ fn srgb_pixel(rgb: [f32; 3], alpha: f32) -> [f32; 4] {
     [l[0] * alpha, l[1] * alpha, l[2] * alpha, alpha]
 }
 fn keyed(key: [u8; 4], intensity: f64, shadow: f64, pixel: [f32; 4]) -> [f32; 4] {
-    let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
+    let passes = chroma_key_passes(key.map(|v| f64::from(v) / 255.0), intensity, shadow).unwrap();
     passes
         .first()
         .map_or(pixel, |pass| chroma_key_pixel(pixel, &pass.values()))
@@ -403,13 +403,15 @@ fn chroma_key_removes_a_green_screen_at_several_intensities() {
     let edge = std::array::from_fn(|i| pure[i] * 0.5 + skin[i] * 0.5);
     let translucent = srgb_pixel([0.0, 1.0, 0.0], 0.5);
     for intensity in [0.0, 40.0, 100.0] {
-        for pass in chroma_key_passes(project::Color(GREEN_KEY), intensity, 0.0).unwrap() {
+        for pass in
+            chroma_key_passes(GREEN_KEY.map(|v| f64::from(v) / 255.0), intensity, 0.0).unwrap()
+        {
             validate_pass(&pass, 8, 4).unwrap();
         }
     }
     // Intensity 0 is the reference's no-op and emits no pass.
     assert!(
-        chroma_key_passes(project::Color(GREEN_KEY), 0.0, 0.0)
+        chroma_key_passes(GREEN_KEY.map(|v| f64::from(v) / 255.0), 0.0, 0.0)
             .unwrap()
             .is_empty()
     );
@@ -465,9 +467,17 @@ fn chroma_key_suppresses_spill_without_a_control() {
 
 #[test]
 fn chroma_key_refuses_hostile_values_and_bad_passes() {
+    for raw in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.001, 1.001] {
+        for intensity in [0.0, 40.0] {
+            assert!(matches!(
+                chroma_key_passes([raw, 0.0, 0.0, 1.0], intensity, 0.0),
+                Err(render::Error::Invalid(_))
+            ));
+        }
+    }
     for bad in [f64::NAN, f64::INFINITY, -0.1, 100.1] {
-        assert!(chroma_key_passes(project::Color(GREEN_KEY), bad, 0.0).is_err());
-        assert!(chroma_key_passes(project::Color(GREEN_KEY), 40.0, bad).is_err());
+        assert!(chroma_key_passes(GREEN_KEY.map(|v| f64::from(v) / 255.0), bad, 0.0).is_err());
+        assert!(chroma_key_passes(GREEN_KEY.map(|v| f64::from(v) / 255.0), 40.0, bad).is_err());
     }
     for weights in [
         vec![0.0, 1.0, 0.0, 0.4],
@@ -1229,6 +1239,40 @@ fn chained_remaps_sample_content_in_order_but_all_parameters_keep_real_time() {
     // Actual pixels prove transform x=1, key intensity=0 and opacity=.5 on the real clock.
     assert_eq!(frame.pixels()[0], [0.0, 0.0, 0.0, 1.0]);
     assert_eq!(frame.pixels()[2], [0.0, 0.125, 0.0, 1.0]);
+    // A second actual render keeps BOTH colour endpoints on real time, too.
+    let mut coloured = project.data().clone();
+    let target = &mut coloured.scene_mut().timeline.main.items[0];
+    let tint = effect_definition("tint").unwrap().instance("tone");
+    for name in ["black", "white"] {
+        let mut colour = colour_curve([1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]);
+        for (component, value) in [(ColorComponent::R, 0.0), (ColorComponent::B, 1.0)] {
+            let channel = colour.channel_mut(Some(component)).unwrap();
+            let mut first = channel.keys()[0].clone();
+            first.segment = Segment::Step;
+            channel.put(first).unwrap();
+            let mut next = Keyframe::new(tick(3, 5), ParamValue::Scalar(value));
+            next.segment = Segment::Step;
+            channel.put(next).unwrap();
+        }
+        target
+            .animations
+            .set(tint.param_path(name).unwrap(), colour)
+            .unwrap();
+    }
+    target.effects.push(tint);
+    let coloured = Project::new(coloured).unwrap();
+    let mut sources = Recording(vec![]);
+    let mut renderer = Renderer::new(&coloured, RenderSettings::from_project(&coloured)).unwrap();
+    let actual = renderer
+        .render_frame(real, &mut sources, &Hooks::default())
+        .unwrap();
+    assert_eq!(sources.0, [tick(1, 2)]);
+    assert_eq!(actual.pixels()[0], [0.0, 0.0, 0.0, 1.0]);
+    assert_working_pixel(
+        actual.pixels()[2],
+        [0.0, 0.0, 0.5, 1.0],
+        "colour uses real .8, not held .5",
+    );
     let mut plain = item.clone();
     plain.effects.clear();
     for handle in [tick(-1, 2), tick(5, 2)] {
@@ -1915,8 +1959,12 @@ fn every_pixel_effect_parameter_changes_the_picture() {
 fn animated_pixel_parameters_clamp_to_their_hard_range() {
     for kind in PIXEL_EFFECTS {
         let definition = project::effect_definition(kind).unwrap();
-        for param in definition.params.iter().filter(|param| param.animatable) {
-            let (min, max) = param.scalar_range().unwrap();
+        for (param, (min, max)) in definition
+            .params
+            .iter()
+            .filter(|p| p.animatable)
+            .filter_map(|p| p.scalar_range().map(|range| (p, range)))
+        {
             for (raw, expected) in [(1e9, max), (-1e9, min)] {
                 let mut animations = project::Animations::default();
                 animations
@@ -2095,4 +2143,339 @@ fn pixel_effect_oracle_rows() {
     for (kind, checksum, expected) in actual {
         assert_eq!(checksum, expected, "{kind} oracle checksum");
     }
+}
+
+fn colour_curve(from: [f64; 4], to: [f64; 4]) -> project::Param {
+    use project::*;
+    Param::Color(Box::new(std::array::from_fn(|i| {
+        Channel::new(
+            ParamValue::Scalar(from[i]),
+            vec![
+                Keyframe::new(time::Tick::ZERO, ParamValue::Scalar(from[i])),
+                Keyframe::new(tick(2, 1), ParamValue::Scalar(to[i])),
+            ],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap()
+    })))
+}
+
+fn colour_output(
+    effect: &project::EffectInstance,
+    animations: &project::Animations,
+    at: time::Tick,
+    source: [f32; 4],
+    fine: bool,
+) -> render::Result<[f32; 4]> {
+    let hooks = Hooks::default();
+    let image = Image::from_working_pixels(1, 1, [source].into_iter(), &hooks)?;
+    let below = Image::new(1, 1, [0.0; 4], &hooks)?;
+    let passes = evaluate_effect(animations, effect, at, 1, 1, fine)?;
+    Ok(apply_effect(image, &passes, &below, &CpuEffects, &hooks)?.pixels()[0])
+}
+
+#[test]
+fn animated_effect_colours_match_independent_linear_pixels() {
+    use project::*;
+    let a = 0.25;
+    let midpoint = [0.125, 0.0, 0.125, a];
+    for (kind, key, source, expected) in [
+        ("strobe", "color", [0.0, a, 0.0, a], midpoint),
+        ("tint", "black", [0.0, 0.0, 0.0, a], midpoint),
+        ("tint", "white", [a; 4], midpoint),
+        ("color_pass", "color", midpoint, midpoint),
+        ("color_replace", "target", midpoint, [0.0, 0.0, a, a]),
+        ("color_replace", "replace", [a, 0.0, 0.0, a], midpoint),
+    ] {
+        let mut effect = effect_definition(kind).unwrap().instance("one");
+        if kind == "color_pass" {
+            effect.set_scalar("similarity", 0.0).unwrap();
+        }
+        if kind == "color_replace" {
+            effect.set_scalar("solid", 1.0).unwrap();
+        }
+        let mut animations = Animations::default();
+        animations
+            .set(
+                effect.param_path(key).unwrap(),
+                colour_curve([1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]),
+            )
+            .unwrap();
+        // Linear-light midpoint encodes to ~.73535698, never rounded to byte188.
+        for fine in [true, false] {
+            let actual = colour_output(&effect, &animations, tick(1, 1), source, fine).unwrap();
+            assert_working_pixel(
+                actual,
+                expected.map(f64::from),
+                &format!("{kind}.{key} fine={fine}"),
+            );
+            assert_eq!(actual[3], a);
+        }
+        // Alpha keys on source RGB-only controls do not alter image colour or coverage.
+        animations
+            .set(
+                effect.param_path(key).unwrap(),
+                colour_curve([0.5, 0.0, 0.5, 0.0], [0.5, 0.0, 0.5, 1.0]),
+            )
+            .unwrap();
+        assert_eq!(
+            colour_output(&effect, &animations, tick(0, 1), source, true).unwrap(),
+            colour_output(&effect, &animations, tick(2, 1), source, true).unwrap()
+        );
+        for impostor in [
+            ParamValue::Scalar(0.5),
+            ParamValue::Bool(true),
+            ParamValue::Text("#FF0000".into()),
+        ] {
+            animations
+                .set(
+                    effect.param_path(key).unwrap(),
+                    Param::new(impostor).unwrap(),
+                )
+                .unwrap();
+            assert!(
+                matches!(
+                    colour_output(&effect, &animations, tick(1, 1), source, true),
+                    Err(render::Error::Invalid(_))
+                ),
+                "{kind}.{key}"
+            );
+        }
+    }
+    // Encoded distance around a floating, animated key has independently placed cutoffs.
+    let key_encoded = oracle_encode(0.5);
+    let encoded: [f64; 3] = [0.8, 0.0, 0.4];
+    let distance = ((encoded[0] - key_encoded).powi(2) + (encoded[2] - key_encoded).powi(2)).sqrt();
+    let grey = 0.2126 * oracle_decode(encoded[0]) + 0.0722 * oracle_decode(encoded[2]);
+    for (delta, expected) in [
+        (-0.01, [grey, grey, grey]),
+        (0.01, encoded.map(oracle_decode)),
+    ] {
+        let effect = effect_definition("color_pass")
+            .unwrap()
+            .instance("one")
+            .with(
+                "similarity",
+                EffectValue::Scalar(distance / 1.2 * 100.0 + delta),
+            )
+            .unwrap();
+        let mut animations = Animations::default();
+        animations
+            .set(
+                effect.param_path("color").unwrap(),
+                colour_curve([1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]),
+            )
+            .unwrap();
+        let actual = colour_output(
+            &effect,
+            &animations,
+            tick(1, 1),
+            oracle_pixel(encoded, 0.25).map(|v| v as f32),
+            true,
+        )
+        .unwrap();
+        assert_working_pixel(
+            actual,
+            [
+                expected[0] * 0.25,
+                expected[1] * 0.25,
+                expected[2] * 0.25,
+                0.25,
+            ],
+            "animated key distance boundary",
+        );
+    }
+    // Swap d=.555 is the midpoint of [.51,.6], giving independently known weight .5.
+    let effect = effect_definition("color_replace")
+        .unwrap()
+        .instance("one")
+        .with("similarity", EffectValue::Scalar(50.0))
+        .unwrap()
+        .with("solid", EffectValue::Bool(true))
+        .unwrap();
+    let mut animations = Animations::default();
+    animations
+        .set(
+            effect.param_path("target").unwrap(),
+            colour_curve([1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]),
+        )
+        .unwrap();
+    let input = [key_encoded - 0.555, 0.0, key_encoded];
+    let actual = colour_output(
+        &effect,
+        &animations,
+        tick(1, 1),
+        oracle_pixel(input, 0.25).map(|v| v as f32),
+        true,
+    )
+    .unwrap();
+    assert_working_pixel(
+        actual,
+        oracle_pixel([input[0] * 0.5, 0.0, (input[2] + 1.0) * 0.5], 0.25),
+        "animated soft replacement",
+    );
+    // Animated replacement also retains the source HSL lightness when solid=false.
+    let effect = effect_definition("color_replace")
+        .unwrap()
+        .instance("one")
+        .with("similarity", EffectValue::Scalar(100.0))
+        .unwrap();
+    let mut animations = Animations::default();
+    animations
+        .set(
+            effect.param_path("replace").unwrap(),
+            colour_curve([0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0]),
+        )
+        .unwrap();
+    for (source, expected) in [
+        ([0.6, 0.0, 0.0], [0.0, 0.0, 0.6]),
+        ([1.0, 0.4, 0.4], [0.4, 0.4, 1.0]),
+    ] {
+        let actual = colour_output(
+            &effect,
+            &animations,
+            tick(1, 1),
+            oracle_pixel(source, 0.25).map(|v| v as f32),
+            true,
+        )
+        .unwrap();
+        assert_working_pixel(
+            actual,
+            oracle_pixel(expected, 0.25),
+            "animated HSL replacement",
+        );
+    }
+}
+
+#[test]
+fn effect_colour_bases_preserve_subbyte_precision_and_clamp_curves() {
+    use project::*;
+    let effect = effect_definition("strobe")
+        .unwrap()
+        .instance("one")
+        .with("color", EffectValue::Color(Color([51, 102, 153, 0])))
+        .unwrap();
+    let source = [0.0, 0.25, 0.0, 0.25];
+    let mut animations = Animations::default();
+    let fallback = colour_output(&effect, &animations, tick(0, 1), source, true).unwrap();
+    assert_working_pixel(
+        fallback,
+        oracle_pixel([0.2, 0.4, 0.6], 0.25),
+        "static byte fallback",
+    );
+    let path = effect.param_path("color").unwrap();
+    let base = [0.123456, 0.234567, 0.345678, 0.5];
+    let mut param = Param::new(ParamValue::Color(base)).unwrap();
+    let channel = param.channel_mut(Some(ColorComponent::R)).unwrap();
+    channel
+        .put(Keyframe::new(tick(1, 1), ParamValue::Scalar(0.9)))
+        .unwrap();
+    channel.remove(tick(1, 1)).unwrap();
+    animations.set(path.clone(), param).unwrap();
+    let changed = effect
+        .clone()
+        .with("color", EffectValue::Color(Color([0, 255, 0, 255])))
+        .unwrap();
+    for instance in [&effect, &changed] {
+        let actual = colour_output(instance, &animations, tick(0, 1), source, true).unwrap();
+        assert_working_pixel(
+            actual,
+            [base[0] * 0.25, base[1] * 0.25, base[2] * 0.25, 0.25],
+            "explicit zero-key base",
+        );
+    }
+    let first = colour_output(&effect, &animations, tick(0, 1), source, true).unwrap();
+    animations
+        .set(
+            path.clone(),
+            Param::new(ParamValue::Color([
+                base[0] + 0.0001,
+                base[1],
+                base[2],
+                base[3],
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+    let second = colour_output(&effect, &animations, tick(0, 1), source, true).unwrap();
+    assert_working_pixel(
+        second,
+        [
+            (base[0] + 0.0001) * 0.25,
+            base[1] * 0.25,
+            base[2] * 0.25,
+            0.25,
+        ],
+        "sub-byte edit",
+    );
+    assert!(((second[0] - first[0]) as f64 - 0.000025).abs() < 3e-6);
+    // Finite Bezier overshoot clamps after interpolation; all stored keys remain admitted.
+    let mut overshoot = colour_curve([0.5, 0.5, 0.25, 0.5], [0.5, 0.5, 0.25, 0.5]);
+    for (component, dv) in [
+        (ColorComponent::R, 2.0),
+        (ColorComponent::G, -2.0),
+        (ColorComponent::A, 2.0),
+    ] {
+        let c = overshoot.channel_mut(Some(component)).unwrap();
+        c.set_handle(
+            tick(0, 1),
+            HandleSide::Out,
+            Some(CurveHandle { dt: tick(2, 3), dv }),
+            TangentMode::Broken,
+        )
+        .unwrap();
+        c.set_handle(
+            tick(2, 1),
+            HandleSide::In,
+            Some(CurveHandle {
+                dt: tick(-2, 3),
+                dv,
+            }),
+            TangentMode::Broken,
+        )
+        .unwrap();
+        let mut first = c.keys()[0].clone();
+        first.segment = Segment::Bezier;
+        c.put(first).unwrap();
+    }
+    animations.set(path.clone(), overshoot).unwrap();
+    assert_working_pixel(
+        colour_output(&effect, &animations, tick(1, 1), source, true).unwrap(),
+        [0.25, 0.0, 0.0625, 0.25],
+        "Bezier overshoot",
+    );
+    let mut extrapolate = colour_curve([0.0, 1.0, 0.25, 1.0], [1.0, 0.0, 0.25, 0.0]);
+    for c in [ColorComponent::R, ColorComponent::G] {
+        extrapolate
+            .channel_mut(Some(c))
+            .unwrap()
+            .set_extrapolation(Extrapolation::Linear, Extrapolation::Linear)
+            .unwrap();
+    }
+    animations.set(path, extrapolate).unwrap();
+    assert_working_pixel(
+        colour_output(&effect, &animations, tick(4, 1), source, true).unwrap(),
+        [0.25, 0.0, 0.0625, 0.25],
+        "linear extrapolation",
+    );
+    let chroma = effect_definition("chroma_key")
+        .unwrap()
+        .instance("one")
+        .with("intensity", EffectValue::Scalar(100.0))
+        .unwrap();
+    let expected =
+        colour_output(&chroma, &Animations::default(), tick(0, 1), source, true).unwrap();
+    let mut ignored = Animations::default();
+    ignored
+        .set(
+            chroma.param_path("key_color").unwrap(),
+            Param::new(ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        colour_output(&chroma, &ignored, tick(0, 1), source, true).unwrap(),
+        expected,
+        "chroma colour stays static"
+    );
 }
