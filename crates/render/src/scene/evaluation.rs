@@ -158,6 +158,19 @@ impl<'a> Renderer<'a> {
             .filter(|i| matches!(i.content, ItemParams::Video(_)))
             .map(|i| i.id)
             .collect();
+        let configured = self.settings.effects.clone();
+        let cpu = crate::effects::CpuEffects;
+        let original = configured.as_deref().unwrap_or(&cpu);
+        let (scoped, busy) = match original.frame(hooks) {
+            Ok(scope) => (scope, false),
+            Err(Error::Unsupported(_)) => (None, true),
+            Err(error) => return Err(error),
+        };
+        let adapter: &dyn crate::effects::EffectCompositor = if busy {
+            &cpu
+        } else {
+            scoped.as_deref().unwrap_or(original)
+        };
         sources.begin_video(&video);
         let output = Image::new(
             self.settings.width,
@@ -208,6 +221,7 @@ impl<'a> Renderer<'a> {
         let mut outgoing = None;
         for item in active {
             check(hooks)?;
+            adapter.release_idle()?;
             let transition = active_transitions.get(&item.id).copied();
             if transition.is_some_and(|(_, outgoing)| outgoing) {
                 transition_base = Some(out.copy(hooks)?);
@@ -470,9 +484,6 @@ impl<'a> Renderer<'a> {
                     ItemParams::Audio(_) => {}
                 }
                 if let Some(mut below) = below {
-                    use crate::effects::CpuEffects;
-                    let cpu = CpuEffects;
-                    let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
                     let mut filtered = out;
                     for run in &runs {
                         if run.is_empty() {
@@ -485,6 +496,7 @@ impl<'a> Renderer<'a> {
                         return Err(Error::Invalid("effect output dimensions"));
                     }
                     if masked {
+                        adapter.release_idle()?;
                         let width = self.settings.width;
                         let height = self.settings.height;
                         crate::mask::apply(
@@ -533,9 +545,9 @@ impl<'a> Renderer<'a> {
                             hooks,
                         )?;
                     }
-                    let cpu = CpuEffects;
-                    let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
+
                     if transform.active() {
+                        adapter.release_idle()?;
                         let r = placement.destination;
                         filtered = transform.apply(
                             &filtered,
@@ -551,19 +563,23 @@ impl<'a> Renderer<'a> {
                         item.blend_mode,
                         hooks,
                     ) {
-                        Err(Error::Unsupported(_)) => crate::blend::composite(
-                            &mut below,
-                            &filtered,
-                            final_opacity,
-                            item.blend_mode,
-                            hooks,
-                        )?,
+                        Err(Error::Unsupported(_)) => {
+                            adapter.release_idle()?;
+                            crate::blend::composite(
+                                &mut below,
+                                &filtered,
+                                final_opacity,
+                                item.blend_mode,
+                                hooks,
+                            )?;
+                        }
                         result => result?,
                     }
                     out = below;
                 }
             }
             if let Some((tr, is_outgoing)) = transition {
+                adapter.release_idle()?;
                 if is_outgoing {
                     let base = transition_base
                         .take()

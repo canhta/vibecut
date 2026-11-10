@@ -384,6 +384,15 @@ struct CountingEffects {
     unsupported: Option<bool>,
 }
 impl render::effects::EffectCompositor for CountingEffects {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
     fn supports(&self, _: &str) -> bool {
         self.queries.fetch_add(1, Ordering::SeqCst);
         self.unsupported.unwrap_or(true)
@@ -548,6 +557,15 @@ struct InterruptedEffects {
     calls: AtomicUsize,
 }
 impl render::effects::EffectCompositor for InterruptedEffects {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
     fn supports(&self, _: &str) -> bool {
         true
     }
