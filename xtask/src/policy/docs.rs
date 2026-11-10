@@ -1,16 +1,21 @@
-//! Documentation gate: the docs index, README module maps and tracker-free prose.
+//! Documentation gate: the docs index, README module maps, tracker-free prose and
+//! links that resolve.
 //!
 //! Tracks the mechanical parts of the documentation rules: every tracked page is
 //! linked from `docs/README.md`, every crate and app README maps its folder
-//! modules, and tracked Markdown outside `.scratch/` carries no tracker ids or
-//! private host and agent names. Current violations live in
+//! modules, tracked Markdown outside `.scratch/` carries no tracker ids, private
+//! host and agent names or reference-checkout source paths, and every relative
+//! link and anchor resolves. Current violations live in
 //! `xtask/docs-baseline.txt`, which only shrinks.
 use baseline::baseline;
 use std::{collections::BTreeSet, path::Path};
 
+const ANCHOR: &str = "anchor";
 const BASELINE: &str = "xtask/docs-baseline.txt";
 const INDEX: &str = "index";
+const LINK: &str = "link";
 const MAP: &str = "map";
+const SOURCE: &str = "source";
 const TEXT: &str = "text";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -39,6 +44,7 @@ pub fn check(root: &Path) -> Result<(), String> {
     violations.extend(index::check(root, &tracked)?);
     violations.extend(map::check(root)?);
     violations.extend(text::check(root, &tracked)?);
+    violations.extend(links::check(root, &tracked)?);
     let baseline = baseline(root)?;
     let mut errors: Vec<String> = violations
         .difference(&baseline)
@@ -90,6 +96,7 @@ fn test_path(path: &str) -> bool {
 
 mod baseline;
 mod index;
+mod links;
 mod map;
 #[cfg(test)]
 mod tests;

@@ -12,7 +12,7 @@ The desktop import composer submits `JobKind::Probe` for canonicalize, probe, ha
 
 ## Thumbnail strips
 
-`thumbnail_strip::tile_interval(strip_height_px, pixels_per_second)` returns the output ticks between two tiles: one 16:9 tile, whose width is the filmstrip height times 16/9 (the implementation reference's `THUMBNAIL_ASPECT_RATIO = 16 / 9` in `apps/web/src/timeline/components/timeline-element.tsx:97`, used at `:1108`). The measured editor uses a 39 px filmstrip at the ruler's 71.5 px/s, about 0.97 s per tile.
+`thumbnail_strip::tile_interval(strip_height_px, pixels_per_second)` returns the output ticks between two tiles: one 16:9 tile, whose width is the filmstrip height times 16/9. The measured editor uses a 39 px filmstrip at the ruler's 71.5 px/s, about 0.97 s per tile.
 
 `ThumbnailStripRequest::new(asset, source_range, interval, max_edge)` samples a video or image source on a grid anchored at source zero, so overlapping requests reuse the same `thumbnails::thumbnail_key` entry per position. `submit` runs one local CPU `GenerateClipThumbnails` job, opens the source once and decodes every missing position in one sequential `media::thumbnails_at` pass (no second decoder or key builder) and reserves 32 MiB decoded frames and a 64 MiB result. A warm cache opens no source. `finish` validates the manifest (magic, count, requested positions, per-frame geometry, 64 MiB) and publishes each frame through the existing thumbnail cache. A still image has one frame at source zero and repeats it.
 

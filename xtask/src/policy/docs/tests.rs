@@ -223,6 +223,145 @@ fn forbidden_names_fail_but_attribution_added_fields_are_exempt() {
 }
 
 #[test]
+fn links_anchors_and_reference_paths_are_rows_in_the_docs_table() {
+    type Case = (
+        &'static str,
+        &'static [(&'static str, &'static str)],
+        Option<(&'static str, &'static str)>,
+    );
+    let readme = "# Docs\n\n[Notes](notes.md)\n";
+    let cases: &[Case] = &[
+        (
+            "dead file",
+            &[("docs/notes.md", "# Notes\n\n[Missing](missing.md)\n")],
+            Some(("[link]", "names no file")),
+        ),
+        (
+            "dead anchor",
+            &[("docs/notes.md", "# Notes\n\n[Gone](notes.md#gone)\n")],
+            Some(("[anchor]", "matches no heading")),
+        ),
+        (
+            "anchor rules",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n## Engine (`crates/engine/src`)\n\n## `audio.set_master` \u{2014} Set master audio\n\n## Same\n\n## Same\n\n## Trailing ##\n\n[Engine](notes.md#engine-cratesenginesrc)\n[Command](notes.md#audioset_master--set-master-audio)\n[Second](notes.md#same-1)\n[Trailing](notes.md#trailing)\n",
+            )],
+            None,
+        ),
+        (
+            "fenced link",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n```text\n[Missing](missing.md)\n```\n",
+            )],
+            None,
+        ),
+        (
+            "inline code link",
+            &[("docs/notes.md", "# Notes\n\n`[Missing](missing.md)`\n")],
+            None,
+        ),
+        (
+            "absolute url",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n[Web](https://example.invalid/missing.md#gone)\n",
+            )],
+            None,
+        ),
+        (
+            "reference definition",
+            &[("docs/notes.md", "# Notes\n\n[missing]: missing.md\n")],
+            Some(("[link]", "names no file")),
+        ),
+        (
+            "web reference source",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n`THUMBNAIL_ASPECT_RATIO` in `apps/web/src/timeline/timeline-element.tsx:97`.\n",
+            )],
+            Some(("[source]", "apps/web/src/timeline/timeline-element.tsx:97")),
+        ),
+        (
+            "spikes reference source",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\nSee `.spikes/repos/reference/src/main.rs`.\n",
+            )],
+            Some(("[source]", ".spikes/repos/reference/src/main.rs")),
+        ),
+        (
+            "relative spikes reference source",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\nSee `../../.spikes/repos/reference/src/main.rs`.\n",
+            )],
+            Some(("[source]", ".spikes/repos/reference/src/main.rs")),
+        ),
+        (
+            "reference evidence",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\nScreens in `.spikes/ui-reference/notes.md`, fixtures from `.spikes/asr-cloud/raw/a.response`, repos under `.spikes/repos/`.\n",
+            )],
+            None,
+        ),
+        (
+            "fenced reference source",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n```text\napps/web/src/timeline/timeline-element.tsx\n```\n",
+            )],
+            None,
+        ),
+        (
+            "root relative link",
+            &[("docs/notes.md", "# Notes\n\n[Docs](/docs/README.md)\n")],
+            None,
+        ),
+        (
+            "dot relative link and title",
+            &[(
+                "docs/notes.md",
+                "# Notes\n\n[Notes](./notes.md#notes \"Notes\")\n",
+            )],
+            None,
+        ),
+        (
+            "same file anchor",
+            &[("docs/notes.md", "# Notes\n\n[Top](#notes)\n")],
+            None,
+        ),
+        (
+            "dead same file anchor",
+            &[("docs/notes.md", "# Notes\n\n[Gone](#gone)\n")],
+            Some(("[anchor]", "#gone")),
+        ),
+        (
+            "outside repository",
+            &[("docs/notes.md", "# Notes\n\n[Out](../../outside.md)\n")],
+            Some(("[link]", "leaves the repository")),
+        ),
+    ];
+    for (name, files, failure) in cases {
+        let tree = Tree::new();
+        tree.write("docs/README.md", readme);
+        for (path, text) in *files {
+            tree.write(path, text);
+        }
+        match failure {
+            Some((rule, detail)) => {
+                let error = check(&tree.0).unwrap_err();
+                assert!(error.contains(rule), "{name}: {error}");
+                assert!(error.contains(detail), "{name}: {error}");
+            }
+            None => check(&tree.0).unwrap_or_else(|error| panic!("{name}: {error}")),
+        }
+    }
+}
+
+#[test]
 fn tracker_scan_has_word_boundaries_and_skips_attribution_lines() {
     let ids = super::text::tracker_ids("see p0-core/94, P1-Parity/119 and ticket 11");
     assert_eq!(

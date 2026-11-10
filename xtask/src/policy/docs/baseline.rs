@@ -1,5 +1,5 @@
 //! Reads the only-shrinking `xtask/docs-baseline.txt` violation list.
-use super::{BASELINE, INDEX, MAP, TEXT, Violation};
+use super::{ANCHOR, BASELINE, INDEX, LINK, MAP, SOURCE, TEXT, Violation};
 use std::{collections::BTreeSet, fs, path::Path};
 
 pub(super) fn baseline(root: &Path) -> Result<BTreeSet<Violation>, String> {
@@ -48,8 +48,11 @@ pub(super) fn baseline(root: &Path) -> Result<BTreeSet<Violation>, String> {
 
 pub(super) fn rule_id(rule: &str) -> Option<&'static str> {
     match rule {
+        ANCHOR => Some(ANCHOR),
         INDEX => Some(INDEX),
+        LINK => Some(LINK),
         MAP => Some(MAP),
+        SOURCE => Some(SOURCE),
         TEXT => Some(TEXT),
         _ => None,
     }
