@@ -199,20 +199,6 @@ pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64
     ))
 }
 
-/// One registered effect scalar, the value a first edit starts from.
-fn effect_param(params: &project::EffectParams, key: &str) -> Option<f64> {
-    match (params, key) {
-        (project::EffectParams::Blur { intensity }, "intensity") => Some(*intensity),
-        (project::EffectParams::ColorGrade { brightness, .. }, "brightness") => Some(*brightness),
-        (project::EffectParams::ColorGrade { contrast, .. }, "contrast") => Some(*contrast),
-        (project::EffectParams::ColorGrade { saturation, .. }, "saturation") => Some(*saturation),
-        (project::EffectParams::ColorGrade { hue, .. }, "hue") => Some(*hue),
-        (project::EffectParams::ChromaKey { intensity, .. }, "intensity") => Some(*intensity),
-        (project::EffectParams::ChromaKey { shadow, .. }, "shadow") => Some(*shadow),
-        _ => None,
-    }
-}
-
 /// The effect scalar at an item-relative time: an animated channel reads its
 /// curve, everything else its persisted value.
 pub(super) fn effect_param_value_at(
@@ -227,7 +213,7 @@ pub(super) fn effect_param_value_at(
         .effects
         .iter()
         .find(|candidate| candidate.id == effect)?;
-    let base = effect_param(&instance.params, key)?;
+    let base = instance.value(key)?.scalar()?;
     let path = project::AnimationPath::new(format!("effects.{effect}.params.{key}")).ok()?;
     Some(match item.animations.value_at(&path, at).ok().flatten() {
         Some(project::ParamValue::Scalar(value)) => value,
@@ -243,7 +229,7 @@ pub(super) fn chroma_key(
     find(project, item)?
         .effects
         .iter()
-        .find(|candidate| matches!(candidate.params, project::EffectParams::ChromaKey { .. }))
+        .find(|candidate| candidate.kind == "chroma_key")
 }
 
 /// An instance's key colour, opaque.
@@ -252,13 +238,10 @@ pub(super) fn chroma_key_color(
     item: ItemId,
     effect: &str,
 ) -> Option<project::Color> {
-    match find(project, item)?
+    find(project, item)?
         .effects
         .iter()
-        .find(|candidate| candidate.id == effect)?
-        .params
-    {
-        project::EffectParams::ChromaKey { key_color, .. } => Some(key_color),
-        _ => None,
-    }
+        .find(|candidate| candidate.id == effect && candidate.kind == "chroma_key")?
+        .value("key_color")?
+        .color()
 }

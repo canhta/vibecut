@@ -3,6 +3,7 @@
 mod blend;
 mod crop;
 mod effects;
+mod effects_catalog;
 mod mask;
 mod transform;
 mod transition;
@@ -13,9 +14,10 @@ mod typography;
 pub use blend::BlendMode;
 pub use crop::Crop;
 pub use effects::{
-    CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_COLOR_MAX, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
-    CHROMA_KEY_MIN, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams,
-    EffectPlacement, GRADE_MAX, GRADE_MIN, chroma_key_color, effect_definitions,
+    ANGLE_MAX, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
+    CHROMA_KEY_MIN, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParamKind,
+    EffectShelf, EffectValue, GRADE_MAX, GRADE_MIN, PACKED_COLOR_MAX, POINT_MAX, effect_definition,
+    effect_definitions, packed_color,
 };
 pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,

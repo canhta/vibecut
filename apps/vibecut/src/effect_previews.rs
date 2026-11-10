@@ -5,7 +5,7 @@ use crate::{Result, egui};
 use engine::effect_thumbnails::EffectThumbnails;
 use engine::jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, ByteBudgetHooks};
-use project::EffectParams;
+use project::EffectInstance;
 use std::{
     collections::BTreeMap,
     sync::Arc,
@@ -93,13 +93,13 @@ impl EffectPreviews {
 
     /// Admit one preview per effect kind. A refused submission is a rendered
     /// failure state, not a silent blank tile.
-    pub fn ensure(&mut self, kind: &str, params: &EffectParams) {
+    pub fn ensure(&mut self, kind: &str, effect: &EffectInstance) {
         if self.entries.contains_key(kind) {
             return;
         }
         let entry = match self
             .cache
-            .submit(&mut self.runner, self.source.clone(), params.clone())
+            .submit(&mut self.runner, self.source.clone(), effect.clone())
         {
             Ok((job, cancel)) => Entry {
                 job: Some(job),
@@ -117,13 +117,13 @@ impl EffectPreviews {
 
     /// Submit again after a failure. The previous job, if any, is cancelled
     /// before the engine cache/runner sees another request.
-    pub fn retry(&mut self, kind: &str, params: &EffectParams) {
+    pub fn retry(&mut self, kind: &str, effect: &EffectInstance) {
         if let Some(entry) = self.entries.remove(kind)
             && let Some(cancel) = entry.cancel
         {
             cancel.cancel();
         }
-        self.ensure(kind, params);
+        self.ensure(kind, effect);
     }
 
     /// Pump the engine runner and retain only terminal truth the tile can show.

@@ -3,34 +3,35 @@ use engine::{Command, Session};
 use project::*;
 use time::{FrameRate, SourceRange, Tick};
 fn blur(id: &str, intensity: f64) -> EffectInstance {
-    EffectInstance {
-        id: id.into(),
-        enabled: true,
-        params: EffectParams::Blur { intensity },
-    }
+    effect_definition("blur")
+        .unwrap()
+        .instance(id)
+        .with("intensity", EffectValue::Scalar(intensity))
+        .unwrap()
 }
 fn grade(id: &str, brightness: f64, contrast: f64, saturation: f64, hue: f64) -> EffectInstance {
-    EffectInstance {
-        id: id.into(),
-        enabled: true,
-        params: EffectParams::ColorGrade {
-            brightness,
-            contrast,
-            saturation,
-            hue,
-        },
-    }
+    effect_definition("color_grade")
+        .unwrap()
+        .instance(id)
+        .with("brightness", EffectValue::Scalar(brightness))
+        .unwrap()
+        .with("contrast", EffectValue::Scalar(contrast))
+        .unwrap()
+        .with("saturation", EffectValue::Scalar(saturation))
+        .unwrap()
+        .with("hue", EffectValue::Scalar(hue))
+        .unwrap()
 }
 fn chroma(id: &str, key_color: Color, intensity: f64, shadow: f64) -> EffectInstance {
-    EffectInstance {
-        id: id.into(),
-        enabled: true,
-        params: EffectParams::ChromaKey {
-            key_color,
-            intensity,
-            shadow,
-        },
-    }
+    effect_definition("chroma_key")
+        .unwrap()
+        .instance(id)
+        .with("key_color", EffectValue::Color(key_color))
+        .unwrap()
+        .with("intensity", EffectValue::Scalar(intensity))
+        .unwrap()
+        .with("shadow", EffectValue::Scalar(shadow))
+        .unwrap()
 }
 fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "Effects".into())
@@ -423,18 +424,14 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
     let source = Arc::new(render::Image::new(32, 18, [0.5, 0.0, 0.0, 1.0], &Hooks).unwrap());
     for n in 0..2 {
         let (id, _) = cache
-            .submit(&mut runner, source.clone(), EffectParams::default())
+            .submit(&mut runner, source.clone(), blur("preview", 15.0))
             .unwrap();
         assert_eq!(pump(&mut runner, id).state, JobState::Completed);
         assert_eq!(runner.take_output(id).unwrap().bytes().len(), 32 * 18 * 4);
         assert_eq!(adapter.0.load(Ordering::SeqCst), 1, "hit {n}");
     }
     let (id, token) = cache
-        .submit(
-            &mut runner,
-            source.clone(),
-            EffectParams::Blur { intensity: 99.0 },
-        )
+        .submit(&mut runner, source.clone(), blur("preview", 99.0))
         .unwrap();
     token.cancel();
     assert_eq!(pump(&mut runner, id).state, JobState::Cancelled);
@@ -445,9 +442,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             .submit(
                 &mut runner,
                 source.clone(),
-                EffectParams::Blur {
-                    intensity: n as f64 + 30.0,
-                },
+                blur("preview", n as f64 + 30.0),
             )
             .unwrap();
         assert_eq!(pump(&mut runner, id).state, JobState::Completed);
@@ -458,26 +453,26 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         MAX_THUMBNAILS as u64 * 32 * 18 * 4
     );
     let (id, _) = cache
-        .submit(&mut runner, source.clone(), EffectParams::default())
+        .submit(&mut runner, source.clone(), blur("preview", 15.0))
         .unwrap();
     assert_eq!(pump(&mut runner, id).state, JobState::Completed);
     runner.take_output(id).unwrap();
     assert_eq!(adapter.0.load(Ordering::SeqCst), MAX_THUMBNAILS + 2);
     assert!(
         cache
-            .submit(
-                &mut runner,
-                source,
-                EffectParams::Blur {
-                    intensity: f64::NAN
-                }
-            )
+            .submit(&mut runner, source, {
+                let mut hostile = blur("preview", 15.0);
+                hostile
+                    .params
+                    .insert("intensity".into(), EffectValue::Scalar(f64::NAN));
+                hostile
+            })
             .is_err()
     );
     let large = Arc::new(render::Image::new(321, 1, [0.0; 4], &Hooks).unwrap());
     assert!(
         cache
-            .submit(&mut runner, large, EffectParams::default())
+            .submit(&mut runner, large, blur("preview", 15.0))
             .is_err()
     );
 }
@@ -530,7 +525,7 @@ fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
         );
         let source = Arc::new(render::Image::new(32, 18, [0.0; 4], &Hooks).unwrap());
         let (id, token) = cache
-            .submit(&mut runner, source, EffectParams::default())
+            .submit(&mut runner, source, blur("preview", 15.0))
             .unwrap();
         runner.tick().unwrap();
         rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
@@ -695,10 +690,10 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
     }
     s.commit_gesture().unwrap();
     let graded = s.project().clone();
-    assert!(matches!(
-        item(&s).effects[0].params,
-        EffectParams::ColorGrade { contrast, .. } if contrast == 20.0
-    ));
+    assert_eq!(
+        item(&s).effects[0].params.get("contrast"),
+        Some(&EffectValue::Scalar(20.0))
+    );
     let saved = project::encode(&graded, false).unwrap();
     assert_eq!(&project::decode(&saved).unwrap().project, graded.as_ref());
     s.apply(Command::Undo {}).unwrap();
@@ -760,10 +755,10 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
         value: 0x11_22_33 as f64,
     })
     .unwrap();
-    assert!(matches!(
-        item(&s).effects[0].params,
-        EffectParams::ChromaKey { key_color, .. } if key_color == Color([0x11, 0x22, 0x33, 255])
-    ));
+    assert_eq!(
+        item(&s).effects[0].params.get("key_color"),
+        Some(&EffectValue::Color(Color([0x11, 0x22, 0x33, 255])))
+    );
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project(), &added);
     for bad in [-1.0, 16_777_216.0, 1.5, f64::NAN] {
@@ -801,10 +796,10 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
     }
     s.commit_gesture().unwrap();
     let keyed = s.project().clone();
-    assert!(matches!(
-        item(&s).effects[0].params,
-        EffectParams::ChromaKey { intensity, .. } if intensity == 30.0
-    ));
+    assert_eq!(
+        item(&s).effects[0].params.get("intensity"),
+        Some(&EffectValue::Scalar(30.0))
+    );
     let saved = project::encode(&keyed, false).unwrap();
     assert_eq!(&project::decode(&saved).unwrap().project, keyed.as_ref());
     s.apply(Command::Undo {}).unwrap();

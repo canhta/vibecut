@@ -1,14 +1,70 @@
 //! Device-free evaluated passes, shared by CPU and app GPU adapters.
 use crate::{Error, ExecutionHooks, Image, Result, check};
-use project::{EffectParams, Item, ParamValue};
+use project::{Animations, EffectInstance, EffectValue, Item, ParamValue};
+use std::{borrow::Cow, collections::BTreeMap};
 use time::Tick;
 
-/// One normalized, separable convolution. Shader names are pipeline data.
-#[derive(Clone, Debug)]
-pub struct EffectPass {
-    pub entry_point: &'static str,
-    pub horizontal: bool,
-    pub weights: Vec<f32>,
+/// One shader uniform: what an effect hands a single-pass pixel op.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Uniform {
+    Float(f32),
+    /// Straight sRGB-encoded colour, `0..=1` per channel.
+    Color([f32; 3]),
+    /// A frame fraction on each axis.
+    Point([f32; 2]),
+}
+impl Uniform {
+    fn extend(self, out: &mut Vec<f32>) {
+        match self {
+            Self::Float(v) => out.push(v),
+            Self::Color(c) => out.extend(c),
+            Self::Point(p) => out.extend(p),
+        }
+    }
+}
+/// One device-independent pass. Shader names are pipeline data.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EffectPass {
+    /// One normalized, separable convolution.
+    Convolve {
+        entry_point: &'static str,
+        horizontal: bool,
+        weights: Vec<f32>,
+    },
+    /// One pixel-local op reading flat uniforms.
+    Pixel {
+        entry_point: &'static str,
+        uniforms: Vec<Uniform>,
+    },
+}
+impl EffectPass {
+    pub const fn entry_point(&self) -> &'static str {
+        match self {
+            Self::Convolve { entry_point, .. } | Self::Pixel { entry_point, .. } => entry_point,
+        }
+    }
+    pub const fn horizontal(&self) -> bool {
+        matches!(
+            self,
+            Self::Convolve {
+                horizontal: true,
+                ..
+            }
+        )
+    }
+    /// The flat floats a shader reads: convolution weights or flattened uniforms.
+    pub fn values(&self) -> Cow<'_, [f32]> {
+        match self {
+            Self::Convolve { weights, .. } => Cow::Borrowed(weights),
+            Self::Pixel { uniforms, .. } => {
+                let mut flat = Vec::with_capacity(uniforms.len() * 3);
+                for uniform in uniforms {
+                    uniform.extend(&mut flat);
+                }
+                Cow::Owned(flat)
+            }
+        }
+    }
 }
 /// Inputs share output geometry and the premultiplied linear working space.
 /// Blur consumes the item only; future passes can consume mask coverage/below.
@@ -72,7 +128,7 @@ pub fn blur_passes(intensity: f64, width: u32, height: u32) -> Result<Vec<Effect
     }
     Ok((0..iterations)
         .flat_map(|_| [true, false])
-        .map(|horizontal| EffectPass {
+        .map(|horizontal| EffectPass::Convolve {
             entry_point: "gaussian",
             horizontal,
             weights: weights.clone(),
@@ -118,15 +174,16 @@ pub fn grade_passes(
     if brightness == 0.0 && contrast == 0.0 && saturation == 0.0 && hue == 0.0 {
         return Ok(Vec::new());
     }
-    Ok(vec![EffectPass {
+    Ok(vec![EffectPass::Pixel {
         entry_point: "grade",
-        horizontal: false,
-        weights: vec![
+        uniforms: [
             (brightness / 50.0).exp2() as f32,
             (1.0 + contrast / 100.0) as f32,
             (1.0 + saturation / 50.0) as f32,
             (hue / 50.0 * std::f64::consts::PI) as f32,
-        ],
+        ]
+        .map(Uniform::Float)
+        .to_vec(),
     }])
 }
 /// One premultiplied linear pixel through a grade pass; the reference the
@@ -182,15 +239,16 @@ pub fn chroma_key_passes(
     // Project colours are straight sRGB bytes; the pass compares sRGB-encoded
     // pixels, so the key needs no transfer conversion here.
     let encoded = |byte: u8| f32::from(byte) / 255.0;
-    Ok(vec![EffectPass {
+    Ok(vec![EffectPass::Pixel {
         entry_point: "chroma_key",
-        horizontal: false,
-        weights: vec![
-            encoded(key_color.0[0]),
-            encoded(key_color.0[1]),
-            encoded(key_color.0[2]),
-            (intensity / 100.0) as f32,
-            (shadow / 100.0) as f32,
+        uniforms: vec![
+            Uniform::Color([
+                encoded(key_color.0[0]),
+                encoded(key_color.0[1]),
+                encoded(key_color.0[2]),
+            ]),
+            Uniform::Float((intensity / 100.0) as f32),
+            Uniform::Float((shadow / 100.0) as f32),
         ],
     }])
 }
@@ -254,52 +312,30 @@ pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     }
     [out[0], out[1], out[2], alpha]
 }
-/// One keyframed scalar at item-local time, clamped to the effect control
-/// range; a missing animation keeps the static value.
-fn animated_scalar(
-    item: &Item,
-    effect: &project::EffectInstance,
-    key: &str,
-    fallback: f64,
-    local: Tick,
-) -> Result<f64> {
-    match item.animations.value_at(&effect.param_path(key)?, local)? {
-        Some(ParamValue::Scalar(value)) => Ok(value.clamp(0.0, 100.0)),
-        Some(_) => Err(Error::Invalid("effect animation type")),
-        None => Ok(fallback),
-    }
+/// A pixel-local op: its shader entry, flat uniform count, uniform check and
+/// the CPU reference the shader mirrors.
+struct PixelOp {
+    entry_point: &'static str,
+    len: usize,
+    valid: fn(&[f32]) -> bool,
+    apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-pub(crate) fn evaluate(
-    item: &Item,
-    local: Tick,
-    width: u32,
-    height: u32,
-) -> Result<Vec<EffectPass>> {
-    let mut passes = Vec::new();
-    for effect in item.effects.iter().filter(|e| e.enabled) {
-        match effect.params {
-            EffectParams::Blur { intensity } => {
-                let value = animated_scalar(item, effect, "intensity", intensity, local)?;
-                passes.extend(blur_passes(value, width, height)?);
-            }
-            EffectParams::ColorGrade {
-                brightness,
-                contrast,
-                saturation,
-                hue,
-            } => passes.extend(grade_passes(brightness, contrast, saturation, hue)?),
-            EffectParams::ChromaKey {
-                key_color,
-                intensity,
-                shadow,
-            } => {
-                let intensity = animated_scalar(item, effect, "intensity", intensity, local)?;
-                let shadow = animated_scalar(item, effect, "shadow", shadow, local)?;
-                passes.extend(chroma_key_passes(key_color, intensity, shadow)?);
-            }
-        }
-    }
-    Ok(passes)
+static PIXEL_OPS: [PixelOp; 2] = [
+    PixelOp {
+        entry_point: "grade",
+        len: 4,
+        valid: |v| v.get(1).is_some_and(|exponent| *exponent > 0.0),
+        apply: grade_pixel,
+    },
+    PixelOp {
+        entry_point: "chroma_key",
+        len: 5,
+        valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
+        apply: chroma_key_pixel,
+    },
+];
+fn pixel_op(entry_point: &str) -> Option<&'static PixelOp> {
+    PIXEL_OPS.iter().find(|op| op.entry_point == entry_point)
 }
 impl EffectCompositor for CpuEffects {
     fn apply(
@@ -314,41 +350,52 @@ impl EffectCompositor for CpuEffects {
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
         for pass in passes {
             validate_pass(pass)?;
-            if pass.entry_point == "grade" || pass.entry_point == "chroma_key" {
-                crate::image::row_chunks(&mut b.pixels, a.width as usize, hooks, |start, rows| {
-                    check(hooks)?;
-                    let source = a
-                        .pixels
-                        .get(start..start + rows.len())
-                        .ok_or(Error::Invalid("effect pixel"))?;
-                    for (out, px) in rows.iter_mut().zip(source) {
-                        *out = match pass.entry_point {
-                            "chroma_key" => chroma_key_pixel(*px, &pass.weights),
-                            _ => grade_pixel(*px, &pass.weights),
-                        };
-                    }
-                    Ok(())
-                })?;
-                std::mem::swap(&mut a, &mut b);
-                continue;
-            }
+            let (horizontal, weights) = match pass {
+                EffectPass::Pixel { entry_point, .. } => {
+                    let op = pixel_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
+                    let values = pass.values();
+                    crate::image::row_chunks(
+                        &mut b.pixels,
+                        a.width as usize,
+                        hooks,
+                        |start, rows| {
+                            check(hooks)?;
+                            let source = a
+                                .pixels
+                                .get(start..start + rows.len())
+                                .ok_or(Error::Invalid("effect pixel"))?;
+                            for (out, px) in rows.iter_mut().zip(source) {
+                                *out = (op.apply)(*px, &values);
+                            }
+                            Ok(())
+                        },
+                    )?;
+                    std::mem::swap(&mut a, &mut b);
+                    continue;
+                }
+                EffectPass::Convolve {
+                    horizontal,
+                    weights,
+                    ..
+                } => (*horizontal, weights),
+            };
             let w = a.width as usize;
             let h = a.height as usize;
-            let radius = pass.weights.len() as i64 / 2;
+            let radius = weights.len() as i64 / 2;
             crate::image::row_chunks(&mut b.pixels, w, hooks, |start, rows| {
                 for (row, pixels) in rows.chunks_mut(w).enumerate() {
                     check(hooks)?;
                     let y = start / w + row;
                     for (x, output) in pixels.iter_mut().enumerate() {
                         let mut sum = [0.0; 4];
-                        for (tap, weight) in pass.weights.iter().enumerate() {
+                        for (tap, weight) in weights.iter().enumerate() {
                             let delta = tap as i64 - radius;
-                            let sx = if pass.horizontal {
+                            let sx = if horizontal {
                                 (x as i64 + delta).clamp(0, w as i64 - 1) as usize
                             } else {
                                 x
                             };
-                            let sy = if pass.horizontal {
+                            let sy = if horizontal {
                                 y
                             } else {
                                 (y as i64 + delta).clamp(0, h as i64 - 1) as usize
@@ -377,41 +424,163 @@ impl EffectCompositor for CpuEffects {
     }
 }
 pub fn validate_pass(pass: &EffectPass) -> Result<()> {
-    if pass.entry_point == "chroma_key" {
-        return if pass.weights.len() == 5
-            && pass.weights.iter().all(|w| w.is_finite())
-            && pass
-                .weights
-                .get(..3)
-                .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
-            && pass
-                .weights
-                .get(3..)
-                .is_some_and(|controls| controls.iter().all(|v| (0.0..=1.0).contains(v)))
-        {
-            Ok(())
-        } else {
-            Err(Error::Unsupported("effect pass"))
-        };
+    let valid = match pass {
+        EffectPass::Pixel { entry_point, .. } => pixel_op(entry_point).is_some_and(|op| {
+            let values = pass.values();
+            values.len() == op.len && values.iter().all(|v| v.is_finite()) && (op.valid)(&values)
+        }),
+        EffectPass::Convolve {
+            entry_point,
+            weights,
+            ..
+        } => {
+            *entry_point == "gaussian"
+                && !weights.is_empty()
+                && weights.len() <= 49
+                && !weights.len().is_multiple_of(2)
+                && weights.iter().all(|w| w.is_finite() && *w >= 0.0)
+                && (weights.iter().sum::<f32>() - 1.0).abs() <= 1e-5
+        }
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::Unsupported("effect pass"))
     }
-    if pass.entry_point == "grade" {
-        return if pass.weights.len() == 4
-            && pass.weights.iter().all(|w| w.is_finite())
-            && pass.weights.get(1).is_some_and(|k| *k > 0.0)
-        {
-            Ok(())
-        } else {
-            Err(Error::Unsupported("effect pass"))
-        };
+}
+
+/// What an evaluator sees: its parameters at item-local time (keyframes
+/// resolved, scalars clamped to the definition's hard range), the item-local
+/// time itself for time-driven effects, and the output size. Second-track
+/// inputs are not part of a frame.
+pub struct EffectFrame {
+    pub local: Tick,
+    pub seconds: f64,
+    pub width: u32,
+    pub height: u32,
+    params: BTreeMap<&'static str, EffectValue>,
+}
+impl EffectFrame {
+    /// Resolve `effect`'s parameters against `animations` at item-local time `local`.
+    pub fn new(
+        animations: &Animations,
+        effect: &EffectInstance,
+        local: Tick,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
+        let definition = effect.definition()?;
+        let mut params = BTreeMap::new();
+        for param in definition.params {
+            let stored = effect
+                .value(param.id)
+                .ok_or(Error::Invalid("effect parameter"))?;
+            let value = match (param.animatable, param.scalar_range()) {
+                (true, Some((min, max))) => {
+                    match animations.value_at(&effect.param_path(param.id)?, local)? {
+                        Some(ParamValue::Scalar(v)) => EffectValue::Scalar(v.clamp(min, max)),
+                        Some(_) => return Err(Error::Invalid("effect animation type")),
+                        None => *stored,
+                    }
+                }
+                _ => *stored,
+            };
+            params.insert(param.id, value);
+        }
+        Ok(Self {
+            local,
+            seconds: local.seconds(),
+            width,
+            height,
+            params,
+        })
     }
-    if pass.entry_point != "gaussian"
-        || pass.weights.is_empty()
-        || pass.weights.len() > 49
-        || pass.weights.len().is_multiple_of(2)
-        || pass.weights.iter().any(|w| !w.is_finite() || *w < 0.0)
-        || (pass.weights.iter().sum::<f32>() - 1.0).abs() > 1e-5
-    {
-        return Err(Error::Unsupported("effect pass"));
+    fn get(&self, id: &str) -> Result<&EffectValue> {
+        self.params
+            .get(id)
+            .ok_or(Error::Invalid("effect parameter"))
     }
-    Ok(())
+    pub fn scalar(&self, id: &str) -> Result<f64> {
+        self.get(id)?
+            .scalar()
+            .ok_or(Error::Invalid("effect parameter"))
+    }
+    pub fn choice(&self, id: &str) -> Result<u32> {
+        self.get(id)?
+            .choice()
+            .ok_or(Error::Invalid("effect parameter"))
+    }
+    pub fn flag(&self, id: &str) -> Result<bool> {
+        self.get(id)?
+            .flag()
+            .ok_or(Error::Invalid("effect parameter"))
+    }
+    pub fn color(&self, id: &str) -> Result<project::Color> {
+        self.get(id)?
+            .color()
+            .ok_or(Error::Invalid("effect parameter"))
+    }
+    pub fn point(&self, id: &str) -> Result<[f64; 2]> {
+        self.get(id)?
+            .point()
+            .ok_or(Error::Invalid("effect parameter"))
+    }
+}
+
+pub type EffectEvaluator = fn(&EffectFrame) -> Result<Vec<EffectPass>>;
+
+/// The evaluator of an effect kind; a kind without one is unsupported.
+pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
+    Some(match kind {
+        "blur" => blur,
+        "color_grade" => color_grade,
+        "chroma_key" => chroma_key,
+        _ => return None,
+    })
+}
+
+fn blur(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    blur_passes(frame.scalar("intensity")?, frame.width, frame.height)
+}
+fn color_grade(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    grade_passes(
+        frame.scalar("brightness")?,
+        frame.scalar("contrast")?,
+        frame.scalar("saturation")?,
+        frame.scalar("hue")?,
+    )
+}
+fn chroma_key(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    chroma_key_passes(
+        frame.color("key_color")?,
+        frame.scalar("intensity")?,
+        frame.scalar("shadow")?,
+    )
+}
+
+/// The passes of one effect instance at item-local time `local`.
+pub fn evaluate_effect(
+    animations: &Animations,
+    effect: &EffectInstance,
+    local: Tick,
+    width: u32,
+    height: u32,
+) -> Result<Vec<EffectPass>> {
+    let evaluate = evaluator(&effect.kind).ok_or(Error::Unsupported("effect kind"))?;
+    evaluate(&EffectFrame::new(animations, effect, local, width, height)?)
+}
+
+/// The passes of every enabled effect of `item`, in stack order.
+pub fn evaluate(item: &Item, local: Tick, width: u32, height: u32) -> Result<Vec<EffectPass>> {
+    let mut passes = Vec::new();
+    for effect in item.effects.iter().filter(|e| e.enabled) {
+        passes.extend(evaluate_effect(
+            &item.animations,
+            effect,
+            local,
+            width,
+            height,
+        )?);
+    }
+    Ok(passes)
 }

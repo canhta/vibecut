@@ -416,16 +416,19 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
                 .flat_map(|t| &mut t.items)
                 .find(|i| i.id == project::ItemId(0))
                 .unwrap();
-            item.effects.push(project::EffectInstance {
-                id: "color_grade".into(),
-                enabled: true,
-                params: project::EffectParams::ColorGrade {
-                    brightness: 30.,
-                    contrast: 20.,
-                    saturation: -20.,
-                    hue: 10.,
-                },
-            });
+            item.effects.push(
+                project::effect_definition("color_grade")
+                    .unwrap()
+                    .instance("color_grade")
+                    .with("brightness", project::EffectValue::Scalar(30.))
+                    .unwrap()
+                    .with("contrast", project::EffectValue::Scalar(20.))
+                    .unwrap()
+                    .with("saturation", project::EffectValue::Scalar(-20.))
+                    .unwrap()
+                    .with("hue", project::EffectValue::Scalar(10.))
+                    .unwrap(),
+            );
         }
         if case == "keyed" {
             // Preview and export must agree on a keyed clip: the synthetic source's
@@ -437,15 +440,20 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
                 .flat_map(|t| &mut t.items)
                 .find(|i| i.id == project::ItemId(0))
                 .unwrap();
-            item.effects.push(project::EffectInstance {
-                id: "chroma_key".into(),
-                enabled: true,
-                params: project::EffectParams::ChromaKey {
-                    key_color: project::Color([0, 255, 0, 255]),
-                    intensity: 40.,
-                    shadow: 0.,
-                },
-            });
+            item.effects.push(
+                project::effect_definition("chroma_key")
+                    .unwrap()
+                    .instance("chroma_key")
+                    .with(
+                        "key_color",
+                        project::EffectValue::Color(project::Color([0, 255, 0, 255])),
+                    )
+                    .unwrap()
+                    .with("intensity", project::EffectValue::Scalar(40.))
+                    .unwrap()
+                    .with("shadow", project::EffectValue::Scalar(0.))
+                    .unwrap(),
+            );
         }
         if masked {
             let item = data
@@ -463,11 +471,13 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
             mask.stroke.color = project::Color([255, 255, 255, 128]);
             mask.stroke.align = project::StrokeAlign::Outside;
             item.masks.push(mask);
-            item.effects.push(project::EffectInstance {
-                id: "blur".into(),
-                enabled: true,
-                params: project::EffectParams::Blur { intensity: 100. },
-            });
+            item.effects.push(
+                project::effect_definition("blur")
+                    .unwrap()
+                    .instance("blur")
+                    .with("intensity", project::EffectValue::Scalar(100.))
+                    .unwrap(),
+            );
         }
         let p = project::Project::new(data).unwrap();
         let h = Hooks::default();
@@ -631,15 +641,20 @@ fn chroma_key_intensity_keyframes_interpolate_in_preview_and_export() {
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: Vec::new(),
-        effects: vec![project::EffectInstance {
-            id: "chroma_key".into(),
-            enabled: true,
-            params: project::EffectParams::ChromaKey {
-                key_color: project::Color([0, 255, 0, 255]),
-                intensity: 0.0,
-                shadow: 0.0,
-            },
-        }],
+        effects: vec![
+            project::effect_definition("chroma_key")
+                .unwrap()
+                .instance("chroma_key")
+                .with(
+                    "key_color",
+                    project::EffectValue::Color(project::Color([0, 255, 0, 255])),
+                )
+                .unwrap()
+                .with("intensity", project::EffectValue::Scalar(0.0))
+                .unwrap()
+                .with("shadow", project::EffectValue::Scalar(0.0))
+                .unwrap(),
+        ],
         animations,
         id: project::ItemId(1),
         source_asset: None,

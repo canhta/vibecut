@@ -61,7 +61,7 @@ impl Editor {
         &self,
         definition: &project::EffectDefinition,
     ) -> &'static str {
-        match definition.kind {
+        match definition.id {
             "blur" => self.tr(Text::EffectBlur),
             "color_grade" => self.tr(Text::EffectColorGrade),
             _ => definition.name,

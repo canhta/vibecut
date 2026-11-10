@@ -2,7 +2,7 @@
 use super::Panel;
 use crate::editor::properties::{
     Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
-    Vec2, effect_definition, effect_scrub_spec, egui, icons, read, theme,
+    Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
 impl Panel<'_, '_> {
@@ -20,7 +20,7 @@ impl Panel<'_, '_> {
     }
 
     fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
-        match definition.kind {
+        match definition.id {
             "blur" => self.tr(Text::EffectBlur),
             "color_grade" => self.tr(Text::EffectColorGrade),
             _ => definition.name,
@@ -32,7 +32,7 @@ impl Panel<'_, '_> {
     pub(super) fn adjust_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(definition) = project::effect_definitions()
             .iter()
-            .find(|definition| definition.kind == "color_grade")
+            .find(|definition| definition.id == "color_grade")
         else {
             return;
         };
@@ -40,20 +40,16 @@ impl Panel<'_, '_> {
             candidate
                 .effects
                 .iter()
-                .find(|effect| matches!(effect.params, project::EffectParams::ColorGrade { .. }))
+                .find(|effect| effect.kind == "color_grade")
                 .map(|effect| effect.id.clone())
         });
-        let id = existing.unwrap_or_else(|| definition.kind.to_owned());
+        let id = existing.unwrap_or_else(|| definition.id.to_owned());
         let at = self.effect_time(item);
         for parameter in definition.params {
-            let current = read::effect_param_value_at(
-                self.cx.session.project(),
-                item,
-                &id,
-                parameter.key,
-                at,
-            )
-            .unwrap_or(parameter.default);
+            let current =
+                read::effect_param_value_at(self.cx.session.project(), item, &id, parameter.id, at)
+                    .or_else(|| parameter.default.scalar())
+                    .unwrap_or(0.0);
             self.effect_scrub_field(ui, item, &id, parameter, current);
         }
     }
@@ -114,7 +110,9 @@ impl Panel<'_, '_> {
                         } else {
                             self.secondary()
                         };
-                        let name = effect_definition(&effect.params)
+                        let name = effect
+                            .definition()
+                            .ok()
                             .map_or("Effect", |definition| self.effect_name(definition));
                         ui.label(
                             egui::RichText::new(name)
@@ -164,14 +162,14 @@ impl Panel<'_, '_> {
                             });
                         }
                     });
-                    if let Some(definition) = effect_definition(&effect.params) {
+                    if let Ok(definition) = effect.definition() {
                         let at = self.effect_time(item);
                         for parameter in definition.params {
                             if let Some(current) = read::effect_param_value_at(
                                 self.cx.session.project(),
                                 item,
                                 &effect.id,
-                                parameter.key,
+                                parameter.id,
                                 at,
                             ) {
                                 self.effect_scrub_field(ui, item, &effect.id, parameter, current);
@@ -229,7 +227,7 @@ impl Panel<'_, '_> {
     ) {
         let spec = effect_scrub_spec(parameter);
         ui.add_space(theme::space::MD);
-        let label = match parameter.key {
+        let label = match parameter.id {
             "intensity" => self.tr(Text::EffectIntensity),
             "shadow" => self.tr(Text::EffectShadow),
             "brightness" => self.tr(Text::Brightness),
@@ -239,9 +237,9 @@ impl Panel<'_, '_> {
             _ => parameter.name,
         };
         let caption = ui.label(label);
-        let draft_key = format!("effects.{effect}.param.{}", parameter.key);
+        let draft_key = format!("effects.{effect}.param.{}", parameter.id);
         ui.horizontal(|ui| {
-            let handle_id = format!("effects.{effect}.param.{}.scrub", parameter.key);
+            let handle_id = format!("effects.{effect}.param.{}.scrub", parameter.id);
             let (rect, handle) = ui.allocate_exact_size(
                 Vec2::new(theme::size::CONTROL, theme::size::FIELD),
                 egui::Sense::click_and_drag(),
@@ -261,14 +259,14 @@ impl Panel<'_, '_> {
                 &handle,
             );
             if handle.drag_started() {
-                self.start_effect_scrub(item, effect, parameter.key, current);
+                self.start_effect_scrub(item, effect, parameter.id, current);
             }
             if handle.dragged()
                 && let Some(mut scrub) = self.state.scrub.take()
             {
                 let target = ScrubTarget::Effect {
                     effect: effect.to_owned(),
-                    key: parameter.key.to_owned(),
+                    key: parameter.id.to_owned(),
                 };
                 if scrub.target == target {
                     let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
@@ -354,7 +352,7 @@ impl Panel<'_, '_> {
         parameter: &project::EffectParamDefinition,
         value: f64,
     ) {
-        let path = effect_param_path(effect, parameter.key);
+        let path = effect_param_path(effect, parameter.id);
         if let Some(time) = self.animated_effect_time(item, &path) {
             self.actions.push(Action::SetKeyframeAt {
                 item,
@@ -363,7 +361,7 @@ impl Panel<'_, '_> {
                 value,
             });
         } else {
-            self.set_effect_param(item, effect, parameter.key, value);
+            self.set_effect_param(item, effect, parameter.id, value);
         }
     }
 
@@ -385,7 +383,7 @@ impl Panel<'_, '_> {
         parameter: &project::EffectParamDefinition,
         current: f64,
     ) {
-        let path = effect_param_path(effect, parameter.key);
+        let path = effect_param_path(effect, parameter.id);
         let Some((start, end)) = read::range_of(self.cx.session.project(), item) else {
             return;
         };
@@ -398,7 +396,7 @@ impl Panel<'_, '_> {
         } else {
             Text::AddKeyframe
         });
-        let id = format!("effects.{effect}.param.{}.keyframe", parameter.key);
+        let id = format!("effects.{effect}.param.{}.keyframe", parameter.id);
         let response = ui
             .add_enabled_ui(inside, |ui| {
                 crate::kit::icon_button(ui, &id, Icon::Diamond, label, exists)

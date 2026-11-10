@@ -1,8 +1,7 @@
 //! Applies effect stack changes.
 
 use crate::editor::properties::{
-    Arc, BTreeSet, Editor, ElementKind, Error, ItemId, Result, Text, effect_params_from_definition,
-    error_detail, read,
+    Arc, BTreeSet, Editor, ElementKind, Error, ItemId, Result, Text, error_detail, read,
 };
 
 impl Editor {
@@ -55,7 +54,7 @@ impl Editor {
         item: ItemId,
         effect: &str,
     ) -> Result<()> {
-        let default = project::chroma_key_color(project::CHROMA_KEY_COLOR_DEFAULT)?;
+        let default = project::CHROMA_KEY_COLOR_DEFAULT;
         let current = read::chroma_key_color(self.session.project(), item, effect);
         if current == Some(default) {
             return Ok(());
@@ -114,13 +113,8 @@ impl Editor {
         }
         let Some(definition) = project::effect_definitions()
             .iter()
-            .find(|definition| definition.kind == kind)
+            .find(|definition| definition.id == kind)
         else {
-            let text = self.tr(Text::EffectKindUnsupported).to_owned();
-            self.set_toast(&text, None);
-            return;
-        };
-        let Some(params) = effect_params_from_definition(definition) else {
             let text = self.tr(Text::EffectKindUnsupported).to_owned();
             self.set_toast(&text, None);
             return;
@@ -132,8 +126,9 @@ impl Editor {
         };
         let effect = project::EffectInstance {
             id: effect_id,
+            kind: definition.id.to_owned(),
             enabled: true,
-            params,
+            params: definition.defaults(),
         };
         let before = self.session.project().clone();
         match self
@@ -287,17 +282,12 @@ impl Editor {
                     _ => "effect unsupported on this item",
                 }));
             }
-            let mut params = project::effect_definitions()
+            let mut instance = project::effect_definitions()
                 .iter()
-                .find(|definition| definition.kind == effect)
-                .and_then(effect_params_from_definition)
+                .find(|definition| definition.id == effect)
+                .map(|definition| definition.instance(effect))
                 .ok_or(Error::Invalid("unknown effect"))?;
-            params.set_scalar(key, value)?;
-            let instance = project::EffectInstance {
-                id: effect.to_owned(),
-                enabled: true,
-                params,
-            };
+            instance.set_scalar(key, value)?;
             self.desk().apply_result(
                 engine::Command::AddEffect {
                     item,

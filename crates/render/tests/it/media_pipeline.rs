@@ -1666,11 +1666,7 @@ fn item_compositing_refuses_forced_copy_and_preserves_destination() {
         } else {
             data.scene_mut().timeline.overlays[0].items[0]
                 .effects
-                .push(project::EffectInstance {
-                    id: "blur".into(),
-                    enabled: true,
-                    params: Default::default(),
-                });
+                .push(project::effect_definition("blur").unwrap().instance("blur"));
         }
         let project = project::Project::new(data).unwrap();
         let mut settings = ExportSettings::from_project(&project);

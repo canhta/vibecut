@@ -5,16 +5,17 @@ use render::{
     effects::{EffectCompositor, EffectInputs, EffectPass},
 };
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     sync::{Arc, mpsc},
     time::Duration,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ComputePass<'a> {
     entry_point: &'static str,
     horizontal: bool,
-    values: &'a [f32],
+    values: Cow<'a, [f32]>,
 }
 
 pub struct GpuEffects {
@@ -277,7 +278,7 @@ impl EffectCompositor for GpuEffects {
         let pass = ComputePass {
             entry_point: "blend",
             horizontal: false,
-            values: &values,
+            values: Cow::Borrowed(&values),
         };
         let result = self.execute(
             item,
@@ -307,9 +308,9 @@ impl EffectCompositor for GpuEffects {
         self.execute(
             item,
             passes.iter().map(|pass| ComputePass {
-                entry_point: pass.entry_point,
-                horizontal: pass.horizontal,
-                values: &pass.weights,
+                entry_point: pass.entry_point(),
+                horizontal: pass.horizontal(),
+                values: pass.values(),
             }),
             inputs,
             hooks,

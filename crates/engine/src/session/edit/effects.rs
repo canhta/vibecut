@@ -56,7 +56,7 @@ pub(super) fn execute_update_effect_param(
         .iter_mut()
         .find(|e| e.id == effect)
         .ok_or(EditError::Invalid("missing effect"))?;
-    effect.params.set_scalar(&key, value)?;
+    effect.set_scalar(&key, value)?;
 
     Ok(data)
 }

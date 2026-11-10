@@ -2,7 +2,7 @@
 use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError, Result};
-use project::EffectParams;
+use project::EffectInstance;
 use render::effects::{EffectCompositor, EffectInputs};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -44,9 +44,9 @@ impl EffectThumbnails {
         &self,
         runner: &mut JobRunner,
         source: Arc<render::Image>,
-        params: EffectParams,
+        effect: EffectInstance,
     ) -> Result<(JobId, CancelToken)> {
-        params.validate()?;
+        effect.validate()?;
         if source.width().max(source.height()) > MAX_THUMBNAIL_EDGE {
             return Err(EditError::Limit);
         }
@@ -58,7 +58,8 @@ impl EffectThumbnails {
                 hash.update(&value.to_le_bytes());
             }
         }
-        let settings = serde_json::to_vec(&params).map_err(|_| EditError::InvalidParams)?;
+        let settings = serde_json::to_vec(&(&effect.kind, &effect.params))
+            .map_err(|_| EditError::InvalidParams)?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
             source: *hash.finalize().as_bytes(),
@@ -96,22 +97,13 @@ impl EffectThumbnails {
                         return Ok(result);
                     }
                 }
-                let passes = match params {
-                    EffectParams::Blur { intensity } => {
-                        render::effects::blur_passes(intensity, source.width(), source.height())?
-                    }
-                    EffectParams::ColorGrade {
-                        brightness,
-                        contrast,
-                        saturation,
-                        hue,
-                    } => render::effects::grade_passes(brightness, contrast, saturation, hue)?,
-                    EffectParams::ChromaKey {
-                        key_color,
-                        intensity,
-                        shadow,
-                    } => render::effects::chroma_key_passes(key_color, intensity, shadow)?,
-                };
+                let passes = render::effects::evaluate_effect(
+                    &project::Animations::default(),
+                    &effect,
+                    time::Tick::ZERO,
+                    source.width(),
+                    source.height(),
+                )?;
                 let image = cache.adapter.apply(
                     &source,
                     &passes,

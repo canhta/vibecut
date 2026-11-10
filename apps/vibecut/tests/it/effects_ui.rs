@@ -10,9 +10,7 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
-use project::{
-    Color, EffectInstance, EffectParams, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind,
-};
+use project::{Color, EffectValue, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -102,10 +100,10 @@ fn add_effect(session: &mut Session, item: ItemId, id: &str, enabled: bool) {
     session
         .apply(Command::AddEffect {
             item,
-            effect: EffectInstance {
-                id: id.into(),
-                enabled,
-                params: EffectParams::Blur { intensity: 15.0 },
+            effect: {
+                let mut effect = project::effect_definition("blur").unwrap().instance(id);
+                effect.enabled = enabled;
+                effect
             },
         })
         .unwrap();
@@ -588,9 +586,11 @@ fn effect_param_scrub_reverses_cancels_and_commits_once() {
     let mut harness = build(editor);
     harness.run_steps(3);
     open_effect_tabs(&mut harness, video);
-    let intensity = |harness: &Harness<Editor>| match effects(harness, video)[0].params {
-        project::EffectParams::Blur { intensity } => intensity,
-        _ => panic!("not a blur"),
+    let intensity = |harness: &Harness<Editor>| {
+        effects(harness, video)[0]
+            .value("intensity")
+            .and_then(EffectValue::scalar)
+            .expect("a blur intensity")
     };
 
     let history = harness.state().session.history_len();
@@ -861,14 +861,15 @@ fn effect_preferences_round_trip_through_the_app_store() {
 fn grade(harness: &Harness<Editor>, id: ItemId) -> Option<[f64; 4]> {
     effects(harness, id)
         .into_iter()
-        .find_map(|effect| match effect.params {
-            project::EffectParams::ColorGrade {
-                brightness,
-                contrast,
-                saturation,
-                hue,
-            } => Some([brightness, contrast, saturation, hue]),
-            _ => None,
+        .filter(|effect| effect.kind == "color_grade")
+        .find_map(|effect| {
+            let scalar = |key: &str| effect.value(key)?.scalar();
+            Some([
+                scalar("brightness")?,
+                scalar("contrast")?,
+                scalar("saturation")?,
+                scalar("hue")?,
+            ])
         })
 }
 
@@ -961,17 +962,17 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
 fn chroma(harness: &Harness<Editor>, id: ItemId) -> Option<project::EffectInstance> {
     effects(harness, id)
         .into_iter()
-        .find(|effect| matches!(effect.params, project::EffectParams::ChromaKey { .. }))
+        .find(|effect| effect.kind == "chroma_key")
 }
 
 fn chroma_parts(harness: &Harness<Editor>, id: ItemId) -> Option<(project::Color, f64, f64, bool)> {
-    chroma(harness, id).and_then(|effect| match effect.params {
-        project::EffectParams::ChromaKey {
-            key_color,
-            intensity,
-            shadow,
-        } => Some((key_color, intensity, shadow, effect.enabled)),
-        _ => None,
+    chroma(harness, id).and_then(|effect| {
+        Some((
+            effect.value("key_color")?.color()?,
+            effect.value("intensity")?.scalar()?,
+            effect.value("shadow")?.scalar()?,
+            effect.enabled,
+        ))
     })
 }
 
@@ -1018,15 +1019,18 @@ fn add_chroma_effect(session: &mut Session, item: ItemId) {
     session
         .apply(Command::AddEffect {
             item,
-            effect: EffectInstance {
-                id: "chroma_key".into(),
-                enabled: true,
-                params: EffectParams::ChromaKey {
-                    key_color: Color([0, 255, 0, 255]),
-                    intensity: project::CHROMA_KEY_INTENSITY_DEFAULT,
-                    shadow: 0.0,
-                },
-            },
+            effect: project::effect_definition("chroma_key")
+                .unwrap()
+                .instance("chroma_key")
+                .with("key_color", EffectValue::Color(Color([0, 255, 0, 255])))
+                .unwrap()
+                .with(
+                    "intensity",
+                    EffectValue::Scalar(project::CHROMA_KEY_INTENSITY_DEFAULT),
+                )
+                .unwrap()
+                .with("shadow", EffectValue::Scalar(0.0))
+                .unwrap(),
         })
         .unwrap();
 }

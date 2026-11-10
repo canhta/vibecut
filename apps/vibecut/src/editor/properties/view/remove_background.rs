@@ -47,30 +47,30 @@ impl Panel<'_, '_> {
             },
         );
         let picked = read::chroma_key_color(project, item, &effect);
-        let default = project::chroma_key_color(project::CHROMA_KEY_COLOR_DEFAULT).ok();
+        let default = project::CHROMA_KEY_COLOR_DEFAULT;
         self.eyedropper_row(
             ui,
             item,
             Some(effect.as_str()),
-            picked.is_some_and(|color| Some(color) != default),
+            picked.is_some_and(|color| color != default),
         );
         ui.add_space(theme::space::MD);
         let Some(definition) = project::effect_definitions()
             .iter()
-            .find(|definition| definition.kind == "chroma_key")
+            .find(|definition| definition.id == "chroma_key")
         else {
             return;
         };
         let at = self.effect_time(item);
         for parameter in definition.params {
-            if parameter.key == "key_color" {
+            if parameter.id == "key_color" {
                 continue;
             }
             let Some(current) = read::effect_param_value_at(
                 self.cx.session.project(),
                 item,
                 &effect,
-                parameter.key,
+                parameter.id,
                 at,
             ) else {
                 continue;

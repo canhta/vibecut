@@ -15,7 +15,7 @@ use super::{
     MediaSortKey, MediaSortOrder, MediaView, NewItem, PathBuf, Rect, Result, SelectionScopes,
     SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, ThumbnailOutcome,
     ThumbnailSource, Tick, Toast, TrackKind, UnsupportedReason, Vec2, display_short_time,
-    display_time, effect_preview_params, egui, error_detail, icons, media_panel, theme,
+    display_time, effect_preview_instance, egui, error_detail, icons, media_panel, theme,
 };
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};
 

@@ -94,7 +94,7 @@ passed as protected paths.
 
 `effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail` jobs through
 the runner. Callers supply an accounted, downsampled working-space source image and registered
-`EffectParams`; the result is straight sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
+an `EffectInstance`; the result is straight sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
 bounds the edge and `MAX_THUMBNAILS` the cache, charged to the runner's shared byte budget. The
 cache belongs to one adapter lifetime; keys hash source pixels, geometry and canonical typed
 params. Consumers request on source or param changes; there is no timer or fixed cadence.

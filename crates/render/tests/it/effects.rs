@@ -109,7 +109,7 @@ fn effects_refuse_budget_cancel_and_invalid_pass() {
         Err(Error::Cancelled)
     ));
     cancelled.state.store(0, Ordering::SeqCst);
-    let bad = EffectPass {
+    let bad = EffectPass::Convolve {
         entry_point: "unknown",
         horizontal: true,
         weights: vec![1.0],
@@ -144,11 +144,13 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: vec![],
-        effects: vec![EffectInstance {
-            id: "b".into(),
-            enabled: true,
-            params: EffectParams::Blur { intensity: 100.0 },
-        }],
+        effects: vec![
+            effect_definition("blur")
+                .unwrap()
+                .instance("b")
+                .with("intensity", EffectValue::Scalar(100.0))
+                .unwrap(),
+        ],
         animations: Default::default(),
         id: ItemId(1),
         source_asset: None,
@@ -328,10 +330,9 @@ fn color_grade_refuses_hostile_values_and_bad_passes() {
         vec![1.0, 1.0, f32::NAN, 0.0],
     ] {
         assert!(
-            validate_pass(&EffectPass {
+            validate_pass(&EffectPass::Pixel {
                 entry_point: "grade",
-                horizontal: false,
-                weights,
+                uniforms: weights.into_iter().map(Uniform::Float).collect(),
             })
             .is_err()
         );
@@ -354,7 +355,7 @@ fn keyed(key: [u8; 4], intensity: f64, shadow: f64, pixel: [f32; 4]) -> [f32; 4]
     let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
     passes
         .first()
-        .map_or(pixel, |pass| chroma_key_pixel(pixel, &pass.weights))
+        .map_or(pixel, |pass| chroma_key_pixel(pixel, &pass.values()))
 }
 const GREEN_KEY: [u8; 4] = [0, 255, 0, 255];
 
@@ -443,10 +444,9 @@ fn chroma_key_refuses_hostile_values_and_bad_passes() {
         vec![0.0, 1.0, 0.0, 0.4, 1.5],
     ] {
         assert!(
-            validate_pass(&EffectPass {
+            validate_pass(&EffectPass::Pixel {
                 entry_point: "chroma_key",
-                horizontal: false,
-                weights,
+                uniforms: weights.into_iter().map(Uniform::Float).collect(),
             })
             .is_err()
         );
@@ -502,30 +502,34 @@ fn masked_item_chroma_key_composes_with_track_below() {
             .unwrap()
     };
     // An exact-keyed item contributes no pixels, so the track below survives.
-    let keyed_out = render(vec![EffectInstance {
-        id: "chroma_key".into(),
-        enabled: true,
-        params: EffectParams::ChromaKey {
-            key_color: Color(GREEN_KEY),
-            intensity: 40.0,
-            shadow: 0.0,
-        },
-    }]);
+    let keyed_out = render(vec![
+        effect_definition("chroma_key")
+            .unwrap()
+            .instance("chroma_key")
+            .with("key_color", EffectValue::Color(Color(GREEN_KEY)))
+            .unwrap()
+            .with("intensity", EffectValue::Scalar(40.0))
+            .unwrap()
+            .with("shadow", EffectValue::Scalar(0.0))
+            .unwrap(),
+    ]);
     let at = |image: &Image, x: usize| image.pixels()[20 * 40 + x];
     for x in [5, 35] {
         assert_eq!(at(&keyed_out, x), [0.0, 0.0, 1.0, 1.0], "x={x}");
     }
     // A near key keeps partial alpha: inside the mask it blends, outside it is
     // fully masked out by the coverage stage after the effect.
-    let partial = render(vec![EffectInstance {
-        id: "chroma_key".into(),
-        enabled: true,
-        params: EffectParams::ChromaKey {
-            key_color: Color([0, 255, 60, 255]),
-            intensity: 40.0,
-            shadow: 0.0,
-        },
-    }]);
+    let partial = render(vec![
+        effect_definition("chroma_key")
+            .unwrap()
+            .instance("chroma_key")
+            .with("key_color", EffectValue::Color(Color([0, 255, 60, 255])))
+            .unwrap()
+            .with("intensity", EffectValue::Scalar(40.0))
+            .unwrap()
+            .with("shadow", EffectValue::Scalar(0.0))
+            .unwrap(),
+    ]);
     let inside = at(&partial, 5);
     let outside = at(&partial, 35);
     // Inside: the partly keyed green keeps some transparency, so the blue
@@ -580,19 +584,138 @@ fn masked_item_grade_applies_only_inside_the_mask() {
             .unwrap()
     };
     let plain = render(vec![]);
-    let bright = render(vec![EffectInstance {
-        id: "color_grade".into(),
-        enabled: true,
-        params: EffectParams::ColorGrade {
-            brightness: 50.0,
-            contrast: 0.0,
-            saturation: 0.0,
-            hue: 0.0,
-        },
-    }]);
+    let bright = render(vec![
+        effect_definition("color_grade")
+            .unwrap()
+            .instance("color_grade")
+            .with("brightness", EffectValue::Scalar(50.0))
+            .unwrap()
+            .with("contrast", EffectValue::Scalar(0.0))
+            .unwrap()
+            .with("saturation", EffectValue::Scalar(0.0))
+            .unwrap()
+            .with("hue", EffectValue::Scalar(0.0))
+            .unwrap(),
+    ]);
     let at = |image: &Image, x: usize| image.pixels()[20 * 40 + x];
     // Inside the mask the grade doubles the linear value; outside is transparent.
     assert!(at(&bright, 5)[0] > at(&plain, 5)[0] * 1.5);
     assert_eq!(at(&bright, 35)[3], 0.0);
     assert_eq!(at(&plain, 35)[3], 0.0);
+}
+
+#[test]
+fn every_catalog_kind_has_an_evaluator_and_frames_carry_item_local_time() {
+    use project::*;
+    use time::Tick;
+    let none = Animations::default();
+    for definition in effect_definitions() {
+        let evaluate = evaluator(definition.id)
+            .unwrap_or_else(|| panic!("{} has no evaluator", definition.id));
+        let frame =
+            EffectFrame::new(&none, &definition.instance("one"), Tick::ZERO, 64, 36).unwrap();
+        for pass in evaluate(&frame).unwrap() {
+            validate_pass(&pass).unwrap();
+        }
+    }
+    assert!(evaluator("nope").is_none());
+
+    // The frame hands time-driven effects the item-local time and resolves a
+    // keyframed scalar to its hard range, whatever the curve says.
+    let mut animations = Animations::default();
+    animations
+        .set(
+            AnimationPath::new("effects.b.params.intensity").unwrap(),
+            Param::new(ParamValue::Scalar(1000.0)).unwrap(),
+        )
+        .unwrap();
+    let blur = effect_definition("blur").unwrap().instance("b");
+    let at = Tick(254_016_000_000 / 2);
+    let frame = EffectFrame::new(&animations, &blur, at, 64, 36).unwrap();
+    assert_eq!(frame.local, at);
+    assert_eq!(frame.seconds, 0.5);
+    assert_eq!((frame.width, frame.height), (64, 36));
+    assert_eq!(frame.scalar("intensity").unwrap(), 100.0);
+    assert!(
+        frame.color("intensity").is_err(),
+        "typed accessors refuse other kinds"
+    );
+    assert!(frame.scalar("nope").is_err());
+    let unkeyed = EffectFrame::new(&none, &blur, at, 64, 36).unwrap();
+    assert_eq!(unkeyed.scalar("intensity").unwrap(), 15.0);
+}
+
+#[test]
+fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
+    use project::*;
+    use time::{FrameRate, SourceRange, Tick};
+    struct GaussianOnly(std::sync::atomic::AtomicUsize);
+    impl EffectCompositor for GaussianOnly {
+        fn apply(
+            &self,
+            item: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn render::ExecutionHooks,
+        ) -> render::Result<Image> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            if passes
+                .iter()
+                .any(|pass| !matches!(pass, EffectPass::Convolve { .. }))
+            {
+                return Err(render::Error::Unsupported("GPU shader entry"));
+            }
+            CpuEffects.apply(item, passes, inputs, hooks)
+        }
+    }
+    let hooks = Hooks::default();
+    let mut data = Project::empty(ProjectId(1), "grade".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 36;
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "V".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: vec![],
+            effects: vec![
+                effect_definition("color_grade")
+                    .unwrap()
+                    .instance("g")
+                    .with("brightness", EffectValue::Scalar(50.0))
+                    .unwrap(),
+            ],
+            animations: Default::default(),
+            id: ItemId(1),
+            source_asset: None,
+            source_range: SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap())
+                .unwrap(),
+            start: Tick::ZERO,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([100, 50, 20, 255]),
+            }),
+        }],
+    });
+    let project = Project::new(data).unwrap();
+    let render = |settings: RenderSettings| {
+        Renderer::new(&project, settings)
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut FileSources::default(), &hooks)
+            .unwrap()
+    };
+    let reference = render(RenderSettings::from_project(&project));
+    let adapter = Arc::new(GaussianOnly(Default::default()));
+    let mut settings = RenderSettings::from_project(&project);
+    settings.effects = Some(adapter.clone());
+    let fallback = render(settings);
+    assert_eq!(adapter.0.load(Ordering::SeqCst), 1, "the adapter was asked");
+    assert_eq!(fallback.pixels(), reference.pixels());
 }

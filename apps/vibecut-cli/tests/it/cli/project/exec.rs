@@ -244,7 +244,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                 exec(
                     &project,
                     "effects.add",
-                    json!({"item":0,"effect":{"id":"color_grade","enabled":true,"params":{"kind":"color_grade","brightness":0.0,"contrast":0.0,"saturation":0.0,"hue":0.0}}}),
+                    json!({"item":0,"effect":{"id":"color_grade","kind":"color_grade","enabled":true,"params":{"brightness":{"kind":"scalar","value":0.0},"contrast":{"kind":"scalar","value":0.0},"saturation":{"kind":"scalar","value":0.0},"hue":{"kind":"scalar","value":0.0}}}}),
                 );
                 for (key, value) in [("brightness", 50.0), ("saturation", -50.0)] {
                     exec(
@@ -259,7 +259,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                 exec(
                     &project,
                     "effects.add",
-                    json!({"item":0,"effect":{"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}}}),
+                    json!({"item":0,"effect":{"id":"chroma_key","kind":"chroma_key","enabled":true,"params":{"key_color":{"kind":"color","value":[0,255,0,255]},"intensity":{"kind":"scalar","value":40.0},"shadow":{"kind":"scalar","value":0.0}}}}),
                 );
                 exec(
                     &project,
@@ -271,7 +271,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                 exec(
                     &project,
                     "effects.add",
-                    json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
+                    json!({"item":0,"effect":{"id":"blur","kind":"blur","enabled":true,"params":{"intensity":{"kind":"scalar","value":100.0}}}}),
                 );
             }
         }

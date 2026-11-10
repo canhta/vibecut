@@ -1,7 +1,7 @@
 //! Prepares the area's read-only workflow projection before rendering.
 use super::{
     AssetRow, AssetState, AssetsTab, BTreeMap, Editor, EffectRow, Icon, MediaKind, Model, Row,
-    Text, asset_row, effect_preview_params, egui, file_name,
+    Text, asset_row, effect_preview_instance, egui, file_name,
 };
 
 pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
@@ -67,43 +67,43 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
     if editor.preferences.assets_tab == AssetsTab::Effects {
         for definition in project::effect_definitions()
             .iter()
-            .filter(|definition| definition.placement == project::EffectPlacement::Library)
+            .filter(|definition| definition.shelf.in_library())
         {
-            let params = effect_preview_params(definition);
+            let params = effect_preview_instance(definition);
             if let (Some(previews), Some(params)) = (&mut editor.effect_previews, params.as_ref()) {
-                previews.ensure(definition.kind, params);
+                previews.ensure(definition.id, params);
             }
             let status = editor
                 .effect_previews
                 .as_ref()
-                .and_then(|previews| previews.status(definition.kind));
+                .and_then(|previews| previews.status(definition.id));
             if matches!(
                 status,
                 Some(crate::effect_previews::EffectPreviewStatus::Ready)
             ) {
-                if !editor.effect_textures.contains_key(definition.kind)
+                if !editor.effect_textures.contains_key(definition.id)
                     && let Some(image) = editor
                         .effect_previews
                         .as_ref()
-                        .and_then(|previews| previews.image(definition.kind))
+                        .and_then(|previews| previews.image(definition.id))
                 {
                     editor.effect_textures.insert(
-                        definition.kind.to_owned(),
-                        crate::effect_previews::preview_texture(ctx, definition.kind, image),
+                        definition.id.to_owned(),
+                        crate::effect_previews::preview_texture(ctx, definition.id, image),
                     );
                 }
             } else {
-                editor.effect_textures.remove(definition.kind);
+                editor.effect_textures.remove(definition.id);
             }
             effects.push(EffectRow {
-                kind: definition.kind,
-                name: if definition.kind == "blur" {
+                kind: definition.id,
+                name: if definition.id == "blur" {
                     editor.tr(Text::EffectBlur)
                 } else {
                     definition.name
                 },
                 status,
-                texture: editor.effect_textures.get(definition.kind).cloned(),
+                texture: editor.effect_textures.get(definition.id).cloned(),
             });
         }
     }

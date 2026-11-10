@@ -16,8 +16,7 @@ use super::{
     EffectReorder, ElementKind, Error, Icon, Id, ItemId, ItemParamPatch, ItemParams, OPACITY_SCRUB,
     Picker, PropertiesTab, Rect, Result, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
     SelectionScope, Session, StreamKind, TEXT_SIZE_SCRUB, Text, Tick, TrackKind, Vec2,
-    effect_definition, effect_params_from_definition, effect_scrub_spec, egui, error_detail, icons,
-    shared_fields, theme,
+    effect_scrub_spec, egui, error_detail, icons, shared_fields, theme,
 };
 
 use workflow::transform_scrub;

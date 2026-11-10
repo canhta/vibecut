@@ -8,7 +8,7 @@ consumes the editor's read-only context and returns `Action` values the frame ro
 
 ## Effects panel
 
-The Effects tab lists `project::effect_definitions()` as draggable tiles. Each tile
+The Effects tab lists the library-shelf entries of `project::effect_definitions()` as draggable tiles. Each tile
 previews through the engine `EffectThumbnails` job and cache: the CPU reference
 compositor headlessly, the playback GPU adapter and its byte budget in native
 startup. Pending, failed and ready states stay visible; a failed tile offers Retry. A

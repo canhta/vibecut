@@ -273,7 +273,11 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             .submit(
                 &mut runner,
                 source.clone(),
-                project::EffectParams::Blur { intensity: 100.0 },
+                project::effect_definition("blur")
+                    .unwrap()
+                    .instance("blur")
+                    .with("intensity", project::EffectValue::Scalar(100.0))
+                    .unwrap(),
             )
             .unwrap();
         loop {

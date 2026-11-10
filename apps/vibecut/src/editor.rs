@@ -433,81 +433,32 @@ fn error_detail(error: &dyn std::error::Error) -> String {
     }
     parts.join(": ")
 }
-fn effect_definition(params: &project::EffectParams) -> Option<&'static project::EffectDefinition> {
-    project::effect_definitions()
-        .iter()
-        .find(|definition| definition.kind == params.kind())
-}
-fn effect_params_from_definition(
+/// A library tile must read as the effect at a glance, so previews use the
+/// admitted maximum of the leading scalar rather than the insertion default.
+fn effect_preview_instance(
     definition: &project::EffectDefinition,
-) -> Option<project::EffectParams> {
-    match definition.kind {
-        "blur" => {
-            let intensity = definition
-                .params
-                .iter()
-                .find(|parameter| parameter.key == "intensity")
-                .map_or(15.0, |parameter| parameter.default);
-            Some(project::EffectParams::Blur { intensity })
-        }
-        "color_grade" => {
-            let value = |key: &str| {
-                definition
-                    .params
-                    .iter()
-                    .find(|parameter| parameter.key == key)
-                    .map_or(0.0, |parameter| parameter.default)
-            };
-            Some(project::EffectParams::ColorGrade {
-                brightness: value("brightness"),
-                contrast: value("contrast"),
-                saturation: value("saturation"),
-                hue: value("hue"),
-            })
-        }
-        "chroma_key" => {
-            let value = |key: &str| {
-                definition
-                    .params
-                    .iter()
-                    .find(|parameter| parameter.key == key)
-                    .map_or(0.0, |parameter| parameter.default)
-            };
-            Some(project::EffectParams::ChromaKey {
-                key_color: project::chroma_key_color(value("key_color")).ok()?,
-                intensity: value("intensity"),
-                shadow: value("shadow"),
-            })
-        }
-        _ => None,
+) -> Option<project::EffectInstance> {
+    let mut instance = definition.instance(definition.id);
+    if definition.id == "blur" {
+        let (_, max) = definition.param("intensity")?.scalar_range()?;
+        instance.set_scalar("intensity", max).ok()?;
+        return Some(instance);
     }
-}
-fn effect_preview_params(definition: &project::EffectDefinition) -> Option<project::EffectParams> {
-    match definition.kind {
-        "blur" => {
-            // A catalog tile must read as the effect at a glance, so use the
-            // admitted maximum rather than the insertion default.
-            let intensity = definition
-                .params
-                .iter()
-                .find(|parameter| parameter.key == "intensity")
-                .map_or(100.0, |parameter| parameter.max);
-            Some(project::EffectParams::Blur { intensity })
-        }
-        _ => None,
-    }
+    None
 }
 fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> ScrubSpec {
-    let step = if parameter.max - parameter.min <= 1.0 {
-        0.01
-    } else {
-        1.0
+    let (min, max) = match parameter.kind {
+        project::EffectParamKind::Float {
+            soft_min, soft_max, ..
+        } => (soft_min, soft_max),
+        _ => parameter.scalar_range().unwrap_or((0.0, 1.0)),
     };
+    let step = if max - min <= 1.0 { 0.01 } else { 1.0 };
     ScrubSpec {
         field: "effect_param",
         label: Text::EffectIntensity,
-        min: parameter.min,
-        max: parameter.max,
+        min,
+        max,
         step,
         pixels_per_step: 2.0,
         decimals: if step < 1.0 { 2 } else { 0 },

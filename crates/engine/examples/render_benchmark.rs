@@ -232,11 +232,8 @@ fn export_benchmark(
             .first_mut()
             .and_then(|t| t.items.first_mut())
     {
-        item.effects.push(project::EffectInstance {
-            id: "blur".into(),
-            enabled: true,
-            params: Default::default(),
-        });
+        item.effects
+            .push(project::effect_definition("blur")?.instance("blur"));
     }
     let p = project::Project::new(d)?;
     let mut settings = render::ExportSettings::from_project(&p);

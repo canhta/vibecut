@@ -170,11 +170,11 @@ pub(crate) fn seed() -> Session {
                     blend_mode: Default::default(),
                     retime: Default::default(),
                     masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
-                    effects: vec![project::EffectInstance {
-                        id: "blur1".into(),
-                        enabled: true,
-                        params: Default::default(),
-                    }],
+                    effects: vec![
+                        project::effect_definition("blur")
+                            .unwrap()
+                            .instance("blur1"),
+                    ],
                     id: ItemId(1),
                     animations,
                     source_asset: None,

@@ -46,8 +46,8 @@ impl Editor {
                 assets::Action::RetryEffect(kind) => {
                     if let Some(definition) = project::effect_definitions()
                         .iter()
-                        .find(|definition| definition.kind == kind)
-                        && let Some(params) = crate::editor::effect_preview_params(definition)
+                        .find(|definition| definition.id == kind)
+                        && let Some(params) = crate::editor::effect_preview_instance(definition)
                         && let Some(previews) = &mut self.effect_previews
                     {
                         previews.retry(kind, &params);

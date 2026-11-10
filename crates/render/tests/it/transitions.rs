@@ -153,11 +153,13 @@ fn item_effects_masks_opacity_and_muted_hidden_tracks_compose_before_transition(
     let p = scene("cross_dissolve");
     let mut d = p.into_data();
     for item in &mut d.scene_mut().timeline.main.items {
-        item.effects.push(EffectInstance {
-            id: "blur".into(),
-            enabled: true,
-            params: EffectParams::Blur { intensity: 10. },
-        });
+        item.effects.push(
+            effect_definition("blur")
+                .unwrap()
+                .instance("blur")
+                .with("intensity", EffectValue::Scalar(10.))
+                .unwrap(),
+        );
         item.masks
             .push(Mask::new("rectangle", MaskShape::Rectangle));
         item.animations

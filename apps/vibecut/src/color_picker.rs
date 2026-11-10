@@ -82,10 +82,7 @@ impl ColorTarget {
                 .effects
                 .iter()
                 .find(|candidate| candidate.id == *effect)
-                .and_then(|candidate| match candidate.params {
-                    project::EffectParams::ChromaKey { key_color, .. } => Some(key_color),
-                    _ => None,
-                })
+                .and_then(|candidate| candidate.value("key_color")?.color())
                 .ok_or(Error::Invalid("chroma key colour target")),
             _ => Err(Error::Invalid("colour target")),
         }

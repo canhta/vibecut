@@ -197,11 +197,7 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
         .first_mut()
         .unwrap()
         .effects
-        .push(project::EffectInstance {
-            id: "blur".into(),
-            enabled: true,
-            params: Default::default(),
-        });
+        .push(project::effect_definition("blur").unwrap().instance("blur"));
     let project = project::Project::new(data).unwrap();
     let mut settings = render::RenderSettings::from_project(&project);
     settings.effects = Some(std::sync::Arc::new(WrongDimensions));
