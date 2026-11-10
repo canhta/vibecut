@@ -263,10 +263,10 @@ impl Cue {
         if let Some((_, text)) = self.texts.get_key_value(&self.source_lang) {
             return Some(text);
         }
-        let wanted = primary(self.source_lang.as_str());
+        let wanted = self.source_lang.primary();
         self.texts
             .iter()
-            .find(|(tag, _)| primary(tag.as_str()) == wanted)
+            .find(|(tag, _)| tag.primary() == wanted)
             .map(|(_, text)| text)
     }
 
@@ -297,11 +297,6 @@ impl Cue {
 pub struct CueWord {
     pub text: NfcText,
     pub range: SourceRange,
-}
-
-/// The primary subtag of a BCP 47 tag.
-pub(crate) fn primary(tag: &str) -> &str {
-    tag.split('-').next().unwrap_or(tag)
 }
 
 /// UAX #29 word segments that contain a letter or digit, in source order.

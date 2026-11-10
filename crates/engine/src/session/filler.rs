@@ -52,7 +52,7 @@ pub(crate) fn scene_candidates(
                 })
                 .flatten()
             {
-                tags.entry(primary(cue.source_lang.as_str()).to_owned())
+                tags.entry(cue.source_lang.primary().to_owned())
                     .or_insert_with(|| cue.source_lang.clone());
             }
             tags.into_values()
@@ -177,10 +177,6 @@ pub(crate) fn visible_words(data: &ProjectData) -> Result<BTreeMap<NfcText, (Wor
         }
     }
     Ok(output)
-}
-
-fn primary(tag: &str) -> &str {
-    tag.split('-').next().unwrap_or_default()
 }
 
 impl From<FillerOccurrence> for super::wire::FillerCandidate {

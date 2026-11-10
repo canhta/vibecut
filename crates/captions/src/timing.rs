@@ -251,9 +251,11 @@ impl TimingSpans {
         range: SourceRange,
         language: &crate::LanguageTag,
     ) -> Result<(), Error> {
-        if self.variant.as_ref().is_some_and(|v| {
-            v.language.as_str().split('-').next() != language.as_str().split('-').next()
-        }) {
+        if self
+            .variant
+            .as_ref()
+            .is_some_and(|v| v.language.primary() != language.primary())
+        {
             return Err(Error::Invalid("display variant changes source language"));
         }
         if self.normalized.text() != text

@@ -20,13 +20,20 @@ impl LanguageTag {
         &self.0
     }
 
+    /// The lowercase primary language subtag, e.g. `zh` for `zh-Hans` or `en`
+    /// for `en-US`. [`LanguageTag::parse`] standardizes casing, so no caller
+    /// needs to lowercase the result.
+    pub fn primary(&self) -> &str {
+        self.0.split('-').next().unwrap_or(self.as_str())
+    }
+
     /// Whether adjacent words in this language are written with an inter-word
     /// space. Chinese and Japanese write Han and Kana runs without one; the
     /// segmentation policy already states "Chinese gets no inserted spaces".
     /// Source: CLDR script metadata (Han, Hiragana, Katakana and Bopomofo are
     /// unspaced scripts) plus `crates/captions/src/segment/README.md`.
     pub fn joins_with_space(&self) -> bool {
-        !matches!(crate::primary(self.as_str()), "zh" | "ja")
+        !matches!(self.primary(), "zh" | "ja")
     }
 }
 impl TryFrom<String> for LanguageTag {

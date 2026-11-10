@@ -134,15 +134,9 @@ impl FillerLexicon {
     /// The shipped lexicon for a language tag: its primary subtag selects the
     /// reviewed data file, and the full requested tag is retained for cue lookup.
     pub fn builtin(language: &LanguageTag) -> Result<Self, Error> {
-        let primary = language
-            .as_str()
-            .split('-')
-            .next()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
         let json = BUILTIN
             .iter()
-            .find(|(tag, _)| *tag == primary)
+            .find(|(tag, _)| *tag == language.primary())
             .map(|(_, json)| *json)
             .ok_or(Error::NoFillerLexicon)?;
         let mut lexicon = Self::parse(json)?;
@@ -168,7 +162,7 @@ pub fn detect_fillers(
     for cue in &track.cues {
         // Word ranges are recognition timing; a lexicon for another language
         // must never pair with this cue's source text.
-        if crate::primary(lexicon.language.as_str()) != crate::primary(cue.source_lang.as_str()) {
+        if lexicon.language.primary() != cue.source_lang.primary() {
             continue;
         }
         let Some(text) = cue.source_text() else {

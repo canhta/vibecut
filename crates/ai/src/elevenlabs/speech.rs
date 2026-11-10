@@ -610,7 +610,7 @@ fn build_body(
     settings: ElevenLabsSpeechSettings,
 ) -> Result<Vec<u8>, Error> {
     let language_code = if model.sends_language_code() {
-        Some(base_language(request.language().language.as_str()))
+        Some(request.language().language.primary())
     } else {
         None
     };
@@ -629,10 +629,6 @@ fn build_body(
         return Err(Error::Payload);
     }
     Ok(body)
-}
-
-fn base_language(tag: &str) -> &str {
-    tag.split('-').next().unwrap_or(tag)
 }
 
 fn nonempty(value: String) -> Option<String> {

@@ -268,13 +268,7 @@ impl Aligner for CandleAligner {
         } = &mut *runtime;
         let profile = self.profiles.profile(&request.scope.source_language);
         let (text_tokens, units) = tokenize::encode(tokenizer, missing, profile, *eot)?;
-        let language = request
-            .scope
-            .source_language
-            .as_str()
-            .split('-')
-            .next()
-            .ok_or(Error::UnsupportedLanguage)?;
+        let language = request.scope.source_language.primary();
         let lang = tokenizer
             .token_to_id(&format!("<|{language}|>"))
             .ok_or(Error::UnsupportedLanguage)?;

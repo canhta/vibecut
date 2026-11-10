@@ -74,7 +74,7 @@ impl FillerRequest {
             };
             let spans = item.word_spans()?;
             for cue in &params.cues.cues {
-                if primary(cue.source_lang.as_str()) != primary(language.as_str()) {
+                if cue.source_lang.primary() != language.primary() {
                     continue;
                 }
                 let Some(text) = cue.source_text() else {
@@ -280,8 +280,4 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EditError> {
         }
     }
     Ok(candidates)
-}
-
-fn primary(tag: &str) -> &str {
-    tag.split('-').next().unwrap_or_default()
 }
