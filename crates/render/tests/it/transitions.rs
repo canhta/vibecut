@@ -1,4 +1,4 @@
-﻿#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 use super::support::{Empty, Hooks};
 use project::*;
 use render::*;
@@ -8,109 +8,607 @@ use time::{SourceRange, Tick};
 
 /// One row per catalogue kind: a 4x4 grid of mean 8-bit RGB at progress 0.25, 0.5 and 0.75.
 const ORACLE: &[(&str, [&str; 3])] = &[
-    ("cross_dissolve", ["906e7cac6e7cc6747cd66e7c8f8385ab8385d7a285d5838590948dac948dc99d8dd6948d90a294aba294c2a294d6a294", "7d7693937693ac7e93b676937c87a09287a0d3bda0b587a07c96ac9396acb4a6acb596ac7ca3b892a3b8a5a3b8b5a3b8", "647ca5737ca58b88a58b7ca5638bb6728bb6ced4b68a8bb66398c67298c699afc68b98c663a4d472a4d47fa4d48aa4d4"]),
-    ("dip_to_black", ["7549428d4942a04942b14942745b428c5b42a05b42b15b427569428d6942a06942b169427475428c7542a07542b17542", "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "2c5e842c5e843b68842c5e842c67932c679391aa932c67932c70a02c70a04d85a02c70a02c77ad2c77ad2c77ad2c77ad"]),
-    ("dip_to_white", ["d7c6c5e3c6c5eec6c5f8c6c5d7ccc5e2ccc5eeccc5f8ccc5d7d1c5e3d1c5eed1c5f8d1c5d7d7c5e2d7c5eed7c5f8d7c5", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "c0cddec0cddec5d2dec0cddec0d0e6c0d0e6e6f4e6c0d0e6c0d4eec0d4eecce0eec0d4eec0d8f5c0d8f5c0d8f5c0d8f5"]),
-    ("dip_to_color", ["c0524ccd524cda524ce5524cbf624ccd624cda624ce5624cc06f4ccd6f4cda6f4ce56f4cbf7a4ccd7a4cda7a4ce57a4c", "d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333", "a46488a46488aa6e88a46488a46d97a46d97d2ad97a46d97a475a4a475a4b389a4a475a4a47cb0a47cb0a47cb0a47cb0"]),
-    ("light_fade", ["a6889fc5889fe3909ff4889fa59facc49facf9ceacf39faca6b2b7c5b2b7e8c0b7f4b2b7a5c3c2c4c3c2dec3c2f3c3c2", "aba2c9c9a2c9e6adc9f7a2c9aab9dac8b9dafdf9daf5b9daabcdebc9cdebeadeebf6cdebaadef8c8def8e1def8f5def8", "8393bf9893bfb6a0bfba93bf83a6d298a6d2f6f5d2b9a6d283b6e398b6e3c3cde3bab6e383c4f398c4f3aac4f3b9c4f3"]),
-    ("film_fade", ["896e73a16e73ba7173c66e73888379a18379d69979c6837989937da1937dc09b7dc6937d88a282a1a282b5a282c6a282", "717489817489997c899a7489708794818794d1b4949a879471969d81969da4a49d9a969d70a3a681a3a68ea3a69aa3a6", "587b9f607b9f76869f6d7b9f588baf608bafccceaf6d8baf5898bc6098bc88adbc6d98bc58a4c960a4c967a4c96da4c9"]),
-    ("soft_focus_fade", ["a46965c16962db6962f0695fa17e61c17e63db7e63f17e63a29163c19163db9163f09162a2a162c1a163dba163f0a162", "817b98988197b08a97b781968088a1998fa1b499a1b88ea18095ac989aacb0a2acb79aac809fb595a1b4aaa4b4b5a1b4", "3f83b64485b66d9db64385b63f8fc95097c9afd4c94d95c93f9adb469ddb7fbbdb459cdb3fa4ea3fa4ea42a5ea3fa4ea"]),
-    ("burn_through", ["a1675dc1675ddb675df1675da07e5dc07e5dda7e5cf07e5da0915dc1915ddb915df1915ca0a15dbfa15cdaa25df0a15c", "c3836ebe8b87d58f809d96b4dd9a79d8a4a3dabe8ca79cad95a1baa0abdae6aa8d78a3d77fabd575ace2a5b5de8aadcc", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("brightness_fade", ["a1675dc1675ddb675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df0a25f", "8f6e788e75928789a55780b06889a75b8cbbc7e4c5418ec84b99d3419ada6bb6db3f9adb40a4ea3fa4eb3fa4eb3fa4eb", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("pixel_blocks", ["bb7f7cc87f7ce67f7cf57f7cbb7f7cc87f7ce67f7cf57f7cbb7f7cc87f7ce67f7cf57f7c9fa93faea93fd2a93fe6a93f", "3f92cf3f92cfe78563e785633f92cf3f92cfe78563e785633f92cf3f92cfe78563e785636f9ca96f9ca99c95a39c95a3", "3f8fca6dadcad3f0ca76b3ca3f8fca6dadcad3f0ca76b3ca3f8fca6dadcad3f0ca76b3ca3fa9f33fa9f33fa9f33fa9f3"]),
-    ("straight_wipe", ["4580adc1675ddb675df1675d478dc3c07e5dda7e5df07e5d4699d2c1915ddb915df1915d46a4e2c0a25ddba25df1a25d", "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5d3f9adb3f9adbdb915df1915d3fa4eb3fa4ebdba25df1a25d", "3f82b43f82b45390b4e668613f8fc93f8fc9c7e8c9e67f653f9adb3f9adb6bb6dbe692653fa4eb3fa4eb3fa4ebe6a267"]),
-    ("soft_edge_wipe", ["a1675ec1675ddb675df1675d9f7f5fc07e5dda7e5df07e5da0925fc1915ddb915df1915da0a260c0a25ddba25df1a25d", "667ba3897798b57b8bd46f7d668ab58a88a8d5b599d383886698c38996b5bba4a3d4948f66a4d28aa3c1afa3add3a298", "3f82b43f82b45390b44382b43f8fc93f8fc9c7e8c9448ec83f9adb3f9adb6bb6db439ada3fa4eb3fa4eb3fa4eb43a4ea"]),
-    ("clock_wipe", ["a1675dc1675d5390b43f82b4a07e5dc07e5dcadcb98789a0a1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d", "a1675dc1675d5390b43f82b4a07e5dc07e5dc7e8c93f8fc9a1915dc1915d6db6da3f9adba0a25dc0a25d44a4e73fa4eb", "a1675dc1675d5390b43f82b48e8174b97f63c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("corner_sweep", ["81717e4880ac5390b43f82b4a07e5db38063c8c6a33f8fc9a1915dc1915ddb915db4958ea0a25dc0a25ddba25df1a25d", "5a7ba03f82b45390b43f82b48b816a408ec8c7e8c93f8fc9a1915d7297a96bb6db3f9adba0a25db4a26648a4e53fa4eb", "487fad3f82b45390b43f82b45789a23f8fc9c7e8c93f8fc971959d3f9adb6bb6db3f9adb83a27f3fa4eb3fa4eb3fa4eb"]),
-    ("star_wipe", ["a1675db36969cc6a65f1675d9f7e5d6988a2d4c6a7f07e5da1915d7b96a4a4a69af1915da0a25dafa26ec7a270f1a25d", "7b70825d7ba976899bad7080578aa63f8fc9c7e8c9758aaa95936f3f9adb6bb6dbdc936993a26f40a4ea40a4eadca26e", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc95198bc3f9adb6bb6db6998c05fa3b23fa4eb3fa4eb87a3b7"]),
-    ("panel_wipe", ["3f82b49a6f6ddb675df1675d5b8bb0bf7f5eda7e5df07e5d92936bc1915ddb915df1915da0a25dc0a25ddba25df1a25d", "3f82b43f82b46389a6f1675d3f8fc93f8fc9d9a386f07e5d3f9adb6d97b1db915df1915d3fa4ebb2a274dba25df1a25d", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c95a8cba3f9adb3f9adb6db6dac494743fa4eb3fa4eb6ea4bff1a25d"]),
-    ("stair_wipe", ["6f7480c1675ddb675df1675d558cbcc07e5eda7e5df07e5d5399c6c0925edb915df1915d74a3a7c0a25ddba25df1a25d", "3f82b45c7c9cdb675df1675d3f8fc9418ec8da8b6bf07e5d3f9adb419adad19869f1915d3fa4eb5fa4ccdaa25ef1a25d", "3f82b43f82b45790b3e768643f8fc93f8fc9c7e8c9b2848d3f9adb3f9adb6bb6dbb095893fa4eb3fa4eb42a4eae7a269"]),
-    ("stretch_wipe", ["71789a9f7287cb6c72ee68617289ab9f8595ca817bed7f657197b89f959ecb937fee926572a3c59fa3a8caa286eda267", "3f82b43f82b44881b3727eab3f8fc93f8fc97fb0c798abbe3f9adb3f9adb489ad97399ce3fa4eb3fa4eb48a4e973a4de", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("neon_edge_wipe", ["6bd6eec2979cdb736ef1696171ddf6c1a79fdb8870f080616de3f6c2b59ddb9a6ef193616fe8f7c2c19edba96ff1a361", "4091c249c4eaddb6bcf27b78409dd549cbf4ddc2c1f18e7b40a7e649d2fbddcdbef19f7940b0f549d8feddd7bff1ae7a", "3f84b6408bbc57b5d8bbd1dc3f90ca4097d0c8f8e8bfd9e43f9bdc40a1e16fd1f5bde1df3fa6ec40abf143c3fdbee8e1"]),
-    ("circle_reveal", ["a1675dc1675ddb675df1675da07e5d8c8481daa78bf07e5da1915d919593b8a384f1915da0a25dc0a25ddba25df1a25d", "a1675d637aa57d8898f1675d9480673f8fc9c7e8c9e0806997926c3f9adb6bb6dbe09268a0a25d61a4c86aa4c2f1a25d", "6c76993f82b45390b48e7684518aaa3f8fc9c7e8c96e8ab35598bd3f9adb6bb6db6d98ba66a3ac3fa4eb3fa4eb91a3ac"]),
-    ("box_reveal", ["a1675dc1675ddb675df1675da07e5da58173da9473f07e5da1915da8937bcfa06ff1915da0a25dc0a25ddba25df1a25d", "a1675dc1675ddb675df1675da07e5d3f8fc9c7e8c9f07e5da1915d3f9adb6bb6dbf1915da0a25dc0a25ddba25df1a25d", "826e7e797490998290ba6e756187923f8fc9c7e8c99287a16896a83f9adb6bb6db8f969f7ca38179a4aa84a4aabda390"]),
-    ("diamond_reveal", ["a1675dc1675ddb675df1675da07e5d848588d9ae93f07e5da1915d889698bcad8df1915da0a25dc0a25ddba25df1a25d", "a1675d817392a18183f1675d69868f3f8fc9c7e8c99b869b6f969f3f9adb6bb6db999697a0a25d7da3a290a3a5f1a25d", "6b75983f82b45390b48c75893f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb66a4ad3fa4eb3fa4eb8ea4ac"]),
-    ("cross_reveal", ["a1675d9d6e7cba7471f1675d81827d5d8aa6d2cdb5be827f8594875f98b697b4bbbc947ba0a25d98a37db4a38bf1a25d", "a1675d3f82b45390b4f1675d3f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adba0a25d3fa4eb3fa4ebf1a25d", "577ba83f82b45390b4687b9a3f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb56a4cf3fa4eb3fa4eb68a4c4"]),
-    ("double_doors", ["a1675d88738e9e7979f1675da07e5d818585d9ae94f07e5da1915d869599aba290f1915da0a25d83a39a99a39df1a25d", "a1675d3f82b45390b4f1675da07e5d3f8fc9c7e8c9f07e5da1915d3f9adb6bb6dbf1915da0a25d3fa4eb3fa4ebf1a25d", "6b76983f82b45390b48d76846187923f8fc9c7e8c99287a16896a83f9adb6bb6db8f969f64a3ab3fa4eb3fa4eb90a3ae"]),
-    ("corner_inset", ["4a7fa8c1675ddb675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d", "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d", "3f82b43f82b45390b4e668613f8fc93f8fc9c7e8c9e67f653f9adb3f9adb6bb6dbe692659ba264b9a264d2a264f0a25e"]),
-    ("zoom_cross", ["b0735ec77365d5735be87363b18261c78263d5825ae7825fb18f61c08f52dc8f6be78f5fb29b61c99b6bd39b53e79b5f", "9888a4a289a8ccc29ad4c39e918ca2968da1d3c3a9d8c6a79091a59291a1c6b5afd8c9ac9095a99295a5ab9bb2c6b7af", "3f88be3f88bea9cebe69a1be3f90cc4091ccd1f0cc84bacc3f98d83f98d88fcad85aa7d83fa0e43fa0e43fa0e43fa0e4"]),
-    ("zoom_smear", ["a76c5fc26c5eda6c60ee6c62a98063c38060d8805cec805fa6905ec2905cda9062ee9064aa9f64c49f63d89f5cec9f5d", "827a96947a96b89396b47c968388a29588a2d4c2a1b992a18195ab9395abbaacadb497ac83a0b695a0b6a3a0b4b1a0b4", "3f84b93f84b977a8b94387b93f8fca3f8fcad0eeca559cca3f99da3f99da7cbfda429bda3fa2e83fa2e83fa2e83fa2e8"]),
-    ("spin_smear", ["a1695fc16860db6862f16964a37f64c17f62da7e5ef07e60a29161c1915fdb9161f19163a2a161c1a161dba161f0a062", "7c7893937693ae8294b577967e87a09589a1d0bba0b487a17d96ab9396acb5a7adb595ae7ea2b693a2b7a6a2b8b5a2b7", "3f83b63f82b55b94b53f83b63f8ec94290c9c5e6c93f8fc93f9adb3f9adb75b9db3f9adb3fa3ea3fa4eb3fa4eb3fa4ea"]),
-    ("streak_smear", ["b9676cc46768ce6763d8675db17e5abf7e5fcd7e62d97e66b69166c29165ce9163d89160b3a260c1a262cda262d9a263", "8c77969377959977949f77938b8d9e938d9f9b8da0a38da18b98ae9298ad9998ad9f98ac86a3b78fa3b796a3b89da3b8", "4484b44484b44484b44484b45e9dc95e9dc95e9dc95e9dc94a9edb4a9edb4a9edb4a9edb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("lens_defocus", ["a36865c16862db6862f0685ea17e61c17e63db7e63f17e64a29163c19163db9163f09161a2a162c1a163dba163f1a163", "7f7896967d95b18995b77e947f86a19a8fa0b59ba0b98da07e95ac979aacb3a5acb899ac7fa1b794a2b6aaa6b6b4a1b5", "3f82b54184b56a9bb54183b53f8ec94e96c9b2d6c94b95c93f9adb449cdb81bcdb439bdb3fa4eb3fa4eb40a4eb3fa4eb"]),
-    ("bloom", ["f2a194fea192ffa191ffa18feebc93febc92ffbc92ffbc90f0d592fed592ffd592ffd591efe993fee992ffe991ffe990", "c5bce7e7c2e6fecfe6ffc2e5c4d1f7e8d7f6fefbf6ffd7f6c4e6fee7eafefef5feffeafec4f6ffe4f8fffcfafffff8ff", "61c4ff75cdff9addff74cdff61d3ff7addffecfdff79ddff61e2ff75eaffa8f7ff74e9ff60eeff6af1ff75f6ff69f1ff"]),
-    ("flash", ["a36b62c26b62db6b62f16b62a18162c18162db8162f18162a29462c29462db9462f19462a2a362c1a362dba362f1a362", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "4785b64785b65a92b64785b64791ca4791cac7e8ca4791ca479cdc479cdc71b7dc479cdc47a6ec47a6ec47a6ec47a6ec"]),
-    ("lens_flare", ["c38871dc876edd6a5ef1675dcca979efb184de8360f07e5db9a36cd7a46ce39b64f49560a6a560c6a561dba25df1a35e", "827994a88699be8e98b77793858da2ccb3b3f3d7b0b98aa18298adc6b9bcdfc9bebd9baf7ea4b8a7afbcb8afbcb9a6b9", "4283b54183b56194b64e86b64b92ca5c98ccddf2cf74a0ce3f9adb4c9ddcc1d7e89bbde63fa4eb47a6ec82b8f183b9f2"]),
-    ("light_leak", ["eb9c7ddb7a65e16b5ef2685df6b081e09067e2835ef17f5df1ba7be0a065e3955ef2925de6be73ddad63e2a55ef2a25d", "ffe5d0f6bbb4d0949bbd7a94fff5dcfdccc1f4cea9bf8ba1fff2dcfbd0c6deb9b3c09aadfee3d7f3ccc8cdb2bcbfa6b8", "d0c7d8f9dde3e7ced4959dbfe1d5ebffecf5fcfae7a3abd3e0d7f5feebfdf4e3f2a2b2e2ced0fbf2dffedbd0f993b5f0"]),
-    ("colour_leak", ["fbbfa7fcd3bff6c0bbf78a84fdcfaffee1c3f9cebef69c89fcd0acfcdab4f5c8a9f6a47bf0c9a0f4cc9beebe8bf4aa6e", "d29eb9f6c1bcf9dbc5e6d9dce1afcdfccfd0fefdd6eae9ece5b7dafdd1dbfae8dae4e1e7dcbbe0f1cbdfebd2d8d7ced8", "808ac49e98ccbfbccbbec7c89198ddb2a6e5fafae4c8d3df9ba4f0bbb0f9d8d5f6c1d2f09aadfdb8b5ffbdc1feadc9fb"]),
-    ("colour_burn", ["ee8f9afe919cff939dff959ee8ac9cfeae9dffaf9effb19fefc49efec69fffc7a0ffc8a1eed99ffedaa0ffdba1ffdca2", "b0c5eccac6ece5cdedf4c8edb3e0facde1fafdfcfcf5e3fab7f7ffd0f8ffeefcfff8f9ffbbffffd3ffffe9fffff9ffff", "77d5e777d5e789d9e877d5e77ce8fd7ce8fdf4fdfe7ce8fd80f9ff80f9ffa7fcff80f9ff84ffff84ffff84ffff84ffff"]),
-    ("light_sweep", ["c79c90c77268db685ef1675dd3b79fca8c6fdb805ff07e5ddfd0abcea274dc9460f1925debe6bbd3b67edda563f1a25d", "f9fdfffffffffffefcffdbccf1fbffffffffffffffffefdde5f7fffffffffffffffffbe9d5f3fffefffffffffffffef4", "4082b54886b781a9c4bfd5eb3f8fc94591cad5f2d3adcef03f9adb439bdc81bfe19bcaf63fa4eb41a5ec53abef8bc7fb"]),
-    ("light_rays", ["a1675dc3685fdf6960fc6f67a2805fc98463e98866fd8f6dac9966d29e66f7a671feab73b7b36ce2ba73f8be70ffc477", "7d7693937693dab3b3c98b9f7d87a1968aa3fefce2dfb1be859eb69ea1b9ded4dcd6b4c98eb6ceabbad3c0bdd4d6c1d9", "3f82b43f82b4b8dbe46fa7c73f8fc9408fc9fdfefe8dc7e541a0e341a0e3a5d8f761b5ec45b3fc45b3fc45b3fc45b3fc"]),
-    ("phosphor_trail", ["a79979c6a07cdfa87ff4ad82a8b17fc7b782e4c185f4c188acc585c9ca88e3d18bf6d38dadd78bcbdb8de3e090f6e392", "828b98988f99b29a9abb959b839ea799a1a8d8d2a8bba7a985aeb49bb1b4bbc2b5bdb6b686bdbf9cbfc0aec1c1bdc4c1", "4c86b25187b26795b35a89b34c94c65294c6cae8c65b96c74da0d852a1d87dbbd85ba2d84eabe853ace858ace85cade8"]),
-    ("solarise", ["bac3b28cc3b271c3b26ac3b2bde7b28fe7b274e7b26ce7b2bbd4b28dd4b272d4b26bd4b2bcbab28ebab273bab26cbab2", "f2eadbdbeadba8dbdb96eadbe3f1c0dbf1c05885c097f1c0edd5a8dbd5a898b3a896d5a8e8bb91dbbb91b7bb9197bb91", "7cea9d7cea9d7bd99d7cea9d7cd8827cd8827873827cd8827cc6717cc6717aa9717cc6717cb66a7cb66a7cb66a7cb66a"]),
-    ("stripes", ["ae908cc36d62db675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d", "3f82b43f82b45390b44083b53f8fc93f8fc9cae6c8adadb9489edb84b0d0e3b185f29561aebea3c4a769dba25df1a25d", "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb"]),
-    ("scramble", ["a36662c56663db665df2665ea27e5fc07e5ddc7e5df27e61a2915dc0915ada915bf19061a0a15cc0a25ddaa15cf1a25e", "8470757278919f7a858d768970858a7a8894d5c09ba9858f7a948e84958f99aaa9a9949369a3b493a39268a3c99ba3a2", "3f82b43f82b45490b53f82b53f8ec8408fc9c8e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4ec3fa4eb3fa4ec"]),
-    ("digital_glitch", ["a0675fc0675dda675ef0675d9c805bbe7e5dd97f5fee805ea29361c0935ed9935ded945f9ea25abea25ddaa25deea35c", "3f82b44684b4538fb34084b3668b9b748d9acbbf9d838a9e839489979887a99489b4958590a374aca277c2a374d1a573", "3f82b44486b25891b33f84b2408fc84795c6c0e5c73f8fc9449bd73f9adb6eb5d6439dd643a5e743a2ea40a5ea44a3e9"]),
-    ("tape_damage", ["996861b66c65ce6f68e2716b9b7f65b8826acf836ce3866f9e916aba936ed19571e59774aaab7ec5ad82d9ad81ecaf84", "7b758d8f788fa58191ab788f868ea1988fa2d3c3aeb491a38a9cad9b9daeb6acb1b49dae85a1b296a2b2a5a3b3b2a4b4", "628db4618cb3749bb7628db4518dbe538dbecde7ce538dbe5799cf5698cf7fb5d45798cf5ba3de5aa3de5ba3de5aa2de"]),
-    ("flicker_cut", ["965f56b45f56cc5f56e15f56957656b37656cc7656e07656968756b48756cc8756e18756959756b39756cc9756e19756", "3774a13774a14980a13774a1377fb4377fb4b1cfb4377fb43789c43789c45fa2c43789c43793d23793d23793d23793d2", "3c7cad3c7cad4f8aad3c7cad3c89c13c89c1bedfc13c89c13c94d23c94d266afd23c94d23c9de23c9de23c9de23c9de2"]),
-    ("quake", ["a87a61c47a61dc7a60f17a60a78c5ec48c5edc8c5ff18c5fa89c61c49c61dc9c60f09c60a7a85dc4a85ddca85df1a85e", "89708f9d748fad758fb6738c887e99ab929abf999bb9819e898da6a99ea6c2aaa7b890a7879ab09c9db1b0a1b2b99db4", "3f8ac23f8ac17cb0c178adc13f95d43f95d38fc3d368aed33f9fe33f9fe359abe341a0e33fa7ef3fa7ef3fa7ef3fa7ef"]),
-    ("glass_shards", ["a56579b4655ecf6a5dea71688a7d4ab57d5fd27d5ff7866f9f916eb5915ed29261f99964a5a361b9a364d6a563f8a962", "7d759c8675949e7b95a9829f68869d8686a3b3a2a381a1c87996b48696b0a6a4b16ba4df9ba48a8da5b994a8c765adf0", "4082b44082b44c8ab7508ebd408ec8408ec88ec2c863a9d2409adb409adb69b4dc49a4e549a7e944a7ec46a8ee43acf6"]),
-    ("rough_edge", ["a1675dc1675ddb675df1675da07e5dc07e5dda7e5df07e5d63848db48b63db915df1915d3ea0e4919179dba25df1a25d", "4a76a197625adb675df1675d4088bcb6795eda7e5df07e5d3f98d85e859dc78760f1915d3fa4eb429bd8b0916ff0a15d", "3f82b43e81b35e76935568803f8fc93e8ec8a3a3843e8ec93f9adb3f9adb65add33e91cd3fa4eb3fa4eb3fa4eb3e9ee1"]),
-    ("kaleidoscope", ["ea9855db8f4bdb8e4bea9954ed8c65dc8c61dc8d63e9945be9945bdc8d63dc8c61ed8c65ea9954db8e4bdb8f4bea9855", "b398afbbaba6bcaea7b297adac9aadcebfabd4c5aab696acb696acd4c5aacebfabac9aadb297adbcaea7bbaba6b398af", "3f98d875bbda75bbd93f99d9429cdaccf0d5b9e4d63f9ee23f9ee2b9e4d6ccf0d5429cda3f99d975bbd975bbda3f98d8"]),
-    ("liquid_warp", ["ac6563cd655ee96b5af76e57ad7a5bcd805ee98361f7845baa8e5dca965de6965ef7955ea7a05ec5a65de3a55ff5a45d", "907e99c4ac9cc39a9eb5778f8c8aa5aea4a6c7aca2bb84a28696ac9999aebaa6a9b68fa685a2b894a2b6a99eb5b19caf", "3f85b9589fc9b5decc3f8ec73f92cf3f99d965b1da3f96d53f9fe33fa2e83fa1e73f9de13fa8f13fa8f23fa8f23fa6ee"]),
-    ("screen_off", ["444d52444d52444d52444d52a0adb3a1adb3a2adb3a2adb3a0adb3a1adb3a2adb3a2adb3444d52444d52444d52444d52", "121517373f43373f431215171a1e20606c73606c731a1e201a1e20606c73606c731a1e20121517373f43373f43121517", "444d52444d52444d52444d529cadb39cadb39fadb39cadb39cadb39cadb39dadb39cadb3444d52444d52444d52444d52"]),
+    (
+        "cross_dissolve",
+        [
+            "906e7cac6e7cc6747cd66e7c8f8385ab8385d7a285d5838590948dac948dc99d8dd6948d90a294aba294c2a294d6a294",
+            "7d7693937693ac7e93b676937c87a09287a0d3bda0b587a07c96ac9396acb4a6acb596ac7ca3b892a3b8a5a3b8b5a3b8",
+            "647ca5737ca58b88a58b7ca5638bb6728bb6ced4b68a8bb66398c67298c699afc68b98c663a4d472a4d47fa4d48aa4d4",
+        ],
+    ),
+    (
+        "dip_to_black",
+        [
+            "7549428d4942a04942b14942745b428c5b42a05b42b15b427569428d6942a06942b169427475428c7542a07542b17542",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "2c5e842c5e843b68842c5e842c67932c679391aa932c67932c70a02c70a04d85a02c70a02c77ad2c77ad2c77ad2c77ad",
+        ],
+    ),
+    (
+        "dip_to_white",
+        [
+            "d7c6c5e3c6c5eec6c5f8c6c5d7ccc5e2ccc5eeccc5f8ccc5d7d1c5e3d1c5eed1c5f8d1c5d7d7c5e2d7c5eed7c5f8d7c5",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "c0cddec0cddec5d2dec0cddec0d0e6c0d0e6e6f4e6c0d0e6c0d4eec0d4eecce0eec0d4eec0d8f5c0d8f5c0d8f5c0d8f5",
+        ],
+    ),
+    (
+        "dip_to_color",
+        [
+            "c0524ccd524cda524ce5524cbf624ccd624cda624ce5624cc06f4ccd6f4cda6f4ce56f4cbf7a4ccd7a4cda7a4ce57a4c",
+            "d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333d93333",
+            "a46488a46488aa6e88a46488a46d97a46d97d2ad97a46d97a475a4a475a4b389a4a475a4a47cb0a47cb0a47cb0a47cb0",
+        ],
+    ),
+    (
+        "light_fade",
+        [
+            "a6889fc5889fe3909ff4889fa59facc49facf9ceacf39faca6b2b7c5b2b7e8c0b7f4b2b7a5c3c2c4c3c2dec3c2f3c3c2",
+            "aba2c9c9a2c9e6adc9f7a2c9aab9dac8b9dafdf9daf5b9daabcdebc9cdebeadeebf6cdebaadef8c8def8e1def8f5def8",
+            "8393bf9893bfb6a0bfba93bf83a6d298a6d2f6f5d2b9a6d283b6e398b6e3c3cde3bab6e383c4f398c4f3aac4f3b9c4f3",
+        ],
+    ),
+    (
+        "film_fade",
+        [
+            "896e73a16e73ba7173c66e73888379a18379d69979c6837989937da1937dc09b7dc6937d88a282a1a282b5a282c6a282",
+            "717489817489997c899a7489708794818794d1b4949a879471969d81969da4a49d9a969d70a3a681a3a68ea3a69aa3a6",
+            "587b9f607b9f76869f6d7b9f588baf608bafccceaf6d8baf5898bc6098bc88adbc6d98bc58a4c960a4c967a4c96da4c9",
+        ],
+    ),
+    (
+        "soft_focus_fade",
+        [
+            "a46965c16962db6962f0695fa17e61c17e63db7e63f17e63a29163c19163db9163f09162a2a162c1a163dba163f0a162",
+            "817b98988197b08a97b781968088a1998fa1b499a1b88ea18095ac989aacb0a2acb79aac809fb595a1b4aaa4b4b5a1b4",
+            "3f83b64485b66d9db64385b63f8fc95097c9afd4c94d95c93f9adb469ddb7fbbdb459cdb3fa4ea3fa4ea42a5ea3fa4ea",
+        ],
+    ),
+    (
+        "burn_through",
+        [
+            "a1675dc1675ddb675df1675da07e5dc07e5dda7e5cf07e5da0915dc1915ddb915df1915ca0a15dbfa15cdaa25df0a15c",
+            "c3836ebe8b87d58f809d96b4dd9a79d8a4a3dabe8ca79cad95a1baa0abdae6aa8d78a3d77fabd575ace2a5b5de8aadcc",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "brightness_fade",
+        [
+            "a1675dc1675ddb675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df0a25f",
+            "8f6e788e75928789a55780b06889a75b8cbbc7e4c5418ec84b99d3419ada6bb6db3f9adb40a4ea3fa4eb3fa4eb3fa4eb",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "pixel_blocks",
+        [
+            "bb7f7cc87f7ce67f7cf57f7cbb7f7cc87f7ce67f7cf57f7cbb7f7cc87f7ce67f7cf57f7c9fa93faea93fd2a93fe6a93f",
+            "3f92cf3f92cfe78563e785633f92cf3f92cfe78563e785633f92cf3f92cfe78563e785636f9ca96f9ca99c95a39c95a3",
+            "3f8fca6dadcad3f0ca76b3ca3f8fca6dadcad3f0ca76b3ca3f8fca6dadcad3f0ca76b3ca3fa9f33fa9f33fa9f33fa9f3",
+        ],
+    ),
+    (
+        "straight_wipe",
+        [
+            "4580adc1675ddb675df1675d478dc3c07e5dda7e5df07e5d4699d2c1915ddb915df1915d46a4e2c0a25ddba25df1a25d",
+            "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5d3f9adb3f9adbdb915df1915d3fa4eb3fa4ebdba25df1a25d",
+            "3f82b43f82b45390b4e668613f8fc93f8fc9c7e8c9e67f653f9adb3f9adb6bb6dbe692653fa4eb3fa4eb3fa4ebe6a267",
+        ],
+    ),
+    (
+        "soft_edge_wipe",
+        [
+            "a1675ec1675ddb675df1675d9f7f5fc07e5dda7e5df07e5da0925fc1915ddb915df1915da0a260c0a25ddba25df1a25d",
+            "667ba3897798b57b8bd46f7d668ab58a88a8d5b599d383886698c38996b5bba4a3d4948f66a4d28aa3c1afa3add3a298",
+            "3f82b43f82b45390b44382b43f8fc93f8fc9c7e8c9448ec83f9adb3f9adb6bb6db439ada3fa4eb3fa4eb3fa4eb43a4ea",
+        ],
+    ),
+    (
+        "clock_wipe",
+        [
+            "a1675dc1675d5390b43f82b4a07e5dc07e5dcadcb98789a0a1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "a1675dc1675d5390b43f82b4a07e5dc07e5dc7e8c93f8fc9a1915dc1915d6db6da3f9adba0a25dc0a25d44a4e73fa4eb",
+            "a1675dc1675d5390b43f82b48e8174b97f63c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "corner_sweep",
+        [
+            "81717e4880ac5390b43f82b4a07e5db38063c8c6a33f8fc9a1915dc1915ddb915db4958ea0a25dc0a25ddba25df1a25d",
+            "5a7ba03f82b45390b43f82b48b816a408ec8c7e8c93f8fc9a1915d7297a96bb6db3f9adba0a25db4a26648a4e53fa4eb",
+            "487fad3f82b45390b43f82b45789a23f8fc9c7e8c93f8fc971959d3f9adb6bb6db3f9adb83a27f3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "star_wipe",
+        [
+            "a1675db36969cc6a65f1675d9f7e5d6988a2d4c6a7f07e5da1915d7b96a4a4a69af1915da0a25dafa26ec7a270f1a25d",
+            "7b70825d7ba976899bad7080578aa63f8fc9c7e8c9758aaa95936f3f9adb6bb6dbdc936993a26f40a4ea40a4eadca26e",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc95198bc3f9adb6bb6db6998c05fa3b23fa4eb3fa4eb87a3b7",
+        ],
+    ),
+    (
+        "panel_wipe",
+        [
+            "3f82b49a6f6ddb675df1675d5b8bb0bf7f5eda7e5df07e5d92936bc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "3f82b43f82b46389a6f1675d3f8fc93f8fc9d9a386f07e5d3f9adb6d97b1db915df1915d3fa4ebb2a274dba25df1a25d",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c95a8cba3f9adb3f9adb6db6dac494743fa4eb3fa4eb6ea4bff1a25d",
+        ],
+    ),
+    (
+        "stair_wipe",
+        [
+            "6f7480c1675ddb675df1675d558cbcc07e5eda7e5df07e5d5399c6c0925edb915df1915d74a3a7c0a25ddba25df1a25d",
+            "3f82b45c7c9cdb675df1675d3f8fc9418ec8da8b6bf07e5d3f9adb419adad19869f1915d3fa4eb5fa4ccdaa25ef1a25d",
+            "3f82b43f82b45790b3e768643f8fc93f8fc9c7e8c9b2848d3f9adb3f9adb6bb6dbb095893fa4eb3fa4eb42a4eae7a269",
+        ],
+    ),
+    (
+        "stretch_wipe",
+        [
+            "71789a9f7287cb6c72ee68617289ab9f8595ca817bed7f657197b89f959ecb937fee926572a3c59fa3a8caa286eda267",
+            "3f82b43f82b44881b3727eab3f8fc93f8fc97fb0c798abbe3f9adb3f9adb489ad97399ce3fa4eb3fa4eb48a4e973a4de",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "neon_edge_wipe",
+        [
+            "6bd6eec2979cdb736ef1696171ddf6c1a79fdb8870f080616de3f6c2b59ddb9a6ef193616fe8f7c2c19edba96ff1a361",
+            "4091c249c4eaddb6bcf27b78409dd549cbf4ddc2c1f18e7b40a7e649d2fbddcdbef19f7940b0f549d8feddd7bff1ae7a",
+            "3f84b6408bbc57b5d8bbd1dc3f90ca4097d0c8f8e8bfd9e43f9bdc40a1e16fd1f5bde1df3fa6ec40abf143c3fdbee8e1",
+        ],
+    ),
+    (
+        "circle_reveal",
+        [
+            "a1675dc1675ddb675df1675da07e5d8c8481daa78bf07e5da1915d919593b8a384f1915da0a25dc0a25ddba25df1a25d",
+            "a1675d637aa57d8898f1675d9480673f8fc9c7e8c9e0806997926c3f9adb6bb6dbe09268a0a25d61a4c86aa4c2f1a25d",
+            "6c76993f82b45390b48e7684518aaa3f8fc9c7e8c96e8ab35598bd3f9adb6bb6db6d98ba66a3ac3fa4eb3fa4eb91a3ac",
+        ],
+    ),
+    (
+        "box_reveal",
+        [
+            "a1675dc1675ddb675df1675da07e5da58173da9473f07e5da1915da8937bcfa06ff1915da0a25dc0a25ddba25df1a25d",
+            "a1675dc1675ddb675df1675da07e5d3f8fc9c7e8c9f07e5da1915d3f9adb6bb6dbf1915da0a25dc0a25ddba25df1a25d",
+            "826e7e797490998290ba6e756187923f8fc9c7e8c99287a16896a83f9adb6bb6db8f969f7ca38179a4aa84a4aabda390",
+        ],
+    ),
+    (
+        "diamond_reveal",
+        [
+            "a1675dc1675ddb675df1675da07e5d848588d9ae93f07e5da1915d889698bcad8df1915da0a25dc0a25ddba25df1a25d",
+            "a1675d817392a18183f1675d69868f3f8fc9c7e8c99b869b6f969f3f9adb6bb6db999697a0a25d7da3a290a3a5f1a25d",
+            "6b75983f82b45390b48c75893f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb66a4ad3fa4eb3fa4eb8ea4ac",
+        ],
+    ),
+    (
+        "cross_reveal",
+        [
+            "a1675d9d6e7cba7471f1675d81827d5d8aa6d2cdb5be827f8594875f98b697b4bbbc947ba0a25d98a37db4a38bf1a25d",
+            "a1675d3f82b45390b4f1675d3f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adba0a25d3fa4eb3fa4ebf1a25d",
+            "577ba83f82b45390b4687b9a3f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb56a4cf3fa4eb3fa4eb68a4c4",
+        ],
+    ),
+    (
+        "double_doors",
+        [
+            "a1675d88738e9e7979f1675da07e5d818585d9ae94f07e5da1915d869599aba290f1915da0a25d83a39a99a39df1a25d",
+            "a1675d3f82b45390b4f1675da07e5d3f8fc9c7e8c9f07e5da1915d3f9adb6bb6dbf1915da0a25d3fa4eb3fa4ebf1a25d",
+            "6b76983f82b45390b48d76846187923f8fc9c7e8c99287a16896a83f9adb6bb6db8f969f64a3ab3fa4eb3fa4eb90a3ae",
+        ],
+    ),
+    (
+        "corner_inset",
+        [
+            "4a7fa8c1675ddb675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "3f82b43f82b45390b4e668613f8fc93f8fc9c7e8c9e67f653f9adb3f9adb6bb6dbe692659ba264b9a264d2a264f0a25e",
+        ],
+    ),
+    (
+        "zoom_cross",
+        [
+            "b0735ec77365d5735be87363b18261c78263d5825ae7825fb18f61c08f52dc8f6be78f5fb29b61c99b6bd39b53e79b5f",
+            "9888a4a289a8ccc29ad4c39e918ca2968da1d3c3a9d8c6a79091a59291a1c6b5afd8c9ac9095a99295a5ab9bb2c6b7af",
+            "3f88be3f88bea9cebe69a1be3f90cc4091ccd1f0cc84bacc3f98d83f98d88fcad85aa7d83fa0e43fa0e43fa0e43fa0e4",
+        ],
+    ),
+    (
+        "zoom_smear",
+        [
+            "a76c5fc26c5eda6c60ee6c62a98063c38060d8805cec805fa6905ec2905cda9062ee9064aa9f64c49f63d89f5cec9f5d",
+            "827a96947a96b89396b47c968388a29588a2d4c2a1b992a18195ab9395abbaacadb497ac83a0b695a0b6a3a0b4b1a0b4",
+            "3f84b93f84b977a8b94387b93f8fca3f8fcad0eeca559cca3f99da3f99da7cbfda429bda3fa2e83fa2e83fa2e83fa2e8",
+        ],
+    ),
+    (
+        "spin_smear",
+        [
+            "a1695fc16860db6862f16964a37f64c17f62da7e5ef07e60a29161c1915fdb9161f19163a2a161c1a161dba161f0a062",
+            "7c7893937693ae8294b577967e87a09589a1d0bba0b487a17d96ab9396acb5a7adb595ae7ea2b693a2b7a6a2b8b5a2b7",
+            "3f83b63f82b55b94b53f83b63f8ec94290c9c5e6c93f8fc93f9adb3f9adb75b9db3f9adb3fa3ea3fa4eb3fa4eb3fa4ea",
+        ],
+    ),
+    (
+        "streak_smear",
+        [
+            "b9676cc46768ce6763d8675db17e5abf7e5fcd7e62d97e66b69166c29165ce9163d89160b3a260c1a262cda262d9a263",
+            "8c77969377959977949f77938b8d9e938d9f9b8da0a38da18b98ae9298ad9998ad9f98ac86a3b78fa3b796a3b89da3b8",
+            "4484b44484b44484b44484b45e9dc95e9dc95e9dc95e9dc94a9edb4a9edb4a9edb4a9edb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "lens_defocus",
+        [
+            "a36865c16862db6862f0685ea17e61c17e63db7e63f17e64a29163c19163db9163f09161a2a162c1a163dba163f1a163",
+            "7f7896967d95b18995b77e947f86a19a8fa0b59ba0b98da07e95ac979aacb3a5acb899ac7fa1b794a2b6aaa6b6b4a1b5",
+            "3f82b54184b56a9bb54183b53f8ec94e96c9b2d6c94b95c93f9adb449cdb81bcdb439bdb3fa4eb3fa4eb40a4eb3fa4eb",
+        ],
+    ),
+    (
+        "bloom",
+        [
+            "f2a194fea192ffa191ffa18feebc93febc92ffbc92ffbc90f0d592fed592ffd592ffd591efe993fee992ffe991ffe990",
+            "c5bce7e7c2e6fecfe6ffc2e5c4d1f7e8d7f6fefbf6ffd7f6c4e6fee7eafefef5feffeafec4f6ffe4f8fffcfafffff8ff",
+            "61c4ff75cdff9addff74cdff61d3ff7addffecfdff79ddff61e2ff75eaffa8f7ff74e9ff60eeff6af1ff75f6ff69f1ff",
+        ],
+    ),
+    (
+        "flash",
+        [
+            "a36b62c26b62db6b62f16b62a18162c18162db8162f18162a29462c29462db9462f19462a2a362c1a362dba362f1a362",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "4785b64785b65a92b64785b64791ca4791cac7e8ca4791ca479cdc479cdc71b7dc479cdc47a6ec47a6ec47a6ec47a6ec",
+        ],
+    ),
+    (
+        "lens_flare",
+        [
+            "c38871dc876edd6a5ef1675dcca979efb184de8360f07e5db9a36cd7a46ce39b64f49560a6a560c6a561dba25df1a35e",
+            "827994a88699be8e98b77793858da2ccb3b3f3d7b0b98aa18298adc6b9bcdfc9bebd9baf7ea4b8a7afbcb8afbcb9a6b9",
+            "4283b54183b56194b64e86b64b92ca5c98ccddf2cf74a0ce3f9adb4c9ddcc1d7e89bbde63fa4eb47a6ec82b8f183b9f2",
+        ],
+    ),
+    (
+        "light_leak",
+        [
+            "eb9c7ddb7a65e16b5ef2685df6b081e09067e2835ef17f5df1ba7be0a065e3955ef2925de6be73ddad63e2a55ef2a25d",
+            "ffe5d0f6bbb4d0949bbd7a94fff5dcfdccc1f4cea9bf8ba1fff2dcfbd0c6deb9b3c09aadfee3d7f3ccc8cdb2bcbfa6b8",
+            "d0c7d8f9dde3e7ced4959dbfe1d5ebffecf5fcfae7a3abd3e0d7f5feebfdf4e3f2a2b2e2ced0fbf2dffedbd0f993b5f0",
+        ],
+    ),
+    (
+        "colour_leak",
+        [
+            "fbbfa7fcd3bff6c0bbf78a84fdcfaffee1c3f9cebef69c89fcd0acfcdab4f5c8a9f6a47bf0c9a0f4cc9beebe8bf4aa6e",
+            "d29eb9f6c1bcf9dbc5e6d9dce1afcdfccfd0fefdd6eae9ece5b7dafdd1dbfae8dae4e1e7dcbbe0f1cbdfebd2d8d7ced8",
+            "808ac49e98ccbfbccbbec7c89198ddb2a6e5fafae4c8d3df9ba4f0bbb0f9d8d5f6c1d2f09aadfdb8b5ffbdc1feadc9fb",
+        ],
+    ),
+    (
+        "colour_burn",
+        [
+            "ee8f9afe919cff939dff959ee8ac9cfeae9dffaf9effb19fefc49efec69fffc7a0ffc8a1eed99ffedaa0ffdba1ffdca2",
+            "b0c5eccac6ece5cdedf4c8edb3e0facde1fafdfcfcf5e3fab7f7ffd0f8ffeefcfff8f9ffbbffffd3ffffe9fffff9ffff",
+            "77d5e777d5e789d9e877d5e77ce8fd7ce8fdf4fdfe7ce8fd80f9ff80f9ffa7fcff80f9ff84ffff84ffff84ffff84ffff",
+        ],
+    ),
+    (
+        "light_sweep",
+        [
+            "c79c90c77268db685ef1675dd3b79fca8c6fdb805ff07e5ddfd0abcea274dc9460f1925debe6bbd3b67edda563f1a25d",
+            "f9fdfffffffffffefcffdbccf1fbffffffffffffffffefdde5f7fffffffffffffffffbe9d5f3fffefffffffffffffef4",
+            "4082b54886b781a9c4bfd5eb3f8fc94591cad5f2d3adcef03f9adb439bdc81bfe19bcaf63fa4eb41a5ec53abef8bc7fb",
+        ],
+    ),
+    (
+        "light_rays",
+        [
+            "a1675dc3685fdf6960fc6f67a2805fc98463e98866fd8f6dac9966d29e66f7a671feab73b7b36ce2ba73f8be70ffc477",
+            "7d7693937693dab3b3c98b9f7d87a1968aa3fefce2dfb1be859eb69ea1b9ded4dcd6b4c98eb6ceabbad3c0bdd4d6c1d9",
+            "3f82b43f82b4b8dbe46fa7c73f8fc9408fc9fdfefe8dc7e541a0e341a0e3a5d8f761b5ec45b3fc45b3fc45b3fc45b3fc",
+        ],
+    ),
+    (
+        "phosphor_trail",
+        [
+            "a79979c6a07cdfa87ff4ad82a8b17fc7b782e4c185f4c188acc585c9ca88e3d18bf6d38dadd78bcbdb8de3e090f6e392",
+            "828b98988f99b29a9abb959b839ea799a1a8d8d2a8bba7a985aeb49bb1b4bbc2b5bdb6b686bdbf9cbfc0aec1c1bdc4c1",
+            "4c86b25187b26795b35a89b34c94c65294c6cae8c65b96c74da0d852a1d87dbbd85ba2d84eabe853ace858ace85cade8",
+        ],
+    ),
+    (
+        "solarise",
+        [
+            "bac3b28cc3b271c3b26ac3b2bde7b28fe7b274e7b26ce7b2bbd4b28dd4b272d4b26bd4b2bcbab28ebab273bab26cbab2",
+            "f2eadbdbeadba8dbdb96eadbe3f1c0dbf1c05885c097f1c0edd5a8dbd5a898b3a896d5a8e8bb91dbbb91b7bb9197bb91",
+            "7cea9d7cea9d7bd99d7cea9d7cd8827cd8827873827cd8827cc6717cc6717aa9717cc6717cb66a7cb66a7cb66a7cb66a",
+        ],
+    ),
+    (
+        "stripes",
+        [
+            "ae908cc36d62db675df1675da07e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "3f82b43f82b45390b44083b53f8fc93f8fc9cae6c8adadb9489edb84b0d0e3b185f29561aebea3c4a769dba25df1a25d",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "scramble",
+        [
+            "a36662c56663db665df2665ea27e5fc07e5ddc7e5df27e61a2915dc0915ada915bf19061a0a15cc0a25ddaa15cf1a25e",
+            "8470757278919f7a858d768970858a7a8894d5c09ba9858f7a948e84958f99aaa9a9949369a3b493a39268a3c99ba3a2",
+            "3f82b43f82b45490b53f82b53f8ec8408fc9c8e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4ec3fa4eb3fa4ec",
+        ],
+    ),
+    (
+        "digital_glitch",
+        [
+            "a0675fc0675dda675ef0675d9c805bbe7e5dd97f5fee805ea29361c0935ed9935ded945f9ea25abea25ddaa25deea35c",
+            "3f82b44684b4538fb34084b3668b9b748d9acbbf9d838a9e839489979887a99489b4958590a374aca277c2a374d1a573",
+            "3f82b44486b25891b33f84b2408fc84795c6c0e5c73f8fc9449bd73f9adb6eb5d6439dd643a5e743a2ea40a5ea44a3e9",
+        ],
+    ),
+    (
+        "tape_damage",
+        [
+            "996861b66c65ce6f68e2716b9b7f65b8826acf836ce3866f9e916aba936ed19571e59774aaab7ec5ad82d9ad81ecaf84",
+            "7b758d8f788fa58191ab788f868ea1988fa2d3c3aeb491a38a9cad9b9daeb6acb1b49dae85a1b296a2b2a5a3b3b2a4b4",
+            "628db4618cb3749bb7628db4518dbe538dbecde7ce538dbe5799cf5698cf7fb5d45798cf5ba3de5aa3de5ba3de5aa2de",
+        ],
+    ),
+    (
+        "flicker_cut",
+        [
+            "965f56b45f56cc5f56e15f56957656b37656cc7656e07656968756b48756cc8756e18756959756b39756cc9756e19756",
+            "3774a13774a14980a13774a1377fb4377fb4b1cfb4377fb43789c43789c45fa2c43789c43793d23793d23793d23793d2",
+            "3c7cad3c7cad4f8aad3c7cad3c89c13c89c1bedfc13c89c13c94d23c94d266afd23c94d23c9de23c9de23c9de23c9de2",
+        ],
+    ),
+    (
+        "quake",
+        [
+            "a87a61c47a61dc7a60f17a60a78c5ec48c5edc8c5ff18c5fa89c61c49c61dc9c60f09c60a7a85dc4a85ddca85df1a85e",
+            "89708f9d748fad758fb6738c887e99ab929abf999bb9819e898da6a99ea6c2aaa7b890a7879ab09c9db1b0a1b2b99db4",
+            "3f8ac23f8ac17cb0c178adc13f95d43f95d38fc3d368aed33f9fe33f9fe359abe341a0e33fa7ef3fa7ef3fa7ef3fa7ef",
+        ],
+    ),
+    (
+        "glass_shards",
+        [
+            "a56579b4655ecf6a5dea71688a7d4ab57d5fd27d5ff7866f9f916eb5915ed29261f99964a5a361b9a364d6a563f8a962",
+            "7d759c8675949e7b95a9829f68869d8686a3b3a2a381a1c87996b48696b0a6a4b16ba4df9ba48a8da5b994a8c765adf0",
+            "4082b44082b44c8ab7508ebd408ec8408ec88ec2c863a9d2409adb409adb69b4dc49a4e549a7e944a7ec46a8ee43acf6",
+        ],
+    ),
+    (
+        "rough_edge",
+        [
+            "a1675dc1675ddb675df1675da07e5dc07e5dda7e5df07e5d63848db48b63db915df1915d3ea0e4919179dba25df1a25d",
+            "4a76a197625adb675df1675d4088bcb6795eda7e5df07e5d3f98d85e859dc78760f1915d3fa4eb429bd8b0916ff0a15d",
+            "3f82b43e81b35e76935568803f8fc93e8ec8a3a3843e8ec93f9adb3f9adb65add33e91cd3fa4eb3fa4eb3fa4eb3e9ee1",
+        ],
+    ),
+    (
+        "kaleidoscope",
+        [
+            "ea9855db8f4bdb8e4bea9954ed8c65dc8c61dc8d63e9945be9945bdc8d63dc8c61ed8c65ea9954db8e4bdb8f4bea9855",
+            "b398afbbaba6bcaea7b297adac9aadcebfabd4c5aab696acb696acd4c5aacebfabac9aadb297adbcaea7bbaba6b398af",
+            "3f98d875bbda75bbd93f99d9429cdaccf0d5b9e4d63f9ee23f9ee2b9e4d6ccf0d5429cda3f99d975bbd975bbda3f98d8",
+        ],
+    ),
+    (
+        "liquid_warp",
+        [
+            "ac6563cd655ee96b5af76e57ad7a5bcd805ee98361f7845baa8e5dca965de6965ef7955ea7a05ec5a65de3a55ff5a45d",
+            "907e99c4ac9cc39a9eb5778f8c8aa5aea4a6c7aca2bb84a28696ac9999aebaa6a9b68fa685a2b894a2b6a99eb5b19caf",
+            "3f85b9589fc9b5decc3f8ec73f92cf3f99d965b1da3f96d53f9fe33fa2e83fa1e73f9de13fa8f13fa8f23fa8f23fa6ee",
+        ],
+    ),
+    (
+        "screen_off",
+        [
+            "444d52444d52444d52444d52a0adb3a1adb3a2adb3a2adb3a0adb3a1adb3a2adb3a2adb3444d52444d52444d52444d52",
+            "121517373f43373f431215171a1e20606c73606c731a1e201a1e20606c73606c731a1e20121517373f43373f43121517",
+            "444d52444d52444d52444d529cadb39cadb39fadb39cadb39cadb39cadb39dadb39cadb3444d52444d52444d52444d52",
+        ],
+    ),
 ];
 
 /// The 4x4 mean-RGB fingerprint at the midpoint of the red-to-blue scene, for the kinds whose
 /// midpoint varies across the frame (the uniform kinds record an exact pixel in `midpoint`).
 const MIDPOINTS: &[(&str, &str)] = &[
-    ("light_fade", "ff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ff"),
-    ("film_fade", "800080800080800080800080800080800080800080800080800080800080800080800080800080800080800080800080"),
-    ("soft_focus_fade", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("burn_through", "c055ffff9ec1f16cffff460cff8efffd0000ff7d1df42a05f50700ff5b13ff9be7ff7affff811e0300ffff9e7de868ff"),
-    ("brightness_fade", "c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5"),
-    ("pixel_blocks", "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff"),
-    ("straight_wipe", "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000"),
-    ("soft_edge_wipe", "ba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00ba"),
-    ("clock_wipe", "ff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000200ff0000ffff0000e8007a8300e40200ff"),
-    ("corner_sweep", "bc00bc0000ff0000ff0000ffff0000bc00bc0000ff0000ffff0000ff0000bc00bc2400fdff0000ff0000fd0024bc00bc"),
-    ("star_wipe", "ff0000a000d3a000d3ff00000000ff0000ff0000ff0000ffff00000000ff0000ffff0000d000a39100dc9100dcd000a3"),
-    ("panel_wipe", "0000ff0000ff0000ffff00000000ff0000fff3005bff00000000ff5b00f3ff0000ff00000000ffff0000ff0000ff0000"),
-    ("stair_wipe", "7000ecb000c6dd008ff900435b00f3a000d3d300a0f3005b5b00f3a000d3d300a0f3005b7000ecb000c6dd008ff90043"),
-    ("stretch_wipe", "0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff"),
-    ("neon_edge_wipe", "48ffff4dffffffffffffffff48ffff4dffffffffffffffff48ffff4dffffffffffffffff48ffff4dffffffffffffffff"),
-    ("circle_reveal", "ff0000df008bdf008bff0000df008b0000ff0000ffdf008bdf008b0000ff0000ffdf008bff0000df008bdf008bff0000"),
-    ("box_reveal", "ff0000ff0000ff0000ff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000ff0000ff0000ff0000"),
-    ("diamond_reveal", "ff0000bc00bcbc00bcff0000bc00bc0000ff0000ffbc00bcbc00bc0000ff0000ffbc00bcff0000bc00bcbc00bcff0000"),
-    ("cross_reveal", "ff00000000ff0000ffff00000000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ffff00000000ff0000ffff0000"),
-    ("double_doors", "ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000"),
-    ("corner_inset", "0000ff0000ffff0000ff00000000ff0000ffff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000"),
-    ("zoom_cross", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("zoom_smear", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("spin_smear", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("streak_smear", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("lens_defocus", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("bloom", "ff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ff"),
-    ("flash", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-    ("lens_flare", "c330bed050c1d050c1c330bee979c9f083cbf083cbd050c1d050c1f083cbf083cbe979c9c330bed050c1d050c1c330be"),
-    ("light_leak", "ffbae8fd87d2cd42c1bf14bcffd4f0ff9ed6dc52c2c21fbcffafdbff88ccdf4ec0c422bcff76c5f463c1d63fbdc31cbc"),
-    ("colour_leak", "e061caf894cdfbadd5e2ade9fb72dbffa4ddffc1e5edc9ffff66e6ff86e5fc92dcdc8ddef54ddff457dce051cfca3fc4"),
-    ("colour_burn", "f639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639ff"),
-    ("light_sweep", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-    ("light_rays", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("phosphor_trail", "c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0"),
-    ("solarise", "8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b"),
-    ("stripes", "0000ff0000ff0000ff0000ff0000ff0000ff8900e0bb00bc6a00eea300d1f70049ff0000ed006dff0000ff0000ff0000"),
-    ("scramble", "0000ff0000ff0000ffff0000ff0000ff0000ff0000ff0000ff00000000ffff00000000ffff0000ff00000000ffff0000"),
-    ("digital_glitch", "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ffff0000ff0000ff0000ff0000"),
-    ("tape_damage", "b34cb3a925a9a200a2a400a4a000a0b95cb9aa29aab143b1a716a7b34cb3b247b2b550b5b95bb9b143b1b042b0a818a8"),
-    ("flicker_cut", "0000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e4"),
-    ("quake", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("glass_shards", "b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2"),
-    ("rough_edge", "3824143824143824142e1d963824143824143824142113cf38241438241435225c0000ff3824143421650f07f10000ff"),
-    ("kaleidoscope", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("liquid_warp", "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc"),
-    ("screen_off", "b6cbd6b9cfdab9cfdab6cbd6b9cfdabfd6e1bfd6e1b9cfdab9cfdabfd6e1bfd6e1b9cfdab6cbd6b9cfdab9cfdab6cbd6"),
+    (
+        "light_fade",
+        "ff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ff",
+    ),
+    (
+        "film_fade",
+        "800080800080800080800080800080800080800080800080800080800080800080800080800080800080800080800080",
+    ),
+    (
+        "soft_focus_fade",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "burn_through",
+        "c055ffff9ec1f16cffff460cff8efffd0000ff7d1df42a05f50700ff5b13ff9be7ff7affff811e0300ffff9e7de868ff",
+    ),
+    (
+        "brightness_fade",
+        "c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5c200b5",
+    ),
+    (
+        "pixel_blocks",
+        "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff",
+    ),
+    (
+        "straight_wipe",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "soft_edge_wipe",
+        "ba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00baba00bdbb00bcbc00bbbd00ba",
+    ),
+    (
+        "clock_wipe",
+        "ff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000200ff0000ffff0000e8007a8300e40200ff",
+    ),
+    (
+        "corner_sweep",
+        "bc00bc0000ff0000ff0000ffff0000bc00bc0000ff0000ffff0000ff0000bc00bc2400fdff0000ff0000fd0024bc00bc",
+    ),
+    (
+        "star_wipe",
+        "ff0000a000d3a000d3ff00000000ff0000ff0000ff0000ffff00000000ff0000ffff0000d000a39100dc9100dcd000a3",
+    ),
+    (
+        "panel_wipe",
+        "0000ff0000ff0000ffff00000000ff0000fff3005bff00000000ff5b00f3ff0000ff00000000ffff0000ff0000ff0000",
+    ),
+    (
+        "stair_wipe",
+        "7000ecb000c6dd008ff900435b00f3a000d3d300a0f3005b5b00f3a000d3d300a0f3005b7000ecb000c6dd008ff90043",
+    ),
+    (
+        "stretch_wipe",
+        "0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff0000ff0000ff0000ff0100ff",
+    ),
+    (
+        "neon_edge_wipe",
+        "48ffff4dffffffffffffffff48ffff4dffffffffffffffff48ffff4dffffffffffffffff48ffff4dffffffffffffffff",
+    ),
+    (
+        "circle_reveal",
+        "ff0000df008bdf008bff0000df008b0000ff0000ffdf008bdf008b0000ff0000ffdf008bff0000df008bdf008bff0000",
+    ),
+    (
+        "box_reveal",
+        "ff0000ff0000ff0000ff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000ff0000ff0000ff0000",
+    ),
+    (
+        "diamond_reveal",
+        "ff0000bc00bcbc00bcff0000bc00bc0000ff0000ffbc00bcbc00bc0000ff0000ffbc00bcff0000bc00bcbc00bcff0000",
+    ),
+    (
+        "cross_reveal",
+        "ff00000000ff0000ffff00000000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ffff00000000ff0000ffff0000",
+    ),
+    (
+        "double_doors",
+        "ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000",
+    ),
+    (
+        "corner_inset",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000",
+    ),
+    (
+        "zoom_cross",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "zoom_smear",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "spin_smear",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "streak_smear",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "lens_defocus",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "bloom",
+        "ff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ffff00ff",
+    ),
+    (
+        "flash",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    ),
+    (
+        "lens_flare",
+        "c330bed050c1d050c1c330bee979c9f083cbf083cbd050c1d050c1f083cbf083cbe979c9c330bed050c1d050c1c330be",
+    ),
+    (
+        "light_leak",
+        "ffbae8fd87d2cd42c1bf14bcffd4f0ff9ed6dc52c2c21fbcffafdbff88ccdf4ec0c422bcff76c5f463c1d63fbdc31cbc",
+    ),
+    (
+        "colour_leak",
+        "e061caf894cdfbadd5e2ade9fb72dbffa4ddffc1e5edc9ffff66e6ff86e5fc92dcdc8ddef54ddff457dce051cfca3fc4",
+    ),
+    (
+        "colour_burn",
+        "f639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639fff639ff",
+    ),
+    (
+        "light_sweep",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    ),
+    (
+        "light_rays",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "phosphor_trail",
+        "c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0c055c0",
+    ),
+    (
+        "solarise",
+        "8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b8b008b",
+    ),
+    (
+        "stripes",
+        "0000ff0000ff0000ff0000ff0000ff0000ff8900e0bb00bc6a00eea300d1f70049ff0000ed006dff0000ff0000ff0000",
+    ),
+    (
+        "scramble",
+        "0000ff0000ff0000ffff0000ff0000ff0000ff0000ff0000ff00000000ffff00000000ffff0000ff00000000ffff0000",
+    ),
+    (
+        "digital_glitch",
+        "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ffff0000ff0000ff0000ff0000",
+    ),
+    (
+        "tape_damage",
+        "b34cb3a925a9a200a2a400a4a000a0b95cb9aa29aab143b1a716a7b34cb3b247b2b550b5b95bb9b143b1b042b0a818a8",
+    ),
+    (
+        "flicker_cut",
+        "0000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e40000e4",
+    ),
+    (
+        "quake",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "glass_shards",
+        "b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2b900c2",
+    ),
+    (
+        "rough_edge",
+        "3824143824143824142e1d963824143824143824142113cf38241438241435225c0000ff3824143421650f07f10000ff",
+    ),
+    (
+        "kaleidoscope",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "liquid_warp",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "screen_off",
+        "b6cbd6b9cfdab9cfdab6cbd6b9cfdabfd6e1bfd6e1b9cfdab9cfdabfd6e1bfd6e1b9cfdab6cbd6b9cfdab9cfdab6cbd6",
+    ),
 ];
 
 fn scene(kind: &str) -> Project {
@@ -824,7 +1322,12 @@ fn every_kind_matches_its_recorded_oracle_row_at_three_progress_points() {
                 &h,
             )
             .unwrap();
-            assert_eq!(&fingerprint(&image), expected, "{} at {progress}", definition.kind);
+            assert_eq!(
+                &fingerprint(&image),
+                expected,
+                "{} at {progress}",
+                definition.kind
+            );
         }
     }
     assert_eq!(ORACLE.len(), TRANSITION_DEFINITIONS.len());
@@ -874,7 +1377,9 @@ fn print_oracle_rows() {
 fn changed_values(param: &TransitionParamDef) -> Vec<TransitionValue> {
     let different = |v: f64, default: f64| (v - default).abs() > 1e-9;
     match param.kind {
-        TransitionParamKind::Float { min, max, default, .. } => [
+        TransitionParamKind::Float {
+            min, max, default, ..
+        } => [
             default + (max - default) * 0.5,
             default - (default - min) * 0.5,
             max,
@@ -916,12 +1421,10 @@ fn every_parameter_changes_the_picture() {
     let (a, b) = oracle_frames(160, 90);
     let progresses = [0.3f64, 0.5, 0.7];
     let render = |kind: &str, params: &TransitionParams| {
-        progresses
-            .map(|progress| {
-                transitions::apply(kind, params, &a, &b, progress, 1., &h).unwrap_or_else(|error| {
-                    panic!("{kind} {progress}: {error:?}")
-                })
-            })
+        progresses.map(|progress| {
+            transitions::apply(kind, params, &a, &b, progress, 1., &h)
+                .unwrap_or_else(|error| panic!("{kind} {progress}: {error:?}"))
+        })
     };
     for definition in TRANSITION_DEFINITIONS {
         let base = render(definition.kind, &TransitionParams::new());

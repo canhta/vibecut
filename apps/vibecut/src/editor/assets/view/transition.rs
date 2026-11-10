@@ -23,9 +23,17 @@ impl View<'_> {
                 shelves.push(definition.shelf);
             }
         }
-        shelves.sort_by_key(|shelf| ORDER.iter().position(|known| known == shelf).unwrap_or(usize::MAX));
-        let rows = std::iter::once((None, Text::Transitions))
-            .chain(shelves.into_iter().map(|shelf| (Some(shelf), transition::shelf_label(shelf))));
+        shelves.sort_by_key(|shelf| {
+            ORDER
+                .iter()
+                .position(|known| known == shelf)
+                .unwrap_or(usize::MAX)
+        });
+        let rows = std::iter::once((None, Text::Transitions)).chain(
+            shelves
+                .into_iter()
+                .map(|shelf| (Some(shelf), transition::shelf_label(shelf))),
+        );
         for (family, label) in rows {
             let selected = self.state.transition_family == family;
             let response = ui

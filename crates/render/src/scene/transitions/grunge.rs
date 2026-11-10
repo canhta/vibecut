@@ -3,7 +3,7 @@ use super::pixels::{
     PI, TAU, add_light, bell, fbm, hash, mid_mix, mix, over, sample_clamped, smoothstep, temporal,
     unit, vnoise,
 };
-use super::wipe::{field_wipe, Style};
+use super::wipe::{Style, field_wipe};
 use super::{Out, Tx};
 use crate::{Error, Result};
 
@@ -47,7 +47,10 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             let amp = amount * env * w * 0.15;
             out.paint(move |x, y| {
                 let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-                let (bx, by) = ((fx / (w / 8.)).floor() as i32, (fy / (h / 6.)).floor() as i32);
+                let (bx, by) = (
+                    (fx / (w / 8.)).floor() as i32,
+                    (fy / (h / 6.)).floor() as i32,
+                );
                 let (cx, cy) = (
                     (fx / (w / 23.)).floor() as i32,
                     (fy / (h / 13.)).floor() as i32,
@@ -65,7 +68,13 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 let swap = fine < k;
                 let kk = if swap { 1. } else { 0. };
                 let kk = mix([kk; 4], [k; 4], 1. - env)[0];
-                split(t, fx - ox, fy - oy, (fine - 0.5) * amount * env * 30. * u, kk)
+                split(
+                    t,
+                    fx - ox,
+                    fy - oy,
+                    (fine - 0.5) * amount * env * 30. * u,
+                    kk,
+                )
             })
         }
         "quake" => {
@@ -74,21 +83,28 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             let (shutter, n) = super::pixels::shutter(t, 0.03)?;
             let rotation = 0.04 * shake / w.max(1.) * 10.;
             out.paint(move |x, y| {
-                temporal(x as f32, y as f32, p, shutter, n, &|x: f32, y: f32, q: f32| {
-                    let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-                    let e = bell(q);
-                    let ox = (vnoise(q * 45., 0.5, seed) - 0.5) * 2. * shake * e;
-                    let oy = (vnoise(q * 45., 7.5, seed + 1) - 0.5) * 2. * shake * e;
-                    let r = (vnoise(q * 30., 3.5, seed + 2) - 0.5) * rotation * e;
-                    let zoom = 1. + 0.08 * e;
-                    let (sn, cs) = r.sin_cos();
-                    let (ux, uy) = ((fx - w / 2.) / zoom, (fy - h / 2.) / zoom);
-                    let (sx, sy) = (
-                        ux * cs - uy * sn + w / 2. - ox,
-                        ux * sn + uy * cs + h / 2. - oy,
-                    );
-                    ab(t, sx, sy, mid_mix(q))
-                })
+                temporal(
+                    x as f32,
+                    y as f32,
+                    p,
+                    shutter,
+                    n,
+                    &|x: f32, y: f32, q: f32| {
+                        let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+                        let e = bell(q);
+                        let ox = (vnoise(q * 45., 0.5, seed) - 0.5) * 2. * shake * e;
+                        let oy = (vnoise(q * 45., 7.5, seed + 1) - 0.5) * 2. * shake * e;
+                        let r = (vnoise(q * 30., 3.5, seed + 2) - 0.5) * rotation * e;
+                        let zoom = 1. + 0.08 * e;
+                        let (sn, cs) = r.sin_cos();
+                        let (ux, uy) = ((fx - w / 2.) / zoom, (fy - h / 2.) / zoom);
+                        let (sx, sy) = (
+                            ux * cs - uy * sn + w / 2. - ox,
+                            ux * sn + uy * cs + h / 2. - oy,
+                        );
+                        ab(t, sx, sy, mid_mix(q))
+                    },
+                )
             })
         }
         "flicker_cut" => {

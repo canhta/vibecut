@@ -188,14 +188,7 @@ pub(super) fn pixel_clamped(image: &Image, x: f32, y: f32) -> [f32; 4] {
 }
 
 /// Average of `n` samples along the segment centred on `(x, y)` with half-extent `(dx, dy)`.
-pub(super) fn line_blur(
-    image: &Image,
-    x: f32,
-    y: f32,
-    dx: f32,
-    dy: f32,
-    n: usize,
-) -> [f32; 4] {
+pub(super) fn line_blur(image: &Image, x: f32, y: f32, dx: f32, dy: f32, n: usize) -> [f32; 4] {
     if n <= 1 || (dx.abs() + dy.abs()) < 0.5 {
         return sample_clamped(image, x, y);
     }
@@ -264,12 +257,7 @@ pub(super) fn disc_offsets(r: f32, n: usize) -> Vec<(f32, f32)> {
         .collect()
 }
 
-pub(super) fn disc_blur_with(
-    image: &Image,
-    x: f32,
-    y: f32,
-    offsets: &[(f32, f32)],
-) -> [f32; 4] {
+pub(super) fn disc_blur_with(image: &Image, x: f32, y: f32, offsets: &[(f32, f32)]) -> [f32; 4] {
     if offsets.is_empty() {
         return sample_clamped(image, x, y);
     }
@@ -452,7 +440,10 @@ fn blur_rows(
         }
         for (x, out) in output.iter_mut().enumerate() {
             *out = working(scale4(acc, inverse));
-            let leaving = row.get(clamp(x as isize - radius as isize)).copied().unwrap_or([0.; 4]);
+            let leaving = row
+                .get(clamp(x as isize - radius as isize))
+                .copied()
+                .unwrap_or([0.; 4]);
             let entering = row
                 .get(clamp(x as isize + radius as isize + 1))
                 .copied()

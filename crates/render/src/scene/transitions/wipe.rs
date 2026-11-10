@@ -1,7 +1,5 @@
 //! Shape wipes driven by a scalar field: the incoming clip appears where `field < T(p)`.
-use super::pixels::{
-    FRAC_PI_2, PI, TAU, angle_deg, angle_dir, centre, mix, px, smoothstep,
-};
+use super::pixels::{FRAC_PI_2, PI, TAU, angle_deg, angle_dir, centre, mix, px, smoothstep};
 use super::{Out, Tx};
 use crate::{Error, Result};
 
@@ -72,15 +70,16 @@ fn field_range(w: f32, h: f32, field: &(impl Fn(f32, f32) -> f32 + Sync)) -> (f3
             }
         }
     }
-    if lo.is_finite() {
-        (lo, hi)
-    } else {
-        (0., 1.)
-    }
+    if lo.is_finite() { (lo, hi) } else { (0., 1.) }
 }
 
 /// The sweeping wipe: incoming where `field < T(p)`, field in pixels.
-pub(super) fn field_wipe(t: &Tx, style: Style, field: impl Fn(f32, f32) -> f32 + Sync, out: &mut Out) -> Result<()> {
+pub(super) fn field_wipe(
+    t: &Tx,
+    style: Style,
+    field: impl Fn(f32, f32) -> f32 + Sync,
+    out: &mut Out,
+) -> Result<()> {
     let (w, h) = (t.width as f32, t.height as f32);
     let (lo, hi) = field_range(w, h, &field);
     let margin = style.margin() + (hi - lo) * 0.01;

@@ -68,7 +68,12 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                     1.
                 };
                 add_light(
-                    [base[0] * charred, base[1] * charred, base[2] * charred, base[3]],
+                    [
+                        base[0] * charred,
+                        base[1] * charred,
+                        base[2] * charred,
+                        base[3],
+                    ],
                     col,
                     edge * 2.,
                 )
@@ -104,7 +109,11 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 } else {
                     k
                 };
-                mix(sample_clamped(t.outgoing, sx, sy), sample_clamped(t.incoming, sx, sy), kk)
+                mix(
+                    sample_clamped(t.outgoing, sx, sy),
+                    sample_clamped(t.incoming, sx, sy),
+                    kk,
+                )
             })
         }
         _ => Err(crate::Error::Invalid("transition kind")),

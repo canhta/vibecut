@@ -48,7 +48,12 @@ const fn percent(id: &'static str, name: &'static str, default: f64) -> Transiti
         },
     }
 }
-const fn pixels(id: &'static str, name: &'static str, default: f64, max: f64) -> TransitionParamDef {
+const fn pixels(
+    id: &'static str,
+    name: &'static str,
+    default: f64,
+    max: f64,
+) -> TransitionParamDef {
     TransitionParamDef {
         id,
         name,
@@ -489,11 +494,7 @@ pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
         name: "Light Leak",
         family: "Lights & Blurs",
         shelf: "Overlay",
-        params: &[
-            colour("color", "Colour", [255, 140, 51]),
-            AMOUNT,
-            seed(),
-        ],
+        params: &[colour("color", "Colour", [255, 140, 51]), AMOUNT, seed()],
     },
     TransitionDefinition {
         kind: "colour_leak",

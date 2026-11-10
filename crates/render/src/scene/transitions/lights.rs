@@ -1,8 +1,8 @@
 //! Lights and blurs: light effects that peak at the midpoint while the clips swap underneath.
 use super::pixels::{
-    PI, add_light, angle_deg, angle_dir, bell, blurred, centre, disc_blur_with, disc_offsets, ease_in,
-    ease_out, hash, line_blur, luma, mid_mix, mix, mixed, perceptual_luma, pixel_clamped, px,
-    smoothstep, spin_blur, taps, zoom_blur,
+    PI, add_light, angle_deg, angle_dir, bell, blurred, centre, disc_blur_with, disc_offsets,
+    ease_in, ease_out, hash, line_blur, luma, mid_mix, mix, mixed, perceptual_luma, pixel_clamped,
+    px, smoothstep, spin_blur, taps, zoom_blur,
 };
 use super::{Out, Tx};
 use crate::{Error, Image, Result};
@@ -61,13 +61,13 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 [1.; 4]
             };
             let cols: [[f32; 4]; 3] = if leak {
-                [user, [user[0], user[1] * 0.8, user[2] * 0.5, 1.], [1., 0.9, 0.7, 1.]]
-            } else {
                 [
-                    [1., 0.15, 0.6, 1.],
-                    [0.1, 0.8, 1., 1.],
-                    [1., 0.85, 0.1, 1.],
+                    user,
+                    [user[0], user[1] * 0.8, user[2] * 0.5, 1.],
+                    [1., 0.9, 0.7, 1.],
                 ]
+            } else {
+                [[1., 0.15, 0.6, 1.], [0.1, 0.8, 1., 1.], [1., 0.85, 0.1, 1.]]
             };
             let blobs: Vec<(f32, f32, f32, [f32; 4])> = (0..3)
                 .map(|i| {
@@ -112,7 +112,15 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             out.paint(move |x, y| {
                 let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
                 let s = |image: &Image, zoom: f32| {
-                    zoom_blur(image, (fx - cx) / zoom + cx, (fy - cy) / zoom + cy, cx, cy, blur, n)
+                    zoom_blur(
+                        image,
+                        (fx - cx) / zoom + cx,
+                        (fy - cy) / zoom + cy,
+                        cx,
+                        cy,
+                        blur,
+                        n,
+                    )
                 };
                 let a = if k < 1. { s(t.outgoing, za) } else { [0.; 4] };
                 let b = if k > 0. { s(t.incoming, zb) } else { [0.; 4] };
@@ -170,8 +178,8 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 let (rx, ry) = (px_ - fx, py_ - fy);
                 let along = rx * dx + ry * dy;
                 let across = -rx * dy + ry * dx;
-                let core =
-                    blob(px_, py_, fx, fy, unit * 0.06) * 3. + blob(px_, py_, fx, fy, unit * 0.35) * 0.6;
+                let core = blob(px_, py_, fx, fy, unit * 0.06) * 3.
+                    + blob(px_, py_, fx, fy, unit * 0.35) * 0.6;
                 let streak = (-(across.abs() / (unit * 0.01))).exp()
                     * (-(along.abs() / (diag * 0.35))).exp()
                     * 1.5;
@@ -231,8 +239,8 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             let band = px(t, "width")?.max(2.);
             let col = t.params.color("color")?;
             let amount = t.params.fraction("amount")?;
-            let ends = [(0., 0.), (w, 0.), (0., h), (w, h)]
-                .map(|(cx, cy): (f32, f32)| cx * dx + cy * dy);
+            let ends =
+                [(0., 0.), (w, 0.), (0., h), (w, h)].map(|(cx, cy): (f32, f32)| cx * dx + cy * dy);
             let lo = ends.iter().copied().fold(f32::INFINITY, f32::min);
             let hi = ends.iter().copied().fold(f32::NEG_INFINITY, f32::max);
             let edge = lo - band + p * (hi - lo + 2. * band);
@@ -366,7 +374,9 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                     1. - smoothstep(-1., 1., d),
                 );
                 let light = if d >= 0. && d < bar {
-                    (1. - d / bar).powi(2) * smoothstep(0., 0.1, qi) * (1. - smoothstep(0.9, 1., qi))
+                    (1. - d / bar).powi(2)
+                        * smoothstep(0., 0.1, qi)
+                        * (1. - smoothstep(0.9, 1., qi))
                 } else {
                     0.
                 };

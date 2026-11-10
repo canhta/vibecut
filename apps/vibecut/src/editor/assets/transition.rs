@@ -107,11 +107,8 @@ impl Preview {
         match result {
             Ok(image) => {
                 let image = egui::ColorImage::from_rgba_unmultiplied([176, 176], &image.bytes);
-                self.texture = Some(ctx.load_texture(
-                    format!("transition.{kind}"),
-                    image,
-                    Default::default(),
-                ));
+                self.texture =
+                    Some(ctx.load_texture(format!("transition.{kind}"), image, Default::default()));
             }
             Err(error) => {
                 tracing::warn!(category = "transition_preview", %error, "preview failed");
