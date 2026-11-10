@@ -7,7 +7,7 @@ use super::error::Error;
 use crate::EditError;
 use crate::cache::{ArtifactCache, ModelLease};
 use ai::transport::{ApiKey, UreqTransport};
-use ai::{ExecutionHooks, Location, SampleRange, Scope};
+use ai::{ExecutionHooks, SampleRange, Scope, Transcriber, Translator};
 use captions::LanguageTag;
 use captions::{LanguageProfile, LanguageRegistry, NfcText};
 use std::{path::PathBuf, sync::Arc};
@@ -193,36 +193,16 @@ impl Providers {
                 )
             }
             TranscriptionProvider::OpenAi { model } => {
-                let config = ai::ProviderConfig::new(
-                    "openai".into(),
-                    model.as_str().into(),
-                    ai::openai::SETTINGS_FINGERPRINT.into(),
-                    Location::Remote {
-                        backend: ai::openai::BACKEND.into(),
-                        base_url: ai::openai::BASE_URL.into(),
-                        auth_ref: "OPENAI_API_KEY".into(),
-                    },
-                )?;
                 let value = ai::openai::OpenAiTranscriber::new(
-                    config,
+                    ai::openai::OpenAiTranscriber::provider_config(model)?,
                     credentials.openai()?.clone(),
                     Arc::new(UreqTransport::new()),
                 )?;
                 (TranscriberKind::OpenAi(Arc::new(value)), true, "file")
             }
             TranscriptionProvider::ElevenLabs { model } => {
-                let config = ai::ProviderConfig::new(
-                    "elevenlabs".into(),
-                    model.as_str().into(),
-                    ai::elevenlabs::SETTINGS_FINGERPRINT.into(),
-                    Location::Remote {
-                        backend: ai::elevenlabs::BACKEND.into(),
-                        base_url: ai::elevenlabs::BASE_URL.into(),
-                        auth_ref: "ELEVENLABS_API_KEY".into(),
-                    },
-                )?;
                 let value = ai::elevenlabs::ElevenLabsTranscriber::new(
-                    config,
+                    ai::elevenlabs::ElevenLabsTranscriber::provider_config(model)?,
                     credentials.elevenlabs()?.clone(),
                     Arc::new(UreqTransport::new()),
                 )?;
@@ -396,18 +376,8 @@ pub(crate) fn build_translator(
 ) -> Result<(TranslatorKind, NfcText), EditError> {
     match translation {
         TranslationProvider::OpenAi { model } => {
-            let config = ai::ProviderConfig::new(
-                "openai".into(),
-                model.as_str().into(),
-                ai::openai::TRANSLATION_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::openai::BACKEND.into(),
-                    base_url: ai::openai::BASE_URL.into(),
-                    auth_ref: "OPENAI_API_KEY".into(),
-                },
-            )?;
             let value = ai::openai::OpenAiTranslator::new(
-                config,
+                ai::openai::OpenAiTranslator::provider_config(model)?,
                 credentials.openai()?.clone(),
                 Arc::new(UreqTransport::new()),
             )?;
@@ -417,18 +387,8 @@ pub(crate) fn build_translator(
             ))
         }
         TranslationProvider::Anthropic { model } => {
-            let config = ai::ProviderConfig::new(
-                "anthropic".into(),
-                model.as_str().into(),
-                ai::anthropic::TRANSLATION_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::anthropic::BACKEND.into(),
-                    base_url: ai::anthropic::BASE_URL.into(),
-                    auth_ref: "ANTHROPIC_API_KEY".into(),
-                },
-            )?;
             let value = ai::anthropic::AnthropicTranslator::new(
-                config,
+                ai::anthropic::AnthropicTranslator::provider_config(model)?,
                 credentials.anthropic()?.clone(),
                 Arc::new(UreqTransport::new()),
             )?;
@@ -445,26 +405,20 @@ pub(crate) fn open_chapter(
     chapter: &TextProvider,
     credentials: &Credentials,
 ) -> Result<Arc<dyn ai::chapters::ChapterGenerator>, EditError> {
-    let (config, key) = text_credentials(
-        chapter,
-        ai::chapters::OPENAI_SETTINGS,
-        ai::chapters::ANTHROPIC_SETTINGS,
-        credentials,
-    )?;
-    match chapter {
-        TextProvider::OpenAi { .. } => Ok(Arc::new(ai::chapters::OpenAiChapterGenerator::new(
-            config,
-            key,
+    Ok(match chapter {
+        TextProvider::OpenAi { model } => Arc::new(ai::chapters::OpenAiChapterGenerator::new(
+            ai::chapters::OpenAiChapterGenerator::provider_config(model)?,
+            credentials.openai()?.clone(),
             Arc::new(UreqTransport::new()),
-        )?)),
-        TextProvider::Anthropic { .. } => {
-            Ok(Arc::new(ai::chapters::AnthropicChapterGenerator::new(
-                config,
-                key,
+        )?),
+        TextProvider::Anthropic { model } => {
+            Arc::new(ai::chapters::AnthropicChapterGenerator::new(
+                ai::chapters::AnthropicChapterGenerator::provider_config(model)?,
+                credentials.anthropic()?.clone(),
                 Arc::new(UreqTransport::new()),
-            )?))
+            )?)
         }
-    }
+    })
 }
 /// Build the selected filler classifier; it shares the approved text model,
 /// provider configuration and credential with chapter generation.
@@ -472,62 +426,18 @@ pub(crate) fn open_filler(
     filler: &TextProvider,
     credentials: &Credentials,
 ) -> Result<Arc<dyn ai::fillers::FillerClassifier>, EditError> {
-    let (config, key) = text_credentials(
-        filler,
-        ai::fillers::OPENAI_SETTINGS,
-        ai::fillers::ANTHROPIC_SETTINGS,
-        credentials,
-    )?;
-    match filler {
-        TextProvider::OpenAi { .. } => Ok(Arc::new(ai::fillers::OpenAiFillerClassifier::new(
-            config,
-            key,
+    Ok(match filler {
+        TextProvider::OpenAi { model } => Arc::new(ai::fillers::OpenAiFillerClassifier::new(
+            ai::fillers::OpenAiFillerClassifier::provider_config(model)?,
+            credentials.openai()?.clone(),
             Arc::new(UreqTransport::new()),
-        )?)),
-        TextProvider::Anthropic { .. } => {
-            Ok(Arc::new(ai::fillers::AnthropicFillerClassifier::new(
-                config,
-                key,
-                Arc::new(UreqTransport::new()),
-            )?))
-        }
-    }
-}
-fn text_credentials(
-    provider: &TextProvider,
-    openai_settings: &str,
-    anthropic_settings: &str,
-    credentials: &Credentials,
-) -> Result<(ai::ProviderConfig, ApiKey), EditError> {
-    let (id, backend, base_url, auth_ref, settings, key) = match provider {
-        TextProvider::OpenAi { .. } => (
-            "openai",
-            ai::openai::BACKEND,
-            ai::openai::BASE_URL,
-            "OPENAI_API_KEY",
-            openai_settings,
-            credentials.openai()?,
-        ),
-        TextProvider::Anthropic { .. } => (
-            "anthropic",
-            ai::anthropic::BACKEND,
-            ai::anthropic::BASE_URL,
-            "ANTHROPIC_API_KEY",
-            anthropic_settings,
-            credentials.anthropic()?,
-        ),
-    };
-    let config = ai::ProviderConfig::new(
-        id.into(),
-        provider.model().into(),
-        settings.into(),
-        Location::Remote {
-            backend: backend.into(),
-            base_url: base_url.into(),
-            auth_ref: auth_ref.into(),
-        },
-    )?;
-    Ok((config, key.clone()))
+        )?),
+        TextProvider::Anthropic { model } => Arc::new(ai::fillers::AnthropicFillerClassifier::new(
+            ai::fillers::AnthropicFillerClassifier::provider_config(model)?,
+            credentials.anthropic()?.clone(),
+            Arc::new(UreqTransport::new()),
+        )?),
+    })
 }
 fn load_aligner(
     cache: &mut ArtifactCache,
@@ -555,37 +465,10 @@ impl Providers {
     pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
         match &self.transcriber {
             TranscriberKind::OpenAi(value) => {
-                let disclosure = value.disclosure(&scope)?;
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Transcribe,
-                    provider: disclosure.provider.as_str().into(),
-                    model: disclosure.model.as_str().into(),
-                    languages: disclosure.language.as_str().into(),
-                    audio_seconds: disclosure.audio_micros as f64 / 1_000_000.0,
-                    upload_bytes: disclosure.upload_bytes,
-                    cost: Cost::from(&disclosure.estimate),
-                    terms: vec![
-                        ("policy", disclosure.policy_url.as_str().into()),
-                        ("docs", disclosure.docs_url.as_str().into()),
-                    ],
-                })
+                transcriber_upload(value.disclosure(&scope)?, CatalogOperation::Transcribe)
             }
             TranscriberKind::ElevenLabs(value) => {
-                let disclosure = value.disclosure(&scope)?;
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Transcribe,
-                    provider: disclosure.provider.as_str().into(),
-                    model: disclosure.model.as_str().into(),
-                    languages: disclosure.language.as_str().into(),
-                    audio_seconds: disclosure.audio_micros as f64 / 1_000_000.0,
-                    upload_bytes: disclosure.upload_bytes,
-                    cost: Cost::from(&disclosure.estimate),
-                    terms: vec![
-                        ("policy", disclosure.policy_url.as_str().into()),
-                        ("pricing", disclosure.pricing_url.as_str().into()),
-                        ("docs", disclosure.docs_url.as_str().into()),
-                    ],
-                })
+                transcriber_upload(value.disclosure(&scope)?, CatalogOperation::Transcribe)
             }
             TranscriberKind::Other(value) => {
                 let estimate = value.estimate(&scope);
@@ -604,53 +487,32 @@ impl Providers {
         }
     }
 }
+
+fn transcriber_upload(
+    disclosure: Option<ai::UploadDisclosure>,
+    operation: CatalogOperation,
+) -> Result<UploadRequest, EditError> {
+    let disclosure = disclosure.ok_or(EditError::Unsupported("provider has no upload"))?;
+    Ok(UploadRequest {
+        operation,
+        provider: disclosure.provider.as_str().into(),
+        model: disclosure.model.as_str().into(),
+        languages: disclosure.languages.as_str().into(),
+        audio_seconds: disclosure.audio_micros as f64 / 1_000_000.0,
+        upload_bytes: disclosure.upload_bytes,
+        cost: Cost::from(&disclosure.estimate),
+        terms: disclosure
+            .links
+            .iter()
+            .map(|(name, url)| (*name, url.as_str().into()))
+            .collect(),
+    })
+}
 impl TranslatorKind {
     pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
         match self {
-            Self::OpenAi(value) => {
-                let disclosure = value.disclosure(&scope)?;
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Translate,
-                    provider: "openai".into(),
-                    model: disclosure.model.into(),
-                    languages: format!(
-                        "{} -> {}",
-                        disclosure.source_language.as_str(),
-                        disclosure.target_language.as_str()
-                    ),
-                    audio_seconds: 0.0,
-                    upload_bytes: u64::try_from(
-                        scope.texts.first().map_or(0, |t| t.as_str().len()),
-                    )
-                    .map_err(|_| EditError::Limit)?,
-                    cost: Cost::from(&disclosure.estimate),
-                    terms: vec![("policy", disclosure.policy_url.into())],
-                })
-            }
-            Self::Anthropic(value) => {
-                let disclosure = value.disclosure(&scope)?;
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Translate,
-                    provider: disclosure.provider.into(),
-                    model: disclosure.model.into(),
-                    languages: format!(
-                        "{} -> {}",
-                        disclosure.source_language.as_str(),
-                        disclosure.target_language.as_str()
-                    ),
-                    audio_seconds: 0.0,
-                    upload_bytes: u64::try_from(
-                        scope.texts.first().map_or(0, |t| t.as_str().len()),
-                    )
-                    .map_err(|_| EditError::Limit)?,
-                    cost: Cost::from(&disclosure.estimate),
-                    terms: vec![
-                        ("policy", disclosure.policy_url.into()),
-                        ("pricing", disclosure.pricing_url.into()),
-                        ("structured_output", disclosure.structured_output_url.into()),
-                    ],
-                })
-            }
+            Self::OpenAi(value) => translator_upload(value.disclosure(&scope)?, &scope),
+            Self::Anthropic(value) => translator_upload(value.disclosure(&scope)?, &scope),
             Self::Other(value) => {
                 let estimate = value.estimate(&scope);
                 Ok(UploadRequest {
@@ -673,4 +535,26 @@ impl TranslatorKind {
             }
         }
     }
+}
+
+fn translator_upload(
+    disclosure: Option<ai::UploadDisclosure>,
+    scope: &Scope,
+) -> Result<UploadRequest, EditError> {
+    let disclosure = disclosure.ok_or(EditError::Unsupported("provider has no upload"))?;
+    Ok(UploadRequest {
+        operation: CatalogOperation::Translate,
+        provider: disclosure.provider.as_str().into(),
+        model: disclosure.model.as_str().into(),
+        languages: disclosure.languages.as_str().into(),
+        audio_seconds: 0.0,
+        upload_bytes: u64::try_from(scope.texts.first().map_or(0, |t| t.as_str().len()))
+            .map_err(|_| EditError::Limit)?,
+        cost: Cost::from(&disclosure.estimate),
+        terms: disclosure
+            .links
+            .iter()
+            .map(|(name, url)| (*name, url.as_str().into()))
+            .collect(),
+    })
 }

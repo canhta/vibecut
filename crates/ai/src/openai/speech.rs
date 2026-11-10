@@ -1,14 +1,14 @@
 //! Single-attempt OpenAI `gpt-audio-1.5` speech synthesis over Chat Completions.
 //! Consent, cost, cancellation and validation stay in `speech`; this adapter owns
 //! the exact wire schema, built-in voice gate and bounded WAV decoding.
-use super::official_base_url;
+use crate::remote::{self, UploadDisclosure};
 use crate::speech::{
     SpeechAudio, SpeechCapabilities, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechPolicy,
     SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice, SynthesisConsent,
     SynthesisEstimate, VoiceCategory, prepare_synthesis,
 };
 use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
-use crate::{Error, ExecutionHooks, Location, Money, ProviderConfig, Support};
+use crate::{Error, ExecutionHooks, Money, Operation, ProviderConfig, Support};
 use base64::Engine as _;
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
@@ -18,12 +18,12 @@ use std::sync::Arc;
 
 /// The only admitted OpenAI audio model. Deprecated Speech API models are refused.
 pub const SPEECH_MODEL: &str = "gpt-audio-1.5";
-pub const SPEECH_BACKEND: &str = "openai";
+const SPEECH_BACKEND: &str = "openai";
 pub const SPEECH_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 /// Observed live output: 24 kHz mono 16-bit PCM WAV.
 pub const SPEECH_SAMPLE_RATE: u32 = 24_000;
 /// Settings identity for composition-owned cache keys and provider configs.
-pub const SPEECH_SETTINGS_FINGERPRINT: &str = "openai-speech-v1;model=gpt-audio-1.5;format=wav;pcm16;rate=24000;store=false;instructions=verbatim-v1;normalization=nfc";
+const SPEECH_SETTINGS_FINGERPRINT: &str = "openai-speech-v1;model=gpt-audio-1.5;format=wav;pcm16;rate=24000;store=false;instructions=verbatim-v1;normalization=nfc";
 /// Built-in voices from the OpenAI TTS guide. Custom voice IDs are voice cloning.
 pub const SPEECH_VOICES: [&str; 13] = [
     "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse",
@@ -60,6 +60,19 @@ pub struct OpenAiSpeechSynthesizer {
 }
 
 impl OpenAiSpeechSynthesizer {
+    /// The one admitted configuration for this model id.
+    pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
+        remote::provider_config(
+            &[SPEECH_MODEL],
+            model,
+            SPEECH_SETTINGS_FINGERPRINT,
+            SPEECH_BACKEND,
+            super::BASE_URL,
+            "openai",
+            "OPENAI_API_KEY",
+        )
+    }
+
     /// Admits only `gpt-audio-1.5`, the `openai` backend and the official HTTPS base
     /// URL. The key is resolved by composition, never here.
     pub fn new(
@@ -67,24 +80,14 @@ impl OpenAiSpeechSynthesizer {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     ) -> Result<Self, Error> {
-        if config.model().as_str() != SPEECH_MODEL
-            || config.settings_fingerprint().as_str() != SPEECH_SETTINGS_FINGERPRINT
-        {
-            return Err(Error::Unsupported);
-        }
-        match config.location() {
-            Location::Remote {
-                backend, base_url, ..
-            } => {
-                if backend.as_str() != SPEECH_BACKEND {
-                    return Err(Error::Unsupported);
-                }
-                official_base_url(base_url.as_str())?;
-            }
-            Location::Local { .. } => {
-                return Err(Error::Invalid("OpenAI speech requires remote config"));
-            }
-        }
+        remote::admit(
+            &config,
+            &[SPEECH_MODEL],
+            Some(SPEECH_SETTINGS_FINGERPRINT),
+            SPEECH_BACKEND,
+            super::BASE_URL,
+            Some("OpenAI speech requires remote config"),
+        )?;
         let languages = SPEECH_LANGUAGES
             .iter()
             .map(|(tag, script)| {
@@ -108,11 +111,6 @@ impl OpenAiSpeechSynthesizer {
             languages,
             voices,
         })
-    }
-
-    /// Canonical settings identity for engine cache keys.
-    pub fn settings_fingerprint() -> &'static str {
-        SPEECH_SETTINGS_FINGERPRINT
     }
 }
 
@@ -192,6 +190,25 @@ impl SpeechSynthesizer for OpenAiSpeechSynthesizer {
             return SynthesisEstimate::Unknown;
         };
         Money::new("USD", total).map_or(SynthesisEstimate::Unknown, SynthesisEstimate::UpperBound)
+    }
+
+    fn disclosure(&self, request: &SpeechRequest) -> Result<Option<UploadDisclosure>, Error> {
+        self.capabilities(request).check(request)?;
+        Ok(Some(remote::disclosure(remote::Disclosure {
+            operation: Operation::Synthesize,
+            provider: "OpenAI",
+            model: self.config.model(),
+            languages: NfcText::from(format!(
+                "{}/{}",
+                request.language().language.as_str(),
+                request.language().script.as_str()
+            )),
+            audio_micros: request.max_duration_micros(),
+            upload_bytes: u64::try_from(request.text().as_str().len())
+                .map_err(|_| Error::Payload)?,
+            estimate: remote::cost_ceiling(self.estimate(request)),
+            links: &[("policy", POLICY_URL)],
+        })))
     }
 
     fn synthesize(
@@ -553,49 +570,17 @@ fn speech_usage(usage: &WireUsage) -> Result<SpeechUsage, Error> {
 }
 
 fn speech_status_error(response: &HttpResponse) -> Error {
-    if (300..=399).contains(&response.status) {
-        return Error::Invalid("provider redirect");
-    }
-    if matches!(response.status, 400 | 404 | 409 | 422) {
-        let code = error_code(&response.body);
-        if code.as_deref().is_some_and(|code| {
-            code.contains("content_policy")
-                || code.contains("content_filter")
-                || code.contains("moderation")
-        }) {
-            return Error::ContentPolicy;
+    remote::status_error(response, |status, fields| {
+        if matches!(status, 400 | 404 | 409 | 422) {
+            if remote::matches(fields, &["content_policy", "content_filter", "moderation"]) {
+                return Some(Error::ContentPolicy);
+            }
+            if remote::matches(fields, &["voice"]) {
+                return Some(Error::UnsupportedVoice);
+            }
         }
-        if code.as_deref().is_some_and(|code| code.contains("voice")) {
-            return Error::UnsupportedVoice;
-        }
-    }
-    super::status_error(response)
-}
-
-fn error_code(body: &[u8]) -> Option<String> {
-    #[derive(Deserialize)]
-    struct Envelope {
-        error: Option<Detail>,
-    }
-    #[derive(Deserialize)]
-    struct Detail {
-        code: Option<String>,
-        #[serde(rename = "type")]
-        kind: Option<String>,
-        param: Option<String>,
-    }
-    let envelope = serde_json::from_slice::<Envelope>(body).ok()?;
-    let detail = envelope.error?;
-    let fields: Vec<_> = [detail.code, detail.kind, detail.param]
-        .into_iter()
-        .flatten()
-        .filter(|value| !value.trim().is_empty())
-        .collect();
-    if fields.is_empty() {
-        None
-    } else {
-        Some(fields.join(" ").to_ascii_lowercase())
-    }
+        (status == 429 && remote::quota(fields)).then_some(Error::Quota)
+    })
 }
 
 #[derive(Deserialize)]

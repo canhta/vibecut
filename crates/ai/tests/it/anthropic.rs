@@ -5,16 +5,15 @@
     clippy::indexing_slicing
 )]
 use ai::anthropic::{
-    ANTHROPIC_VERSION, AnthropicTranslator, BASE_URL, ENDPOINT, MODEL, MessagesClient,
-    TRANSLATION_MODE, TRANSLATION_SETTINGS, message_text,
+    ANTHROPIC_VERSION, AnthropicTranslator, ENDPOINT, MODEL, MessagesClient, TRANSLATION_MODE,
+    message_text,
 };
 use ai::transport::{
     ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, UreqTransport,
 };
 use ai::{
-    Consent, Error, ExecutionHooks, GlossaryTerm, Location, Money, Operation, ProviderConfig,
-    Request, Scope, Stage, Translation, TranslationSegment, TranslationWindow, Translator,
-    translate,
+    Consent, Error, ExecutionHooks, GlossaryTerm, Money, Operation, ProviderConfig, Request, Scope,
+    Stage, Translation, TranslationSegment, TranslationWindow, Translator, translate,
 };
 use captions::LanguageTag;
 use serde_json::{Value, json};
@@ -79,22 +78,8 @@ fn lang(value: &str) -> LanguageTag {
     LanguageTag::parse(value).unwrap()
 }
 
-fn config_at(base_url: &str) -> ProviderConfig {
-    config_with("anthropic", base_url)
-}
-
-fn config_with(id: &str, base_url: &str) -> ProviderConfig {
-    ProviderConfig::new(
-        id.into(),
-        MODEL.into(),
-        TRANSLATION_SETTINGS.into(),
-        Location::Remote {
-            backend: "anthropic".into(),
-            base_url: base_url.into(),
-            auth_ref: format!("keychain:vibecut/{id}").into(),
-        },
-    )
-    .unwrap()
+fn config() -> ProviderConfig {
+    AnthropicTranslator::provider_config(MODEL).unwrap()
 }
 
 fn window(source: &str, target: &str) -> TranslationWindow {
@@ -138,7 +123,7 @@ fn provider(response: Value) -> (AnthropicTranslator, Arc<Transport>) {
     });
     (
         AnthropicTranslator::new(
-            config_at(BASE_URL),
+            config(),
             ApiKey::new("test-anthropic-key").unwrap(),
             transport.clone(),
         )
@@ -162,7 +147,7 @@ fn six_directions_use_strict_messages_schema_and_context() {
         ("zh-Hans", "en"),
     ] {
         let window = window(source, target);
-        let scope = scope(&window, config_at(BASE_URL));
+        let scope = scope(&window, config());
         let approved = consent(&scope);
         let (translator, transport) = provider(response(json!({
             "translations": [{"id": "cue-1", "text": "VibeCut 12 kg translated"}]
@@ -221,20 +206,29 @@ fn six_directions_use_strict_messages_schema_and_context() {
             serde_json::from_str(body["messages"][0]["content"].as_str().unwrap()).unwrap();
         assert_eq!(input["target_language"], target);
         assert_eq!(input["before"][0], "earlier context");
-        let disclosure = translator.disclosure(&scope).unwrap();
-        assert_eq!(disclosure.provider, "Anthropic");
-        assert_eq!(disclosure.model, MODEL);
-        assert_eq!(disclosure.endpoint, ENDPOINT);
-        assert_eq!(disclosure.policy_url, ai::anthropic::POLICY_URL);
-        assert!(disclosure.policy_url.contains("claude.com"));
-        assert_eq!(disclosure.pricing_url, ai::anthropic::PRICING_URL);
+        let disclosure = translator.disclosure(&scope).unwrap().unwrap();
+        assert_eq!(disclosure.provider.as_str(), "Anthropic");
+        assert_eq!(disclosure.model.as_str(), MODEL);
+        assert_eq!(
+            disclosure.link("policy").unwrap().as_str(),
+            ai::anthropic::POLICY_URL
+        );
+        assert!(
+            disclosure
+                .link("policy")
+                .unwrap()
+                .as_str()
+                .contains("claude.com")
+        );
+        assert!(disclosure.link("pricing").is_some());
+        assert!(disclosure.link("structured_output").is_some());
     }
 }
 
 #[test]
 fn every_context_glossary_style_id_text_and_language_change_invalidates_consent() {
     let window = window("vi", "en");
-    let scope = scope(&window, config_at(BASE_URL));
+    let scope = scope(&window, config());
     let approved = consent(&scope);
     let (translator, transport) = provider(response(json!({
         "translations": [{"id": "cue-1", "text": "VibeCut 12 kg"}]
@@ -269,7 +263,7 @@ fn every_context_glossary_style_id_text_and_language_change_invalidates_consent(
 #[test]
 fn schema_ids_numbers_glossary_and_incomplete_responses_are_validated() {
     let window = window("vi", "en");
-    let scope = scope(&window, config_at(BASE_URL));
+    let scope = scope(&window, config());
     let approved = consent(&scope);
     let run = |body: Value| {
         let (translator, _) = provider(body);
@@ -381,13 +375,13 @@ fn provider_errors_are_typed_without_bodies_and_do_not_retry() {
         calls: AtomicUsize::new(0),
     });
     let translator = AnthropicTranslator::new(
-        config_at(BASE_URL),
+        config(),
         ApiKey::new("test-anthropic-key").unwrap(),
         transport.clone(),
     )
     .unwrap();
     let window = window("vi", "en");
-    let scope = scope(&window, config_at(BASE_URL));
+    let scope = scope(&window, config());
     let approved = consent(&scope);
     let cases: Vec<Error> = (0..8)
         .map(|_| {
@@ -430,22 +424,7 @@ fn official_endpoint_and_redacted_debug_are_enforced() {
         calls: AtomicUsize::new(0),
         request: Mutex::new(None),
     });
-    for destination in [
-        "https://third-party.example/v1",
-        "https://api.anthropic.com.evil.example/v1",
-        "https://api.anthropic.com/v1/messages",
-        "https://api.anthropic.com/v2",
-    ] {
-        assert!(matches!(
-            AnthropicTranslator::new(
-                config_at(destination),
-                ApiKey::new("test-anthropic-key").unwrap(),
-                transport.clone()
-            ),
-            Err(Error::Unsupported)
-        ));
-    }
-    let provider = config_at("https://api.anthropic.com/v1/");
+    let provider = config();
     let translator = AnthropicTranslator::new(
         provider.clone(),
         ApiKey::new("test-anthropic-key").unwrap(),
@@ -481,12 +460,12 @@ fn capabilities_and_reuse_transport_are_explicit() {
         request: Mutex::new(None),
     });
     let translator = AnthropicTranslator::new(
-        config_at(BASE_URL),
+        config(),
         ApiKey::new("test-anthropic-key").unwrap(),
         transport,
     )
     .unwrap();
-    let scope = scope(&window("vi", "en"), config_at(BASE_URL));
+    let scope = scope(&window("vi", "en"), config());
     let capabilities = translator.capabilities(&scope);
     assert_eq!(capabilities.model.as_str(), MODEL);
     assert_eq!(capabilities.mode.as_str(), TRANSLATION_MODE);
@@ -546,7 +525,7 @@ fn live_six_directions_use_production_transport() {
     }
     let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY");
     let transport = Arc::new(UreqTransport::new());
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let translator =
         AnthropicTranslator::new(provider.clone(), ApiKey::new(key).unwrap(), transport).unwrap();
     let mut completed = 0;

@@ -5,7 +5,7 @@
 //! parsing. It never retries or switches provider.
 use crate::transport::{ApiKey, HttpRequest, HttpTransport};
 use crate::{
-    Error, ExecutionHooks, Location, ProviderConfig, Stage, contracts::checkpoint,
+    Error, ExecutionHooks, ProviderConfig, Stage, contracts::checkpoint, remote,
     transport::HttpResponse,
 };
 use captions::NfcText;
@@ -44,17 +44,7 @@ impl TextModel {
         } else {
             (crate::openai::BACKEND, crate::openai::BASE_URL)
         };
-        if config.model().as_str() != model || config.settings_fingerprint().as_str() != settings {
-            return Err(Error::Unsupported);
-        }
-        match config.location() {
-            Location::Remote {
-                backend: b,
-                base_url,
-                ..
-            } if b.as_str() == backend && base_url.as_str().trim_end_matches('/') == base => {}
-            _ => return Err(Error::Unsupported),
-        }
+        remote::admit(&config, &[model], Some(settings), backend, base, None)?;
         let client = if anthropic {
             Client::Anthropic(crate::anthropic::MessagesClient::new(key, transport))
         } else {
@@ -71,12 +61,6 @@ impl TextModel {
             Client::Anthropic(_) => "Anthropic",
         }
     }
-    pub(crate) fn endpoint(&self) -> &'static str {
-        match self.client {
-            Client::OpenAi { .. } => crate::openai::TRANSLATION_ENDPOINT,
-            Client::Anthropic(_) => crate::anthropic::ENDPOINT,
-        }
-    }
     pub(crate) fn policy_url(&self) -> &'static str {
         match self.client {
             Client::OpenAi { .. } => "https://developers.openai.com/api/docs/guides/your-data",
@@ -84,16 +68,16 @@ impl TextModel {
         }
     }
     /// Send one structured request and return only the decoded JSON object.
-    pub(crate) fn send(
-        &self,
-        name: &str,
-        instructions: &str,
-        schema: Value,
-        payload: &NfcText,
-        stage: Stage,
-        hooks: &dyn ExecutionHooks,
-        max_bytes: u64,
-    ) -> Result<Value, Error> {
+    pub(crate) fn send(&self, request: TextRequest<'_>) -> Result<Value, Error> {
+        let TextRequest {
+            name,
+            instructions,
+            schema,
+            payload,
+            stage,
+            hooks,
+            max_bytes,
+        } = request;
         let body = match self.client {
             Client::OpenAi { .. } => {
                 json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":instructions,"input":payload.as_str(),"text":{"format":crate::structured::format(name,schema)}})
@@ -125,6 +109,17 @@ impl TextModel {
             Client::Anthropic(_) => decode_anthropic(&response),
         }
     }
+}
+
+/// One bounded structured text request owned by the operation adapter.
+pub(crate) struct TextRequest<'a> {
+    pub name: &'a str,
+    pub instructions: &'a str,
+    pub schema: Value,
+    pub payload: &'a NfcText,
+    pub stage: Stage,
+    pub hooks: &'a dyn ExecutionHooks,
+    pub max_bytes: u64,
 }
 fn decode_openai(response: &HttpResponse) -> Result<Value, Error> {
     crate::structured::parse(response)

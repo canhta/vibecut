@@ -5,8 +5,8 @@
     reason = "test fixtures"
 )]
 use ai::{
-    Consent, CostEstimate, Error, ExecutionHooks, Location, Money, Operation, ProviderConfig,
-    Request, SampleRange, Scope, Stage,
+    Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
+    SampleRange, Scope, Stage,
     fillers::*,
     transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport},
 };
@@ -49,32 +49,11 @@ fn input(include_markers: bool) -> FillerInput {
     }
 }
 fn config(anthropic: bool) -> ProviderConfig {
-    ProviderConfig::new(
-        "fillers".into(),
-        if anthropic {
-            ai::anthropic::MODEL
-        } else {
-            OPENAI_MODEL
-        }
-        .into(),
-        if anthropic {
-            ANTHROPIC_SETTINGS
-        } else {
-            OPENAI_SETTINGS
-        }
-        .into(),
-        Location::Remote {
-            backend: if anthropic { "anthropic" } else { "openai" }.into(),
-            base_url: if anthropic {
-                ai::anthropic::BASE_URL
-            } else {
-                ai::openai::BASE_URL
-            }
-            .into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap()
+    if anthropic {
+        ai::fillers::AnthropicFillerClassifier::provider_config(ai::anthropic::MODEL).unwrap()
+    } else {
+        ai::fillers::OpenAiFillerClassifier::provider_config(OPENAI_MODEL).unwrap()
+    }
 }
 fn scope(w: &FillerInput, p: &dyn FillerClassifier) -> Scope {
     Scope {
@@ -312,7 +291,7 @@ fn adapters_return_exact_ids_and_name_their_provider() {
                 }),
             )
             .unwrap()
-            .disclosure(&input(false), &scope(&input(false), p.as_ref()))
+            .disclosure(&scope(&input(false), p.as_ref()))
         } else {
             OpenAiFillerClassifier::new(
                 config(false),
@@ -324,14 +303,16 @@ fn adapters_return_exact_ids_and_name_their_provider() {
                 }),
             )
             .unwrap()
-            .disclosure(&input(false), &scope(&input(false), p.as_ref()))
+            .disclosure(&scope(&input(false), p.as_ref()))
         }
+        .unwrap()
         .unwrap();
         assert_eq!(
-            disclosure.provider,
+            disclosure.provider.as_str(),
             if anthropic { "Anthropic" } else { "OpenAI" }
         );
         assert!(matches!(disclosure.estimate, CostEstimate::UpperBound(_)));
+        assert!(disclosure.link("policy").is_some());
     }
 }
 

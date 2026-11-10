@@ -174,7 +174,7 @@ pub fn suggest(
     let mut requests = Vec::with_capacity(windows.len());
     for window in &windows {
         let scope = scope_for(provider.as_clip(), window, &source_fingerprint)?;
-        if let Some(disclosure) = provider.disclosure(window, &scope)? {
+        if let Some(disclosure) = provider.disclosure(&scope)? {
             requests.push((
                 scope.clone(),
                 upload_request(&disclosure, &source_language)?,

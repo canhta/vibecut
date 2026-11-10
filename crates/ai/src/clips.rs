@@ -7,7 +7,7 @@ use crate::{
 };
 use captions::{LanguageTag, NfcText};
 pub use heuristic::HeuristicClipSuggester;
-pub use remote::{AnthropicClipSuggester, ClipDisclosure, OPENAI_LUNA_MODEL, OpenAiClipSuggester};
+pub use remote::{AnthropicClipSuggester, OPENAI_LUNA_MODEL, OpenAiClipSuggester};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{SourceRange, Tick};
@@ -263,6 +263,11 @@ pub trait ClipSuggester: Send + Sync {
     fn capabilities(&self, scope: &Scope) -> Capabilities;
     fn estimate(&self, scope: &Scope) -> CostEstimate;
     fn source(&self) -> ClipSource;
+    /// Provider-neutral upload disclosure for this exact scope; the local
+    /// heuristic returns `Ok(None)` and never uploads.
+    fn disclosure(&self, _scope: &Scope) -> Result<Option<crate::UploadDisclosure>, Error> {
+        Ok(None)
+    }
     fn suggest(
         &self,
         window: &ClipInput,

@@ -3,10 +3,10 @@
 mod speech;
 mod translation;
 use crate::contracts::checkpoint;
+use crate::remote::{self, UploadDisclosure};
 use crate::{
-    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Money,
-    Operation, ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Stage, Support,
-    Transcriber,
+    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Money, Operation,
+    ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Stage, Support, Transcriber,
 };
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
@@ -17,8 +17,7 @@ use std::sync::Arc;
 pub use translation::*;
 
 use crate::transport::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, retry_after,
-    wav, wav_bytes,
+    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, wav,
 };
 
 /// The only production model admitted here. Deprecated transcription models are refused.
@@ -40,24 +39,8 @@ const MODE: &str = "file";
 /// Product ASR languages. Extend this data table only with documented API support.
 pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 /// Settings identity for composition-owned cache keys.
-pub const SETTINGS_FINGERPRINT: &str =
+const SETTINGS_FINGERPRINT: &str =
     "openai-transport-v1;model=gpt-transcribe;format=json;wav=pcm16;languages=vi,en,zh";
-
-/// What the composition root must show before granting upload consent.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UploadDisclosure {
-    pub operation: Operation,
-    pub provider: NfcText,
-    pub model: NfcText,
-    pub endpoint: NfcText,
-    pub language: LanguageTag,
-    pub format: NfcText,
-    pub audio_micros: u64,
-    pub upload_bytes: u64,
-    pub estimate: CostEstimate,
-    pub policy_url: NfcText,
-    pub docs_url: NfcText,
-}
 
 /// Consent-gated OpenAI file transcription over an injected blocking transport.
 pub struct OpenAiTranscriber {
@@ -67,6 +50,19 @@ pub struct OpenAiTranscriber {
     languages: Vec<LanguageTag>,
 }
 impl OpenAiTranscriber {
+    /// The one admitted configuration for this model id.
+    pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
+        remote::provider_config(
+            &[MODEL],
+            model,
+            SETTINGS_FINGERPRINT,
+            BACKEND,
+            BASE_URL,
+            "openai",
+            "OPENAI_API_KEY",
+        )
+    }
+
     /// Admits only the `gpt-transcribe` model, the `openai` backend and a remote
     /// versioned HTTPS base URL. The key is resolved by composition, never here.
     pub fn new(
@@ -74,20 +70,14 @@ impl OpenAiTranscriber {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     ) -> Result<Self, Error> {
-        if config.model().as_str() != MODEL {
-            return Err(Error::Unsupported);
-        }
-        match config.location() {
-            Location::Remote {
-                backend, base_url, ..
-            } => {
-                if backend.as_str() != BACKEND {
-                    return Err(Error::Unsupported);
-                }
-                official_base_url(base_url.as_str())?;
-            }
-            Location::Local { .. } => return Err(Error::Invalid("OpenAI requires remote config")),
-        }
+        remote::admit(
+            &config,
+            &[MODEL],
+            None,
+            BACKEND,
+            BASE_URL,
+            Some("OpenAI requires remote config"),
+        )?;
         let languages = LANGUAGES
             .iter()
             .map(|tag| LanguageTag::parse(tag).map_err(Error::Captions))
@@ -99,45 +89,8 @@ impl OpenAiTranscriber {
             languages,
         })
     }
-
-    /// Canonical settings identity for the engine cache key.
-    pub fn settings_fingerprint() -> &'static str {
-        SETTINGS_FINGERPRINT
-    }
-
-    /// Provider identity, policy link, payload and cost for upload approval.
-    pub fn disclosure(&self, scope: &Scope) -> Result<UploadDisclosure, Error> {
-        self.validate_scope(scope)?;
-        let audio_micros = duration_micros(scope)?;
-        let upload_bytes = encoded_bytes(scope)?;
-        Ok(UploadDisclosure {
-            operation: Operation::Transcribe,
-            provider: NfcText::from("OpenAI"),
-            model: self.config.model().clone(),
-            endpoint: NfcText::from(ENDPOINT),
-            language: scope.source_language.clone(),
-            format: NfcText::from(format!(
-                "audio/wav; mono 16-bit PCM at {} Hz",
-                scope.sample_rate
-            )),
-            audio_micros,
-            upload_bytes,
-            estimate: self.estimate(scope),
-            policy_url: NfcText::from(POLICY_URL),
-            docs_url: NfcText::from(DOCS_URL),
-        })
-    }
-
-    fn validate_scope(&self, scope: &Scope) -> Result<(), Error> {
-        if scope.provider != self.config {
-            return Err(Error::Unsupported);
-        }
-        if !scope.texts.is_empty() {
-            return Err(Error::Invalid("transcription text payload"));
-        }
-        self.capabilities(scope).check(scope)
-    }
 }
+
 impl fmt::Debug for OpenAiTranscriber {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -174,7 +127,8 @@ impl Transcriber for OpenAiTranscriber {
     }
 
     fn estimate(&self, scope: &Scope) -> CostEstimate {
-        let Some(seconds) = rounded_up_seconds(scope) else {
+        let Some(seconds) = remote::rounded_up_seconds(scope).and_then(|s| u64::try_from(s).ok())
+        else {
             return CostEstimate::Unknown;
         };
         let Some(micros) = seconds.checked_mul(PRICE_MICROS_PER_SECOND) else {
@@ -186,6 +140,21 @@ impl Transcriber for OpenAiTranscriber {
         }
     }
 
+    fn disclosure(&self, scope: &Scope) -> Result<Option<UploadDisclosure>, Error> {
+        let capabilities = self.capabilities(scope);
+        remote::validate_audio_scope(&self.config, scope, &capabilities)?;
+        Ok(Some(remote::disclosure(remote::Disclosure {
+            operation: Operation::Transcribe,
+            provider: "OpenAI",
+            model: self.config.model(),
+            languages: NfcText::from(scope.source_language.as_str()),
+            audio_micros: remote::duration_micros(scope)?,
+            upload_bytes: remote::encoded_bytes(scope, MAX_UPLOAD_BYTES)?,
+            estimate: self.estimate(scope),
+            links: &[("policy", POLICY_URL), ("docs", DOCS_URL)],
+        })))
+    }
+
     fn transcribe(
         &self,
         audio: AudioWindow<'_>,
@@ -193,8 +162,15 @@ impl Transcriber for OpenAiTranscriber {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Vec<RecognitionSegment>, Error> {
         checkpoint(hooks, Stage::Transcribe)?;
-        let upload = self.authorize(audio, request)?;
-        let outbound = build_request(&upload, audio)?;
+        let scope = request.scope;
+        let capabilities = self.capabilities(scope);
+        remote::validate_audio_scope(&self.config, scope, &capabilities)?;
+        audio.validate(scope)?;
+        if remote::encoded_bytes(scope, MAX_UPLOAD_BYTES)? > scope.max_bytes {
+            return Err(Error::Payload);
+        }
+        request.prepare(&capabilities, &self.estimate(scope), Operation::Transcribe)?;
+        let outbound = build_request(scope, &self.key, audio)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let response = self.transport.send(outbound)?;
         checkpoint(hooks, Stage::Transcribe)?;
@@ -204,74 +180,9 @@ impl Transcriber for OpenAiTranscriber {
     }
 }
 
-/// A network request exists only after consent, capability and audio checks pass.
-struct AuthorizedUpload<'a> {
-    scope: &'a Scope,
-    key: &'a ApiKey,
-}
-
-impl OpenAiTranscriber {
-    fn authorize<'a>(
-        &'a self,
-        audio: AudioWindow<'_>,
-        request: &'a Request<'_>,
-    ) -> Result<AuthorizedUpload<'a>, Error> {
-        let scope = request.scope;
-        self.validate_scope(scope)?;
-        audio.validate(scope)?;
-        if encoded_bytes(scope)? > scope.max_bytes {
-            return Err(Error::Payload);
-        }
-        request.prepare(
-            &self.capabilities(scope),
-            &self.estimate(scope),
-            Operation::Transcribe,
-        )?;
-        Ok(AuthorizedUpload {
-            scope,
-            key: &self.key,
-        })
-    }
-}
-
-fn official_base_url(base_url: &str) -> Result<(), Error> {
-    if base_url.trim_end_matches('/') == BASE_URL {
-        Ok(())
-    } else {
-        // Consent names the official endpoint; never
-        // apply it to a proxy, lookalike host or unsupported version path.
-        Err(Error::Unsupported)
-    }
-}
-
-fn duration_micros(scope: &Scope) -> Result<u64, Error> {
-    let micros = u128::from(scope.source_samples.len())
-        .checked_mul(1_000_000)
-        .ok_or(Error::Payload)?
-        / u128::from(scope.sample_rate);
-    u64::try_from(micros).map_err(|_| Error::Payload)
-}
-
-fn rounded_up_seconds(scope: &Scope) -> Option<u64> {
-    let samples = u128::from(scope.source_samples.len());
-    let rate = u128::from(scope.sample_rate);
-    if rate == 0 {
-        return None;
-    }
-    let seconds = samples.checked_add(rate - 1)? / rate;
-    u64::try_from(seconds).ok()
-}
-
-fn encoded_bytes(scope: &Scope) -> Result<u64, Error> {
-    let bytes = wav_bytes(scope.source_samples.len())?;
-    if bytes > MAX_UPLOAD_BYTES {
-        return Err(Error::Payload);
-    }
-    Ok(bytes)
-}
-
 fn build_request(
-    upload: &AuthorizedUpload<'_>,
+    scope: &Scope,
+    key: &ApiKey,
     audio: AudioWindow<'_>,
 ) -> Result<HttpRequest, Error> {
     let audio = wav(&audio)?;
@@ -281,17 +192,14 @@ fn build_request(
     let mut form = Multipart::new(&audio)?;
     form.field("model", MODEL);
     form.field("response_format", "json");
-    form.field("languages[]", upload.scope.source_language.as_str());
+    form.field("languages[]", scope.source_language.as_str());
     form.file("audio.wav", "audio/wav", &audio);
     let (content_type, body) = form.finish();
     Ok(HttpRequest {
         method: "POST",
         url: ENDPOINT.into(),
         headers: vec![
-            (
-                "Authorization".into(),
-                format!("Bearer {}", upload.key.expose()),
-            ),
+            ("Authorization".into(), format!("Bearer {}", key.expose())),
             ("Content-Type".into(), content_type),
             ("Accept".into(), "application/json".into()),
         ],
@@ -339,43 +247,8 @@ fn parse_transcription(
     }])
 }
 
-#[derive(Deserialize)]
-struct ErrorEnvelope {
-    error: Option<ErrorDetail>,
-}
-#[derive(Deserialize)]
-struct ErrorDetail {
-    code: Option<String>,
-    #[serde(rename = "type")]
-    kind: Option<String>,
-}
-
 pub(crate) fn status_error(response: &HttpResponse) -> Error {
-    match response.status {
-        401 | 403 => Error::Auth,
-        413 => Error::Payload,
-        429 if quota_error(&response.body) => Error::Quota,
-        429 => Error::RateLimit {
-            retry_after_seconds: retry_after(&response.headers),
-        },
-        500..=599 => Error::Server,
-        300..=399 => Error::Invalid("provider redirect"),
-        400 | 404 | 409 | 422 => Error::Invalid("provider rejected request"),
-        _ => Error::Server,
-    }
-}
-
-fn quota_error(body: &[u8]) -> bool {
-    let Ok(envelope) = serde_json::from_slice::<ErrorEnvelope>(body) else {
-        return false;
-    };
-    envelope.error.is_some_and(|detail| {
-        [detail.code, detail.kind]
-            .into_iter()
-            .flatten()
-            .any(|value| {
-                let value = value.to_ascii_lowercase();
-                value.contains("quota") || value.contains("billing")
-            })
+    remote::status_error(response, |status, fields| {
+        (status == 429 && remote::quota(fields)).then_some(Error::Quota)
     })
 }

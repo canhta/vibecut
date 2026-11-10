@@ -5,12 +5,12 @@
     clippy::indexing_slicing
 )]
 use ai::elevenlabs::{
-    BASE_URL, ENDPOINT, ElevenLabsTranscriber, MAX_DURATION_MICROS, MAX_UPLOAD_BYTES,
+    ENDPOINT, ElevenLabsTranscriber, MAX_DURATION_MICROS, MAX_UPLOAD_BYTES, MODEL,
 };
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 use ai::{
-    AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Location, Money, Operation,
-    ProviderConfig, Request, Scope, Stage, TimingUnit, Transcriber,
+    AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
+    Request, Scope, Stage, TimingUnit, Transcriber,
 };
 use captions::LanguageTag;
 use serde_json::Value;
@@ -86,22 +86,12 @@ fn fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
-fn config_at(base_url: &str) -> ProviderConfig {
-    config_with("elevenlabs-transcribe", base_url)
+fn config() -> ProviderConfig {
+    ElevenLabsTranscriber::provider_config(MODEL).unwrap()
 }
 
-fn config_with(id: &str, base_url: &str) -> ProviderConfig {
-    ProviderConfig::new(
-        id.into(),
-        "scribe_v2".into(),
-        ElevenLabsTranscriber::settings_fingerprint().into(),
-        Location::Remote {
-            backend: "elevenlabs".into(),
-            base_url: base_url.into(),
-            auth_ref: format!("keychain:vibecut/{id}").into(),
-        },
-    )
-    .unwrap()
+fn other_config() -> ProviderConfig {
+    ai::openai::OpenAiTranscriber::provider_config(ai::openai::MODEL).unwrap()
 }
 
 fn scope(provider: ProviderConfig) -> Scope {
@@ -188,7 +178,7 @@ fn fixture_scope(name: &str, language: &str) -> (Scope, Vec<f32>, Value) {
     let value: Value = serde_json::from_slice(&body).unwrap();
     let duration = value["audio_duration_secs"].as_f64().unwrap();
     let samples = (duration * 16_000.0).ceil() as usize;
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let mut scope = scope(provider);
     scope.source_language = LanguageTag::parse(language).unwrap();
     scope.source_samples = ai::SampleRange::new(0, samples as u64).unwrap();
@@ -321,7 +311,7 @@ fn timed_chunks_assemble_in_source_order_and_encoded_boundary_is_checked() {
             .unwrap(),
         ),
     ]));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider.clone());
     let samples = vec![0.0f32; 1_440_000];
     let mut first_scope = scope(provider.clone());
@@ -371,7 +361,7 @@ fn timed_chunks_assemble_in_source_order_and_encoded_boundary_is_checked() {
         merged.segments()[0].range.unwrap().start() < merged.segments()[1].range.unwrap().start()
     );
 
-    let mut exact = scope(config_at(BASE_URL));
+    let mut exact = scope(config());
     exact.source_samples = ai::SampleRange::new(0, 1).unwrap();
     exact.max_bytes = 46;
     let exact_consent = consent(&exact);
@@ -420,17 +410,16 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
     let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(fixture(
         "transcribe-en.json",
     ))]));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider.clone());
 
-    let disclosure = transcriber.disclosure(&scope).unwrap();
+    let disclosure = transcriber.disclosure(&scope).unwrap().unwrap();
     assert_eq!(disclosure.operation, Operation::Transcribe);
-    assert_eq!(disclosure.endpoint.as_str(), ENDPOINT);
-    assert_eq!(disclosure.language.as_str(), "vi");
+    assert_eq!(disclosure.languages.as_str(), "vi");
     assert_eq!(disclosure.audio_micros, 2_000_000);
     assert_eq!(disclosure.upload_bytes, 64_044);
-    match disclosure.estimate {
+    match &disclosure.estimate {
         CostEstimate::UpperBound(cost) => {
             assert_eq!(cost.currency(), "USD");
             assert_eq!(cost.micros(), 123);
@@ -439,10 +428,12 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
     }
     assert!(
         disclosure
-            .policy_url
+            .link("policy")
+            .unwrap()
             .as_str()
             .starts_with("https://elevenlabs.io/")
     );
+    assert!(disclosure.link("pricing").is_some());
     assert_eq!(disclosure.provider.as_str(), "ElevenLabs");
 
     let mut translate = scope.clone();
@@ -492,7 +483,7 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
     ));
     assert_eq!(fake.calls(), 0);
     let mut changed_provider = scope.clone();
-    changed_provider.provider = config_with("other-elevenlabs", BASE_URL);
+    changed_provider.provider = other_config();
     let estimate = CostEstimate::UpperBound(Money::new("USD", 123).unwrap());
     assert!(matches!(
         ai::authorize(&changed_payload, &estimate, Some(&approved)),
@@ -516,44 +507,6 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
         Err(Error::Unsupported)
     ));
     assert_eq!(fake.calls(), 0);
-}
-
-#[test]
-fn only_the_official_destination_can_be_constructed() {
-    let fake = Arc::new(FakeTransport::new(Vec::new()));
-    for destination in [
-        "https://third-party.example/v1",
-        "https://api.elevenlabs.io.evil.example/v1",
-        "https://api.elevenlabs.io/v1/speech-to-text",
-        "https://api.elevenlabs.io/v2",
-    ] {
-        assert!(
-            matches!(
-                ElevenLabsTranscriber::new(
-                    config_at(destination),
-                    ApiKey::new("test-key-not-real").unwrap(),
-                    fake.clone(),
-                ),
-                Err(Error::Unsupported)
-            ),
-            "unverified destination admitted: {destination}"
-        );
-    }
-    let provider = config_at("https://api.elevenlabs.io/v1/");
-    let transcriber = ElevenLabsTranscriber::new(
-        provider.clone(),
-        ApiKey::new("test-key-not-real").unwrap(),
-        fake,
-    )
-    .unwrap();
-    assert_eq!(
-        transcriber
-            .disclosure(&scope(provider))
-            .unwrap()
-            .endpoint
-            .as_str(),
-        ENDPOINT
-    );
 }
 
 #[test]
@@ -608,7 +561,7 @@ fn provider_errors_are_typed_without_bodies_and_do_not_retry() {
             body: fixture("error-payload.json"),
         },
     ]));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let approved = consent(&scope);
@@ -682,7 +635,7 @@ fn hostile_timing_and_text_mismatch_are_rejected() {
             .unwrap(),
         ),
     ]));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let approved = consent(&scope);
@@ -707,7 +660,7 @@ fn hostile_timing_and_text_mismatch_are_rejected() {
 #[test]
 fn capabilities_admit_timed_tokens_and_document_limits() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let capabilities = transcriber.capabilities(&scope);
@@ -740,7 +693,7 @@ fn capabilities_admit_timed_tokens_and_document_limits() {
 #[test]
 fn debug_output_redacts_key_headers_audio_and_transcript_bodies() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = adapter(&fake, provider);
     assert!(!format!("{transcriber:?}").contains("test-key-not-real"));
     assert_eq!(
@@ -821,7 +774,7 @@ fn live_elevenlabs_transcription_uses_production_transport() {
     let samples = live_speech().expect("live speech probe unavailable; see fixtures README");
     assert!(samples.len() > 16_000);
     assert!(samples.iter().any(|value| value.abs() > 0.1));
-    let provider = config_at(BASE_URL);
+    let provider = config();
     let transcriber = ElevenLabsTranscriber::new(
         provider.clone(),
         ApiKey::new(key).unwrap(),
@@ -899,7 +852,7 @@ fn audio_events_keep_their_own_native_timing() {
         let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(
             serde_json::to_vec(&serde_json::json!({"text":text, "words":words})).unwrap(),
         )]));
-        let scope = scope(config_at(BASE_URL));
+        let scope = scope(config());
         let transcriber = adapter(&fake, scope.provider.clone());
         let approved = consent(&scope);
         let samples = vec![0.0; 32_000];

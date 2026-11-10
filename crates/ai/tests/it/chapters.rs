@@ -6,8 +6,8 @@
     reason = "test fixtures"
 )]
 use ai::{
-    Capabilities, Consent, CostEstimate, Error, ExecutionHooks, Location, Money, Operation,
-    ProviderConfig, Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator,
+    Capabilities, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
+    Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator,
     chapters::*,
     transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport},
 };
@@ -54,32 +54,11 @@ fn input(language: &str, n: usize) -> ChapterInput {
     }
 }
 fn config(anthropic: bool) -> ProviderConfig {
-    ProviderConfig::new(
-        "chapters".into(),
-        if anthropic {
-            ai::anthropic::MODEL
-        } else {
-            OPENAI_MODEL
-        }
-        .into(),
-        if anthropic {
-            ANTHROPIC_SETTINGS
-        } else {
-            OPENAI_SETTINGS
-        }
-        .into(),
-        Location::Remote {
-            backend: if anthropic { "anthropic" } else { "openai" }.into(),
-            base_url: if anthropic {
-                ai::anthropic::BASE_URL
-            } else {
-                ai::openai::BASE_URL
-            }
-            .into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap()
+    if anthropic {
+        ai::chapters::AnthropicChapterGenerator::provider_config(ai::anthropic::MODEL).unwrap()
+    } else {
+        ai::chapters::OpenAiChapterGenerator::provider_config(OPENAI_MODEL).unwrap()
+    }
 }
 fn scope(w: &ChapterInput, p: &dyn ChapterGenerator) -> Scope {
     Scope {
@@ -614,7 +593,7 @@ fn adapter_wire_identity_and_disclosure_name_the_selected_provider() {
                 }),
             )
             .unwrap()
-            .disclosure(&w, &scope)
+            .disclosure(&scope)
         } else {
             ai::chapters::OpenAiChapterGenerator::new(
                 config(false),
@@ -628,11 +607,16 @@ fn adapter_wire_identity_and_disclosure_name_the_selected_provider() {
                 }),
             )
             .unwrap()
-            .disclosure(&w, &scope)
+            .disclosure(&scope)
         }
+        .unwrap()
         .unwrap();
-        assert_eq!(disclosure.payload, w.consent_text().unwrap());
+        assert_eq!(
+            disclosure.upload_bytes,
+            u64::try_from(w.consent_text().unwrap().as_str().len()).unwrap()
+        );
         assert!(matches!(disclosure.estimate, CostEstimate::UpperBound(_)));
+        assert!(disclosure.link("policy").is_some());
     }
 }
 
@@ -742,17 +726,8 @@ fn optional_translation_reuses_the_shared_window_without_moving_chapters() {
         glossary: Vec::new(),
         style: style.clone(),
     };
-    let config = ProviderConfig::new(
-        "translation".into(),
-        ai::openai::TRANSLATION_MODEL.into(),
-        ai::openai::TRANSLATION_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap();
+    let config =
+        ai::openai::OpenAiTranslator::provider_config(ai::openai::TRANSLATION_MODEL).unwrap();
     let scope = Scope {
         provider: config.clone(),
         operation: Operation::Translate,

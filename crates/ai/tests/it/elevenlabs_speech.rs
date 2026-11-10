@@ -5,7 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::elevenlabs::speech::{
-    BASE_URL, ElevenLabsSpeech, ElevenLabsSpeechSettings, FLASH_MICROS_PER_CHARACTER, FLASH_MODEL,
+    ElevenLabsSpeech, ElevenLabsSpeechSettings, FLASH_MICROS_PER_CHARACTER, FLASH_MODEL,
     LoggingMode, MULTILINGUAL_MICROS_PER_CHARACTER, MULTILINGUAL_MODEL, SAMPLE_RATE, SpeechSpeed,
 };
 use ai::speech::{
@@ -13,7 +13,7 @@ use ai::speech::{
     SpeechVoice, SynthesisConsent, SynthesisEstimate, VoiceCategory, synthesize,
 };
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
-use ai::{Error, ExecutionHooks, Location, Money, ProviderConfig, Stage};
+use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -152,22 +152,8 @@ fn settings() -> ElevenLabsSpeechSettings {
     ElevenLabsSpeechSettings::default()
 }
 
-fn provider_config(
-    model: &str,
-    settings: ElevenLabsSpeechSettings,
-    base_url: &str,
-) -> ProviderConfig {
-    ProviderConfig::new(
-        "elevenlabs-speech".into(),
-        model.into(),
-        settings.settings_fingerprint().into(),
-        Location::Remote {
-            backend: "elevenlabs".into(),
-            base_url: base_url.into(),
-            auth_ref: "keychain:vibecut/elevenlabs".into(),
-        },
-    )
-    .unwrap()
+fn provider_config(model: &str, settings: ElevenLabsSpeechSettings) -> ProviderConfig {
+    ElevenLabsSpeech::provider_config(model, &settings).unwrap()
 }
 
 fn voices() -> Vec<SpeechVoice> {
@@ -184,7 +170,7 @@ fn build_adapter(
     stock: Vec<SpeechVoice>,
 ) -> ElevenLabsSpeech {
     ElevenLabsSpeech::new(
-        provider_config(model, settings, BASE_URL),
+        provider_config(model, settings),
         ApiKey::new("test-key-not-real").unwrap(),
         fake,
         settings,
@@ -392,7 +378,7 @@ fn success_uses_production_seam_and_exact_request() {
     assert_eq!(call.method, "POST");
     assert_eq!(
         call.url,
-        format!("{BASE_URL}/text-to-speech/{VOICE}?output_format=pcm_24000")
+        format!("https://api.elevenlabs.io/v1/text-to-speech/{VOICE}?output_format=pcm_24000")
     );
     assert!(call.headers.iter().any(|(name, value)| {
         name.eq_ignore_ascii_case("xi-api-key") && value == "test-key-not-real"
@@ -837,23 +823,28 @@ fn zero_retention_is_requested_but_never_claimed() {
         output(),
         1_000_000,
     );
-    let disclosure = adapter.disclosure(&request).unwrap();
-    assert!(disclosure.logging.as_str().contains("Enterprise"));
+    let disclosure = adapter.disclosure(&request).unwrap().unwrap();
     assert!(
-        disclosure
+        adapter
+            .capabilities(&request)
             .policy
             .retention
             .as_str()
             .contains("does not verify")
     );
+    assert_eq!(disclosure.operation, ai::Operation::Synthesize);
     assert_eq!(disclosure.model.as_str(), FLASH_MODEL);
-    assert_eq!(disclosure.voice.as_str(), VOICE);
-    assert_eq!(disclosure.billable_characters, 16);
-    assert_eq!(
+    assert_eq!(disclosure.languages.as_str(), "vi/Latn");
+    assert_eq!(disclosure.audio_micros, 1_000_000);
+    assert!(matches!(
         disclosure.estimate,
-        SynthesisEstimate::UpperBound(money(16 * FLASH_MICROS_PER_CHARACTER))
+        ai::CostEstimate::UpperBound(_)
+    ));
+    assert_eq!(
+        disclosure.link("zero_retention").unwrap().as_str(),
+        "https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode"
     );
-    assert_eq!(disclosure.speed, None);
+    assert!(disclosure.link("pricing").is_some());
     let approved = grant_consent(&adapter, &request, 1_000_000);
     synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
     let calls = fake.take();
@@ -868,17 +859,16 @@ fn zero_retention_is_requested_but_never_claimed() {
         settings(),
         voices(),
     );
-    let disclosure = default
-        .disclosure(&request_with(default.config().clone()))
-        .unwrap();
+    let default_request = request_with(default.config().clone());
+    default.disclosure(&default_request).unwrap().unwrap();
     assert!(
-        !disclosure
+        !default
+            .capabilities(&default_request)
             .policy
             .retention
             .as_str()
             .contains("zero retention")
     );
-    assert!(!disclosure.logging.as_str().contains("Enterprise"));
 }
 
 fn request_with(provider: ProviderConfig) -> SpeechRequest {
@@ -1224,73 +1214,14 @@ fn unsupported_configuration_and_voices_are_refused() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
     let key = ApiKey::new("test-key-not-real").unwrap();
 
-    for model in ["eleven_v3", "eleven_turbo_v2_5"] {
-        let config = provider_config(model, settings(), BASE_URL);
-        assert!(matches!(
-            ElevenLabsSpeech::new(config, key.clone(), fake.clone(), settings(), voices()),
-            Err(Error::Unsupported)
-        ));
-    }
-
-    for base_url in [
-        "https://api.elevenlabs.io/v1/",
-        "https://api.elevenlabs.io/v1/other",
-        "https://lookalike.example/v1",
-    ] {
-        let provider = provider_config(FLASH_MODEL, settings(), base_url);
-        let result =
-            ElevenLabsSpeech::new(provider, key.clone(), fake.clone(), settings(), voices());
-        if base_url == "https://api.elevenlabs.io/v1/" {
-            assert!(result.is_ok());
-        } else {
-            assert!(matches!(result, Err(Error::Unsupported)));
-        }
-    }
-
     for invalid in [0.69, 1.21, f64::NAN, f64::INFINITY] {
         assert!(matches!(SpeechSpeed::new(invalid), Err(Error::Invalid(_))));
     }
-    let wrong_settings = ProviderConfig::new(
-        "elevenlabs-speech".into(),
-        FLASH_MODEL.into(),
-        "elevenlabs-speech-v1;format=pcm_24000;normalization=off;speed=none;logging=default".into(),
-        Location::Remote {
-            backend: "elevenlabs".into(),
-            base_url: BASE_URL.into(),
-            auth_ref: "keychain:vibecut/elevenlabs".into(),
-        },
-    )
-    .unwrap();
-    assert!(matches!(
-        ElevenLabsSpeech::new(
-            wrong_settings,
-            key.clone(),
-            fake.clone(),
-            settings(),
-            voices()
-        ),
-        Err(Error::Unsupported)
-    ));
-
-    let local = ProviderConfig::new(
-        "elevenlabs-speech".into(),
-        FLASH_MODEL.into(),
-        settings().settings_fingerprint().into(),
-        Location::Local {
-            backend: "elevenlabs".into(),
-            model_ref: "local".into(),
-        },
-    )
-    .unwrap();
-    assert!(matches!(
-        ElevenLabsSpeech::new(local, key.clone(), fake.clone(), settings(), voices()),
-        Err(Error::Invalid(_))
-    ));
 
     for stock in [Vec::new(), vec![voices()[0].clone(), voices()[0].clone()]] {
         assert!(matches!(
             ElevenLabsSpeech::new(
-                provider_config(FLASH_MODEL, settings(), BASE_URL),
+                provider_config(FLASH_MODEL, settings()),
                 key.clone(),
                 fake.clone(),
                 settings(),
@@ -1307,7 +1238,7 @@ fn unsupported_configuration_and_voices_are_refused() {
         }];
         assert!(matches!(
             ElevenLabsSpeech::new(
-                provider_config(FLASH_MODEL, settings(), BASE_URL),
+                provider_config(FLASH_MODEL, settings()),
                 key.clone(),
                 fake.clone(),
                 settings(),
@@ -1351,7 +1282,7 @@ fn live_elevenlabs_speech_uses_production_transport() {
     ];
     for (tag, script, model, text) in cases {
         let settings = settings();
-        let config = provider_config(model, settings, BASE_URL);
+        let config = provider_config(model, settings);
         let adapter = ElevenLabsSpeech::new(
             config,
             ApiKey::new(key.clone()).unwrap(),

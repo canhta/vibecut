@@ -10,7 +10,7 @@ Requests use Responses `text.format` strict JSON schema, no tools, synchronous, 
 
 One attempt only. Schema joins transient transport failures as engine-retryable; refusals, incomplete results and auth/quota/consent/cost failures do not retry. No automatic fallback.
 
-Disclosure names OpenAI, links its policy and shows language pair, model, endpoint and cost; composition shows these and the payload before `Consent::grant`.
+Disclosure returns the shared `ai::UploadDisclosure` with the language pair, model, payload bytes, cost bound and the provider's policy link; composition shows these and the payload before `Consent::grant`.
 
 The per-attempt upper bound is 344,064 micro-USD: 131,072 input tokens at $2/M plus 8192 output tokens at $10/M. It bounds the capped input bytes plus overhead and is deliberately loose. Engine adds the attempt ceiling and aggregate authorization. A digit-set mismatch yields advisory cue-ID warnings; it does not validate units or equivalent dates or compare digit multiplicity.
 

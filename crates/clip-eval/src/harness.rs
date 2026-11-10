@@ -14,10 +14,10 @@ use crate::transcript;
 use crate::{Error, Result};
 use ai::clips::{
     ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester, OPENAI_LUNA_MODEL,
-    OPENAI_SETTINGS, OpenAiClipSuggester,
+    OpenAiClipSuggester,
 };
 use ai::transport::{ApiKey, UreqTransport};
-use ai::{ExecutionHooks, Location, ProviderConfig, Stage};
+use ai::{ExecutionHooks, Stage};
 use captions::{LanguageProfile, LanguageRegistry, LanguageTag, NfcText, SegmentRules, Transcript};
 
 use std::path::{Path, PathBuf};
@@ -407,16 +407,7 @@ fn make_provider(options: &Options) -> Result<(Box<dyn ClipSuggester>, String)> 
             let key =
                 std::env::var("OPENAI_API_KEY").map_err(|_| Error::MissingKey("OPENAI_API_KEY"))?;
             let key = ApiKey::new(key).map_err(|_| Error::MissingKey("OPENAI_API_KEY"))?;
-            let config = ProviderConfig::new(
-                "clips".into(),
-                OPENAI_LUNA_MODEL.into(),
-                OPENAI_SETTINGS.into(),
-                Location::Remote {
-                    backend: "openai".into(),
-                    base_url: ai::openai::BASE_URL.into(),
-                    auth_ref: "env:OPENAI_API_KEY".into(),
-                },
-            )?;
+            let config = OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL)?;
             let provider = OpenAiClipSuggester::new(config, key, Arc::new(UreqTransport::new()))?;
             Ok((Box::new(provider), "gpt-6-luna".into()))
         }
@@ -490,7 +481,7 @@ fn baseline_input(
 mod tests {
     use super::*;
     use ai::clips::{ClipSource, MAX_WIRE, MODE};
-    use ai::{CostEstimate, Money, Operation, Request, Scope};
+    use ai::{CostEstimate, Location, Money, Operation, ProviderConfig, Request, Scope};
     use time::{SourceRange, Tick};
 
     #[test]

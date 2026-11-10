@@ -45,17 +45,7 @@ fn lang(s: &str) -> LanguageTag {
     LanguageTag::parse(s).unwrap()
 }
 fn config() -> ProviderConfig {
-    ProviderConfig::new(
-        "openai".into(),
-        TRANSLATION_MODEL.into(),
-        TRANSLATION_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: BASE_URL.into(),
-            auth_ref: "test".into(),
-        },
-    )
-    .unwrap()
+    OpenAiTranslator::provider_config(TRANSLATION_MODEL).unwrap()
 }
 fn window(source: &str, target: &str) -> TranslationWindow {
     TranslationWindow {
@@ -148,10 +138,10 @@ fn all_six_directions_and_both_chinese_scripts_use_strict_contextual_requests() 
         assert_eq!(input["after"][0], "later context");
         assert!(!format!("{req:?}").contains("secret-test-key"));
         assert!(!format!("{w:?}").contains("earlier context"));
-        let d = p.disclosure(&s).unwrap();
+        let d = p.disclosure(&s).unwrap().unwrap();
         assert_eq!(d.provider.as_str(), "OpenAI");
         assert_eq!(
-            d.policy_url,
+            d.link("policy").unwrap().as_str(),
             "https://developers.openai.com/api/docs/guides/your-data"
         );
         assert_eq!(t.calls.load(Ordering::Relaxed), 1);

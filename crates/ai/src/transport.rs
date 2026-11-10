@@ -6,7 +6,7 @@ use std::fmt;
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-pub(crate) use text_model::{MAX_OUTPUT, OPENAI_MODEL, TextModel};
+pub(crate) use text_model::{MAX_OUTPUT, OPENAI_MODEL, TextModel, TextRequest};
 
 /// Response bodies are transcripts or error envelopes; cap hostile responses.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;

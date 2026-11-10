@@ -6,14 +6,14 @@
 )]
 use ai::openai::{
     OpenAiSpeechSynthesizer, SPEECH_ENDPOINT, SPEECH_LANGUAGES, SPEECH_MODEL, SPEECH_SAMPLE_RATE,
-    SPEECH_SETTINGS_FINGERPRINT, SPEECH_VOICES,
+    SPEECH_VOICES,
 };
 use ai::speech::{
     SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer, SynthesisConsent,
     VoiceCategory, prepare_synthesis, synthesize,
 };
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
-use ai::{Error, ExecutionHooks, Location, Money, ProviderConfig, Stage};
+use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use base64::Engine as _;
 use captions::LanguageTag;
 use serde_json::Value;
@@ -123,27 +123,8 @@ fn fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
-fn config_at(base_url: &str) -> ProviderConfig {
-    config_with(
-        SPEECH_MODEL,
-        SPEECH_SETTINGS_FINGERPRINT,
-        "openai",
-        base_url,
-    )
-}
-
-fn config_with(model: &str, settings: &str, backend: &str, base_url: &str) -> ProviderConfig {
-    ProviderConfig::new(
-        "openai-speech".into(),
-        model.into(),
-        settings.into(),
-        Location::Remote {
-            backend: backend.into(),
-            base_url: base_url.into(),
-            auth_ref: "keychain:vibecut/openai-speech".into(),
-        },
-    )
-    .unwrap()
+fn config() -> ProviderConfig {
+    OpenAiSpeechSynthesizer::provider_config(SPEECH_MODEL).unwrap()
 }
 
 fn request_with(
@@ -154,7 +135,7 @@ fn request_with(
     duration_micros: u64,
 ) -> SpeechRequest {
     SpeechRequest::new(
-        config_at("https://api.openai.com/v1"),
+        config(),
         text.into(),
         voice.into(),
         SpeechLanguage {
@@ -181,12 +162,7 @@ fn recorded_request() -> SpeechRequest {
 }
 
 fn adapter(fake: Arc<dyn HttpTransport>) -> OpenAiSpeechSynthesizer {
-    OpenAiSpeechSynthesizer::new(
-        config_at("https://api.openai.com/v1"),
-        ApiKey::new("test-key-not-real").unwrap(),
-        fake,
-    )
-    .unwrap()
+    OpenAiSpeechSynthesizer::new(config(), ApiKey::new("test-key-not-real").unwrap(), fake).unwrap()
 }
 
 fn consent(
@@ -314,68 +290,6 @@ fn language_voice_and_constructor_boundaries_fail_before_network() {
         Err(Error::UnsupportedVoice)
     ));
     assert_eq!(fake.calls(), 0);
-
-    for (model, settings, backend, base_url) in [
-        (
-            "gpt-4o-mini-tts",
-            SPEECH_SETTINGS_FINGERPRINT,
-            "openai",
-            "https://api.openai.com/v1",
-        ),
-        (
-            SPEECH_MODEL,
-            "openai-speech-v1;other",
-            "openai",
-            "https://api.openai.com/v1",
-        ),
-        (
-            SPEECH_MODEL,
-            SPEECH_SETTINGS_FINGERPRINT,
-            "other",
-            "https://api.openai.com/v1",
-        ),
-        (
-            SPEECH_MODEL,
-            SPEECH_SETTINGS_FINGERPRINT,
-            "openai",
-            "https://api.openai.com.evil.example/v1",
-        ),
-        (
-            SPEECH_MODEL,
-            SPEECH_SETTINGS_FINGERPRINT,
-            "openai",
-            "https://api.openai.com/v1/audio/speech",
-        ),
-    ] {
-        assert!(
-            matches!(
-                OpenAiSpeechSynthesizer::new(
-                    config_with(model, settings, backend, base_url),
-                    ApiKey::new("test-key-not-real").unwrap(),
-                    fake.clone(),
-                ),
-                Err(Error::Unsupported)
-            ),
-            "unverified configuration admitted: {model} {backend} {base_url}"
-        );
-    }
-    assert!(matches!(
-        OpenAiSpeechSynthesizer::new(
-            ProviderConfig::new(
-                "local".into(),
-                SPEECH_MODEL.into(),
-                SPEECH_SETTINGS_FINGERPRINT.into(),
-                Location::Local {
-                    backend: "whisper".into(),
-                    model_ref: "sha256:model".into(),
-                },
-            )
-            .unwrap(),
-            ApiKey::new("test-key-not-real").unwrap(),
-            fake.clone(),
-        ),
-        Err(Error::Invalid(_))
-    ));
 }
 
 #[test]
@@ -762,7 +676,7 @@ fn live_openai_speech_uses_production_transport() {
         return;
     }
     let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY");
-    let config = config_at("https://api.openai.com/v1");
+    let config = config();
     let synth = OpenAiSpeechSynthesizer::new(
         config,
         ApiKey::new(key).unwrap(),

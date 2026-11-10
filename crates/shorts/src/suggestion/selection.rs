@@ -1,9 +1,8 @@
 //! Resolves the selected clip suggestion provider.
 use super::{
-    ANTHROPIC_SETTINGS, AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation,
-    ClipDisclosure, ClipInput, ClipSuggester, Consent, Cost, CostEstimate, Credentials, EditError,
-    Error, HeuristicClipSuggester, LanguageTag, Location, Money, OPENAI_LUNA_MODEL,
-    OPENAI_POLICY_URL, OPENAI_SETTINGS, OpenAiClipSuggester, PromptApproval, ProviderConfig, Scope,
+    AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation, ClipSuggester, Consent, Cost,
+    CostEstimate, Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, Money,
+    OPENAI_LUNA_MODEL, OPENAI_POLICY_URL, OpenAiClipSuggester, PromptApproval, Scope,
     SuggestionOption, SuggestionProvider, UploadRequest, engine_providers,
 };
 impl SuggestionProvider {
@@ -84,14 +83,9 @@ impl BuiltSuggester {
     }
     pub(super) fn disclosure(
         &self,
-        window: &ClipInput,
         scope: &Scope,
-    ) -> Result<Option<ClipDisclosure>, EditError> {
-        match self {
-            Self::Heuristic(_) => Ok(None),
-            Self::OpenAi(value) => Ok(Some(value.disclosure(window, scope)?)),
-            Self::Anthropic(value) => Ok(Some(value.disclosure(window, scope)?)),
-        }
+    ) -> Result<Option<ai::UploadDisclosure>, EditError> {
+        self.as_clip().disclosure(scope).map_err(Into::into)
     }
 }
 
@@ -104,35 +98,15 @@ pub(super) fn build_suggester(
             Ok(BuiltSuggester::Heuristic(HeuristicClipSuggester::new()?))
         }
         SuggestionProvider::OpenAi { model } => {
-            let config = ProviderConfig::new(
-                "openai".into(),
-                model.as_str().into(),
-                OPENAI_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::openai::BACKEND.into(),
-                    base_url: ai::openai::BASE_URL.into(),
-                    auth_ref: "OPENAI_API_KEY".into(),
-                },
-            )?;
             Ok(BuiltSuggester::OpenAi(OpenAiClipSuggester::new(
-                config,
+                OpenAiClipSuggester::provider_config(model)?,
                 credentials.openai()?.clone(),
                 Arc::new(ai::transport::UreqTransport::new()),
             )?))
         }
         SuggestionProvider::Anthropic { model } => {
-            let config = ProviderConfig::new(
-                "anthropic".into(),
-                model.as_str().into(),
-                ANTHROPIC_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::anthropic::BACKEND.into(),
-                    base_url: ai::anthropic::BASE_URL.into(),
-                    auth_ref: "ANTHROPIC_API_KEY".into(),
-                },
-            )?;
             Ok(BuiltSuggester::Anthropic(AnthropicClipSuggester::new(
-                config,
+                AnthropicClipSuggester::provider_config(model)?,
                 credentials.anthropic()?.clone(),
                 Arc::new(ai::transport::UreqTransport::new()),
             )?))
@@ -141,25 +115,33 @@ pub(super) fn build_suggester(
 }
 
 pub(super) fn upload_request(
-    disclosure: &ClipDisclosure,
+    disclosure: &ai::UploadDisclosure,
     language: &LanguageTag,
 ) -> Result<UploadRequest, EditError> {
+    let link = |name: &str| -> Result<String, EditError> {
+        disclosure
+            .link(name)
+            .map(|url| url.as_str().into())
+            .ok_or(EditError::Unsupported("clip disclosure link"))
+    };
     Ok(UploadRequest {
         operation: CatalogOperation::SuggestClips,
-        provider: disclosure.provider.into(),
+        provider: disclosure.provider.as_str().into(),
         model: disclosure.model.as_str().into(),
         languages: language.as_str().into(),
         audio_seconds: 0.0,
-        upload_bytes: u64::try_from(disclosure.payload.as_str().len())
-            .map_err(|_| EditError::Limit)?,
+        upload_bytes: disclosure.upload_bytes,
         cost: Cost::from(&disclosure.estimate),
         terms: vec![
-            ("endpoint", disclosure.endpoint.into()),
+            ("endpoint", link("endpoint")?),
             (
                 "operation",
                 "clip suggestions: transcript segments, no audio".into(),
             ),
-            ("retention_training_policy", disclosure.policy_url.into()),
+            (
+                "retention_training_policy",
+                link("retention_training_policy")?,
+            ),
         ],
     })
 }

@@ -1,10 +1,8 @@
 //! Opt-in, single-attempt evaluation of caller-supplied public text windows.
 use ai::{
-    Consent, CostEstimate, Location, Money, Operation, ProviderConfig, Request, SampleRange, Scope,
-    Translation, TranslationWindow, Translator,
-    openai::{
-        BASE_URL, OpenAiTranslator, TRANSLATION_MODE, TRANSLATION_MODEL, TRANSLATION_SETTINGS,
-    },
+    Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope, Translation,
+    TranslationWindow, Translator,
+    openai::{OpenAiTranslator, TRANSLATION_MODE, TRANSLATION_MODEL},
     transport::{ApiKey, UreqTransport},
 };
 use std::{io::Read, path::PathBuf, sync::Arc};
@@ -40,16 +38,7 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
         return Err("evaluation admits 1..=8 windows".into());
     }
     let budget: u64 = std::env::var("VIBECUT_TRANSLATE_EVAL_BUDGET_MICROS")?.parse()?;
-    let config = ProviderConfig::new(
-        "openai".into(),
-        TRANSLATION_MODEL.into(),
-        TRANSLATION_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: BASE_URL.into(),
-            auth_ref: "OPENAI_API_KEY".into(),
-        },
-    )?;
+    let config = OpenAiTranslator::provider_config(TRANSLATION_MODEL)?;
     let provider = OpenAiTranslator::new(
         config.clone(),
         ApiKey::new(std::env::var("OPENAI_API_KEY").map_err(|_| "missing OPENAI_API_KEY")?)?,

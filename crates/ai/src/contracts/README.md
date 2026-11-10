@@ -13,3 +13,7 @@ Chunks and retries may shrink the approved window and byte ceiling. A changed pr
 
 `Money` uses integer millionths and a three-letter uppercase currency. Estimates are free, an upper bound, or unknown. Remote execution refuses unknown estimates, currency mismatch and bounds above the approval. A budget is per invocation; engine owns aggregate job/retry/chunk reservation and reserves budget before calling this seam again. Tokens are in-memory capabilities, not a sandbox for arbitrary adapters.
 
+## Disclosure
+
+`ai::UploadDisclosure` is the one provider-neutral consent value: operation, provider, model, request languages, audio duration in microseconds, exact wire payload bytes, the cost ceiling and named policy/documentation links. Remote-capable traits return it from `disclosure`: `Transcriber`, `Translator`, `clips::ClipSuggester`, `chapters::ChapterGenerator` and `fillers::FillerClassifier` take the exact `Scope`; `SpeechSynthesizer` takes its `SpeechRequest`. Local adapters inherit the default and return `Ok(None)`. Adapters keep their endpoint, request form, response parser and price table; the shared [remote core](../remote.rs) owns constructor admission, scope binding, wire arithmetic and error classification.
+

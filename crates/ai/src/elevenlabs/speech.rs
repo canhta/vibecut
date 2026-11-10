@@ -1,22 +1,21 @@
 //! ElevenLabs text-to-speech adapter: consent-gated HTTPS, per-model language
 //! capabilities, exact per-character cost and validated 24 kHz PCM.
+use crate::remote::{self, UploadDisclosure};
 use crate::speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAudio, SpeechCapabilities, SpeechFormat, SpeechLanguage,
     SpeechOutput, SpeechPolicy, SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice,
     SynthesisConsent, SynthesisEstimate, prepare_synthesis, validate_speech_audio,
 };
 use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, retry_after};
-use crate::{
-    Error, ExecutionHooks, Location, MAX_PCM_BYTES, Money, Operation, ProviderConfig, Support,
-};
+use crate::{Error, ExecutionHooks, MAX_PCM_BYTES, Money, Operation, ProviderConfig, Support};
 use captions::{LanguageTag, NfcText, NormalizedText};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
-pub const BACKEND: &str = "elevenlabs";
-pub const BASE_URL: &str = "https://api.elevenlabs.io/v1";
+const BACKEND: &str = "elevenlabs";
+const BASE_URL: &str = "https://api.elevenlabs.io/v1";
 pub const MULTILINGUAL_MODEL: &str = "eleven_multilingual_v2";
 pub const FLASH_MODEL: &str = "eleven_flash_v2_5";
 pub const OUTPUT_FORMAT: &str = "pcm_24000";
@@ -53,14 +52,6 @@ impl LoggingMode {
         match self {
             Self::Default => "default",
             Self::ZeroRetentionRequested => "zero-retention-requested",
-        }
-    }
-    fn description(self) -> &'static str {
-        match self {
-            Self::Default => "default logging; history retention applies",
-            Self::ZeroRetentionRequested => {
-                "zero retention requested with enable_logging=false; Enterprise-only and not verified by this adapter"
-            }
         }
     }
 }
@@ -118,29 +109,67 @@ impl ElevenLabsSpeechSettings {
     }
 }
 
-/// What composition must show before granting a per-invocation synthesis consent.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpeechDisclosure {
-    pub operation: Operation,
-    pub provider: NfcText,
-    pub model: NfcText,
-    pub voice: NfcText,
-    pub language: SpeechLanguage,
-    pub output: SpeechOutput,
-    pub characters: u64,
-    /// Conservative billable count (Unicode scalars or UTF-16 units), minimum one.
-    pub billable_characters: u64,
-    pub text_sha256: NfcText,
-    pub max_duration_micros: u64,
-    pub speed: Option<NfcText>,
-    pub logging: NfcText,
-    pub fingerprint: NfcText,
-    pub estimate: SynthesisEstimate,
-    pub policy: SpeechPolicy,
-    pub docs_url: NfcText,
-    pub models_url: NfcText,
-    pub pricing_url: NfcText,
-    pub zero_retention_url: NfcText,
+/// One ElevenLabs provider with per-model, per-language capabilities. Voices are
+/// an explicit premade/stock allowlist supplied by composition; the adapter never
+/// lists, selects or falls back to another voice or model.
+pub struct ElevenLabsSpeech {
+    config: ProviderConfig,
+    key: ApiKey,
+    transport: Arc<dyn HttpTransport>,
+    settings: ElevenLabsSpeechSettings,
+    model: Model,
+    voices: Vec<SpeechVoice>,
+    languages: Vec<SpeechLanguage>,
+}
+impl ElevenLabsSpeech {
+    /// The one admitted configuration for this model id and adapter settings.
+    pub fn provider_config(
+        model: &str,
+        settings: &ElevenLabsSpeechSettings,
+    ) -> Result<ProviderConfig, Error> {
+        remote::provider_config(
+            &[MULTILINGUAL_MODEL, FLASH_MODEL],
+            model,
+            &settings.settings_fingerprint(),
+            BACKEND,
+            BASE_URL,
+            "elevenlabs",
+            "ELEVENLABS_API_KEY",
+        )
+    }
+
+    /// Admits the two documented TTS models, backend `elevenlabs`, the official
+    /// base URL and the exact settings fingerprint. Voice IDs must be premade or
+    /// stock and URL-safe; cloned/professional-clone IDs are composition-owned and
+    /// must not be supplied.
+    pub fn new(
+        config: ProviderConfig,
+        key: ApiKey,
+        transport: Arc<dyn HttpTransport>,
+        settings: ElevenLabsSpeechSettings,
+        voices: Vec<SpeechVoice>,
+    ) -> Result<Self, Error> {
+        let model = Model::parse(config.model().as_str()).ok_or(Error::Unsupported)?;
+        remote::admit(
+            &config,
+            &[MULTILINGUAL_MODEL, FLASH_MODEL],
+            Some(&settings.settings_fingerprint()),
+            BACKEND,
+            BASE_URL,
+            Some("ElevenLabs requires remote config"),
+        )?;
+        let voices = validate_voices(voices)?;
+        let languages = model.languages()?;
+        Ok(Self {
+            config,
+            key,
+            transport,
+            settings,
+            model,
+            voices,
+            languages,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -210,91 +239,7 @@ fn language(tag: &str, script: &str) -> Result<SpeechLanguage, Error> {
     })
 }
 
-/// One ElevenLabs provider with per-model, per-language capabilities. Voices are
-/// an explicit premade/stock allowlist supplied by composition; the adapter never
-/// lists, selects or falls back to another voice or model.
-pub struct ElevenLabsSpeech {
-    config: ProviderConfig,
-    key: ApiKey,
-    transport: Arc<dyn HttpTransport>,
-    settings: ElevenLabsSpeechSettings,
-    model: Model,
-    voices: Vec<SpeechVoice>,
-    languages: Vec<SpeechLanguage>,
-}
 impl ElevenLabsSpeech {
-    /// Admits the two documented TTS models, backend `elevenlabs`, the official
-    /// base URL and the exact settings fingerprint. Voice IDs must be premade or
-    /// stock and URL-safe; cloned/professional-clone IDs are composition-owned and
-    /// must not be supplied.
-    pub fn new(
-        config: ProviderConfig,
-        key: ApiKey,
-        transport: Arc<dyn HttpTransport>,
-        settings: ElevenLabsSpeechSettings,
-        voices: Vec<SpeechVoice>,
-    ) -> Result<Self, Error> {
-        let model = Model::parse(config.model().as_str()).ok_or(Error::Unsupported)?;
-        if config.settings_fingerprint().as_str() != settings.settings_fingerprint() {
-            return Err(Error::Unsupported);
-        }
-        match config.location() {
-            Location::Remote {
-                backend, base_url, ..
-            } => {
-                if backend.as_str() != BACKEND {
-                    return Err(Error::Unsupported);
-                }
-                official_base_url(base_url.as_str())?;
-            }
-            Location::Local { .. } => {
-                return Err(Error::Invalid("ElevenLabs requires remote config"));
-            }
-        }
-        let voices = validate_voices(voices)?;
-        let languages = model.languages()?;
-        Ok(Self {
-            config,
-            key,
-            transport,
-            settings,
-            model,
-            voices,
-            languages,
-        })
-    }
-
-    /// Provider identity, exact model/voice/language and policy for the consent sheet.
-    pub fn disclosure(&self, request: &SpeechRequest) -> Result<SpeechDisclosure, Error> {
-        let capabilities = self.capabilities(request);
-        capabilities.check(request)?;
-        let billable = billable_count(request.text().as_str()).0;
-        Ok(SpeechDisclosure {
-            operation: Operation::Synthesize,
-            provider: NfcText::from("ElevenLabs"),
-            model: self.config.model().clone(),
-            voice: request.voice().clone(),
-            language: request.language().clone(),
-            output: request.output(),
-            characters: request.characters(),
-            billable_characters: billable,
-            text_sha256: NfcText::from(hex(&request.text_sha256())),
-            max_duration_micros: request.max_duration_micros(),
-            speed: self
-                .settings
-                .speed
-                .map(|speed| NfcText::from(speed.fingerprint())),
-            logging: NfcText::from(self.settings.logging.description()),
-            fingerprint: capabilities.fingerprint,
-            estimate: self.estimate(request),
-            policy: self.policy(),
-            docs_url: NfcText::from(TTS_DOC_URL),
-            models_url: NfcText::from(MODELS_DOC_URL),
-            pricing_url: NfcText::from(PRICING_URL),
-            zero_retention_url: NfcText::from(ZRM_DOC_URL),
-        })
-    }
-
     pub fn voices(&self) -> &[SpeechVoice] {
         &self.voices
     }
@@ -409,6 +354,31 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
         self.estimate_inner(request)
     }
 
+    fn disclosure(&self, request: &SpeechRequest) -> Result<Option<UploadDisclosure>, Error> {
+        self.capabilities(request).check(request)?;
+        Ok(Some(remote::disclosure(remote::Disclosure {
+            operation: Operation::Synthesize,
+            provider: "ElevenLabs",
+            model: self.config.model(),
+            languages: NfcText::from(format!(
+                "{}/{}",
+                request.language().language.as_str(),
+                request.language().script.as_str()
+            )),
+            audio_micros: request.max_duration_micros(),
+            upload_bytes: u64::try_from(request.text().as_str().len())
+                .map_err(|_| Error::Payload)?,
+            estimate: remote::cost_ceiling(self.estimate(request)),
+            links: &[
+                ("policy", POLICY_URL),
+                ("docs", TTS_DOC_URL),
+                ("models", MODELS_DOC_URL),
+                ("pricing", PRICING_URL),
+                ("zero_retention", ZRM_DOC_URL),
+            ],
+        })))
+    }
+
     fn synthesize(
         &self,
         request: &SpeechRequest,
@@ -503,16 +473,6 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
         validate_speech_audio(&audio, request, &capabilities, &estimate)?;
         checked(hooks)?;
         Ok(audio)
-    }
-}
-
-fn official_base_url(base_url: &str) -> Result<(), Error> {
-    if base_url.trim_end_matches('/') == BASE_URL {
-        Ok(())
-    } else {
-        // Consent names the official endpoint; never apply it to a proxy,
-        // lookalike host or unsupported version path.
-        Err(Error::Unsupported)
     }
 }
 
@@ -722,83 +682,35 @@ fn status_error(response: &HttpResponse) -> Error {
     // bounded provider codes before the generic status mapping so exhausted credits
     // stay distinct from bad input and invalid credentials. Codes never enter the
     // public error or logs.
-    if (400..=429).contains(&response.status) {
-        let codes = error_codes(&response.body);
-        if has_code(
-            &codes,
-            &[
-                "quota_exceeded",
-                "insufficient_credits",
-                "payment_required",
-                "quota",
-            ],
-        ) {
-            return Error::Quota;
-        }
-        if has_code(
-            &codes,
-            &["invalid_api_key", "authentication", "unauthorized"],
-        ) {
-            return Error::Auth;
-        }
-        if has_code(&codes, &["content_policy", "moderation", "safety"]) {
-            return Error::ContentPolicy;
-        }
-        if has_code(&codes, &["rate_limit", "too_many_requests"]) {
-            return Error::RateLimit {
-                retry_after_seconds: retry_after(&response.headers),
-            };
-        }
-    }
-    match response.status {
-        401 | 403 => Error::Auth,
-        400 | 422 => Error::Payload,
-        402 => Error::Quota,
-        404 => Error::UnsupportedVoice,
-        408 => Error::Timeout,
-        409 => Error::Invalid("provider rejected request"),
-        413 => Error::Payload,
-        429 => Error::RateLimit {
-            retry_after_seconds: retry_after(&response.headers),
-        },
-        500..=599 => Error::Server,
-        300..=399 => Error::Invalid("provider redirect"),
-        _ => Error::Server,
-    }
-}
-
-fn error_codes(body: &[u8]) -> Vec<String> {
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return Vec::new();
-    };
-    let mut codes = Vec::new();
-    for container in [Some(&value), value.get("detail")] {
-        let Some(container) = container else {
-            continue;
-        };
-        for key in ["status", "code", "type"] {
-            if let Some(code) = container.get(key).and_then(serde_json::Value::as_str) {
-                // Bound hostile code strings before lowercasing.
-                codes.push(
-                    code.chars()
-                        .take(128)
-                        .collect::<String>()
-                        .to_ascii_lowercase(),
-                );
+    remote::status_error(response, |status, fields| {
+        if (400..=429).contains(&status) {
+            if remote::quota(fields) {
+                return Some(Error::Quota);
+            }
+            if remote::matches(
+                fields,
+                &["invalid_api_key", "authentication", "unauthorized"],
+            ) {
+                return Some(Error::Auth);
+            }
+            if remote::matches(fields, &["content_policy", "moderation", "safety"]) {
+                return Some(Error::ContentPolicy);
+            }
+            if remote::matches(fields, &["rate_limit", "too_many_requests"]) {
+                return Some(Error::RateLimit {
+                    retry_after_seconds: retry_after(&response.headers),
+                });
             }
         }
-    }
-    codes
-}
-
-fn has_code(codes: &[String], needles: &[&str]) -> bool {
-    codes
-        .iter()
-        .any(|code| needles.iter().any(|needle| code.contains(needle)))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+        match status {
+            400 | 422 => Some(Error::Payload),
+            402 => Some(Error::Quota),
+            404 => Some(Error::UnsupportedVoice),
+            408 => Some(Error::Timeout),
+            409 => Some(Error::Invalid("provider rejected request")),
+            _ => None,
+        }
+    })
 }
 
 /// Split once at a cue/newline, sentence or whitespace boundary at or before the

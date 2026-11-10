@@ -228,6 +228,11 @@ pub trait Transcriber: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn capabilities(&self, scope: &Scope) -> Capabilities;
     fn estimate(&self, scope: &Scope) -> CostEstimate;
+    /// Provider-neutral upload disclosure for this exact scope; local adapters
+    /// return `Ok(None)` and never upload.
+    fn disclosure(&self, _scope: &Scope) -> Result<Option<crate::UploadDisclosure>, Error> {
+        Ok(None)
+    }
     fn transcribe(
         &self,
         audio: AudioWindow<'_>,

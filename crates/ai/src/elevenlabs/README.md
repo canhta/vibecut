@@ -2,13 +2,13 @@
 
 ## Scribe transcription
 
-`elevenlabs::ElevenLabsTranscriber` admits only `scribe_v2`, backend `elevenlabs` and the base URL `https://api.elevenlabs.io/v1`; proxies, lookalike hosts and other version paths are refused so upload consent stays bound to the official endpoint. Composition resolves `ELEVENLABS_API_KEY` (development) or the OS keychain entry and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
+`provider_config(model, settings)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and the exact settings, so proxies, lookalike hosts and other version paths are refused. Composition resolves `ELEVENLABS_API_KEY` (development) or the OS keychain entry and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
 
 Uploads are multipart PCM16 WAV with `model_id=scribe_v2`, the exact `language_code` (`vi`, `en` or `zh`, no fallback) and `timestamps_granularity=word`. The provider allows 3 GB and 10 hours in standard mode; the shared 64 MiB PCM admission and engine chunking bound real invocations. Responses are capped at 1 MiB. Consent `max_bytes` bounds the encoded WAV including its 44-byte header.
 
 Scribe returns word, spacing and audio-event tokens in seconds. The adapter folds spacing into the preceding token, keeps audio events as separate timed tokens, and converts each absolute boundary once to source samples with nearest-sample rounding. It emits one timed segment per invocation with stable window-derived IDs. Word tokens become `raw_tokens` and flow through captions' shared span code; zero-width punctuation stays untimed. No cue segmentation, interpolation or fallback.
 
-`disclosure(scope)` names ElevenLabs, links its privacy policy and shows payload details and the cost bound; composition shows these before approval without restating provider terms. The adapter uses default logging and does not send `enable_logging=false`.
+`disclosure(scope)` returns the shared `ai::UploadDisclosure` with provider, model, language, duration, payload bytes, cost bound and the named policy/pricing/docs links; composition shows these before approval without restating provider terms. The adapter uses default logging and does not send `enable_logging=false`.
 
 Typed failures: auth, payment/quota, rate limit, payload, server, network. The adapter never retries; engine owns network retry. Tests: `cargo test -p ai --test it elevenlabs::` (offline, see `tests/fixtures/elevenlabs/`). The ignored live test uses the same synthetic-speech probe as OpenAI.
 
@@ -22,7 +22,7 @@ The estimate is exact for BMP-only VI/EN/ZH input: 40 micro-USD per character fo
 
 Requests over the model limit (10,000 or 40,000 characters) split at cue (newline), sentence or whitespace boundaries. Adjacent chunks send bounded `previous_text`/`next_text` context. Audio is concatenated only after every chunk decodes and validates; cancellation between chunks discards all audio. The provider minimum is charged per request, so split cost is the sum of chunk characters.
 
-The settings fingerprint binds output format, normalization, optional speed and logging mode; the per-request fingerprint also binds model, voice, language/script, continuity and split policy. Composition puts `ElevenLabsSpeechSettings::settings_fingerprint()` in the provider configuration; a different value is refused. Consent names default retention and model-improvement use with dashboard opt-out. Zero retention is requested only with `enable_logging=false`, is Enterprise-only and is reported as requested, never as verified.
+The settings fingerprint binds output format, normalization, optional speed and logging mode; the per-request fingerprint also binds model, voice, language/script, continuity and split policy. `ElevenLabsSpeech::provider_config(model, settings)` builds the one admitted configuration; a different fingerprint is refused. Consent names default retention and model-improvement use with dashboard opt-out. Zero retention is requested only with `enable_logging=false`, is Enterprise-only and is reported as requested, never as verified.
 
 `transport::HttpTransport::send_bounded` bounds an audio response while it is read. The cap derives from the approved duration and the shared 64 MiB decoded-PCM ceiling. `UreqTransport` enforces it during the read; the default trait method checks after buffering.
 

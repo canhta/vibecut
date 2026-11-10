@@ -5,11 +5,11 @@
 //! source coordinates and caches the resulting captions transcript.
 use crate::budget::Budget;
 use crate::{Error, Result};
-use ai::elevenlabs::{BACKEND, BASE_URL, ElevenLabsTranscriber, MODEL, SETTINGS_FINGERPRINT};
+use ai::elevenlabs::{ElevenLabsTranscriber, MODEL};
 use ai::transport::{ApiKey, UreqTransport};
 use ai::{
-    AudioWindow, Consent, CostEstimate, ExecutionHooks, Location, Money, Operation, ProviderConfig,
-    Request, SampleRange, Scope, Stage, Transcriber,
+    AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Operation, Request, SampleRange,
+    Scope, Stage, Transcriber,
 };
 use captions::{
     LanguageProfile, LanguageRegistry, LanguageTag, NfcText, TimingSpans, Transcript, Word,
@@ -53,16 +53,7 @@ pub fn prepare(
     let key =
         std::env::var("ELEVENLABS_API_KEY").map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
     let key = ApiKey::new(key).map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
-    let config = ProviderConfig::new(
-        "asr".into(),
-        MODEL.into(),
-        SETTINGS_FINGERPRINT.into(),
-        Location::Remote {
-            backend: BACKEND.into(),
-            base_url: BASE_URL.into(),
-            auth_ref: "env:ELEVENLABS_API_KEY".into(),
-        },
-    )?;
+    let config = ElevenLabsTranscriber::provider_config(MODEL)?;
     let transcriber = ElevenLabsTranscriber::new(config, key, Arc::new(UreqTransport::new()))?;
     let asset = SourceAsset::import(AssetId(1), source.to_path_buf())?;
     let duration = asset

@@ -5,12 +5,11 @@ use crate::clip_boundaries::{
 use crate::error::Error;
 use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
-    ANTHROPIC_SETTINGS, AnthropicClipSuggester, ClipDisclosure, ClipInput, ClipProposal,
-    ClipSegment, ClipSettings, ClipSource, ClipSourceSegment, ClipSuggester, ClipSuggestion,
-    DroppedClip, HeuristicClipSuggester, MAX_WIRE, MODE, OPENAI_LUNA_MODEL, OPENAI_SETTINGS,
-    OpenAiClipSuggester,
+    AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
+    ClipSourceSegment, ClipSuggester, ClipSuggestion, DroppedClip, HeuristicClipSuggester,
+    MAX_WIRE, MODE, OPENAI_LUNA_MODEL, OpenAiClipSuggester,
 };
-use ai::{Consent, CostEstimate, Location, Money, Operation, ProviderConfig, SampleRange, Scope};
+use ai::{Consent, CostEstimate, Money, Operation, SampleRange, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
 use engine::EditError;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};

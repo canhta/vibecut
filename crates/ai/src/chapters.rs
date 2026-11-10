@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{TICKS_PER_SECOND, Tick};
 
-pub use remote::{
-    AnthropicChapterGenerator, ChapterDisclosure, OPENAI_MODEL, OpenAiChapterGenerator,
-};
+pub use remote::{AnthropicChapterGenerator, OPENAI_MODEL, OpenAiChapterGenerator};
 
 pub const MODE: &str = "transcript-chapters";
 /// The versioned chapter-document schema written to `.json` sidecars.
@@ -363,6 +361,11 @@ pub trait ChapterGenerator: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn capabilities(&self, scope: &Scope) -> Capabilities;
     fn estimate(&self, scope: &Scope) -> CostEstimate;
+    /// Provider-neutral upload disclosure for this exact scope; a local adapter
+    /// returns `Ok(None)`.
+    fn disclosure(&self, _scope: &Scope) -> Result<Option<crate::UploadDisclosure>, Error> {
+        Ok(None)
+    }
     fn propose(
         &self,
         input: &ChapterInput,

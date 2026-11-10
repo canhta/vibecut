@@ -276,6 +276,14 @@ pub trait SpeechSynthesizer: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn capabilities(&self, request: &SpeechRequest) -> SpeechCapabilities;
     fn estimate(&self, request: &SpeechRequest) -> SynthesisEstimate;
+    /// Provider-neutral upload disclosure for this exact request; a local adapter
+    /// returns `Ok(None)`.
+    fn disclosure(
+        &self,
+        _request: &SpeechRequest,
+    ) -> Result<Option<crate::UploadDisclosure>, Error> {
+        Ok(None)
+    }
     fn synthesize(
         &self,
         request: &SpeechRequest,

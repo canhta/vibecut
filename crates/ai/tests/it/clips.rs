@@ -6,8 +6,8 @@
     reason = "test fixtures"
 )]
 use ai::{
-    Consent, CostEstimate, Error, ExecutionHooks, Location, Money, Operation, ProviderConfig,
-    Request, SampleRange, Scope, Stage,
+    Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
+    SampleRange, Scope, Stage,
     clips::*,
     transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport},
 };
@@ -56,32 +56,11 @@ fn input(language: &str, n: usize) -> ClipInput {
     }
 }
 fn config(anthropic: bool) -> ProviderConfig {
-    ProviderConfig::new(
-        "clips".into(),
-        if anthropic {
-            ai::anthropic::MODEL
-        } else {
-            ai::openai::TRANSLATION_MODEL
-        }
-        .into(),
-        if anthropic {
-            ANTHROPIC_SETTINGS
-        } else {
-            OPENAI_SETTINGS
-        }
-        .into(),
-        Location::Remote {
-            backend: if anthropic { "anthropic" } else { "openai" }.into(),
-            base_url: if anthropic {
-                ai::anthropic::BASE_URL
-            } else {
-                ai::openai::BASE_URL
-            }
-            .into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap()
+    if anthropic {
+        ai::clips::AnthropicClipSuggester::provider_config(ai::anthropic::MODEL).unwrap()
+    } else {
+        ai::clips::OpenAiClipSuggester::provider_config(ai::openai::TRANSLATION_MODEL).unwrap()
+    }
 }
 fn scope(w: &ClipInput, p: &dyn ClipSuggester) -> Scope {
     Scope {
@@ -459,17 +438,7 @@ fn provider_failures_are_typed() {
 #[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; one bounded gpt-6-luna request"]
 fn live_clip_providers() {
     assert_eq!(std::env::var("VIBECUT_LIVE_AI").as_deref(), Ok("1"));
-    let cfg = ProviderConfig::new(
-        "clips".into(),
-        OPENAI_LUNA_MODEL.into(),
-        OPENAI_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap();
+    let cfg = ai::clips::OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL).unwrap();
     let p = OpenAiClipSuggester::new(
         cfg,
         ApiKey::new(std::env::var("OPENAI_API_KEY").unwrap()).unwrap(),
@@ -1030,22 +999,12 @@ fn luna_model_selection_disclosure_and_nested_schema_match_the_wire() {
         cancel: None,
         fail: false,
     });
-    let cfg = ProviderConfig::new(
-        "clips".into(),
-        OPENAI_LUNA_MODEL.into(),
-        OPENAI_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "secret-store".into(),
-        },
-    )
-    .unwrap();
+    let cfg = ai::clips::OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL).unwrap();
     let p =
         OpenAiClipSuggester::new(cfg, ApiKey::new("synthetic-key").unwrap(), t.clone()).unwrap();
     let s = scope(&w, &p);
     assert_eq!(
-        p.disclosure(&w, &s).unwrap().model.as_str(),
+        p.disclosure(&s).unwrap().unwrap().model.as_str(),
         OPENAI_LUNA_MODEL
     );
     assert_eq!(run(&p, &w).unwrap().clips.len(), 1);

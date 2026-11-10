@@ -2,14 +2,14 @@
 //! is in `speech`.
 pub mod speech;
 use crate::contracts::checkpoint;
+use crate::remote::{self, UploadDisclosure};
 use crate::transport::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, retry_after,
-    wav, wav_bytes,
+    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, wav,
 };
 use crate::{
-    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Money,
-    Operation, Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange,
-    Scope, Stage, Support, TimingUnit, Transcriber,
+    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Money, Operation,
+    Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,
+    Support, TimingUnit, Transcriber,
 };
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
@@ -18,8 +18,8 @@ use std::fmt;
 use std::sync::Arc;
 
 pub const MODEL: &str = "scribe_v2";
-pub const BACKEND: &str = "elevenlabs";
-pub const BASE_URL: &str = "https://api.elevenlabs.io/v1";
+const BACKEND: &str = "elevenlabs";
+const BASE_URL: &str = "https://api.elevenlabs.io/v1";
 pub const ENDPOINT: &str = "https://api.elevenlabs.io/v1/speech-to-text";
 /// Documented standard-mode file ceiling; duration is separately capped at 10 h.
 pub const MAX_UPLOAD_BYTES: u64 = 3_000_000_000;
@@ -28,27 +28,10 @@ pub const MAX_DURATION_MICROS: u64 = 10 * 60 * 60 * 1_000_000;
 const PRICE_MICROS_PER_HOUR: u64 = 220_000;
 const MODE: &str = "file";
 pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
-pub const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;model=scribe_v2;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
+const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;model=scribe_v2;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
 const POLICY_URL: &str = "https://elevenlabs.io/privacy-policy";
 const DOCS_URL: &str = "https://elevenlabs.io/docs/capabilities/speech-to-text";
 const PRICING_URL: &str = "https://elevenlabs.io/pricing/api?price.section=speech_to_text";
-
-/// What the composition root must show before granting upload consent.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UploadDisclosure {
-    pub operation: Operation,
-    pub provider: NfcText,
-    pub model: NfcText,
-    pub endpoint: NfcText,
-    pub language: LanguageTag,
-    pub format: NfcText,
-    pub audio_micros: u64,
-    pub upload_bytes: u64,
-    pub estimate: CostEstimate,
-    pub policy_url: NfcText,
-    pub docs_url: NfcText,
-    pub pricing_url: NfcText,
-}
 
 pub struct ElevenLabsTranscriber {
     config: ProviderConfig,
@@ -57,28 +40,33 @@ pub struct ElevenLabsTranscriber {
     languages: Vec<LanguageTag>,
 }
 impl ElevenLabsTranscriber {
+    /// The one admitted configuration for this model id.
+    pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
+        remote::provider_config(
+            &[MODEL],
+            model,
+            SETTINGS_FINGERPRINT,
+            BACKEND,
+            BASE_URL,
+            "elevenlabs",
+            "ELEVENLABS_API_KEY",
+        )
+    }
+
     /// Admits only `scribe_v2`, backend `elevenlabs` and the official HTTPS base URL.
     pub fn new(
         config: ProviderConfig,
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     ) -> Result<Self, Error> {
-        if config.model().as_str() != MODEL {
-            return Err(Error::Unsupported);
-        }
-        match config.location() {
-            Location::Remote {
-                backend, base_url, ..
-            } => {
-                if backend.as_str() != BACKEND {
-                    return Err(Error::Unsupported);
-                }
-                official_base_url(base_url.as_str())?;
-            }
-            Location::Local { .. } => {
-                return Err(Error::Invalid("ElevenLabs requires remote config"));
-            }
-        }
+        remote::admit(
+            &config,
+            &[MODEL],
+            None,
+            BACKEND,
+            BASE_URL,
+            Some("ElevenLabs requires remote config"),
+        )?;
         let languages = LANGUAGES
             .iter()
             .map(|tag| LanguageTag::parse(tag).map_err(Error::Captions))
@@ -89,44 +77,6 @@ impl ElevenLabsTranscriber {
             transport,
             languages,
         })
-    }
-
-    pub fn settings_fingerprint() -> &'static str {
-        SETTINGS_FINGERPRINT
-    }
-
-    /// Provider identity, policy link, payload and cost for upload approval.
-    pub fn disclosure(&self, scope: &Scope) -> Result<UploadDisclosure, Error> {
-        self.validate_scope(scope)?;
-        let audio_micros = duration_micros(scope)?;
-        let upload_bytes = encoded_bytes(scope)?;
-        Ok(UploadDisclosure {
-            operation: Operation::Transcribe,
-            provider: NfcText::from("ElevenLabs"),
-            model: self.config.model().clone(),
-            endpoint: NfcText::from(ENDPOINT),
-            language: scope.source_language.clone(),
-            format: NfcText::from(format!(
-                "audio/wav; mono 16-bit PCM at {} Hz",
-                scope.sample_rate
-            )),
-            audio_micros,
-            upload_bytes,
-            estimate: self.estimate(scope),
-            policy_url: NfcText::from(POLICY_URL),
-            docs_url: NfcText::from(DOCS_URL),
-            pricing_url: NfcText::from(PRICING_URL),
-        })
-    }
-
-    fn validate_scope(&self, scope: &Scope) -> Result<(), Error> {
-        if scope.provider != self.config {
-            return Err(Error::Unsupported);
-        }
-        if !scope.texts.is_empty() {
-            return Err(Error::Invalid("transcription text payload"));
-        }
-        self.capabilities(scope).check(scope)
     }
 }
 impl fmt::Debug for ElevenLabsTranscriber {
@@ -164,7 +114,7 @@ impl Transcriber for ElevenLabsTranscriber {
     }
 
     fn estimate(&self, scope: &Scope) -> CostEstimate {
-        let Some(seconds) = rounded_up_seconds(scope) else {
+        let Some(seconds) = remote::rounded_up_seconds(scope) else {
             return CostEstimate::Unknown;
         };
         let Some(micros) = seconds
@@ -183,6 +133,25 @@ impl Transcriber for ElevenLabsTranscriber {
         }
     }
 
+    fn disclosure(&self, scope: &Scope) -> Result<Option<UploadDisclosure>, Error> {
+        let capabilities = self.capabilities(scope);
+        remote::validate_audio_scope(&self.config, scope, &capabilities)?;
+        Ok(Some(remote::disclosure(remote::Disclosure {
+            operation: Operation::Transcribe,
+            provider: "ElevenLabs",
+            model: self.config.model(),
+            languages: NfcText::from(scope.source_language.as_str()),
+            audio_micros: remote::duration_micros(scope)?,
+            upload_bytes: remote::encoded_bytes(scope, MAX_UPLOAD_BYTES)?,
+            estimate: self.estimate(scope),
+            links: &[
+                ("policy", POLICY_URL),
+                ("pricing", PRICING_URL),
+                ("docs", DOCS_URL),
+            ],
+        })))
+    }
+
     fn transcribe(
         &self,
         audio: AudioWindow<'_>,
@@ -190,8 +159,15 @@ impl Transcriber for ElevenLabsTranscriber {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Vec<RecognitionSegment>, Error> {
         checkpoint(hooks, Stage::Transcribe)?;
-        let upload = self.authorize(audio, request)?;
-        let outbound = build_request(&upload, audio)?;
+        let scope = request.scope;
+        let capabilities = self.capabilities(scope);
+        remote::validate_audio_scope(&self.config, scope, &capabilities)?;
+        audio.validate(scope)?;
+        if remote::encoded_bytes(scope, MAX_UPLOAD_BYTES)? > scope.max_bytes {
+            return Err(Error::Payload);
+        }
+        request.prepare(&capabilities, &self.estimate(scope), Operation::Transcribe)?;
+        let outbound = build_request(scope, &self.key, audio)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let response = self.transport.send(outbound)?;
         checkpoint(hooks, Stage::Transcribe)?;
@@ -201,72 +177,9 @@ impl Transcriber for ElevenLabsTranscriber {
     }
 }
 
-struct AuthorizedUpload<'a> {
-    scope: &'a Scope,
-    key: &'a ApiKey,
-}
-
-impl ElevenLabsTranscriber {
-    fn authorize<'a>(
-        &'a self,
-        audio: AudioWindow<'_>,
-        request: &'a Request<'_>,
-    ) -> Result<AuthorizedUpload<'a>, Error> {
-        let scope = request.scope;
-        self.validate_scope(scope)?;
-        audio.validate(scope)?;
-        if encoded_bytes(scope)? > scope.max_bytes {
-            return Err(Error::Payload);
-        }
-        request.prepare(
-            &self.capabilities(scope),
-            &self.estimate(scope),
-            Operation::Transcribe,
-        )?;
-        Ok(AuthorizedUpload {
-            scope,
-            key: &self.key,
-        })
-    }
-}
-
-fn official_base_url(base_url: &str) -> Result<(), Error> {
-    if base_url.trim_end_matches('/') == BASE_URL {
-        Ok(())
-    } else {
-        // Consent names the official endpoint; never
-        // apply it to a proxy, lookalike host or unsupported version path.
-        Err(Error::Unsupported)
-    }
-}
-
-fn duration_micros(scope: &Scope) -> Result<u64, Error> {
-    let micros = u128::from(scope.source_samples.len())
-        .checked_mul(1_000_000)
-        .ok_or(Error::Payload)?
-        / u128::from(scope.sample_rate);
-    u64::try_from(micros).map_err(|_| Error::Payload)
-}
-
-fn rounded_up_seconds(scope: &Scope) -> Option<u128> {
-    let samples = u128::from(scope.source_samples.len());
-    let rate = u128::from(scope.sample_rate);
-    if rate == 0 {
-        return None;
-    }
-    Some(samples.checked_add(rate - 1)? / rate)
-}
-
-fn encoded_bytes(scope: &Scope) -> Result<u64, Error> {
-    let bytes = wav_bytes(scope.source_samples.len())?;
-    if bytes > MAX_UPLOAD_BYTES {
-        return Err(Error::Payload);
-    }
-    Ok(bytes)
-}
-
 fn build_request(
-    upload: &AuthorizedUpload<'_>,
+    scope: &Scope,
+    key: &ApiKey,
     audio: AudioWindow<'_>,
 ) -> Result<HttpRequest, Error> {
     let audio = wav(&audio)?;
@@ -275,7 +188,7 @@ fn build_request(
     }
     let mut form = Multipart::new(&audio)?;
     form.field("model_id", MODEL);
-    form.field("language_code", upload.scope.source_language.as_str());
+    form.field("language_code", scope.source_language.as_str());
     form.field("timestamps_granularity", "word");
     form.file("audio.wav", "audio/wav", &audio);
     let (content_type, body) = form.finish();
@@ -283,7 +196,7 @@ fn build_request(
         method: "POST",
         url: ENDPOINT.into(),
         headers: vec![
-            ("xi-api-key".into(), upload.key.expose().to_owned()),
+            ("xi-api-key".into(), key.expose().to_owned()),
             ("Content-Type".into(), content_type),
             ("Accept".into(), "application/json".into()),
         ],
@@ -424,53 +337,19 @@ fn sample_at(seconds: f64, window: SampleRange, sample_rate: u32) -> Result<u64,
     Ok(window.start().saturating_add(relative).min(window.end()))
 }
 
-#[derive(Deserialize)]
-struct ErrorEnvelope {
-    detail: Option<ErrorDetail>,
-}
-#[derive(Deserialize)]
-struct ErrorDetail {
-    code: Option<String>,
-    #[serde(rename = "type")]
-    kind: Option<String>,
-}
-
 fn status_error(response: &HttpResponse) -> Error {
-    match response.status {
-        401 | 403 => Error::Auth,
-        400 if auth_error(&response.body) => Error::Auth,
-        400 | 422 if payload_error(&response.body) => Error::Payload,
-        402 => Error::Quota,
-        413 => Error::Payload,
-        429 => Error::RateLimit {
-            retry_after_seconds: retry_after(&response.headers),
-        },
-        500..=599 => Error::Server,
-        300..=399 => Error::Invalid("provider redirect"),
-        400 | 404 | 409 | 422 => Error::Invalid("provider rejected request"),
-        _ => Error::Server,
-    }
-}
-
-fn detail_matches(body: &[u8], needles: &[&str]) -> bool {
-    let Ok(envelope) = serde_json::from_slice::<ErrorEnvelope>(body) else {
-        return false;
-    };
-    envelope.detail.is_some_and(|detail| {
-        [detail.code, detail.kind]
-            .into_iter()
-            .flatten()
-            .any(|value| {
-                let value = value.to_ascii_lowercase();
-                needles.iter().any(|needle| value.contains(needle))
-            })
+    remote::status_error(response, |status, fields| {
+        if status == 402 {
+            return Some(Error::Quota);
+        }
+        if matches!(status, 400 | 422) {
+            if remote::matches(fields, &["invalid_api_key", "authentication"]) {
+                return Some(Error::Auth);
+            }
+            if remote::matches(fields, &["file_too_large", "too_large", "payload"]) {
+                return Some(Error::Payload);
+            }
+        }
+        None
     })
-}
-
-fn auth_error(body: &[u8]) -> bool {
-    detail_matches(body, &["invalid_api_key", "authentication"])
-}
-
-fn payload_error(body: &[u8]) -> bool {
-    detail_matches(body, &["file_too_large", "too_large", "payload"])
 }

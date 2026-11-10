@@ -12,6 +12,7 @@ pub mod fillers;
 pub mod gipformer;
 pub mod models;
 pub mod openai;
+mod remote;
 pub mod speech;
 pub mod structured;
 mod translation;
@@ -22,6 +23,7 @@ pub use translation::*;
 pub mod whisper;
 pub use assembly::*;
 pub use contracts::*;
+pub use remote::UploadDisclosure;
 
 /// Transcript-text operations accept these exact BCP 47 tags; `zh` is a request
 /// tag that adapters normalise rather than a distinct model language.

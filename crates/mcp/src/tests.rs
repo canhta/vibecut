@@ -563,17 +563,8 @@ fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
         10,
     )
     .unwrap();
-    let config = ai::ProviderConfig::new(
-        "openai".into(),
-        ai::chapters::OPENAI_MODEL.into(),
-        ai::chapters::OPENAI_SETTINGS.into(),
-        ai::Location::Remote {
-            backend: ai::openai::BACKEND.into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "OPENAI_API_KEY".into(),
-        },
-    )
-    .unwrap();
+    let config =
+        ai::chapters::OpenAiChapterGenerator::provider_config(ai::chapters::OPENAI_MODEL).unwrap();
     let request = |revision, key: &str| {
         json!({
             "command": "chapters.generate",

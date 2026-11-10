@@ -12,9 +12,7 @@ use captions::{FillerKind, LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub use remote::{
-    AnthropicFillerClassifier, FillerDisclosure, OPENAI_MODEL, OpenAiFillerClassifier,
-};
+pub use remote::{AnthropicFillerClassifier, OPENAI_MODEL, OpenAiFillerClassifier};
 
 pub const MODE: &str = "transcript-fillers";
 pub const MAX_SEGMENTS: usize = 10_000;
@@ -166,6 +164,11 @@ pub trait FillerClassifier: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn capabilities(&self, scope: &Scope) -> Capabilities;
     fn estimate(&self, scope: &Scope) -> CostEstimate;
+    /// Provider-neutral upload disclosure for this exact scope; a local adapter
+    /// returns `Ok(None)`.
+    fn disclosure(&self, _scope: &Scope) -> Result<Option<crate::UploadDisclosure>, Error> {
+        Ok(None)
+    }
     fn classify(
         &self,
         input: &FillerInput,
