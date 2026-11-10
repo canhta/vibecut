@@ -376,10 +376,6 @@ pub fn catalog_model(id: &str) -> Result<ai::models::Model, EditError> {
         .find(|model| model.id == id)
         .ok_or(EditError::Unsupported("unknown model"))
 }
-/// Default location shared by model bundles and ASR checkpoints.
-pub fn default_cache_root() -> Result<PathBuf, EditError> {
-    Ok(ai::models::cache_dir()?)
-}
 /// Find the explicitly configured or bundled local ASR helper without launching
 /// it or downloading weights. Shared by desktop and CLI composition roots.
 pub fn local_asr_runner() -> Option<PathBuf> {

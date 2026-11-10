@@ -88,7 +88,7 @@ impl Workflow for LocalWorkflow {
             } => {
                 events.stage(Stage::Extract);
                 let credentials = credentials()?;
-                let root = engine::providers::default_cache_root()?;
+                let root = engine::cache::CacheRoot::discover()?.models();
                 let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
                 let provider = engine::providers::choose_transcription(
                     &options.transcription,

@@ -2,6 +2,8 @@
 
 `models::catalog` is metadata only: identity, licence, licence URL, source, exact files with pinned HTTPS URLs, sizes and SHA-256. Downloads are engine-owned, user-initiated, consented and integrity-verified; weights are never bundled.
 
+Default cache discovery belongs to [engine runtime](../../../engine/src/runtime/README.md#default-cache-location).
+
 `Model::languages` is the supported language scope. An empty list means language-neutral weights that neither read nor produce language, such as vision detectors; `Model::language_neutral()` exposes it. It never means every language: `Model::matches_language` is false for neutral weights and `suggested_transcriber` requires a real match, so a vision entry is never an ASR model. Concrete lists: `whisper-large-v3-turbo` vi, en, zh; `gipformer-68m-rnnt-int8` vi; `whisper-small-dtw` vi, en, zh, zh-Hans, zh-Hant.
 
 Vision entries in this table are MIT and language-neutral; the Apache-2.0 SFace entry is documented in [vision](../vision/README.md):

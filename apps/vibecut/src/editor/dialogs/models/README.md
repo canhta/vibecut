@@ -8,8 +8,8 @@ the shared write context. `Editor::open_models` and `Editor::open_model` open it
 the workspace lends the one app-wide instance to the focused window.
 
 `ModelManager` opens one modal over `ai::models::catalog` and engine's
-`ModelTransfers`. It uses the same `ai::models::cache_dir` bundle cache as the CLI and
-adds no second downloader, checkpoint or cache. Rows show model id, language scope
+`ModelTransfers`. It shares [engine's default model path](../../../../../../crates/engine/src/runtime/README.md#default-cache-location)
+with the CLI and adds no second downloader, checkpoint or cache. Rows show model id, language scope
 (including language-neutral weights), licence and source links, total and per-file
 size and SHA-256, install state and current job stage and progress.
 

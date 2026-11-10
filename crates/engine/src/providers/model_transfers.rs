@@ -92,13 +92,13 @@ impl ModelTransfers {
             io,
         }
     }
-    /// Existing ai per-OS path policy; does not download or grant consent.
+    /// Runtime's default model path; does not download or grant consent.
     pub fn open_default(
         budget: ByteBudget,
         max_entries: usize,
         transport: Arc<dyn DownloadTransport>,
     ) -> Result<(Self, usize)> {
-        let root = ai::models::cache_dir()?;
+        let root = crate::cache::CacheRoot::discover()?.models();
         let (cache, diagnostics) = ArtifactCache::open(&root, budget.clone(), max_entries)?;
         Ok((
             Self::new(cache, transport, Arc::new(SystemModelIo)),

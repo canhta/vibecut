@@ -269,7 +269,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     clip_suggest::check_suggestion_credentials(&suggestion, &credentials)?;
     let runtime = cli_runtime()?;
     let budget = context.budget()?;
-    let root = engine::providers::default_cache_root()?;
+    let root = engine::cache::CacheRoot::discover()?.models();
     let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
     let cancellation = engine::transcript::Cancellation::new();
     let mut providers = engine::providers::Providers::open(

@@ -2,7 +2,7 @@
 use crate::{Error, ExecutionHooks};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{io::Read, path::PathBuf};
+use std::io::Read;
 
 /// Public catalog data, validated before consent or IO. No local path is admitted.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,19 +210,6 @@ pub fn storage_error(error: std::io::Error) -> Error {
     } else {
         Error::ModelStorage(error.kind())
     }
-}
-/// OS cache location only. Does not create directories, download, or evict files.
-pub fn cache_dir() -> Result<PathBuf, Error> {
-    #[cfg(target_os = "macos")]
-    let base = std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Library/Caches"));
-    #[cfg(target_os = "windows")]
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".cache")));
-    let base = base.filter(|p| p.is_absolute()).ok_or(Error::Unsupported)?;
-    Ok(base.join("VibeCut").join("models"))
 }
 /// Pinned local models; metadata never starts an automatic download.
 pub fn catalog() -> Result<Vec<Model>, Error> {

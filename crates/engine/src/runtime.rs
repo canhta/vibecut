@@ -1,9 +1,11 @@
 //! Executes bounded background work over shared resources.
 mod budget;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner};
+mod cache_location;
 mod cache_storage;
 pub mod cache {
     //! Retains content-addressed execution artifacts.
+    pub use super::cache_location::CacheRoot;
     pub use super::cache_storage::{
         ArtifactCache, ArtifactKind, ArtifactLease, CacheKey, KeyInputs, ModelLease,
     };

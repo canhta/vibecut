@@ -1,9 +1,9 @@
 //! Discovers available font families.
 use super::{
-    Arc, BTreeMap, BTreeSet, BUNDLED_LICENSE, BUNDLED_SOURCES, Cache, DownloadTransport, EditError,
-    FontEntry, FontError, FontOrigin, FontState, FontStore, GOOGLE_FONTS_COMMIT, GoogleFamily,
-    GoogleFile, LICENSE_FILE, MAX_FAMILY_FACES, MAX_SCANNED_FACES, Mutex, OnceLock, Path, PathBuf,
-    Result, ScannedFace, styles_of,
+    Arc, BTreeMap, BTreeSet, BUNDLED_LICENSE, BUNDLED_SOURCES, Cache, DownloadTransport, FontEntry,
+    FontError, FontOrigin, FontState, FontStore, GOOGLE_FONTS_COMMIT, GoogleFamily, GoogleFile,
+    LICENSE_FILE, MAX_FAMILY_FACES, MAX_SCANNED_FACES, Mutex, OnceLock, Path, PathBuf, Result,
+    ScannedFace, styles_of,
 };
 /// Enumerate font files below `dir` (recursively) with `fontdb`; malformed files are skipped.
 pub fn scan_directory(dir: &Path) -> Vec<ScannedFace> {
@@ -281,10 +281,7 @@ impl FontStore {
     ///
     /// Fails when the OS cache location is unavailable.
     pub fn native() -> Result<Self> {
-        let root = ai::models::cache_dir()?
-            .parent()
-            .map(|parent| parent.join("fonts"))
-            .ok_or(EditError::Invalid("font cache location"))?;
+        let root = engine::cache::CacheRoot::discover()?.fonts();
         Self::new(
             root,
             curated_google_families(),
