@@ -55,21 +55,21 @@ Lowest first; imports go down only, and a window never names another window.
 
 | Layer | Holds |
 |---|---|
-| Foundation | `kit/`, `i18n/`, `input/`, `appearance.rs`; no engine knowledge |
-| Services | `services/` (playback, preview, crop, ai_task, progress): job progress, pickers, shared window services |
+| Foundation | `kit/` (tokens, icons, widgets, appearance), `i18n/`, `input/`; no engine knowledge |
+| Services | `services/`: playback, preview, crop, AI task progress, the editor session with autosave, capture, the GPU effects adapter |
 | Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs |
-| Frame | `editor/frame/`, `actions/`, `preferences/`, `workspace/`, `control/` |
-| Composition root | App wiring, window registry, control attach |
+| Frame | `editor/frame/`, `actions/`, `preferences/` |
+| Composition root | `app/`: wiring, window registry, control attach |
 
 ```mermaid
 flowchart TB
-  root[Composition root: wiring, window registry, control attach] --> frame
-  frame[Frame: editor/frame, actions, preferences, workspace, control] --> areas
+  root[Composition root: app/] --> frame
+  frame[Frame: editor/frame, actions, preferences] --> areas
   subgraph areas[Windows and areas: never import each other]
     home; shorts; assets; player; properties; timeline; dialogs
   end
-  areas --> services[Services: job progress, pickers, shared window services]
-  services --> foundation[Foundation: kit, i18n, input, appearance]
+  areas --> services[Services: services/]
+  services --> foundation[Foundation: kit, i18n, input]
 ```
 
 ```mermaid
@@ -79,6 +79,8 @@ flowchart LR
   frame -- command --> session[engine Session]
   session -- project change --> show
 ```
+
+The crate root holds exactly `kit/`, `i18n/`, `input/`, `services/`, `home/`, `shorts/`, `editor/`, `actions/`, `preferences/`, `app/`, `lib.rs` and `main.rs`; a new shared module goes into `services/` or `kit/`, never beside them. The engine `Session` owns the item selection; areas read it and never keep a copy.
 
 An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`.
 
