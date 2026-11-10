@@ -52,7 +52,7 @@ impl<'a> Renderer<'a> {
     }
     /// Static placement with project-owned keyframed opacity applied at `local`.
     pub(super) fn placement_at(&self, item: &Item, local: Tick) -> Result<Placement> {
-        let mut placement = self.placement(item);
+        let mut placement = self.placement(item, local)?;
         let Some(value) = item.animations.value_at(&self.opacity_path, local)? else {
             return Ok(placement);
         };
@@ -66,7 +66,7 @@ impl<'a> Renderer<'a> {
         placement.opacity = opacity.clamp(0.0, 1.0) as f32;
         Ok(placement)
     }
-    fn placement(&self, item: &Item) -> Placement {
+    fn placement(&self, item: &Item, local: Tick) -> Result<Placement> {
         let placement = self
             .settings
             .placements
@@ -94,7 +94,7 @@ impl<'a> Renderer<'a> {
                     Placement::default()
                 }
             });
-        item_crop(item, placement)
+        item_crop(item, placement, local)
     }
     fn frame(
         &mut self,
@@ -186,7 +186,7 @@ impl<'a> Renderer<'a> {
                 if self.placement_at(item, local_time(item, at)?)?.opacity == 0.0 {
                     continue;
                 }
-                let placement = item_crop(item, Placement::default());
+                let placement = item_crop(item, Placement::default(), local_time(item, at)?)?;
                 if let Some(image) = self.video_image(
                     item,
                     source_time(item, at)?,
@@ -740,10 +740,14 @@ impl<'a> Renderer<'a> {
 }
 /// Maps the item's source-normalized crop into the placement's source window so
 /// sampling keeps the cropped region and every later stage sees the placed item.
-fn item_crop(item: &Item, mut placement: Placement) -> Placement {
+/// The crop position follows the `crop.x` / `crop.y` channels at the item-local
+/// time, clamped into the frame by `project::Crop::at`; preview and export both
+/// reach it through `placement_at`.
+fn item_crop(item: &Item, mut placement: Placement, local: Tick) -> Result<Placement> {
     if let ItemParams::Video(p) = &item.content
         && let Some(crop) = p.crop
     {
+        let crop = crop.at(&item.animations, local)?;
         let base = placement.crop;
         placement.crop = project::Crop {
             x: base.x + crop.x * base.width,
@@ -752,7 +756,7 @@ fn item_crop(item: &Item, mut placement: Placement) -> Placement {
             height: crop.height * base.height,
         };
     }
-    placement
+    Ok(placement)
 }
 /// Finite scalar channel value at the item-local time, or the stored base when unkeyed.
 fn scalar_at(

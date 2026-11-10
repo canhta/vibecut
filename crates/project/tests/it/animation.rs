@@ -126,6 +126,64 @@ fn independent_linear_rgba_components_and_discrete_fallback_hold() {
         AnimationPath::scale_group(),
         [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY]
     );
+    // The crop position is a scalar pair; the auto flag is a held bool and never interpolates.
+    for (path, name) in [
+        (BuiltinPath::CropX, "crop.x"),
+        (BuiltinPath::CropY, "crop.y"),
+        (BuiltinPath::CropAuto, "crop.auto"),
+    ] {
+        assert_eq!(path.as_str(), name);
+    }
+    let mut linear_flag = Keyframe::new(Tick(0), ParamValue::Bool(true));
+    linear_flag.segment = Segment::Linear;
+    assert!(
+        Channel::new(
+            ParamValue::Bool(false),
+            vec![linear_flag],
+            Extrapolation::Hold,
+            Extrapolation::Hold
+        )
+        .is_err()
+    );
+    let crop_x = AnimationPath::from(BuiltinPath::CropX);
+    let mut animations = Animations::default();
+    animations
+        .set(crop_x.clone(), Param::new(ParamValue::Bool(true)).unwrap())
+        .unwrap_err();
+    animations
+        .set(
+            crop_x.clone(),
+            Param::Value(channel(
+                vec![key(0, 0.0, Segment::Step), key(10, 0.5, Segment::Step)],
+                Extrapolation::Linear,
+                Extrapolation::Linear,
+            )),
+        )
+        .unwrap();
+    let crop = Crop {
+        x: 0.2,
+        y: 0.3,
+        width: 0.5,
+        height: 0.5,
+    };
+    // A step holds until the next key; the evaluated position clamps into the frame.
+    for (tick, expected) in [(5, 0.0), (10, 0.5), (50, 0.5), (-5, 0.0)] {
+        near(crop.at(&animations, Tick(tick)).unwrap().x, expected);
+    }
+    assert_eq!(crop.at(&animations, Tick(5)).unwrap().y, 0.3);
+    animations
+        .set(
+            crop_x,
+            Param::Value(channel(
+                vec![key(0, 0.0, Segment::Linear), key(10, 0.5, Segment::Linear)],
+                Extrapolation::Linear,
+                Extrapolation::Linear,
+            )),
+        )
+        .unwrap();
+    near(crop.at(&animations, Tick(5)).unwrap().x, 0.25);
+    near(crop.at(&animations, Tick(100)).unwrap().x, 0.5);
+    near(crop.at(&animations, Tick(-100)).unwrap().x, 0.0);
     for path in BuiltinPath::ALL {
         assert!(AnimationPath::new(path.as_str()).is_ok());
         assert_eq!(BuiltinPath::parse(path.as_str()), Some(path));

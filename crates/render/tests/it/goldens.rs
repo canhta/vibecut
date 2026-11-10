@@ -51,6 +51,22 @@ fn crop_scene(
     crop: Option<project::Crop>,
     transform: &[(&str, f64)],
 ) -> project::Project {
+    let mut animations = project::Animations::default();
+    for (path, value) in transform {
+        animations
+            .set(
+                project::AnimationPath::new(*path).unwrap(),
+                project::Param::new(project::ParamValue::Scalar(*value)).unwrap(),
+            )
+            .unwrap();
+    }
+    crop_scene_animated(format, crop, animations)
+}
+fn crop_scene_animated(
+    format: &str,
+    crop: Option<project::Crop>,
+    animations: project::Animations,
+) -> project::Project {
     let asset = testkit::source::asset(1, std::env::temp_dir().join("render-crop-source"))
         .format(format)
         .duration(tick(1, 1))
@@ -73,15 +89,6 @@ fn crop_scene(
     data.canvas.height = 64;
     data.canvas.background = project::Color([0, 0, 0, 255]);
     data.assets.push(asset);
-    let mut animations = project::Animations::default();
-    for (path, value) in transform {
-        animations
-            .set(
-                project::AnimationPath::new(*path).unwrap(),
-                project::Param::new(project::ParamValue::Scalar(*value)).unwrap(),
-            )
-            .unwrap();
-    }
     data.scene_mut().timeline.main.items = vec![project::Item {
         hidden: false,
         blend_mode: Default::default(),
@@ -153,6 +160,13 @@ fn item_crop_renders_centred_and_edge_regions_before_transform() {
             2049379840725108052u64,
         ),
         (
+            "keyed-position",
+            "synthetic",
+            Some(edge),
+            vec![("crop.x", 0.25), ("crop.y", 0.25)],
+            18372119245977500073u64,
+        ),
+        (
             "image",
             "png_pipe",
             Some(centred),
@@ -189,6 +203,41 @@ fn item_crop_renders_centred_and_edge_regions_before_transform() {
         ]);
         assert_eq!(actual, expected, "inspected {case} crop golden");
     }
+    // A keyed crop position: preview at tick t equals the export frame at t, and the
+    // linear midpoint matches the same crop held at that position.
+    let key = |t: Tick, v: f64| {
+        let mut key = project::Keyframe::new(t, project::ParamValue::Scalar(v));
+        key.segment = project::Segment::Linear;
+        key
+    };
+    let mut keyed = project::Animations::default();
+    for path in ["crop.x", "crop.y"] {
+        let channel = project::Channel::new(
+            project::ParamValue::Scalar(0.0),
+            vec![key(Tick::ZERO, 0.0), key(tick(1, 1), 0.5)],
+            project::Extrapolation::Hold,
+            project::Extrapolation::Hold,
+        )
+        .unwrap();
+        keyed
+            .set(
+                project::AnimationPath::new(path).unwrap(),
+                project::Param::Value(channel),
+            )
+            .unwrap();
+    }
+    let p = crop_scene_animated("synthetic", Some(edge), keyed);
+    let mut renderer = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+    let mid = tick(1, 2);
+    let frame = renderer.render_frame(mid, &mut Quadrants, &h).unwrap();
+    let preview = renderer.preview_frame(mid, &mut Quadrants, &h).unwrap();
+    assert_eq!(frame.pixels(), preview.pixels(), "keyed crop preview");
+    let held = crop_scene("synthetic", Some(centred), &[]);
+    let held = Renderer::new(&held, RenderSettings::from_project(&held))
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut Quadrants, &h)
+        .unwrap();
+    assert_eq!(frame.pixels(), held.pixels(), "midpoint equals held crop");
     let none = crop_scene("synthetic", None, &[]);
     let full = crop_scene(
         "synthetic",

@@ -11,6 +11,40 @@ fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<Sa
 pub(crate) fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(Tick(start), Tick(end)).unwrap()
 }
+/// `crop.x` / `crop.y` stepping channels (tick, value) plus a held `crop.auto` flag.
+fn crop_channels(x: &[(i64, f64)], y: &[(i64, f64)]) -> Animations {
+    let scalar = |keys: &[(i64, f64)]| {
+        let keys = keys
+            .iter()
+            .map(|(t, v)| {
+                let mut key = Keyframe::new(Tick(*t), ParamValue::Scalar(*v));
+                key.segment = Segment::Step;
+                key
+            })
+            .collect();
+        Param::Value(
+            Channel::new(
+                ParamValue::Scalar(0.0),
+                keys,
+                Extrapolation::Hold,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        )
+    };
+    let mut animations = Animations::default();
+    for (path, param) in [
+        (BuiltinPath::CropX, scalar(x)),
+        (BuiltinPath::CropY, scalar(y)),
+        (
+            BuiltinPath::CropAuto,
+            Param::new(ParamValue::Bool(true)).unwrap(),
+        ),
+    ] {
+        animations.set(AnimationPath::from(path), param).unwrap();
+    }
+    animations
+}
 pub(crate) fn empty() -> Project {
     Project::empty(ProjectId(1), "Dự án Việt Nam".into()).unwrap()
 }
@@ -119,7 +153,12 @@ fn populated(path: PathBuf) -> Project {
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
-            crop: None,
+            crop: Some(Crop {
+                x: 0.1,
+                y: 0.2,
+                width: 0.5,
+                height: 0.5,
+            }),
         }),
         ItemParams::Audio(AudioParams {
             fades: project::Fades {
@@ -168,7 +207,11 @@ fn populated(path: PathBuf) -> Project {
                 retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
-                animations: Default::default(),
+                animations: if matches!(content, ItemParams::Video(_)) {
+                    crop_channels(&[(0, 0.1), (10, 0.5)], &[(0, 0.0), (10, 0.5)])
+                } else {
+                    Default::default()
+                },
                 id: ItemId(i as u64),
                 source_asset,
                 source_range: range(0, 10),
@@ -526,6 +569,32 @@ fn model_trust_boundaries() {
             corrupt(&mut crop);
             params.crop = Some(crop);
         }
+        cases.push(d);
+    }
+    // Crop channels need a static crop and stay inside `[0, 1 - size]`.
+    for (crop, x, y) in [
+        (None, vec![(0, 0.1)], vec![(0, 0.2)]),
+        (Some(0.5), vec![(0, 0.6)], vec![(0, 0.2)]),
+        (Some(0.5), vec![(0, 0.1)], vec![(0, -0.01)]),
+        (Some(0.5), vec![(0, 0.1), (5, 0.5001)], vec![(0, 0.2)]),
+    ] {
+        let mut d = base.clone();
+        let item = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Video(_)))
+            .unwrap();
+        if let ItemParams::Video(params) = &mut item.content {
+            params.crop = crop.map(|size| Crop {
+                x: 0.0,
+                y: 0.0,
+                width: size,
+                height: size,
+            });
+        }
+        item.animations = crop_channels(&x, &y);
         cases.push(d);
     }
     for kind in [

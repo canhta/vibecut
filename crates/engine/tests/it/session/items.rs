@@ -1166,3 +1166,110 @@ proptest! {
         prop_assert_eq!(&project::decode(&project::encode(&final_layout, false).unwrap()).unwrap().project,final_layout.as_ref());
     }
 }
+
+#[test]
+fn crop_position_channels_need_a_crop_stay_in_frame_and_follow_split_duplicate_and_scale() {
+    let (mut s, _video, _audio, clip) = audible_session();
+    let x = project::AnimationPath::new("crop.x").unwrap();
+    let key =
+        |at: i64, value: f64| project::Keyframe::new(Tick(at), project::ParamValue::Scalar(value));
+    let add = |s: &mut Session, keys: Vec<project::Keyframe>| {
+        let channel = project::Channel::new(
+            project::ParamValue::Scalar(0.0),
+            keys,
+            project::Extrapolation::Hold,
+            project::Extrapolation::Hold,
+        )
+        .unwrap();
+        s.apply(Command::SetAnimatedParam {
+            item: clip,
+            path: x.clone(),
+            param: project::Param::Value(channel),
+        })
+    };
+    assert!(
+        add(&mut s, vec![key(0, 0.0)]).is_err(),
+        "keys need a static crop"
+    );
+    let crop = project::Crop {
+        x: 0.0,
+        y: 0.0,
+        width: 0.5,
+        height: 0.5,
+    };
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: engine::ItemParamPatch::Crop(Some(crop)),
+    })
+    .unwrap();
+    assert!(add(&mut s, vec![key(0, 0.6)]).is_err(), "past 1 - width");
+    assert!(add(&mut s, vec![key(0, -0.1)]).is_err(), "before the frame");
+    add(&mut s, vec![key(0, 0.0), key(80, 0.5)]).unwrap();
+    let at = |s: &Session, id: ItemId, t: i64| {
+        let item = get_id(s, id);
+        let crop = crop_of(item).at(&item.animations, Tick(t)).unwrap();
+        (crop.x, crop.y)
+    };
+    assert_eq!(at(&s, clip, 40), (0.25, 0.0), "linear between keys");
+    let split = s
+        .apply(Command::SplitAt {
+            item: clip,
+            at: Tick(40),
+        })
+        .unwrap();
+    let CreatedId::Item(right) = *split.created.first().unwrap() else {
+        panic!("item ID");
+    };
+    assert_eq!(at(&s, clip, 20), (0.125, 0.0));
+    assert_eq!(
+        at(&s, right, 20),
+        (0.375, 0.0),
+        "right piece keeps the curve"
+    );
+    let copy = s
+        .apply(Command::DuplicateItems { items: vec![right] })
+        .unwrap();
+    let copy = copy
+        .created
+        .iter()
+        .find_map(|id| match id {
+            CreatedId::Item(item) => Some(*item),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(get_id(&s, copy).animations, get_id(&s, right).animations);
+    s.apply(Command::ScaleKeyframeTime {
+        item: right,
+        numerator: 2,
+        denominator: 1,
+    })
+    .unwrap();
+    assert_eq!(at(&s, right, 40), (0.375, 0.0), "keys stretch with time");
+    let auto = project::AnimationPath::new("crop.auto").unwrap();
+    let mut step = project::Keyframe::new(Tick(0), project::ParamValue::Bool(true));
+    step.segment = project::Segment::Linear;
+    assert!(
+        project::Channel::new(
+            project::ParamValue::Bool(false),
+            vec![step],
+            project::Extrapolation::Hold,
+            project::Extrapolation::Hold,
+        )
+        .is_err(),
+        "the auto flag only steps"
+    );
+    let held = project::Param::new(project::ParamValue::Bool(true)).unwrap();
+    s.apply(Command::SetAnimatedParam {
+        item: clip,
+        path: auto,
+        param: held,
+    })
+    .unwrap();
+}
+
+fn crop_of(item: &Item) -> project::Crop {
+    let ItemParams::Video(p) = &item.content else {
+        panic!("video item");
+    };
+    p.crop.unwrap()
+}

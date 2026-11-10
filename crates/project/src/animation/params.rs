@@ -32,9 +32,12 @@ pub enum BuiltinPath {
     BackgroundOffsetX,
     BackgroundOffsetY,
     BackgroundCornerRadius,
+    CropX,
+    CropY,
+    CropAuto,
 }
 impl BuiltinPath {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 18] = [
         Self::TransformPositionX,
         Self::TransformPositionY,
         Self::TransformScaleX,
@@ -50,6 +53,9 @@ impl BuiltinPath {
         Self::BackgroundOffsetX,
         Self::BackgroundOffsetY,
         Self::BackgroundCornerRadius,
+        Self::CropX,
+        Self::CropY,
+        Self::CropAuto,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -68,6 +74,9 @@ impl BuiltinPath {
             Self::BackgroundOffsetX => "background.offsetX",
             Self::BackgroundOffsetY => "background.offsetY",
             Self::BackgroundCornerRadius => "background.cornerRadius",
+            Self::CropX => "crop.x",
+            Self::CropY => "crop.y",
+            Self::CropAuto => "crop.auto",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -137,7 +146,7 @@ impl AnimationPath {
             Param::Color(_) => None,
         };
         match builtin {
-            BuiltinPath::Muted => matches!(base, Some(ParamValue::Bool(_))),
+            BuiltinPath::Muted | BuiltinPath::CropAuto => matches!(base, Some(ParamValue::Bool(_))),
             BuiltinPath::Color | BuiltinPath::BackgroundColor => {
                 matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
             }

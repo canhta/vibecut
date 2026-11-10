@@ -322,6 +322,13 @@ fn validate(data: &ProjectData) -> Result<()> {
                 }
             }
             item.animations.validate()?;
+            crate::Crop::validate_animations(
+                match &item.content {
+                    ItemParams::Video(p) => p.crop.as_ref(),
+                    _ => None,
+                },
+                &item.animations,
+            )?;
             keys = keys
                 .checked_add(item.animations.key_count())
                 .ok_or(Error::TooLarge("project keys"))?;
