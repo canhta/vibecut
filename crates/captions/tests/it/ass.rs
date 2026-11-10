@@ -11,7 +11,8 @@ fn tick(seconds: f64) -> Tick {
 
 /// The style a parsed cue references in the import's shared table.
 fn cue_style(import: &captions::AssImport, cue: usize) -> &captions::CueStyle {
-    &import.styles[usize::from(import.cues[cue].style.0)]
+    let style = import.cues.get(cue).unwrap().style.0;
+    import.styles.get(usize::from(style)).unwrap()
 }
 
 fn doc(play_res: &str, style: &str, dialogue: &str) -> String {
