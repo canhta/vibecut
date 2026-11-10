@@ -34,7 +34,7 @@ Pass one mixes each audible clip alone with its volume, mute and automation, wit
 
 The meter is K-weighted at the project rate, 400 ms blocks on a 100 ms hop, absolute gate -70 LUFS, relative gate -10 LU, true peak from the limiter's 4x/2x polyphase detector. Measurement is stereo (mono duplicates at unity), so a mono export of stereo-measured material reads up to 3 dB lower. Silence, clips under 400 ms and gains within 0.05 dB are exact unity. Gains clamp to +/-60 dB. An unreachable target lands below target rather than clipping.
 
-The planner reports progress through `Stage::Mix`, honours cancellation and returns `LoudnessReport` (gains plus measured numbers; the engine owns its key). `project.settings.loudness.measured` holds the gains. `AudioMixer` and `mix_audio` apply the clip gain beside item volume and the master gain to the summed mix ahead of the limiter, whose 0.98 post gain stays in the chain, so final loudness is 0.18 dB under target. Gains apply sample-accurately and do not change timing. `cargo test -p render --test it loudness::` compares the meter with ffmpeg `ebur128`.
+The planner reports progress through `Stage::Mix`, honours cancellation and returns `LoudnessReport` (gains plus measured numbers; the engine owns its key). `project.settings.loudness.measured` holds the gains. `AudioMixer` and `mix_audio` apply the clip gain beside item volume and the master gain to the summed mix ahead of the limiter, whose 0.98 post gain stays in the chain, so final loudness is 0.18 dB under target. Gains apply sample-accurately and do not change timing.
 
 ## Export audio
 
