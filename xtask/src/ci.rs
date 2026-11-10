@@ -1,5 +1,4 @@
-//! Hosted-CI verification and the one workspace test suite, refused inside
-//! linked worktrees.
+//! Workspace verification with a guarded hosted aggregate.
 use crate::{cargo_check, ffmpeg, lint, process};
 use std::env;
 use std::ffi::OsStr;
@@ -10,15 +9,19 @@ const REFUSED: &str = "cargo xtask ci is for hosted CI; in a worktree run: cargo
 
 pub fn run(root: &Path, require_oracles: bool) -> Result<(), String> {
     guard(root, env::var_os("CI").as_deref())?;
-    lint(root)?;
-    suite(root, require_oracles)
+    suite(root, require_oracles, true)
 }
 
 /// The one workspace test suite behind `cargo xtask test` and the aggregate
 /// `cargo xtask ci`. Both callers keep their own oracle mode and fixture
 /// receipt; the coverage, including the Windows feature builds, is the same.
-pub(crate) fn suite(root: &Path, required: bool) -> Result<(), String> {
-    let checks = ffmpeg::begin(required).and_then(|()| workspace_tests(root, required));
+pub(crate) fn suite(root: &Path, required: bool, with_lint: bool) -> Result<(), String> {
+    let checks = ffmpeg::begin(required).and_then(|()| {
+        if with_lint {
+            lint(root)?;
+        }
+        workspace_tests(root, required)
+    });
     let fixtures = ffmpeg::print_fixtures(root);
     checks.and(fixtures)
 }

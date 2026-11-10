@@ -119,7 +119,7 @@ fn run() -> Result<ExitCode, String> {
         ["checks"] => checks(root),
         ["clippy"] => clippy(root),
         ["lint"] => lint(root),
-        ["test"] => ci::suite(root, true),
+        ["test"] => ci::suite(root, true, false),
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => policy::edges::layers(root),
         ["assets"] => policy::assets::check(root),
