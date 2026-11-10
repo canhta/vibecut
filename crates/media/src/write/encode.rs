@@ -106,15 +106,26 @@ fn explicit_quality_quantizer(quality: u8) -> u32 {
     ((100 - u32::from(quality)) * 51 / 100).max(1)
 }
 
-fn video_open_error(last: Option<ff::Error>, software_h264: bool) -> MediaError {
+fn video_open_error(last: Option<ff::Error>, software_h264: bool, webm: bool) -> MediaError {
     match last {
         Some(source) => MediaError::Ffmpeg {
             operation: "open video encoder",
             source,
         },
+        None if webm => MediaError::Unsupported("VP9 encoder unavailable in this FFmpeg build"),
         None if software_h264 => MediaError::EncoderUnavailable { source: None },
         None => MediaError::Unsupported("no available encoder for target quality"),
     }
+}
+
+/// Registry lookup for the one audio encoder a container admits. A missing
+/// encoder names the absent capability; there is no fallback pair.
+fn audio_encoder(name: &'static str, webm: bool) -> Result<ff::Codec> {
+    ff::encoder::find_by_name(name).ok_or(MediaError::Unsupported(if webm {
+        "Opus encoder unavailable in this FFmpeg build"
+    } else {
+        "AAC encoder unavailable in this FFmpeg build"
+    }))
 }
 
 /// Encoders this host can open for MP4, in preference order.
@@ -365,6 +376,7 @@ impl VideoEncoder {
         Err(video_open_error(
             last,
             !settings.webm && matches!(preference, EncodePreference::Software),
+            settings.webm,
         ))
     }
     pub fn name(&self) -> &str {
@@ -514,8 +526,7 @@ impl AudioEncoder {
             return Err(MediaError::Invalid("audio encoder settings"));
         }
         let name = if settings.webm { "libopus" } else { "aac" };
-        let codec = ff::encoder::find_by_name(name)
-            .ok_or(MediaError::Unsupported("audio encoder unavailable"))?;
+        let codec = audio_encoder(name, settings.webm)?;
         let mut encoder = ff::codec::context::Context::new_with_codec(codec)
             .encoder()
             .audio()
@@ -814,20 +825,60 @@ mod tests {
         for software in [true, false] {
             for source in [ff::Error::External, ff::Error::InvalidData] {
                 assert!(matches!(
-                    video_open_error(Some(source), software),
+                    video_open_error(Some(source), software, false),
                     MediaError::Ffmpeg { operation: "open video encoder", source: actual }
                         if actual == source
                 ));
             }
         }
         assert!(matches!(
-            video_open_error(None, true),
+            video_open_error(None, true, false),
             MediaError::EncoderUnavailable { source: None }
         ));
         assert!(matches!(
-            video_open_error(None, false),
+            video_open_error(None, false, false),
             MediaError::Unsupported(_)
         ));
+    }
+
+    #[test]
+    fn missing_webm_encoders_are_typed_capability_errors() {
+        // The branch taken when no admitted VP9 encoder opens names the
+        // capability instead of silently selecting the MP4 pair.
+        assert!(matches!(
+            video_open_error(None, false, true),
+            MediaError::Unsupported("VP9 encoder unavailable in this FFmpeg build")
+        ));
+        // The audio registry lookup fails with the container's own codec name.
+        assert!(matches!(
+            audio_encoder("vibecut-no-such-encoder", true),
+            Err(MediaError::Unsupported(message)) if message.contains("Opus")
+        ));
+        assert!(matches!(
+            audio_encoder("vibecut-no-such-encoder", false),
+            Err(MediaError::Unsupported(message)) if message.contains("AAC")
+        ));
+        // Capability admission is the registry itself, not a platform adapter.
+        init().unwrap();
+        let vp9 = ff::encoder::find_by_name("libvpx-vp9").is_some();
+        let opus = ff::encoder::find_by_name("libopus").is_some();
+        assert_eq!(
+            export_container_available(crate::Container::WebM),
+            vp9 && opus
+        );
+        assert_eq!(video_candidates(true), &[("libvpx-vp9", true)][..]);
+        if !opus {
+            assert!(matches!(
+                audio_encoder("libopus", true),
+                Err(MediaError::Unsupported(message)) if message.contains("Opus")
+            ));
+        }
+        if !vp9 {
+            assert!(matches!(
+                video_open_error(None, false, true),
+                MediaError::Unsupported(message) if message.contains("VP9")
+            ));
+        }
     }
 }
 

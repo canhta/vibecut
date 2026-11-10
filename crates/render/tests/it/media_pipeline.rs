@@ -99,6 +99,31 @@ fn av_fixture(path: &Path) {
         ],
     );
 }
+fn video_pts(path: &Path) -> Vec<f64> {
+    let output = tool_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=pts_time",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().trim_end_matches(',').parse().ok())
+        .collect()
+}
 fn pcm(path: &Path, filter: Option<&str>) -> Vec<f32> {
     let mut command = tool_command("ffmpeg");
     command.args(["-v", "error", "-i"]).arg(path);
@@ -1001,6 +1026,127 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
         }
         settings.include_audio = true;
     }
+}
+
+#[test]
+fn webm_export_matches_the_project_grid_and_plays() {
+    if !tools() {
+        return;
+    }
+    let p = solid_project(1, 128, 96, [70, 160, 210, 255]);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::Encode;
+    settings.container = media::Container::WebM;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    settings.quality = 100;
+    let output = root().join("export-oracle.webm");
+    let receipt = export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert_eq!(receipt.video_frames, 30);
+    assert_eq!(receipt.audio_samples, 48_000);
+    assert!(!receipt.stream_copied);
+    let info = probe(&output);
+    let video = &info["streams"][0];
+    let audio = &info["streams"][1];
+    assert_eq!(video["codec_name"], "vp9");
+    assert_eq!(video["width"].as_u64(), Some(128));
+    assert_eq!(video["height"].as_u64(), Some(96));
+    assert_eq!(video["r_frame_rate"], "30/1");
+    assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 30);
+    assert_eq!(audio["codec_name"], "opus");
+    assert_eq!(audio["sample_rate"].as_str(), Some("48000"));
+    assert_eq!(audio["channels"].as_u64(), Some(2));
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
+        1.0,
+        0.03,
+        "WebM duration",
+    );
+    assert!(
+        testkit::oracle::decodes(&output),
+        "WebM playback smoke: every stream decodes cleanly"
+    );
+    let hooks = Hooks::default();
+    let reference = Renderer::new(&p, settings.render.clone())
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap()
+        .video_rgba8(1, &hooks)
+        .unwrap();
+    let decoded = rgba(&output);
+    assert_eq!(decoded.len(), reference.bytes.len());
+    let max = decoded
+        .iter()
+        .zip(&reference.bytes)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    let mse = decoded
+        .iter()
+        .zip(&reference.bytes)
+        .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+        .sum::<f64>()
+        / decoded.len() as f64;
+    assert!(
+        max <= 8 && mse <= 4.0,
+        "VP9 decoded quality max={max} mse={mse}"
+    );
+    eprintln!("OBSERVED WebM oracle: 30 frames, 48000 samples, max={max} mse={mse}");
+}
+
+#[test]
+fn webm_export_is_deterministic_across_runs() {
+    if !tools() {
+        return;
+    }
+    let p = solid_project(1, 128, 96, [30, 120, 210, 255]);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::Encode;
+    settings.container = media::Container::WebM;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let mut runs = Vec::new();
+    for name in ["deterministic-one.webm", "deterministic-two.webm"] {
+        let path = root().join(name);
+        let receipt = export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &settings,
+            &path,
+            &Hooks::default(),
+        )
+        .unwrap();
+        runs.push((receipt, path));
+    }
+    assert_eq!(
+        runs.iter()
+            .map(|(receipt, _)| receipt.video_frames)
+            .collect::<Vec<_>>(),
+        [30, 30]
+    );
+    assert_eq!(runs[0].0.audio_samples, runs[1].0.audio_samples);
+    let timestamps: Vec<Vec<f64>> = runs.iter().map(|(_, path)| video_pts(path)).collect();
+    assert_eq!(timestamps[0].len(), 30);
+    for (frame, at) in timestamps[0].iter().enumerate() {
+        // WebM timestamps resolve to the container's millisecond time base.
+        assert!(
+            (at - frame as f64 / 30.0).abs() <= 0.001,
+            "frame {frame} timestamp {at}"
+        );
+    }
+    assert_eq!(
+        timestamps[0], timestamps[1],
+        "the same project must produce the same frame timestamps"
+    );
+    assert_eq!(
+        testkit::oracle::decoded_frames(&runs[0].1, "v:0"),
+        testkit::oracle::decoded_frames(&runs[1].1, "v:0")
+    );
 }
 
 #[test]
@@ -1951,4 +2097,99 @@ fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
             "{centre}: preview {want} export {got}"
         );
     }
+}
+
+#[cfg(windows)]
+fn peak_working_set_bytes() -> Option<u64> {
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!("(Get-Process -Id {}).PeakWorkingSet64", std::process::id()),
+        ])
+        .output()
+        .ok()?;
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+#[cfg(not(windows))]
+fn peak_working_set_bytes() -> Option<u64> {
+    None
+}
+
+#[test]
+#[ignore = "manual 60 s 1080p WebM export speed and quality measurement"]
+fn webm_export_benchmark() {
+    if !tools() {
+        return;
+    }
+    let input = root().join("benchmark-1080p60s-source.mp4");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1920x1080:rate=30:duration=60",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ],
+    );
+    let p = video_project(&input);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::Encode;
+    settings.container = media::Container::WebM;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("benchmark-1080p60s.webm");
+    let start = std::time::Instant::now();
+    let receipt = export(
+        &p,
+        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    let elapsed = start.elapsed();
+    let info = probe(&output);
+    assert_eq!(info["streams"][0]["codec_name"], "vp9");
+    assert_eq!(info["streams"][1]["codec_name"], "opus");
+    assert_eq!(receipt.video_frames, 1_800);
+    // Speed and quality come from the same run against the generated fixture.
+    let decoded = rgba(&output);
+    let reference = rgba(&input);
+    let max = decoded
+        .iter()
+        .zip(&reference)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    let mse = decoded
+        .iter()
+        .zip(&reference)
+        .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+        .sum::<f64>()
+        / decoded.len() as f64;
+    println!(
+        "OBSERVED webm benchmark 1920x1080 30fps 60s: elapsed_s={:.3} video_frames={} audio_samples={} fps={:.2} bytes={} peak_working_set_bytes={:?} first_frame_max={max} first_frame_mse={mse:.3}",
+        elapsed.as_secs_f64(),
+        receipt.video_frames,
+        receipt.audio_samples,
+        receipt.video_frames as f64 / elapsed.as_secs_f64(),
+        std::fs::metadata(&output).unwrap().len(),
+        peak_working_set_bytes(),
+    );
 }

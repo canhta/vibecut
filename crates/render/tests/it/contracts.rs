@@ -132,19 +132,20 @@ fn export_options_refuse_hostile_geometry_rates_versions_and_incompatible_codecs
 }
 
 #[test]
-fn export_refuses_a_rate_whose_frames_are_not_whole_ticks() {
+fn export_refuses_hostile_settings_and_zero_duration_with_typed_errors() {
     let p = solid_project(1, 64, 64, [0, 0, 0, 255]);
-    let mut settings = ExportSettings::from_project(&p);
+    let range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
     for fps in [
         time::FrameRate::new(17, 1).unwrap(),
         time::FrameRate::new(17, 1_001).unwrap(),
     ] {
+        let mut settings = ExportSettings::from_project(&p);
         settings.fps = fps;
         assert!(
             matches!(
                 export(
                     &p,
-                    TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                    range,
                     &settings,
                     std::path::Path::new("never-written.mp4"),
                     &Hooks::default()
@@ -154,6 +155,69 @@ fn export_refuses_a_rate_whose_frames_are_not_whole_ticks() {
             "{fps}"
         );
     }
+    // VP9 and H.264 both refuse odd output axes before any encoder opens.
+    for (width, height) in [(65, 64), (64, 65), (3, 64), (64, 3)] {
+        let mut settings = ExportSettings::from_project(&p);
+        settings.container = media::Container::WebM;
+        settings.render.width = width;
+        settings.render.height = height;
+        assert!(
+            matches!(
+                export(
+                    &p,
+                    range,
+                    &settings,
+                    std::path::Path::new("never-written.webm"),
+                    &Hooks::default()
+                ),
+                Err(Error::Invalid("export settings/range"))
+            ),
+            "{width}x{height}"
+        );
+    }
+    // Every remaining explicit bound is a typed refusal, never a clamp.
+    let rejections: [fn(&mut ExportSettings); 6] = [
+        |s| s.bit_rate = 0,
+        |s| s.quality = 101,
+        |s| s.channels = 3,
+        |s| s.max_bytes = 0,
+        |s| s.audio_block = 0,
+        |s| s.audio_cut_fade_ms = 1_001,
+    ];
+    for reject in rejections {
+        let mut settings = ExportSettings::from_project(&p);
+        settings.container = media::Container::WebM;
+        reject(&mut settings);
+        assert!(matches!(
+            export(
+                &p,
+                range,
+                &settings,
+                std::path::Path::new("never-written.webm"),
+                &Hooks::default()
+            ),
+            Err(Error::Invalid("export settings/range"))
+        ));
+    }
+    // An empty timeline cannot form a positive range, so it refuses before staging.
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    let empty = project::Project::new(data).unwrap();
+    let mut settings = ExportSettings::from_project(&empty);
+    settings.container = media::Container::WebM;
+    assert!(matches!(
+        export(
+            &empty,
+            range,
+            &settings,
+            std::path::Path::new("never-written.webm"),
+            &Hooks::default()
+        ),
+        Err(Error::Invalid("export settings/range"))
+    ));
 }
 
 #[test]
@@ -776,6 +840,35 @@ fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
         (media::Container::Mov, "mov"),
         (media::Container::WebM, "webm"),
     ] {
+        // Cancellation before publication leaves no final file and no staged
+        // neighbour, for WebM as for MP4/MOV.
+        let cancelled = dir.path().join(format!("cancelled.{extension}"));
+        let h = Hooks {
+            event: Some(std::sync::Arc::new(|stage| {
+                if stage == Stage::Render {
+                    Err(Error::Cancelled)
+                } else {
+                    Ok(())
+                }
+            })),
+            ..Default::default()
+        };
+        let mut settings = ExportSettings::from_project(&p);
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        settings.mode = ExportMode::Encode;
+        settings.container = container;
+        assert!(matches!(
+            export(
+                &p,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &settings,
+                &cancelled,
+                &h
+            ),
+            Err(Error::Cancelled)
+        ));
+        assert!(!cancelled.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
         let path = dir.path().join(format!("existing movie.{extension}"));
         for failure in [
             Stage::Render,
