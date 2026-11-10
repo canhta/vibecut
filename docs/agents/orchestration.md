@@ -17,6 +17,8 @@ Rules for the coordinator and workers. Hosts and commands: `.scratch/process/orc
 2. opencode implements mechanical slices: moves, call-site updates and slices whose `## Design` decides every type, error and limit. Codex implements a slice that still needs judgement: an undecided contract, a change to a public type used by three or more crates, or UI behaviour matched against the reference product. A slice goes to Codex in the same worktree once its review returned a design finding or its worker has run two hours without handing off.
 3. Before dispatch the coordinator greps current `main` for every file and symbol in the ticket's Ownership line, fixes the line, and splits the ticket when it would exceed the bound above. It then compares those files with what every live branch changes, committed or not: a ticket that edits a function a live branch edits waits for that merge, and a refactor that moves or renames an area's files runs while no other branch edits that area. Shared registries are exempt: entries go inside the feature's own section, never at the end of the list.
 4. Slices of one ticket that touch the same files run in sequence; `Blocked by` orders them.
+5. Ready small tickets in the same crate go to one worker and one worktree as a queue, one commit and one merge per ticket, so build warm-up is paid once. Slices are never enlarged to batch them.
+6. Live worktrees never outnumber the warm build directories the host holds; a worker that has to switch directories pays a cold build on every run.
 
 ## Tickets
 
