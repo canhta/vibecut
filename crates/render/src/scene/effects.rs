@@ -4,7 +4,7 @@ use project::{Animations, EffectInstance, EffectValue, Item, ParamValue};
 use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
-mod helpers;
+mod image_ops;
 
 /// One shader uniform: what an effect hands a single-pass pixel op.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -375,12 +375,12 @@ impl SampleInputs<'_> {
     }
     /// Bilinear sample of the current image at a pixel-edge coordinate.
     #[allow(dead_code, reason = "first used by the 264 and 265 ops")]
-    pub fn sample_current(&self, x: f32, y: f32, edge: helpers::Edge) -> [f32; 4] {
-        helpers::sample(self.current, x, y, edge)
+    pub fn sample_current(&self, x: f32, y: f32, edge: image_ops::Edge) -> [f32; 4] {
+        image_ops::sample(self.current, x, y, edge)
     }
     /// Bilinear sample of the instance's input image at a pixel-edge coordinate.
-    pub fn sample_input(&self, x: f32, y: f32, edge: helpers::Edge) -> [f32; 4] {
-        helpers::sample(self.input, x, y, edge)
+    pub fn sample_input(&self, x: f32, y: f32, edge: image_ops::Edge) -> [f32; 4] {
+        image_ops::sample(self.input, x, y, edge)
     }
 }
 fn texel(image: &Image, x: u32, y: u32) -> [f32; 4] {
@@ -431,7 +431,7 @@ fn mirror(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4]
         inputs.sample_input(
             px - 2.0 * distance * nx,
             py - 2.0 * distance * ny,
-            helpers::Edge::Transparent,
+            image_ops::Edge::Transparent,
         )
     } else {
         inputs.texel_current(x, y)

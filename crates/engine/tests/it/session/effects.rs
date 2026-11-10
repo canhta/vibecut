@@ -372,6 +372,9 @@ impl render::ExecutionHooks for Hooks {
 }
 struct CountingEffects(std::sync::atomic::AtomicUsize);
 impl render::effects::EffectCompositor for CountingEffects {
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
     fn apply(
         &self,
         image: &render::Image,
@@ -482,6 +485,9 @@ struct InterruptedEffects {
     fail: bool,
 }
 impl render::effects::EffectCompositor for InterruptedEffects {
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
     fn apply(
         &self,
         _: &render::Image,
