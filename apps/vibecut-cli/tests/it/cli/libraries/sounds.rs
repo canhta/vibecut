@@ -1,5 +1,5 @@
 //! Verifies native sounds command behaviour.
-use crate::cli::process::{cli, error_json, os};
+use crate::cli::process::{bin, cli, error_json, os};
 use serde_json::{Value, json};
 
 fn wav_fixture() -> Vec<u8> {
@@ -192,4 +192,42 @@ fn sounds_cli_refuses_missing_cache_and_invalid_arguments() {
     ]);
     assert_eq!(invalid.status.code(), Some(5), "{invalid:?}");
     assert_eq!(error_json(&invalid)["error"]["code"], "sounds");
+}
+
+#[test]
+fn sounds_cli_local_mutations_ignore_invalid_provider_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library");
+    let sound = sound_json(5, "https://cdn.example/5.mp3");
+    for args in [
+        vec![os("sounds"), os("save"), library.as_os_str(), os(&sound)],
+        vec![os("sounds"), os("unsave"), library.as_os_str(), os("5")],
+    ] {
+        let output = std::process::Command::new(bin())
+            .args(args)
+            .env("FREESOUND_API_KEY", "invalid token")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    assert!(
+        libraries::sounds::SoundLibrary::open(&library)
+            .unwrap()
+            .saved()
+            .unwrap()
+            .is_empty()
+    );
+    let output = std::process::Command::new(bin())
+        .args([
+            os("sounds"),
+            os("search"),
+            os("--library"),
+            library.as_os_str(),
+            os("--json"),
+        ])
+        .env("FREESOUND_API_KEY", "invalid token")
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(error_json(&output)["error"]["code"], "setup");
 }

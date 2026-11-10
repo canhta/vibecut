@@ -32,16 +32,15 @@ pub(crate) fn with_fonts<T>(serve: impl FnOnce(Option<&FontAccess<'_>>) -> T) ->
     serve(fonts.as_ref())
 }
 
-/// Open one sound-library root, read the user credential for this process and serve
-/// the three library operations. The token never enters a command parameter; the
-/// access object chooses remote search when it is present and the saved local
-/// library when it is absent.
+/// Open one sound-library root and serve its three operations. Only search reads
+/// the user credential; local mutations do not need it. The token never enters a
+/// command parameter; the access object chooses remote search when it is present
+/// and the saved local library when it is absent.
 pub(crate) fn with_sounds<T>(
     root: &Path,
     serve: impl FnOnce(&SoundAccess<'_>) -> Result<T, CliError>,
 ) -> Result<T, CliError> {
     let library = SoundLibrary::open(root)?;
-    let token = Token::from_env()?;
     let search =
         |query: &engine::control::SoundQuery| -> engine::Result<engine::control::SoundPage> {
             let request = SearchRequest {
@@ -50,8 +49,8 @@ pub(crate) fn with_sounds<T>(
                 page_size: query.page_size,
                 commercial_only: query.commercial_only,
             };
-            let page = match &token {
-                Some(token) => SoundClient::ureq(token.clone()).search(&request)?,
+            let page = match Token::from_env()? {
+                Some(token) => SoundClient::ureq(token).search(&request)?,
                 None => library.search_local(&request)?,
             };
             Ok(page.into_control(query.commercial_only))
