@@ -591,6 +591,8 @@ pub(crate) fn apply(
         | Command::BurnSubtitles { .. }
         | Command::DuplicateProject { .. }
         | Command::DeleteProject {}
+        | Command::RestoreProject {}
+        | Command::PurgeProject {}
         | Command::ThumbnailProject {}
         | Command::CreateProject { .. }
         | Command::SaveProject {}

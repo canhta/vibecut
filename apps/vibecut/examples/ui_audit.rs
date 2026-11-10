@@ -527,6 +527,12 @@ const SCENES: &[Scene] = &[
         build: home_projects,
     },
     Scene {
+        name: "home-trash",
+        reference_dark: None,
+        reference_light: None,
+        build: projects_trash,
+    },
+    Scene {
         name: "editor-empty",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -815,6 +821,63 @@ fn home_projects(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+    app.run_steps(2);
+    Ok(app)
+}
+
+fn projects_trash(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("projects");
+    {
+        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        for id in 1..=6u64 {
+            library.execute(
+                ProjectId(id),
+                Command::CreateProject {
+                    id: ProjectId(id),
+                    name: format!("Draft {id}").into(),
+                },
+            )?;
+        }
+        for id in [2, 5] {
+            library.execute(ProjectId(id), Command::DeleteProject {})?;
+        }
+    }
+    let workspace = Workspace::with_projects(
+        directory.path().join("recovery"),
+        root,
+        preferences(theme, Locale::En),
+        None,
+    )?;
+    let mut app = harness_sized(
+        App::Home {
+            workspace: Box::new(workspace),
+            _directory: directory,
+        },
+        scale,
+        HOME_WINDOW,
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.state().busy() {
+        app.run_steps(1);
+        if Instant::now() >= deadline {
+            return Err("home trash audit timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.get(By::new().predicate(|node| node.author_id() == Some("projects.trash")))
+        .click();
+    app.run_steps(2);
+    while app.state().busy() {
+        app.run_steps(1);
+        if Instant::now() >= deadline {
+            return Err("home trash audit timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Keep the pointer off the toggle so the capture shows its selected state,
+    // not the click's hover surface.
+    app.hover_at(egui::pos2(4.0, 4.0));
     app.run_steps(2);
     Ok(app)
 }

@@ -132,6 +132,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
     }
 
     if let Some(dialog) = &state.delete {
+        let permanent = dialog.permanent;
         let names: Vec<String> = dialog
             .ids
             .iter()
@@ -139,50 +140,85 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
                 state
                     .entries
                     .iter()
+                    .chain(state.trash.iter())
                     .find(|entry| entry.id == *id)
                     .map(|entry| entry.name.as_str().to_owned())
             })
             .collect();
         let mut confirm = false;
         let mut cancel = false;
-        let title = i18n::text(locale, Text::ProjectsDeleteTitle);
-        let response =
-            egui::Modal::new(egui::Id::unique("projects.delete.dialog")).show(ctx, |ui| {
-                ui.set_width(420.0);
-                ui.heading(title);
-                ui.label(i18n::text(locale, Text::ProjectsDeletePrompt));
-                let names_label = names.join(", ");
-                let response =
-                    ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
-                set_author_id(&response, "projects.delete.names");
-                if let Some(error) = &dialog.error {
-                    ui.label(egui::RichText::new(error).color(kit::error_text(dark)));
+        let title = i18n::text(
+            locale,
+            if permanent {
+                Text::ProjectsPurgeTitle
+            } else {
+                Text::ProjectsDeleteTitle
+            },
+        );
+        let prompt = if permanent {
+            i18n::text(locale, Text::ProjectsPurgePrompt).to_owned()
+        } else {
+            i18n::format(
+                locale,
+                Text::ProjectsDeletePrompt,
+                &[(
+                    "days",
+                    &i18n::number(locale, engine::library::RETENTION_DAYS),
+                )],
+            )
+        };
+        let dialog_id = if permanent {
+            "projects.purge.dialog"
+        } else {
+            "projects.delete.dialog"
+        };
+        let response = egui::Modal::new(egui::Id::unique(dialog_id)).show(ctx, |ui| {
+            ui.set_width(420.0);
+            ui.heading(title);
+            ui.label(prompt);
+            let names_label = names.join(", ");
+            let response =
+                ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
+            set_author_id(&response, "projects.delete.names");
+            if let Some(error) = &dialog.error {
+                ui.label(egui::RichText::new(error).color(kit::error_text(dark)));
+            }
+            ui.horizontal(|ui| {
+                if action_button(
+                    ui,
+                    "projects.delete.confirm",
+                    Icon::Trash,
+                    i18n::text(
+                        locale,
+                        if permanent {
+                            Text::ProjectsPurgeConfirm
+                        } else {
+                            Text::ProjectsDeleteConfirm
+                        },
+                    ),
+                    !busy,
+                ) {
+                    confirm = true;
                 }
-                ui.horizontal(|ui| {
-                    if action_button(
-                        ui,
-                        "projects.delete.confirm",
-                        Icon::Trash,
-                        i18n::text(locale, Text::ProjectsDeleteConfirm),
-                        !busy,
-                    ) {
-                        confirm = true;
-                    }
-                    if action_button(
-                        ui,
-                        "projects.delete.cancel",
-                        Icon::X,
-                        i18n::text(locale, Text::Cancel),
-                        !busy,
-                    ) {
-                        cancel = true;
-                    }
-                });
+                if action_button(
+                    ui,
+                    "projects.delete.cancel",
+                    Icon::X,
+                    i18n::text(locale, Text::Cancel),
+                    !busy,
+                ) {
+                    cancel = true;
+                }
             });
-        set_author_id(&response.response, "projects.delete.dialog");
+        });
+        set_author_id(&response.response, dialog_id);
         if confirm {
             let ids = dialog.ids.clone();
-            state.request_delete(ids);
+            if permanent {
+                state.request_purge(ids);
+            } else {
+                state.request_delete(ids);
+            }
         }
         if cancel {
             state.delete = None;

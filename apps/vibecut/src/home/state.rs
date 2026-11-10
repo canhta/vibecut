@@ -36,6 +36,8 @@ pub(super) struct RenameDialog {
 pub(super) struct DeleteDialog {
     pub(super) ids: Vec<ProjectId>,
     pub(super) error: Option<String>,
+    /// The dialog either moves to Trash or removes the entries for good.
+    pub(super) permanent: bool,
 }
 
 /// One owner per library root. A catalog worker owns the exclusive
@@ -47,6 +49,11 @@ pub struct State {
     pub(super) events: Receiver<Event>,
     pub(super) worker: Option<JoinHandle<()>>,
     pub(super) entries: Vec<ProjectEntry>,
+    pub(super) trash: Vec<ProjectEntry>,
+    /// Trash mode replaces the Projects grid; `trash_loaded` keeps a first
+    /// listing from rendering the active entries.
+    pub(super) trash_mode: bool,
+    pub(super) trash_loaded: bool,
     pub(super) textures: BTreeMap<ProjectId, egui::TextureHandle>,
     pub(super) selection: BTreeSet<ProjectId>,
     pub(super) anchor: Option<ProjectId>,
@@ -73,6 +80,9 @@ impl State {
             events,
             worker: None,
             entries: Vec::new(),
+            trash: Vec::new(),
+            trash_mode: false,
+            trash_loaded: false,
             textures: BTreeMap::new(),
             selection: BTreeSet::new(),
             anchor: None,
@@ -121,6 +131,9 @@ impl State {
         self.pending = 0;
         self.list_error = None;
         self.spawn();
+        if self.trash_mode {
+            self.request_trash_list();
+        }
     }
 
     pub fn busy(&self) -> bool {
@@ -137,6 +150,17 @@ impl State {
 
     pub fn entries(&self) -> &[ProjectEntry] {
         &self.entries
+    }
+
+    /// Trashed entries in their newest-first move order after the live search.
+    pub fn trash(&self) -> impl Iterator<Item = &ProjectEntry> {
+        self.trash_order()
+            .into_iter()
+            .filter_map(|index| self.trash.get(index))
+    }
+
+    pub fn trash_mode(&self) -> bool {
+        self.trash_mode
     }
 
     /// Project identities once the catalog listing is authoritative. `None`
@@ -164,18 +188,7 @@ impl State {
     }
 
     pub(super) fn order(&self, projects: ProjectsPreferences) -> Vec<usize> {
-        let needle = engine::NfcText::from(self.search.trim())
-            .as_str()
-            .to_lowercase();
-        let mut order: Vec<usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                needle.is_empty() || entry.name.as_str().to_lowercase().contains(&needle)
-            })
-            .map(|(index, _)| index)
-            .collect();
+        let mut order = self.matching(&self.entries);
         let sort = projects;
         order.sort_by(|left, right| {
             let Some(a) = self.entries.get(*left) else {
@@ -205,13 +218,42 @@ impl State {
         order
     }
 
+    /// Trash rows follow their own move order, newest first, so the sort menu
+    /// never reorders a retention view by a project property.
+    pub(super) fn trash_order(&self) -> Vec<usize> {
+        let mut order = self.matching(&self.trash);
+        order.sort_by(|left, right| {
+            let Some(a) = self.trash.get(*left) else {
+                return std::cmp::Ordering::Equal;
+            };
+            let Some(b) = self.trash.get(*right) else {
+                return std::cmp::Ordering::Equal;
+            };
+            b.trashed_unix_ms
+                .cmp(&a.trashed_unix_ms)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        order
+    }
+
+    fn matching(&self, entries: &[ProjectEntry]) -> Vec<usize> {
+        let needle = engine::NfcText::from(self.search.trim())
+            .as_str()
+            .to_lowercase();
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                needle.is_empty() || entry.name.as_str().to_lowercase().contains(&needle)
+            })
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     pub(super) fn set_entries(&mut self, entries: Vec<ProjectEntry>) {
         let ids: BTreeSet<ProjectId> = entries.iter().map(|entry| entry.id).collect();
-        self.textures.retain(|id, _| {
-            let before = self.entries.iter().find(|entry| entry.id == *id);
-            let after = entries.iter().find(|entry| entry.id == *id);
-            matches!((before, after), (Some(before), Some(after)) if before.thumbnail == after.thumbnail)
-        });
+        let before = std::mem::take(&mut self.entries);
+        self.retain_textures(&before, &entries);
         self.entries = entries;
         self.selection.retain(|id| ids.contains(id));
         if self.anchor.is_some_and(|id| !ids.contains(&id)) {
@@ -229,6 +271,43 @@ impl State {
         }
     }
 
+    pub(super) fn set_trash(&mut self, entries: Vec<ProjectEntry>) {
+        let ids: BTreeSet<ProjectId> = entries.iter().map(|entry| entry.id).collect();
+        let before = std::mem::take(&mut self.trash);
+        self.retain_textures(&before, &entries);
+        self.trash = entries;
+        self.trash_loaded = true;
+        self.selection.retain(|id| ids.contains(id));
+        if self.anchor.is_some_and(|id| !ids.contains(&id)) {
+            self.anchor = None;
+        }
+    }
+
+    /// Keep one GPU texture per displayed entry whose thumbnail bytes did not change.
+    fn retain_textures(&mut self, before: &[ProjectEntry], after: &[ProjectEntry]) {
+        self.textures.retain(|id, _| {
+            let before = before.iter().find(|entry| entry.id == *id);
+            let after = after.iter().find(|entry| entry.id == *id);
+            matches!((before, after), (Some(before), Some(after)) if before.thumbnail == after.thumbnail)
+        });
+    }
+
+    /// Trash keeps the same page; the toggle swaps the listed catalog.
+    pub(super) fn toggle_trash(&mut self) {
+        self.trash_mode = !self.trash_mode;
+        self.selection.clear();
+        self.anchor = None;
+        self.info = None;
+        self.rename = None;
+        self.delete = None;
+        self.notice = None;
+        if self.trash_mode {
+            self.request_trash_list();
+        } else if self.ready {
+            self.request_list();
+        }
+    }
+
     fn send(&mut self, request: Request) -> bool {
         let Some(sender) = &self.request else {
             self.notice = Some((Text::ProjectsListError, None));
@@ -243,6 +322,12 @@ impl State {
 
     fn request_list(&mut self) {
         if self.send(Request::List) {
+            self.pending += 1;
+        }
+    }
+
+    fn request_trash_list(&mut self) {
+        if self.send(Request::ListTrash) {
             self.pending += 1;
         }
     }
@@ -287,6 +372,26 @@ impl State {
             return;
         }
         if self.send(Request::Delete { ids }) {
+            self.notice = None;
+            self.pending += 1;
+        }
+    }
+
+    pub(super) fn request_restore(&mut self, ids: Vec<ProjectId>) {
+        if ids.is_empty() {
+            return;
+        }
+        if self.send(Request::Restore { ids }) {
+            self.notice = None;
+            self.pending += 1;
+        }
+    }
+
+    pub(super) fn request_purge(&mut self, ids: Vec<ProjectId>) {
+        if ids.is_empty() {
+            return;
+        }
+        if self.send(Request::Purge { ids }) {
             self.notice = None;
             self.pending += 1;
         }
@@ -402,6 +507,50 @@ impl State {
                 self.delete = None;
                 if !failures.is_empty() {
                     self.notice = Some((Text::ProjectsDeleteFailed, Some(failures.join("; "))));
+                }
+            }
+            Event::TrashListed(result) => {
+                self.pending = self.pending.saturating_sub(1);
+                match result {
+                    Ok(entries) => {
+                        self.list_error = None;
+                        self.set_trash(entries);
+                    }
+                    Err(error) => {
+                        self.list_error = Some(error);
+                        self.notice = Some((Text::ProjectsTrashError, None));
+                    }
+                }
+            }
+            Event::Restored {
+                failures,
+                trash,
+                entries,
+            } => {
+                self.pending = self.pending.saturating_sub(1);
+                if let Ok(trash) = trash {
+                    self.set_trash(trash);
+                }
+                if let Ok(entries) = entries {
+                    self.set_entries(entries);
+                }
+                self.selection.clear();
+                self.anchor = None;
+                if !failures.is_empty() {
+                    self.notice = Some((Text::ProjectsRestoreFailed, Some(failures.join("; "))));
+                }
+            }
+            Event::Purged { failures, trash } => {
+                self.pending = self.pending.saturating_sub(1);
+                match trash {
+                    Ok(trash) => self.set_trash(trash),
+                    Err(error) => self.list_error = Some(error),
+                }
+                self.selection.clear();
+                self.anchor = None;
+                self.delete = None;
+                if !failures.is_empty() {
+                    self.notice = Some((Text::ProjectsPurgeFailed, Some(failures.join("; "))));
                 }
             }
             Event::Thumbnail(result) => {

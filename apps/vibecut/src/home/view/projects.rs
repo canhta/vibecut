@@ -16,6 +16,7 @@ use engine::library::ProjectEntry;
 use project::{ProjectId, Thumbnail};
 use std::collections::BTreeMap;
 
+#[derive(Clone)]
 enum CardAction {
     Select {
         id: ProjectId,
@@ -26,12 +27,16 @@ enum CardAction {
     Open(ProjectId),
     Duplicate(ProjectId),
     Delete(ProjectId),
+    Restore(ProjectId),
+    Purge(ProjectId),
     Thumbnail(ProjectId),
 }
 
 const SEARCH_WIDTH: f32 = 148.0;
 const LIST_ROW: f32 = 56.0;
 const LIST_THUMB: f32 = 40.0;
+/// Measured width of the reference Trash control: icon and its label.
+const TRASH_WIDTH: f32 = 64.0;
 
 pub(super) fn section(
     ui: &mut egui::Ui,
@@ -43,15 +48,27 @@ pub(super) fn section(
     let dark = look.dark;
     let tr = |key: Text| i18n::text(locale, key);
 
-    let shown = state.order(*projects);
-    let order: Vec<ProjectId> = shown
-        .iter()
-        .filter_map(|index| state.entries.get(*index).map(|entry| entry.id))
-        .collect();
+    let trash = state.trash_mode;
+    let shown = if trash {
+        state.trash_order()
+    } else {
+        state.order(*projects)
+    };
+    let order: Vec<ProjectId> = if trash {
+        shown
+            .iter()
+            .filter_map(|index| state.trash.get(*index).map(|entry| entry.id))
+            .collect()
+    } else {
+        shown
+            .iter()
+            .filter_map(|index| state.entries.get(*index).map(|entry| entry.id))
+            .collect()
+    };
     header(ui, state, look, projects, &order);
     ui.add_space(16.0);
     notices(ui, state, locale, dark);
-    if !state.ready {
+    if !state.ready || (trash && !state.trash_loaded) {
         // One explicit scope for the transient loading row: the catalog
         // arrives asynchronously, so its widget count must not depend on how
         // many controls the ready grid would allocate in the same position.
@@ -75,14 +92,24 @@ pub(super) fn section(
         egui::UiBuilder::new().scope_id(ui.make_persistent_id("projects.body")),
         |ui| {
             if shown.is_empty() {
-                let text = if state.entries.is_empty() {
+                let text = if trash {
+                    if state.trash.is_empty() {
+                        Text::ProjectsTrashEmpty
+                    } else {
+                        Text::ProjectsNoResults
+                    }
+                } else if state.entries.is_empty() {
                     Text::ProjectsEmpty
                 } else {
                     Text::ProjectsNoResults
                 };
                 ui.add_space(24.0);
                 ui.vertical_centered(|ui| {
-                    ui.add(kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark)));
+                    ui.add(kit::tinted(
+                        if trash { Icon::Trash } else { Icon::FilmStrip },
+                        24.0,
+                        kit::secondary(dark),
+                    ));
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(tr(text)).color(kit::secondary(dark)));
                 });
@@ -158,9 +185,16 @@ fn header(
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.label(
-                egui::RichText::new(i18n::text(locale, Text::Projects))
-                    .font(semibold(16.0))
-                    .color(kit::text(dark)),
+                egui::RichText::new(i18n::text(
+                    locale,
+                    if state.trash_mode {
+                        Text::ProjectsTrash
+                    } else {
+                        Text::Projects
+                    },
+                ))
+                .font(semibold(16.0))
+                .color(kit::text(dark)),
             );
             if !state.ready {
                 return;
@@ -173,7 +207,7 @@ fn header(
     );
 }
 
-/// Right to left: selection actions, view switch, sort, search.
+/// Right to left: selection actions, Trash, view switch, sort, search.
 fn toolbar(
     ui: &mut egui::Ui,
     state: &mut State,
@@ -183,6 +217,7 @@ fn toolbar(
 ) {
     let locale = look.locale;
     let dark = look.dark;
+    let trash = state.trash_mode;
     let selected: Vec<ProjectId> = state
         .selection
         .iter()
@@ -194,31 +229,61 @@ fn toolbar(
     let tr = |key: Text| i18n::text(locale, key);
 
     ui.add_enabled_ui(actionable, |ui| {
-        if kit::icon_button(
-            ui,
-            "projects.toolbar.delete",
-            Icon::Trash,
-            tr(Text::Delete),
-            false,
-        )
-        .clicked()
-        {
-            state.delete = Some(DeleteDialog {
-                ids: selected.clone(),
-                error: None,
-            });
-        }
-        if kit::icon_button(
-            ui,
-            "projects.toolbar.duplicate",
-            Icon::Copy,
-            tr(Text::ProjectsDuplicate),
-            false,
-        )
-        .clicked()
-        {
-            state.selection = selected.iter().copied().collect();
-            state.request_duplicate(selected.clone());
+        if trash {
+            if kit::icon_button(
+                ui,
+                "projects.toolbar.restore",
+                Icon::ArrowCounterClockwise,
+                tr(Text::ProjectsRestore),
+                false,
+            )
+            .clicked()
+            {
+                state.request_restore(selected.clone());
+            }
+            if kit::icon_button(
+                ui,
+                "projects.toolbar.purge",
+                Icon::Trash,
+                tr(Text::ProjectsPurge),
+                false,
+            )
+            .clicked()
+            {
+                state.delete = Some(DeleteDialog {
+                    ids: selected.clone(),
+                    error: None,
+                    permanent: true,
+                });
+            }
+        } else {
+            if kit::icon_button(
+                ui,
+                "projects.toolbar.delete",
+                Icon::Trash,
+                tr(Text::Delete),
+                false,
+            )
+            .clicked()
+            {
+                state.delete = Some(DeleteDialog {
+                    ids: selected.clone(),
+                    error: None,
+                    permanent: false,
+                });
+            }
+            if kit::icon_button(
+                ui,
+                "projects.toolbar.duplicate",
+                Icon::Copy,
+                tr(Text::ProjectsDuplicate),
+                false,
+            )
+            .clicked()
+            {
+                state.selection = selected.iter().copied().collect();
+                state.request_duplicate(selected.clone());
+            }
         }
     });
     if let Some((done, total)) = state.duplicate {
@@ -242,6 +307,12 @@ fn toolbar(
             ))
             .color(kit::secondary(dark)),
         );
+    }
+
+    // Trash sits between the view switch and the selection actions, as the
+    // measured Projects row places it beside the view control.
+    if trash_toggle(ui, tr(Text::ProjectsTrash), trash).clicked() {
+        state.toggle_trash();
     }
 
     let (pill, _) = ui.allocate_exact_size(
@@ -280,7 +351,10 @@ fn toolbar(
         },
     );
 
-    sort_menu(ui, state, look, projects);
+    // Trash rows follow their move order, so the project sort menu is hidden there.
+    if !trash {
+        sort_menu(ui, state, look, projects);
+    }
 
     // The old text-first search field stays a visible field so typing needs no
     // extra click; it takes the 24 px control height and the field surface.
@@ -311,6 +385,74 @@ fn toolbar(
             set_author_id(&search, "projects.search");
         },
     );
+}
+
+/// The measured 64 px Trash control: trash glyph and its label. The selected
+/// state marks that the grid below lists trashed projects, with the same quiet
+/// surface and accent ink every other toolbar toggle uses.
+fn trash_toggle(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    let dark = ui.visuals().dark_mode;
+    let color = if selected {
+        kit::accent(dark)
+    } else {
+        kit::text(dark)
+    };
+    let response = ui
+        .scope_builder(
+            egui::UiBuilder::new().scope_id(ui.make_persistent_id("projects.trash")),
+            |ui| {
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(TRASH_WIDTH, kit::size::CONTROL),
+                    egui::Sense::click(),
+                );
+                if response.hovered()
+                    || response.has_focus()
+                    || response.is_pointer_button_down_on()
+                    || selected
+                {
+                    ui.painter()
+                        .rect_filled(rect, kit::radius::CONTROL, kit::hover(dark));
+                }
+                let text = ui.painter().layout_no_wrap(
+                    label.to_owned(),
+                    egui::FontId::proportional(kit::type_size::BODY),
+                    color,
+                );
+                let glyph = kit::icon::DENSE;
+                let gap = 6.0;
+                let start = egui::pos2(
+                    rect.center().x - (glyph + gap + text.size().x) / 2.0,
+                    rect.center().y,
+                );
+                kit::tinted(Icon::Trash, glyph, color).paint_at(
+                    ui,
+                    egui::Rect::from_min_size(
+                        egui::pos2(start.x, start.y - glyph / 2.0),
+                        egui::Vec2::splat(glyph),
+                    ),
+                );
+                ui.painter().galley(
+                    egui::pos2(start.x + glyph + gap, start.y - text.size().y / 2.0),
+                    text,
+                    color,
+                );
+                if response.has_focus() {
+                    ui.painter().rect_stroke(
+                        rect,
+                        kit::radius::CONTROL,
+                        egui::Stroke::new(kit::space::HAIRLINE, kit::accent(dark)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
+                });
+                response
+            },
+        )
+        .inner;
+    set_author_id(&response, "projects.trash");
+    response
 }
 
 fn sort_menu(ui: &mut egui::Ui, state: &mut State, look: Look, projects: &mut ProjectsPreferences) {
@@ -387,6 +529,15 @@ fn sort_key_text(key: ProjectsSortKey) -> Text {
     }
 }
 
+/// The listed catalog for the current mode.
+fn rows(state: &State) -> &[ProjectEntry] {
+    if state.trash_mode {
+        &state.trash
+    } else {
+        &state.entries
+    }
+}
+
 /// Square thumbnails on the measured pitch, rows wrapping at the page width.
 fn grid(
     ui: &mut egui::Ui,
@@ -405,7 +556,7 @@ fn grid(
             egui::Sense::hover(),
         );
         for (column, index) in row.iter().enumerate() {
-            let Some(entry) = state.entries.get(*index).cloned() else {
+            let Some(entry) = rows(state).get(*index).cloned() else {
                 continue;
             };
             let left = band.min.x + GRID_INSET + column as f32 * pitch;
@@ -423,6 +574,7 @@ fn grid(
                 thumb,
                 texts,
                 false,
+                state.trash_mode,
                 locale,
                 &mut state.textures,
                 actions,
@@ -441,7 +593,7 @@ fn list(
 ) {
     let dark = ui.visuals().dark_mode;
     for index in shown {
-        let Some(entry) = state.entries.get(*index).cloned() else {
+        let Some(entry) = rows(state).get(*index).cloned() else {
             continue;
         };
         let (row, _) = ui.allocate_exact_size(
@@ -467,6 +619,7 @@ fn list(
             thumb,
             texts,
             true,
+            state.trash_mode,
             locale,
             &mut state.textures,
             actions,
@@ -474,7 +627,8 @@ fn list(
     }
 }
 
-/// One project: thumbnail, name and `duration | date`, plus its menu.
+/// One project: thumbnail, name and `duration | date`, plus its menu; a trashed
+/// project shows its remaining days instead of its own metadata.
 #[allow(clippy::too_many_arguments)]
 fn card(
     ui: &mut egui::Ui,
@@ -483,6 +637,7 @@ fn card(
     thumb: egui::Rect,
     texts: egui::Rect,
     menu_always: bool,
+    trash: bool,
     locale: Locale,
     textures: &mut BTreeMap<ProjectId, egui::TextureHandle>,
     actions: &mut Vec<CardAction>,
@@ -490,7 +645,7 @@ fn card(
     let dark = ui.visuals().dark_mode;
     let prefix = format!("projects.card.{:016x}", entry.id.0);
 
-    thumbnail(ui, entry, thumb, locale, textures, actions);
+    thumbnail(ui, entry, thumb, trash, locale, textures, actions);
     if selected {
         ui.painter().rect_stroke(
             thumb,
@@ -527,13 +682,24 @@ fn card(
         )
         .inner;
     set_author_id(&response, &prefix);
-    open_or_select(ui, &response, entry.id, locale, actions);
+    open_or_select(ui, &response, entry.id, trash, locale, actions);
 
-    let meta = format!(
-        "{} | {}",
-        display_time(entry.duration),
-        i18n::date(locale, entry.created_unix_ms)
-    );
+    let meta = if trash {
+        match entry.trash_days_left(now_unix_ms()) {
+            Some(days) => i18n::format(
+                locale,
+                Text::ProjectsTrashDays,
+                &[("days", &i18n::number(locale, days))],
+            ),
+            None => String::new(),
+        }
+    } else {
+        format!(
+            "{} | {}",
+            display_time(entry.duration),
+            i18n::date(locale, entry.created_unix_ms)
+        )
+    };
     let meta_rect = egui::Rect::from_min_size(
         egui::pos2(texts.min.x, texts.min.y + 16.0),
         egui::vec2(texts.width(), 16.0),
@@ -576,7 +742,7 @@ fn card(
         };
         let response = ui
             .menu_image_button(kit::tinted(Icon::DotsThree, kit::icon::DENSE, tint), |ui| {
-                card_menu_items(ui, &entry.id, actions, locale);
+                card_menu_items(ui, &entry.id, trash, actions, locale);
             })
             .response
             .on_hover_text(i18n::text(locale, Text::ProjectsCardMenu));
@@ -588,6 +754,7 @@ fn open_or_select(
     ui: &egui::Ui,
     response: &egui::Response,
     id: ProjectId,
+    trash: bool,
     locale: Locale,
     actions: &mut Vec<CardAction>,
 ) {
@@ -597,16 +764,17 @@ fn open_or_select(
             modifiers: ui.input(|input| input.modifiers),
         });
     }
-    if response.double_clicked() {
+    if response.double_clicked() && !trash {
         actions.push(CardAction::Open(id));
     }
-    response.context_menu(|ui| card_menu_items(ui, &id, actions, locale));
+    response.context_menu(|ui| card_menu_items(ui, &id, trash, actions, locale));
 }
 
 fn thumbnail(
     ui: &mut egui::Ui,
     entry: &ProjectEntry,
     rect: egui::Rect,
+    trash: bool,
     locale: Locale,
     textures: &mut BTreeMap<ProjectId, egui::TextureHandle>,
     actions: &mut Vec<CardAction>,
@@ -619,7 +787,7 @@ fn thumbnail(
         egui::Sense::click(),
     );
     set_author_id(&response, &format!("{prefix}.thumbnail"));
-    open_or_select(ui, &response, entry.id, locale, actions);
+    open_or_select(ui, &response, entry.id, trash, locale, actions);
     // Missing and unrenderable frames sit on the field surface, as the black
     // frame of an unrendered clip does.
     ui.painter()
@@ -668,51 +836,69 @@ fn thumbnail(
 fn card_menu_items(
     ui: &mut egui::Ui,
     id: &ProjectId,
+    trash: bool,
     actions: &mut Vec<CardAction>,
     locale: Locale,
 ) {
     let prefix = format!("projects.card.{:016x}", id.0);
-    let rows = [
-        (
-            "open",
-            Icon::FolderOpen,
-            Text::ProjectsOpen,
-            CardAction::Open(*id),
-        ),
-        (
-            "rename",
-            Icon::PencilSimple,
-            Text::ProjectsRename,
-            CardAction::Rename(*id),
-        ),
-        (
-            "info",
-            Icon::File,
-            Text::ProjectsInfoTitle,
-            CardAction::Info(*id),
-        ),
-        (
-            "duplicate",
-            Icon::Copy,
-            Text::ProjectsDuplicate,
-            CardAction::Duplicate(*id),
-        ),
-        ("delete", Icon::Trash, Text::Delete, CardAction::Delete(*id)),
-        (
-            "thumbnail.refresh",
-            Icon::ArrowClockwise,
-            Text::ProjectsRefreshThumbnail,
-            CardAction::Thumbnail(*id),
-        ),
-    ];
+    let rows: &[(&str, Icon, Text, CardAction)] = if trash {
+        &[
+            (
+                "restore",
+                Icon::ArrowCounterClockwise,
+                Text::ProjectsRestore,
+                CardAction::Restore(*id),
+            ),
+            (
+                "purge",
+                Icon::Trash,
+                Text::ProjectsPurge,
+                CardAction::Purge(*id),
+            ),
+        ]
+    } else {
+        &[
+            (
+                "open",
+                Icon::FolderOpen,
+                Text::ProjectsOpen,
+                CardAction::Open(*id),
+            ),
+            (
+                "rename",
+                Icon::PencilSimple,
+                Text::ProjectsRename,
+                CardAction::Rename(*id),
+            ),
+            (
+                "info",
+                Icon::File,
+                Text::ProjectsInfoTitle,
+                CardAction::Info(*id),
+            ),
+            (
+                "duplicate",
+                Icon::Copy,
+                Text::ProjectsDuplicate,
+                CardAction::Duplicate(*id),
+            ),
+            ("delete", Icon::Trash, Text::Delete, CardAction::Delete(*id)),
+            (
+                "thumbnail.refresh",
+                Icon::ArrowClockwise,
+                Text::ProjectsRefreshThumbnail,
+                CardAction::Thumbnail(*id),
+            ),
+        ]
+    };
     for (suffix, icon, text, action) in rows {
         if menu_action(
             ui,
             &format!("{prefix}.{suffix}"),
-            icon,
-            i18n::text(locale, text),
+            *icon,
+            i18n::text(locale, *text),
         ) {
-            actions.push(action);
+            actions.push(action.clone());
             ui.close();
         }
     }
@@ -749,9 +935,32 @@ fn apply(state: &mut State, actions: Vec<CardAction>, order: &[ProjectId]) {
                 state.delete = Some(DeleteDialog {
                     ids: vec![id],
                     error: None,
+                    permanent: false,
+                });
+            }
+            CardAction::Restore(id) => {
+                state.selection.clear();
+                state.selection.insert(id);
+                state.anchor = Some(id);
+                state.request_restore(vec![id]);
+            }
+            CardAction::Purge(id) => {
+                state.delete = Some(DeleteDialog {
+                    ids: vec![id],
+                    error: None,
+                    permanent: true,
                 });
             }
             CardAction::Thumbnail(id) => state.request_thumbnail(id),
         }
     }
+}
+
+/// Trash age is presented in the creator's clock; the engine owns the policy.
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        .unwrap_or(0)
 }

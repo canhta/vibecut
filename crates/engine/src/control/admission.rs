@@ -178,7 +178,12 @@ impl Session {
         match crate::lifecycle(&request.command) {
             Some(Lifecycle::Save) => self.control_lifecycle_save(request, caller, publish),
             Some(
-                Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete | Lifecycle::Thumbnail,
+                Lifecycle::Create
+                | Lifecycle::Duplicate
+                | Lifecycle::Delete
+                | Lifecycle::Restore
+                | Lifecycle::Purge
+                | Lifecycle::Thumbnail,
             )
             | None => self.control_request(request, caller, runner),
         }

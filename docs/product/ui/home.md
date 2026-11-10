@@ -13,6 +13,7 @@ Shot 221432, window origin (56,38), 1728×1030; logical px from the window's top
 - Suite cards 272×174 (120 px image, 54 px text), 20 px gap, section title 14 px at x=248; section gaps 64 px.
 - Projects heading 16 px/600 at x=240; toolbar controls 24 px high at y 682–706 (search 24, view 40, Trash 64, sync 99, 8 px gaps, right edge x=1668).
 - Project thumbnails 124×124 (radius 6, cover-cropped) on a 146 px pitch starting x=245, 16 px below the toolbar; name 12 px/600 2 px below the thumbnail and a 12 px secondary line 16 px lower; the row runs 20 px past the banner edge.
+- Trash view: the Trash control is selected and the grid lists trashed projects instead; the secondary line shows whole days left before the automatic purge, and restore or delete forever are the row menu and selection actions. Behaviour from the web reference (2026-11-10), layout from the desktop row above.
 - Card surface `#111D20` and window `#071417` are samples only; colours stay ours.
 - Columns fill the available width using these rail and thumbnail values; Library asset-card geometry remains unmeasured.
 

@@ -18,7 +18,7 @@ fn create(library: &mut ProjectLibrary, id: u64) {
         .unwrap();
 }
 #[test]
-fn catalog_commands_preserve_content_and_history_and_permanent_delete() {
+fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     let root = tempfile::tempdir().unwrap();
     let mut lib = library(root.path());
     create(&mut lib, 1);
@@ -75,11 +75,14 @@ fn catalog_commands_preserve_content_and_history_and_permanent_delete() {
     lib.execute(ProjectId(2), Command::DeleteProject {})
         .unwrap();
     assert!(!entries[1].path.exists());
+    assert_eq!(lib.list_trash().unwrap().len(), 1);
     assert_eq!(unrelated_writer.load().unwrap().project, source);
     drop(unrelated_writer);
     assert!(matches!(lib.undo(), Err(EditError::NoHistory)));
     drop(lib);
-    assert_eq!(library(root.path()).list().unwrap().len(), 1);
+    let reopened = library(root.path());
+    assert_eq!(reopened.list().unwrap().len(), 1);
+    assert_eq!(reopened.list_trash().unwrap()[0].id, ProjectId(2));
 }
 
 #[test]
@@ -310,5 +313,260 @@ fn listing_uses_main_duration_and_active_scene_first_frame() {
     assert_eq!(
         library(root.path()).list().unwrap()[0].thumbnail,
         entry.thumbnail
+    );
+}
+
+fn add_asset(lib: &mut ProjectLibrary, id: u64, media: &std::path::Path) -> Project {
+    let path = lib.list().unwrap()[0].path.clone();
+    let asset = media::SourceAsset::try_from(media::AssetData {
+        ephemeral: false,
+        id: media::AssetId(9),
+        path: media.to_owned(),
+        content_hash: media::ContentHash::read(media).unwrap(),
+        probe: media::SourceProbe {
+            format: "synthetic".into(),
+            duration: None,
+            streams: Vec::new(),
+        },
+    })
+    .unwrap();
+    let mut lease = WriterLease::acquire(&path).unwrap();
+    let mut data = lease.load().unwrap().project.into_data();
+    data.assets.push(asset);
+    let project = Project::new(data).unwrap();
+    lease.save(&project).unwrap();
+    drop(lease);
+    assert_eq!(project.data().id, ProjectId(id));
+    project
+}
+
+#[test]
+fn delete_moves_the_complete_project_to_trash_and_restore_keeps_media() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    let external = root.path().join("clip.dat");
+    fs::write(&external, [5u8; 4096]).unwrap();
+    add_asset(&mut lib, 1, &external);
+    // A duplicate owns copied media inside its directory, like any managed
+    // project whose sources were copied in.
+    lib.execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(2) })
+        .unwrap();
+    let managed = lib.list().unwrap().remove(1);
+    assert_eq!(managed.id, ProjectId(2));
+    let source = project::load(&managed.path).unwrap().project;
+    let asset_path = source.data().assets[0].path().to_owned();
+    assert_ne!(asset_path, external);
+    assert!(asset_path.exists());
+    lib.execute(ProjectId(2), Command::DeleteProject {})
+        .unwrap();
+    assert_eq!(
+        lib.list().unwrap().len(),
+        1,
+        "only the duplicate leaves the listing"
+    );
+    assert!(!managed.path.exists());
+    assert!(!asset_path.exists());
+    let trash = lib.list_trash().unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(trash[0].id, ProjectId(2));
+    assert_eq!(trash[0].name, source.data().name);
+    let trashed = trash[0].trashed_unix_ms.unwrap();
+    assert_eq!(trash[0].trash_days_left(trashed), Some(30));
+    assert!(
+        trash[0]
+            .path
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(".trash-")
+    );
+    // The complete directory survives, with the project's own media links
+    // untouched by the move.
+    assert_eq!(
+        project::load(&trash[0].path).unwrap().project,
+        source,
+        "trash keeps the exact project bytes"
+    );
+    lib.execute(ProjectId(2), Command::RestoreProject {})
+        .unwrap();
+    assert!(lib.list_trash().unwrap().is_empty());
+    let restored = lib
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == ProjectId(2))
+        .unwrap();
+    assert_eq!(
+        project::load(&restored.path).unwrap().project,
+        source,
+        "restore returns the same project and media links"
+    );
+    assert!(asset_path.exists());
+    assert_eq!(fs::read(&asset_path).unwrap(), fs::read(&external).unwrap());
+    // The move record leaves with the entry.
+    assert!(!restored.path.parent().unwrap().join("trash.json").exists());
+}
+
+#[test]
+fn purge_removes_trash_and_retention_purges_only_recorded_expired_entries() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    for id in [1, 2, 3] {
+        create(&mut lib, id);
+        lib.execute(ProjectId(id), Command::DeleteProject {})
+            .unwrap();
+    }
+    let trash = lib.list_trash().unwrap();
+    assert_eq!(trash.len(), 3);
+    // Id 1 loses its record: unknown age is never purged automatically.
+    fs::remove_file(
+        trash
+            .iter()
+            .find(|entry| entry.id == ProjectId(1))
+            .unwrap()
+            .path
+            .parent()
+            .unwrap()
+            .join("trash.json"),
+    )
+    .unwrap();
+    // Id 3 claims to have been trashed at the Unix epoch, so it is long expired.
+    fs::write(
+        trash
+            .iter()
+            .find(|entry| entry.id == ProjectId(3))
+            .unwrap()
+            .path
+            .parent()
+            .unwrap()
+            .join("trash.json"),
+        br#"{"unix_ms":0}"#,
+    )
+    .unwrap();
+    // Id 2 leaves through an explicit purge, whatever its age.
+    lib.execute(ProjectId(2), Command::PurgeProject {}).unwrap();
+    assert_eq!(lib.list_trash().unwrap().len(), 2);
+    drop(lib);
+    let mut reopened = library(root.path());
+    let trash = reopened.list_trash().unwrap();
+    assert_eq!(
+        trash.len(),
+        1,
+        "only the unrecorded entry survives the automatic purge"
+    );
+    assert_eq!(trash[0].id, ProjectId(1));
+    assert_eq!(trash[0].trashed_unix_ms, None);
+    assert_eq!(trash[0].trash_days_left(0), None);
+    assert!(!root.path().join(".trash-0000000000000002").exists());
+    assert!(!root.path().join(".trash-0000000000000003").exists());
+    assert!(root.path().join(".trash-0000000000000001").exists());
+    // Purging an entry that is no longer in Trash refuses without touching the catalog.
+    assert!(
+        reopened
+            .execute(ProjectId(2), Command::PurgeProject {})
+            .is_err()
+    );
+    assert_eq!(reopened.list_trash().unwrap().len(), 1);
+    reopened
+        .execute(ProjectId(1), Command::RestoreProject {})
+        .unwrap();
+    assert_eq!(reopened.list().unwrap().len(), 1);
+}
+
+#[test]
+fn restore_refuses_an_occupied_target_and_keeps_the_trashed_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    lib.execute(ProjectId(1), Command::DeleteProject {})
+        .unwrap();
+    let trashed = lib.list_trash().unwrap().remove(0);
+    // A later project reuses the identity while the original sits in Trash.
+    create(&mut lib, 1);
+    assert!(matches!(
+        lib.execute(ProjectId(1), Command::RestoreProject {}),
+        Err(EditError::Project(project::Error::Conflict))
+    ));
+    assert_eq!(lib.list().unwrap().len(), 1);
+    assert_eq!(lib.list_trash().unwrap().len(), 1);
+    assert_eq!(
+        project::load(&trashed.path).unwrap().project.data().id,
+        ProjectId(1)
+    );
+}
+
+#[test]
+fn delete_refuses_a_busy_project_and_a_hostile_trash_destination() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    let entry = lib.list().unwrap().remove(0);
+    let writer = WriterLease::acquire(&entry.path).unwrap();
+    assert!(matches!(
+        lib.execute(ProjectId(1), Command::DeleteProject {}),
+        Err(EditError::Project(project::Error::Busy))
+    ));
+    assert!(entry.path.exists());
+    drop(writer);
+    // An occupied Trash destination refuses the move after the record was
+    // staged, so the entry stays complete and active.
+    let occupied = root.path().join(".trash-0000000000000001");
+    fs::create_dir(&occupied).unwrap();
+    assert!(
+        lib.execute(ProjectId(1), Command::DeleteProject {})
+            .is_err()
+    );
+    assert_eq!(lib.list().unwrap().len(), 1);
+    // An empty `.trash-<id>` directory is a corrupt catalog entry: it is
+    // reported, never silently hidden, and never replaces the active project.
+    assert!(lib.list_trash().is_err());
+    // The record staged before the move stays with the active entry and is
+    // replaced by the next attempt; it never marks an active project trashed.
+    assert!(entry.path.parent().unwrap().join("trash.json").exists());
+    fs::remove_dir(&occupied).unwrap();
+    assert!(lib.list_trash().unwrap().is_empty());
+    lib.execute(ProjectId(1), Command::DeleteProject {})
+        .unwrap();
+    assert_eq!(lib.list_trash().unwrap().len(), 1);
+}
+
+#[test]
+fn corrupt_trashed_entries_are_reported_and_never_hidden() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    lib.execute(ProjectId(1), Command::DeleteProject {})
+        .unwrap();
+    let corrupt = root.path().join(".trash-0000000000000002");
+    fs::create_dir(&corrupt).unwrap();
+    fs::write(corrupt.join("project.vibecut"), b"not a project").unwrap();
+    assert!(lib.list_trash().is_err());
+    assert_eq!(lib.list().unwrap().len(), 0, "active listing stays usable");
+    assert!(lib.execute(ProjectId(2), Command::PurgeProject {}).is_err());
+    fs::remove_dir_all(&corrupt).unwrap();
+    assert_eq!(lib.list_trash().unwrap().len(), 1);
+    // Retention boundaries, independent of the filesystem clock.
+    let entry = lib.list_trash().unwrap().remove(0);
+    let start = entry.trashed_unix_ms.unwrap();
+    assert_eq!(entry.trash_days_left(start), Some(30));
+    assert_eq!(
+        entry.trash_days_left(start + 24 * 60 * 60 * 1000 - 1),
+        Some(30)
+    );
+    assert_eq!(entry.trash_days_left(start + 24 * 60 * 60 * 1000), Some(29));
+    assert_eq!(
+        entry.trash_days_left(start + 29 * 24 * 60 * 60 * 1000),
+        Some(1)
+    );
+    assert_eq!(
+        entry.trash_days_left(start + 30 * 24 * 60 * 60 * 1000),
+        Some(0)
+    );
+    assert_eq!(
+        entry.trash_days_left(start + 99 * 24 * 60 * 60 * 1000),
+        Some(0)
     );
 }

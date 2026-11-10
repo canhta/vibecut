@@ -414,7 +414,9 @@ commands! {
     RenameScene, "scene.rename", "Rename scene", Edit { scene: project::SceneId, name: NfcText } => Timeline, serde_json::json!({"scene":0,"name":"Renamed scene"});
     RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
     DuplicateProject, "project.duplicate", "Duplicate project", SessionControl { id: project::ProjectId } => Library, serde_json::json!({"id":"2"}), grant = Human, lifecycle = Duplicate;
-    DeleteProject, "project.delete", "Permanently delete project", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Delete;
+    DeleteProject, "project.delete", "Move project to trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Delete;
+    RestoreProject, "project.restore", "Restore project from trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Restore;
+    PurgeProject, "project.purge", "Permanently delete trashed project", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Purge;
     ThumbnailProject, "project.thumbnail", "Refresh project thumbnail", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Thumbnail;
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({}), grant = Agent, lifecycle = Save;
     SetMaster, "audio.set_master", "Set master audio", Edit { volume: f32, muted: bool } => Timeline, serde_json::json!({"volume":0.0,"muted":false});

@@ -5,9 +5,15 @@ Interface: `State`, `Action`, `show`, `WINDOW`, `ProjectsPreferences`,
 
 `show` draws the whole window and returns the one lifecycle `Action` the workspace must
 carry out. The page never loads or mutates project JSON: a catalog worker runs every
-`project.create`, `project.duplicate`, `project.rename`, `project.delete` and
-`project.thumbnail` command off the UI thread, and listing is supplied by
+`project.create`, `project.duplicate`, `project.rename`, `project.delete`, `project.restore`,
+`project.purge` and `project.thumbnail` command off the UI thread, and listing is supplied by
 [engine library](../../../../crates/engine/src/store/README.md#managed-project-library).
+
+The toolbar's Trash control swaps the grid for the trashed entries without changing page. A
+trashed row shows its remaining retention days; Restore and Delete forever are its row menu
+and the selection actions, and Delete forever passes through its own confirmation. Delete on
+the Projects grid is the move to Trash, so a creator can always undo an accidental removal for
+the retention the engine states.
 
 A project path supplied at startup acquires the writer lease before loading and stays
 pending until recovery discovery and the managed catalog are both idle. Opening a card

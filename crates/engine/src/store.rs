@@ -2,7 +2,7 @@
 mod projects;
 pub mod library {
     //! Owns managed project storage.
-    pub use super::projects::{ProjectEntry, ProjectLibrary};
+    pub use super::projects::{ProjectEntry, ProjectLibrary, RETENTION_DAYS};
 }
 mod recovery_workflow;
 pub mod recovery {

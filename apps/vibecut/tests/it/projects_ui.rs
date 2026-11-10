@@ -345,8 +345,11 @@ fn shift_selection_enables_bulk_actions_and_delete_confirmation_lists_names() {
     );
     assert!(
         harness
-            .query_by_label("Delete the selected projects for good? This can't be undone.")
-            .is_some()
+            .query_by_label(
+                "Moved projects stay in Trash for 30 days, then they are permanently deleted."
+            )
+            .is_some(),
+        "the move-to-trash confirmation states the retention period"
     );
     harness.get(by("projects.delete.cancel")).click();
     harness.run_steps(2);
@@ -638,7 +641,7 @@ fn delete_failure_keeps_the_project_and_reports_it() {
         idle(&mut harness);
         assert!(
             harness
-                .query_by_label("Couldn't delete some projects.")
+                .query_by_label("Couldn't move some projects to Trash.")
                 .is_some()
         );
         assert_eq!(harness.state().projects.entries().len(), 1);
@@ -733,6 +736,182 @@ fn projects_page_screenshot() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     image.save(&path).unwrap();
     eprintln!("projects screenshot: {}", path.display());
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
+#[test]
+fn trash_lists_moved_projects_with_retention_restore_and_delete_forever() {
+    let fixture = Fixture::new(&[("Alpha", missing()), ("Beta", missing())]);
+    let mut harness = fixture.build(Preferences::default());
+    harness
+        .get(by("projects.card.0000000000000001.menu"))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(by("projects.card.0000000000000001.delete"))
+        .click();
+    harness.run_steps(2);
+    assert!(harness.query_by_label("Move to Trash?").is_some());
+    harness.get(by("projects.delete.confirm")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.entries().len(), 1);
+
+    // The Trash toggle swaps the grid and each row keeps its remaining days.
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    assert!(harness.state().projects.trash_mode());
+    assert_eq!(harness.query_all(by("projects.trash")).count(), 1);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    assert_eq!(
+        harness
+            .state()
+            .projects
+            .trash()
+            .map(|entry| entry.trash_days_left(now))
+            .collect::<Vec<_>>(),
+        vec![Some(30)],
+        "the trashed row reports the retention it was moved with"
+    );
+    harness.get(by("projects.search")).click();
+    harness.get(by("projects.search")).type_text("beta");
+    harness.run_steps(2);
+    assert!(
+        harness.query_by_label("No matches").is_some(),
+        "search filters Trash rows by name"
+    );
+    harness.get(by("projects.search")).click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press(egui::Key::Backspace);
+    harness.run_steps(2);
+
+    // A trashed card offers restore and delete forever, never open.
+    harness
+        .get(by("projects.card.0000000000000001"))
+        .click_modifiers(egui::Modifiers::NONE);
+    harness.run_steps(2);
+    harness
+        .get(by("projects.card.0000000000000001.menu"))
+        .click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_all(by("projects.card.0000000000000001.open"))
+            .count()
+            == 0,
+        "a trashed project cannot be opened"
+    );
+    assert!(
+        harness
+            .query_all(by("projects.card.0000000000000001.restore"))
+            .count()
+            == 1
+    );
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    harness.get(by("projects.toolbar.restore")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.trash().count(), 0);
+    assert_eq!(harness.state().projects.entries().len(), 2);
+    assert!(fixture.path(0).exists(), "restore puts the directory back");
+    assert!(harness.query_by_label("Trash is empty").is_some());
+
+    // Delete forever asks for the permanent confirmation and removes the bytes.
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    harness
+        .get(by("projects.card.0000000000000002.menu"))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(by("projects.card.0000000000000002.delete"))
+        .click();
+    harness.run_steps(2);
+    harness.get(by("projects.delete.confirm")).click();
+    idle(&mut harness);
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    harness
+        .get(by("projects.card.0000000000000002"))
+        .click_modifiers(egui::Modifiers::NONE);
+    harness.run_steps(2);
+    harness.get(by("projects.toolbar.purge")).click();
+    harness.run_steps(2);
+    assert!(harness.query_by_label("Delete forever?").is_some());
+    assert!(
+        harness
+            .query_by_label("These projects are deleted permanently and can't be restored.")
+            .is_some()
+    );
+    harness.get(by("projects.delete.confirm")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.trash().count(), 0);
+    assert_eq!(harness.state().projects.entries().len(), 1);
+    assert!(
+        !fixture.projects.join(".trash-0000000000000002").exists(),
+        "delete forever removes the trashed directory"
+    );
+    assert!(harness.query_by_label("Trash is empty").is_some());
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    assert!(!harness.state().projects.trash_mode());
+    assert!(harness.query_by_label("No projects yet").is_none());
+}
+
+#[test]
+fn trash_listing_failure_reports_and_retry_keeps_the_page_usable() {
+    let fixture = Fixture::new(&[("Alpha", missing())]);
+    let mut harness = fixture.build(Preferences::default());
+    let corrupt = fixture.projects.join(".trash-0000000000000007");
+    std::fs::create_dir(&corrupt).unwrap();
+    std::fs::write(corrupt.join("project.vibecut"), b"not a project").unwrap();
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    assert!(harness.query_by_label("Couldn't load Trash.").is_some());
+    assert!(harness.state().projects.trash().count() == 0);
+    std::fs::remove_dir_all(&corrupt).unwrap();
+    // Retry in Trash reloads the Trash listing; the active catalog stays usable.
+    harness.get(by("projects.retry")).click();
+    idle(&mut harness);
+    assert!(harness.query_by_label("Trash is empty").is_some());
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.entries().len(), 1);
+    assert!(!harness.state().projects.trash_mode());
+}
+
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-199-trash.png"]
+fn trash_screenshot() {
+    let fixture = Fixture::new(&[
+        ("Product launch", missing()),
+        ("Cooking short", ready_thumbnail([220, 90, 40])),
+        ("Monthly recap", ready_thumbnail([40, 120, 200])),
+    ]);
+    let mut harness = fixture.build(Preferences::default());
+    harness
+        .get(by("projects.card.0000000000000002.menu"))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(by("projects.card.0000000000000002.delete"))
+        .click();
+    harness.run_steps(2);
+    harness.get(by("projects.delete.confirm")).click();
+    idle(&mut harness);
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    harness
+        .get(by("projects.card.0000000000000002"))
+        .click_modifiers(egui::Modifiers::NONE);
+    harness.run_steps(3);
+    let image = harness.render().expect("offscreen render");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-199-trash.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image.save(&path).unwrap();
+    eprintln!("trash screenshot: {}", path.display());
     assert!(image.width() > 0 && image.height() > 0);
 }
 

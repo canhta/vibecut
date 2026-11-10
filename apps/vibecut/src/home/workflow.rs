@@ -18,10 +18,13 @@ use std::{
 
 pub(super) enum Request {
     List,
+    ListTrash,
     Create { id: ProjectId, base_name: String },
     Rename { id: ProjectId, name: String },
     Duplicate { sources: Vec<ProjectId> },
     Delete { ids: Vec<ProjectId> },
+    Restore { ids: Vec<ProjectId> },
+    Purge { ids: Vec<ProjectId> },
     Thumbnail { id: ProjectId },
 }
 
@@ -29,6 +32,7 @@ pub(super) enum Event {
     Failed(engine::EditError),
     Ready(Result<Vec<ProjectEntry>, String>),
     Listed(Result<Vec<ProjectEntry>, String>),
+    TrashListed(Result<Vec<ProjectEntry>, String>),
     Created(Result<(PathBuf, Vec<ProjectEntry>), String>),
     Renamed(Result<Vec<ProjectEntry>, String>),
     Duplicated {
@@ -41,6 +45,15 @@ pub(super) enum Event {
     Deleted {
         failures: Vec<String>,
         entries: Result<Vec<ProjectEntry>, String>,
+    },
+    Restored {
+        failures: Vec<String>,
+        trash: Result<Vec<ProjectEntry>, String>,
+        entries: Result<Vec<ProjectEntry>, String>,
+    },
+    Purged {
+        failures: Vec<String>,
+        trash: Result<Vec<ProjectEntry>, String>,
     },
     Thumbnail(Result<Vec<ProjectEntry>, String>),
 }
@@ -90,6 +103,10 @@ pub(super) fn catalog_worker(
             Request::List => {
                 let listed = library.list().map_err(|error| error.to_string());
                 let _ = events.send(Event::Listed(listed));
+            }
+            Request::ListTrash => {
+                let listed = library.list_trash().map_err(|error| error.to_string());
+                let _ = events.send(Event::TrashListed(listed));
             }
             Request::Create { id, base_name } => {
                 let result = (|| {
@@ -164,6 +181,31 @@ pub(super) fn catalog_worker(
                 }
                 let entries = library.list().map_err(|error| error.to_string());
                 let _ = events.send(Event::Deleted { failures, entries });
+            }
+            Request::Restore { ids } => {
+                let mut failures = Vec::new();
+                for id in ids {
+                    if let Err(error) = library.execute(id, Command::RestoreProject {}) {
+                        failures.push(error.to_string());
+                    }
+                }
+                let trash = library.list_trash().map_err(|error| error.to_string());
+                let entries = library.list().map_err(|error| error.to_string());
+                let _ = events.send(Event::Restored {
+                    failures,
+                    trash,
+                    entries,
+                });
+            }
+            Request::Purge { ids } => {
+                let mut failures = Vec::new();
+                for id in ids {
+                    if let Err(error) = library.execute(id, Command::PurgeProject {}) {
+                        failures.push(error.to_string());
+                    }
+                }
+                let trash = library.list_trash().map_err(|error| error.to_string());
+                let _ = events.send(Event::Purged { failures, trash });
             }
             Request::Thumbnail { id } => {
                 let result = library

@@ -97,6 +97,8 @@ pub enum Lifecycle {
     Create,
     Duplicate,
     Delete,
+    Restore,
+    Purge,
     Thumbnail,
     Save,
 }

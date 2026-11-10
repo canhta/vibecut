@@ -56,9 +56,14 @@ impl Autosave {
                 self.save()?;
                 Ok(unchanged())
             }
-            Some(Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete) | None => {
-                self.session.apply(command)
-            }
+            Some(
+                Lifecycle::Create
+                | Lifecycle::Duplicate
+                | Lifecycle::Delete
+                | Lifecycle::Restore
+                | Lifecycle::Purge,
+            )
+            | None => self.session.apply(command),
         }
     }
     /// Dispatch a registry command; the declared lifecycle route picks the persistence
@@ -75,9 +80,14 @@ impl Autosave {
                 self.save()?;
                 Ok(unchanged())
             }
-            Some(Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete) | None => {
-                self.session.execute(id, params)
-            }
+            Some(
+                Lifecycle::Create
+                | Lifecycle::Duplicate
+                | Lifecycle::Delete
+                | Lifecycle::Restore
+                | Lifecycle::Purge,
+            )
+            | None => self.session.execute(id, params),
         }
     }
     fn empty_params(&self, params: &serde_json::Value) -> Result<()> {

@@ -226,6 +226,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("project.rename", Effect::Edit, true, true),
         ("project.duplicate", Effect::SessionControl, false, false),
         ("project.delete", Effect::SessionControl, false, false),
+        ("project.restore", Effect::SessionControl, false, false),
+        ("project.purge", Effect::SessionControl, false, false),
         ("project.thumbnail", Effect::SessionControl, false, false),
         ("project.save", Effect::SessionControl, true, true),
         ("audio.set_master", Effect::Edit, true, true),

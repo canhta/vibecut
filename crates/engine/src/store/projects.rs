@@ -11,6 +11,14 @@ use std::{
 const PROJECT: &str = "project.vibecut";
 const MAX_ENTRIES: usize = 1024;
 const HISTORY: usize = 32;
+/// Trashed entries keep their complete directory beside the active ones under
+/// this hidden prefix; the project ID follows in lowercase hex.
+const TRASH: &str = ".trash-";
+/// Store-owned record of when an entry moved to Trash, inside its directory.
+const TRASH_RECORD: &str = "trash.json";
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// Whole days an entry may stay in Trash before the next catalog open purges it.
+pub const RETENTION_DAYS: u64 = 30;
 
 /// Listing is derived from the project and its one metadata sidecar, never an index copy.
 #[derive(Clone, serde::Serialize)]
@@ -23,6 +31,26 @@ pub struct ProjectEntry {
     pub modified_unix_ms: u64,
     pub thumbnail: Thumbnail,
     pub path: PathBuf,
+    /// Unix milliseconds of the Trash move; `None` for active entries and for
+    /// trashed entries whose record is missing, which are never purged by age.
+    pub trashed_unix_ms: Option<u64>,
+}
+
+impl ProjectEntry {
+    /// Whole days this trashed entry may stay before the next automatic purge.
+    /// Active entries and entries without a readable record report `None`.
+    pub fn trash_days_left(&self, now_unix_ms: u64) -> Option<u64> {
+        let trashed = self.trashed_unix_ms?;
+        let retention = RETENTION_DAYS.checked_mul(DAY_MS)?;
+        let remaining = retention.saturating_sub(now_unix_ms.saturating_sub(trashed));
+        Some(remaining.saturating_add(DAY_MS - 1) / DAY_MS)
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrashRecord {
+    unix_ms: u64,
 }
 
 enum Step {
@@ -42,7 +70,8 @@ enum Step {
 
 /// One library owns one explicitly supplied root. Its exclusive lease serializes
 /// catalog mutations; project leases also refuse operations on open projects.
-/// History lasts for this handle only. Delete is permanent and clears catalog history.
+/// History lasts for this handle only. Delete moves the entry to Trash and clears
+/// catalog history; purge is the only permanent removal.
 pub struct ProjectLibrary {
     root: PathBuf,
     _lease: WriterLease,
@@ -59,6 +88,10 @@ impl ProjectLibrary {
         let root = root.canonicalize()?;
         let lease = WriterLease::acquire(&root.join("catalog.vibecut"))?;
         WriterLease::enable_directory_moves(&root)?;
+        // Retention is a catalog policy, so expired Trash entries leave before
+        // this handle lists anything. An entry that cannot be removed stays
+        // listed at zero days and is retried on the next open.
+        let _ = purge_expired(&root, now_ms());
         Ok(Self {
             root,
             _lease: lease,
@@ -70,9 +103,17 @@ impl ProjectLibrary {
     fn directory(&self, id: ProjectId) -> PathBuf {
         self.root.join(format!("{:016x}", id.0))
     }
+    fn trash_directory(&self, id: ProjectId) -> PathBuf {
+        self.root.join(format!("{TRASH}{:016x}", id.0))
+    }
     fn lease(&self, id: ProjectId) -> Result<WriterLease> {
-        let directory = self.directory(id);
-        if !fs::symlink_metadata(&directory)?.file_type().is_dir()
+        self.directory_lease(&self.directory(id), id)
+    }
+    fn trash_lease(&self, id: ProjectId) -> Result<WriterLease> {
+        self.directory_lease(&self.trash_directory(id), id)
+    }
+    fn directory_lease(&self, directory: &Path, id: ProjectId) -> Result<WriterLease> {
+        if !fs::symlink_metadata(directory)?.file_type().is_dir()
             || !fs::symlink_metadata(directory.join(PROJECT))?
                 .file_type()
                 .is_file()
@@ -107,34 +148,78 @@ impl ProjectLibrary {
             {
                 continue;
             }
-            if !entry.file_type()?.is_dir() {
-                return Err(EditError::Invalid("library entry"));
-            }
-            if entries.len() >= MAX_ENTRIES {
+            let (entry, bytes) = self.read_entry(&entry.path(), name, None)?;
+            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Limit)?;
+            if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
                 return Err(EditError::Limit);
             }
-            let id =
-                ProjectId(u64::from_str_radix(name, 16).map_err(|_| EditError::InvalidParams)?);
-            let path = entry.path().join(PROJECT);
-            if !fs::symlink_metadata(&path)?.file_type().is_file() {
-                return Err(EditError::Invalid("library project"));
+            entries.push(entry);
+        }
+        entries.sort_by_key(|entry| entry.id.0);
+        Ok(entries)
+    }
+    /// Trashed entries derive from their own complete directory and the store's
+    /// move record; the project ID orders the listing for a stable view.
+    pub fn list_trash(&self) -> Result<Vec<ProjectEntry>> {
+        self._lease.validate()?;
+        let mut entries = Vec::new();
+        let mut retained_bytes = 0usize;
+        for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
+            if count >= MAX_ENTRIES * 4 {
+                return Err(EditError::Limit);
             }
-            let project = project::load(&path)?.project;
-            if project.data().id != id {
-                return Err(EditError::Invalid("library identity"));
-            }
-            let metadata = project::read_metadata(&path);
-            let thumbnail_bytes = match &metadata.thumbnail {
-                Thumbnail::Ready { rgba, .. } => rgba.len(),
-                _ => 0,
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
             };
-            retained_bytes = retained_bytes
-                .checked_add(project.data().name.as_str().len() + thumbnail_bytes + 512)
-                .ok_or(EditError::Limit)?;
-            if retained_bytes > 16 << 20 {
+            let Some(name) = name.strip_prefix(TRASH) else {
+                continue;
+            };
+            if name.len() != 16
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            {
+                continue;
+            }
+            let trashed_unix_ms = read_trash_record(&entry.path());
+            let (entry, bytes) = self.read_entry(&entry.path(), name, trashed_unix_ms)?;
+            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Limit)?;
+            if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
                 return Err(EditError::Limit);
             }
-            entries.push(ProjectEntry {
+            entries.push(entry);
+        }
+        entries.sort_by_key(|entry| entry.id.0);
+        Ok(entries)
+    }
+    fn read_entry(
+        &self,
+        directory: &Path,
+        name: &str,
+        trashed_unix_ms: Option<u64>,
+    ) -> Result<(ProjectEntry, usize)> {
+        if !fs::symlink_metadata(directory)?.file_type().is_dir() {
+            return Err(EditError::Invalid("library entry"));
+        }
+        let id = ProjectId(u64::from_str_radix(name, 16).map_err(|_| EditError::InvalidParams)?);
+        let path = directory.join(PROJECT);
+        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+            return Err(EditError::Invalid("library project"));
+        }
+        let project = project::load(&path)?.project;
+        if project.data().id != id {
+            return Err(EditError::Invalid("library identity"));
+        }
+        let metadata = project::read_metadata(&path);
+        let thumbnail_bytes = match &metadata.thumbnail {
+            Thumbnail::Ready { rgba, .. } => rgba.len(),
+            _ => 0,
+        };
+        let bytes = project.data().name.as_str().len() + thumbnail_bytes + 512;
+        Ok((
+            ProjectEntry {
                 id,
                 short_id: format!("{:08x}", id.0 as u32),
                 name: project.data().name.clone(),
@@ -143,10 +228,10 @@ impl ProjectLibrary {
                 modified_unix_ms: metadata.modified_unix_ms,
                 thumbnail: metadata.thumbnail,
                 path,
-            });
-        }
-        entries.sort_by_key(|entry| entry.id.0);
-        Ok(entries)
+                trashed_unix_ms,
+            },
+            bytes,
+        ))
     }
     /// Dispatch a registered command against one managed project. `project.create`
     /// uses its own ID; other commands target `target`. Undo/redo are library-local.
@@ -206,8 +291,26 @@ impl ProjectLibrary {
                 });
             }
             Command::DeleteProject {} => {
-                // Confirmation belongs to the caller. No undo promise is made.
+                // Confirmation belongs to the caller. Trash keeps the complete
+                // directory, so a restore never relinks media.
                 let lease = self.lease(target)?;
+                let trash = self.trash_directory(target);
+                write_trash_record(&self.directory(target), &TrashRecord { unix_ms: now_ms() })?;
+                lease.move_directory(&trash)?;
+                self.clear_history();
+            }
+            Command::RestoreProject {} => {
+                let lease = self.trash_lease(target)?;
+                let destination = self.directory(target);
+                lease.move_directory(&destination)?;
+                self.clear_history();
+                // The record describes a Trash entry; a failed removal leaves an
+                // ignored file that the next deletion replaces.
+                let _ = fs::remove_file(destination.join(TRASH_RECORD));
+            }
+            Command::PurgeProject {} => {
+                // Confirmation belongs to the caller, as for any permanent delete.
+                let lease = self.trash_lease(target)?;
                 let tomb = self.unique("delete")?;
                 lease.move_directory(&tomb)?;
                 self.clear_history();
@@ -476,6 +579,81 @@ fn checkpoint(cancelled: &dyn Fn() -> bool) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        .unwrap_or(0)
+}
+
+/// Write the move record before the directory moves, so a failed move leaves the
+/// entry active. Later deletions replace it.
+fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
+    let path = directory.join(TRASH_RECORD);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if !metadata.file_type().is_file() => {
+            return Err(EditError::Invalid("library trash record"));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let bytes =
+        serde_json::to_vec(record).map_err(|_| EditError::Invalid("library trash record"))?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// A missing, unreadable or corrupt record keeps the entry listed but untimed,
+/// so nothing is ever purged without an authoritative move time.
+fn read_trash_record(directory: &Path) -> Option<u64> {
+    let path = directory.join(TRASH_RECORD);
+    let metadata = fs::symlink_metadata(&path).ok()?;
+    if !metadata.file_type().is_file() || metadata.len() > 128 {
+        return None;
+    }
+    let bytes = fs::read(path).ok()?;
+    let record: TrashRecord = serde_json::from_slice(&bytes).ok()?;
+    Some(record.unix_ms)
+}
+
+/// Purge Trash entries whose recorded age reaches the published retention.
+/// Removal errors leave the entry for the next open; nothing else is touched.
+fn purge_expired(root: &Path, now_unix_ms: u64) -> Result<()> {
+    let retention = RETENTION_DAYS.checked_mul(DAY_MS).ok_or(EditError::Limit)?;
+    for (count, entry) in fs::read_dir(root)?.enumerate() {
+        if count >= MAX_ENTRIES * 4 {
+            return Err(EditError::Limit);
+        }
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str().and_then(|name| name.strip_prefix(TRASH)) else {
+            continue;
+        };
+        if name.len() != 16
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            continue;
+        }
+        let Some(trashed_unix_ms) = read_trash_record(&entry.path()) else {
+            continue;
+        };
+        if now_unix_ms.saturating_sub(trashed_unix_ms) >= retention {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+    Ok(())
 }
 
 fn private_directory(path: &Path, recursive: bool) -> std::io::Result<()> {

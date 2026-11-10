@@ -116,6 +116,16 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                         },
                     )
                     .unwrap();
+                // Restore and purge target a Trash entry, produced by the same
+                // command the projects page sends.
+                if matches!(
+                    &typed,
+                    Command::RestoreProject {} | Command::PurgeProject {}
+                ) {
+                    library
+                        .execute(project::ProjectId(1), Command::DeleteProject {})
+                        .unwrap();
+                }
                 library.execute(project::ProjectId(1), typed).unwrap();
                 exercised.insert(spec.id);
                 continue;
@@ -373,6 +383,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.create",
             "project.delete",
             "project.duplicate",
+            "project.purge",
+            "project.restore",
             "project.thumbnail",
             "sounds.add_to_timeline",
             "timeline.commit_preview",
@@ -410,6 +422,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.create",
             "project.delete",
             "project.duplicate",
+            "project.purge",
+            "project.restore",
             "project.save",
             "project.thumbnail",
         ]
