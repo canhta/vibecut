@@ -8,10 +8,10 @@ Commit only green, with the smallest check that covers the change. Compile throu
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
-| Rust, when the maintainer asks for a build or debugging | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` for the crates involved |
-| Rust, handoff | `cargo xtask checks` only. No compile, test or Clippy run while implementing or before merge, unless the maintainer asks for one |
+| Rust, while iterating | `cargo test -p <crate>` for the crate being edited |
+| Rust, handoff | `cargo test -p <crate>` for every edited crate, plus `cargo xtask checks`. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
 | Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
-| Fix round, merge conflict | `cargo xtask checks`; a build or test run only when the maintainer asked for the debugging |
+| Fix round, merge conflict | Edited crates' tests (plus the reviewer's reproductions) |
 | Clean rebase | Reuse the receipt |
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
 | `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
