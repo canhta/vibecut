@@ -1,6 +1,6 @@
 //! Derives indivisible speech units from words, spans or plain text.
 
-use super::{LayoutHooks, TimingKind};
+use super::TimingKind;
 use crate::{Error, LanguageProfile, NfcText, NormalizedText};
 use std::{collections::BTreeSet, ops::Range};
 use time::{SourceRange, Tick};
@@ -150,40 +150,20 @@ pub(super) struct TextBoundaries {
     total: usize,
 }
 impl TextBoundaries {
-    pub(super) fn new(map: &NormalizedText, hooks: &LayoutHooks<'_>) -> Result<Self, Error> {
+    pub(super) fn new(map: &NormalizedText) -> Self {
         let text = map.text().as_str();
-        let boundaries: BTreeSet<_> = std::iter::once(0)
+        let graphemes: BTreeSet<_> = std::iter::once(0)
             .chain(map.spans().iter().map(|s| s.normalized.end))
             .collect();
-        let protected = match hooks.words {
-            Some(words) => words(text)?,
-            None => Vec::new(),
-        };
-        let mut previous = 0;
-        for span in &protected {
-            if span.start < previous
-                || span.start >= span.end
-                || !boundaries.contains(&span.start)
-                || !boundaries.contains(&span.end)
-            {
-                return Err(Error::Invalid("word segmenter spans"));
-            }
-            previous = span.end;
-        }
         let breaks: BTreeSet<_> = unicode_linebreak::linebreaks(text)
             .map(|(end, _)| end)
-            .filter(|end| {
-                boundaries.contains(end)
-                    && !protected
-                        .get(protected.partition_point(|s| s.end <= *end))
-                        .is_some_and(|s| s.start < *end && *end < s.end)
-            })
+            .filter(|end| graphemes.contains(end))
             .collect();
-        Ok(Self {
-            graphemes: boundaries,
+        Self {
+            graphemes,
             breaks,
             total: map.spans().len(),
-        })
+        }
     }
 }
 

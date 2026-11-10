@@ -2,7 +2,7 @@
 
 use super::layout::{Lines, layout};
 use super::units::Unit;
-use super::{LayoutHooks, SegmentRules, Segmentation, SegmentedCue, TimingKind};
+use super::{SegmentRules, Segmentation, SegmentedCue, TimingKind};
 use crate::{Cue, CueText, Error, LanguageTag, NfcText, Warning, WarningKind};
 use std::collections::BTreeMap;
 use time::{SourceRange, TICKS_PER_SECOND};
@@ -21,13 +21,12 @@ pub(super) fn append_groups(
     reference: Option<NfcText>,
     edited: bool,
     rules: &SegmentRules,
-    hooks: &LayoutHooks<'_>,
 ) -> Result<(), Error> {
     let mut start = 0;
     let initial = output.cues.len();
     while let Some(first) = units.get(start) {
         let mut candidate = Lines::default();
-        candidate.push(first, rules, hooks)?;
+        candidate.push(first, rules);
         let mut end = start + 1;
         let mut preferred = None;
         let mut priority = 0;
@@ -41,7 +40,7 @@ pub(super) fn append_groups(
                 preferred = Some(end);
                 priority = boundary;
             }
-            candidate.push(next, rules, hooks)?;
+            candidate.push(next, rules);
             if next.speaker != first.speaker
                 || pause
                 || next.range.end - first.range.start > rules.max_duration
@@ -57,7 +56,7 @@ pub(super) fn append_groups(
         }
         let slice = units.get(start..end).ok_or(Error::Invalid("unit offset"))?;
         let last = slice.last().ok_or(Error::Invalid("empty cue"))?;
-        let (text, overflow) = layout(slice, rules, hooks)?;
+        let (text, overflow) = layout(slice, rules);
         let timing = if slice.iter().all(|u| u.timing == TimingKind::SourceWords) {
             TimingKind::SourceWords
         } else if slice.iter().all(|u| u.timing == TimingKind::SourceSpans) {

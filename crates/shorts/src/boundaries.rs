@@ -1,7 +1,7 @@
 //! Independent source-edge snapping for ordered, potentially reordered shorts.
 use crate::error::{BoundaryFailure, Error, Result as ShortsResult};
 use ai::clips::{ClipRole, ClipSourceSegment};
-use captions::{LanguageProfile, LayoutHooks, Transcript};
+use captions::{LanguageProfile, Transcript};
 use engine::{EditError, Result};
 use media::SpeechEnergyWindow;
 use serde::Serialize;
@@ -76,7 +76,6 @@ pub fn snap_clip_boundaries(
     shorts: &[Vec<ClipSourceSegment>],
     transcript: &Transcript,
     profile: &LanguageProfile,
-    hooks: &LayoutHooks<'_>,
     energy: &[SpeechEnergyWindow],
     settings: &ClipBoundarySettings,
 ) -> ShortsResult<Vec<SnappedShort>> {
@@ -84,7 +83,7 @@ pub fn snap_clip_boundaries(
     if shorts.len() > 32 || energy.len() > 360_001 {
         return Err(EditError::Limit.into());
     }
-    let units = captions::source_speech_units(transcript, profile, hooks).map_err(Error::kernel)?;
+    let units = captions::source_speech_units(transcript, profile).map_err(Error::kernel)?;
     if units.is_empty() {
         return Err(EditError::Invalid("empty boundary transcript").into());
     }

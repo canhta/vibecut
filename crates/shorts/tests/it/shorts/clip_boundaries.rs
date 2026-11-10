@@ -5,9 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::clips::{ClipRole, ClipSourceSegment};
-use captions::{
-    Fingerprint, LanguageRegistry, LanguageTag, LayoutHooks, Segment, Transcript, Word,
-};
+use captions::{Fingerprint, LanguageRegistry, LanguageTag, Segment, Transcript, Word};
 use media::SpeechEnergyWindow;
 use shorts::Error;
 use shorts::clip_boundaries::*;
@@ -96,7 +94,6 @@ fn snap(
         shorts,
         transcript,
         registry.profile(&transcript.source_lang),
-        &LayoutHooks::default(),
         energy,
         s,
     )
@@ -420,7 +417,7 @@ proptest::proptest! {
         let tr=transcript(true); let mut s=settings(); s.frame_rate=FrameRate::COMMON[rate];
         if let Ok(output)=snap(&[vec![piece(start,end,ClipRole::Payoff,0)]],&tr,&quiet(),&s) {
             let registry=LanguageRegistry::standard().unwrap();
-            let units=captions::source_speech_units(&tr,registry.profile(&tr.source_lang),&LayoutHooks::default()).unwrap();
+            let units=captions::source_speech_units(&tr,registry.profile(&tr.source_lang)).unwrap();
             for a in [&output[0].adjustments[0].start,&output[0].adjustments[0].end] {
                 let allowance = if a.kind == BoundaryKind::WordFade { Tick(s.frame_rate.tick_of(1).unwrap().0/2) } else { Tick::ZERO };
                 proptest::prop_assert!(a.delta.abs() <= s.tolerance + allowance);

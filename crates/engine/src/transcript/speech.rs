@@ -123,12 +123,7 @@ pub fn transcribe(
     cancel.checkpoint()?;
     progress.stage(Stage::Segment);
     let rules = SegmentRules::from_profile(&profile, FrameRate::FPS_30)?;
-    let segmentation = captions::segment_transcript(
-        &transcript,
-        &profile,
-        &rules,
-        &captions::LayoutHooks::default(),
-    )?;
+    let segmentation = captions::segment_transcript(&transcript, &profile, &rules)?;
     let cues: Vec<Cue> = segmentation
         .cues
         .into_iter()

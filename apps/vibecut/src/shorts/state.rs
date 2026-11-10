@@ -764,7 +764,6 @@ impl State {
             &[row.segments],
             &source.transcript,
             &profile,
-            &captions::LayoutHooks::default(),
             &source.energy,
             &source.boundaries,
         )?;

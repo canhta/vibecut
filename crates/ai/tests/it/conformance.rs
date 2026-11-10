@@ -1143,13 +1143,7 @@ fn raw_tokens_through_public_execution_retain_utf8_correspondence_and_source_sam
         .profile(&scope.source_language)
         .clone();
     let rules = captions::SegmentRules::from_profile(&profile, time::FrameRate::FPS_24).unwrap();
-    let generated = captions::segment_transcript(
-        &transcript,
-        &profile,
-        &rules,
-        &captions::LayoutHooks::default(),
-    )
-    .unwrap();
+    let generated = captions::segment_transcript(&transcript, &profile, &rules).unwrap();
     assert!(
         generated
             .cues

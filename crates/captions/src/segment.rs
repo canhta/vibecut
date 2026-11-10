@@ -5,8 +5,6 @@ mod layout;
 mod units;
 mod validate;
 
-use std::ops::Range;
-
 use crate::{
     Cue, CueText, Error, LanguageProfile, LanguageTag, NormalizedText, Transcript, Warning,
 };
@@ -15,11 +13,10 @@ use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use units::{TextBoundaries, rank, span_units, text_units, timed_units};
 use validate::validate_transcript;
 
-/// Exactly one line-width policy. Pixels require the caller's measurement hook.
+/// The one line-width policy: extended grapheme count.
 #[derive(Clone, Copy, Debug)]
 pub enum LineLimit {
     Graphemes(u32),
-    Pixels(f64),
 }
 /// Tick durations, graphemes/second, and a pause threshold (None disables pauses).
 /// Conflicting limits warn rather than deleting text or shifting speech timing.
@@ -49,10 +46,9 @@ impl SegmentRules {
             break_on_pause: Some(Tick(TICKS_PER_SECOND)),
         })
     }
-    fn validate(&self, hooks: &LayoutHooks<'_>) -> Result<(), Error> {
+    fn validate(&self) -> Result<(), Error> {
         let bad_width = match self.line_limit {
             LineLimit::Graphemes(n) => n == 0,
-            LineLimit::Pixels(n) => !n.is_finite() || n <= 0.0 || hooks.measure.is_none(),
         };
         if bad_width
             || self.max_lines == 0
@@ -68,17 +64,6 @@ impl SegmentRules {
     }
 }
 
-type Measure<'a> = dyn Fn(&str) -> Result<f64, Error> + 'a;
-type Words<'a> = dyn Fn(&str) -> Result<Vec<Range<usize>>, Error> + 'a;
-/// Optional pure callbacks on NFC text. Word ranges must be sorted, nonempty,
-/// disjoint and aligned to extended graphemes; uncovered text is still retained.
-/// Returned words protect internal UAX#14 break opportunities (e.g. a dictionary
-/// segmenter). No dictionary or font engine is bundled by captions.
-#[derive(Default)]
-pub struct LayoutHooks<'a> {
-    pub measure: Option<&'a Measure<'a>>,
-    pub words: Option<&'a Words<'a>>,
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimingKind {
     SourceWords,
@@ -107,9 +92,8 @@ pub fn segment_transcript(
     transcript: &Transcript,
     profile: &LanguageProfile,
     rules: &SegmentRules,
-    hooks: &LayoutHooks<'_>,
 ) -> Result<Segmentation, Error> {
-    rules.validate(hooks)?;
+    rules.validate()?;
     let mut output = Segmentation::default();
     validate_transcript(transcript)?;
     for segment in &transcript.segments {
@@ -123,7 +107,7 @@ pub fn segment_transcript(
         if text.trim().is_empty() {
             continue;
         }
-        let boundaries = TextBoundaries::new(&normalized, hooks)?;
+        let boundaries = TextBoundaries::new(&normalized);
         let timed = match &segment.spans {
             Some(spans) => span_units(spans, profile, &boundaries)?,
             None => timed_units(text, &segment.words, profile, &boundaries)?,
@@ -155,7 +139,6 @@ pub fn segment_transcript(
             None,
             false,
             rules,
-            hooks,
         )?;
     }
     finish(&mut output, rules)?;
@@ -176,7 +159,6 @@ pub struct SourceSpeechUnit {
 pub fn source_speech_units(
     transcript: &Transcript,
     profile: &LanguageProfile,
-    hooks: &LayoutHooks<'_>,
 ) -> Result<Vec<SourceSpeechUnit>, Error> {
     if transcript.segments.len() > 10_000
         || transcript
@@ -197,7 +179,7 @@ pub fn source_speech_units(
                 .as_ref()
                 .map_or(segment.text.as_str(), |s| s.display().as_str()),
         )?;
-        let boundaries = TextBoundaries::new(&normalized, hooks)?;
+        let boundaries = TextBoundaries::new(&normalized);
         let units = match &segment.spans {
             Some(spans) => span_units(spans, profile, &boundaries)?,
             None => timed_units(
@@ -243,9 +225,8 @@ pub fn segment_translation(
     translation: &CueText,
     profile: &LanguageProfile,
     rules: &SegmentRules,
-    hooks: &LayoutHooks<'_>,
 ) -> Result<Segmentation, Error> {
-    rules.validate(hooks)?;
+    rules.validate()?;
     if source.range.start() < Tick::ZERO || source.id.as_str().is_empty() {
         return Err(Error::Invalid("translation source"));
     }
@@ -261,7 +242,7 @@ pub fn segment_translation(
         }
     }
     let normalized = NormalizedText::new(translation.text.as_str())?;
-    let boundaries = TextBoundaries::new(&normalized, hooks)?;
+    let boundaries = TextBoundaries::new(&normalized);
     let units = text_units(
         normalized.text().as_str(),
         source.range,
@@ -282,7 +263,6 @@ pub fn segment_translation(
             .or_else(|| Some(source.id.clone())),
         translation.edited,
         rules,
-        hooks,
     )?;
     finish(&mut output, rules)?;
     Ok(output)

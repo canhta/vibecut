@@ -1,6 +1,6 @@
 //! Bounded real/synthetic input measurement; transcript stays in local files.
 use ai::clips::{ClipRole, ClipSourceSegment};
-use captions::{LanguageRegistry, LayoutHooks, Transcript};
+use captions::{LanguageRegistry, Transcript};
 use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
 use std::{
     path::PathBuf,
@@ -22,7 +22,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let transcript: Transcript = serde_json::from_slice(&std::fs::read(transcript_path)?)?;
     let registry = LanguageRegistry::standard()?;
     let profile = registry.profile(&transcript.source_lang);
-    let units = captions::source_speech_units(&transcript, profile, &LayoutHooks::default())?;
+    let units = captions::source_speech_units(&transcript, profile)?;
     let selected: Vec<_> = transcript
         .segments
         .iter()
@@ -66,14 +66,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         media::analyze_speech_energy(&asset, source_range, Arc::new(AtomicBool::new(false)))?;
     let energy_seconds = start.elapsed().as_secs_f64();
     let start = Instant::now();
-    let output = snap_clip_boundaries(
-        &shorts,
-        &transcript,
-        profile,
-        &LayoutHooks::default(),
-        &energy,
-        &settings,
-    )?;
+    let output = snap_clip_boundaries(&shorts, &transcript, profile, &energy, &settings)?;
     let cold_seconds = start.elapsed().as_secs_f64();
     let start = Instant::now();
     for _ in 0..1000 {
@@ -81,7 +74,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             &shorts,
             &transcript,
             profile,
-            &LayoutHooks::default(),
             &energy,
             &settings,
         )?);

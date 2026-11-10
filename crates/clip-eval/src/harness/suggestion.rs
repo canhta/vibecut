@@ -153,7 +153,6 @@ pub(super) fn run_provider(
         min_segment_duration: settings.min_segment_duration,
         max_segments: settings.max_segments,
     };
-    let hooks = captions::LayoutHooks::default();
     let mut shorts = Vec::with_capacity(result.clips.len());
     let mut snap_failures = 0usize;
     for clip in &result.clips {
@@ -161,7 +160,6 @@ pub(super) fn run_provider(
             std::slice::from_ref(&clip.segments),
             transcript,
             profile,
-            &hooks,
             &energy,
             &boundary,
         ) {

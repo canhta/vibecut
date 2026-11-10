@@ -93,7 +93,6 @@ fn snap_candidate(
         std::slice::from_ref(&suggestion.segments),
         transcript,
         profile,
-        &captions::LayoutHooks::default(),
         energy,
         settings,
     )

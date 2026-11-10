@@ -164,7 +164,7 @@ pub fn evaluate(input: &Evaluation<'_>) -> Result<Metrics, captions::Error> {
             metrics.precision_matches = metrics.precision_matches.saturating_add(1);
         }
     }
-    let units = source_speech_units(transcript, profile, &captions::LayoutHooks::default())?;
+    let units = source_speech_units(transcript, profile)?;
     let (words, sentences) = spans(&units)?;
     for suggestion in *suggestions {
         let total: i128 = suggestion

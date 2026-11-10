@@ -430,12 +430,7 @@ fn build_input(
     language: &LanguageTag,
 ) -> Result<ClipInput> {
     let rules = SegmentRules::from_profile(profile, settings.frame_rate)?;
-    let segmentation = captions::segment_transcript(
-        transcript,
-        profile,
-        &rules,
-        &captions::LayoutHooks::default(),
-    )?;
+    let segmentation = captions::segment_transcript(transcript, profile, &rules)?;
     let mut segments = Vec::with_capacity(segmentation.cues.len());
     for cue in &segmentation.cues {
         let text = cue

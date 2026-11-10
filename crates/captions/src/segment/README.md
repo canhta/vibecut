@@ -4,7 +4,7 @@ Generated cues keep measured source word ranges in `Cue::word_ranges` when every
 
 `segment/units` derives indivisible speech units from words, spans or plain text. `segment/layout` fits them into the configured lines. `segment/assembly` turns them into positioned cues. `segment/validate` rejects transcripts outside the contract.
 
-`segment_transcript` takes a transcript, one caller-resolved `LanguageProfile`, `SegmentRules` and `LayoutHooks`. It returns `Segmentation` with fresh `SegmentedCue` values and positioned warnings, and never mutates the input. `SegmentRules::from_profile` uses the profile's line length and CPS, two lines, 5/6..7 seconds, a two-frame gap at the supplied rational rate and a one-second pause threshold. `LineLimit` selects grapheme or caller-measured pixel width. Callbacks return typed errors, and measurements must be finite and nonnegative. There is no font dependency.
+`segment_transcript` takes a transcript, one caller-resolved `LanguageProfile` and `SegmentRules`. It returns `Segmentation` with fresh `SegmentedCue` values and positioned warnings, and never mutates the input. `SegmentRules::from_profile` uses the profile's line length and CPS, two lines, 5/6..7 seconds, a two-frame gap at the supplied rational rate and a one-second pause threshold. `LineLimit` is the grapheme line width. There is no font dependency.
 
 ## Input contract
 
@@ -12,11 +12,11 @@ Segment IDs are unique and nonempty. Source segments are nonnegative, ordered an
 
 ## Units and breaks
 
-Complete timed words are indivisible and keep their source ranges. Adjacent timed words separated by a forbidden UAX #14 or dictionary boundary form one unit from the first word start to the last word end, including silence between them, with timing `SourceWords`.
+Complete timed words are indivisible and keep their source ranges. Adjacent timed words separated by a forbidden UAX #14 boundary form one unit from the first word start to the last word end, including silence between them, with timing `SourceWords`.
 
-Untimed text uses UAX #14 opportunities with extended-grapheme safety. Chinese gets no inserted spaces and Latin runs stay intact. An optional dictionary callback returns sorted, nonoverlapping NFC byte ranges that protect word interiors from breaks; callers resolve a profile's optional segmenter name to it. The same boundary policy applies before choosing timed-word or segment timing, including callback errors and invalid spans. No dictionary is bundled.
+Untimed text uses UAX #14 opportunities with extended-grapheme safety. Chinese gets no inserted spaces and Latin runs stay intact. The same boundary policy applies before choosing timed-word or segment timing, including invalid spans.
 
-Capacity and duration boundaries prefer sentence end, then clause punctuation, then pause, then a legal word boundary. Speaker changes and pauses also force a split at legal text boundaries, but text protection wins when one falls inside an indivisible unit, which keeps its first speaker. Indivisible words wider or longer than the limits stay intact and warn. Layout is greedy within each cue, without syntactic parsing.
+Capacity and duration boundaries prefer sentence end, then clause punctuation, then pause, then a legal word boundary. Speaker changes and pauses also force a split at legal text boundaries, but never divide an indivisible unit, which keeps its first speaker. Indivisible words wider or longer than the limits stay intact and warn. Layout is greedy within each cue, without syntactic parsing.
 
 ## Timing kinds
 
@@ -30,4 +30,4 @@ CPS, duration, gap and layout conflicts warn instead of truncating text or movin
 
 ## Source cut units
 
-`source_speech_units(transcript, resolved_profile, hooks)` reuses subtitle validation, NFC correspondence, word and span grouping and profile punctuation to return indivisible `SourceSpeechUnit`s and sentence-end marks for engine boundary snapping. Fully measured, text-matching native groups keep their source ranges. Missing, incomplete or mismatched timing protects the entire source segment, and no proportional estimate is admitted as a cut boundary. Limits are 10,000 segments, 500,000 words or output units and the 16 MiB segmentation byte cap. The caller resolves the `LanguageProfile` once and can inject dictionary word hooks.
+`source_speech_units(transcript, resolved_profile)` reuses subtitle validation, NFC correspondence, word and span grouping and profile punctuation to return indivisible `SourceSpeechUnit`s and sentence-end marks for engine boundary snapping. Fully measured, text-matching native groups keep their source ranges. Missing, incomplete or mismatched timing protects the entire source segment, and no proportional estimate is admitted as a cut boundary. Limits are 10,000 segments, 500,000 words or output units and the 16 MiB segmentation byte cap. The caller resolves the `LanguageProfile` once.

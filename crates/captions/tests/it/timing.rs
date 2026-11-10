@@ -1,7 +1,7 @@
 use captions::{
     DisplayReplacement, DisplayVariant, Fingerprint, Format, LanguageRegistry, LanguageTag,
-    LayoutHooks, LineLimit, NormalizedText, Segment, SegmentRules, SpanTiming, TimingKind,
-    TimingProvenance, TimingSpans, TimingUnit, Transcript, WarningKind,
+    LineLimit, NormalizedText, Segment, SegmentRules, SpanTiming, TimingKind, TimingProvenance,
+    TimingSpans, TimingUnit, Transcript, WarningKind,
 };
 use proptest::prelude::*;
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
@@ -154,13 +154,8 @@ fn han_variant_selection_retains_source_timing_through_segmentation_and_srt() {
     assert_eq!(display.spans()[1].display(), 6..9);
     assert_eq!(display.spans()[1].input().range, inputs[1].range);
     let input = transcript(raw, display, "zh-Hans", inputs.len());
-    let output = captions::segment_transcript(
-        &input,
-        &profile("zh-Hant"),
-        &rules("zh-Hant", 3),
-        &LayoutHooks::default(),
-    )
-    .unwrap();
+    let output =
+        captions::segment_transcript(&input, &profile("zh-Hant"), &rules("zh-Hant", 3)).unwrap();
     assert!(
         output
             .cues
@@ -221,7 +216,6 @@ fn missing_timing_is_retained_and_explicitly_estimated_only_at_segmentation() {
         &transcript("中文", spans, "zh-Hans", 2),
         &profile("zh-Hans"),
         &rules("zh-Hans", 1),
-        &LayoutHooks::default(),
     )
     .unwrap();
     assert!(
@@ -305,8 +299,7 @@ fn malformed_maps_layers_variants_and_segment_bounds_are_rejected() {
         captions::segment_transcript(
             &transcript("e\u{301}中", unrelated, "zh-Hans", 2),
             &profile("en"),
-            &rules("en", 10),
-            &LayoutHooks::default()
+            &rules("en", 10)
         )
         .is_err()
     );
@@ -363,7 +356,7 @@ fn sparse_raw_token_coverage_never_fabricates_grapheme_timing() {
     assert!(spans.groups(&profile("vi")).unwrap()[0].range.is_none());
 }
 #[test]
-fn source_span_segmentation_reuses_dictionary_boundaries_and_translation_estimates() {
+fn source_span_segmentation_and_translation_estimates() {
     let raw = "中文词";
     let spans = TimingSpans::new(
         raw,
@@ -374,23 +367,14 @@ fn source_span_segmentation_reuses_dictionary_boundaries_and_translation_estimat
     )
     .unwrap();
     let input = transcript(raw, spans, "zh-Hans", 3);
-    let dictionary = |_text: &str| Ok(std::iter::once(0..6).collect());
-    let output = captions::segment_transcript(
-        &input,
-        &profile("zh-Hans"),
-        &rules("zh-Hans", 1),
-        &LayoutHooks {
-            measure: None,
-            words: Some(&dictionary),
-        },
-    )
-    .unwrap();
+    let output =
+        captions::segment_transcript(&input, &profile("zh-Hans"), &rules("zh-Hans", 3)).unwrap();
     assert_eq!(
         output.cues[0].cue.texts[&language("zh-Hans")].text.as_str(),
-        "中文"
+        "中文词"
     );
     assert_eq!(output.cues[0].timing, TimingKind::SourceSpans);
-    assert_eq!(output.cues[0].cue.range, range(0, 2));
+    assert_eq!(output.cues[0].cue.range, range(0, 3));
     let target = captions::CueText {
         text: "Hello world".into(),
         edited: false,
@@ -402,7 +386,6 @@ fn source_span_segmentation_reuses_dictionary_boundaries_and_translation_estimat
         &target,
         &profile("en"),
         &rules("en", 5),
-        &LayoutHooks::default(),
     )
     .unwrap();
     assert!(translated.cues.len() > 1);
@@ -443,9 +426,7 @@ fn timing_span_benchmark() {
         let spans = TimingSpans::new(&raw, inputs.clone(), None).unwrap();
         let mut input = transcript(&raw, spans, "zh-Hans", 1);
         input.segments[0].range = SourceRange::new(Tick::ZERO, duration).unwrap();
-        let output =
-            captions::segment_transcript(&input, &profile, &rules, &LayoutHooks::default())
-                .unwrap();
+        let output = captions::segment_transcript(&input, &profile, &rules).unwrap();
         let elapsed = start.elapsed();
         let actual: String = output
             .cues
@@ -501,16 +482,14 @@ fn source_cut_units_keep_unicode_native_groups_and_never_estimate_missing_timing
     )
     .unwrap();
     let tr = transcript(raw, spans, "en", 2);
-    let units =
-        captions::source_speech_units(&tr, &profile("en"), &LayoutHooks::default()).unwrap();
+    let units = captions::source_speech_units(&tr, &profile("en")).unwrap();
     assert_eq!(units.len(), 2);
     assert_eq!(units[0].range, range(0, 1));
     assert!(!units[0].sentence_end);
     assert!(units[1].sentence_end);
     let mut partial = tr;
     partial.segments[0].spans = None;
-    let units =
-        captions::source_speech_units(&partial, &profile("en"), &LayoutHooks::default()).unwrap();
+    let units = captions::source_speech_units(&partial, &profile("en")).unwrap();
     assert_eq!(units.len(), 1);
     assert_eq!(units[0].range, range(0, 2));
 }
