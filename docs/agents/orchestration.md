@@ -8,13 +8,13 @@ Rules for the coordinator and workers. Hosts and commands: `.scratch/process/orc
 |---|---|
 | Coordinator (Claude) | Plans with the maintainer, splits tickets into slices, dispatches, reviews and merges every branch, cleans up |
 | opencode | Implements every slice |
-| Claude Sonnet | Implements slices that need design judgement, and takes over a slice opencode could not finish |
+| Codex | Implements slices that need design judgement, and takes over a slice opencode could not finish |
 | Maintainer | Product decisions, credentials, hardware, assets, outward-facing actions |
 
 ## Routing
 
 1. The coordinator splits each ticket into slices opencode can finish: one behaviour, its owner module and files, acceptance naming failure paths and boundary inputs, and the exact check commands. A slice that would exceed about 1,000 inserted lines (tests included) or two owner modules splits again by behaviour. Every spec repeats the [upgrade policy](../engineering/workflows.md#upgrade-policy) line. A slice that needs a new contract states the contract (types, errors, limits) in the spec.
-2. opencode implements mechanical slices: moves, call-site updates and slices whose `## Design` decides every type, error and limit. Sonnet implements a slice that still needs judgement: an undecided contract, a change to a public type used by three or more crates, or UI behaviour matched against the reference product. A slice goes to Sonnet in the same worktree once its review returned a design finding or its worker has run two hours without handing off.
+2. opencode implements mechanical slices: moves, call-site updates and slices whose `## Design` decides every type, error and limit. Codex implements a slice that still needs judgement: an undecided contract, a change to a public type used by three or more crates, or UI behaviour matched against the reference product. A slice goes to Codex in the same worktree once its review returned a design finding or its worker has run two hours without handing off.
 3. Before dispatch the coordinator greps current `main` for every file and symbol in the ticket's Ownership line, fixes the line, and splits the ticket when it would exceed the bound above.
 4. Slices of one ticket that touch the same files run in sequence; `Blocked by` orders them.
 
