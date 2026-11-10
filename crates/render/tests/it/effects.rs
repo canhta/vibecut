@@ -651,8 +651,8 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
     use time::{FrameRate, SourceRange, Tick};
     struct GaussianOnly(std::sync::atomic::AtomicUsize);
     impl EffectCompositor for GaussianOnly {
-        fn supports(&self, entry_point: &str) -> bool {
-            entry_point == "gaussian"
+        fn supports(&self, _: &str) -> bool {
+            true
         }
         fn apply(
             &self,
@@ -721,6 +721,73 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
     let fallback = render(settings);
     assert_eq!(adapter.0.load(Ordering::SeqCst), 1, "the adapter was asked");
     assert_eq!(fallback.pixels(), reference.pixels());
+}
+
+#[test]
+fn per_run_supports_keeps_supported_runs_on_the_adapter() {
+    use project::*;
+    use std::sync::Mutex;
+    use time::Tick;
+    /// Claims the gaussian entry only, so a Pixel run in the same item must go to CPU.
+    struct GaussianOnly(Mutex<Vec<&'static str>>);
+    impl EffectCompositor for GaussianOnly {
+        fn supports(&self, entry_point: &str) -> bool {
+            entry_point == "gaussian"
+        }
+        fn apply(
+            &self,
+            item: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> render::Result<Image> {
+            for pass in passes {
+                self.0.lock().unwrap().push(pass.entry_point());
+            }
+            CpuEffects.apply(item, passes, inputs, hooks)
+        }
+    }
+    let mut data = crate::support::solid_project(1, 64, 36, [100, 50, 20, 255]).into_data();
+    let item = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .next()
+        .unwrap();
+    item.effects.push(
+        effect_definition("blur")
+            .unwrap()
+            .instance("b")
+            .with("intensity", EffectValue::Scalar(100.0))
+            .unwrap(),
+    );
+    item.effects.push(
+        effect_definition("color_grade")
+            .unwrap()
+            .instance("g")
+            .with("brightness", EffectValue::Scalar(50.0))
+            .unwrap(),
+    );
+    let project = Project::new(data).unwrap();
+    let hooks = Hooks::default();
+    let render = |settings: RenderSettings| {
+        Renderer::new(&project, settings)
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut crate::support::Empty, &hooks)
+            .unwrap()
+    };
+    let reference = render(RenderSettings::from_project(&project));
+    let adapter = Arc::new(GaussianOnly(Default::default()));
+    let mut settings = RenderSettings::from_project(&project);
+    settings.effects = Some(adapter.clone());
+    let mixed = render(settings);
+    assert_eq!(mixed.pixels(), reference.pixels());
+    let asked = adapter.0.lock().unwrap();
+    assert!(
+        !asked.is_empty() && asked.iter().all(|entry| *entry == "gaussian"),
+        "the adapter saw {asked:?}"
+    );
 }
 
 /// Opaque frames that differ only with the source tick: red before 0.05 s, green after.
@@ -886,7 +953,7 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
 }
 
 #[test]
-fn whole_image_render_pass_mirrors_through_the_bilinear_helper() {
+fn sample_pass_mirrors_through_the_bilinear_helper() {
     let hooks = Hooks::default();
     // Left half red, right half blue: the two sides tell the reflection apart.
     let source = (0..32).map(|i| {
