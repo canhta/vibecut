@@ -91,7 +91,7 @@ impl Inbox {
 
     /// Lend the process transcript-text adapters and the human approval they consult.
     /// Without them an agent cannot start a chapter or filler upload.
-    pub fn attach_chapters(&mut self, text: Arc<TextAccess>) {
+    pub fn attach_text(&mut self, text: Arc<TextAccess>) {
         self.chapters = Some(text);
     }
 

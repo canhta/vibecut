@@ -48,6 +48,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "subtitle" => ai::subtitle(context, rest),
         "clips" => ai::clips(context, rest),
         "chapters" => ai::chapters(context, rest),
+        "fillers" => ai::fillers(context, rest),
         "providers" => ai::providers(context, rest),
         "sounds" => libraries::sounds(context, rest),
         "model" => ai::model(context, rest),

@@ -594,7 +594,7 @@ fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
     assert_eq!(response.pointer("/value/status"), Some(&json!("error")));
     assert_eq!(response.pointer("/value/value"), Some(&json!("permission")));
 
-    inbox.attach_chapters(Arc::new(TextAccess::new(
+    inbox.attach_text(Arc::new(TextAccess::new(
         Arc::new(NoChapters {
             config: config.clone(),
         }),

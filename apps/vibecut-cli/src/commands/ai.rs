@@ -5,6 +5,8 @@ mod clips;
 pub(super) use clips::run as clips;
 mod chapters;
 pub(super) use chapters::run as chapters;
+mod fillers;
+pub(super) use fillers::run as fillers;
 mod providers;
 pub(super) use providers::run as providers;
 mod model;
