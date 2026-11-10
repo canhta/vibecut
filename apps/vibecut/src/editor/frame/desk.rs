@@ -126,13 +126,8 @@ impl<'a> Desk<'a> {
 
     /// Stage a preview and always show it; a reversal must restore the entry
     /// frame even when the engine reports no net change.
-    pub(in crate::editor) fn preview(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-        ripple: bool,
-    ) -> bool {
-        match self.run(command, params, ripple) {
+    pub(in crate::editor) fn preview(&mut self, command: Command, ripple: bool) -> bool {
+        match self.run_command(command, ripple) {
             Ok(_) => {
                 self.sync();
                 true

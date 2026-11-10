@@ -486,18 +486,10 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
         &before_apply,
         harness.state().session.project()
     ));
-    harness
-        .state_mut()
-        .session
-        .execute("undo", serde_json::json!({}))
-        .unwrap();
+    harness.state_mut().session.apply(Command::Undo {}).unwrap();
     assert_eq!(item_crop(&harness, fixture.video), None);
     assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
-    harness
-        .state_mut()
-        .session
-        .execute("redo", serde_json::json!({}))
-        .unwrap();
+    harness.state_mut().session.apply(Command::Redo {}).unwrap();
     assert_eq!(item_crop(&harness, fixture.video), Some(shape(9.0 / 16.0)));
 
     // Escape and the close button discard the transient box and the shape.

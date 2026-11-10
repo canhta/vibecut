@@ -1536,10 +1536,11 @@ fn lifecycle_view_state_restores_and_tracks_timeline_navigation() {
     fixture
         .editor
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":5,"scroll":80,"playhead":0}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 5.0,
+            scroll: 80.0,
+            playhead: Tick::ZERO,
+        })
         .unwrap();
     let vibecut::lifecycle::EditorSession::Memory(session) = fixture.editor.session else {
         panic!("memory fixture")
@@ -1604,10 +1605,11 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
     fixture
         .editor
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":2,"scroll":40,"playhead":3 * SECOND}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 2.0,
+            scroll: 40.0,
+            playhead: Tick(3 * SECOND),
+        })
         .unwrap();
     fixture.editor.activate("transport.pause").unwrap();
     assert_eq!(fixture.editor.inspect().unwrap().zoom, 80.0);
@@ -1620,10 +1622,11 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
     fixture
         .editor
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":3,"scroll":0,"playhead":0}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 3.0,
+            scroll: 0.0,
+            playhead: Tick::ZERO,
+        })
         .unwrap();
     fixture.editor.activate("timeline.zoom_in").unwrap();
     assert!(
@@ -1636,10 +1639,11 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
         fixture
             .editor
             .session
-            .execute(
-                "project.set_view_state",
-                serde_json::json!({"zoom":zoom,"scroll":scroll,"playhead":0}),
-            )
+            .apply(Command::SetViewState {
+                zoom,
+                scroll,
+                playhead: Tick::ZERO,
+            })
             .unwrap();
         fixture.editor.activate("transport.pause").unwrap();
         if zoom == 1.0 {
@@ -2640,10 +2644,10 @@ fn a_refused_group_move_shows_the_reason_and_discards_the_preview() {
     let mut editor = fixture.editor;
     editor
         .session
-        .execute(
-            "track.set_locked",
-            serde_json::json!({"track": text_track, "locked": true}),
-        )
+        .apply(Command::SetTrackLocked {
+            track: text_track,
+            locked: true,
+        })
         .unwrap();
     editor.selection = [video_b, text].into_iter().collect();
     let before = editor.session.project().clone();
@@ -2791,10 +2795,11 @@ fn edge_auto_scroll_follows_a_dragged_item_and_stops_when_the_pointer_leaves() {
     fixture
         .editor
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":20,"scroll":4800,"playhead":0}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 20.0,
+            scroll: 4800.0,
+            playhead: Tick::ZERO,
+        })
         .unwrap();
     let id = fixture.video_b;
     let mut harness = harness(fixture.editor);
@@ -2854,10 +2859,11 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
     f.editor.preferences.snapping = false;
     f.editor
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":1,"scroll":0.4,"playhead":0}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 1.0,
+            scroll: 0.4,
+            playhead: Tick::ZERO,
+        })
         .unwrap();
     let id = f.video_b;
     let mut h = harness(f.editor);
@@ -2997,10 +3003,11 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
     for scroll in [0.0, 4_000.0, 40_000.0] {
         h.state_mut()
             .session
-            .execute(
-                "project.set_view_state",
-                serde_json::json!({"zoom":100,"scroll":scroll,"playhead":0}),
-            )
+            .apply(Command::SetViewState {
+                zoom: 100.0,
+                scroll,
+                playhead: Tick::ZERO,
+            })
             .unwrap();
         h.run_steps(3);
         let clip = widget(&h, &format!("timeline.item.{}", id.0));

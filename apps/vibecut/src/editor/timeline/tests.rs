@@ -948,7 +948,11 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
     assert!(
         matches!(
             returned.as_slice(),
-            [Action::Command { id: "track.set_magnet", params }] if params["enabled"] == false
+            [Action::Command(command)]
+                if matches!(
+                    command.as_ref(),
+                    engine::Command::SetTrackMagnet { enabled: false }
+                )
         ),
         "{returned:?}"
     );
@@ -1064,8 +1068,14 @@ fn track_header_controls_return_track_commands() {
     assert!(
         matches!(
             returned.as_slice(),
-            [Action::Command { id: "track.set_locked", params }]
-                if params["track"] == serde_json::json!(track) && params["locked"] == true
+            [Action::Command(command)]
+                if matches!(
+                    command.as_ref(),
+                    engine::Command::SetTrackLocked {
+                        track: clicked,
+                        locked: true,
+                    } if *clicked == track
+                )
         ),
         "{returned:?}"
     );

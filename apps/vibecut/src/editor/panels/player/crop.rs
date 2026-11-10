@@ -276,9 +276,11 @@ impl Dialog {
         if patch == self.original {
             return Ok(());
         }
-        desk.run(
-            "timeline.set_item_param",
-            serde_json::json!({"item": self.item, "patch": {"field": "crop", "value": patch}}),
+        desk.run_command(
+            engine::Command::SetItemField {
+                item: self.item,
+                patch: engine::ItemParamPatch::Crop(patch),
+            },
             false,
         )?;
         desk.sync();

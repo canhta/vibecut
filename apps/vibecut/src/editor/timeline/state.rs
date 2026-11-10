@@ -185,8 +185,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) drag: Option<DragState>,
     /// Highlighted landing row or insertion line while a move drag is over the lanes.
     pub(in crate::editor::timeline) drop_zone: Option<DropZone>,
-    /// Command id of the candidate staged by the group preview contract.
-    pub(in crate::editor::timeline) preview: Option<&'static str>,
+    /// Command of the candidate staged by the group preview contract.
+    pub(in crate::editor::timeline) preview: Option<engine::CommandKind>,
     /// The last staged command leaves every member at its entry position.
     pub(in crate::editor::timeline) preview_noop: bool,
     /// The gesture armed the preview contract and may stage a candidate.
@@ -275,24 +275,26 @@ impl State {
         let Some(open) = self.bookmark_popover.as_ref() else {
             return;
         };
-        let mut params = serde_json::Map::new();
-        params.insert("bookmark".into(), serde_json::json!(open.bookmark));
-        if let Some(note) = &open.note
-            && *note != open.note_base
-        {
-            params.insert("note".into(), note.clone().into());
+        let note = open
+            .note
+            .as_ref()
+            .filter(|note| **note != open.note_base)
+            .map(|note| engine::NfcText::from(note.clone()));
+        let duration = open
+            .duration
+            .as_deref()
+            .and_then(duration_tick)
+            .filter(|tick| *tick != open.duration_base);
+        if note.is_none() && duration.is_none() {
+            return;
         }
-        if let Some(tick) = open.duration.as_deref().and_then(duration_tick)
-            && tick != open.duration_base
-        {
-            params.insert("duration".into(), serde_json::json!(tick));
-        }
-        if params.len() > 1 {
-            self.outbox.push(Action::Command {
-                id: "bookmark.update",
-                params: params.into(),
-            });
-        }
+        self.outbox
+            .push(Action::Command(Box::new(engine::Command::UpdateBookmark {
+                bookmark: open.bookmark,
+                note,
+                color: None,
+                duration,
+            })));
     }
     /// Escape closes the colour window before the marker editor.
     pub(in crate::editor) fn escape_bookmark(&mut self) -> bool {
@@ -444,8 +446,8 @@ impl State {
     pub(in crate::editor) fn preview_armed(&self) -> bool {
         self.preview_armed
     }
-    /// Record the command id backing the live candidate.
-    pub(in crate::editor) fn mark_preview(&mut self, command: &'static str, noop: bool) {
+    /// Record the command backing the live candidate.
+    pub(in crate::editor) fn mark_preview(&mut self, command: engine::CommandKind, noop: bool) {
         self.preview = Some(command);
         self.preview_noop = noop;
         self.preview_armed = true;
@@ -457,7 +459,7 @@ impl State {
     }
     /// The command id behind the live candidate, if any.
     pub(in crate::editor) fn preview_command(&self) -> Option<&'static str> {
-        self.preview
+        self.preview.map(engine::CommandKind::id)
     }
     /// Publish or discard finished: stop accepting staged commands.
     pub(in crate::editor) fn clear_preview(&mut self) {

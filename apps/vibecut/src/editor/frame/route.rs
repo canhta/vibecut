@@ -76,17 +76,18 @@ impl Editor {
         for action in actions {
             match action {
                 Action::Activate(id) => self.action(&id),
-                Action::Command { id, params } => self.track_command(id, params),
+                Action::Command(command) => self.track_command(*command),
                 Action::Generate(request) => {
                     if let Err(error) = self.media.generate(&mut self.session, request) {
                         self.desk().fail(error.to_string());
                     }
                 }
                 Action::RenameScene { scene, name } => {
-                    if !self.desk().edit(
-                        "scene.rename",
-                        serde_json::json!({"scene":scene,"name":name}),
-                    ) {
+                    let command = Command::RenameScene {
+                        scene,
+                        name: name.clone().into(),
+                    };
+                    if self.desk().apply_result(command, false).is_err() {
                         self.timeline.keep_scene_rename(scene, name);
                     }
                 }
@@ -182,10 +183,7 @@ impl Editor {
             })
             .collect();
         let result = self.session.transaction(|session| {
-            session.execute(
-                "keyframes.delete_selection",
-                serde_json::json!({"keys": keys}),
-            )?;
+            session.apply(engine::Command::DeleteKeyframes { keys })?;
             Ok(())
         });
         match result {
@@ -203,20 +201,15 @@ impl Editor {
         item: ItemId,
         values: &[(project::TransformField, f64)],
     ) {
-        let commands: Vec<serde_json::Value> = values
+        let commands = values
             .iter()
-            .map(|(field, value)| {
-                serde_json::json!({
-                    "command":"timeline.set_item_param",
-                    "params":{"item":item,"patch":{"field":field.path(),"value":value}}
-                })
+            .map(|(field, value)| Command::SetItemField {
+                item,
+                patch: transform_patch(*field, *value),
             })
             .collect();
-        self.desk().preview(
-            "timeline.preview",
-            serde_json::json!({"commands":commands}),
-            false,
-        );
+        self.desk()
+            .preview(Command::TimelinePreview { commands }, false);
     }
     /// Close a transform gesture with one undo step, or restore its entry project.
     pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
@@ -224,11 +217,11 @@ impl Editor {
             return;
         }
         let command = if commit {
-            "timeline.commit_preview"
+            Command::TimelineCommitPreview {}
         } else {
-            "timeline.discard_preview"
+            Command::TimelineDiscardPreview {}
         };
-        self.desk().preview(command, serde_json::json!({}), false);
+        self.desk().preview(command, false);
     }
     /// Select the text item whose inline session just opened and keep the
     /// timeline's preview contract as the only writer.
@@ -241,15 +234,12 @@ impl Editor {
     /// Stage the whole text buffer as an absolute `text_content` candidate; each
     /// call replaces the candidate from the session's opening snapshot.
     pub(in crate::editor) fn preview_text(&mut self, item: ItemId, content: &str) {
-        let commands = [serde_json::json!({
-            "command":"timeline.set_item_param",
-            "params":{"item":item,"patch":{"field":"text_content","value":content}}
-        })];
-        self.desk().preview(
-            "timeline.preview",
-            serde_json::json!({"commands":commands}),
-            false,
-        );
+        let commands = vec![Command::SetItemField {
+            item,
+            patch: engine::ItemParamPatch::TextContent(content.into()),
+        }];
+        self.desk()
+            .preview(Command::TimelinePreview { commands }, false);
     }
     /// Commit an open inline edit as one undo step, or discard a net-zero session.
     pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
@@ -266,7 +256,7 @@ impl Editor {
         }
         if self.session.gesture_active() {
             self.desk()
-                .preview("timeline.discard_preview", serde_json::json!({}), false);
+                .preview(Command::TimelineDiscardPreview {}, false);
         }
         true
     }
@@ -357,22 +347,23 @@ impl Editor {
             return;
         }
         let command = gesture.command();
-        let params = serde_json::json!({
-            "commands": [{"command": command, "params": gesture.params()}]
-        });
+        let staged = Command::TimelinePreview {
+            commands: vec![command.clone()],
+        };
         let previous = self
             .session
             .preview_project()
             .unwrap_or(self.session.project())
             .clone();
         let ripple = self.preferences.ripple;
-        let result = self.desk().run("timeline.preview", params, ripple);
+        let result = self.desk().run_command(staged, ripple);
         match result {
             Ok(_) => {
                 // `project()` stays committed; the player follows the staged
                 // candidate (including a reversal back to the entry state) so a
                 // trim shows its frame live.
-                self.timeline.mark_preview(command, gesture.is_noop());
+                self.timeline
+                    .mark_preview(command.kind(), gesture.is_noop());
                 let current = self
                     .session
                     .preview_project()
@@ -398,18 +389,13 @@ impl Editor {
             if self.timeline.preview_noop() {
                 self.discard_staged_preview();
             } else {
-                match self
-                    .session
-                    .execute("timeline.commit_preview", serde_json::json!({}))
-                {
+                match self.session.apply(Command::TimelineCommitPreview {}) {
                     Ok(outcome) if outcome.changed => self.desk().sync(),
                     Ok(_) => {}
                     Err(error) => {
                         // A refused publication must not leave the gesture open.
                         self.desk().fail(error.to_string());
-                        let _ = self
-                            .session
-                            .execute("timeline.discard_preview", serde_json::json!({}));
+                        let _ = self.session.apply(Command::TimelineDiscardPreview {});
                     }
                 }
                 self.timeline.clear_preview();
@@ -422,9 +408,7 @@ impl Editor {
     /// Restore the entry project without a history entry.
     fn discard_staged_preview(&mut self) {
         if self.session.gesture_active()
-            && let Err(error) = self
-                .session
-                .execute("timeline.discard_preview", serde_json::json!({}))
+            && let Err(error) = self.session.apply(Command::TimelineDiscardPreview {})
         {
             self.desk().fail(error.to_string());
         }
@@ -543,11 +527,11 @@ impl Editor {
         let duration = self.session.project().duration();
         self.timeline.zoom_by(factor, duration, playhead);
     }
-    /// Run an engine command on the current selection (track edits).
-    pub(in crate::editor) fn track_command(&mut self, command: &str, params: serde_json::Value) {
+    /// Run a typed engine command on the current selection (track edits).
+    pub(in crate::editor) fn track_command(&mut self, command: Command) {
         let before = self.session.project().clone();
         let ripple = self.preferences.ripple;
-        let result = self.desk().run(command, params, ripple);
+        let result = self.desk().run_command(command, ripple);
         match result {
             Ok(_) => {
                 self.prune_selection();
@@ -557,6 +541,18 @@ impl Editor {
             }
             Err(error) => self.desk().fail(error.to_string()),
         }
+    }
+}
+
+/// The typed patch for one transform field the player stages.
+fn transform_patch(field: project::TransformField, value: f64) -> engine::ItemParamPatch {
+    use project::TransformField as F;
+    match field {
+        F::PositionX => engine::ItemParamPatch::PositionX(value),
+        F::PositionY => engine::ItemParamPatch::PositionY(value),
+        F::ScaleX => engine::ItemParamPatch::ScaleX(value),
+        F::ScaleY => engine::ItemParamPatch::ScaleY(value),
+        F::Rotate => engine::ItemParamPatch::Rotate(value),
     }
 }
 

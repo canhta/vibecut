@@ -226,10 +226,12 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
     let Rig {
         mut editor, track, ..
     } = rig();
-    editor.route_timeline(vec![timeline::Action::Command {
-        id: "track.set_locked",
-        params: serde_json::json!({"track":track,"locked":true}),
-    }]);
+    editor.route_timeline(vec![timeline::Action::Command(Box::new(
+        Command::SetTrackLocked {
+            track,
+            locked: true,
+        },
+    ))]);
     assert!(
         editor
             .session

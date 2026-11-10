@@ -77,10 +77,12 @@ impl State {
             if commit {
                 let edited = open.note.take().unwrap_or(note);
                 if edited != open.note_base {
-                    actions.push(Action::Command {
-                        id: "bookmark.update",
-                        params: serde_json::json!({"bookmark": id, "note": edited}),
-                    });
+                    actions.push(Action::Command(Box::new(engine::Command::UpdateBookmark {
+                        bookmark: id,
+                        note: Some(edited.into()),
+                        color: None,
+                        duration: None,
+                    })));
                 }
             }
 
@@ -123,13 +125,12 @@ impl State {
                     );
                     record(&mut widgets, "timeline.bookmark.color.reset", &reset);
                     if reset.clicked() {
-                        actions.push(Action::Command {
-                            id: "bookmark.update",
-                            params: serde_json::json!({
-                                "bookmark": id,
-                                "color": engine::DEFAULT_BOOKMARK_COLOR,
-                            }),
-                        });
+                        actions.push(Action::Command(Box::new(engine::Command::UpdateBookmark {
+                            bookmark: id,
+                            note: None,
+                            color: Some(engine::DEFAULT_BOOKMARK_COLOR),
+                            duration: None,
+                        })));
                     }
                 }
             });
@@ -200,10 +201,9 @@ impl State {
             );
             record(&mut widgets, "timeline.bookmark.delete", &delete);
             if delete.clicked() {
-                actions.push(Action::Command {
-                    id: "bookmark.remove",
-                    params: serde_json::json!({"bookmark": id}),
-                });
+                actions.push(Action::Command(Box::new(engine::Command::RemoveBookmark {
+                    bookmark: id,
+                })));
                 close = true;
             }
         });
@@ -215,10 +215,12 @@ impl State {
             }
             if !event.cancel {
                 if event.commit && picker.color != picker.original {
-                    actions.push(Action::Command {
-                        id: "bookmark.update",
-                        params: serde_json::json!({"bookmark": id, "color": picker.color}),
-                    });
+                    actions.push(Action::Command(Box::new(engine::Command::UpdateBookmark {
+                        bookmark: id,
+                        note: None,
+                        color: Some(picker.color),
+                        duration: None,
+                    })));
                     picker.original = picker.color;
                 }
                 open.picker = Some(picker);
@@ -239,9 +241,13 @@ impl State {
 /// to the project's current duration would be a refused no-op, so it is dropped.
 fn duration_action(bookmark: project::BookmarkId, seconds: f64, base: Tick) -> Option<Action> {
     let tick = Tick::from_seconds_f64(seconds.max(0.0), Rounding::Nearest).ok()?;
-    (tick != base).then(|| Action::Command {
-        id: "bookmark.update",
-        params: serde_json::json!({"bookmark": bookmark, "duration": tick}),
+    (tick != base).then(|| {
+        Action::Command(Box::new(engine::Command::UpdateBookmark {
+            bookmark,
+            note: None,
+            color: None,
+            duration: Some(tick),
+        }))
     })
 }
 

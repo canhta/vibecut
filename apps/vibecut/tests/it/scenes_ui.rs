@@ -3,7 +3,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, CreatedId, Session};
+use engine::{ByteBudget, Command, CreatedId, Session};
 use project::{Project, ProjectId, SceneId};
 use std::sync::Arc;
 use vibecut::{
@@ -19,7 +19,7 @@ fn scene_sheet_switches_and_multideletes_with_main_protected() {
         let mut ids = Vec::new();
         for name in ["Opening", "Closing"] {
             let created = session
-                .execute("scene.create", serde_json::json!({"name":name}))
+                .apply(Command::CreateScene { name: name.into() })
                 .unwrap();
             match created.created.first() {
                 Some(CreatedId::Scene(id)) => ids.push(*id),

@@ -493,7 +493,9 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
             let result = h
                 .state_mut()
                 .session
-                .execute("scene.create", serde_json::json!({"name":"Other"}))
+                .apply(Command::CreateScene {
+                    name: "Other".into(),
+                })
                 .unwrap();
             let engine::CreatedId::Scene(scene) = result.created[0] else {
                 panic!("scene")

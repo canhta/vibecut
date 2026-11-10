@@ -18,7 +18,7 @@ pub(super) struct TrackRow {
     pub(super) id: TrackId,
     pub(super) main: bool,
     pub(super) audio: bool,
-    pub(super) display_index: usize,
+    pub(super) display_index: u32,
     pub(super) muted: bool,
     pub(super) hidden: bool,
     pub(super) locked: bool,
@@ -225,8 +225,8 @@ impl State {
         let mut rows = Vec::new();
         let mut raw_items: Vec<RawItem> = Vec::new();
         let mut offset = 0.0;
-        let mut overlay_index = 0usize;
-        let mut audio_index = 0usize;
+        let mut overlay_index = 0u32;
+        let mut audio_index = 0u32;
         for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
             let base_height = track_height(track.kind);
             let main = track.id == data.scene().timeline.main.id;

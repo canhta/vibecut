@@ -203,16 +203,15 @@ impl State {
                                 Side::Before => (mode, current.1),
                                 Side::After => (current.0, mode),
                             };
-                            self.push(Action::Command {
-                                id: "keyframes.set_extrapolation",
-                                params: serde_json::json!({
-                                    "item": item.id,
-                                    "path": lane.path.as_str(),
-                                    "component": lane.component,
-                                    "before": before,
-                                    "after": after,
-                                }),
-                            });
+                            self.push(Action::Command(Box::new(
+                                engine::Command::SetKeyframeExtrapolation {
+                                    item: item.id,
+                                    path: lane.path.clone(),
+                                    component: lane.component,
+                                    before,
+                                    after,
+                                },
+                            )));
                             ui.close();
                         }
                     }

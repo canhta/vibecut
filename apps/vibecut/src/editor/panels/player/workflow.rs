@@ -211,10 +211,11 @@ impl Editor {
             playhead: self.playback.position()?,
         };
         if self.session.metadata().view != view {
-            self.session.execute(
-                "project.set_view_state",
-                serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":view.playhead}),
-            )?;
+            self.session.apply(engine::Command::SetViewState {
+                zoom: view.zoom,
+                scroll: view.scroll,
+                playhead: view.playhead,
+            })?;
         }
         self.last_view = view;
         Ok(())

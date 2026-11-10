@@ -110,10 +110,10 @@ impl State {
                 let cancel = header_ui.input(|input| input.key_pressed(egui::Key::Escape));
                 let commit = header_ui.input(|input| input.key_pressed(egui::Key::Enter));
                 if commit && !cancel {
-                    self.push(Action::Command {
-                        id: "track.rename",
-                        params: serde_json::json!({"track":row.id,"name":name}),
-                    });
+                    self.push(Action::Command(Box::new(engine::Command::RenameTrack {
+                        track: row.id,
+                        name: name.into(),
+                    })));
                 } else if !cancel {
                     self.track_rename = Some((row.id, name));
                 }
@@ -144,10 +144,10 @@ impl State {
                     row.locked,
                     Icon::Lock,
                 ) {
-                    self.push(Action::Command {
-                        id: "track.set_locked",
-                        params: serde_json::json!({"track":row.id,"locked":!row.locked}),
-                    });
+                    self.push(Action::Command(Box::new(engine::Command::SetTrackLocked {
+                        track: row.id,
+                        locked: !row.locked,
+                    })));
                 }
                 if row.kind.can_hide()
                     && self.track_cell(
@@ -166,10 +166,10 @@ impl State {
                         },
                     )
                 {
-                    self.push(Action::Command {
-                        id: "track.set_hidden",
-                        params: serde_json::json!({"track":row.id,"hidden":!row.hidden}),
-                    });
+                    self.push(Action::Command(Box::new(engine::Command::SetTrackHidden {
+                        track: row.id,
+                        hidden: !row.hidden,
+                    })));
                 }
                 if row.kind.can_mute()
                     && self.track_cell(
@@ -188,10 +188,10 @@ impl State {
                         },
                     )
                 {
-                    self.push(Action::Command {
-                        id: "track.set_muted",
-                        params: serde_json::json!({"track":row.id,"muted":!row.muted}),
-                    });
+                    self.push(Action::Command(Box::new(engine::Command::SetTrackMuted {
+                        track: row.id,
+                        muted: !row.muted,
+                    })));
                 }
                 let more_rect = Rect::from_center_size(cell(4), Vec2::splat(theme::size::CONTROL))
                     .intersect(layout.labels);
@@ -240,10 +240,10 @@ impl State {
                     })
                     && target.id != row.id
                 {
-                    self.push(Action::Command {
-                        id: "track.reorder",
-                        params: serde_json::json!({"track":row.id,"index":target.display_index}),
-                    });
+                    self.push(Action::Command(Box::new(engine::Command::ReorderTrack {
+                        track: row.id,
+                        index: target.display_index,
+                    })));
                 }
             }
         }
@@ -480,10 +480,9 @@ impl State {
                 &response,
             );
             if response.clicked() {
-                self.push(Action::Command {
-                    id: "track.remove",
-                    params: serde_json::json!({"track":row.id}),
-                });
+                self.push(Action::Command(Box::new(engine::Command::RemoveTrack {
+                    track: row.id,
+                })));
                 ui.close();
             }
         }

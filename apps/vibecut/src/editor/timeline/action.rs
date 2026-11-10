@@ -27,11 +27,23 @@ pub(in crate::editor) enum Gesture {
 }
 
 impl Gesture {
-    /// The registered command this gesture stages.
-    pub(in crate::editor) fn command(&self) -> &'static str {
+    /// The typed command this gesture stages.
+    pub(in crate::editor) fn command(&self) -> engine::Command {
         match self {
-            Self::Move { .. } => "timeline.move_items",
-            Self::Trim { .. } => "timeline.trim",
+            Self::Move {
+                items,
+                delta,
+                placement,
+            } => engine::Command::TimelineMoveItems {
+                items: items.clone(),
+                delta: *delta,
+                placement: *placement,
+            },
+            Self::Trim { items, edge, delta } => engine::Command::TimelineTrim {
+                items: items.clone(),
+                edge: *edge,
+                delta: *delta,
+            },
         }
     }
     /// The command would leave every member where the gesture found it.
@@ -43,25 +55,6 @@ impl Gesture {
             Self::Trim { delta, .. } => *delta == Tick::ZERO,
         }
     }
-    /// Strictly typed JSON parameters for the staged command.
-    pub(in crate::editor) fn params(&self) -> serde_json::Value {
-        match self {
-            Self::Move {
-                items,
-                delta,
-                placement,
-            } => serde_json::json!({
-                "items": items,
-                "delta": delta,
-                "placement": placement,
-            }),
-            Self::Trim { items, edge, delta } => serde_json::json!({
-                "items": items,
-                "edge": edge,
-                "delta": delta,
-            }),
-        }
-    }
 }
 
 /// A cross-area request. The panel never mutates the session, the
@@ -70,12 +63,9 @@ impl Gesture {
 pub(in crate::editor) enum Action {
     /// Run a registered action by id (toolbar, scene sheet, media reveal).
     Activate(String),
-    /// Run an engine command on the current selection; the frame prunes the
-    /// selection and restarts the preview when the project changed.
-    Command {
-        id: &'static str,
-        params: serde_json::Value,
-    },
+    /// Run one typed engine command on the current selection; the frame prunes
+    /// the selection and restarts the preview when the project changed.
+    Command(Box<engine::Command>),
     /// Submit one registered media generation job for a pending clip visual.
     Generate(VisualRequest),
     /// Rename a scene; the frame reports a refusal back through

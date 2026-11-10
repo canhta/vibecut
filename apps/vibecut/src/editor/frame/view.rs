@@ -1,5 +1,7 @@
 //! Composes the editor window.
-use crate::editor::{Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme};
+use crate::editor::{
+    Command, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
+};
 
 impl Editor {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -352,10 +354,10 @@ impl Editor {
             match action {
                 super::Action::Activate(id) => self.action(id),
                 super::Action::Rename(name) => {
-                    if !self
-                        .desk()
-                        .edit("project.rename", serde_json::json!({"name":name}))
-                    {
+                    let command = Command::RenameProject {
+                        name: name.clone().into(),
+                    };
+                    if self.desk().apply_result(command, false).is_err() {
                         self.frame.rename = Some(name);
                     }
                 }

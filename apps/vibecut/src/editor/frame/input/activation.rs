@@ -177,8 +177,7 @@ impl Editor {
                         self.timeline.scenes.toggle(scene, is_main);
                     } else {
                         self.cancel_interaction();
-                        self.session
-                            .execute("scene.switch", serde_json::json!({"scene":scene}))?;
+                        self.session.apply(engine::Command::SwitchScene { scene })?;
                         self.selection.clear();
                         self.selection_scopes = SelectionScopes::default();
                     }
@@ -281,15 +280,11 @@ impl Editor {
                         self.preference_history.redo(&mut self.preferences)
                     };
                     if !preference_changed {
-                        self.session.execute(
-                            if action == UiAction::Undo {
-                                engine::CommandKind::Undo
-                            } else {
-                                engine::CommandKind::Redo
-                            }
-                            .id(),
-                            serde_json::json!({}),
-                        )?;
+                        self.session.apply(if action == UiAction::Undo {
+                            engine::Command::Undo {}
+                        } else {
+                            engine::Command::Redo {}
+                        })?;
                         self.selection = self.session.selection().clone();
                         self.selection_scopes = SelectionScopes::default();
                         self.properties.clear_drafts();

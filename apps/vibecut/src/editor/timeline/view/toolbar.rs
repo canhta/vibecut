@@ -155,10 +155,9 @@ impl State {
             Text::Magnet,
             Some(magnet),
         ) {
-            self.push(Action::Command {
-                id: "track.set_magnet",
-                params: serde_json::json!({"enabled":!magnet}),
-            });
+            self.push(Action::Command(Box::new(engine::Command::SetTrackMagnet {
+                enabled: !magnet,
+            })));
         }
         self.toolbar_button(
             cx,
