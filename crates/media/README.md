@@ -1,6 +1,6 @@
 # media
 
-Headless streaming media I/O through dynamically linked FFmpeg (LGPL on macOS and Windows, GPL with libx264 on Linux). Owns source identity, probe, demux, codec parameters, decode and encode, hardware selection, conversion, resampling, muxing and vision media preparation. Timeline semantics, compositing, captions, text, provider policy, jobs and output promotion belong to their respective owners.
+Headless streaming media I/O through dynamically linked FFmpeg. Owns source identity, probe, demux, codec parameters, decode and encode, hardware selection, conversion, resampling, muxing and vision media preparation. Timeline semantics, compositing, captions, text, provider policy, jobs and output promotion belong to their respective owners. FFmpeg licensing and distribution are owned by the [open-source policy](../../docs/engineering/open-source.md#ffmpeg-distribution).
 
 | Module | Owns | Contract |
 |---|---|---|
@@ -15,8 +15,7 @@ The crate root re-exports the public names; module paths are private.
 
 All errors use `MediaError`. Logs omit paths and media or user text. FFmpeg's default logger is disabled because it can disclose filenames. After a codec or mux error, discard that execution; flush is idempotent after successful completion.
 
-## Evidence
+## Verification
 
-Tests generate synthetic inputs with an independently installed ffmpeg and exercise the public packet, decode, encode, resample and mux interfaces. Subprocess ffprobe checks counts, durations, codecs and tags. These are pipeline oracles, not independent codec implementations. Missing tools are explicit skips; `VIBECUT_REQUIRE_ORACLES=1` requires them. A found tool that fails is a failure. Failed oracle subprocesses report the exit status and the first 4 KiB of each output stream with full byte counts, and are never retried.
-
-Native codec behaviour has been observed on macOS only.
+Test and oracle policy, including required-oracle skips and failure handling, is owned by
+[verification](../../docs/engineering/verification.md#checks).

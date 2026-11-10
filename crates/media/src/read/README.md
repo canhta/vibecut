@@ -6,7 +6,7 @@ Container reading, packet decoding and bounded thumbnails over the one shared FF
 
 `probe(path)` and `PacketReader` open native `File` paths through seekable AVIO (32 KiB buffers), detect the format, and report optional presentation duration, stream start and time base, codec parameters, dimensions and color, audio format and priming, and optional counts. Unknown frame counts and VFR stay unknown; capabilities are never guessed from filenames. Probing reads at most 32 MiB.
 
-The cancellation token interrupts probing and every packet read. A packet read after exhaustion returns `MediaError::TooLarge("input read bytes")`. `PacketReader::seek` seeks backward to the keyframe at or before a presentation time and resets consumers. Packets are capped at 64 MiB.
+The cancellation token interrupts probing and every packet read. A packet read after exhaustion returns `MediaError::TooLarge("input read bytes")`. `PacketReader::seek` seeks backward to the keyframe at or before a presentation time; `VideoReader::seek` resets its decoder and suppresses presentation ticks before the target. Packets are capped at 64 MiB.
 
 ## Decoding
 
