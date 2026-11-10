@@ -6,9 +6,9 @@ Item-relative parameter overrides, keyed channels, Bezier evaluation, clip fades
 
 `Item.animations` is the single `Animations` map of parameter overrides. A missing path leaves the consumer's static property in use. A present `Param` owns its explicit base value and keys, even when no keys remain; editing static item content does not rewrite it. `Param::new(value)` creates a static override. Validate edited candidates through `Project::new`.
 
-`Animations::value_at(path, local_tick)` is the shared evaluation entry point for engine, rendering, audio automation and graph consumers. `None` means absent, not zero.
+`Animations::value_at(path, local_tick)` is the shared evaluation entry point. `None` means absent, not zero.
 
-`AnimationPath::new` admits `transform.positionX/Y`, `transform.scaleX/Y`, `transform.rotate`, `opacity`, `volume`, `muted`, `color`, `background.color`, `background.paddingX/Y`, `background.offsetX/Y`, `background.cornerRadius`, `crop.x`, `crop.y`, `crop.auto`, `params.<name>` and `effects.<id>.params.<name>`. The fixed vocabulary is `BuiltinPath::ALL`: `BuiltinPath::as_str` is its persisted spelling and `BuiltinPath::parse` / `AnimationPath::builtin` round-trip that spelling unchanged. `AnimationPath::from(BuiltinPath)` is the typed construction used outside this crate. Extension ids and names are 1..=64 ASCII letters, digits, underscore or hyphen; complete paths are at most 160 bytes. Extension namespaces reserve animation data only; later owners resolve ids against their admitted implementations.
+`AnimationPath::new` admits `transform.positionX/Y`, `transform.scaleX/Y`, `transform.rotate`, `opacity`, `volume`, `muted`, `color`, `background.color`, `background.paddingX/Y`, `background.offsetX/Y`, `background.cornerRadius`, `crop.x`, `crop.y`, `crop.auto`, `params.<name>`, `effects.<id>.params.<name>` and `masks.<id>.params.<name>`. The fixed vocabulary is `BuiltinPath::ALL`: `BuiltinPath::as_str` is its persisted spelling and `BuiltinPath::parse` / `AnimationPath::builtin` round-trip that spelling unchanged. `AnimationPath::from(BuiltinPath)` is the typed construction used outside this crate. Extension ids and names are 1..=64 ASCII letters, digits, underscore or hyphen; complete paths are at most 160 bytes. Extension namespaces reserve animation data only; later owners resolve ids against their admitted implementations.
 
 `volume` is scalar dB (consumers clamp overshoot to -60..20). `muted` requires a held bool.
 
@@ -16,7 +16,7 @@ Item-relative parameter overrides, keyed channels, Bezier evaluation, clip fades
 
 `ParamValue` holds scalar, bool, NFC text or linear-light unpremultiplied RGBA. RGBA uses four independently keyed scalar `Channel`s selected by `ColorComponent`, with no shared-key-time restriction. Stored RGBA values are in 0..=1 and composite evaluation clamps overshoot and extrapolation to that range. Discrete color text stays a held string. `AnimationPath::scale_group()` identifies the scaleX/Y editor group; both curves stay independent.
 
-Limits: 64 paths per item, 4096 keys per channel, 100,000 keys per project, plus the JSON budgets in persistence. Stored scalars and handle `dv` are finite with absolute value <= 10^12. Unknown fields or paths, wrong component kinds, unordered or duplicate keys, invalid handles and over-budget input refuse. Raw channel deserialization bounds its key sequence; map deserialization refuses duplicate paths. Evaluation is allocation-free.
+Limits: 64 paths per item, 4096 keys per channel, 100,000 keys per project, plus the JSON budgets in persistence. Stored scalars and handle `dv` are finite with absolute value <= 10^12. Unknown fields or paths, wrong component kinds, unordered or duplicate keys, invalid handles and over-budget input refuse. Raw channel deserialization bounds its key sequence; map deserialization refuses duplicate paths. Scalar evaluation is allocation-free; a discrete text value clones its stored text.
 
 ## Keyframes
 
