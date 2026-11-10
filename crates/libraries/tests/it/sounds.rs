@@ -617,7 +617,12 @@ fn preview_play_stop_and_missing_device_are_typed() {
         device: true,
     });
     let preview = SoundPreview::new(downloads.clone(), sink.clone());
-    preview.play(&sound).unwrap();
+    assert!(matches!(
+        preview.play(&sound, &|| true),
+        Err(engine::SoundError::Cancelled)
+    ));
+    assert_eq!(sink.plays.load(Ordering::Relaxed), 0);
+    preview.play(&sound, &|| false).unwrap();
     preview.stop().unwrap();
     assert_eq!(sink.plays.load(Ordering::Relaxed), 1);
     assert_eq!(sink.stops.load(Ordering::Relaxed), 1);
@@ -629,11 +634,11 @@ fn preview_play_stop_and_missing_device_are_typed() {
     });
     let preview = SoundPreview::new(downloads, no_device);
     assert!(matches!(
-        preview.play(&sound),
+        preview.play(&sound, &|| false),
         Err(engine::SoundError::NoAudioDevice)
     ));
     assert!(matches!(
-        preview.play(&sound),
+        preview.play(&sound, &|| false),
         Err(engine::SoundError::NoAudioDevice)
     ));
 }
@@ -838,7 +843,7 @@ fn preview_stop_cancels_playback_already_running_on_the_device() {
     });
     let preview = Arc::new(SoundPreview::new(downloads, sink.clone()));
     let playing = preview.clone();
-    let thread = std::thread::spawn(move || playing.play(&sound));
+    let thread = std::thread::spawn(move || playing.play(&sound, &|| false));
     while !sink.started.load(Ordering::Acquire) {
         std::hint::spin_loop();
     }

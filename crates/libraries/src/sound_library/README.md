@@ -14,6 +14,11 @@ Credentials are bring-your-own: `Token::from_env` reads `FREESOUND_API_KEY` in t
 
 `sounds.add_to_timeline` takes an asset already in project-owned media and commits it plus the audio item in one undo step; the item stores `sourceType=library` metadata. The `sounds::add_to_timeline`/`add_saved` helpers first copy the cached preview into the caller's project media directory under its content hash (staged, hash-verified, then published through project's destination-admitting atomic writer; reused when present), so unsave, clear-all and URL invalidation only remove cache entries, never a file a project references. The CLI uses `<project file>.media/`; managed projects pass their own `media` directory.
 
-`SoundPreview` composes the cache/download owner with an app-owned `PreviewSink`; play and stop are cancellable and a missing device is a typed error.
+`SoundPreview` composes the cache/download owner with an app-owned `PreviewSink`;
+play returns only at terminal drain/stop/failure, keeping active cancellation
+through playback. Its caller cancellation predicate also refuses a worker stopped
+before entry, before cache/network IO. Stop is idempotent and must interrupt
+decoding as well as playback; the caller retains/joins its worker. Missing devices
+remain typed `NoAudioDevice`. The app sink owns device timing and buffer accounting.
 
 Container export writes deduplicated attribution and licence records from every library audio item into the MP4/WebM `comment` tag through media's bounded muxer metadata seam. Export refuses more than 64 distinct records or 8 KiB of attribution text with a typed size error, preserving any existing output.

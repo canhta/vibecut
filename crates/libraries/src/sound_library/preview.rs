@@ -11,7 +11,13 @@ impl SoundPreview {
             active: Mutex::new(None),
         }
     }
-    pub fn play(&self, sound: &SoundResult) -> Sound<()> {
+    /// Remain active until terminal sink completion. `cancelled` also covers an
+    /// owner stopping a queued worker before this call begins; it is checked
+    /// before cache/network work and throughout download and sink playback.
+    pub fn play(&self, sound: &SoundResult, cancelled: &dyn Fn() -> bool) -> Sound<()> {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         validate_result(sound)?;
         let cancel = Arc::new(AtomicBool::new(false));
         {
@@ -20,16 +26,18 @@ impl SoundPreview {
                 old.store(true, Ordering::Release);
             }
         }
+        let is_cancelled = || cancel.load(Ordering::Acquire) || cancelled();
         let result = (|| {
+            if is_cancelled() {
+                return Err(Error::Cancelled);
+            }
             let cached = match self.downloads.library.cached(&sound.audio_url)? {
                 Some(cached) => cached,
-                None => self.downloads.download(
-                    &sound.audio_url,
-                    &|| cancel.load(Ordering::Acquire),
-                    &|_, _| {},
-                )?,
+                None => self
+                    .downloads
+                    .download(&sound.audio_url, &is_cancelled, &|_, _| {})?,
             };
-            if cancel.load(Ordering::Acquire) {
+            if is_cancelled() {
                 return Err(Error::Cancelled);
             }
             let bytes = cached.bytes()?;
@@ -37,7 +45,7 @@ impl SoundPreview {
                 name: &sound.name,
                 audio_url: &sound.audio_url,
                 bytes: &bytes,
-                cancelled: &|| cancel.load(Ordering::Acquire),
+                cancelled: &is_cancelled,
             })
         })();
         let mut active = self.active.lock().map_err(|_| Error::LibraryCorrupt)?;

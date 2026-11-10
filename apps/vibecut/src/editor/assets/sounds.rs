@@ -18,6 +18,7 @@ use std::{
     collections::BTreeSet,
     sync::{
         Arc,
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, TryRecvError},
     },
     time::Duration,
@@ -184,8 +185,10 @@ pub struct Sounds {
     saved_ids: BTreeSet<u64>,
     saved_problem: Option<SoundsProblem>,
     previewing: Option<u64>,
-    preview_generation: u64,
-    preview_rx: Option<Receiver<(u64, std::result::Result<(), SoundError>)>>,
+    preview_rx: Option<Receiver<std::result::Result<(), SoundError>>>,
+    preview_worker: Option<std::thread::JoinHandle<()>>,
+    preview_pending: Option<SoundResult>,
+    preview_cancel: Option<Arc<AtomicBool>>,
     preview_problem: Option<SoundsProblem>,
     cache: Option<CacheJob>,
     cache_problem: Option<SoundsProblem>,
@@ -203,7 +206,7 @@ impl Sounds {
         let downloads = Arc::new(SoundDownloads::ureq(library.clone()));
         let preview = Arc::new(SoundPreview::new(
             downloads.clone(),
-            Arc::new(sink::OutputSink::new()),
+            Arc::new(sink::OutputSink::new(budget.clone())),
         ));
         Self::with_parts(library, client, downloads, preview, budget)
     }
@@ -255,8 +258,10 @@ impl Sounds {
             saved_ids,
             saved_problem: None,
             previewing: None,
-            preview_generation: 0,
             preview_rx: None,
+            preview_worker: None,
+            preview_pending: None,
+            preview_cancel: None,
             preview_problem: None,
             cache: None,
             cache_problem: None,
@@ -435,30 +440,54 @@ impl Sounds {
             self.preview_problem = Some(SoundsProblem::Library);
             return;
         };
+        if self.preview_worker.is_some() {
+            self.stop();
+        }
+        self.previewing = Some(id);
+        self.preview_problem = None;
+        self.preview_pending = Some(sound);
+        self.start_preview();
+    }
+
+    fn start_preview(&mut self) {
+        if self.preview_worker.is_some() {
+            return;
+        }
+        let Some(sound) = self.preview_pending.take() else {
+            return;
+        };
         let preview = self.preview.clone();
-        let (tx, rx) = mpsc::channel();
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        let generation = self.preview_generation;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.preview_cancel = Some(cancel.clone());
+        let (tx, rx) = mpsc::sync_channel(1);
         let spawned = std::thread::Builder::new()
             .name("vibecut-sounds-preview".into())
             .spawn(move || {
-                let _ = tx.send((generation, preview.play(&sound)));
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    preview.play(&sound, &|| cancel.load(Ordering::Acquire))
+                }))
+                .unwrap_or(Err(SoundError::NoAudioDevice));
+                let _ = tx.send(result);
             });
         match spawned {
-            Ok(_) => {
-                self.previewing = Some(id);
-                self.preview_problem = None;
+            Ok(worker) => {
+                self.preview_worker = Some(worker);
                 self.preview_rx = Some(rx);
             }
-            Err(_) => self.preview_problem = Some(SoundsProblem::NoAudioDevice),
+            Err(_) => {
+                self.previewing = None;
+                self.preview_problem = Some(SoundsProblem::NoAudioDevice);
+            }
         }
     }
 
     pub fn stop(&mut self) {
+        if let Some(cancel) = self.preview_cancel.take() {
+            cancel.store(true, Ordering::Release);
+        }
         let _ = self.preview.stop();
         self.previewing = None;
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        self.preview_rx = None;
+        self.preview_pending = None;
     }
 
     /// Queue a cache job for an add that has no local audio yet. The editor
@@ -545,26 +574,38 @@ impl Sounds {
                 Err(TryRecvError::Empty) => {}
             }
         }
-        if let Some(rx) = &self.preview_rx {
-            match rx.try_recv() {
-                Ok((generation, result)) => {
-                    if generation == self.preview_generation {
-                        self.preview_rx = None;
-                        self.previewing = None;
-                        if let Err(error) = result
-                            && !matches!(error, SoundError::Cancelled)
-                        {
-                            self.preview_problem = Some(SoundsProblem::from_error(&error));
+        if self
+            .preview_worker
+            .as_ref()
+            .is_some_and(|worker| worker.is_finished())
+        {
+            if let Some(worker) = self.preview_worker.take() {
+                let _ = worker.join(); // Entry catches panics into the terminal result.
+            }
+            if let Some(rx) = self.preview_rx.take() {
+                if self
+                    .preview_cancel
+                    .take()
+                    .is_some_and(|cancel| !cancel.load(Ordering::Acquire))
+                {
+                    match rx.try_recv() {
+                        Ok(result) => {
+                            self.previewing = None;
+                            if let Err(error) = result
+                                && !matches!(error, SoundError::Cancelled)
+                            {
+                                self.preview_problem = Some(SoundsProblem::from_error(&error));
+                            }
                         }
+                        Err(TryRecvError::Disconnected) => {
+                            self.previewing = None;
+                            self.preview_problem = Some(SoundsProblem::NoAudioDevice);
+                        }
+                        Err(TryRecvError::Empty) => {}
                     }
                 }
-                Err(TryRecvError::Disconnected) => {
-                    self.preview_rx = None;
-                    self.previewing = None;
-                    self.preview_problem = Some(SoundsProblem::NoAudioDevice);
-                }
-                Err(TryRecvError::Empty) => {}
             }
+            self.start_preview();
         }
         let (sound, add, cancelling, state, error, progress) = {
             let Some(cache) = self.cache.as_ref() else {
@@ -652,7 +693,10 @@ impl Drop for Sounds {
         if let Some(cache) = &self.cache {
             cache.cancel.cancel();
         }
-        let _ = self.preview.stop();
+        self.stop();
+        if let Some(worker) = self.preview_worker.take() {
+            let _ = worker.join();
+        }
         self.runner.shutdown();
     }
 }

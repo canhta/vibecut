@@ -9,8 +9,24 @@ switch reruns the search without it. Results page 30 at a time and every result 
 author, duration, licence and precomputed attribution.
 
 Save and unsave are local-library operations outside project history. Preview uses the
-engine play/stop seam and an app-owned cpal sink holding one stream on a dedicated
-thread, capped at 120 seconds. Add copies the cached preview into project media and
+engine play/stop seam and an app-owned cpal sink on the retained preview worker,
+capped at 120 seconds (longer material refuses, rather than playing an excerpt).
+Play stays pending until CPAL's stream clock reaches the predicted DAC end of the
+last samples, or stop/error; callback submission alone is not drain or proof of
+physical audibility. Missing callbacks/device failure are typed NoAudioDevice.
+One active worker and one newest pending selection are retained; cancellation
+also covers stop before worker entry, and close stops and joins the worker.
+The sink copies no pending replacement bytes, checks stop during decoding and
+conversion, and holds no state mutex across IO. Encoded copies (32 MiB maximum)
+and stereo f32 storage use the existing shared budget through stream destruction.
+PCM pre-admits the full 120-second capacity at the actual 8–192 kHz device rate;
+copied conversion planes are also charged. Cache reads and codec-internal native
+buffers remain with their existing owners. Temporary input uses private
+create_new files; collisions preserve the existing object, and cleanup removes
+only a file successfully created by this operation. Native audibility needs
+separate device evidence.
+
+Add copies the cached preview into project media and
 applies `sounds.add_to_timeline` as one undo step; an uncached add first runs the
 shared cache job with progress and Cancel and adds only after the preview publishes.
 

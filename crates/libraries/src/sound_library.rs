@@ -167,8 +167,7 @@ pub struct SoundDownloads {
     busy: Arc<AtomicBool>,
 }
 
-/// App-owned audio device seam. `play` must not return before playback is started;
-/// `stop` must be idempotent and safe while `play` is still decoding.
+/// Borrowed preview bytes and a cancellation predicate, valid until terminal play.
 pub struct PreviewClip<'a> {
     pub name: &'a str,
     pub audio_url: &'a str,
@@ -176,7 +175,11 @@ pub struct PreviewClip<'a> {
     pub cancelled: &'a dyn Fn() -> bool,
 }
 pub trait PreviewSink: Send + Sync {
+    /// Return once, at device drain, stop/cancellation or typed failure, never at
+    /// startup. Poll cancellation during decode/conversion/playback. The caller
+    /// retains and joins its worker; the sink must not detach borrowed work.
     fn play(&self, clip: PreviewClip<'_>) -> Sound<()>;
+    /// Idempotent, nonblocking cancellation, including while play is decoding.
     fn stop(&self) -> Sound<()>;
 }
 /// One preview at a time. Stop cancels an in-flight download and delegates to the
