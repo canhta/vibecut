@@ -747,8 +747,11 @@ fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
 /// effects' content-time remaps, applied in stack order. Each remap resolves its
 /// parameters at the time the previous remaps produced, so two holds chain. Only
 /// the content is held: transform, crop, opacity and effects keep the real time.
+/// Without a remap the time is returned unchanged, so handles outside the item's
+/// extent keep sampling exactly; a remapped time is clamped into the item's range.
 pub fn content_time(item: &Item, local: Tick, width: u32, height: u32) -> Result<Tick> {
     let mut at = local;
+    let mut remapped = false;
     for effect in item.effects.iter().filter(|effect| effect.enabled) {
         let Some(remap) = content_remap(&effect.kind) else {
             continue;
@@ -760,8 +763,13 @@ pub fn content_time(item: &Item, local: Tick, width: u32, height: u32) -> Result
             width,
             height,
         )?);
+        remapped = true;
     }
-    Ok(at)
+    if remapped {
+        Ok(at.clamp(Tick::ZERO, item.duration()?))
+    } else {
+        Ok(local)
+    }
 }
 
 /// The passes of one effect instance at item-local time `local`. `fine` is false

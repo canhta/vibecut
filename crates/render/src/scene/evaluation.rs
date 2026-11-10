@@ -785,11 +785,12 @@ fn source_time(item: &Item, at: Tick) -> Result<Tick> {
         .map_err(|_| Error::Invalid("item source overflow"))
 }
 /// Item-local time at which the item's content is sampled: the enabled effects'
-/// content-time remaps in stack order, clamped into the item's own range. Only the
-/// content is held; transform, crop, opacity and effect parameters keep the real time.
+/// content-time remaps in stack order, clamped into the item's range by the remap.
+/// Only the content is held; transform, crop, opacity and effect parameters keep the
+/// real time. Without a remap the time is the item's own, so transition handles
+/// outside the item's extent sample exactly as before.
 fn content_local(item: &Item, local: Tick, width: u32, height: u32) -> Result<Tick> {
-    let held = crate::effects::content_time(item, local, width, height)?;
-    Ok(held.clamp(Tick::ZERO, item.duration()?))
+    crate::effects::content_time(item, local, width, height)
 }
 /// The timeline tick of an item-local content time.
 fn content_tick(item: &Item, local: Tick) -> Result<Tick> {
