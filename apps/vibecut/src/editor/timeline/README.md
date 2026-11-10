@@ -18,6 +18,7 @@ off returns both the counter and the player to the playhead. The hover time is
 presentation state: it never enters Project JSON, the transport or the undo
 history, and clicking the ruler still moves the playhead while the guide keeps
 following the pointer.
+Audio clips also carry a fade handle in each bottom corner. Dragging one stages `audio.set_fade` inside the engine's gesture, so the release publishes exactly one undo step, Escape restores the entry fade, and the stored window clamps to the clip and against the other edge. The gain curve is sampled through the project's own fade-curve evaluation; right-clicking a handle re-shapes that edge as one `audio.set_fade` command.
 
 ## Markers
 

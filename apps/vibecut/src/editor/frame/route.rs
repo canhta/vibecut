@@ -493,6 +493,10 @@ impl Editor {
             self.discard_gesture();
             return;
         }
+        if self.timeline.cancel_fade_drag() {
+            self.discard_gesture();
+            return;
+        }
         if let Some(before) = self.timeline.cancel_keyframe_marquee() {
             self.selection_scopes.keyframes = before;
             return;

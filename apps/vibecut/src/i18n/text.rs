@@ -904,6 +904,13 @@ catalog! {
     VisualFailed { key: "visual_failed", en: "Unavailable", vi: "Không khả dụng" },
     VisualUnsupported { key: "visual_unsupported", en: "Not supported", vi: "Không được hỗ trợ" },
     VisualClipping { key: "visual_clipping", en: "Audio clips past 0 dBFS", vi: "Âm thanh vượt 0 dBFS" },
+
+    // Timeline audio fade handles.
+    FadeIn { key: "fade_in", en: "Fade in", vi: "Mờ dần vào" },
+    FadeLinear { key: "fade_linear", en: "Linear", vi: "Tuyến tính" },
+    FadeOut { key: "fade_out", en: "Fade out", vi: "Mờ dần ra" },
+    FadeSharp { key: "fade_sharp", en: "Sharp", vi: "Nhọn" },
+    FadeSmooth { key: "fade_smooth", en: "Smooth", vi: "Mượt" },
 }
 
 /// The message for `key` in `locale`.

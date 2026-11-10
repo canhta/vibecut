@@ -80,6 +80,7 @@ pub(in crate::editor) fn show(
     state.paint_lanes(cx, ui, &layout, &views.items, modifiers);
     state.advance_keyframe_drag(cx, ui, &layout);
     state.advance_volume_drag(cx, ui, &layout);
+    state.advance_fade_drag(ui);
     let empty_items = views.items.is_empty();
     let duration = views.duration;
     let rows = views.rows;

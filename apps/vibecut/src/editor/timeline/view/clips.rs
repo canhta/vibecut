@@ -3,8 +3,8 @@
 use crate::editor::context::visuals::{StripState, StripTile, WaveBar, WaveState};
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
-    LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio,
-    display_label, egui, icons, theme,
+    LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, Tick, TimelineLayout, TrackKind, Vec2,
+    audio, display_label, egui, icons, theme,
     view::{Ink, tr},
     visuals::{self},
 };
@@ -187,6 +187,9 @@ impl State {
                     self.begin_drag(cx, item.id, mode, ui);
                 }
             }
+        }
+        if item.kind == TrackKind::Audio {
+            self.paint_fades(cx, ui, layout, item, inner, visible, ink, modifiers);
         }
         if response.clicked() {
             self.push(Action::Select {
@@ -545,6 +548,219 @@ impl State {
         let y = inner.top() + audio::line_fraction(db) * inner.height();
         (point.y - y).abs() <= 6.0
     }
+}
+
+/// Fade handle face radius at an audio clip's bottom corner.
+const FADE_HANDLE_RADIUS: f32 = 4.0;
+/// Pointer target around a fade handle.
+const FADE_HANDLE_HIT: f32 = 16.0;
+/// Gap between a fade handle and the clip's edge and bottom border.
+const FADE_HANDLE_INSET: f32 = 7.0;
+/// Longest gap between sampled curve points.
+const FADE_CURVE_STEP: f32 = 4.0;
+/// Cap on the samples one fade curve spends.
+const FADE_CURVE_SAMPLES: usize = 96;
+
+impl State {
+    /// Paint an audio clip's two fade handles and their gain curves.
+    fn paint_fades(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &egui::Ui,
+        layout: &TimelineLayout,
+        item: &ItemView,
+        inner: Rect,
+        visible: Rect,
+        ink: Ink,
+        modifiers: egui::Modifiers,
+    ) {
+        let Some(fades) = item.fades else {
+            return;
+        };
+        if item.locked || visible.width() < 32.0 || inner.height() < 20.0 {
+            return;
+        }
+        let painter = ui.painter().with_clip_rect(visible);
+        for edge in [project::FadeEdge::In, project::FadeEdge::Out] {
+            let fade = match edge {
+                project::FadeEdge::In => fades.fade_in,
+                project::FadeEdge::Out => fades.fade_out,
+            };
+            self.paint_fade_curve(&painter, layout, item, inner, visible, edge, fade, ink);
+            let center = match edge {
+                project::FadeEdge::In => egui::pos2(
+                    inner.left() + FADE_HANDLE_INSET,
+                    inner.bottom() - FADE_HANDLE_INSET,
+                ),
+                project::FadeEdge::Out => egui::pos2(
+                    inner.right() - FADE_HANDLE_INSET,
+                    inner.bottom() - FADE_HANDLE_INSET,
+                ),
+            };
+            if !visible.contains(center) {
+                continue;
+            }
+            let id = fade_edge_id(edge);
+            let response = ui.interact(
+                Rect::from_center_size(center, Vec2::splat(FADE_HANDLE_HIT)),
+                Id::unique(("timeline.item.fade", item.id.0, id)),
+                egui::Sense::click_and_drag(),
+            );
+            let label = tr(
+                cx,
+                match edge {
+                    project::FadeEdge::In => Text::FadeIn,
+                    project::FadeEdge::Out => Text::FadeOut,
+                },
+            );
+            self.remember_with(
+                format!("timeline.item.{}.{id}", item.id.0),
+                None,
+                Some(label.to_owned()),
+                &response,
+            );
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+            if response.hovered()
+                || self
+                    .fade_drag
+                    .is_some_and(|drag| drag.item == item.id && drag.edge == edge)
+            {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+            painter.circle_filled(center, FADE_HANDLE_RADIUS, ink.panel());
+            painter.circle_stroke(
+                center,
+                FADE_HANDLE_RADIUS,
+                egui::Stroke::new(1.5, ink.accent()),
+            );
+            if response.clicked() {
+                self.push(Action::Select {
+                    item: item.id,
+                    modifiers,
+                });
+            }
+            if response.drag_started() && self.fade_drag.is_none() {
+                self.begin_fade_drag(cx, ui, item, edge);
+            }
+            self.fade_curve_menu(cx, item, edge, fade, &response);
+            let _ = response.on_hover_text(label);
+        }
+    }
+
+    /// The fade's gain curve, sampled through the project's own curve evaluation.
+    fn paint_fade_curve(
+        &self,
+        painter: &egui::Painter,
+        layout: &TimelineLayout,
+        item: &ItemView,
+        inner: Rect,
+        visible: Rect,
+        edge: project::FadeEdge,
+        fade: project::Fade,
+        ink: Ink,
+    ) {
+        let duration = fade.duration;
+        let window = fade.window();
+        if duration <= Tick::ZERO || window <= Tick::ZERO {
+            return;
+        }
+        let span = (window.seconds() * f64::from(self.zoom)) as f32;
+        if !span.is_finite() || span <= 0.0 {
+            return;
+        }
+        let start = self.x_at(item.start, layout.body.left());
+        let end = self.x_at(item.end, layout.body.left());
+        if start > visible.right() || end < visible.left() {
+            return;
+        }
+        let offset = fade.offset.max(Tick::ZERO).min(duration);
+        let first = (offset.seconds() / duration.seconds()).clamp(0.0, 1.0) as f32;
+        let steps = ((span / FADE_CURVE_STEP).ceil() as usize).clamp(1, FADE_CURVE_SAMPLES);
+        let stroke = egui::Stroke::new(1.5, ink.accent());
+        // Keep the gain ramps inside the border so they read apart from it.
+        let top = inner.top() + 2.0;
+        let bottom = inner.bottom() - 2.0;
+        let height = bottom - top;
+        let mut previous: Option<egui::Pos2> = None;
+        for index in 0..=steps {
+            let t = index as f32 / steps as f32;
+            let (x, progress) = match edge {
+                project::FadeEdge::In => (start + span * t, first + (1.0 - first) * t),
+                project::FadeEdge::Out => (end - span + span * t, 1.0 - (1.0 - first) * t),
+            };
+            let gain = fade.curve.gain(f64::from(progress));
+            let point = egui::pos2(x, bottom - gain * height);
+            if let Some(previous) = previous {
+                painter.line_segment([previous, point], stroke);
+            }
+            previous = Some(point);
+        }
+    }
+
+    /// Right-click menu on a fade handle: the edge's curve shape.
+    fn fade_curve_menu(
+        &mut self,
+        cx: &Context<'_>,
+        item: &ItemView,
+        edge: project::FadeEdge,
+        fade: project::Fade,
+        response: &egui::Response,
+    ) {
+        let current = fade.curve;
+        let duration = fade.window();
+        let edge_id = fade_edge_id(edge);
+        response.context_menu(|ui| {
+            for curve in [
+                project::FadeCurve::EqualPower,
+                project::FadeCurve::Linear,
+                project::FadeCurve::Exponential,
+            ] {
+                let response =
+                    ui.selectable_label(current == curve, fade_curve_label(cx.locale, curve));
+                self.remember(
+                    format!(
+                        "timeline.item.{}.{edge_id}.curve.{}",
+                        item.id.0,
+                        fade_curve_id(curve)
+                    ),
+                    &response,
+                );
+                if response.clicked() {
+                    self.push(Action::Command(Box::new(engine::Command::SetFade {
+                        item: item.id,
+                        edge,
+                        duration,
+                        curve,
+                    })));
+                    ui.close();
+                }
+            }
+        });
+    }
+}
+
+fn fade_edge_id(edge: project::FadeEdge) -> &'static str {
+    match edge {
+        project::FadeEdge::In => "fade_in",
+        project::FadeEdge::Out => "fade_out",
+    }
+}
+fn fade_curve_id(curve: project::FadeCurve) -> &'static str {
+    match curve {
+        project::FadeCurve::EqualPower => "equal_power",
+        project::FadeCurve::Linear => "linear",
+        project::FadeCurve::Exponential => "exponential",
+    }
+}
+fn fade_curve_label(locale: Locale, curve: project::FadeCurve) -> &'static str {
+    i18n::text(
+        locale,
+        match curve {
+            project::FadeCurve::EqualPower => Text::FadeSmooth,
+            project::FadeCurve::Linear => Text::FadeLinear,
+            project::FadeCurve::Exponential => Text::FadeSharp,
+        },
+    )
 }
 
 fn volume_channel<'a>(

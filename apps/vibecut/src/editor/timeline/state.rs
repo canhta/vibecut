@@ -94,6 +94,22 @@ pub(in crate::editor::timeline) struct VolumeDrag {
     pub(in crate::editor::timeline) height: f32,
 }
 
+/// A fade-handle drag: one edge of one clip, measured from the press point.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::editor::timeline) struct FadeDrag {
+    pub(in crate::editor::timeline) item: ItemId,
+    pub(in crate::editor::timeline) edge: project::FadeEdge,
+    /// Curve the edge keeps while its duration changes.
+    pub(in crate::editor::timeline) curve: project::FadeCurve,
+    /// Duration the handle was grabbed with, so a press alone changes nothing.
+    pub(in crate::editor::timeline) base: Tick,
+    pub(in crate::editor::timeline) press_x: f32,
+    /// Longest fade the clip admits; the engine also clamps against the other edge.
+    pub(in crate::editor::timeline) room: Tick,
+    /// Duration last staged by this gesture.
+    pub(in crate::editor::timeline) duration: Tick,
+}
+
 /// A control the panel painted this frame, recorded for automation by the frame.
 pub(in crate::editor) struct Remembered {
     pub(in crate::editor) id: String,
@@ -207,6 +223,7 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) keyframe_drag: Option<KeyframeDrag>,
     pub(in crate::editor::timeline) keyframe_marquee: Option<KeyframeMarquee>,
     pub(in crate::editor::timeline) volume_drag: Option<VolumeDrag>,
+    pub(in crate::editor::timeline) fade_drag: Option<FadeDrag>,
     pub(in crate::editor) scenes: Scenes,
     /// Screen rectangles of the visible clips, published for drops from other areas.
     pub(in crate::editor::timeline) item_rects: Vec<(ItemId, Rect)>,
@@ -246,6 +263,7 @@ impl State {
             keyframe_drag: None,
             keyframe_marquee: None,
             volume_drag: None,
+            fade_drag: None,
             scenes: Scenes::default(),
             item_rects: Vec::new(),
             keyframe_rects: Vec::new(),
@@ -420,6 +438,12 @@ impl State {
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
         self.expanded.retain(|id| existing.contains(id));
+        if self
+            .fade_drag
+            .is_some_and(|drag| !existing.contains(&drag.item))
+        {
+            self.fade_drag = None;
+        }
         if self.bookmark_popover.as_ref().is_some_and(|popover| {
             !data
                 .scene()
@@ -440,6 +464,7 @@ impl State {
         self.bookmark_drag = None;
         self.keyframe_drag = None;
         self.volume_drag = None;
+        self.fade_drag = None;
         self.drop_zone = None;
         self.preview = None;
         self.preview_noop = false;
@@ -508,6 +533,10 @@ impl State {
     /// Escape on a volume-line drag; the frame cancels the session gesture.
     pub(in crate::editor) fn cancel_volume_drag(&mut self) -> bool {
         self.volume_drag.take().is_some()
+    }
+    /// Escape on a fade-handle drag; the frame cancels the session gesture.
+    pub(in crate::editor) fn cancel_fade_drag(&mut self) -> bool {
+        self.fade_drag.take().is_some()
     }
     /// Escape on the keyframe marquee: the selection it started from.
     pub(in crate::editor) fn cancel_keyframe_marquee(

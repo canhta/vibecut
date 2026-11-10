@@ -4,6 +4,7 @@ mod item_drag;
 mod snapping;
 mod viewport;
 mod volume;
+mod fades;
 
 pub(super) use snapping::frame_snap;
 pub(super) use viewport::{

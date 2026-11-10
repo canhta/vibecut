@@ -56,6 +56,8 @@ pub(super) struct ItemView {
     pub(super) muted: bool,
     /// Base clip volume in dB for audio items, used when the channel is unkeyed.
     pub(super) volume: Option<f32>,
+    /// Audible clip fades; `None` for items that cannot carry them.
+    pub(super) fades: Option<project::Fades>,
     /// Main-track item at the timeline origin: its start cannot move left.
     pub(super) pinned: bool,
     pub(super) lanes: Vec<ItemLane>,
@@ -138,6 +140,7 @@ struct RawItem {
     source_audio_enabled: Option<bool>,
     muted: bool,
     volume: Option<f32>,
+    fades: Option<project::Fades>,
     channels: Vec<ChannelLane>,
     /// Main-track item at the timeline origin: its start cannot move left.
     pinned: bool,
@@ -262,6 +265,10 @@ impl State {
                     project::ItemParams::Audio(params) => params.muted,
                     _ => false,
                 };
+                let fades = match &item.content {
+                    project::ItemParams::Audio(params) => Some(params.fades),
+                    _ => None,
+                };
                 let channels = if self.expanded.contains(&item.id) {
                     channels(item, track.kind, cx.locale)
                 } else {
@@ -282,6 +289,7 @@ impl State {
                     source_audio_enabled,
                     muted,
                     volume,
+                    fades,
                     channels,
                     pinned: main && item.start == Tick::ZERO,
                 });
@@ -360,6 +368,7 @@ impl State {
                 source_audio_enabled: raw.source_audio_enabled,
                 muted: raw.muted,
                 volume: raw.volume,
+                fades: raw.fades,
                 pinned: raw.pinned,
                 lanes,
             });

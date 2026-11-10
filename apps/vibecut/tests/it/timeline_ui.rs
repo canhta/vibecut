@@ -4267,3 +4267,185 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     image.save(&target).unwrap();
     eprintln!("clip actions screenshot: {}", target.display());
 }
+
+fn fades(editor: &Editor, id: ItemId) -> project::Fades {
+    match &item(editor, id).content {
+        ItemParams::Audio(params) => params.fades,
+        _ => panic!("item {id:?} is not audio"),
+    }
+}
+
+fn fade_handle(id: ItemId, edge: &str) -> String {
+    format!("timeline.item.{}.{edge}", id.0)
+}
+
+/// Press a fade handle and move the pointer by `travel` seconds without releasing.
+fn grab_fade(
+    harness: &mut Harness<'_, Editor>,
+    id: ItemId,
+    edge: &str,
+    travel: f32,
+) -> egui::Pos2 {
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let handle = widget(harness, &fade_handle(id, edge));
+    let from = handle.center();
+    let to = egui::pos2(from.x + travel * zoom, from.y);
+    harness.drag_at(from);
+    harness.run_steps(1);
+    harness.hover_at(to);
+    harness.run_steps(2);
+    to
+}
+
+#[test]
+fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
+    let fixture = fixture();
+    let video = fixture.video_a;
+    let audio = audio_item(&fixture.editor);
+    let text = text_item_id(&fixture.editor);
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    let widgets = h.state().inspect().unwrap().widgets;
+    for edge in ["fade_in", "fade_out"] {
+        assert!(
+            widgets.iter().any(|widget| widget.id == fade_handle(audio, edge)),
+            "audio clips expose a {edge} handle"
+        );
+        for other in [video, text] {
+            assert!(
+                !widgets
+                    .iter()
+                    .any(|widget| widget.id == fade_handle(other, edge)),
+                "non-audio item {} must not paint a {edge} handle",
+                other.0
+            );
+        }
+    }
+    let undo = |h: &mut Harness<'_, Editor>| {
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run_steps(2);
+    };
+    let redo = |h: &mut Harness<'_, Editor>| {
+        h.key_press_modifiers(
+            egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+            egui::Key::Z,
+        );
+        h.run_steps(2);
+    };
+
+    // Escape cancels a drag: the committed bytes, the history and the stored fade
+    // all stay at the entry state, and no gesture is left open.
+    let committed = h.state().session.project().clone();
+    let bytes = serde_json::to_vec(committed.data()).unwrap();
+    let history = h.state().session.history_len();
+    let to = grab_fade(&mut h, audio, "fade_in", 2.0);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
+    assert!(h.state().session.gesture_active());
+    assert_eq!(
+        h.state().session.history_len(),
+        history,
+        "the drag stages one engine gesture and publishes nothing yet"
+    );
+    assert!(
+        !h.state().session.can_undo(),
+        "an open gesture is not an undo step"
+    );
+    assert!(h.state().session.transaction_active());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(!h.state().session.gesture_active(), "Escape closes the gesture");
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
+    assert_eq!(
+        h.state().session.project(),
+        &committed,
+        "Escape restores the entry project byte for byte"
+    );
+    assert_eq!(serde_json::to_vec(h.state().session.project().data()).unwrap(), bytes);
+    assert_eq!(h.state().session.history_len(), history);
+    h.drop_at(to);
+    h.run_steps(2);
+
+    // A drag publishes exactly one undo step through `audio.set_fade`.
+    let to = grab_fade(&mut h, audio, "fade_in", 2.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    undo(&mut h);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
+    redo(&mut h);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
+    let history = h.state().session.history_len();
+
+    // A 3 s fade-out leaves the fade-in only 7 s of the 10 s clip.
+    let to = grab_fade(&mut h, audio, "fade_out", -3.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick(3 * SECOND));
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    let to = grab_fade(&mut h, audio, "fade_in", 20.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(
+        fades(h.state(), audio).fade_in.duration,
+        Tick(7 * SECOND),
+        "the engine clamps the fade against the other edge"
+    );
+
+    // Without a fade-out the same drag fills the clip and stops at its length.
+    let to = grab_fade(&mut h, audio, "fade_out", 3.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick::ZERO);
+    let to = grab_fade(&mut h, audio, "fade_in", 20.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(
+        fades(h.state(), audio).fade_in.duration,
+        Tick(10 * SECOND),
+        "the engine clamps the fade at the clip duration"
+    );
+    // A drag past the clip's start cannot store a negative fade.
+    let to = grab_fade(&mut h, audio, "fade_in", -20.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
+    undo(&mut h);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(10 * SECOND));
+
+    // The handle menu re-shapes the edge with one `audio.set_fade`.
+    let before = h.state().session.history_len();
+    let handle = fade_handle(audio, "fade_in");
+    h.get(By::new().predicate(move |node| node.author_id() == Some(handle.as_str())))
+        .click_secondary();
+    h.run_steps(2);
+    let entry = fade_handle(audio, "fade_in.curve.exponential");
+    h.get(By::new().predicate(move |node| node.author_id() == Some(entry.as_str())))
+        .click();
+    h.run_steps(3);
+    let chosen = fades(h.state(), audio);
+    assert_eq!(chosen.fade_in.curve, project::FadeCurve::Exponential);
+    assert_eq!(chosen.fade_in.duration, Tick(10 * SECOND));
+    assert_eq!(h.state().session.history_len().0, before.0 + 1);
+    undo(&mut h);
+    assert_eq!(
+        fades(h.state(), audio).fade_in.curve,
+        project::FadeCurve::EqualPower
+    );
+
+    // A visible curve for each edge in the audit screenshot.
+    let to = grab_fade(&mut h, audio, "fade_in", -7.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    let to = grab_fade(&mut h, audio, "fade_out", -3.0);
+    h.drop_at(to);
+    h.run_steps(2);
+    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(3 * SECOND));
+    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick(3 * SECOND));
+    let image = h.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-66-fades.png");
+    image.save(&path).unwrap();
+    eprintln!("fade screenshot: {}", path.display());
+}
