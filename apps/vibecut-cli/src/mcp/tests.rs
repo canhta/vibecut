@@ -1,7 +1,7 @@
 //! Verifies the owning module interface.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
-use engine::providers::ChapterAccess;
+use engine::providers::TextAccess;
 use engine::{
     ByteBudget, Command, EditError, Session,
     control::{self, Policy},
@@ -252,6 +252,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.remove_fillers", Effect::Edit, true, true),
         ("chapters.generate", Effect::JobControl, true, true),
         ("chapters.export_sidecars", Effect::FilePublish, true, false),
+        ("fillers.classify", Effect::JobControl, true, true),
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),
@@ -517,6 +518,42 @@ impl ai::chapters::ChapterGenerator for NoChapters {
         Err(ai::Error::Unsupported)
     }
 }
+struct NoFillers {
+    config: ai::ProviderConfig,
+}
+impl ai::fillers::FillerClassifier for NoFillers {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::fillers::MODE.into(),
+            operation: ai::Operation::ClassifyFillers,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "fillers-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn classify(
+        &self,
+        _: &ai::fillers::FillerInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+        Err(ai::Error::Unsupported)
+    }
+}
 #[test]
 fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
     let (_handler, mut inbox) =
@@ -557,14 +594,17 @@ fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
     assert_eq!(response.pointer("/value/status"), Some(&json!("error")));
     assert_eq!(response.pointer("/value/value"), Some(&json!("permission")));
 
-    inbox.attach_chapters(Arc::new(ChapterAccess::new(
+    inbox.attach_chapters(Arc::new(TextAccess::new(
         Arc::new(NoChapters {
             config: config.clone(),
         }),
-        Box::new(engine::providers::StoredConsent::grant(
+        Arc::new(NoFillers {
+            config: config.clone(),
+        }),
+        Box::new(engine::providers::StoredConsent::grant([(
             config,
             ai::Money::new("USD", 0).unwrap(),
-        )),
+        )])),
     )));
     let revision = session.revision();
     let response = inbox

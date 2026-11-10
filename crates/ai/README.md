@@ -15,6 +15,7 @@ Adapters cap response-parser allocation before building transport records; engin
 | `clips/` | [Transcript clip suggestions](src/clips/README.md) |
 | `contracts.rs` | [Provider contracts](src/contracts/README.md) |
 | `elevenlabs.rs` | [ElevenLabs transcription and speech synthesis](src/elevenlabs/README.md) |
+| `fillers/` | [Filler classification](src/fillers/README.md) |
 | `gipformer/` | [Local Gipformer](src/gipformer/README.md) |
 | `models.rs` | [Model catalog and language-neutral weights](src/models/README.md) |
 | `openai/` | [OpenAI adapters](src/openai/README.md) |

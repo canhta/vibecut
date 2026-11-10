@@ -137,6 +137,48 @@ fn candidate_id(item: ItemId, cue: &NfcText, start: Tick) -> NfcText {
     format!("filler:{}:{}:{}", item.0, cue.as_str(), start.0).into()
 }
 
+/// Every visible measured word a reviewed candidate may select, keyed by the same
+/// stable ID the local detector and the LLM classifier produce. LLM candidates are
+/// not limited to the lexicon, so removal resolves those IDs here before cutting.
+pub(crate) fn visible_words(data: &ProjectData) -> Result<BTreeMap<NfcText, (WordId, bool)>> {
+    let mut output = BTreeMap::new();
+    for item in data.scene().timeline.iter().flat_map(|track| &track.items) {
+        let ItemParams::Caption(params) = &item.content else {
+            continue;
+        };
+        let spans = item.word_spans()?;
+        for cue in &params.cues.cues {
+            let Some(text) = cue.source_text() else {
+                continue;
+            };
+            let words = cue.words();
+            if words.is_empty() || words.len() != cue.word_ranges.len() {
+                continue;
+            }
+            for (index, word) in words.iter().enumerate() {
+                let Some(_) = spans
+                    .iter()
+                    .find(|span| span.cue == cue.id && span.index == index)
+                else {
+                    continue;
+                };
+                output.insert(
+                    candidate_id(item.id, &cue.id, word.range.start()),
+                    (
+                        WordId {
+                            item: item.id,
+                            cue: cue.id.clone(),
+                            word: index,
+                        },
+                        text.edited,
+                    ),
+                );
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn primary(tag: &str) -> &str {
     tag.split('-').next().unwrap_or_default()
 }

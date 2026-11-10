@@ -3,13 +3,13 @@
 //!
 //! One job snapshots the project, maps the requested language's cues to output
 //! time, validates the complete input, obtains the human consent token from the
-//! lent [`ChapterAccess`] and runs one provider attempt. Cancellation discards the
+//! lent [`crate::providers::TextAccess`] and runs one provider attempt. Cancellation discards the
 //! result; a typed refusal happens before the job is enqueued.
 use crate::{
     EditError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState},
-    providers::ChapterAccess,
+    providers::TextAccess,
 };
 use ai::chapters::{
     ChapterDocument, ChapterInput, ChapterRefusal, ChapterSegment, ChapterSettings, MAX_CHAPTERS,
@@ -109,9 +109,9 @@ impl ChapterRequest {
     pub fn submit(
         &self,
         runner: &mut JobRunner,
-        access: &ChapterAccess,
+        access: &TextAccess,
     ) -> Result<ChapterJob, EditError> {
-        let prepared = access.prepare(&self.input)?;
+        let prepared = access.prepare_chapter(&self.input)?;
         let input = self.input.clone();
         let spec = JobSpec {
             kind: JobKind::GenerateChapters,

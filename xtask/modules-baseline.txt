@@ -9,7 +9,6 @@ doc	crates/ai/src/assembly.rs	first line is not a //! responsibility line
 doc	crates/ai/src/bin/local_asr.rs	first line is not a //! responsibility line
 doc	crates/ai/src/clips/heuristic.rs	first line is not a //! responsibility line
 doc	crates/ai/src/clips/remote.rs	first line is not a //! responsibility line
-doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line

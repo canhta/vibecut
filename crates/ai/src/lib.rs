@@ -7,6 +7,7 @@ pub mod chapters;
 pub mod clips;
 mod contracts;
 pub mod elevenlabs;
+pub mod fillers;
 #[cfg(feature = "gipformer")]
 pub mod gipformer;
 pub mod models;
@@ -95,6 +96,8 @@ pub enum Error {
     Captions(#[from] captions::Error),
     #[error("chapter generation refused: {0}")]
     Chapters(#[from] chapters::ChapterRefusal),
+    #[error("filler classification refused: {0}")]
+    Fillers(#[from] fillers::FillerRefusal),
 }
 
 impl Error {

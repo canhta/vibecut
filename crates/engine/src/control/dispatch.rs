@@ -15,6 +15,7 @@ impl From<ProviderOption> for ProviderView {
                 CatalogOperation::Translate => "translate",
                 CatalogOperation::SuggestClips => "suggest_clips",
                 CatalogOperation::GenerateChapters => "generate_chapters",
+                CatalogOperation::ClassifyFillers => "classify_fillers",
             }
             .into(),
             provider: p.id.into(),
@@ -123,6 +124,13 @@ impl Session {
                     snapshot.chapters = Some(Box::new(crate::chapters::decode(
                         runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
                     )?));
+                }
+                if snapshot.kind == JobKind::ClassifyFillers
+                    && snapshot.state == JobState::Completed
+                {
+                    snapshot.fillers = Some(crate::fillers::decode(
+                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
+                    )?);
                 }
                 if matches!(
                     snapshot.kind,
@@ -236,6 +244,23 @@ impl Session {
                 let access = caller.chapters.ok_or(EditError::ConsentRequired)?;
                 let request =
                     crate::chapters::ChapterRequest::new(self.project(), language, max_chapters)?;
+                let job = request.submit(runner, access)?;
+                Ok(ControlResult::JobAccepted {
+                    job: job.id,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::FillersClassify {
+                language,
+                include_markers,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let access = caller.chapters.ok_or(EditError::ConsentRequired)?;
+                let request =
+                    crate::fillers::FillerRequest::new(self.project(), language, include_markers)?;
                 let job = request.submit(runner, access)?;
                 Ok(ControlResult::JobAccepted {
                     job: job.id,

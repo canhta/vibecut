@@ -1,6 +1,6 @@
 # Providers
 
-Interface: `Providers`, `Credentials`, `ConsentPrompt`, `ChapterAccess`, `ChapterProvider`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
+Interface: `Providers`, `Credentials`, `ConsentPrompt`, `TextAccess`, `TextProvider`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
 
 ## Provider selection and fallback
 
@@ -10,11 +10,13 @@ Composition implements `providers::Approval` to show provider identity, its poli
 
 `ProviderOutput` keeps the exact successful provider configuration beside its output; serializable outputs preserve this provenance in job result bytes. Callers store the complete envelope and include the entire selection and request settings in cache keys. Recognition keeps its sample-coordinate model, including text-only results when timing is unavailable. The functions do not mutate projects; translation results go through the registered edit command. Clip provider outputs preserve AI-owned ordered source segments, resolved source-order ranks and summed duration; consumers use the [AI clip contract](../../../ai/src/clips/README.md#transcript-clip-suggestions).
 
-## Chapter generation
+## Transcript-text generation
 
-`ChapterProvider` is the user's explicit chapter provider and model (`openai/chapters` with `gpt-6-luna`, `anthropic/chapters` with `claude-sonnet-5-5`), listed by `provider_options` and resolved by `choose_chapter`; there is no fallback. `ChapterAccess::open(provider, credentials, approval)` builds that adapter once and `ChapterAccess::new(generator, approval)` lends an already built one. Composition roots construct one access per process and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with `Inbox::attach_chapters`.
+`TextProvider` is the user's explicit transcript-text provider and model (`openai/chapters` with `gpt-6-luna`, `anthropic/chapters` with `claude-sonnet-5-5`, and the same models for `openai|anthropic/fillers`), listed by `provider_options` and resolved by `choose_chapter` / `choose_filler`; there is no fallback. `TextAccess::open(provider, credentials, approval)` builds both the chapter adapter and the filler classifier once; `TextAccess::new(chapters, fillers, approval)` lends already built ones. Composition roots construct one access per process and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with `Inbox::attach_text`.
 
-`ChapterAccess::prepare(input)` binds the complete canonical transcript, the provider configuration, the operation and a bounded cost estimate into an `ai::Scope`, then asks the composition's `Approval` for the exact token. `Approval` is where the human decision lives: a prompt shows provider, model, payload and cost; `StoredConsent::grant(provider, budget)` records an already-given human approval and only returns a token for that exact configuration, leaving a higher estimate to the token's cost check; no token means `ConsentRequired` and no adapter call. The access never constructs consent on its own and never retries or switches provider.
+`TextAccess::prepare_chapter(input)` and `prepare_fillers(input)` bind the complete canonical transcript, the provider configuration, the operation and a bounded cost estimate into an `ai::Scope`, then ask the composition's `Approval` for the exact token. `Approval` is where the human decision lives: a prompt shows provider, model, payload and cost; `StoredConsent::grant([(provider, budget), ...])` records already-given human approvals and only returns a token for that exact configuration, leaving a higher estimate to the token's cost check; no token means `ConsentRequired` and no adapter call. The access never constructs consent on its own and never retries or switches provider.
+
+The two operations share the `ai::text_model` request path: one official backend/base URL check, one bounded body, one response parser. They differ only in prompt, schema, settings fingerprint and result validation.
 
 ## Local model transfers
 

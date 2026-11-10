@@ -102,6 +102,7 @@ pub enum JobKind {
     Translate,
     SuggestClips,
     GenerateChapters,
+    ClassifyFillers,
     AnalyzeShots,
     DetectScenes,
     AnalyzeSpeechActivity,

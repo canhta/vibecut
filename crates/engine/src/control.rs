@@ -69,9 +69,10 @@ pub struct Caller<'a> {
     /// One mutex instance is shared by the desktop timeline display and the
     /// in-process MCP inbox, so generation and display read the same entries.
     pub media: Option<&'a std::sync::Mutex<MediaAccess>>,
-    /// The process chapter adapter and the human approval it consults. Without
-    /// it `chapters.generate` refuses with [`crate::EditError::ConsentRequired`].
-    pub chapters: Option<&'a crate::providers::ChapterAccess>,
+    /// The process transcript-text adapter and the human approval it consults.
+    /// Without it `chapters.generate` and `fillers.classify` refuse with
+    /// [`crate::EditError::ConsentRequired`].
+    pub chapters: Option<&'a crate::providers::TextAccess>,
 }
 
 #[cfg(test)]

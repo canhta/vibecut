@@ -27,6 +27,7 @@ pub mod transcript;
 pub use transcript::translation;
 mod analysis;
 pub use analysis::chapters;
+pub use analysis::fillers;
 pub use analysis::loudness;
 pub use analysis::pause_candidates;
 pub use analysis::scene_detection;

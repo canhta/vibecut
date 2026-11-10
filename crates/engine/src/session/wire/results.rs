@@ -93,4 +93,6 @@ pub struct JobView {
     pub pauses: Option<PauseCandidates>,
     /// Chapter document, present on a completed `generate_chapters` job.
     pub chapters: Option<Box<ai::chapters::ChapterDocument>>,
+    /// Filler candidates, present on a completed `fillers.classify` job.
+    pub fillers: Option<Vec<FillerCandidate>>,
 }

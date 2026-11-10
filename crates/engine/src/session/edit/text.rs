@@ -176,9 +176,10 @@ pub(super) fn execute_transcript_delete(
     cut_selected_words(data, &selected, created, next, sources)
 }
 
-/// Removes reviewed lexicon filler candidates as measured words through the same
-/// cutter and ripple path as a word-range cut. Every id must still name a visible
-/// candidate of the active scene; an edited cue refuses without `confirm_edited`.
+/// Removes reviewed filler candidates (lexicon or LLM-classified) as measured
+/// words through the same cutter and ripple path as a word-range cut. Every id
+/// must still name a visible candidate or measured word of the active scene; an
+/// edited cue refuses without `confirm_edited`.
 pub(super) fn execute_remove_fillers(
     data: ProjectData,
     ids: Vec<captions::NfcText>,
@@ -198,15 +199,30 @@ pub(super) fn execute_remove_fillers(
         .into_iter()
         .map(|candidate| (candidate.id.clone(), candidate))
         .collect();
+    let visible = if ids.iter().any(|id| !candidates.contains_key(id)) {
+        Some(super::super::filler::visible_words(&data)?)
+    } else {
+        None
+    };
     let mut selected = BTreeSet::new();
     for id in &ids {
-        let candidate = candidates
-            .get(id)
+        if let Some(candidate) = candidates.get(id) {
+            if candidate.edited_cue && !confirm_edited {
+                return Err(EditError::Protected);
+            }
+            selected.extend(candidate.words().iter().cloned());
+            continue;
+        }
+        // LLM classification may name lexicon-independent words. The reviewed ID
+        // must still address one visible measured word of this scene.
+        let (word, edited) = visible
+            .as_ref()
+            .and_then(|visible| visible.get(id))
             .ok_or(EditError::Invalid("stale filler candidate"))?;
-        if candidate.edited_cue && !confirm_edited {
+        if *edited && !confirm_edited {
             return Err(EditError::Protected);
         }
-        selected.extend(candidate.words().iter().cloned());
+        selected.insert(word.clone());
     }
     cut_selected_words(data, &selected, created, next, sources)
 }

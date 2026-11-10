@@ -1,25 +1,25 @@
 //! Resolves the user's explicitly chosen AI providers.
 mod adapters;
 mod catalog;
-mod chapters;
 mod consent;
 mod selection;
+mod text;
 pub use adapters::{Credentials, Providers, Runtime};
 pub(crate) use adapters::{IdleHooks, TranslatorKind, build_translator, translation_scope};
 pub(crate) use catalog::normalize_target;
 pub use catalog::{
     CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
-    TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter,
+    TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter, choose_filler,
     choose_transcription, choose_translation, default_cache_root, local_asr_runner, model_info,
     model_infos, normalize_target_tag, parse_language, provider_options, provider_options_for,
 };
-pub use chapters::{ChapterAccess, StoredConsent};
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest};
 pub use selection::{
     Approval, ClipAttempt, ProviderOutput, TranscriptionAttempt, TranslationAttempt, suggest_clips,
     transcribe, translate,
 };
+pub use text::{StoredConsent, TextAccess};
 mod model_transfers;
 pub mod models {
     //! Transfers explicitly requested model bundles.

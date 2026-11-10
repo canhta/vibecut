@@ -6,7 +6,7 @@ use engine::{
     ByteBudget, EditError, Session,
     control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
-    providers::ChapterAccess,
+    providers::TextAccess,
 };
 use serde_json::{Value, json};
 use std::{
@@ -35,9 +35,10 @@ pub struct Inbox {
     /// The same caches the CLI control session lends to media generation jobs.
     /// The desktop attaches one instance shared with its timeline displays.
     media: Option<Arc<Mutex<MediaAccess>>>,
-    /// The chapter adapter and human consent the desktop already owns. An inbox
-    /// without it refuses `chapters.generate` with `consent_required`.
-    chapters: Option<Arc<ChapterAccess>>,
+    /// The transcript-text adapters and human consent the desktop already owns. An
+    /// inbox without them refuses `chapters.generate` and `fillers.classify` with
+    /// `consent_required`.
+    chapters: Option<Arc<TextAccess>>,
 }
 impl Inbox {
     pub(super) fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), CliError> {
@@ -88,10 +89,10 @@ impl Inbox {
         self.media = Some(media);
     }
 
-    /// Lend the process chapter adapter and the human approval it consults.
-    /// Without it an agent cannot start a chapter upload.
-    pub fn attach_chapters(&mut self, chapters: Arc<ChapterAccess>) {
-        self.chapters = Some(chapters);
+    /// Lend the process transcript-text adapters and the human approval they consult.
+    /// Without them an agent cannot start a chapter or filler upload.
+    pub fn attach_chapters(&mut self, text: Arc<TextAccess>) {
+        self.chapters = Some(text);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -244,7 +245,7 @@ impl Inbox {
         runner: &mut JobRunner,
         grants: &Grants,
         media: Option<&Mutex<MediaAccess>>,
-        chapters: Option<&ChapterAccess>,
+        chapters: Option<&TextAccess>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,

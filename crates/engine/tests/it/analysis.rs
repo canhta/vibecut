@@ -1,5 +1,6 @@
 //! Behaviour coverage for analysis.
 mod chapters;
+mod fillers;
 mod loudness;
 mod pause_candidates;
 mod scene_detection;

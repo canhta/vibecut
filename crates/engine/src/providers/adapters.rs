@@ -462,6 +462,33 @@ pub(crate) fn open_chapter(
         }
     }
 }
+/// Build the selected filler classifier; it shares the approved text model,
+/// provider configuration and credential with chapter generation.
+pub(crate) fn open_filler(
+    filler: &TextProvider,
+    credentials: &Credentials,
+) -> Result<Arc<dyn ai::fillers::FillerClassifier>, EditError> {
+    let (config, key) = text_credentials(
+        filler,
+        ai::fillers::OPENAI_SETTINGS,
+        ai::fillers::ANTHROPIC_SETTINGS,
+        credentials,
+    )?;
+    match filler {
+        TextProvider::OpenAi { .. } => Ok(Arc::new(ai::fillers::OpenAiFillerClassifier::new(
+            config,
+            key,
+            Arc::new(UreqTransport::new()),
+        )?)),
+        TextProvider::Anthropic { .. } => {
+            Ok(Arc::new(ai::fillers::AnthropicFillerClassifier::new(
+                config,
+                key,
+                Arc::new(UreqTransport::new()),
+            )?))
+        }
+    }
+}
 fn text_credentials(
     provider: &TextProvider,
     openai_settings: &str,

@@ -18,6 +18,7 @@ impl From<JobSnapshot> for JobView {
             result: None,
             pauses: None,
             chapters: None,
+            fillers: None,
         }
     }
 }

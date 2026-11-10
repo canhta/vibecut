@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::chapters::{ChapterJob, ChapterRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
-use engine::providers::{Approval, ChapterAccess};
+use engine::providers::{Approval, TextAccess};
 use engine::{ByteBudget, EditError};
 use project::{
     CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
@@ -248,11 +248,64 @@ impl Approval for Grant {
     }
 }
 
+/// Untouched filler adapter: these tests only exercise chapter preparation.
+struct UnusedFillers {
+    config: ai::ProviderConfig,
+}
+impl ai::fillers::FillerClassifier for UnusedFillers {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::fillers::MODE.into(),
+            operation: ai::Operation::ClassifyFillers,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "fillers-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn classify(
+        &self,
+        _: &ai::fillers::FillerInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+        Err(ai::Error::Unsupported)
+    }
+}
+
 fn access(
     generator: Arc<dyn ai::chapters::ChapterGenerator>,
     allowed: Arc<AtomicBool>,
-) -> ChapterAccess {
-    ChapterAccess::new(generator, Box::new(Grant { allowed }))
+) -> TextAccess {
+    let config = ai::ProviderConfig::new(
+        "openai".into(),
+        ai::fillers::OPENAI_MODEL.into(),
+        ai::fillers::OPENAI_SETTINGS.into(),
+        ai::Location::Remote {
+            backend: ai::openai::BACKEND.into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "OPENAI_API_KEY".into(),
+        },
+    )
+    .unwrap();
+    TextAccess::new(
+        generator,
+        Arc::new(UnusedFillers { config }),
+        Box::new(Grant { allowed }),
+    )
 }
 
 fn wait(runner: &mut JobRunner, job: &ChapterJob) -> JobState {

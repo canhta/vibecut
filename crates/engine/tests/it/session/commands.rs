@@ -6353,9 +6353,9 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
         refused(json!(["filler:4:câu-1:0", "filler:4:câu-1:0"])),
         EditError::Invalid("duplicate filler")
     ));
-    // A measured word that is not a candidate, an unknown cue, item and shape.
+    // A start that is not a measured word, an unknown cue, item and shape.
     for id in [
-        "filler:4:câu-1:100",
+        "filler:4:câu-1:50",
         "filler:4:khác:0",
         "filler:77:câu-1:0",
         "nope",
@@ -6454,6 +6454,28 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
         Err(EditError::Locked(_))
     ));
     assert_unchanged(&locked, &before, &revision);
+}
+
+#[test]
+fn remove_fillers_accepts_a_classified_non_lexicon_word() {
+    let mut s = filler_project(false, false);
+    // `hello` is a visible measured word but not a lexicon filler; LLM
+    // classification may return it and removal must apply that reviewed id.
+    s.execute(
+        "timeline.remove_fillers",
+        json!({"ids":["filler:4:câu-1:100"],"confirm_edited":false}),
+    )
+    .unwrap();
+    assert_eq!(s.history_len(), (1, 0));
+    let words: Vec<String> = s
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .flat_map(|cue| &cue.words)
+        .filter_map(|word| word.text.as_ref().map(|text| text.as_str().to_owned()))
+        .collect();
+    assert_eq!(words, ["um", "uh", "there", "like", "world"]);
 }
 
 #[test]

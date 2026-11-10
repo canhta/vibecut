@@ -32,6 +32,8 @@ pub enum CatalogOperation {
     SuggestClips,
     /// Whole-transcript upload for chapters, title and description.
     GenerateChapters,
+    /// Timed-word transcript upload for filler classification.
+    ClassifyFillers,
 }
 /// Offline capability data used by CLI and UI pickers. No provider is constructed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,6 +206,26 @@ pub fn provider_options() -> Vec<ProviderOption> {
             target_languages: Vec::new(),
             native_timing: false,
         },
+        ProviderOption {
+            id: "openai",
+            label: "OpenAI (fillers)",
+            operation: CatalogOperation::ClassifyFillers,
+            local: false,
+            models: vec![ai::fillers::OPENAI_MODEL.into()],
+            languages: tags(&TEXT_LANGUAGES),
+            target_languages: Vec::new(),
+            native_timing: false,
+        },
+        ProviderOption {
+            id: "anthropic",
+            label: "Anthropic (fillers)",
+            operation: CatalogOperation::ClassifyFillers,
+            local: false,
+            models: vec![ai::anthropic::MODEL.into()],
+            languages: tags(&TEXT_LANGUAGES),
+            target_languages: Vec::new(),
+            native_timing: false,
+        },
     ]
 }
 pub fn provider_options_for(
@@ -279,6 +301,9 @@ pub fn choose_translation(
 }
 pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<TextProvider, EditError> {
     choose_text(CatalogOperation::GenerateChapters, provider, model)
+}
+pub fn choose_filler(provider: &str, model: Option<&str>) -> Result<TextProvider, EditError> {
+    choose_text(CatalogOperation::ClassifyFillers, provider, model)
 }
 fn choose_text(
     operation: CatalogOperation,

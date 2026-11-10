@@ -804,8 +804,54 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
         })
     }
 }
-fn fixture_chapters() -> engine::providers::ChapterAccess {
-    let config = ai::ProviderConfig::new(
+/// Offline filler adapter used by the registry and control conformance tests.
+struct FixtureFillers {
+    config: ai::ProviderConfig,
+}
+impl ai::fillers::FillerClassifier for FixtureFillers {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::fillers::MODE.into(),
+            operation: ai::Operation::ClassifyFillers,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "fillers-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn classify(
+        &self,
+        input: &ai::fillers::FillerInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+        let fillers = input
+            .segments
+            .iter()
+            .filter_map(|segment| segment.words.last())
+            .map(|word| ai::fillers::FillerFinding {
+                id: word.id.clone(),
+                kind: captions::FillerKind::FilledPause,
+            })
+            .collect();
+        Ok(ai::fillers::FillerProposal { fillers })
+    }
+}
+fn fixture_chapters() -> engine::providers::TextAccess {
+    let chapter = ai::ProviderConfig::new(
         "openai".into(),
         ai::chapters::OPENAI_MODEL.into(),
         ai::chapters::OPENAI_SETTINGS.into(),
@@ -816,15 +862,156 @@ fn fixture_chapters() -> engine::providers::ChapterAccess {
         },
     )
     .unwrap();
-    engine::providers::ChapterAccess::new(
-        Arc::new(FixtureChapters {
-            config: config.clone(),
-        }),
-        Box::new(engine::providers::StoredConsent::grant(
-            config,
-            ai::Money::new("USD", 0).unwrap(),
-        )),
+    let filler = ai::ProviderConfig::new(
+        "openai".into(),
+        ai::fillers::OPENAI_MODEL.into(),
+        ai::fillers::OPENAI_SETTINGS.into(),
+        ai::Location::Remote {
+            backend: ai::openai::BACKEND.into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "OPENAI_API_KEY".into(),
+        },
     )
+    .unwrap();
+    engine::providers::TextAccess::new(
+        Arc::new(FixtureChapters {
+            config: chapter.clone(),
+        }),
+        Arc::new(FixtureFillers {
+            config: filler.clone(),
+        }),
+        Box::new(engine::providers::StoredConsent::grant([
+            (chapter, ai::Money::new("USD", 0).unwrap()),
+            (filler, ai::Money::new("USD", 0).unwrap()),
+        ])),
+    )
+}
+
+#[test]
+fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
+    let mut s = with_words(&seed());
+    let before = serde_json::to_vec(s.project().data()).unwrap();
+    let mut r = runner();
+    let text = fixture_chapters();
+    let allow = Allow;
+
+    // An agent transport without a lent text access cannot upload.
+    let req = request(
+        &s,
+        "fillers.classify",
+        json!({"language":"en","include_markers":true}),
+        "fillers-denied",
+    );
+    error(
+        s.control_request(
+            req,
+            Caller {
+                principal: "local-mcp",
+                external: true,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: None,
+            },
+            &mut r,
+        )
+        .unwrap(),
+        ErrorCode::Permission,
+    );
+
+    let req = request(
+        &s,
+        "fillers.classify",
+        json!({"language":"en","include_markers":true}),
+        "fillers",
+    );
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: Some(&text),
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::JobAccepted { job, .. } = value else {
+        panic!("{value:?}");
+    };
+    finish(&mut r, job);
+    let req = request(&s, "job_status", json!({"job":job.0}), "fillers-status");
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: Some(&text),
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::Job { snapshot } = value else {
+        panic!("{value:?}");
+    };
+    let candidates = snapshot.fillers.clone().unwrap();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["filler:4:cue-1:100", "filler:4:cue-2:500"]
+    );
+    assert_eq!(candidates[0].range.start, Tick(100));
+    assert_eq!(candidates[0].kind, captions::FillerKind::FilledPause);
+    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);
+
+    // The classified ids feed the existing removal command unchanged, including
+    // `brave`, which no lexicon contains.
+    let ids: Vec<_> = candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect();
+    let req = request(
+        &s,
+        "timeline.remove_fillers",
+        json!({"ids": ids, "confirm_edited": false}),
+        "fillers-remove",
+    );
+    let value = ok(s
+        .control_request(
+            req,
+            Caller {
+                principal: "ui",
+                external: false,
+                policy: &allow,
+                fonts: None,
+                media: None,
+                chapters: None,
+            },
+            &mut r,
+        )
+        .unwrap());
+    let ControlResult::Edit { outcome } = value else {
+        panic!("{value:?}");
+    };
+    assert!(outcome.changed);
+    let words: Vec<String> = s
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .flat_map(|cue| &cue.words)
+        .filter_map(|word| word.text.as_ref().map(|text| text.as_str().to_owned()))
+        .collect();
+    assert_eq!(words, ["Um"]);
 }
 
 #[test]
@@ -1705,6 +1892,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         job_control,
         [
             "chapters.generate",
+            "fillers.classify",
             "fonts.download",
             "job_cancel",
             "media.generate_clip_thumbnails",
@@ -1731,6 +1919,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             &[
                 "burn_subtitles",
                 "export_subtitles",
+                "fillers.classify",
                 "timeline.filler_candidates",
                 "timeline.remove_fillers",
                 "transcript.delete_range",

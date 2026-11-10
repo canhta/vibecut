@@ -14,6 +14,7 @@ pub use shot_analysis::{
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
 pub mod chapters;
+pub mod fillers;
 mod loudness_workflow;
 pub mod pause_candidates;
 pub mod speech_activity;

@@ -1,0 +1,9 @@
+# Filler classification
+
+`FillerInput` is an ordered, bounded transcript of measured words: each segment names its caption item and cue (`<item>:<cue>`), carries the cue text and the engine's stable word IDs (`filler:<item>:<cue>:<source word start>`). Settings carry the transcript language (vi/en/zh/zh-Hans/zh-Hant) and `include_markers`. Input is at most 10,000 segments, 50,000 words and 96 KiB of canonical JSON; empty, unsupported, duplicate-ID, blank or oversized input refuses with a typed `FillerRefusal` before consent.
+
+`FillerClassifier` is the blocking single-attempt seam. `OpenAiFillerClassifier` admits only `gpt-6-luna` and `OPENAI_SETTINGS`; `AnthropicFillerClassifier` admits only `claude-sonnet-5-5` and `ANTHROPIC_SETTINGS`. Both use the shared `text_model` body and transport, and expose `disclosure` with provider, policy link, endpoint, model, exact payload and a USD upper bound. No retry, fallback or provider switch happens inside an adapter.
+
+The model returns word IDs and a `filled_pause`/`discourse_marker` kind. `FillerInput::resolve` refuses an ID absent from the exact sent transcript, a duplicate ID, or a discourse marker when `include_markers` is false with `InvalidSegments`; nothing is dropped silently. The model decides which lexicon-independent words are filler speech; the engine maps IDs to output ranges and the local lexicon detector stays the synchronous `timeline.filler_candidates` path. This path is opt-in: `fillers.classify` is a network job and never falls back to the lexicon.
+
+Tests: `cargo test -p ai --test it fillers::`.

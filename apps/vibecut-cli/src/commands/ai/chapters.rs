@@ -2,7 +2,7 @@
 use crate::args::{CliError, parse_u64, utf8};
 use crate::output::{CliApproval, Output, json_path, wait_for_job};
 use crate::session::{Context, cli_runner};
-use engine::providers::{ChapterAccess, Credentials, choose_chapter};
+use engine::providers::{Credentials, TextAccess, choose_chapter};
 use engine::{chapter_sidecars, chapters};
 use project::WriterLease;
 use serde_json::{Value, json};
@@ -81,19 +81,19 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     }
     let language =
         language.ok_or_else(|| CliError::Usage("chapters requires --language <tag>".into()))?;
-    if !["vi", "en", "zh", "zh-Hans", "zh-Hant"].contains(&language.as_str()) {
+    let language = engine::providers::parse_language(&language)?;
+    if !ai::supports_text_language(&language) {
         return Err(CliError::Usage(
             "--language must be vi, en, zh, zh-Hans or zh-Hant".into(),
         ));
     }
-    let language = engine::providers::parse_language(&language)?;
     let provider = choose_chapter(&provider, model.as_deref())?;
     let credentials = Credentials::new(
         std::env::var("OPENAI_API_KEY").ok(),
         std::env::var("ELEVENLABS_API_KEY").ok(),
         std::env::var("ANTHROPIC_API_KEY").ok(),
     )?;
-    let access = ChapterAccess::open(
+    let access = TextAccess::open(
         provider,
         &credentials,
         Box::new(CliApproval::new(yes_upload)),
@@ -130,15 +130,15 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
 
 fn response_json(
     project: &std::path::Path,
-    access: &ChapterAccess,
+    access: &TextAccess,
     document: &ai::chapters::ChapterDocument,
     sidecars: Option<&chapter_sidecars::ChapterSidecars>,
 ) -> Result<Value, CliError> {
     Ok(json!({
         "status": "completed",
         "project": json_path(project)?,
-        "provider": access.provider().id().as_str(),
-        "model": access.provider().model().as_str(),
+        "provider": access.chapter_provider().id().as_str(),
+        "model": access.chapter_provider().model().as_str(),
         "language": document.language().as_str(),
         "document": serde_json::to_value(document)?,
         "sidecars": sidecars.map(serde_json::to_value).transpose()?,

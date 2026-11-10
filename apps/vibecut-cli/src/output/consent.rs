@@ -20,6 +20,7 @@ impl ConsentPrompt for CliConsent {
             CatalogOperation::Translate => "translate",
             CatalogOperation::SuggestClips => "suggest_clips",
             CatalogOperation::GenerateChapters => "generate_chapters",
+            CatalogOperation::ClassifyFillers => "classify_fillers",
         };
         let _ = writeln!(
             io::stderr(),
