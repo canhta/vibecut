@@ -418,7 +418,7 @@ fn texel(image: &Image, x: u32, y: u32) -> [f32; 4] {
 struct SampleOp {
     entry_point: &'static str,
     len: usize,
-    valid: fn(&[f32]) -> bool,
+    valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
 static SAMPLE_OPS: [SampleOp; 1] = [SampleOp {
@@ -430,15 +430,23 @@ static SAMPLE_OPS: [SampleOp; 1] = [SampleOp {
 fn sample_op(entry_point: &str) -> Option<&'static SampleOp> {
     SAMPLE_OPS.iter().find(|op| op.entry_point == entry_point)
 }
-/// Mirror uniforms: a centre in output pixels and a non-zero direction.
-fn mirror_uniforms(values: &[f32]) -> bool {
-    let Some(&[_, _, nx, ny]) = values.first_chunk::<4>() else {
+/// Mirror uniforms use an image-edge centre (admitted against geometry below)
+/// and an explicitly unit normal. Components are in [-1,1]; squared length may
+/// differ from 1 by at most eight f32 epsilons for representation roundoff.
+fn mirror_uniforms(values: &[f32], width: u32, height: u32) -> bool {
+    let Some(&[cx, cy, nx, ny]) = values.first_chunk::<4>() else {
         return false;
     };
-    values.len() == 4 && values.iter().all(|c| c.is_finite()) && nx * nx + ny * ny > 1e-6
+    values.len() == 4
+        && values.iter().all(|c| c.is_finite())
+        && nx.abs() <= 1.0
+        && ny.abs() <= 1.0
+        && (nx * nx + ny * ny - 1.0).abs() <= 8.0 * f32::EPSILON
+        && (0.0..=width as f32).contains(&cx)
+        && (0.0..=height as f32).contains(&cy)
 }
 /// Reflect the picture about the line through `(cx, cy)` in output pixels with unit
-/// direction `(nx, ny)`: pixels on the direction's positive side take the bilinear
+/// normal `(nx, ny)`: pixels on the direction's positive side take the bilinear
 /// sample of their reflection (transparent borders), the rest keep their value.
 fn mirror(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
     let Some(&[cx, cy, nx, ny]) = values.first_chunk::<4>() else {
@@ -491,7 +499,7 @@ impl EffectCompositor for CpuEffects {
         check(hooks)?;
         inputs.validate(item)?;
         for pass in passes {
-            validate_pass(pass)?;
+            validate_pass(pass, item.width(), item.height())?;
         }
         let mut a = item.copy(hooks)?;
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
@@ -590,7 +598,13 @@ impl EffectCompositor for CpuEffects {
         Ok(a)
     }
 }
-pub fn validate_pass(pass: &EffectPass) -> Result<()> {
+/// Admit a pass for positive output dimensions within Image's area bound.
+/// Mirror centres lie in [0,width] x [0,height] in image-edge pixels, with an
+/// explicitly unit normal. Thus |distance| <= width+height and each reflected
+/// coordinate is bounded by 3*(width+height)+0.5, safely inside WGSL's i32 range
+/// under Image's 2^26 pixel cap. Invalid geometry/uniforms are Unsupported.
+pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
+    Image::bytes(width, height)?;
     let valid = match pass {
         EffectPass::Pixel { entry_point, .. } => pixel_op(entry_point).is_some_and(|op| {
             let values = pass.values();
@@ -598,7 +612,9 @@ pub fn validate_pass(pass: &EffectPass) -> Result<()> {
         }),
         EffectPass::Sample { entry_point, .. } => sample_op(entry_point).is_some_and(|op| {
             let values = pass.values();
-            values.len() == op.len && values.iter().all(|v| v.is_finite()) && (op.valid)(&values)
+            values.len() == op.len
+                && values.iter().all(|v| v.is_finite())
+                && (op.valid)(&values, width, height)
         }),
         EffectPass::Convolve {
             entry_point,

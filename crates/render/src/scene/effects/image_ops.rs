@@ -18,7 +18,7 @@ pub(crate) enum Edge {
 }
 
 fn axis(i: i64, n: i64, edge: Edge) -> i64 {
-    if n <= 1 {
+    if n <= 1 && edge != Edge::Transparent {
         return 0;
     }
     match edge {
@@ -37,12 +37,18 @@ fn axis(i: i64, n: i64, edge: Edge) -> i64 {
 /// Geometry in image-edge coordinates (pixel centres `x+0.5`, `y+0.5`) subtracts
 /// 0.5 exactly once before this lookup, including reflection and upsampling.
 pub(super) fn sample(image: &Image, x: f32, y: f32, edge: Edge) -> [f32; 4] {
+    if !x.is_finite() || !y.is_finite() {
+        return [0.0; 4];
+    }
     let (w, h) = (i64::from(image.width), i64::from(image.height));
     let (floor_x, floor_y) = (x.floor(), y.floor());
     let (tx, ty) = (x - floor_x, y - floor_y);
     let (ix, iy) = (floor_x as i64, floor_y as i64);
     let at = |dx: i64, dy: i64| {
-        let (sx, sy) = (axis(ix + dx, w, edge), axis(iy + dy, h, edge));
+        let Some((x, y)) = ix.checked_add(dx).zip(iy.checked_add(dy)) else {
+            return [0.0; 4];
+        };
+        let (sx, sy) = (axis(x, w, edge), axis(y, h, edge));
         if sx < 0 || sy < 0 || sx >= w || sy >= h {
             return [0.0; 4];
         }
@@ -79,7 +85,7 @@ pub(super) fn blur(image: &Image, sigma: f32, hooks: &dyn ExecutionHooks) -> Res
         image,
         &passes,
         EffectInputs {
-            input: &image,
+            input: image,
             coverage: None,
             below: image,
         },
@@ -122,4 +128,116 @@ pub(super) fn upsample(
         Ok(())
     })?;
     Ok(out)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    struct Hooks;
+    struct Lease;
+    impl crate::Reservation for Lease {}
+    impl ExecutionHooks for Hooks {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, _: crate::MemoryKind, _: u64) -> Result<Box<dyn crate::Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    #[test]
+    fn hostile_sample_coordinates_stay_finite_without_index_overflow() {
+        let image = Image::new(1, 1, [0.5, 0.0, 0.0, 1.0], &Hooks).unwrap();
+        for edge in [Edge::Clamp, Edge::Mirror, Edge::Wrap, Edge::Transparent] {
+            for coordinate in [f32::MAX, -f32::MAX] {
+                let pixel = sample(&image, coordinate, coordinate, edge);
+                assert!(
+                    pixel
+                        .iter()
+                        .all(|v| v.is_finite() && *v >= 0.0 && *v <= pixel[3])
+                );
+            }
+            for coordinate in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                assert_eq!(sample(&image, coordinate, 0.0, edge), [0.0; 4]);
+                assert_eq!(sample(&image, 0.0, coordinate, edge), [0.0; 4]);
+            }
+        }
+    }
+    #[test]
+    fn singleton_and_strip_edges_keep_exact_and_fractional_semantics() {
+        use Edge::*;
+        for (w, h) in [(1, 3), (3, 1), (1, 1)] {
+            let pixels = if w * h == 1 {
+                vec![[0.5, 0.0, 0.0, 1.0]]
+            } else {
+                [0.25, 0.5, 1.0].map(|r| [r, 0.0, 0.0, 1.0]).to_vec()
+            };
+            let image = Image::from_working_pixels(w, h, pixels.into_iter(), &Hooks).unwrap();
+            for edge in [Clamp, Mirror, Wrap, Transparent] {
+                // Fixed strip-centre value .5, move along its singleton axis.
+                for (coordinate, transparent_weight) in
+                    [(-1.0, 0.0), (-0.5, 0.5), (0.0, 1.0), (0.5, 0.5), (1.0, 0.0)]
+                {
+                    let (x, y) = if w == 1 {
+                        (coordinate, if h == 1 { 0.0 } else { 1.0 })
+                    } else {
+                        (1.0, coordinate)
+                    };
+                    let weight = if edge == Transparent {
+                        transparent_weight
+                    } else {
+                        1.0
+                    };
+                    assert_eq!(
+                        sample(&image, x, y, edge),
+                        [0.5 * weight, 0.0, 0.0, weight],
+                        "{w}x{h} {edge:?} {x},{y}"
+                    );
+                }
+            }
+            if w * h == 1 {
+                assert_eq!(
+                    sample(&image, -0.5, -0.5, Transparent),
+                    [0.125, 0.0, 0.0, 0.25]
+                );
+                continue;
+            }
+            // Explicit oracle for the nonuniform three-texel strip, not a second sampler.
+            for (edge, red, alpha) in [
+                (
+                    Clamp,
+                    [0.25, 0.25, 0.25, 0.375, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0],
+                    [1.0; 10],
+                ),
+                (
+                    Mirror,
+                    [0.5, 0.375, 0.25, 0.375, 0.5, 0.75, 1.0, 0.75, 0.5, 0.375],
+                    [1.0; 10],
+                ),
+                (
+                    Wrap,
+                    [1.0, 0.625, 0.25, 0.375, 0.5, 0.75, 1.0, 0.625, 0.25, 0.375],
+                    [1.0; 10],
+                ),
+                (
+                    Transparent,
+                    [0.0, 0.125, 0.25, 0.375, 0.5, 0.75, 1.0, 0.5, 0.0, 0.0],
+                    [0.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0],
+                ),
+            ] {
+                for ((at, r), a) in [-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
+                    .into_iter()
+                    .zip(red)
+                    .zip(alpha)
+                {
+                    let (x, y) = if w == 1 { (0.0, at) } else { (at, 0.0) };
+                    assert_eq!(
+                        sample(&image, x, y, edge),
+                        [r, 0.0, 0.0, a],
+                        "{w}x{h} {edge:?} {at}"
+                    );
+                }
+            }
+        }
+    }
 }

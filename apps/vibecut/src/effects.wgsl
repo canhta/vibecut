@@ -184,6 +184,9 @@ fn inst_texel(x: i32, y: i32) -> vec4<f32> {
 }
 // Texel-index bilinear sample: integers address exact texels, as image_ops::sample.
 fn inst_sample(x: f32, y: f32) -> vec4<f32> {
+    // Geometry admission bounds coordinates; outside the transparent footprint
+    // return before converting or adding neighbours, including singleton axes.
+    if x <= -1.0 || y <= -1.0 || x >= f32(p.width) || y >= f32(p.height) { return vec4<f32>(0.0); }
     let ix = floor(x);
     let iy = floor(y);
     let tx = x - ix;
@@ -197,7 +200,7 @@ fn inst_sample(x: f32, y: f32) -> vec4<f32> {
     let bottom = c + (d - c) * tx;
     return clamp(top + (bottom - top) * ty, vec4<f32>(0.0), vec4<f32>(1.0));
 }
-// Mirrors render::effects::mirror; weights = [centre x, centre y, direction x, direction y].
+// Mirrors render::effects::mirror; weights = [centre x, centre y, unit normal x, unit normal y].
 @compute @workgroup_size(8, 8)
 fn mirror(@builtin(global_invocation_id) id: vec3<u32>) {
     if id.x >= p.width || id.y >= p.height { return; }

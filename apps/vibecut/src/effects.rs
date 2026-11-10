@@ -321,7 +321,7 @@ impl EffectCompositor for GpuEffects {
             return Err(Error::Cancelled);
         }
         for pass in passes {
-            render::effects::validate_pass(pass)?;
+            render::effects::validate_pass(pass, item.width(), item.height())?;
         }
         self.execute(
             item,

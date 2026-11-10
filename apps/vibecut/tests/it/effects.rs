@@ -32,6 +32,63 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
     );
+    // Actual device admission and transparent singleton footprints use the
+    // same contract as the CPU, including the largest admitted frame centres.
+    for (w, h) in [(8, 4), (1, 3), (3, 1), (1, 1)] {
+        let image = Image::new(w, h, [0.5, 0.0, 0.0, 1.0], &Hooks).unwrap();
+        let pass = |v: [f32; 4]| EffectPass::Sample {
+            entry_point: "mirror",
+            uniforms: v.map(Uniform::Float).to_vec(),
+        };
+        let inputs = || EffectInputs {
+            input: &image,
+            coverage: None,
+            below: &image,
+        };
+        for v in [
+            [0.0, 0.0, 1.0, 0.0],
+            [w as f32, h as f32, -0.6, -0.8],
+            [0.25, 0.0, 1.0, 0.0],
+            [0.0, 0.25, 0.0, 1.0],
+        ] {
+            let cpu = CpuEffects
+                .apply(&image, &[pass(v)], inputs(), &Hooks)
+                .unwrap();
+            let actual = gpu.apply(&image, &[pass(v)], inputs(), &Hooks).unwrap();
+            let max = cpu
+                .pixels()
+                .iter()
+                .zip(actual.pixels())
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                .fold(0.0_f32, f32::max);
+            assert!(
+                max <= 2e-5,
+                "GPU admitted/singleton difference {w}x{h} {v:?}: {max}"
+            );
+            if w == 1 && v == [0.25, 0.0, 1.0, 0.0] {
+                assert!(actual.pixels().iter().all(|p| *p == [0.25, 0.0, 0.0, 0.5]));
+            }
+            if h == 1 && v == [0.0, 0.25, 0.0, 1.0] {
+                assert!(actual.pixels().iter().all(|p| *p == [0.25, 0.0, 0.0, 0.5]));
+            }
+            eprintln!("mirror-admission {w}x{h} values={v:?} max_abs={max}");
+        }
+        for v in [
+            [f32::MAX, 0.0, -1.0, 0.0],
+            [-f32::MAX, 0.0, 1.0, 0.0],
+            [0.0, f32::MAX, 0.0, -1.0],
+            [0.0, -f32::MAX, 0.0, 1.0],
+            [0.0, 0.0, 2.0, 0.0],
+            [0.0, 0.0, 1e-30, 0.0],
+            [f32::NAN, 0.0, 1.0, 0.0],
+            [0.0, f32::INFINITY, 0.0, 1.0],
+        ] {
+            assert!(matches!(
+                gpu.apply(&image, &[pass(v)], inputs(), &Hooks),
+                Err(Error::Unsupported(_))
+            ));
+        }
+    }
     let pair: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../crates/render/tests/fixtures/blend-linear.json"
     ))

@@ -15,7 +15,7 @@ fn gaussian_scaling_bounds_and_channel_energy() {
             let passes = blur_passes(intensity, w, h).unwrap();
             assert!(passes.len() <= 512);
             for pass in passes {
-                validate_pass(&pass).unwrap();
+                validate_pass(&pass, w, h).unwrap();
             }
         }
     }
@@ -336,10 +336,14 @@ fn color_grade_refuses_hostile_values_and_bad_passes() {
         vec![1.0, 1.0, f32::NAN, 0.0],
     ] {
         assert!(
-            validate_pass(&EffectPass::Pixel {
-                entry_point: "grade",
-                uniforms: weights.into_iter().map(Uniform::Float).collect(),
-            })
+            validate_pass(
+                &EffectPass::Pixel {
+                    entry_point: "grade",
+                    uniforms: weights.into_iter().map(Uniform::Float).collect(),
+                },
+                8,
+                4
+            )
             .is_err()
         );
     }
@@ -377,7 +381,7 @@ fn chroma_key_removes_a_green_screen_at_several_intensities() {
     let translucent = srgb_pixel([0.0, 1.0, 0.0], 0.5);
     for intensity in [0.0, 40.0, 100.0] {
         for pass in chroma_key_passes(project::Color(GREEN_KEY), intensity, 0.0).unwrap() {
-            validate_pass(&pass).unwrap();
+            validate_pass(&pass, 8, 4).unwrap();
         }
     }
     // Intensity 0 is the reference's no-op and emits no pass.
@@ -450,10 +454,14 @@ fn chroma_key_refuses_hostile_values_and_bad_passes() {
         vec![0.0, 1.0, 0.0, 0.4, 1.5],
     ] {
         assert!(
-            validate_pass(&EffectPass::Pixel {
-                entry_point: "chroma_key",
-                uniforms: weights.into_iter().map(Uniform::Float).collect(),
-            })
+            validate_pass(
+                &EffectPass::Pixel {
+                    entry_point: "chroma_key",
+                    uniforms: weights.into_iter().map(Uniform::Float).collect(),
+                },
+                8,
+                4
+            )
             .is_err()
         );
     }
@@ -621,7 +629,7 @@ fn every_catalog_kind_has_an_evaluator_and_frames_carry_item_local_time() {
         let frame =
             EffectFrame::new(&none, &definition.instance("one"), Tick::ZERO, 64, 36).unwrap();
         for pass in evaluate(&frame).unwrap() {
-            validate_pass(&pass).unwrap();
+            validate_pass(&pass, 8, 4).unwrap();
         }
     }
     assert!(evaluator("nope").is_none());
@@ -978,7 +986,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
     };
     // Reflect about the vertical line through the frame centre.
     let pass = mirror([4.0, 2.0, 1.0, 0.0]);
-    validate_pass(&pass).unwrap();
+    validate_pass(&pass, 8, 4).unwrap();
     let at = |image: &Image, x: usize, y: usize| image.pixels()[y * 8 + x];
     let output = CpuEffects
         .apply(
@@ -1061,7 +1069,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
             uniforms: vec![Uniform::Float(0.0)],
         },
     ] {
-        assert!(validate_pass(&bad).is_err(), "{bad:?}");
+        assert!(validate_pass(&bad, 8, 4).is_err(), "{bad:?}");
     }
     // An adapter without a pipeline for the pass answers Unsupported; the
     // renderer then runs the rest of the list on the CPU reference above.
@@ -1205,4 +1213,104 @@ fn chained_remaps_sample_content_in_order_but_all_parameters_keep_real_time() {
     }
     assert_eq!(content_time(item, tick(-1, 2), 4, 4).unwrap(), Tick::ZERO);
     assert_eq!(content_time(item, tick(5, 2), 4, 4).unwrap(), tick(2, 1));
+}
+
+#[test]
+fn mirror_refuses_extreme_geometry_before_allocating_and_keeps_admitted_results_bounded() {
+    let hooks = Hooks::default();
+    let image = Image::new(8, 4, [0.25, 0.0, 0.0, 1.0], &hooks).unwrap();
+    let mirror = |v: [f32; 4]| EffectPass::Sample {
+        entry_point: "mirror",
+        uniforms: v.map(Uniform::Float).to_vec(),
+    };
+    let inputs = || EffectInputs {
+        input: &image,
+        coverage: None,
+        below: &image,
+    };
+    let tiny = Hooks {
+        limit: 0,
+        ..Default::default()
+    };
+    for values in [
+        [f32::MAX, 2.0, -1.0, 0.0],
+        [-f32::MAX, 2.0, 1.0, 0.0],
+        [4.0, f32::MAX, 0.0, -1.0],
+        [4.0, -f32::MAX, 0.0, 1.0],
+        [-0.25, 2.0, 1.0, 0.0],
+        [8.25, 2.0, 1.0, 0.0],
+        [4.0, -0.25, 0.0, 1.0],
+        [4.0, 4.25, 0.0, 1.0],
+        [4.0, 2.0, 2.0, 0.0],
+        [4.0, 2.0, 0.5, 0.0],
+        [4.0, 2.0, 1e-30, 0.0],
+        [4.0, 2.0, f32::MAX, f32::MAX],
+        [f32::NAN, 2.0, 1.0, 0.0],
+        [4.0, f32::INFINITY, 1.0, 0.0],
+        [4.0, 2.0, f32::NEG_INFINITY, 0.0],
+    ] {
+        for execution in [&hooks, &tiny] {
+            assert!(
+                matches!(
+                    CpuEffects.apply(&image, &[mirror(values)], inputs(), execution),
+                    Err(Error::Unsupported(_))
+                ),
+                "{values:?}"
+            );
+        }
+        assert_eq!(
+            tiny.requested.load(Ordering::SeqCst),
+            0,
+            "refusal before allocation"
+        );
+    }
+    for values in [
+        [0.0, 0.0, -1.0, 0.0],
+        [8.0, 4.0, 0.0, -1.0],
+        [8.0, 4.0, 0.6, 0.8],
+        [0.0, 4.0, -0.6, -0.8],
+    ] {
+        let output = CpuEffects
+            .apply(&image, &[mirror(values)], inputs(), &hooks)
+            .unwrap();
+        assert!(
+            output
+                .pixels()
+                .iter()
+                .all(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0 && *v <= p[3]))
+        );
+    }
+    let valid = mirror([4.0, 2.0, 1.0, 0.0]);
+    assert!(matches!(
+        CpuEffects.apply(&image, std::slice::from_ref(&valid), inputs(), &tiny),
+        Err(Error::Budget { .. })
+    ));
+    let cancelled = Hooks {
+        state: Arc::new(AtomicU8::new(1)),
+        ..Default::default()
+    };
+    assert!(matches!(
+        CpuEffects.apply(&image, &[valid], inputs(), &cancelled),
+        Err(Error::Cancelled)
+    ));
+    let mismatch = Image::new(1, 1, [0.0; 4], &hooks).unwrap();
+    for (input, below, coverage) in [
+        (&mismatch, &image, None),
+        (&image, &mismatch, None),
+        (&image, &image, Some(&mismatch)),
+    ] {
+        assert!(matches!(
+            CpuEffects.apply(
+                &image,
+                &[],
+                EffectInputs {
+                    input,
+                    below,
+                    coverage
+                },
+                &tiny
+            ),
+            Err(Error::Invalid("effect input dimensions"))
+        ));
+    }
 }
