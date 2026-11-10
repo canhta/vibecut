@@ -37,7 +37,7 @@ Each window owns its measured geometry; read only the one you work on:
 
 ### Theme and tokens
 
-The [token contract](tokens.md) links to the executable value owner, `theme.rs`. Geometry follows the [measured reference](#measured-desktop-reference); colour and icon choices are ours. Reference hex samples are capture evidence, not app tokens.
+The [token contract](tokens.md) links to the executable value owner, `theme.rs`. Geometry follows the measured reference; colour and icon choices are ours. Reference hex samples are capture evidence, not app tokens.
 
 ### Type scale
 
@@ -51,11 +51,8 @@ The [token contract](tokens.md) links to the executable value owner, `theme.rs`.
 
 - Phosphor `regular` only, embedded SVG. The selected state is the accent colour on icon and label. Every button carries an icon; text-only buttons are limited to modal footers, the properties tabs and the player `Full`/`Ratio` controls.
 - Sizes are boxes (glyph is about 80% of the box): 16 px in dense rows, timeline headers and feature tabs; 20 px in toolbars; 24 px for empty states. At 20 px the regular stroke is 1.25 px, matching the captured chrome's ~1.2 px.
-- Feature toolbar tab [measured]: 16 px glyph, 5 px gap to a 12 px semibold label, 12 px horizontal padding (about 48 px minimum tab width), 42 px strip on the panel surface; inactive in text colour (221643: icon x 81–97/y 82–95, label x 75–102/y 100–108).
-- Corner radii (221643 corner scans): sub-tab bar and its active cell 4 px; value fields and steppers about 2 px. Row labels are regular weight, section titles 600.
-- Properties tabs are text-only at 12 px with a 28 px gap; the active tab uses the accent (221643: y 90–99, x 1300–1676).
+- Measured editor boxes, tab composition and corner radii: [editor measured frame](editor.md#measured-frame).
 - The timeline toolbar, player controls and track-header controls are icon-only; labels appear only in the feature toolbar tabs, the top bar's primary actions and dialogs.
-- Icon-only buttons are 24×24 px in the timeline toolbar and 16×16 px for the player fit button, with a 16 px icon and a tooltip naming the action and its shortcut (221643: toolbar toggles x 1382–1406/y 617–640; player fit x 959.5–975/y 513.5–529). The Shortcuts footer buttons are 72×22 text buttons.
 
 ### Motion
 
