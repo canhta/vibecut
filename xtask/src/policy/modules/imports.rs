@@ -12,6 +12,50 @@ use std::{
 };
 use syn::{ImplItemFn, Item, ItemMod, ItemUse, Path as SynPath, UseTree, Visibility, visit::Visit};
 
+const CONTROL_CATALOG: &str = "crates/engine/tests/it/control/catalog.rs";
+const CONTROL_IMPORT: &str = "use crate::support::control::";
+
+/// `control/catalog.rs` imports one support name per line in ascending order,
+/// so two appended helpers never share a line.
+pub(super) fn control_test_order(root: &Path) -> Result<(), String> {
+    let path = root.join(CONTROL_CATALOG);
+    let text = fs::read_to_string(&path).map_err(|e| format!("{CONTROL_CATALOG}: {e}"))?;
+    control_order(&text)?;
+    eprintln!("control imports: ok");
+    Ok(())
+}
+
+pub(super) fn control_order(text: &str) -> Result<(), String> {
+    let mut previous: Option<(&str, usize)> = None;
+    for (index, line) in text.lines().enumerate() {
+        let Some(rest) = line.trim_start().strip_prefix(CONTROL_IMPORT) else {
+            continue;
+        };
+        let name = rest.trim_end_matches(';').trim();
+        if name.is_empty() || name.contains('{') || name.contains(',') || name.contains(' ') {
+            return Err(format!(
+                "{CONTROL_CATALOG}:{}: control support imports must be one name per line; split `{name}`",
+                index + 1
+            ));
+        }
+        if let Some((before, before_line)) = previous
+            && before > name
+        {
+            return Err(format!(
+                "{CONTROL_CATALOG}:{}: control support import `{name}` sorts before `{before}` (line {before_line}); keep imports in ascending order",
+                index + 1
+            ));
+        }
+        previous = Some((name, index + 1));
+    }
+    if previous.is_none() {
+        return Err(format!(
+            "{CONTROL_CATALOG}: no `{CONTROL_IMPORT}...` imports found"
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn imports(
     root: &Path,
     config: &Table,

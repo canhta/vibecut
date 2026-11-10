@@ -29,6 +29,9 @@ pub fn check(root: &Path) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", catalog_path.display()))?;
     let entries = parse(&catalog)?;
     let mut errors = Vec::new();
+    if let Some(error) = order_error(&catalog) {
+        errors.push(error);
+    }
     let mut keys = BTreeSet::new();
     let mut variants = BTreeSet::new();
     for entry in &entries {
@@ -527,6 +530,114 @@ fn quoted(source: &str, at: usize) -> Result<(String, usize), String> {
     Err(format!("catalog string near byte {at} is unterminated"))
 }
 
+/// The first key that sorts before its predecessor inside one `// <area>`
+/// section. The prologue before the first heading is a section too; existing
+/// headings are never merged, renamed or moved.
+fn order_error(source: &str) -> Option<String> {
+    let start = source.rfind("catalog!")?;
+    let catalog = source.get(start..)?;
+    let first_line = source
+        .get(..start)?
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let mut section = "prologue";
+    let mut previous: Option<(&str, usize)> = None;
+    let mut pending: Option<(&str, usize)> = None;
+    for (offset, line) in catalog.lines().enumerate() {
+        let line_number = first_line + offset;
+        if let Some(heading) = section_heading(line) {
+            section = heading;
+            previous = None;
+            pending = None;
+            continue;
+        }
+        let key = key_literal(line);
+        if let Some((variant, start_line)) = pending.take() {
+            let Some(key) = key else {
+                pending = Some((variant, start_line));
+                continue;
+            };
+            if let Some((before, before_line)) = previous
+                && before > key
+            {
+                return Some(order_message(
+                    section,
+                    key,
+                    line_number,
+                    before,
+                    before_line,
+                ));
+            }
+            previous = Some((key, line_number));
+            continue;
+        }
+        let Some(variant) = entry_start(line) else {
+            continue;
+        };
+        let Some(key) = key else {
+            pending = Some((variant, line_number));
+            continue;
+        };
+        if let Some((before, before_line)) = previous
+            && before > key
+        {
+            return Some(order_message(
+                section,
+                key,
+                line_number,
+                before,
+                before_line,
+            ));
+        }
+        previous = Some((key, line_number));
+    }
+    None
+}
+
+fn section_heading(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix("//")?;
+    if rest.starts_with('/') || rest.starts_with('!') {
+        return None;
+    }
+    let rest = rest.trim();
+    (!rest.is_empty()).then_some(rest)
+}
+
+fn entry_start(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    let open = line.find(" {")?;
+    let variant = line.get(..open)?;
+    if variant.is_empty()
+        || !variant
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return None;
+    }
+    Some(variant)
+}
+
+fn key_literal(line: &str) -> Option<&str> {
+    let at = line.find("key: \"")?;
+    let rest = line.get(at + "key: \"".len()..)?;
+    let end = rest.find('"')?;
+    rest.get(..end)
+}
+
+fn order_message(
+    section: &str,
+    key: &str,
+    line: usize,
+    before: &str,
+    before_line: usize,
+) -> String {
+    format!(
+        "i18n catalog key `{key}` (line {line}) sorts before `{before}` (line {before_line}) in section `{section}`; keep keys in ascending order within each // section"
+    )
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
@@ -591,9 +702,9 @@ mod tests {
         let root = directory.path();
         std::fs::create_dir_all(root.join("apps/vibecut/src/i18n")).unwrap();
         let catalog = r#"catalog! {
+            Empty { key: "empty", en: "", vi: "Trống" },
             Save { key: "save", en: "Save", vi: "Lưu" },
             SaveAs { key: "save_as", en: "Save as", vi: "Lưu thành" },
-            Empty { key: "empty", en: "", vi: "Trống" },
             Unused { key: "unused", en: "Unused", vi: "Không dùng" },
         }"#;
         fs::write(root.join("apps/vibecut/src/i18n/text.rs"), catalog).unwrap();
@@ -630,5 +741,80 @@ fn ui() {
         ] {
             assert!(error.contains(callee), "{callee}: {error}");
         }
+    }
+
+    #[test]
+    fn order_check_rejects_first_out_of_order_key_inside_an_area() {
+        let sorted = r#"catalog! {
+            Alpha { key: "alpha", en: "A", vi: "A" },
+            Bravo { key: "bravo", en: "B", vi: "B" },
+            // Second area.
+            AlphaAgain { key: "alpha", en: "A", vi: "A" },
+            Zulu { key: "zulu", en: "Z", vi: "Z" },
+        }"#;
+        assert_eq!(order_error(sorted), None);
+        let disordered = r#"catalog! {
+            // First area.
+            Alpha { key: "alpha", en: "A", vi: "A" },
+            Charlie { key: "charlie", en: "C", vi: "C" },
+            Bravo { key: "bravo", en: "B", vi: "B" },
+            // Second area.
+            Zulu { key: "zulu", en: "Z", vi: "Z" },
+            Delta { key: "delta", en: "D", vi: "D" },
+        }"#;
+        let error = order_error(disordered).unwrap();
+        assert!(error.contains("`bravo`"), "{error}");
+        assert!(error.contains("sorts before `charlie`"), "{error}");
+        assert!(error.contains("section `First area.`"), "{error}");
+        assert!(!error.contains("`delta`"), "{error}");
+    }
+
+    #[test]
+    fn order_check_handles_wrapped_rows_and_resets_at_each_area() {
+        let wrapped = r#"catalog! {
+            Zulu { key: "zulu", en: "Z", vi: "Z" },
+            // Later area.
+            Alpha { key: "alpha", en: "A", vi: "A" },
+            Wrapped {
+                key: "wrapped",
+                en: "W",
+                vi: "W",
+            },
+        }"#;
+        assert_eq!(order_error(wrapped), None);
+        let disordered = r#"catalog! {
+            // Area.
+            Zulu { key: "zulu", en: "Z", vi: "Z" },
+            Wrapped {
+                key: "alpha",
+                en: "A",
+                vi: "A",
+            },
+        }"#;
+        let error = order_error(disordered).unwrap();
+        assert!(error.contains("`alpha`"), "{error}");
+        assert!(error.contains("sorts before `zulu`"), "{error}");
+    }
+
+    #[test]
+    fn check_refuses_disordered_catalog_keys_by_name() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("apps/vibecut/src/i18n")).unwrap();
+        let catalog = r#"catalog! {
+            // First area.
+            Alpha { key: "alpha", en: "Alpha", vi: "Alpha" },
+            Charlie { key: "charlie", en: "Charlie", vi: "Charlie" },
+            Bravo { key: "bravo", en: "Bravo", vi: "Bravo" },
+        }"#;
+        fs::write(root.join("apps/vibecut/src/i18n/text.rs"), catalog).unwrap();
+        fs::write(
+            root.join("apps/vibecut/src/frontend.rs"),
+            "fn ui() { Text::Alpha; Text::Bravo; Text::Charlie; }\n",
+        )
+        .unwrap();
+        let error = check(root).unwrap_err();
+        assert!(error.contains("`bravo`"), "{error}");
+        assert!(error.contains("sorts before `charlie`"), "{error}");
     }
 }

@@ -10,7 +10,7 @@ use std::{collections::BTreeSet, path::Path};
 
 use baseline::baseline;
 use config::config;
-use imports::imports;
+use imports::{control_test_order, imports};
 use layout::{file_name, folder_rules, inline_names, leading_doc, mod_file, test_folder_rules};
 
 const CONFIG: &str = "xtask/modules.toml";
@@ -76,6 +76,7 @@ pub fn check(root: &Path) -> Result<(), String> {
     violations.extend(folder_rules(&tracked));
     violations.extend(test_folder_rules(&tracked));
     violations.extend(imports(root, &config, &sources)?);
+    control_test_order(root)?;
     let baseline = baseline(root)?;
     let mut errors: Vec<String> = violations
         .difference(&baseline)
