@@ -4,14 +4,81 @@ use super::{
     theme,
 };
 
+/// Library shelves in the order the panel lists them; the four the effect
+/// port fills. Empty shelves keep their place and show the empty state.
+const SHELVES: [(project::EffectShelf, Text); 4] = [
+    (project::EffectShelf::BlurDetail, Text::EffectShelfBlurDetail),
+    (project::EffectShelf::Colour, Text::EffectShelfColour),
+    (project::EffectShelf::Distort, Text::EffectShelfDistort),
+    (project::EffectShelf::Stylize, Text::EffectShelfStylize),
+];
+fn shelf_label(shelf: project::EffectShelf) -> Text {
+    SHELVES
+        .iter()
+        .find(|(candidate, _)| *candidate == shelf)
+        .map_or(Text::AssetsAll, |(_, label)| *label)
+}
+fn shelf_id(shelf: project::EffectShelf) -> &'static str {
+    match shelf {
+        project::EffectShelf::BlurDetail => "blur_detail",
+        project::EffectShelf::Colour => "colour",
+        project::EffectShelf::Distort => "distort",
+        project::EffectShelf::Stylize => "stylize",
+        project::EffectShelf::GlowLight => "glow_light",
+        project::EffectShelf::OverlayKey => "overlay_key",
+        project::EffectShelf::Inspector => "inspector",
+    }
+}
+
 impl View<'_> {
+    pub(super) fn effects_nav(&mut self, ui: &mut egui::Ui) {
+        let shelves = std::iter::once((None, Text::AssetsAll))
+            .chain(SHELVES.iter().map(|(shelf, label)| (Some(*shelf), *label)));
+        for (shelf, label) in shelves {
+            let selected = self.state.effect_shelf == shelf;
+            let response = ui
+                .add_sized(
+                    [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
+                    egui::Button::new(
+                        egui::RichText::new(self.tr(label))
+                            .size(theme::type_size::CHROME)
+                            .color(if selected {
+                                theme::accent(self.cx.preferences.dark)
+                            } else {
+                                theme::text(self.cx.preferences.dark)
+                            }),
+                    )
+                    .fill(if selected {
+                        theme::hover(self.cx.preferences.dark)
+                    } else {
+                        theme::panel(self.cx.preferences.dark)
+                    })
+                    .stroke(egui::Stroke::NONE)
+                    .truncate()
+                    .right_text(""),
+                )
+                .on_hover_text(self.tr(label));
+            self.remember(
+                format!(
+                    "effects.category.{}",
+                    shelf.map_or("all", shelf_id)
+                ),
+                &response,
+                None,
+            );
+            if response.clicked() {
+                self.state.effect_shelf = shelf;
+            }
+        }
+    }
     pub(super) fn effects(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
         self.search(ui, area.width());
+        let title = self.state.effect_shelf.map_or(Text::AssetsAll, shelf_label);
         ui.painter().text(
             area.min + Vec2::new(0.0, 36.0),
             Align2::LEFT_TOP,
-            self.tr(Text::AssetsAll),
+            self.tr(title),
             FontId::proportional(theme::type_size::BODY),
             theme::text(self.cx.preferences.dark),
         );
@@ -25,6 +92,11 @@ impl View<'_> {
         let rows: Vec<_> = cx
             .effects
             .iter()
+            .filter(|row| {
+                self.state
+                    .effect_shelf
+                    .is_none_or(|shelf| shelf == row.shelf)
+            })
             .filter(|row| row.name.to_lowercase().contains(&query))
             .collect();
         let width = theme::size::EFFECT_CARD;

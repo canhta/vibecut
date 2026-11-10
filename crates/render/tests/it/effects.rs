@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use crate::support::{Hooks, tick};
+use project::{ANGLE_MAX, Color, EffectValue};
 use render::{effects::*, *};
 use std::sync::{
     Arc,
@@ -1334,5 +1335,329 @@ fn mirror_refuses_extreme_geometry_before_allocating_and_keeps_admitted_results_
             ),
             Err(Error::Invalid("effect input dimensions"))
         ));
+}
+
+const PIXEL_EFFECTS: [&str; 11] = [
+    "black_white",
+    "channel_mix",
+    "color_pass",
+    "color_replace",
+    "extract",
+    "gamma_correction",
+    "invert",
+    "levels",
+    "posterize",
+    "strobe",
+    "tint",
+];
+
+/// Chart plus a fully transparent working pixel, so alpha handling is exercised.
+fn effect_chart() -> Vec<[f32; 4]> {
+    let mut pixels = chart();
+    // A near-red patch for Swap Colour's tight default similarity, then a
+    // fully transparent working pixel so alpha handling is exercised.
+    pixels.push([1.0, 0.006, 0.006, 1.0]);
+    pixels.push([0.0; 4]);
+    pixels
+}
+
+fn effect_instance(kind: &str, params: &[(&str, EffectValue)]) -> project::EffectInstance {
+    let mut instance = project::effect_definition(kind).unwrap().instance(kind);
+    for (id, value) in params {
+        instance = instance.with(id, *value).unwrap();
+    }
+    instance
+}
+
+fn effect_output_at(kind: &str, params: &[(&str, EffectValue)], at: time::Tick) -> Vec<[f32; 4]> {
+    let hooks = Hooks::default();
+    let source = effect_chart();
+    let image = Image::from_working_pixels(
+        source.len() as u32,
+        1,
+        source.iter().copied(),
+        &hooks,
+    )
+    .unwrap();
+    let instance = effect_instance(kind, params);
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &instance,
+        at,
+        source.len() as u32,
+        1,
+        true,
+    )
+    .unwrap();
+    for pass in &passes {
+        validate_pass(pass, image.width(), image.height()).unwrap();
+    }
+    CpuEffects
+        .apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap()
+        .pixels()
+        .to_vec()
+}
+
+fn effect_output(kind: &str, params: &[(&str, EffectValue)]) -> Vec<[f32; 4]> {
+    effect_output_at(kind, params, time::Tick::ZERO)
+}
+
+/// A value each parameter has not: the other hard bound, the next option, the
+/// negated flag or a colour the chart does not hold.
+fn changed_value(param: &project::EffectParamDefinition) -> EffectValue {
+    use project::{EffectParamKind, EffectValue};
+    match param.kind {
+        EffectParamKind::Float { min, max, .. } => {
+            let current = param.default.scalar().unwrap();
+            EffectValue::Scalar(if current > (min + max) / 2.0 {
+                min
+            } else {
+                max
+            })
+        }
+        EffectParamKind::Angle => EffectValue::Scalar(if param.default.scalar() == Some(0.0) {
+            ANGLE_MAX
+        } else {
+            0.0
+        }),
+        EffectParamKind::Choice { options } => EffectValue::Choice(
+            (param.default.choice().unwrap() + 1) % options.len() as u32,
+        ),
+        EffectParamKind::Bool => EffectValue::Bool(!param.default.flag().unwrap()),
+        EffectParamKind::Color => EffectValue::Color(if param.default.color() == Some(Color([255, 0, 0, 255])) {
+            Color([0, 255, 255, 255])
+        } else {
+            Color([255, 0, 0, 255])
+        }),
+        EffectParamKind::Point => EffectValue::Point([1.0, 1.0]),
+    }
+}
+
+#[test]
+fn pixel_effects_that_are_identity_at_default_emit_no_pass() {
+    for kind in ["gamma_correction", "levels", "channel_mix"] {
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &effect_instance(kind, &[]),
+            time::Tick::ZERO,
+            13,
+            1,
+            true,
+        )
+        .unwrap();
+        assert!(passes.is_empty(), "{kind} emits an identity pass");
+        assert_eq!(effect_output(kind, &[]), effect_chart(), "{kind} is identity");
+    }
+}
+
+#[test]
+fn every_pixel_effect_parameter_changes_the_picture() {
+    // Strobe's time gates need a moment where the default is idle; every other
+    // parameter reads at the clip start.
+    let idle = time::Tick(time::TICKS_PER_SECOND * 12 / 100);
+    for kind in PIXEL_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for param in definition.params {
+            let at = if matches!(param.id, "duration" | "period") {
+                idle
+            } else {
+                time::Tick::ZERO
+            };
+            let base = effect_output_at(kind, &[], at);
+            let changed = effect_output_at(kind, &[(param.id, changed_value(param))], at);
+            assert_ne!(
+                changed, base,
+                "{kind}.{} changed nothing",
+                param.id
+            );
+        }
+    }
+}
+
+#[test]
+fn animated_pixel_parameters_clamp_to_their_hard_range() {
+    for kind in PIXEL_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for param in definition.params.iter().filter(|param| param.animatable) {
+            let (min, max) = param.scalar_range().unwrap();
+            for (raw, expected) in [(1e9, max), (-1e9, min)] {
+                let mut animations = project::Animations::default();
+                animations
+                    .set(
+                        project::AnimationPath::new(format!(
+                            "effects.one.params.{}",
+                            param.id
+                        ))
+                        .unwrap(),
+                        project::Param::new(project::ParamValue::Scalar(raw)).unwrap(),
+                    )
+                    .unwrap();
+                let instance = definition.instance("one");
+                let frame =
+                    EffectFrame::new(&animations, &instance, time::Tick::ZERO, 64, 36).unwrap();
+                assert_eq!(frame.scalar(param.id).unwrap(), expected, "{kind}.{}", param.id);
+                for pass in (evaluator(kind).unwrap())(&frame).unwrap() {
+                    validate_pass(&pass, 64, 36)
+                        .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.id));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
+    for kind in PIXEL_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for high in [false, true] {
+            let mut params = Vec::new();
+            let mut values = Vec::new();
+            for param in definition.params {
+                let value = match param.kind {
+                    project::EffectParamKind::Float { min, max, .. } => {
+                        project::EffectValue::Scalar(if high { max } else { min })
+                    }
+                    project::EffectParamKind::Angle => project::EffectValue::Scalar(if high {
+                        ANGLE_MAX
+                    } else {
+                        -ANGLE_MAX
+                    }),
+                    project::EffectParamKind::Choice { options } => {
+                        project::EffectValue::Choice(if high {
+                            options.len() as u32 - 1
+                        } else {
+                            0
+                        })
+                    }
+                    project::EffectParamKind::Bool => project::EffectValue::Bool(high),
+                    project::EffectParamKind::Color => {
+                        project::EffectValue::Color(if high {
+                            Color([255, 255, 255, 255])
+                        } else {
+                            Color([0, 0, 0, 255])
+                        })
+                    }
+                    project::EffectParamKind::Point => {
+                        project::EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
+                    }
+                };
+                params.push((param.id, value));
+                values.push(value);
+            }
+            let output = effect_output(kind, &params);
+            for pixel in &output {
+                assert!(
+                    pixel.iter().all(|v| v.is_finite() && *v >= 0.0),
+                    "{kind} {high} {pixel:?}"
+                );
+                assert!(
+                    pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6),
+                    "{kind} {high} {pixel:?}"
+                );
+            }
+        }
+    }
+}
+
+/// One rendered-frame oracle row per ported entry: fixed parameters on the
+/// chart, FNV-1a of the packed sRGB RGBA8 bytes. Re-bless only after looking at
+/// the frame.
+#[test]
+fn pixel_effect_oracle_rows() {
+    let rows: [(&str, Vec<(&str, EffectValue)>, u64); 11] = [
+        ("black_white", vec![], 0),
+        (
+            "channel_mix",
+            vec![
+                ("rr", EffectValue::Scalar(0.0)),
+                ("rb", EffectValue::Scalar(100.0)),
+                ("br", EffectValue::Scalar(100.0)),
+                ("bb", EffectValue::Scalar(0.0)),
+            ],
+            0,
+        ),
+        (
+            "color_pass",
+            vec![("similarity", EffectValue::Scalar(40.0))],
+            0,
+        ),
+        (
+            "color_replace",
+            vec![
+                ("similarity", EffectValue::Scalar(60.0)),
+                ("target", EffectValue::Color(Color([0, 0, 255, 255]))),
+                ("replace", EffectValue::Color(Color([255, 0, 0, 255]))),
+            ],
+            0,
+        ),
+        (
+            "extract",
+            vec![
+                ("black", EffectValue::Scalar(30.0)),
+                ("white", EffectValue::Scalar(200.0)),
+                ("softness", EffectValue::Scalar(20.0)),
+            ],
+            0,
+        ),
+        (
+            "gamma_correction",
+            vec![("gamma", EffectValue::Scalar(20.0))],
+            0,
+        ),
+        (
+            "invert",
+            vec![("blend", EffectValue::Scalar(30.0))],
+            0,
+        ),
+        (
+            "levels",
+            vec![
+                ("in_black", EffectValue::Scalar(20.0)),
+                ("in_white", EffectValue::Scalar(220.0)),
+                ("gamma", EffectValue::Scalar(150.0)),
+            ],
+            0,
+        ),
+        ("posterize", vec![("levels", EffectValue::Scalar(5.0))], 0),
+        (
+            "strobe",
+            vec![
+                ("color", EffectValue::Color(Color([255, 210, 0, 255]))),
+                ("blend", EffectValue::Scalar(40.0)),
+            ],
+            0,
+        ),
+        ("tint", vec![("amount", EffectValue::Scalar(60.0))], 0),
+    ];
+    let hooks = Hooks::default();
+    let mut actual = Vec::new();
+    for (kind, params, expected) in rows {
+        let output = effect_output(kind, &params);
+        let image = Image::from_working_pixels(
+            output.len() as u32,
+            1,
+            output.iter().copied(),
+            &hooks,
+        )
+        .unwrap();
+        let bytes = image.rgba8(13, &hooks).unwrap();
+        let checksum = bytes.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
+            (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        });
+        eprintln!("(\"{kind}\", 0x{checksum:016x}),");
+        actual.push((kind, checksum, expected));
+    }
+    for (kind, checksum, expected) in actual {
+        assert_eq!(checksum, expected, "{kind} oracle checksum");
     }
 }
