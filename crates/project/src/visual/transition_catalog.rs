@@ -143,7 +143,7 @@ const SOURCES: &[&str] = &["Outgoing", "Incoming"];
 
 const CENTRE: TransitionParamDef = point("center", "Centre");
 const DIRECTION: TransitionParamDef = choice("direction", "Direction", DIRECTIONS, 3);
-const FEATHER: TransitionParamDef = pixels("feather", "Feather", 0., 500.);
+const FEATHER: TransitionParamDef = pixels("feather", "Feather", 0., 2000.);
 const BORDER_WIDTH: TransitionParamDef = pixels("border_width", "Border Width", 0., 200.);
 const BORDER_COLOR: TransitionParamDef = colour("border_color", "Border Colour", [0, 0, 0]);
 const ANTIALIAS: TransitionParamDef = choice("antialias", "Anti-aliasing", AA, 1);
@@ -253,7 +253,7 @@ pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
         shelf: "Wipes",
         params: &[
             angle("angle", "Angle", 90.),
-            pixels("feather", "Feather", 300., 500.),
+            pixels("feather", "Feather", 300., 2000.),
             BORDER_WIDTH,
             BORDER_COLOR,
             ANTIALIAS,
@@ -333,7 +333,7 @@ pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
         params: &[
             angle("angle", "Angle", 90.),
             ranged("plateaus", "Steps", 5., 1., 64.),
-            pixels("feather", "Feather", 4., 500.),
+            pixels("feather", "Feather", 4., 2000.),
             BORDER_WIDTH,
             BORDER_COLOR,
             ANTIALIAS,
@@ -437,7 +437,12 @@ pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
             TransitionParamDef {
                 id: "angle",
                 name: "Blur Angle",
-                kind: TransitionParamKind::Angle { default: 40. },
+                kind: TransitionParamKind::Float {
+                    min: 0.,
+                    max: 180.,
+                    default: 40.,
+                    unit: "°",
+                },
             },
         ],
     },

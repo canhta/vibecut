@@ -462,6 +462,44 @@ mod tests {
     #[test]
     fn parameters_default_validate_persist_and_refuse_hostile_values() {
         use crate::{TRANSITION_DEFINITIONS, TransitionParamKind as K, TransitionValue as V};
+        // Pin source hard bounds independently of catalogue coherence. The 500 px
+        // feather slider range is not a persisted-value limit.
+        for definition in TRANSITION_DEFINITIONS {
+            if let Some(param) = definition.param("feather") {
+                assert!(matches!(
+                    param.kind,
+                    K::Float {
+                        min: 0.,
+                        max: 2000.,
+                        unit: "px",
+                        ..
+                    }
+                ));
+                for value in [600., 2000.] {
+                    param.kind.validate(&V::Float(value)).unwrap();
+                }
+                assert!(param.kind.validate(&V::Float(2000.1)).is_err());
+            }
+        }
+        let spin = crate::transition_definition("spin_smear")
+            .unwrap()
+            .param("angle")
+            .unwrap();
+        assert_eq!(
+            spin.kind,
+            K::Float {
+                min: 0.,
+                max: 180.,
+                default: 40.,
+                unit: "°"
+            }
+        );
+        for value in [0., 120., 180.] {
+            spin.kind.validate(&V::Float(value)).unwrap();
+        }
+        for value in [V::Float(-0.1), V::Float(180.1), V::Angle(40.)] {
+            assert!(spin.kind.validate(&value).is_err());
+        }
         // Every kind of parameter, in and out of bounds.
         const CHOICES: &[&str] = &["a", "b"];
         for (kind, value, ok) in [

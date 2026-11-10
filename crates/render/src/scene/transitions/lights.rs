@@ -268,7 +268,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
         }
         "spin_smear" => {
             let (cx, cy) = centre(t)?;
-            let max = t.params.angle("angle")?;
+            let max = t.params.num("angle")?.to_radians();
             let ang = max * env;
             let n = taps(ang * w.max(h) * 0.5);
             let (ra, rb) = (max * 0.25 * ease_in(p), -max * 0.25 * (1. - ease_out(p)));
