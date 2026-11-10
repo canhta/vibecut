@@ -5,5 +5,3 @@
 `FillerClassifier` is the blocking single-attempt seam. `OpenAiFillerClassifier` admits only `gpt-6-luna` and `OPENAI_SETTINGS`; `AnthropicFillerClassifier` admits only `claude-sonnet-5-5` and `ANTHROPIC_SETTINGS`. Both build their configuration with `provider_config(model)`, use the shared `text_model` body and transport, and expose the shared `ai::UploadDisclosure` (provider, policy link, model, payload bytes and a USD upper bound). No retry, fallback or provider switch happens inside an adapter.
 
 The model returns word IDs and a `filled_pause`/`discourse_marker` kind. `FillerInput::resolve` refuses an ID absent from the exact sent transcript, a duplicate ID, or a discourse marker when `include_markers` is false with `InvalidSegments`; nothing is dropped silently. The model decides which lexicon-independent words are filler speech; the engine maps IDs to output ranges and the local lexicon detector stays the synchronous `timeline.filler_candidates` path. This path is opt-in: `fillers.classify` is a network job and never falls back to the lexicon.
-
-Tests: `cargo test -p ai --test it fillers::`.

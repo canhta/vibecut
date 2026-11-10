@@ -2,7 +2,7 @@
 
 ## Scribe transcription
 
-`provider_config(model, settings)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and the exact settings, so proxies, lookalike hosts and other version paths are refused. Composition resolves `ELEVENLABS_API_KEY` (development) or the OS keychain entry and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
+`provider_config(model)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs` and the base URL `https://api.elevenlabs.io/v1`, so proxies, lookalike hosts and other version paths are refused. Composition resolves the provider key and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
 
 Uploads are multipart PCM16 WAV with `model_id=scribe_v2`, the exact `language_code` (`vi`, `en` or `zh`, no fallback) and `timestamps_granularity=word`. The provider allows 3 GB and 10 hours in standard mode; the shared 64 MiB PCM admission and engine chunking bound real invocations. Responses are capped at 1 MiB. Consent `max_bytes` bounds the encoded WAV including its 44-byte header.
 
@@ -10,11 +10,11 @@ Scribe returns word, spacing and audio-event tokens in seconds. The adapter fold
 
 `disclosure(scope)` returns the shared `ai::UploadDisclosure` with provider, model, language, duration, payload bytes, cost bound and the named policy/pricing/docs links; composition shows these before approval without restating provider terms. The adapter uses default logging and does not send `enable_logging=false`.
 
-Typed failures: auth, payment/quota, rate limit, payload, server, network. The adapter never retries; engine owns network retry. Tests: `cargo test -p ai --test it elevenlabs::` (offline, see `tests/fixtures/elevenlabs/`). The ignored live test uses the same synthetic-speech probe as OpenAI.
+Typed failures: auth, payment/quota, rate limit, payload, server, network. The adapter never retries; engine owns network retry.
 
 ## ElevenLabs speech synthesis
 
-`elevenlabs::speech::ElevenLabsSpeech` is the ElevenLabs adapter for the speech contract. It admits only backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and two models chosen in `ProviderConfig::model`: `eleven_multilingual_v2` (EN/ZH) and `eleven_flash_v2_5` (VI/EN/ZH). Unsupported language/model pairs return `UnsupportedLanguage` before transport; the adapter never switches model, voice or provider. Multilingual v2 returned HTTP 200 with garbled Vietnamese audio, so the VI gate is client-side. `config`, `capabilities` and `estimate` do no IO.
+`elevenlabs::speech::ElevenLabsSpeech` is the ElevenLabs adapter for the speech contract. It admits only backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and two models chosen in `ProviderConfig::model`: `eleven_multilingual_v2` (EN/ZH) and `eleven_flash_v2_5` (VI/EN/ZH). Unsupported language/model pairs return `UnsupportedLanguage` before transport; the adapter never switches model, voice or provider, and the VI gate is client-side. `config`, `capabilities` and `estimate` do no IO.
 
 Requests are `POST /v1/text-to-speech/{voice_id}?output_format=pcm_24000` with the exact NFC text, `model_id`, `apply_text_normalization=auto` and optional `voice_settings.speed` in 0.7–1.2. `language_code` is sent only for Flash v2.5. The response is headerless little-endian PCM16 at 24 kHz, decoded to finite mono f32 and validated by the shared seam. Only a complete HTTP 200 body is accepted (other 2xx are rejected as partial), and a declared `Content-Length` must equal the received bytes, since raw PCM has no container length. Voices are an explicit premade/stock allowlist supplied by composition; cloned and professional-clone voices are never listed, selected or guessed.
 
@@ -26,6 +26,6 @@ The settings fingerprint binds output format, normalization, optional speed and 
 
 `transport::HttpTransport::send_bounded` bounds an audio response while it is read. The cap derives from the approved duration and the shared 64 MiB decoded-PCM ceiling. `UreqTransport` enforces it during the read; the default trait method checks after buffering.
 
-Tests: `cargo test -p ai --test it elevenlabs_speech::` replays fixtures (see `tests/fixtures/elevenlabs-speech/`); CI makes no network call. The ignored `live_elevenlabs_speech_uses_production_transport` needs `VIBECUT_LIVE_AI=1`, `ELEVENLABS_API_KEY` and a premade `VIBECUT_ELEVENLABS_VOICE_ID`, and synthesizes one bounded probe each in VI, EN and ZH. Live voice quality is unverified.
+Live voice quality is unverified.
 
 Sources checked 2026-11-05: [text-to-speech](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [models](https://elevenlabs.io/docs/overview/models), [zero retention](https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode), [pricing](https://elevenlabs.io/pricing/api).

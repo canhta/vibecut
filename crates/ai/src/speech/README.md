@@ -10,4 +10,4 @@ After showing the exact payload, policy and quote, the composition root calls `S
 
 `SpeechAudio` carries finite mono f32 PCM, the output sample rate and fingerprint, duration rounded up from the sample count to integer microseconds, usage/actual cost and an optional NFC transcript. The shared seam rejects empty, nonfinite or over-64-MiB PCM, wrong rate or identity, inconsistent duration, duration beyond the approved maximum and any transcript differing from the request. A missing transcript is allowed; adapters promising exact transcripts must require it. Cancellation discards all output. Debug omits audio and redacts text and configuration. Error categories include UnsupportedLanguage, UnsupportedVoice, Payload, Auth, Quota, RateLimit, ContentPolicy, Server, Network, Timeout, Cost, OutputRejected and Cancelled.
 
-Tests: `cargo test -p ai --test it speech::` proves the contract only; wire schemas, live output and voice quality belong to the adapters.
+Wire schemas, live output and voice quality belong to the adapters.

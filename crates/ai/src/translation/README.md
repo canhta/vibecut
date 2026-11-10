@@ -14,4 +14,4 @@ Disclosure returns the shared `ai::UploadDisclosure` with the language pair, mod
 
 The per-attempt upper bound is 344,064 micro-USD: 131,072 input tokens at $2/M plus 8192 output tokens at $10/M. It bounds the capped input bytes plus overhead and is deliberately loose. Engine adds the attempt ceiling and aggregate authorization. A digit-set mismatch yields advisory cue-ID warnings; it does not validate units or equivalent dates or compare digit multiplicity.
 
-Offline tests: `tests/it/translation.rs`, synthetic fixtures. The opt-in `translate_eval` example needs `VIBECUT_LIVE_AI=1`, `OPENAI_API_KEY` and `VIBECUT_TRANSLATE_EVAL_BUDGET_MICROS`, checks the total ceiling before network, never retries and writes only to the requested local file. Quality needs live output and independent human scoring.
+The `translate_eval` example checks the total ceiling before network, never retries and writes only to the requested local file. Quality needs live output and independent human scoring.
