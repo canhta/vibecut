@@ -14,7 +14,8 @@ Local-first desktop video editor for macOS, Windows and Linux.
 | P0 | Transcribe Vietnamese, English or Chinese; translate between any pair or show bilingual subtitles; edit; burn into MP4 or export SRT/VTT. |
 | P0 | Get suggested vertical shorts from long talking videos; review, trim, export. |
 | P1 | Coding agents (Claude Code, Codex, opencode, any MCP client) drive the editor through MCP, CLI and an agent skill. |
-| P1 | Better reframing, batch operations, output quality; full editor parity. |
+| P1 | An agent chat inside the editor proposes edits from a prompt; the user previews them and applies or discards them as one step. |
+| P1 | Better reframing, batch operations, output quality; full editor parity, including footage clean-up (stabilize, noise, flicker) and a brand kit of reusable logos, colours, fonts and presets. |
 | P2 | Optional dubbing into Vietnamese, English or Chinese. |
 
 Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions always go through user review.
@@ -30,6 +31,7 @@ The user picks the provider for every AI feature:
 | Transcription | whisper.cpp and Gipformer (local), OpenAI, ElevenLabs |
 | Translation, clip suggestion | OpenAI, Anthropic (clips also: local heuristics) |
 | Chapters, title and description | OpenAI, Anthropic |
+| Agent chat | OpenAI, Anthropic |
 | Dubbing voices | OpenAI, ElevenLabs |
 
 Each run uses one provider. A fallback runs only when the user configured it.
