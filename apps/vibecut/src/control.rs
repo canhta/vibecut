@@ -25,7 +25,7 @@ pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Resu
         let editor = window
             .editor
             .as_deref_mut()
-            .ok_or(engine::EditError::RecoveryBusy)?;
+            .ok_or(engine::EditError::Invalid("editor activation"))?;
         editor
             .activate_with(None, |editor| {
                 Ok(inbox.execute_project(&mut editor.session, value, |_, _| {

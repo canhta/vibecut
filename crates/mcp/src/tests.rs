@@ -646,6 +646,13 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
         (EditError::StaleResult, "stale_result"),
         (EditError::Io(std::io::Error::other("disk")), "io"),
         (
+            engine::recovery::Error::PersistenceFailed(Arc::new(EditError::Io(
+                std::io::Error::other("disk"),
+            )))
+            .into(),
+            "io",
+        ),
+        (
             EditError::Render(render::Error::Unavailable(Vec::new())),
             "unavailable",
         ),

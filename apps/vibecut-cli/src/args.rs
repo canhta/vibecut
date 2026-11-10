@@ -135,13 +135,12 @@ mod exit_codes {
             CliError::Engine(model).value()["message"],
             "local model test-model is not installed; run `vibecut-cli model download test-model`"
         );
-        assert_eq!(
-            CliError::Engine(E::PersistenceFailed(Arc::new(E::Io(io::Error::other(
-                "disk"
-            )))))
-            .value()["message"],
-            "session persistence failed"
+        let persistence = CliError::Engine(
+            engine::recovery::Error::PersistenceFailed(Arc::new(E::Io(io::Error::other("disk"))))
+                .into(),
         );
+        assert_eq!(persistence.code(), ("io", 7));
+        assert_eq!(persistence.value()["message"], "session persistence failed");
     }
 }
 

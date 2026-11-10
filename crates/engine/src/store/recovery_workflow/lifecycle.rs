@@ -1,12 +1,12 @@
 //! Executes persistent session lifecycle operations.
-use super::{Autosave, Duration, EditError, PathBuf, Result, Session};
+use super::{Autosave, Duration, EditError, Error, PathBuf, Session};
 use crate::Lifecycle;
 impl Autosave {
     /// Reserve the destination, then queue journal/project publication off-thread.
     /// Native path resolution/lease acquisition can block this caller. The journal
     /// precedes the project write. Poll tick until saving() is false; leaving before
     /// acknowledgement is not a successful save boundary.
-    pub fn save_as(&mut self, path: PathBuf) -> Result<()> {
+    pub fn save_as(&mut self, path: PathBuf) -> crate::Result<()> {
         if !path.is_absolute() {
             return Err(EditError::Invalid("save path must be absolute"));
         }
@@ -24,7 +24,7 @@ impl Autosave {
         let root = self
             .directory
             .parent()
-            .ok_or(EditError::RecoveryCorrupt)?
+            .ok_or(Error::Corrupt)?
             .canonicalize()?;
         if parent.starts_with(root) {
             return Err(EditError::Invalid(
@@ -33,7 +33,7 @@ impl Autosave {
         }
         self.tick()?;
         if self.saving() {
-            return Err(EditError::RecoveryBusy);
+            return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
             return Err(EditError::TransactionActive);
@@ -46,7 +46,7 @@ impl Autosave {
 impl Autosave {
     /// Typed lifecycle dispatch: the declared route picks the persistence owner, and
     /// completion of a save is acknowledged by tick().
-    pub fn apply(&mut self, command: crate::Command) -> Result<crate::Outcome> {
+    pub fn apply(&mut self, command: crate::Command) -> crate::Result<crate::Outcome> {
         match command.lifecycle() {
             Some(Lifecycle::Thumbnail) => {
                 self.refresh_thumbnail()?;
@@ -68,7 +68,11 @@ impl Autosave {
     }
     /// Dispatch a registry command; the declared lifecycle route picks the persistence
     /// owner, and completion of a save is acknowledged by tick().
-    pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
+    pub fn execute(
+        &mut self,
+        id: &str,
+        params: serde_json::Value,
+    ) -> crate::Result<crate::Outcome> {
         match crate::lifecycle(id) {
             Some(Lifecycle::Thumbnail) => {
                 self.empty_params(&params)?;
@@ -90,14 +94,14 @@ impl Autosave {
             | None => self.session.execute(id, params),
         }
     }
-    fn empty_params(&self, params: &serde_json::Value) -> Result<()> {
+    fn empty_params(&self, params: &serde_json::Value) -> crate::Result<()> {
         if *params == serde_json::json!({}) {
             Ok(())
         } else {
             Err(EditError::InvalidParams)
         }
     }
-    fn refresh_thumbnail(&mut self) -> Result<()> {
+    fn refresh_thumbnail(&mut self) -> crate::Result<()> {
         if self.session.transaction_active() {
             return Err(EditError::TransactionActive);
         }
@@ -122,8 +126,8 @@ fn unchanged() -> crate::Outcome {
 }
 
 impl Autosave {
-    pub fn save(&mut self) -> Result<()> {
-        let path = self.saved_path.clone().ok_or(EditError::SaveAsRequired)?;
+    pub fn save(&mut self) -> crate::Result<()> {
+        let path = self.saved_path.clone().ok_or(Error::SaveAsRequired)?;
         self.save_as(path)
     }
 }
@@ -131,9 +135,9 @@ impl Autosave {
 impl Autosave {
     /// Acknowledge the old pending revision before replacing the active project.
     /// On failure this retains the current Session and refuses the switch.
-    pub fn switch(&mut self, session: Session) -> Result<()> {
+    pub fn switch(&mut self, session: Session) -> crate::Result<()> {
         self.flush()?;
-        let root = self.directory.parent().ok_or(EditError::RecoveryCorrupt)?;
+        let root = self.directory.parent().ok_or(Error::Corrupt)?;
         let next = Self::new(
             root,
             session,
@@ -150,7 +154,7 @@ impl Autosave {
     /// Explicit blocking project-switch/exit barrier. IO remains on the job worker;
     /// the app should keep its progress presentation responsive while waiting.
     /// Failure refuses the boundary; Drop alone never claims to have flushed.
-    pub fn flush(&mut self) -> Result<u64> {
+    pub fn flush(&mut self) -> crate::Result<u64> {
         if self.session.transaction_active() {
             return Err(EditError::TransactionActive);
         }

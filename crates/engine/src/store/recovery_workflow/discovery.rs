@@ -1,12 +1,12 @@
 //! Discovers abandoned recoverable sessions.
 use super::{
-    Candidate, Deserialize, Discovery, EditError, File, JOURNAL, JOURNAL_VERSION, Journal,
-    MAX_META, MAX_PROJECT, Path, PathBuf, Read, Result, Session, SessionLock, TryLockError, fs,
+    Candidate, Deserialize, Discovery, Error, File, JOURNAL, JOURNAL_VERSION, Journal, MAX_META,
+    MAX_PROJECT, Path, PathBuf, Read, Result, Session, SessionLock, TryLockError, fs,
 };
 impl Candidate {
     /// Open as never-saved work. Its original path remains informational metadata;
     /// save() therefore requires an explicit save-as destination.
-    pub fn recover(&self, history_limit: usize) -> Result<Session> {
+    pub fn recover(&self, history_limit: usize) -> crate::Result<Session> {
         Session::new(self.project.clone(), history_limit)
     }
     /// Removes only this journal and its canonical snapshots, preserving the source.
@@ -17,7 +17,7 @@ impl Candidate {
 }
 fn regular(path: &Path) -> Result<()> {
     if !fs::symlink_metadata(path)?.file_type().is_file() {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     Ok(())
 }
@@ -37,11 +37,11 @@ pub(super) fn lock(path: &Path) -> Result<Option<SessionLock>> {
         Err(TryLockError::Error(e)) => Err(lock_error(e)),
     }
 }
-pub(super) fn lock_error(e: std::io::Error) -> EditError {
+pub(super) fn lock_error(e: std::io::Error) -> Error {
     if e.kind() == std::io::ErrorKind::Unsupported {
-        EditError::Unsupported("session locking")
+        Error::Unsupported("session locking")
     } else {
-        EditError::Io(e)
+        Error::Io(e)
     }
 }
 pub(super) fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>> {
@@ -49,7 +49,7 @@ pub(super) fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     Ok(bytes)
 }
@@ -59,15 +59,14 @@ pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Option<
     struct Version {
         version: u32,
     }
-    let header: Version = serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
+    let header: Version = serde_json::from_slice(&bytes).map_err(|_| Error::Corrupt)?;
     if header.version != JOURNAL_VERSION {
         clear(&directory)?;
         return Ok(None);
     }
-    let journal: Journal =
-        serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
+    let journal: Journal = serde_json::from_slice(&bytes).map_err(|_| Error::Corrupt)?;
     if journal.revision == 0 {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     let base = directory.join("project");
     // Canonical list membership rejects traversal, links and unbounded filenames.
@@ -75,14 +74,14 @@ pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Option<
     let path = paths
         .into_iter()
         .find(|p| p.file_name().and_then(|n| n.to_str()) == Some(journal.snapshot.as_str()))
-        .ok_or(EditError::RecoveryCorrupt)?;
+        .ok_or(Error::Corrupt)?;
     let bytes = read_bounded(&path, MAX_PROJECT)?;
     if *blake3::hash(&bytes).as_bytes() != journal.content_hash {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     let project = project::decode(&bytes)?.project;
     if project.data().id != journal.project_id || project.data().name.as_str() != journal.name {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     Ok(Some(Candidate {
         directory,
@@ -103,11 +102,11 @@ pub fn discover(root: &Path) -> Result<Discovery> {
         return Ok(result);
     }
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
-        return Err(EditError::RecoveryCorrupt);
+        return Err(Error::Corrupt);
     }
     for (i, entry) in fs::read_dir(root)?.enumerate() {
         if i >= 10000 {
-            return Err(EditError::Limit);
+            return Err(Error::Limit);
         }
         let entry = entry?;
         if !entry.file_type()?.is_dir() {

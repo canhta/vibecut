@@ -91,3 +91,9 @@ pub enum Error {
     Image(#[from] image::ImageError),
 }
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<engine::recovery::Error> for Error {
+    fn from(error: engine::recovery::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

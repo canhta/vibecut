@@ -155,8 +155,13 @@ Stdout control frames separately project that code to protocol exits. Direct err
 those exits: `budget` uses 2, `stale_result` uses 3, `worker_failure` and `io` use 7, and the
 remaining refined classes use 5. `JobFailure` delegates its inner wire code, so a wrapped
 limit, stale result or IO failure intentionally becomes control exit 2, 3 or 7 respectively.
-Typed CLI labels, messages and exits stay unchanged. API remains 3 with the regenerated
-catalog digest.
+Recovery persistence failures also delegate the stored cause's code: disk IO uses `io`/7,
+worker unwind uses `job`/7, limits use `usage`/2 and budget refusal uses `job`/7 in typed CLI
+diagnostics. Stdout control keeps its separate projection: IO and unwind use exit 7;
+limits and budgets use 2.
+These failures retain the safe message `session persistence failed` and remain non-transient;
+code delegation does not retry a sticky write or expose its cause's diagnostic payload.
+API remains 3 with the current catalog digest; no error-code vocabulary changes.
 
 ## Sounds
 

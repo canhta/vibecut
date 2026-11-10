@@ -92,14 +92,8 @@ pub enum EditError {
     #[error("model storage is full")]
     StorageFull,
 
-    #[error("recovery candidate is corrupt or incomplete")]
-    RecoveryCorrupt,
-    #[error("persistence operation is already active")]
-    RecoveryBusy,
-    #[error("recovered or never-saved work requires save-as")]
-    SaveAsRequired,
-    #[error("session persistence failed")]
-    PersistenceFailed(#[source] std::sync::Arc<EditError>),
+    #[error(transparent)]
+    Recovery(#[from] recovery::Error),
     #[error("job queue is full")]
     QueueFull,
     #[error("aggregate byte budget is full")]
@@ -219,6 +213,7 @@ impl EditError {
             Self::JobPoisoned | Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
             Self::JobFailure(inner) => inner.code(),
+            Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
             Self::Providers(inner) => inner.code(),
@@ -244,10 +239,6 @@ impl EditError {
             | Self::CacheBusy
             | Self::ModelResponse
             | Self::StorageFull
-            | Self::RecoveryCorrupt
-            | Self::RecoveryBusy
-            | Self::SaveAsRequired
-            | Self::PersistenceFailed(_)
             | Self::LoudnessStale
             | Self::NoTrack(_)
             | Self::NoAsset(_)

@@ -378,6 +378,13 @@ fn failed_create_and_refused_save_as_keep_the_editor_recoverable() {
     let recovery = root.path().join("recovery");
     std::fs::remove_dir(&recovery).unwrap();
     std::fs::write(&recovery, b"not a directory").unwrap();
+    let mut discovery = Workspace::new(recovery.clone(), Preferences::default(), None).unwrap();
+    idle(&mut discovery);
+    assert!(matches!(
+        discovery.error(),
+        Some(vibecut::Error::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists
+    ));
+    drop(discovery);
     app.create().unwrap();
     idle(&mut app);
     assert!(app.focused_editor().is_none());
@@ -464,7 +471,7 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
         .map(|e| e.unwrap().path().join("journal.json"))
         .find(|p| p.exists())
         .unwrap();
-    std::fs::write(journal, b"{").unwrap();
+    std::fs::write(&journal, b"{").unwrap();
     let second = app(root.path());
     let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
@@ -483,6 +490,7 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
     assert!(h.query_by_label("A damaged backup was skipped.").is_some());
     assert!(h.query_by_label("Recover a copy").is_none());
     assert!(h.query_by_label("New project").is_some());
+    assert_eq!(std::fs::read(journal).unwrap(), b"{");
 }
 
 #[test]
