@@ -16,7 +16,7 @@ The registry also names an optional content-time remap per kind. `ContentTime` r
 
 `image_ops.rs` owns the shared primitives the ports use: an edge-aware bilinear sample and a gaussian blur at a given sigma over the same kernel builder, plus the box downsample and bilinear upsample pair. Sampling uses texel-index coordinates: integers address exact texels. Image-edge geometry places pixel centres at `x+0.5` / `y+0.5` and subtracts 0.5 exactly once after mapping, before lookup (mirror and upsample alike). Each reserves its transients through the hooks and checks cancellation per row chunk.
 
-The desktop adapter keeps one pipeline per shader entry and binds the instance input as the second readable image; it answers `Unsupported` for entries it has no pipeline for. CPU/GPU parity uses the existing 2e-5 working-channel tolerance.
+The desktop adapter keeps one pipeline per shader entry and binds the instance input as the second readable image; it answers `Unsupported` for entries it has no pipeline for. CPU/GPU parity tolerance is 2e-5 per working channel.
 
 Mirror admits centres only within the closed image-edge rectangle `[0,width] x [0,height]` and unit normals with components in `[-1,1]`, squared length within eight f32 epsilons of one. It refuses non-unit, near-zero, nonfinite and out-of-frame values as `Unsupported` before allocation, on CPU and GPU through the same admission function. With Image's area cap, reflection remains finite and inside the shader's signed index range; the sampler also checks neighbour arithmetic and returns transparent for nonfinite coordinates. No host-dependent bounds are used.
 
