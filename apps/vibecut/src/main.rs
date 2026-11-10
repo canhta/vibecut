@@ -93,8 +93,12 @@ impl eframe::App for Native {
         if self.workspace.focused_project().is_some()
             && let Some((endpoint, grants)) = self.control_options.take()
         {
-            match vibecut_cli::mcp::Server::bind(&endpoint, grants, self.workspace.control_budget())
-            {
+            match vibecut_cli::mcp::Server::bind_with_media(
+                &endpoint,
+                grants,
+                self.workspace.control_budget(),
+                self.workspace.media(),
+            ) {
                 Ok(server) => self.control = Some(server),
                 Err(_) => tracing::warn!(
                     category = "control_listener_failed",

@@ -66,7 +66,9 @@ pub struct Caller<'a> {
     pub fonts: Option<&'a FontAccess<'a>>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
-    pub media: Option<&'a std::cell::RefCell<MediaAccess>>,
+    /// One mutex instance is shared by the desktop timeline display and the
+    /// in-process MCP inbox, so generation and display read the same entries.
+    pub media: Option<&'a std::sync::Mutex<MediaAccess>>,
 }
 
 #[cfg(test)]

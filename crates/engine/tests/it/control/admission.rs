@@ -17,7 +17,11 @@ use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use serde_json::{Value, json};
-use std::{cell::RefCell, path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use time::{FrameRate, SourceRange, Tick};
 
 struct Allow;
@@ -123,7 +127,7 @@ fn add(s: &mut Session, r: &mut JobRunner, key: &str) {
 fn submit_media(
     s: &mut Session,
     r: &mut JobRunner,
-    media: &RefCell<MediaAccess>,
+    media: &Mutex<MediaAccess>,
     id: &str,
     params: Value,
     key: &str,
@@ -145,7 +149,7 @@ fn submit_media(
 fn media_status(
     s: &mut Session,
     r: &mut JobRunner,
-    media: &RefCell<MediaAccess>,
+    media: &Mutex<MediaAccess>,
     job: engine::jobs::JobId,
     key: &str,
 ) -> engine::control::JobView {
@@ -166,7 +170,7 @@ fn media_status(
 fn media_state(
     s: &mut Session,
     r: &mut JobRunner,
-    media: &RefCell<MediaAccess>,
+    media: &Mutex<MediaAccess>,
     job: engine::jobs::JobId,
     key: &str,
 ) -> JobState {
@@ -741,7 +745,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     let png = root.path().join("registry-thumbnails.png");
     write_wav(&wav, 8_000);
     write_png(&png);
-    let media = RefCell::new(media_access(root.path()));
+    let media = Mutex::new(media_access(root.path()));
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -2549,7 +2553,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
     let mut wave_session = with_waveform(&seed(), &wav);
     let mut thumbnail_session = with_thumbnails(&seed(), &png);
     let mut runner = runner();
-    let media = RefCell::new(media_access(dir.path()));
+    let media = Mutex::new(media_access(dir.path()));
 
     let wave = submit_media(
         &mut wave_session,

@@ -44,6 +44,9 @@ pub struct Workspace {
     lane_paths: BTreeMap<project::ProjectId, PathBuf>,
     lane_prune_key: Vec<project::ProjectId>,
     sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+    /// One process media cache instance, lent to every editor's timeline and to
+    /// the desktop MCP inbox. A second open of the same root is never attempted.
+    media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
 }
 
 impl Workspace {
@@ -64,6 +67,12 @@ impl Workspace {
         let sounds = libraries::sounds::SoundLibrary::open(&root.with_file_name("sounds"))
             .ok()
             .map(Arc::new);
+        // One media cache owner for the whole desktop process. Its workspace
+        // root keeps test runs isolated and never races the CLI's cache root.
+        let media =
+            engine::control::MediaAccess::open_in(&root.with_file_name("media"), budget.clone())
+                .ok()
+                .map(|access| Arc::new(Mutex::new(access)));
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
             RunnerConfig {
                 concurrency: [2, 1, 1],
@@ -83,6 +92,7 @@ impl Workspace {
             persistence,
             runner,
             sounds.clone(),
+            media.clone(),
         );
         home.startup_path = path;
         home.submit(Work::Discover, Text::Discovering)?;
@@ -100,10 +110,15 @@ impl Workspace {
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
             sounds,
+            media,
         })
     }
     pub fn control_budget(&self) -> ByteBudget {
         self.home.budget.clone()
+    }
+    /// The one process media cache instance the timeline and MCP inbox share.
+    pub fn media(&self) -> Option<Arc<Mutex<engine::control::MediaAccess>>> {
+        self.media.clone()
     }
     /// The copied appearance value every window reads this frame.
     fn look(&self) -> crate::appearance::Look {
@@ -115,6 +130,9 @@ impl Workspace {
         self.rekey_windows();
         if let Some(sounds) = &self.sounds {
             let _ = editor.set_sound_library(sounds.clone());
+        }
+        if let Some(media) = &self.media {
+            editor.set_media(media.clone());
         }
         let id = editor.session.project().data().id;
         let path = match &editor.session {
@@ -129,6 +147,7 @@ impl Workspace {
                 self.home.persistence.clone(),
                 self.home.runner.clone(),
                 self.sounds.clone(),
+                self.media.clone(),
             );
             window.project_window = true;
             window.title = editor.session.project().data().name.as_str().to_owned();
@@ -695,6 +714,8 @@ pub struct EditorWindow {
     persistence: ByteBudget,
     runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+    /// The process media cache instance lent to this window's editor.
+    media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
     pending: Option<Pending>,
     picker: Option<Picker>,
     candidates: Vec<Candidate>,
@@ -724,6 +745,7 @@ impl EditorWindow {
         persistence: ByteBudget,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
         sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+        media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
     ) -> Self {
         static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Self {
@@ -744,6 +766,7 @@ impl EditorWindow {
             persistence,
             runner,
             sounds,
+            media,
             pending: None,
             picker: None,
             candidates: Vec::new(),
@@ -1193,6 +1216,9 @@ impl EditorWindow {
                 editor.playback.set_device_available(self.device_available);
                 if let Some(sounds) = &self.sounds {
                     let _ = editor.set_sound_library(sounds.clone());
+                }
+                if let Some(media) = &self.media {
+                    editor.set_media(media.clone());
                 }
                 self.editor = Some(editor);
                 self.retry_path = None;

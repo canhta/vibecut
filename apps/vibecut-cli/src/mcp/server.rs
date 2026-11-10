@@ -1,8 +1,12 @@
 //! Listens for MCP clients inside the running desktop process.
 use super::{Grants, Inbox, socket};
 use crate::args::CliError;
-use engine::ByteBudget;
-use std::{path::Path, time::Duration};
+use engine::{ByteBudget, control::MediaAccess};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 /// A listener in the running desktop process. Dropping it closes transports and
 /// joins its runtime; queued requests never outlive the UI-owned inbox.
@@ -12,7 +16,27 @@ pub struct Server {
 }
 impl Server {
     pub fn bind(endpoint: &Path, grants: Grants, budget: ByteBudget) -> Result<Self, CliError> {
-        let (mut handler, inbox) = Inbox::new(grants, budget)?;
+        let (handler, inbox) = Inbox::new(grants, budget)?;
+        Self::listen(endpoint, handler, inbox)
+    }
+
+    /// Bind a desktop listener that lends the process media caches the desktop
+    /// timeline also reads instead of opening a second cache root.
+    pub fn bind_with_media(
+        endpoint: &Path,
+        grants: Grants,
+        budget: ByteBudget,
+        media: Option<Arc<Mutex<MediaAccess>>>,
+    ) -> Result<Self, CliError> {
+        let (handler, inbox) = Inbox::with_media(grants, budget, media)?;
+        Self::listen(endpoint, handler, inbox)
+    }
+
+    fn listen(
+        endpoint: &Path,
+        mut handler: super::Handler,
+        inbox: Inbox,
+    ) -> Result<Self, CliError> {
         handler.project_routing = true;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)

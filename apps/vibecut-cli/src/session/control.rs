@@ -87,7 +87,7 @@ pub(crate) fn control(
     // Without a usable media cache the generation commands refuse; edits still run.
     let media = crate::session::media_access(context.budget()?)
         .ok()
-        .map(std::cell::RefCell::new);
+        .map(std::sync::Mutex::new);
     let policy = ControlPolicy { allow_overwrite };
     let stdin = io::stdin();
     let mut input = stdin.lock();

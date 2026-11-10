@@ -9,8 +9,7 @@ use engine::{
 };
 use serde_json::{Value, json};
 use std::{
-    cell::RefCell,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::sync::{mpsc, oneshot};
@@ -33,10 +32,26 @@ pub struct Inbox {
     runner: JobRunner,
     grants: Grants,
     /// The same caches the CLI control session lends to media generation jobs.
-    media: Option<RefCell<MediaAccess>>,
+    /// The desktop attaches one instance shared with its timeline displays.
+    media: Option<Arc<Mutex<MediaAccess>>>,
 }
 impl Inbox {
     pub(super) fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), CliError> {
+        // Without a usable media cache the generation commands refuse; edits
+        // still run. Desktop composition attaches its own shared instance.
+        let media = crate::session::media_access(budget.clone())
+            .ok()
+            .map(|access| Arc::new(Mutex::new(access)));
+        Self::with_media(grants, budget, media)
+    }
+
+    /// Build an inbox with no cache of its own; the caller owns the one
+    /// `MediaAccess` both the timeline and the MCP inbox use.
+    pub(super) fn with_media(
+        grants: Grants,
+        budget: ByteBudget,
+        media: Option<Arc<Mutex<MediaAccess>>>,
+    ) -> Result<(Handler, Self), CliError> {
         let (send, receive) = mpsc::channel(QUEUE);
         let runner = JobRunner::new(
             RunnerConfig {
@@ -50,10 +65,6 @@ impl Inbox {
             budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
-        // Without a usable media cache the generation commands refuse; edits still run.
-        let media = crate::session::media_access(budget.clone())
-            .ok()
-            .map(RefCell::new);
         Ok((
             Handler::new(send),
             Self {
@@ -65,6 +76,11 @@ impl Inbox {
                 media,
             },
         ))
+    }
+
+    /// Lend the process media caches the desktop already owns.
+    pub fn attach_media(&mut self, media: Arc<Mutex<MediaAccess>>) {
+        self.media = Some(media);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -178,7 +194,7 @@ impl Inbox {
         } = self;
         let runner = projects.get_mut(&id).ok_or(EditError::SessionGone)?;
         session.observe_jobs(runner);
-        Self::execute_with(runner, grants, media.as_ref(), session, value, publish)
+        Self::execute_with(runner, grants, media.as_deref(), session, value, publish)
     }
 
     fn execute(
@@ -193,12 +209,12 @@ impl Inbox {
             grants,
             ..
         } = self;
-        Self::execute_with(runner, grants, media.as_ref(), session, value, publish)
+        Self::execute_with(runner, grants, media.as_deref(), session, value, publish)
     }
     fn execute_with(
         runner: &mut JobRunner,
         grants: &Grants,
-        media: Option<&RefCell<MediaAccess>>,
+        media: Option<&Mutex<MediaAccess>>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,

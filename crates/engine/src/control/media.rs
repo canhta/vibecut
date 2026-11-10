@@ -40,7 +40,12 @@ impl MediaAccess {
     /// root. One owner holds them so generation and display read the same
     /// entries; a second open of the same root reports [`EditError::CacheBusy`].
     pub fn open(budget: crate::ByteBudget) -> Result<Self, EditError> {
-        let root = crate::providers::default_cache_root()?;
+        Self::open_in(&crate::providers::default_cache_root()?, budget)
+    }
+
+    /// Open the two caches under an explicit root. The desktop keeps them with
+    /// its workspace, while the headless CLI uses the shared cache root.
+    pub fn open_in(root: &std::path::Path, budget: crate::ByteBudget) -> Result<Self, EditError> {
         let artifacts =
             ArtifactCache::open(&root.join("waveform"), budget.clone(), MAX_CACHE_ENTRIES)?.0;
         let thumbnails = ThumbnailCache::open(&root.join("thumbnails"), budget, MAX_CACHE_ENTRIES)?;

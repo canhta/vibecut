@@ -16,7 +16,7 @@ Media insertion reuses an unlocked compatible track only when the playhead range
 
 ## Clip visuals
 
-Video and image clips paint the cached thumbnail strip across their visible source range; audio clips, and the audio band inside a video clip, paint the cached waveform. The panel passes its zoom in pixels per second to the engine display query, which maps trim and retime and reads only the cache. Pending displays paint quiet placeholders and ask the frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; failed or unsupported bands show a warning marker instead of retrying, and bars past 0 dBFS get a warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps drawing. `visuals.rs` owns the process caches, in-flight jobs and uploaded strip textures; the panel never decodes media or builds a cache key.
+Video and image clips paint the cached thumbnail strip across their visible source range; audio clips, and the audio band inside a video clip, paint the cached waveform. The panel passes its zoom in pixels per second to the engine display query, which maps trim and retime and reads only the cache. Pending displays paint quiet placeholders and ask the frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; failed or unsupported bands show a warning marker instead of retrying, and bars past 0 dBFS get a warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps drawing. The workspace owns the one process `MediaAccess` and lends it here and to the MCP inbox; `visuals.rs` owns this editor's in-flight jobs and uploaded strip textures, and the panel never decodes media or builds a cache key.
 
 ## Scene switcher
 

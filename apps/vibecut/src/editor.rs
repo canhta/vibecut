@@ -109,6 +109,14 @@ impl Editor {
     pub fn set_font_imports_available(&mut self, available: bool) {
         self.properties.font_picker.has_imports = available;
     }
+    /// Adopt the workspace's one media cache instance for timeline display
+    /// reads and generation. The same instance is lent to the MCP inbox.
+    pub(crate) fn set_media(
+        &mut self,
+        media: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
+    ) {
+        self.media.set_access(media);
+    }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
         Self::with_session(

@@ -9,6 +9,8 @@ use engine::{NewItem, Session};
 use project::{Project, ProjectId};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use time::{SourceRange, TICKS_PER_SECOND};
 
 const SECOND: i64 = TICKS_PER_SECOND;
@@ -469,6 +471,183 @@ fn ranges(count: i64) -> Vec<time::TimeRange> {
             time::TimeRange::new(Tick(index * SECOND), Tick((index + 1) * SECOND)).unwrap()
         })
         .collect()
+}
+
+#[test]
+fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
+    if !testkit::oracle::require("desktop shared media") {
+        return;
+    }
+    let budget = engine::ByteBudget::new(128 << 20).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let shared = Arc::new(Mutex::new(
+        engine::control::MediaAccess::open_in(cache.path(), budget.clone()).unwrap(),
+    ));
+    let dir = testkit::fixture::dir("p1-93-shared-media");
+    let wav = testkit::oracle::generate(
+        &dir,
+        "desktop shared media",
+        "tone.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+        ],
+    )
+    .unwrap();
+    let asset = media::SourceAsset::import(AssetId(1), wav).unwrap();
+    let mut session =
+        Session::new(Project::empty(ProjectId(7), "Shared".into()).unwrap(), 50).unwrap();
+    session
+        .apply(Command::AddAsset {
+            asset: asset.clone(),
+        })
+        .unwrap();
+    let track = match session
+        .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
+            name: "Audio".into(),
+            kind: TrackKind::Audio,
+        })
+        .unwrap()
+        .created
+        .first()
+    {
+        Some(engine::CreatedId::Track(id)) => *id,
+        _ => panic!("track"),
+    };
+    let item = match session
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Track { track },
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(AssetId(1)),
+                source_range: SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Audio(project::AudioParams {
+                    volume: 0.0,
+                    muted: false,
+                    source: Default::default(),
+                    fades: Default::default(),
+                }),
+            },
+        })
+        .unwrap()
+        .created
+        .first()
+    {
+        Some(engine::CreatedId::Item(id)) => *id,
+        _ => panic!("item"),
+    };
+    let before = session.project().clone();
+    let endpoint = std::path::PathBuf::from(format!(
+        "vibecut-shared-media-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut server = vibecut_cli::mcp::Server::bind_with_media(
+        &endpoint,
+        vibecut_cli::mcp::Grants::default(),
+        budget.clone(),
+        Some(shared.clone()),
+    )
+    .unwrap();
+    let accepted_rev = session.revision();
+    let accepted = server
+        .inbox
+        .execute_project(
+            &mut session,
+            serde_json::json!({
+                "request_id": "shared-waveform",
+                "idempotency_key": "shared-waveform",
+                "base_rev": accepted_rev,
+                "command": "media.generate_waveform",
+                "params": {"asset": 1},
+            }),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    let job = accepted
+        .pointer("/value/value/job")
+        .expect("waveform job")
+        .clone();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut status_id = 0u64;
+    loop {
+        server
+            .inbox
+            .poll_projects(|_, _, _| Ok(serde_json::Value::Null))
+            .unwrap();
+        status_id = status_id.saturating_add(1);
+        let key = format!("shared-status-{status_id}");
+        let status_rev = session.revision();
+        let status = server
+            .inbox
+            .execute_project(
+                &mut session,
+                serde_json::json!({
+                    "request_id": key,
+                    "idempotency_key": key,
+                    "base_rev": status_rev,
+                    "command": "job_status",
+                    "params": {"job": job},
+                }),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        match status
+            .pointer("/value/value/snapshot/state")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("completed") => break,
+            Some("failed" | "cancelled") => panic!("waveform job ended early: {status}"),
+            _ => {}
+        }
+        assert!(
+            Instant::now() < deadline,
+            "waveform job timed out: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        std::sync::Arc::ptr_eq(&before, session.project()),
+        "media generation must not mutate the project"
+    );
+
+    // The timeline reads the waveform through the same desktop owner; the MCP
+    // job published that entry, so the display is immediately ready.
+    let item = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .cloned()
+        .unwrap();
+    let visible = time::TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)).unwrap();
+    let mut media = Media::new(budget.clone());
+    media.set_access(shared.clone());
+    let state = media.waveform(&asset, &item, visible, 16);
+    assert!(
+        matches!(&state, WaveState::Ready(bars) if !bars.is_empty()),
+        "timeline display is not ready: {state:?}"
+    );
+    // A second owner would have to refuse: the desktop keeps the only open.
+    assert!(matches!(
+        engine::control::MediaAccess::open_in(cache.path(), budget),
+        Err(engine::EditError::CacheBusy)
+    ));
 }
 
 #[test]

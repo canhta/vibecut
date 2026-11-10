@@ -7,8 +7,9 @@
 
 use crate::editor::timeline::{AssetId, ItemId, Tick, egui, theme};
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
+    sync::{Arc, Mutex},
 };
 
 /// One ready waveform column, linear amplitudes.
@@ -117,8 +118,6 @@ pub(crate) trait VisualQuery {
 
 /// Reserved texture slots for strip frames; the oldest frame is dropped first.
 const MAX_TEXTURES: usize = 512;
-/// A cache directory held by another process is retried after this many ticks.
-const BUSY_RETRY_TICKS: u32 = 120;
 /// Loopback policy for the editor's own registered commands.
 struct EditorPolicy;
 impl engine::control::Policy for EditorPolicy {
@@ -127,19 +126,15 @@ impl engine::control::Policy for EditorPolicy {
     }
 }
 
-enum Access {
-    Unopened,
-    Ready(Box<RefCell<engine::control::MediaAccess>>),
-    Unavailable,
-}
-
 /// Texture cache key: asset, cached source position and content identity.
 type StripTextures = BTreeMap<(AssetId, Tick, [u8; 32]), egui::TextureHandle>;
 
 /// Production display queries plus the jobs they request.
 pub(in crate::editor) struct Media {
     budget: engine::ByteBudget,
-    access: RefCell<Access>,
+    /// The one process cache instance the workspace lends to this editor and
+    /// the MCP inbox; `None` until the composition root attaches it.
+    access: Option<Arc<Mutex<engine::control::MediaAccess>>>,
     runner: Option<engine::jobs::JobRunner>,
     /// In-flight generation job -> the display request that submitted it.
     jobs: BTreeMap<engine::jobs::JobId, VisualRequest>,
@@ -150,14 +145,13 @@ pub(in crate::editor) struct Media {
     queued: RefCell<Vec<VisualRequest>>,
     textures: RefCell<StripTextures>,
     request_id: u64,
-    ticks: Cell<u32>,
 }
 
 impl Media {
     pub(in crate::editor) fn new(budget: engine::ByteBudget) -> Self {
         Self {
             budget,
-            access: RefCell::new(Access::Unopened),
+            access: None,
             runner: None,
             jobs: BTreeMap::new(),
             pending: RefCell::new(BTreeMap::new()),
@@ -165,23 +159,22 @@ impl Media {
             queued: RefCell::new(Vec::new()),
             textures: RefCell::new(BTreeMap::new()),
             request_id: 0,
-            ticks: Cell::new(0),
         }
     }
 
-    /// Run one display query with the shared caches; `None` while closed.
+    /// Adopt the workspace's one media cache instance.
+    pub(in crate::editor) fn set_access(
+        &mut self,
+        access: Arc<Mutex<engine::control::MediaAccess>>,
+    ) {
+        self.access = Some(access);
+    }
+
+    /// Run one display query with the shared caches; `None` while detached.
     fn query<T>(&self, read: impl FnOnce(&mut engine::control::MediaAccess) -> T) -> Option<T> {
-        let mut access = self.access.borrow_mut();
-        if matches!(*access, Access::Unopened) {
-            *access = match engine::control::MediaAccess::open(self.budget.clone()) {
-                Ok(opened) => Access::Ready(Box::new(RefCell::new(opened))),
-                Err(_) => Access::Unavailable,
-            };
-        }
-        match &*access {
-            Access::Ready(opened) => Some(read(&mut opened.borrow_mut())),
-            Access::Unopened | Access::Unavailable => None,
-        }
+        let access = self.access.as_ref()?;
+        let mut access = access.lock().ok()?;
+        Some(read(&mut access))
     }
 
     fn texture(
@@ -266,14 +259,7 @@ impl Media {
         command: &str,
         params: serde_json::Value,
     ) -> crate::Result<engine::control::Response> {
-        let mut access = self.access.borrow_mut();
-        if matches!(*access, Access::Unopened) {
-            *access = match engine::control::MediaAccess::open(self.budget.clone()) {
-                Ok(opened) => Access::Ready(Box::new(RefCell::new(opened))),
-                Err(_) => Access::Unavailable,
-            };
-        }
-        let Access::Ready(access) = &*access else {
+        let Some(access) = &self.access else {
             return Err(crate::Error::Invalid("media cache unavailable"));
         };
         if self.runner.is_none() {
@@ -323,12 +309,6 @@ impl Media {
 
     /// Advance generation jobs and publish finished outputs through `job_status`.
     pub(in crate::editor) fn tick(&mut self, session: &mut engine::Session) -> crate::Result<()> {
-        self.ticks.set(self.ticks.get().wrapping_add(1));
-        let retry = self.ticks.get().is_multiple_of(BUSY_RETRY_TICKS)
-            && matches!(*self.access.borrow(), Access::Unavailable);
-        if retry {
-            *self.access.borrow_mut() = Access::Unopened;
-        }
         if let Some(runner) = &mut self.runner {
             runner.tick()?;
         }

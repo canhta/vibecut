@@ -85,13 +85,16 @@ pub fn background(arguments: Vec<OsString>) -> Result<()> {
         if workspace.error().is_some() {
             return Err(Error::Invalid("background workspace failed"));
         }
-        if let Some(editor) = workspace.focused_editor_mut() {
+        if workspace.focused_editor().is_some() {
             if server.is_none() {
+                let budget = workspace.control_budget();
+                let media = workspace.media();
                 server = Some(
-                    vibecut_cli::mcp::Server::bind(
+                    vibecut_cli::mcp::Server::bind_with_media(
                         &endpoint,
                         Default::default(),
-                        editor.playback.budget().clone(),
+                        budget,
+                        media,
                     )
                     .map_err(|_| Error::Invalid("control listener"))?,
                 );

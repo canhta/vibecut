@@ -104,7 +104,7 @@ impl Session {
                     JobKind::GenerateWaveform | JobKind::GenerateClipThumbnails
                 ) && let Some(media) = caller.media
                 {
-                    let mut media = media.borrow_mut();
+                    let mut media = media.lock().map_err(|_| EditError::JobPoisoned)?;
                     match snapshot.state {
                         JobState::Completed => media.finish(runner, job)?,
                         JobState::Cancelled | JobState::Failed => media.forget(job),
@@ -128,7 +128,10 @@ impl Session {
                 let media = caller
                     .media
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
-                let job = media.borrow_mut().generate_waveform(runner, asset)?;
+                let job = media
+                    .lock()
+                    .map_err(|_| EditError::JobPoisoned)?
+                    .generate_waveform(runner, asset)?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
@@ -164,13 +167,10 @@ impl Session {
                 let media = caller
                     .media
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
-                let job = media.borrow_mut().generate_clip_thumbnails(
-                    runner,
-                    asset,
-                    &clip,
-                    visible,
-                    pixels_per_second,
-                )?;
+                let job = media
+                    .lock()
+                    .map_err(|_| EditError::JobPoisoned)?
+                    .generate_clip_thumbnails(runner, asset, &clip, visible, pixels_per_second)?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
