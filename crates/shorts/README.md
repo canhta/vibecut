@@ -10,4 +10,4 @@ Use `clip_suggest::{suggest, prepare_export, export}` for the complete workflow,
 | `suggestion/` | Produces source-snapped clip candidates. | [Suggestion workflow](src/suggestion/README.md) |
 | `batch_export/` | Exports accepted shorts through bounded jobs. | [Batch export](src/batch_export/README.md) |
 
-`cargo test -p shorts` runs the contracts. `cargo xtask clip-eval synthetic` compares the pipeline against its pinned labelled baseline.
+Verification and the labelled acceptance path are owned by [verification](../../docs/engineering/verification.md#checks) and [clip-eval](../clip-eval/README.md).
