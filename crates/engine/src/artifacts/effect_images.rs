@@ -103,6 +103,7 @@ impl EffectThumbnails {
                     time::Tick::ZERO,
                     source.width(),
                     source.height(),
+                    true,
                 )?;
                 let image = cache.adapter.apply(
                     &source,

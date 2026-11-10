@@ -16,6 +16,8 @@ struct ComputePass<'a> {
     entry_point: &'static str,
     horizontal: bool,
     values: Cow<'a, [f32]>,
+    /// Reads the instance input image as well as the previous pass output.
+    sample: bool,
 }
 
 pub struct GpuEffects {
@@ -36,7 +38,7 @@ impl GpuEffects {
 
     pub async fn new(device: wgpu::Device, queue: wgpu::Queue) -> Result<Self> {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let entries: Vec<_> = (0..6)
+        let entries: Vec<_> = (0..7)
             .map(|binding| wgpu::BindGroupLayoutEntry {
                 binding,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -64,7 +66,7 @@ impl GpuEffects {
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::include_wgsl!("effects.wgsl"));
-        let pipelines = ["gaussian", "blend", "grade", "chroma_key"]
+        let pipelines = ["gaussian", "blend", "grade", "chroma_key", "mirror"]
             .into_iter()
             .map(|entry| {
                 (
@@ -129,7 +131,7 @@ impl GpuEffects {
         let pass_bytes = (passes.len() as u64)
             .checked_mul(1024)
             .ok_or(Error::Invalid("GPU pass bytes"))?;
-        let lease = Arc::new(hooks.reserve(MemoryKind::Compositor, bytes * 6 + pass_bytes)?);
+        let lease = Arc::new(hooks.reserve(MemoryKind::Compositor, bytes * 7 + pass_bytes)?);
         let upload = |image: &Image| -> Result<wgpu::Buffer> {
             let mut data = Vec::new();
             data.try_reserve_exact(bytes as usize)?;
@@ -144,6 +146,13 @@ impl GpuEffects {
             ))
         };
         let mut a = upload(item)?;
+        // A sample pass also reads the image its effect instance started with;
+        // other runs leave binding 6 on the current image instead of uploading.
+        let instance = if passes.clone().any(|pass| pass.sample) {
+            Some(upload(item)?)
+        } else {
+            None
+        };
         let mut b = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("effect output"),
             size: bytes,
@@ -175,14 +184,22 @@ impl GpuEffects {
             let params = self.buffer(&constants, wgpu::BufferUsages::UNIFORM);
             let weights: Vec<u8> = pass.values.iter().flat_map(|w| w.to_le_bytes()).collect();
             let weights = self.buffer(&weights, wgpu::BufferUsages::STORAGE);
-            let entries: Vec<_> = [&a, &b, &weights, &params, &coverage, &below]
-                .into_iter()
-                .enumerate()
-                .map(|(binding, buffer)| wgpu::BindGroupEntry {
-                    binding: binding as u32,
-                    resource: buffer.as_entire_binding(),
-                })
-                .collect();
+            let entries: Vec<_> = [
+                &a,
+                &b,
+                &weights,
+                &params,
+                &coverage,
+                &below,
+                instance.as_ref().unwrap_or(&a),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect();
             let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("effect pass"),
                 layout: &self.layout,
@@ -263,6 +280,9 @@ impl GpuEffects {
     }
 }
 impl EffectCompositor for GpuEffects {
+    fn supports(&self, entry_point: &str) -> bool {
+        self.pipelines.contains_key(entry_point)
+    }
     fn composite(
         &self,
         below: &mut Image,
@@ -279,6 +299,7 @@ impl EffectCompositor for GpuEffects {
             entry_point: "blend",
             horizontal: false,
             values: Cow::Borrowed(&values),
+            sample: false,
         };
         let result = self.execute(
             item,
@@ -311,6 +332,7 @@ impl EffectCompositor for GpuEffects {
                 entry_point: pass.entry_point(),
                 horizontal: pass.horizontal(),
                 values: pass.values(),
+                sample: matches!(pass, EffectPass::Sample { .. }),
             }),
             inputs,
             hooks,

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use crate::support::Hooks;
+use crate::support::{Hooks, tick};
 use render::{effects::*, *};
 use std::sync::{
     Arc,
@@ -651,6 +651,9 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
     use time::{FrameRate, SourceRange, Tick};
     struct GaussianOnly(std::sync::atomic::AtomicUsize);
     impl EffectCompositor for GaussianOnly {
+        fn supports(&self, entry_point: &str) -> bool {
+            entry_point == "gaussian"
+        }
         fn apply(
             &self,
             item: &Image,
@@ -718,4 +721,271 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
     let fallback = render(settings);
     assert_eq!(adapter.0.load(Ordering::SeqCst), 1, "the adapter was asked");
     assert_eq!(fallback.pixels(), reference.pixels());
+}
+
+/// Opaque frames that differ only with the source tick: red before 0.05 s, green after.
+struct TimeFrames;
+impl SourceProvider for TimeFrames {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        at: time::Tick,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        let colour = if at.seconds() < 0.05 {
+            [255, 0, 0, 255]
+        } else {
+            [0, 255, 0, 255]
+        };
+        let bytes: Vec<u8> = colour.iter().copied().cycle().take(16 * 4).collect();
+        Ok(Some(Image::from_rgba8(4, 4, &bytes, false, 13, hooks)?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, hooks)
+    }
+}
+
+/// A 4x4, 2-second video item whose effects are `effects`.
+fn content_scene(effects: Vec<project::EffectInstance>) -> project::Project {
+    use project::*;
+    use time::{SourceRange, Tick};
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-content-time"))
+        .format("synthetic")
+        .duration(tick(2, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(2, 1))
+                .start(Tick::ZERO)
+                .frame_count(60)
+                .variable_frame_rate(false)
+                .size(4, 4)
+                .build(),
+        )
+        .build();
+    let mut data = Project::empty(ProjectId(7), "content".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 4;
+    data.canvas.height = 4;
+    data.assets.push(asset);
+    data.scene_mut().timeline.main.items.push(Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: vec![],
+        effects,
+        animations: Default::default(),
+        id: ItemId(1),
+        source_asset: Some(media::AssetId(1)),
+        source_range: SourceRange::new(Tick::ZERO, tick(2, 1)).unwrap(),
+        start: Tick::ZERO,
+        content: ItemParams::Video(VideoParams {
+            crop: None,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+        }),
+    });
+    Project::new(data).unwrap()
+}
+
+#[test]
+fn content_time_holds_the_media_frame_at_the_effect_rate() {
+    use project::*;
+    use time::Tick;
+    let hooks = Hooks::default();
+    let hold = effect_definition("hold_time")
+        .unwrap()
+        .instance("hold")
+        .with("rate", EffectValue::Scalar(2.0))
+        .unwrap();
+    let held = content_scene(vec![hold]);
+    let plain = content_scene(vec![]);
+    let render = |project: &Project, at: Tick| {
+        Renderer::new(project, RenderSettings::from_project(project))
+            .unwrap()
+            .render_frame(at, &mut TimeFrames, &hooks)
+            .unwrap()
+    };
+    let tenth = tick(1, 10);
+    // Without the effect the content follows the item clock.
+    assert_eq!(render(&plain, Tick::ZERO).pixels()[0], [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(render(&plain, tenth).pixels()[0], [0.0, 1.0, 0.0, 1.0]);
+    // With a 2 fps hold both ticks sample the content at 0: the picture is held
+    // while the item clock (and so every parameter) keeps running.
+    let first = render(&held, Tick::ZERO);
+    assert_eq!(first.pixels()[0], [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(render(&held, tenth).pixels(), first.pixels());
+    // The remap is a registry lookup, not a special case in the renderer.
+    assert!(content_remap("hold_time").is_some());
+    assert!(content_remap("blur").is_none());
+}
+
+#[test]
+fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
+    use project::*;
+    use time::Tick;
+    let hooks = Hooks::default();
+    let view = effect_definition("hold_time").unwrap().instance("probe");
+    let passes = |fine| {
+        evaluate_effect(&Animations::default(), &view, Tick::ZERO, 64, 36, fine).unwrap()
+    };
+    // EffectFrame is fine by default, and the evaluator sees the renderer's flag.
+    let frame = EffectFrame::new(&Animations::default(), &view, Tick::ZERO, 64, 36).unwrap();
+    assert!(frame.fine);
+    let hue = |passes: &[EffectPass]| match passes.first() {
+        Some(EffectPass::Pixel { uniforms, .. }) => uniforms.get(3).copied(),
+        _ => None,
+    };
+    assert_eq!(hue(&passes(true)), Some(Uniform::Float(0.0)));
+    assert_eq!(hue(&passes(false)), Some(Uniform::Float(1e-3)));
+    // Coarse stays within a stated tolerance of fine on the colour chart.
+    let source = chart();
+    let image =
+        Image::from_working_pixels(source.len() as u32, 1, source.iter().copied(), &hooks).unwrap();
+    let apply = |passes: Vec<EffectPass>| {
+        CpuEffects
+            .apply(
+                &image,
+                &passes,
+                EffectInputs {
+                    coverage: None,
+                    below: &image,
+                },
+                &hooks,
+            )
+            .unwrap()
+    };
+    let fine = apply(passes(true));
+    let coarse = apply(passes(false));
+    for (a, b) in fine.pixels().iter().zip(coarse.pixels()) {
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() <= 2e-3, "{a:?} vs {b:?}");
+        }
+    }
+}
+
+#[test]
+fn whole_image_render_pass_mirrors_through_the_bilinear_helper() {
+    let hooks = Hooks::default();
+    // Left half red, right half blue: the two sides tell the reflection apart.
+    let source = (0..32).map(|i| {
+        if i % 8 < 4 {
+            [1.0, 0.0, 0.0, 1.0]
+        } else {
+            [0.0, 0.0, 1.0, 1.0]
+        }
+    });
+    let image = Image::from_working_pixels(8, 4, source, &hooks).unwrap();
+    let mirror = |values: [f32; 4]| EffectPass::Sample {
+        entry_point: "mirror",
+        uniforms: values.map(Uniform::Float).to_vec(),
+    };
+    // Reflect about the vertical line through the frame centre.
+    let pass = mirror([4.0, 2.0, 1.0, 0.0]);
+    validate_pass(&pass).unwrap();
+    let at = |image: &Image, x: usize, y: usize| image.pixels()[y * 8 + x];
+    let output = CpuEffects
+        .apply(
+            &image,
+            &[pass],
+            EffectInputs {
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap();
+    assert_eq!(output.width(), 8);
+    assert_eq!(output.height(), 4);
+    // The negative side (left) keeps its pixels; the positive side samples the
+    // reflection, so the blue right half becomes red.
+    for x in 0..4 {
+        assert_eq!(at(&output, x, 1), [1.0, 0.0, 0.0, 1.0], "x={x}");
+    }
+    assert_eq!(at(&output, 7, 1), [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(at(&output, 4, 1), [0.5, 0.0, 0.5, 1.0]);
+    // Same input, same output: no clock, no global state.
+    let again = CpuEffects
+        .apply(
+            &image,
+            &[mirror([4.0, 2.0, 1.0, 0.0])],
+            EffectInputs {
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap();
+    assert_eq!(again.pixels(), output.pixels());
+    // Hostile uniforms and an unknown op are refused before any pixel is written.
+    for bad in [
+        mirror([4.0, 2.0, 0.0, 0.0]),
+        mirror([f32::NAN, 2.0, 1.0, 0.0]),
+        mirror([4.0, 2.0, f32::INFINITY, 0.0]),
+        EffectPass::Sample {
+            entry_point: "nope",
+            uniforms: vec![Uniform::Float(0.0)],
+        },
+    ] {
+        assert!(validate_pass(&bad).is_err(), "{bad:?}");
+    }
+    // An adapter without a pipeline for the pass answers Unsupported; the
+    // renderer then runs the rest of the list on the CPU reference above.
+    struct PixelOnly;
+    impl EffectCompositor for PixelOnly {
+        fn supports(&self, entry_point: &str) -> bool {
+            entry_point != "mirror"
+        }
+        fn apply(
+            &self,
+            item: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            if passes
+                .iter()
+                .any(|pass| matches!(pass, EffectPass::Sample { .. }))
+            {
+                return Err(Error::Unsupported("GPU shader entry"));
+            }
+            CpuEffects.apply(item, passes, inputs, hooks)
+        }
+    }
+    assert!(matches!(
+        PixelOnly.apply(
+            &image,
+            &[mirror([4.0, 2.0, 1.0, 0.0])],
+            EffectInputs {
+                coverage: None,
+                below: &image
+            },
+            &hooks
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    // The pass lists flatten their uniforms like a pixel op does.
+    let pass = mirror([4.0, 2.0, 1.0, 0.0]);
+    assert_eq!(pass.values().as_ref(), [4.0, 2.0, 1.0, 0.0]);
 }

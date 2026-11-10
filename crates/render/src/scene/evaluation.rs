@@ -183,13 +183,15 @@ impl<'a> Renderer<'a> {
                 .iter()
                 .filter(|i| matches!(i.content, ItemParams::Video(_)))
             {
-                if self.placement_at(item, local_time(item, at)?)?.opacity == 0.0 {
+                let local = local_time(item, at)?;
+                if self.placement_at(item, local)?.opacity == 0.0 {
                     continue;
                 }
-                let placement = item_crop(item, Placement::default(), local_time(item, at)?)?;
+                let content = content_local(item, local, out.width, out.height)?;
+                let placement = item_crop(item, Placement::default(), local)?;
                 if let Some(image) = self.video_image(
                     item,
-                    source_time(item, at)?,
+                    source_time(item, content_tick(item, content)?)?,
                     placement,
                     sources,
                     hooks,
@@ -211,12 +213,13 @@ impl<'a> Renderer<'a> {
                 transition_base = Some(out.copy(hooks)?);
             }
             let local = local_time(item, at)?;
+            let content = content_local(item, local, out.width, out.height)?;
             let mut placement = self.placement_at(item, local)?;
             if placement.opacity != 0.0 {
                 let masked = item.masks.iter().any(|m| m.active());
                 let transform = super::transform::Transform::at(item, local)?;
                 let blended = item.blend_mode != project::BlendMode::Normal;
-                let source_at = source_time(item, at)?;
+                let source_at = source_time(item, content_tick(item, content)?)?;
                 let _plan = if item.effects.iter().any(|effect| effect.enabled) {
                     Some(hooks.reserve(
                         MemoryKind::Compositor,
@@ -227,16 +230,32 @@ impl<'a> Renderer<'a> {
                 } else {
                     None
                 };
-                let passes = crate::effects::evaluate(item, local, out.width, out.height)?;
-                let final_opacity = if masked || blended || !passes.is_empty() || transform.active()
-                {
+                // One pass list per effect instance, so a sample op's `input` is the
+                // image that instance started with, not the whole item's.
+                let runs = item
+                    .effects
+                    .iter()
+                    .filter(|effect| effect.enabled)
+                    .map(|effect| {
+                        crate::effects::evaluate_effect(
+                            &item.animations,
+                            effect,
+                            local,
+                            out.width,
+                            out.height,
+                            !preview,
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let has_passes = runs.iter().any(|run| !run.is_empty());
+                let final_opacity = if masked || blended || has_passes || transform.active() {
                     let opacity = placement.opacity;
                     placement.opacity = 1.;
                     opacity
                 } else {
                     1.
                 };
-                let below = if passes.is_empty() && !masked && !blended && !transform.active() {
+                let below = if !has_passes && !masked && !blended && !transform.active() {
                     None
                 } else {
                     let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
@@ -451,23 +470,16 @@ impl<'a> Renderer<'a> {
                     ItemParams::Audio(_) => {}
                 }
                 if let Some(mut below) = below {
-                    use crate::effects::{CpuEffects, EffectCompositor, EffectInputs};
-                    let inputs = || EffectInputs {
-                        coverage: None,
-                        below: &below,
-                    };
+                    use crate::effects::CpuEffects;
                     let cpu = CpuEffects;
                     let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
-                    let mut filtered = if passes.is_empty() {
-                        out
-                    } else {
-                        match adapter.apply(&out, &passes, inputs(), hooks) {
-                            Err(Error::Unsupported(_)) => {
-                                cpu.apply(&out, &passes, inputs(), hooks)?
-                            }
-                            result => result?,
+                    let mut filtered = out;
+                    for run in &runs {
+                        if run.is_empty() {
+                            continue;
                         }
-                    };
+                        filtered = apply_run(filtered, run, &below, adapter, hooks)?;
+                    }
                     if filtered.width != below.width || filtered.height != below.height {
                         return Err(Error::Invalid("effect output dimensions"));
                     }
@@ -771,6 +783,60 @@ fn source_time(item: &Item, at: Tick) -> Result<Tick> {
     // Project owns the one retime-aware mapping: nearest earlier source frame at non-1x speed.
     item.source_time_at(at)
         .map_err(|_| Error::Invalid("item source overflow"))
+}
+/// Item-local time at which the item's content is sampled: the enabled effects'
+/// content-time remaps in stack order, clamped into the item's own range. Only the
+/// content is held; transform, crop, opacity and effect parameters keep the real time.
+fn content_local(item: &Item, local: Tick, width: u32, height: u32) -> Result<Tick> {
+    let held = crate::effects::content_time(item, local, width, height)?;
+    Ok(held.clamp(Tick::ZERO, item.duration()?))
+}
+/// The timeline tick of an item-local content time.
+fn content_tick(item: &Item, local: Tick) -> Result<Tick> {
+    item.start
+        .checked_add(local)
+        .ok_or(Error::Invalid("item content time"))
+}
+/// Apply one effect instance's pass list: consecutive passes the adapter supports go
+/// to it as one run, the rest to the CPU reference. Each run starts from the previous
+/// run's output, so a sample op's `input` is the image its instance started with.
+fn apply_run(
+    mut image: Image,
+    passes: &[crate::effects::EffectPass],
+    below: &Image,
+    adapter: &dyn crate::effects::EffectCompositor,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Image> {
+    use crate::effects::{CpuEffects, EffectCompositor, EffectInputs};
+    let cpu = CpuEffects;
+    let mut index = 0;
+    while index < passes.len() {
+        let first = passes.get(index).ok_or(Error::Invalid("effect run"))?;
+        let supported = adapter.supports(first.entry_point());
+        let mut end = index + 1;
+        while end < passes.len() {
+            let next = passes.get(end).ok_or(Error::Invalid("effect run"))?;
+            if adapter.supports(next.entry_point()) != supported {
+                break;
+            }
+            end += 1;
+        }
+        let run = passes.get(index..end).ok_or(Error::Invalid("effect run"))?;
+        let inputs = || EffectInputs {
+            coverage: None,
+            below,
+        };
+        image = if supported {
+            match adapter.apply(&image, run, inputs(), hooks) {
+                Err(Error::Unsupported(_)) => cpu.apply(&image, run, inputs(), hooks)?,
+                result => result?,
+            }
+        } else {
+            cpu.apply(&image, run, inputs(), hooks)?
+        };
+        index = end;
+    }
+    Ok(image)
 }
 fn local_time(item: &Item, at: Tick) -> Result<Tick> {
     at.checked_sub(item.start)

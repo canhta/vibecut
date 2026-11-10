@@ -6,6 +6,8 @@ struct Params { width: u32, height: u32, horizontal: u32, count: u32 }
 // Reserved common inputs keep the pass interface independent of effect type.
 @group(0) @binding(4) var<storage, read> coverage: array<vec4<f32>>;
 @group(0) @binding(5) var<storage, read> below: array<vec4<f32>>;
+// A sample pass also reads the image its effect instance started with.
+@group(0) @binding(6) var<storage, read> inst: array<vec4<f32>>;
 @compute @workgroup_size(8, 8)
 fn gaussian(@builtin(global_invocation_id) id: vec3<u32>) {
     if id.x >= p.width || id.y >= p.height { return; }
@@ -173,4 +175,39 @@ fn blend(@builtin(global_invocation_id) id: vec3<u32>) {
     let alpha = a+b.a*(1.0-a);
     let color = s.rgb*opacity*(1.0-b.a)+b.rgb*(1.0-a)+a*b.a*mixed;
     dst[i] = vec4<f32>(clamp(color,vec3<f32>(0.0),vec3<f32>(alpha)),alpha);
+}
+
+// Exact texel of the instance input image; transparent outside the picture.
+fn inst_texel(x: i32, y: i32) -> vec4<f32> {
+    if x < 0 || y < 0 || x >= i32(p.width) || y >= i32(p.height) { return vec4<f32>(0.0); }
+    return inst[u32(y) * p.width + u32(x)];
+}
+// Transparent-border bilinear sample of the instance input, as helpers::sample.
+fn inst_sample(x: f32, y: f32) -> vec4<f32> {
+    let ix = floor(x);
+    let iy = floor(y);
+    let tx = x - ix;
+    let ty = y - iy;
+    let i = vec2<i32>(i32(ix), i32(iy));
+    let a = inst_texel(i.x, i.y);
+    let b = inst_texel(i.x + 1, i.y);
+    let c = inst_texel(i.x, i.y + 1);
+    let d = inst_texel(i.x + 1, i.y + 1);
+    let top = a + (b - a) * tx;
+    let bottom = c + (d - c) * tx;
+    return clamp(top + (bottom - top) * ty, vec4<f32>(0.0), vec4<f32>(1.0));
+}
+// Mirrors render::effects::mirror; weights = [centre x, centre y, direction x, direction y].
+@compute @workgroup_size(8, 8)
+fn mirror(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let px = f32(id.x) + 0.5;
+    let py = f32(id.y) + 0.5;
+    let centre = vec2<f32>(weights[0], weights[1]);
+    let dir = vec2<f32>(weights[2], weights[3]);
+    let d = dot(vec2<f32>(px, py) - centre, dir);
+    var out = src[id.y * p.width + id.x];
+    if d > 0.0 { out = inst_sample(px - 2.0 * d * dir.x, py - 2.0 * d * dir.y); }
+    let a = clamp(out.a, 0.0, 1.0);
+    dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
 }

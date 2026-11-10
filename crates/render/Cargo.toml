@@ -23,3 +23,6 @@ rayon = "1.12.0"
 tempfile.workspace = true
 serde_json.workspace = true
 testkit.workspace = true
+# The content-time and quality proofs need a catalog kind that no production
+# build carries (see project's `test-kinds` feature).
+project = { workspace = true, features = ["test-kinds"] }

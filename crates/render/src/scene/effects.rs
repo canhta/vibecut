@@ -2,7 +2,9 @@
 use crate::{Error, ExecutionHooks, Image, Result, check};
 use project::{Animations, EffectInstance, EffectValue, Item, ParamValue};
 use std::{borrow::Cow, collections::BTreeMap};
-use time::Tick;
+use time::{Rounding, Tick};
+
+mod helpers;
 
 /// One shader uniform: what an effect hands a single-pass pixel op.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,11 +38,18 @@ pub enum EffectPass {
         entry_point: &'static str,
         uniforms: Vec<Uniform>,
     },
+    /// One pixel from its coordinate, flat uniforms and two readable images.
+    Sample {
+        entry_point: &'static str,
+        uniforms: Vec<Uniform>,
+    },
 }
 impl EffectPass {
     pub const fn entry_point(&self) -> &'static str {
         match self {
-            Self::Convolve { entry_point, .. } | Self::Pixel { entry_point, .. } => entry_point,
+            Self::Convolve { entry_point, .. }
+            | Self::Pixel { entry_point, .. }
+            | Self::Sample { entry_point, .. } => entry_point,
         }
     }
     pub const fn horizontal(&self) -> bool {
@@ -56,7 +65,7 @@ impl EffectPass {
     pub fn values(&self) -> Cow<'_, [f32]> {
         match self {
             Self::Convolve { weights, .. } => Cow::Borrowed(weights),
-            Self::Pixel { uniforms, .. } => {
+            Self::Pixel { uniforms, .. } | Self::Sample { uniforms, .. } => {
                 let mut flat = Vec::with_capacity(uniforms.len() * 3);
                 for uniform in uniforms {
                     uniform.extend(&mut flat);
@@ -85,6 +94,9 @@ pub trait EffectCompositor: Send + Sync {
     ) -> Result<()> {
         super::blend::composite(below, item, opacity, mode, hooks)
     }
+    /// Whether this compositor has a pipeline for `entry_point`. The renderer runs
+    /// unsupported passes on the CPU and keeps their supported neighbours here.
+    fn supports(&self, entry_point: &str) -> bool;
     /// Unsupported requests fall back to CPU at the renderer; other failures propagate.
     /// Implementations must reserve all transient bytes and check cancellation.
     fn apply(
@@ -109,7 +121,15 @@ pub fn blur_sigma(intensity: f64, width: u32, height: u32) -> Result<f32> {
 /// At most sigma 8/radius 24 per axis per iteration. Variances add, so n
 /// iterations use sigma/sqrt(n). The image-area cap bounds n to 203.
 pub fn blur_passes(intensity: f64, width: u32, height: u32) -> Result<Vec<EffectPass>> {
-    let sigma = blur_sigma(intensity, width, height)?;
+    sigma_passes(blur_sigma(intensity, width, height)?, width, height)
+}
+/// The same kernel for a gaussian of `sigma` output pixels, which whole-image
+/// ops ask for directly instead of an intensity.
+pub(super) fn sigma_passes(sigma: f32, width: u32, height: u32) -> Result<Vec<EffectPass>> {
+    Image::bytes(width, height)?;
+    if !sigma.is_finite() || sigma < 0.0 {
+        return Err(Error::Invalid("blur sigma"));
+    }
     if sigma <= 0.01 {
         return Ok(Vec::new());
     }
@@ -337,7 +357,111 @@ static PIXEL_OPS: [PixelOp; 2] = [
 fn pixel_op(entry_point: &str) -> Option<&'static PixelOp> {
     PIXEL_OPS.iter().find(|op| op.entry_point == entry_point)
 }
+/// The two images a sample op reads: `current`, the output of the previous pass,
+/// and `input`, the image the effect instance started with.
+pub(crate) struct SampleInputs<'a> {
+    pub current: &'a Image,
+    pub input: &'a Image,
+}
+impl SampleInputs<'_> {
+    /// Exact texel of the current image; transparent outside it.
+    pub fn texel_current(&self, x: u32, y: u32) -> [f32; 4] {
+        texel(self.current, x, y)
+    }
+    /// Exact texel of the instance's input image; transparent outside it.
+    #[allow(dead_code, reason = "first used by the 264 and 265 ops")]
+    pub fn texel_input(&self, x: u32, y: u32) -> [f32; 4] {
+        texel(self.input, x, y)
+    }
+    /// Bilinear sample of the current image at a pixel-edge coordinate.
+    #[allow(dead_code, reason = "first used by the 264 and 265 ops")]
+    pub fn sample_current(&self, x: f32, y: f32, edge: helpers::Edge) -> [f32; 4] {
+        helpers::sample(self.current, x, y, edge)
+    }
+    /// Bilinear sample of the instance's input image at a pixel-edge coordinate.
+    pub fn sample_input(&self, x: f32, y: f32, edge: helpers::Edge) -> [f32; 4] {
+        helpers::sample(self.input, x, y, edge)
+    }
+}
+fn texel(image: &Image, x: u32, y: u32) -> [f32; 4] {
+    if x >= image.width || y >= image.height {
+        return [0.0; 4];
+    }
+    image
+        .pixels
+        .get(y as usize * image.width as usize + x as usize)
+        .copied()
+        .unwrap_or([0.0; 4])
+}
+/// A sample op: entry name, flat uniform count, uniform check and the CPU reference
+/// a shader entry mirrors (one output pixel from its coordinate, the uniforms and
+/// [`SampleInputs`]).
+struct SampleOp {
+    entry_point: &'static str,
+    len: usize,
+    valid: fn(&[f32]) -> bool,
+    apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
+}
+static SAMPLE_OPS: [SampleOp; 1] = [SampleOp {
+    entry_point: "mirror",
+    len: 4,
+    valid: mirror_uniforms,
+    apply: mirror,
+}];
+fn sample_op(entry_point: &str) -> Option<&'static SampleOp> {
+    SAMPLE_OPS.iter().find(|op| op.entry_point == entry_point)
+}
+/// Mirror uniforms: a centre in output pixels and a non-zero direction.
+fn mirror_uniforms(values: &[f32]) -> bool {
+    let Some(&[_, _, nx, ny]) = values.first_chunk::<4>() else {
+        return false;
+    };
+    values.len() == 4 && values.iter().all(|c| c.is_finite()) && nx * nx + ny * ny > 1e-6
+}
+/// Reflect the picture about the line through `(cx, cy)` in output pixels with unit
+/// direction `(nx, ny)`: pixels on the direction's positive side take the bilinear
+/// sample of their reflection (transparent borders), the rest keep their value.
+fn mirror(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[cx, cy, nx, ny]) = values.first_chunk::<4>() else {
+        return inputs.texel_current(x, y);
+    };
+    let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+    let distance = (px - cx) * nx + (py - cy) * ny;
+    if distance > 0.0 {
+        inputs.sample_input(
+            px - 2.0 * distance * nx,
+            py - 2.0 * distance * ny,
+            helpers::Edge::Transparent,
+        )
+    } else {
+        inputs.texel_current(x, y)
+    }
+}
+/// Clamp one sample result to the working-image contract (alpha in `0..=1`, colour
+/// in `0..=alpha`, all finite) once, at the pass exit, so no op repeats it.
+fn clamp_pixel(pixel: [f32; 4]) -> [f32; 4] {
+    let alpha = if pixel[3].is_finite() {
+        pixel[3].clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mut out = pixel;
+    for channel in out.iter_mut().take(3) {
+        *channel = if channel.is_finite() {
+            channel.clamp(0.0, alpha)
+        } else {
+            0.0
+        };
+    }
+    if let Some(last) = out.last_mut() {
+        *last = alpha;
+    }
+    out
+}
 impl EffectCompositor for CpuEffects {
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
     fn apply(
         &self,
         item: &Image,
@@ -351,6 +475,27 @@ impl EffectCompositor for CpuEffects {
         for pass in passes {
             validate_pass(pass)?;
             let (horizontal, weights) = match pass {
+                EffectPass::Sample { entry_point, .. } => {
+                    let op = sample_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
+                    let values = pass.values();
+                    let inputs = SampleInputs {
+                        current: &a,
+                        input: item,
+                    };
+                    let width = a.width as usize;
+                    crate::image::row_chunks(&mut b.pixels, width, hooks, |start, rows| {
+                        check(hooks)?;
+                        for (row, pixels) in rows.chunks_mut(width).enumerate() {
+                            let y = (start / width + row) as u32;
+                            for (x, pixel) in pixels.iter_mut().enumerate() {
+                                *pixel = clamp_pixel((op.apply)(&inputs, x as u32, y, &values));
+                            }
+                        }
+                        Ok(())
+                    })?;
+                    std::mem::swap(&mut a, &mut b);
+                    continue;
+                }
                 EffectPass::Pixel { entry_point, .. } => {
                     let op = pixel_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
                     let values = pass.values();
@@ -429,6 +574,10 @@ pub fn validate_pass(pass: &EffectPass) -> Result<()> {
             let values = pass.values();
             values.len() == op.len && values.iter().all(|v| v.is_finite()) && (op.valid)(&values)
         }),
+        EffectPass::Sample { entry_point, .. } => sample_op(entry_point).is_some_and(|op| {
+            let values = pass.values();
+            values.len() == op.len && values.iter().all(|v| v.is_finite()) && (op.valid)(&values)
+        }),
         EffectPass::Convolve {
             entry_point,
             weights,
@@ -451,13 +600,18 @@ pub fn validate_pass(pass: &EffectPass) -> Result<()> {
 
 /// What an evaluator sees: its parameters at item-local time (keyframes
 /// resolved, scalars clamped to the definition's hard range), the item-local
-/// time itself for time-driven effects, and the output size. Second-track
-/// inputs are not part of a frame.
+/// time itself for time-driven effects, the output size and the quality the
+/// renderer asks for. Second-track inputs are not part of a frame.
 pub struct EffectFrame {
     pub local: Tick,
     pub seconds: f64,
     pub width: u32,
     pub height: u32,
+    /// True for export and every strict production frame, false only for interactive
+    /// preview. A coarse evaluation may lower sample counts, iteration counts or the
+    /// number of scales; it never changes geometry, colour mapping, parameter meaning
+    /// or which pixels are affected, and its output stays close to the fine one.
+    pub fine: bool,
     params: BTreeMap<&'static str, EffectValue>,
 }
 impl EffectFrame {
@@ -492,6 +646,7 @@ impl EffectFrame {
             seconds: local.seconds(),
             width,
             height,
+            fine: true,
             params,
         })
     }
@@ -529,12 +684,25 @@ impl EffectFrame {
 
 pub type EffectEvaluator = fn(&EffectFrame) -> Result<Vec<EffectPass>>;
 
+/// The item-local time at which an effect holds the item's content.
+pub type ContentTime = fn(&EffectFrame) -> Tick;
+
 /// The evaluator of an effect kind; a kind without one is unsupported.
 pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
     Some(match kind {
         "blur" => blur,
         "color_grade" => color_grade,
         "chroma_key" => chroma_key,
+        "hold_time" => hold_time,
+        _ => return None,
+    })
+}
+
+/// The content-time remap of an effect kind; a kind without one samples the
+/// content at the frame's own time.
+pub fn content_remap(kind: &str) -> Option<ContentTime> {
+    Some(match kind {
+        "hold_time" => hold_time_content,
         _ => return None,
     })
 }
@@ -557,30 +725,57 @@ fn chroma_key(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         frame.scalar("shadow")?,
     )
 }
+/// Test kind paired with project's `test-kinds` feature: holds the item's content
+/// at `rate` frames per second, as Low Frame Rate does.
+fn hold_time_content(frame: &EffectFrame) -> Tick {
+    let rate = frame.scalar("rate").unwrap_or(2.0).clamp(1.0, 60.0);
+    let held = (frame.seconds * rate).floor() / rate;
+    Tick::from_seconds_f64(held, Rounding::Floor).unwrap_or(frame.local)
+}
+/// The test kind's evaluator: an identity grade whose hue uniform carries the
+/// quality flag, so a test can see which frame the renderer built.
+fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+    Ok(vec![EffectPass::Pixel {
+        entry_point: "grade",
+        uniforms: [1.0, 1.0, 1.0, if frame.fine { 0.0 } else { 1e-3 }]
+            .map(Uniform::Float)
+            .to_vec(),
+    }])
+}
 
-/// The passes of one effect instance at item-local time `local`.
+/// The item-local time at which `item`'s content is sampled after its enabled
+/// effects' content-time remaps, applied in stack order. Each remap resolves its
+/// parameters at the time the previous remaps produced, so two holds chain. Only
+/// the content is held: transform, crop, opacity and effects keep the real time.
+pub fn content_time(item: &Item, local: Tick, width: u32, height: u32) -> Result<Tick> {
+    let mut at = local;
+    for effect in item.effects.iter().filter(|effect| effect.enabled) {
+        let Some(remap) = content_remap(&effect.kind) else {
+            continue;
+        };
+        at = remap(&EffectFrame::new(
+            &item.animations,
+            effect,
+            at,
+            width,
+            height,
+        )?);
+    }
+    Ok(at)
+}
+
+/// The passes of one effect instance at item-local time `local`. `fine` is false
+/// only for interactive preview; see [`EffectFrame::fine`].
 pub fn evaluate_effect(
     animations: &Animations,
     effect: &EffectInstance,
     local: Tick,
     width: u32,
     height: u32,
+    fine: bool,
 ) -> Result<Vec<EffectPass>> {
     let evaluate = evaluator(&effect.kind).ok_or(Error::Unsupported("effect kind"))?;
-    evaluate(&EffectFrame::new(animations, effect, local, width, height)?)
-}
-
-/// The passes of every enabled effect of `item`, in stack order.
-pub fn evaluate(item: &Item, local: Tick, width: u32, height: u32) -> Result<Vec<EffectPass>> {
-    let mut passes = Vec::new();
-    for effect in item.effects.iter().filter(|e| e.enabled) {
-        passes.extend(evaluate_effect(
-            &item.animations,
-            effect,
-            local,
-            width,
-            height,
-        )?);
-    }
-    Ok(passes)
+    let mut frame = EffectFrame::new(animations, effect, local, width, height)?;
+    frame.fine = fine;
+    evaluate(&frame)
 }

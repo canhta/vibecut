@@ -40,7 +40,7 @@ const fn grade_param(id: &'static str, name: &'static str) -> EffectParamDefinit
     slider(id, name, (GRADE_MIN, GRADE_MAX), 0.0, false)
 }
 
-static DEFINITIONS: [EffectDefinition; 3] = [
+static DEFINITIONS: &[EffectDefinition] = &[
     EffectDefinition {
         id: "blur",
         name: "Blur",
@@ -86,8 +86,18 @@ static DEFINITIONS: [EffectDefinition; 3] = [
             ),
         ],
     },
+    // Test-only kind: no shelf lists it, and no production build contains it.
+    // Render's tests use it to prove the content-time remap and the preview
+    // quality input through the same evaluation path as a real effect.
+    #[cfg(feature = "test-kinds")]
+    EffectDefinition {
+        id: "hold_time",
+        name: "Hold time (test)",
+        shelf: EffectShelf::Inspector,
+        params: &[slider("rate", "Frame rate", (1.0, 60.0), 2.0, true)],
+    },
 ];
 
 pub fn effect_definitions() -> &'static [EffectDefinition] {
-    &DEFINITIONS
+    DEFINITIONS
 }

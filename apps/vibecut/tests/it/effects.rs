@@ -145,6 +145,34 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                 "GPU chroma key difference {key:?} {intensity} {shadow}: {max}"
             );
         }
+        // A whole-image Sample pass reads coordinates and the instance input on
+        // both sides: the mirror row is the variant's GPU parity proof.
+        assert!(gpu.supports("mirror"));
+        for values in [
+            [0.0, 0.0, 1.0, 0.0],
+            [w as f32 / 2.0, h as f32 / 2.0, 1.0, 0.0],
+            [w as f32 / 2.0, h as f32 / 2.0, 0.6, 0.8],
+            [w as f32 * 0.3, h as f32 * 0.7, 0.0, -1.0],
+        ] {
+            let passes = [EffectPass::Sample {
+                entry_point: "mirror",
+                uniforms: values.map(Uniform::Float).to_vec(),
+            }];
+            let inputs = || EffectInputs {
+                coverage: None,
+                below: &image,
+            };
+            let cpu = CpuEffects.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let actual = gpu.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let max = cpu
+                .pixels()
+                .iter()
+                .zip(actual.pixels())
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                .fold(0.0_f32, f32::max);
+            eprintln!("mirror scale={scale} values={values:?} max_abs={max}");
+            assert!(max <= 2e-5, "GPU mirror difference {values:?}: {max}");
+        }
         let below = Image::from_working_pixels(
             w,
             h,

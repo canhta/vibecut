@@ -8,6 +8,11 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# One catalog-only kind that proves render's content-time and preview-quality
+# seams end to end. Enabled by render's tests, never by a production build.
+test-kinds = []
+
 [dependencies]
 getrandom.workspace = true
 schemars.workspace = true
