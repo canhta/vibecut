@@ -82,6 +82,10 @@ name = "shorts"
 path = "crates/shorts"
 
 [[crate.layer]]
+name = "contract"
+groups = ["error"]
+
+[[crate.layer]]
 name = "operations"
 groups = ["boundaries", "batch_export"]
 
@@ -100,6 +104,10 @@ group = "batch_export"
 [[crate.module]]
 name = "suggestion"
 group = "suggestion"
+
+[[crate.module]]
+name = "error"
+group = "error"
 
 # Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
 # Foundation (kit, i18n, input) sits below shell. Home, Shorts and each editor

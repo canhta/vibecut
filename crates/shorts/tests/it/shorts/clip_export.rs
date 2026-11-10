@@ -427,7 +427,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
         };
     assert!(matches!(
         prepare(one(vec![]), vec![], vec![], 1 << 20),
-        Err(EditError::ClipExport {
+        Err(shorts::Error::ClipExport {
             short: 0,
             reason: "no segments"
         })
@@ -437,7 +437,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
         .collect();
     assert!(matches!(
         prepare(one(too_many), vec![], vec![], 1 << 20),
-        Err(EditError::ClipExport {
+        Err(shorts::Error::ClipExport {
             reason: "too many segments",
             ..
         })
@@ -449,14 +449,14 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20
         ),
-        Err(EditError::ClipExport {
+        Err(shorts::Error::ClipExport {
             reason: "segments overlap",
             ..
         })
     ));
     assert!(matches!(
         prepare(one(vec![segment(29, 31, 0)]), vec![], vec![], 1 << 20),
-        Err(EditError::ClipExport {
+        Err(shorts::Error::ClipExport {
             reason: "segment outside source",
             ..
         })
@@ -474,7 +474,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20,
         ),
-        Err(EditError::ClipExport {
+        Err(shorts::Error::ClipExport {
             reason: "negative source range",
             ..
         })
@@ -486,7 +486,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20,
         ),
-        Err(EditError::Invalid("clip caption languages"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip caption languages"
+        )))
     ));
     assert!(matches!(
         prepare(
@@ -495,7 +497,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20,
         ),
-        Err(EditError::Invalid("clip caption languages"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip caption languages"
+        )))
     ));
     assert!(matches!(
         prepare(
@@ -504,7 +508,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![Format::Srt],
             1 << 20
         ),
-        Err(EditError::Invalid("clip subtitle languages"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip subtitle languages"
+        )))
     ));
     assert!(matches!(
         prepare(
@@ -513,11 +519,15 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![Format::Srt, Format::Srt],
             1 << 20,
         ),
-        Err(EditError::Invalid("clip subtitle formats"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip subtitle formats"
+        )))
     ));
     assert!(matches!(
         prepare(one(vec![segment(0, 1, 0)]), vec![], vec![], 0),
-        Err(EditError::Invalid("clip output byte ceiling"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip output byte ceiling"
+        )))
     ));
     let bad_crop = ClipShort::new("Crop", vec![segment(0, 1, 0)]).with_crop(Some(project::Crop {
         x: -0.1,
@@ -525,8 +535,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     }));
     assert!(matches!(
         prepare(bad_crop, vec![], vec![], 1 << 20),
-        Err(EditError::Render(render::Error::Invalid(
-            "normalized rectangle"
+        Err(shorts::Error::Engine(EditError::Render(
+            render::Error::Invalid("normalized rectangle")
         )))
     ));
     let missing_asset = ClipBatchRequest {
@@ -540,7 +550,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     };
     assert!(matches!(
         ClipBatch::prepare(&source, missing_asset),
-        Err(EditError::Invalid("clip source asset"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip source asset"
+        )))
     ));
     let mut missing_directory = batch(
         1,
@@ -551,7 +563,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     missing_directory.directory = dir.path().join("absent");
     assert!(matches!(
         ClipBatch::prepare(&source, missing_directory),
-        Err(EditError::Invalid("clip output directory"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip output directory"
+        )))
     ));
     let empty = ClipBatchRequest {
         shorts: vec![],
@@ -559,7 +573,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     };
     assert!(matches!(
         ClipBatch::prepare(&source, empty),
-        Err(EditError::Invalid("clip batch size"))
+        Err(shorts::Error::Engine(EditError::Invalid("clip batch size")))
     ));
     let mut audio_only = AssetData::from(asset(2, dir.path().join("missing-source.mp4"), 10));
     audio_only
@@ -577,7 +591,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
                 dir.path()
             ),
         ),
-        Err(EditError::Invalid("clip source media"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip source media"
+        )))
     ));
 }
 
@@ -644,7 +660,10 @@ fn cancelling_one_short_mid_batch_leaves_neighbours_and_retries() {
     assert!(batch.retry(&mut runner, 1).is_ok());
     let snapshots = wait(&batch, &mut runner);
     assert_eq!(snapshots[1].state, JobState::Failed);
-    assert!(matches!(batch.cancel(9), Err(EditError::Invalid(_))));
+    assert!(matches!(
+        batch.cancel(9),
+        Err(shorts::Error::Engine(EditError::Invalid(_)))
+    ));
     batch.cancel_all();
 }
 
@@ -883,7 +902,9 @@ fn cancelling_mid_batch_completes_neighbours_and_retry_finishes() {
     assert!(batch.paths(1).unwrap().video.exists());
     assert!(matches!(
         batch.retry(&mut runner, 0),
-        Err(EditError::Invalid("clip is not retryable"))
+        Err(shorts::Error::Engine(EditError::Invalid(
+            "clip is not retryable"
+        )))
     ));
     assert_eq!(temporary_files(&out), 0);
 }

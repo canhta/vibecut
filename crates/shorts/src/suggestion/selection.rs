@@ -2,9 +2,9 @@
 use super::{
     ANTHROPIC_SETTINGS, AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation,
     ClipDisclosure, ClipInput, ClipSuggester, Consent, Cost, CostEstimate, Credentials, EditError,
-    HeuristicClipSuggester, LanguageTag, Location, Money, OPENAI_LUNA_MODEL, OPENAI_POLICY_URL,
-    OPENAI_SETTINGS, OpenAiClipSuggester, PromptApproval, ProviderConfig, Scope, SuggestionOption,
-    SuggestionProvider, UploadRequest, engine_providers,
+    Error, HeuristicClipSuggester, LanguageTag, Location, Money, OPENAI_LUNA_MODEL,
+    OPENAI_POLICY_URL, OPENAI_SETTINGS, OpenAiClipSuggester, PromptApproval, ProviderConfig, Scope,
+    SuggestionOption, SuggestionProvider, UploadRequest, engine_providers,
 };
 impl SuggestionProvider {
     pub fn id(&self) -> &'static str {
@@ -50,10 +50,7 @@ pub fn suggestion_options() -> Vec<SuggestionOption> {
     ]
 }
 
-pub fn choose_suggestion(
-    provider: &str,
-    model: Option<&str>,
-) -> Result<SuggestionProvider, EditError> {
+pub fn choose_suggestion(provider: &str, model: Option<&str>) -> Result<SuggestionProvider, Error> {
     let option = suggestion_options()
         .into_iter()
         .find(|option| option.id == provider)
@@ -62,9 +59,9 @@ pub fn choose_suggestion(
         .or_else(|| option.models.first().copied())
         .ok_or(EditError::Unsupported("missing clip suggestion model"))?;
     if !option.models.contains(&model) {
-        return Err(EditError::Unsupported(
-            "unsupported model for clip suggestion provider",
-        ));
+        return Err(
+            EditError::Unsupported("unsupported model for clip suggestion provider").into(),
+        );
     }
     match option.id {
         "heuristic" => Ok(SuggestionProvider::Heuristic),
@@ -74,7 +71,7 @@ pub fn choose_suggestion(
         "anthropic" => Ok(SuggestionProvider::Anthropic {
             model: model.into(),
         }),
-        _ => Err(EditError::Unsupported("unknown clip suggestion provider")),
+        _ => Err(EditError::Unsupported("unknown clip suggestion provider").into()),
     }
 }
 impl BuiltSuggester {
@@ -200,10 +197,14 @@ impl engine_providers::Approval for PromptApproval<'_> {
 pub fn check_suggestion_credentials(
     provider: &SuggestionProvider,
     credentials: &Credentials,
-) -> Result<(), EditError> {
+) -> Result<(), Error> {
     match provider {
         SuggestionProvider::Heuristic => Ok(()),
-        SuggestionProvider::OpenAi { .. } => credentials.openai().map(|_| ()),
-        SuggestionProvider::Anthropic { .. } => credentials.anthropic().map(|_| ()),
+        SuggestionProvider::OpenAi { .. } => {
+            credentials.openai().map(|_| ()).map_err(Error::Engine)
+        }
+        SuggestionProvider::Anthropic { .. } => {
+            credentials.anthropic().map(|_| ()).map_err(Error::Engine)
+        }
     }
 }

@@ -441,7 +441,10 @@ fn export_preparation_covers_source_and_translated_captions() {
         &progress,
         &cancellation,
     );
-    assert!(matches!(result, Err(engine::EditError::Cancelled)));
+    assert!(matches!(
+        result,
+        Err(shorts::Error::Engine(engine::EditError::Cancelled))
+    ));
     let (pending, active, _, _) = runner.counts();
     assert_eq!(
         (pending, active),

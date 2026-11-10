@@ -14,6 +14,8 @@ pub enum CliError {
     #[error(transparent)]
     Engine(#[from] EditError),
     #[error(transparent)]
+    Shorts(#[from] shorts::Error),
+    #[error(transparent)]
     Render(#[from] render::Error),
     #[error(transparent)]
     Media(#[from] media::MediaError),
@@ -43,6 +45,8 @@ impl CliError {
             Self::Project(project::Error::Media(_)) => ("media", 6),
             Self::Project(_) => ("rejected", 5),
             Self::Engine(error) => edit_code(error),
+            Self::Shorts(shorts::Error::Engine(error)) => edit_code(error),
+            Self::Shorts(_) => ("rejected", 5),
             Self::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
             Self::Render(_) => ("render", 6),
             Self::Media(_) => ("media", 6),

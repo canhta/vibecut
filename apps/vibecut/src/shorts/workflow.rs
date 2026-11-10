@@ -11,6 +11,17 @@ use shorts::clip_suggest::{self, ClipRequest, SnapSettings};
 use std::{sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 
+fn engine_error(error: shorts::Error) -> engine::EditError {
+    match error {
+        shorts::Error::Engine(error) => error,
+        // Generation collects boundary refusals as rejected clips, so a refusal
+        // here is a contract breach; report it as the workflow's generic failure.
+        shorts::Error::ClipBoundary { .. } | shorts::Error::ClipExport { .. } => {
+            engine::EditError::Invalid("shorts workflow refusal")
+        }
+    }
+}
+
 pub struct LocalVideoWorkflow;
 impl Generator for LocalVideoWorkflow {
     fn run(
@@ -28,13 +39,15 @@ impl Generator for LocalVideoWorkflow {
         let provider = clip_suggest::choose_suggestion(
             &request.suggestion_provider,
             Some(&request.suggestion_model),
-        )?;
+        )
+        .map_err(engine_error)?;
         let credentials = engine::providers::Credentials::new(
             std::env::var("OPENAI_API_KEY").ok(),
             std::env::var("ELEVENLABS_API_KEY").ok(),
             std::env::var("ANTHROPIC_API_KEY").ok(),
         )?;
-        clip_suggest::check_suggestion_credentials(&provider, &credentials)?;
+        clip_suggest::check_suggestion_credentials(&provider, &credentials)
+            .map_err(engine_error)?;
         let root = engine::providers::default_cache_root()?;
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
         let runtime = engine::providers::Runtime {
@@ -90,7 +103,8 @@ impl Generator for LocalVideoWorkflow {
             events,
             events,
             cancel,
-        )?;
+        )
+        .map_err(engine_error)?;
         let candidates = outcome.clips;
         Ok(ReviewSource {
             project: outcome.source_project,

@@ -1,7 +1,7 @@
 //! Prepares ordered-segment short projects.
 use super::{
     Arc, CaptionParams, ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath,
-    CueTrack, EditError, Item, ItemId, ItemParams, MAX_BATCH_CLIPS, MAX_BATCH_CUE_BYTES,
+    CueTrack, EditError, Error, Item, ItemId, ItemParams, MAX_BATCH_CLIPS, MAX_BATCH_CUE_BYTES,
     MAX_CLIP_SEGMENTS, Mutex, NameSet, Options, PreparedClip, Project, ProjectData, Published,
     Tick, Timeline, Track, TrackId, TrackKind, VideoParams, extension, job_key, name_base,
 };
@@ -9,7 +9,7 @@ impl ClipBatch {
     /// Validate the batch and build one derived project per short without touching
     /// media, submitting jobs or writing files. Request errors are `Invalid`;
     /// short-specific refusals name the zero-based short index.
-    pub fn prepare(source: &Project, request: ClipBatchRequest) -> Result<Self, EditError> {
+    pub fn prepare(source: &Project, request: ClipBatchRequest) -> Result<Self, Error> {
         validate_request(&request)?;
         let asset = source
             .data()
@@ -23,7 +23,7 @@ impl ClipBatch {
             .iter()
             .any(|stream| stream.kind == media::StreamKind::Video)
         {
-            return Err(EditError::Invalid("clip source media"));
+            return Err(EditError::Invalid("clip source media").into());
         }
         let options = Options {
             asset,
@@ -96,8 +96,8 @@ fn prepare_clip(
     index: usize,
     names: &mut NameSet,
     cue_total: &mut u64,
-) -> Result<PreparedClip, EditError> {
-    let refuse = |reason| EditError::ClipExport {
+) -> Result<PreparedClip, Error> {
+    let refuse = |reason| Error::ClipExport {
         short: index,
         reason,
     };
@@ -179,8 +179,9 @@ fn prepare_clip(
         None
     } else {
         for (segment, start) in short.segments.iter().zip(&starts) {
-            let mapping = captions::EditMapping::new(vec![(segment.range, segment.range.start())])?;
-            let clipped = mapping.map_cues(options.cues)?;
+            let mapping = captions::EditMapping::new(vec![(segment.range, segment.range.start())])
+                .map_err(Error::kernel)?;
+            let clipped = mapping.map_cues(options.cues).map_err(Error::kernel)?;
             for cue in &clipped.cues {
                 for language in options.languages {
                     if !cue.texts.contains_key(language) {
@@ -261,10 +262,12 @@ fn prepare_clip(
             timeline,
             bookmarks: Vec::new(),
         }]
-        .try_into()?,
+        .try_into()
+        .map_err(Error::kernel)?,
         current_scene_id: project::SceneId(0),
         settings: source.data().settings.clone(),
-    })?;
+    })
+    .map_err(Error::kernel)?;
     let mut settings = render::ExportSettings::from_project(&project);
     settings.render = render::RenderSettings::portrait(&project);
     settings.render.caption_languages = options.languages.to_vec();
@@ -294,7 +297,7 @@ fn prepare_clip(
     settings.allow_degraded = options.allow_degraded;
     settings.max_bytes = options.max_output_bytes;
     // Validate geometry, crop rectangles and caption style before submitting.
-    render::Renderer::new(&project, settings.render.clone())?;
+    render::Renderer::new(&project, settings.render.clone()).map_err(Error::kernel)?;
     let video = options.directory.join(format!("{base}.mp4"));
     let subtitles = options
         .formats

@@ -8,8 +8,8 @@ use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{
     Fingerprint, LanguageRegistry, LanguageTag, LayoutHooks, Segment, Transcript, Word,
 };
-use engine::EditError;
 use media::SpeechEnergyWindow;
+use shorts::Error;
 use shorts::clip_boundaries::*;
 use time::{FrameRate, Rounding, SourceRange, Tick};
 
@@ -90,7 +90,7 @@ fn snap(
     transcript: &Transcript,
     energy: &[SpeechEnergyWindow],
     s: &ClipBoundarySettings,
-) -> engine::Result<Vec<SnappedShort>> {
+) -> shorts::Result<Vec<SnappedShort>> {
     let registry = LanguageRegistry::standard().unwrap();
     snap_clip_boundaries(
         shorts,
@@ -146,7 +146,7 @@ fn no_word_timing_protects_whole_segment_even_with_silent_energy() {
             }],
             &s
         ),
-        Err(EditError::ClipBoundary {
+        Err(Error::ClipBoundary {
             reason: BoundaryFailure::NoSafeFrame,
             ..
         })
@@ -282,7 +282,7 @@ fn refuses_post_snap_overlap_duration_and_hostile_inputs() {
     s.tolerance = t(1.);
     assert!(matches!(
         snap(&candidates, &tr, &quiet(), &s),
-        Err(EditError::ClipBoundary {
+        Err(Error::ClipBoundary {
             reason: BoundaryFailure::SegmentOverlap,
             ..
         })
@@ -296,7 +296,7 @@ fn refuses_post_snap_overlap_duration_and_hostile_inputs() {
             &quiet(),
             &s
         ),
-        Err(EditError::ClipBoundary {
+        Err(Error::ClipBoundary {
             reason: BoundaryFailure::TotalDuration,
             ..
         })
@@ -310,7 +310,7 @@ fn refuses_post_snap_overlap_duration_and_hostile_inputs() {
             &quiet(),
             &s
         ),
-        Err(EditError::ClipBoundary {
+        Err(Error::ClipBoundary {
             reason: BoundaryFailure::SegmentDuration,
             ..
         })

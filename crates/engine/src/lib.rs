@@ -61,17 +61,6 @@ pub struct AssetUsage {
     pub items: Vec<project::ItemId>,
 }
 
-/// Typed reason payload for a clip-boundary refusal.
-/// Owned with `EditError` so feature workflows can depend on the error contract.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BoundaryFailure {
-    NoSafeFrame,
-    SegmentDuration,
-    TotalDuration,
-    SegmentOverlap,
-    Candidate,
-}
-
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
@@ -94,12 +83,6 @@ pub enum EditError {
     #[error("control identity unavailable")]
     ControlIdentity,
 
-    #[error("clip boundary refused at short {short}, segment {segment}: {reason:?}")]
-    ClipBoundary {
-        short: usize,
-        segment: usize,
-        reason: BoundaryFailure,
-    },
     #[error("cache is in use")]
     CacheBusy,
     #[error("model transfer response does not match the requested representation")]
@@ -195,8 +178,6 @@ pub enum EditError {
     EmptyProject,
     #[error("invalid edit: {0}")]
     Invalid(&'static str),
-    #[error("clip export refused at short {short}: {reason}")]
-    ClipExport { short: usize, reason: &'static str },
     #[error("unsupported edit: {0}")]
     Unsupported(&'static str),
     #[error("command unwound; transaction rolled back")]

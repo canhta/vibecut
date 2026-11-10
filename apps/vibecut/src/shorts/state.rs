@@ -669,6 +669,7 @@ impl State {
             match &error {
                 Error::Engine(e) => failure_text(e),
                 Error::Worker(e) => failure_text(e),
+                Error::Shorts(shorts::Error::Engine(e)) => failure_text(e),
                 _ => text,
             }
         } else {

@@ -1,6 +1,6 @@
 # Edit commands
 
-The kernel owns `BoundaryFailure`, the typed payload of `EditError::ClipBoundary`. It carries refusal categories and zero-based indices without depending on a feature. The [shorts crate](../../../../shorts/README.md) owns suggestion, snapping and batch export.
+The kernel error carries no feature concept. The [shorts crate](../../../../shorts/README.md) owns `BoundaryFailure`, the typed payload of a clip-boundary refusal, plus suggestion, snapping and batch export.
 
 ## Import policy
 

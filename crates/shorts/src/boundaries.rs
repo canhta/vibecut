@@ -1,7 +1,8 @@
 //! Independent source-edge snapping for ordered, potentially reordered shorts.
+use crate::error::{BoundaryFailure, Error, Result as ShortsResult};
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, LayoutHooks, Transcript};
-use engine::{BoundaryFailure, EditError, Result};
+use engine::{EditError, Result};
 use media::SpeechEnergyWindow;
 use serde::Serialize;
 use time::{FrameRate, SourceRange, Tick};
@@ -78,21 +79,21 @@ pub fn snap_clip_boundaries(
     hooks: &LayoutHooks<'_>,
     energy: &[SpeechEnergyWindow],
     settings: &ClipBoundarySettings,
-) -> Result<Vec<SnappedShort>> {
+) -> ShortsResult<Vec<SnappedShort>> {
     validate_settings(settings)?;
     if shorts.len() > 32 || energy.len() > 360_001 {
-        return Err(EditError::Limit);
+        return Err(EditError::Limit.into());
     }
-    let units = captions::source_speech_units(transcript, profile, hooks)?;
+    let units = captions::source_speech_units(transcript, profile, hooks).map_err(Error::kernel)?;
     if units.is_empty() {
-        return Err(EditError::Invalid("empty boundary transcript"));
+        return Err(EditError::Invalid("empty boundary transcript").into());
     }
     let mut gaps = Vec::new();
     let mut previous = settings.source_range.start();
     let mut sentence = true;
     for unit in &units {
         if unit.range.start() < previous || unit.range.end() > settings.source_range.end() {
-            return Err(EditError::Invalid("boundary transcript outside source"));
+            return Err(EditError::Invalid("boundary transcript outside source").into());
         }
         gaps.push(Gap {
             start: previous,
@@ -127,7 +128,8 @@ pub fn snap_clip_boundaries(
                 return Err(failure(short, index, BoundaryFailure::SegmentDuration));
             }
             let mut adjusted = segment.clone();
-            adjusted.range = SourceRange::new(start.adjusted, end.adjusted)?;
+            adjusted.range =
+                SourceRange::new(start.adjusted, end.adjusted).map_err(Error::kernel)?;
             result.duration = result
                 .duration
                 .checked_add(adjusted.range.duration())
@@ -144,8 +146,8 @@ pub fn snap_clip_boundaries(
     Ok(output)
 }
 
-fn failure(short: usize, segment: usize, reason: BoundaryFailure) -> EditError {
-    EditError::ClipBoundary {
+fn failure(short: usize, segment: usize, reason: BoundaryFailure) -> Error {
+    Error::ClipBoundary {
         short,
         segment,
         reason,

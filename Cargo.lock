@@ -5345,6 +5345,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "testkit",
+ "thiserror 2.0.21",
  "time 0.1.0",
  "unicode-segmentation",
 ]

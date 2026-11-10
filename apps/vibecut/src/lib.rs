@@ -64,6 +64,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("engine operation failed")]
     Engine(#[from] engine::EditError),
+    #[error(transparent)]
+    Shorts(#[from] ::shorts::Error),
     #[error("AI operation failed")]
     Ai(#[from] ai::Error),
     #[error("caption data failed")]

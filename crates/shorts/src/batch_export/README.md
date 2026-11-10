@@ -10,7 +10,7 @@ Cues map through captions' `EditMapping` over the ordered `(piece range, cumulat
 
 Output names derive from the NFC title. Characters illegal on Windows (`< > : " / \ | ? *`), controls and bidi overrides become `-`. Trailing spaces and dots are trimmed, reserved device names are prefixed, the base is limited to 200 UTF-8 bytes on grapheme boundaries, and duplicates get deterministic `-2`, `-3` suffixes. Outputs are `<base>.mp4` plus `<base>.srt` and `<base>.vtt`. Empty titles fall back to `clip-NN`. No user text appears in job errors.
 
-`prepare` accepts 1..=1000 shorts, 1..=32 pieces per short, nonnegative nonoverlapping source ranges inside a known asset duration, one or two distinct languages, at most one of each sidecar format, a 1 byte..=1 TiB artifact ceiling and at most 256 MiB of prepared cue content across the batch. Request-level failures are `Invalid`, short-level failures are `EditError::ClipExport { short, reason }`, and a source asset without video is refused.
+`prepare` accepts 1..=1000 shorts, 1..=32 pieces per short, nonnegative nonoverlapping source ranges inside a known asset duration, one or two distinct languages, at most one of each sidecar format, a 1 byte..=1 TiB artifact ceiling and at most 256 MiB of prepared cue content across the batch. Request-level failures are `Invalid`, short-level failures are `shorts::Error::ClipExport { short, reason }`, and a source asset without video is refused.
 
 ## Jobs and retry
 

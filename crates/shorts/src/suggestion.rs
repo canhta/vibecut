@@ -2,6 +2,7 @@
 use crate::clip_boundaries::{
     BoundaryFailure, ClipBoundarySettings, SegmentAdjustment, snap_clip_boundaries,
 };
+use crate::error::Error;
 use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
     ANTHROPIC_SETTINGS, AnthropicClipSuggester, ClipDisclosure, ClipInput, ClipProposal,

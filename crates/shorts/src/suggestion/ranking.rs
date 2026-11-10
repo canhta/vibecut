@@ -3,7 +3,7 @@ use super::{
     Arc, ArtifactCache, ArtifactKind, BoundaryFailure, CacheKey, Cancellation,
     ClipBoundarySettings, ClipCandidate, ClipInput, ClipRequest, ClipSegment, ClipSettings,
     ClipSuggester, ClipSuggestion, ClipSuggestionOutcome, ConsentPrompt, Cost, CostEstimate,
-    Credentials, Cue, EditError, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec,
+    Credentials, Cue, EditError, Error, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec,
     KeyInputs, LanguageTag, MAX_WIRE, MODE, Money, NfcText, Operation, Progress, PromptApproval,
     Providers, RejectedClip, ResourceClass, SampleRange, Scope, SnapSettings, SourceAsset,
     SourceRange, Stage, Tick, Transcription, build_session, build_suggester, engine_providers,
@@ -98,7 +98,7 @@ fn snap_candidate(
         settings,
     )
     .map_err(|error| match error {
-        EditError::ClipBoundary { reason, .. } => reason,
+        Error::ClipBoundary { reason, .. } => reason,
         _ => BoundaryFailure::NoSafeFrame,
     })?;
     let Some(short) = snapped.into_iter().next() else {
@@ -131,10 +131,11 @@ pub fn suggest(
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<ClipSuggestionOutcome, EditError> {
+) -> Result<ClipSuggestionOutcome, Error> {
     let started = Instant::now();
     cancel.checkpoint()?;
-    let asset = SourceAsset::import(media::AssetId(1), request.input.clone())?;
+    let asset =
+        SourceAsset::import(media::AssetId(1), request.input.clone()).map_err(Error::kernel)?;
     let duration = asset
         .probe()
         .duration
@@ -163,13 +164,13 @@ pub fn suggest(
         ..
     } = transcription;
     let input = clip_input(&cues, &source_language, &request.settings)?;
-    if input.windows()?.len() > 64 {
-        return Err(EditError::Limit);
+    if input.windows().map_err(Error::kernel)?.len() > 64 {
+        return Err(EditError::Limit.into());
     }
 
     let provider = Arc::new(build_suggester(&request.provider, credentials)?);
     let source_fingerprint = NfcText::from(fingerprint(&asset));
-    let windows = input.windows()?;
+    let windows = input.windows().map_err(Error::kernel)?;
     let mut scopes = Vec::with_capacity(windows.len());
     let mut requests = Vec::with_capacity(windows.len());
     for window in &windows {
@@ -202,9 +203,9 @@ pub fn suggest(
         })
         .collect::<Result<Vec<_>, _>>();
     if let Some(error) = approval.refusal.take() {
-        return Err(error);
+        return Err(error.into());
     }
-    let tokens = tokens?;
+    let tokens = tokens.map_err(Error::kernel)?;
     let settings_bytes = serde_json::to_vec(&(provider.as_clip().config(), &input))
         .map_err(|_| EditError::Invalid("clip input serialization"))?;
     let key = CacheKey::new(KeyInputs {
@@ -259,7 +260,7 @@ pub fn suggest(
         approval.spent.add(&match &estimate {
             Cost::Free => CostEstimate::Free,
             Cost::UpperBound { currency, micros } => {
-                CostEstimate::UpperBound(Money::new(currency, *micros)?)
+                CostEstimate::UpperBound(Money::new(currency, *micros).map_err(Error::kernel)?)
             }
             Cost::Unknown => CostEstimate::Unknown,
         });
@@ -269,10 +270,12 @@ pub fn suggest(
     progress.stage(Stage::Snap);
     let energy = media::analyze_speech_energy(
         &asset,
-        SourceRange::new(Tick::ZERO, duration)?,
+        SourceRange::new(Tick::ZERO, duration).map_err(Error::kernel)?,
         cancel.media_flag(),
-    )?;
-    let profile = captions::LanguageRegistry::standard()?
+    )
+    .map_err(Error::kernel)?;
+    let profile = captions::LanguageRegistry::standard()
+        .map_err(Error::kernel)?
         .profile(&source_language)
         .clone();
     let boundaries = snap_settings(&asset, duration, &request.settings, &request.snap)?;

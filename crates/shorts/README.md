@@ -2,7 +2,7 @@
 
 Produces accepted shorts from source segments for desktop review, CLI clips and the fixed clip evaluation harness. Engine owns the edit kernel, provider selection, transcript acquisition, jobs, cache and typed execution errors. Domain crates own media processing, AI adapters, captions and rendering. This crate owns no UI, transport, model download or scheduler.
 
-Use `clip_suggest::{suggest, prepare_export, export}` for the complete workflow, `clip_boundaries::snap_clip_boundaries` for reviewed source edges, or `ClipBatch` for explicit accepted clips. Callers supply engine resources, consent, progress and cancellation. Failures keep the engine's typed error contract, including its `BoundaryFailure` payload.
+Use `clip_suggest::{suggest, prepare_export, export}` for the complete workflow, `clip_boundaries::snap_clip_boundaries` for reviewed source edges, or `ClipBatch` for explicit accepted clips. Callers supply engine resources, consent, progress and cancellation. `shorts::Error` owns boundary and export refusals and passes engine failures through; `BoundaryFailure` names the boundary reason.
 
 | Module | Responsibility | Contract |
 |---|---|---|

@@ -2,8 +2,8 @@
 use super::{
     Cancellation, ClipBatch, ClipBatchRequest, ClipExportOutcome, ClipExportPaths, ClipExportPrep,
     ClipExportRequest, ClipShort, ClipSuggestionOutcome, ConsentPrompt, Cost, CueTrack, Duration,
-    EditError, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers, ResourceClass,
-    fingerprint, translate_track,
+    EditError, Error, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers,
+    ResourceClass, fingerprint, translate_track,
 };
 /// Translate (when needed) and prepare every selected short for export.
 #[allow(clippy::too_many_arguments)]
@@ -15,14 +15,14 @@ pub fn prepare_export(
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<ClipExportPrep, EditError> {
+) -> Result<ClipExportPrep, Error> {
     if request.select.is_empty() || request.select.len() > MAX_BATCH_CLIPS {
-        return Err(EditError::Invalid("clip selection size"));
+        return Err(EditError::Invalid("clip selection size").into());
     }
     let mut seen = std::collections::BTreeSet::new();
     for index in &request.select {
         if *index >= outcome.clips.len() || !seen.insert(*index) {
-            return Err(EditError::Invalid("clip selection index"));
+            return Err(EditError::Invalid("clip selection index").into());
         }
     }
     let mut track = CueTrack {
@@ -50,7 +50,7 @@ pub fn prepare_export(
         )?;
         for (target, source) in track.cues.iter_mut().zip(translated.cues) {
             if target.id != source.id {
-                return Err(EditError::Invalid("translated clip cues"));
+                return Err(EditError::Invalid("translated clip cues").into());
             }
             for (tag, text) in source.texts {
                 if tag != outcome.source_language {
@@ -97,7 +97,7 @@ pub fn export(
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<ClipExportOutcome, EditError> {
+) -> Result<ClipExportOutcome, Error> {
     let prep = prepare_export(
         outcome, request, providers, runner, consent, progress, cancel,
     )?;
@@ -116,7 +116,7 @@ pub fn export(
                         next += 1;
                     }
                     // Pump the caller's other work before retrying admission.
-                    Err(EditError::QueueFull) => break,
+                    Err(Error::Engine(EditError::QueueFull)) => break,
                     Err(error) => return Err(error),
                 }
             }
@@ -143,11 +143,13 @@ pub fn export(
                     }
                     JobState::Failed => {
                         return Err(match snapshot.error {
-                            Some(error) => EditError::JobFailure(error),
-                            None => EditError::Invalid("clip job failed without diagnostics"),
+                            Some(error) => EditError::JobFailure(error).into(),
+                            None => {
+                                EditError::Invalid("clip job failed without diagnostics").into()
+                            }
                         });
                     }
-                    JobState::Cancelled => return Err(EditError::Cancelled),
+                    JobState::Cancelled => return Err(EditError::Cancelled.into()),
                     _ => index += 1,
                 }
             }

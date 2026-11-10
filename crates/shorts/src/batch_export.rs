@@ -1,4 +1,5 @@
 //! Exports accepted shorts as ordered source segments.
+use crate::error::Error;
 use captions::{CueTrack, Format, LanguageTag, NfcText};
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{

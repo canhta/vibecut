@@ -1,4 +1,6 @@
 //! Produces accepted shorts from source segments.
+mod error;
+pub use error::{Error, Result};
 mod boundaries;
 pub mod clip_boundaries {
     //! Snaps accepted source segments to safe edges.
@@ -6,7 +8,7 @@ pub mod clip_boundaries {
         BoundaryAdjustment, BoundaryKind, ClipBoundarySettings, SegmentAdjustment, SnappedShort,
         snap_clip_boundaries,
     };
-    pub use engine::BoundaryFailure;
+    pub use super::error::BoundaryFailure;
 }
 mod batch_export;
 pub use batch_export::{

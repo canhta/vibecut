@@ -1,7 +1,7 @@
 //! Schedules accepted short exports.
 use super::{
-    ArtifactKind, CacheKey, CancelToken, ClipBatch, ClipJob, EditError, JobBytes, JobId, JobKind,
-    JobRunner, JobSpec, JobStage, JobState, KeyInputs, Options, PreparedClip, Project,
+    ArtifactKind, CacheKey, CancelToken, ClipBatch, ClipJob, EditError, Error, JobBytes, JobId,
+    JobKind, JobRunner, JobSpec, JobStage, JobState, KeyInputs, Options, PreparedClip, Project,
     ResourceClass, Tick, TimeRange, Write, extension, mark_subtitle, mark_video,
     reconcile_published, subtitle_file,
 };
@@ -9,9 +9,9 @@ impl ClipBatch {
     /// Submit one prepared short that has no job yet. An out-of-range or already
     /// submitted index is refused before the runner is touched, so callers that
     /// drain as they submit never leave an orphan admission behind.
-    pub fn submit_one(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, EditError> {
+    pub fn submit_one(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, Error> {
         if self.jobs.get(index).is_some_and(Option::is_some) {
-            return Err(EditError::Invalid("clip already submitted"));
+            return Err(EditError::Invalid("clip already submitted").into());
         }
         let clip = self
             .clips
@@ -29,7 +29,7 @@ impl ClipBatch {
     /// Submit every short that has no job yet. A repeated call submits nothing and
     /// returns an empty list. If submission fails midway, earlier jobs stay tracked
     /// and cancellable; nothing is published until a job runs.
-    pub fn submit(&mut self, runner: &mut JobRunner) -> Result<Vec<JobId>, EditError> {
+    pub fn submit(&mut self, runner: &mut JobRunner) -> Result<Vec<JobId>, Error> {
         let mut submitted = Vec::new();
         submitted
             .try_reserve_exact(self.clips.len())
@@ -47,7 +47,7 @@ impl ClipBatch {
 impl ClipBatch {
     /// Resubmit a failed or cancelled short with its prepared inputs. Completed,
     /// running and unknown jobs are refused.
-    pub fn retry(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, EditError> {
+    pub fn retry(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, Error> {
         let clip = self
             .clips
             .get(index)
@@ -59,7 +59,7 @@ impl ClipBatch {
             .ok_or(EditError::Invalid("clip not submitted"))?;
         match runner.snapshot(current.id).map(|snapshot| snapshot.state) {
             Some(JobState::Failed | JobState::Cancelled) => {}
-            _ => return Err(EditError::Invalid("clip is not retryable")),
+            _ => return Err(EditError::Invalid("clip is not retryable").into()),
         }
         let (id, cancel) = submit_clip(runner, clip)?;
         if let Some(slot) = self.jobs.get_mut(index) {
@@ -71,7 +71,7 @@ impl ClipBatch {
 
 impl ClipBatch {
     /// Cancel one short. Cancelling an already finished job has no effect.
-    pub fn cancel(&self, index: usize) -> Result<(), EditError> {
+    pub fn cancel(&self, index: usize) -> Result<(), Error> {
         let job = self
             .jobs
             .get(index)
