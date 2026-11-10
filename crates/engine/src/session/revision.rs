@@ -1,7 +1,7 @@
 //! Advances the session revision and records each change in the ledger.
-use super::wire::{Event, Payload, Revision};
+use super::wire::{Payload, Revision};
 use crate::{EditError, Result, Session};
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 impl Session {
     pub fn revision(&self) -> Revision {
@@ -27,14 +27,5 @@ impl Session {
             },
         );
         Ok(())
-    }
-
-    pub(crate) fn control_mark(&self) -> (u64, VecDeque<Arc<Event>>) {
-        (self.ledger.sequence, self.ledger.events.clone())
-    }
-
-    pub(crate) fn restore_control_mark(&mut self, mark: (u64, VecDeque<Arc<Event>>)) {
-        self.ledger.sequence = mark.0;
-        self.ledger.events = mark.1;
     }
 }

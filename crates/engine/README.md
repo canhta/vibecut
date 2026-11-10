@@ -17,6 +17,7 @@ the output grant authorizes every generated path. Control API version 2 requires
 |---|---|---|
 | `session/` | Owns editable project state and the wire contract. | [Session](src/session/README.md) |
 | `session/edit/` | Applies validated editing commands to project candidates. | [Edit commands](src/session/edit/README.md) |
+| `session/state/` | Owns editable session history. | [Session state](src/session/state/README.md) |
 | `session/wire/` | Defines the transport-neutral wire contract. | [Wire contract](src/session/wire/README.md) |
 | `runtime/` | Executes bounded background work. | [Runtime](src/runtime/README.md) |
 | `runtime/cache_storage/` | Retains content-addressed execution artifacts. | [Artifact cache](src/runtime/cache_storage/README.md) |

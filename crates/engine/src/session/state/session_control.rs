@@ -1,0 +1,221 @@
+//! Executes the commands declared `SessionControl`.
+use super::{Session, Snapshot};
+use crate::session::{edit, wire};
+use crate::{Command, EditError, Outcome, Result};
+use project::Project;
+use std::sync::Arc;
+
+fn outcome(changed: bool) -> Result<Outcome> {
+    Ok(Outcome {
+        changed,
+        created: Vec::new(),
+        placements: Vec::new(),
+    })
+}
+
+impl Session {
+    /// Run one session-control command. `commit` has already reserved the
+    /// generation and refused lifecycle commands, which their owners execute.
+    pub(super) fn session_control(
+        &mut self,
+        command: Command,
+        wire: bool,
+        ripple: bool,
+    ) -> Result<Outcome> {
+        match command {
+            Command::TimelineSetRipple { enabled } => self.set_ripple(enabled),
+            Command::TimelinePreview { commands } => self.preview(commands, wire, ripple),
+            Command::SwitchScene { scene } => self.switch_scene(scene, wire),
+            Command::SetViewState {
+                zoom,
+                scroll,
+                playhead,
+            } => self.set_view_state(
+                project::ViewState {
+                    zoom,
+                    scroll,
+                    playhead,
+                },
+                wire,
+            ),
+            Command::BeginGesture {} => {
+                if wire {
+                    wire::validate_wire(self.project().data())?;
+                }
+                self.start_gesture()
+            }
+            Command::CommitGesture {} | Command::TimelineCommitPreview {} => {
+                if wire {
+                    wire::validate_wire(self.state.project.data())?;
+                }
+                self.finish_gesture()
+            }
+            Command::CancelGesture {} | Command::TimelineDiscardPreview {} => {
+                if wire && let Some(before) = &self.gesture {
+                    wire::validate_wire(before.project.data())?;
+                }
+                self.revert_gesture()
+            }
+            Command::Undo {} => self.history(false, wire),
+            Command::Redo {} => self.history(true, wire),
+            _ => Err(EditError::Invalid(
+                "lifecycle command requires its library or persistence owner",
+            )),
+        }
+    }
+
+    fn set_ripple(&mut self, enabled: bool) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        let changed = self.ripple != enabled;
+        self.ripple = enabled;
+        if changed {
+            self.invalidate_revision(false)?;
+        }
+        outcome(changed)
+    }
+
+    /// Replace the staged preview with `commands` applied to the gesture entry.
+    fn preview(&mut self, commands: Vec<Command>, wire: bool, ripple: bool) -> Result<Outcome> {
+        let batch = Command::Batch { commands };
+        edit::check_budget(&batch)?;
+        if !self.timeline_preview {
+            if let Some(before) = &self.gesture {
+                // The UI may promote its empty pointer gesture, but a
+                // replacement cannot discard an earlier incremental edit.
+                if before.project != self.state.project {
+                    return Err(EditError::TransactionActive);
+                }
+            } else {
+                self.start_gesture()?;
+            }
+        }
+        let before = self.gesture.as_ref().ok_or(EditError::NoGesture)?.clone();
+        self.state.rewind(before);
+        let outcome = self.commit(batch, None, wire, ripple)?;
+        self.timeline_preview = true;
+        Ok(outcome)
+    }
+
+    fn switch_scene(&mut self, scene: project::SceneId, wire: bool) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        if self.project().data().scenes.get(scene).is_none() {
+            return Err(EditError::Invalid("scene not found"));
+        }
+        let mut data = self.project().data().clone();
+        if wire {
+            wire::validate_wire(&data)?;
+        }
+        let changed = data.current_scene_id != scene;
+        if changed {
+            data.current_scene_id = scene;
+            if wire {
+                wire::validate_wire(&data)?;
+            }
+            self.change_scene_view(&data);
+            self.state.project = Arc::new(Project::new(data)?);
+            self.state.selection = Arc::default();
+            self.end_merge();
+            self.state.change = Some(self.state.project.clone());
+        }
+        outcome(changed)
+    }
+
+    fn set_view_state(&mut self, view: project::ViewState, wire: bool) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        if wire {
+            wire::validate_wire(self.project().data())?;
+        }
+        view.validate()?;
+        let changed = self.metadata.view != view;
+        self.metadata.view = view;
+        if changed {
+            self.invalidate_revision(false)?;
+        }
+        outcome(changed)
+    }
+
+    fn start_gesture(&mut self) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        self.end_merge();
+        self.gesture = Some(self.state.clone());
+        outcome(false)
+    }
+
+    fn finish_gesture(&mut self) -> Result<Outcome> {
+        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        self.timeline_preview = false;
+        self.squash(before)
+    }
+
+    fn revert_gesture(&mut self) -> Result<Outcome> {
+        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        self.timeline_preview = false;
+        let changed = *self.state.project != *before.project;
+        self.state.rewind(before);
+        self.end_merge();
+        self.invalidate_revision(false)?;
+        outcome(changed)
+    }
+
+    fn history(&mut self, redo: bool, wire: bool) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        if wire {
+            let candidate = if redo {
+                self.state.redo.last()
+            } else {
+                self.state.undo.back()
+            }
+            .ok_or(EditError::NoHistory)?;
+            wire::validate_wire(candidate.project.data())?;
+        }
+        let mut snapshot = if redo {
+            self.state.redo.pop()
+        } else {
+            self.state.undo.pop_back()
+        }
+        .ok_or(EditError::NoHistory)?;
+        let id = self.project().data().id;
+        let current = self.project().data().current_scene_id;
+        if snapshot.project.data().id != id
+            || (snapshot.project.data().current_scene_id != current
+                && snapshot.project.data().scenes.get(current).is_some())
+        {
+            let mut data = snapshot.project.data().clone();
+            data.id = id;
+            if data.scenes.get(current).is_some() {
+                data.current_scene_id = current;
+            }
+            snapshot.project = Arc::new(Project::new(data)?);
+        }
+        if wire {
+            wire::validate_wire(snapshot.project.data())?;
+        }
+        self.change_scene_view(snapshot.project.data());
+        // Each entry remembers the selection that produced its edit, even if the
+        // user subsequently deselected everything before invoking history.
+        let old = Snapshot {
+            project: std::mem::replace(&mut self.state.project, snapshot.project),
+            selection: snapshot.selection.clone(),
+        };
+        self.state.selection = snapshot.selection;
+        self.prune_selection();
+        if redo {
+            self.state.undo.push_back(old);
+        } else {
+            self.state.redo.push(old);
+        }
+        self.end_merge();
+        self.state.change = Some(self.state.project.clone());
+        outcome(true)
+    }
+}

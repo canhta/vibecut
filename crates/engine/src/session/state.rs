@@ -1,6 +1,9 @@
 //! Owns editable session history.
 use super::edit;
+mod checkpoint;
+mod session_control;
 use crate::{Command, EditError, NewItem, Outcome, Placement, Result};
+use checkpoint::Checkpoint;
 use project::{AudioParams, AudioSource, ItemId, ItemParams, LibrarySound, Project};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -36,6 +39,15 @@ struct State {
     trim_sources: edit::TrimSources,
     next_id: Option<u64>,
     change: Option<Arc<Project>>,
+}
+impl State {
+    /// Return to `before` while keeping the ID counter: a gesture or transaction
+    /// already returned its children's IDs, so they stay retired.
+    fn rewind(&mut self, before: State) {
+        let next_id = self.next_id;
+        *self = before;
+        self.next_id = next_id;
+    }
 }
 /// Opaque identity for exactly one Session revision, including save boundaries.
 #[derive(Clone)]
@@ -281,46 +293,14 @@ impl Session {
     pub fn begin_gesture(&mut self) -> Result<()> {
         self.apply(Command::BeginGesture {}).map(|_| ())
     }
-    fn start_gesture(&mut self) -> Result<Outcome> {
-        if self.transaction_active() {
-            return Err(EditError::TransactionActive);
-        }
-        self.end_merge();
-        self.gesture = Some(self.state.clone());
-        Ok(Outcome {
-            changed: false,
-            created: Vec::new(),
-            placements: Vec::new(),
-        })
-    }
     /// Publish a gesture as exactly one bounded undo step and one change event.
     pub fn commit_gesture(&mut self) -> Result<Outcome> {
         self.apply(Command::CommitGesture {})
-    }
-    fn finish_gesture(&mut self) -> Result<Outcome> {
-        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
-        self.timeline_preview = false;
-        self.squash(before)
     }
     /// Restore project, history and deferred event to gesture entry. Preview IDs are
     /// retired so stale preview references cannot alias future items.
     pub fn cancel_gesture(&mut self) -> Result<Outcome> {
         self.apply(Command::CancelGesture {})
-    }
-    fn revert_gesture(&mut self) -> Result<Outcome> {
-        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
-        self.timeline_preview = false;
-        let changed = *self.state.project != *before.project;
-        let next_id = self.state.next_id;
-        self.state = before;
-        self.state.next_id = next_id;
-        self.end_merge();
-        self.invalidate_revision(false)?;
-        Ok(Outcome {
-            changed,
-            created: Vec::new(),
-            placements: Vec::new(),
-        })
     }
     /// Stage commands as one undo step. An error or unwind restores project, undo/redo,
     /// merging and deferred events. Nested transactions/gestures and undo/redo are refused.
@@ -343,9 +323,7 @@ impl Session {
             failed => {
                 // Targets captured by child commands belong to discarded previews.
                 self.invalidate_revision(false)?;
-                let next_id = self.state.next_id;
-                self.state = before;
-                self.state.next_id = next_id;
+                self.state.rewind(before);
                 match failed {
                     Ok(Err(error)) => Err(error),
                     _ => Err(EditError::Panicked),
@@ -357,10 +335,8 @@ impl Session {
         // Close the preview lifetime even for a net-zero group/gesture.
         self.generation.checked_add(1).ok_or(EditError::Limit)?;
         let project = self.state.project.clone();
-        let next_id = self.state.next_id;
         let changed = *project != *before.project;
-        self.state = before;
-        self.state.next_id = next_id;
+        self.state.rewind(before);
         self.end_merge();
         if changed {
             self.publish(project, None);
@@ -410,52 +386,26 @@ impl Session {
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
         self.boundary(|session| session.commit(command, None, true, session.ripple))
     }
+    /// Run `run` atomically: a refusal or an unwind leaves the session as
+    /// [`Checkpoint`] captured it.
     fn boundary<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-        let before = self.state.clone();
-        let gesture = self.gesture.clone();
-        let timeline_preview = self.timeline_preview;
-        let ripple = self.ripple;
-        let revision = self.revision.clone();
-        let event_mark = self.control_mark();
-        let metadata = self.metadata.clone();
-        match catch_unwind(AssertUnwindSafe(|| run(self))) {
+        let checkpoint = Checkpoint::take(self);
+        let result = match catch_unwind(AssertUnwindSafe(|| run(self))) {
             Ok(Ok(value)) => {
-                if Arc::ptr_eq(&revision, &self.revision)
-                    && !Arc::ptr_eq(&before.project, &self.state.project)
-                    && let Err(error) = self.invalidate_revision(!self.transaction_active())
-                {
-                    self.state = before;
-                    self.gesture = gesture;
-                    self.timeline_preview = timeline_preview;
-                    self.ripple = ripple;
-                    self.metadata = metadata;
-                    self.revision = revision;
-                    self.restore_control_mark(event_mark);
-                    return Err(error);
+                if checkpoint.project_changed_at_same_revision(self) {
+                    self.invalidate_revision(!self.transaction_active())
+                        .map(|()| value)
+                } else {
+                    Ok(value)
                 }
-                Ok(value)
             }
-            Ok(Err(error)) => {
-                self.state = before;
-                self.gesture = gesture;
-                self.timeline_preview = timeline_preview;
-                self.ripple = ripple;
-                self.metadata = metadata;
-                self.revision = revision;
-                self.restore_control_mark(event_mark);
-                Err(error)
-            }
-            Err(_) => {
-                self.state = before;
-                self.gesture = gesture;
-                self.timeline_preview = timeline_preview;
-                self.ripple = ripple;
-                self.metadata = metadata;
-                self.revision = revision;
-                self.restore_control_mark(event_mark);
-                Err(EditError::Panicked)
-            }
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(EditError::Panicked),
+        };
+        if result.is_err() {
+            checkpoint.restore(self);
         }
+        result
     }
     /// One undo step: the asset and its audio item commit or roll back together.
     /// The caller supplies an already cached, probed media file and provider
@@ -563,122 +513,8 @@ impl Session {
                 "lifecycle command requires its library or persistence owner",
             ));
         }
-        match command {
-            Command::TimelineSetRipple { enabled } => {
-                if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
-                }
-                let changed = self.ripple != enabled;
-                self.ripple = enabled;
-                if changed {
-                    self.invalidate_revision(false)?;
-                }
-                return Ok(Outcome {
-                    changed,
-                    created: Vec::new(),
-                    placements: Vec::new(),
-                });
-            }
-            Command::TimelinePreview { commands } => {
-                let batch = Command::Batch { commands };
-                edit::check_budget(&batch)?;
-                if !self.timeline_preview {
-                    if let Some(before) = &self.gesture {
-                        // The UI may promote its empty pointer gesture, but a
-                        // replacement cannot discard an earlier incremental edit.
-                        if before.project != self.state.project {
-                            return Err(EditError::TransactionActive);
-                        }
-                    } else {
-                        self.start_gesture()?;
-                    }
-                }
-                let before = self.gesture.as_ref().ok_or(EditError::NoGesture)?.clone();
-                let next_id = self.state.next_id;
-                self.state = before;
-                self.state.next_id = next_id;
-                let outcome = self.commit(batch, None, wire, ripple)?;
-                self.timeline_preview = true;
-                return Ok(outcome);
-            }
-            Command::SwitchScene { scene } => {
-                if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
-                }
-                if self.project().data().scenes.get(scene).is_none() {
-                    return Err(EditError::Invalid("scene not found"));
-                }
-                let mut data = self.project().data().clone();
-                if wire {
-                    super::wire::validate_wire(&data)?;
-                }
-                let changed = data.current_scene_id != scene;
-                if changed {
-                    data.current_scene_id = scene;
-                    if wire {
-                        super::wire::validate_wire(&data)?;
-                    }
-                    self.change_scene_view(&data);
-                    self.state.project = Arc::new(Project::new(data)?);
-                    self.state.selection = Arc::default();
-                    self.end_merge();
-                    self.state.change = Some(self.state.project.clone());
-                }
-                return Ok(Outcome {
-                    changed,
-                    created: Vec::new(),
-                    placements: Vec::new(),
-                });
-            }
-            Command::SetViewState {
-                zoom,
-                scroll,
-                playhead,
-            } => {
-                if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
-                }
-                if wire {
-                    super::wire::validate_wire(self.project().data())?;
-                }
-                let view = project::ViewState {
-                    zoom,
-                    scroll,
-                    playhead,
-                };
-                view.validate()?;
-                let changed = self.metadata.view != view;
-                self.metadata.view = view;
-                if changed {
-                    self.invalidate_revision(false)?;
-                }
-                return Ok(Outcome {
-                    changed,
-                    created: Vec::new(),
-                    placements: Vec::new(),
-                });
-            }
-            Command::BeginGesture {} => {
-                if wire {
-                    super::wire::validate_wire(self.project().data())?;
-                }
-                return self.start_gesture();
-            }
-            Command::CommitGesture {} | Command::TimelineCommitPreview {} => {
-                if wire {
-                    super::wire::validate_wire(self.state.project.data())?;
-                }
-                return self.finish_gesture();
-            }
-            Command::CancelGesture {} | Command::TimelineDiscardPreview {} => {
-                if wire && let Some(before) = &self.gesture {
-                    super::wire::validate_wire(before.project.data())?;
-                }
-                return self.revert_gesture();
-            }
-            Command::Undo {} => return self.history(false, wire),
-            Command::Redo {} => return self.history(true, wire),
-            _ => {}
+        if matches!(command.effect(), crate::Effect::SessionControl) {
+            return self.session_control(command, wire, ripple);
         }
         edit::check_budget(&command)?;
         let mut command = command;
@@ -824,90 +660,114 @@ impl Session {
     pub fn redo(&mut self) -> Result<Outcome> {
         self.apply(Command::Redo {})
     }
-    fn history(&mut self, redo: bool, wire: bool) -> Result<Outcome> {
-        if self.transaction_active() {
-            return Err(EditError::TransactionActive);
-        }
-        if wire {
-            let candidate = if redo {
-                self.state.redo.last()
-            } else {
-                self.state.undo.back()
-            }
-            .ok_or(EditError::NoHistory)?;
-            super::wire::validate_wire(candidate.project.data())?;
-        }
-        let mut snapshot = if redo {
-            self.state.redo.pop()
-        } else {
-            self.state.undo.pop_back()
-        }
-        .ok_or(EditError::NoHistory)?;
-        let id = self.project().data().id;
-        let current = self.project().data().current_scene_id;
-        if snapshot.project.data().id != id
-            || (snapshot.project.data().current_scene_id != current
-                && snapshot.project.data().scenes.get(current).is_some())
-        {
-            let mut data = snapshot.project.data().clone();
-            data.id = id;
-            if data.scenes.get(current).is_some() {
-                data.current_scene_id = current;
-            }
-            snapshot.project = Arc::new(Project::new(data)?);
-        }
-        if wire {
-            super::wire::validate_wire(snapshot.project.data())?;
-        }
-        self.change_scene_view(snapshot.project.data());
-        // Each entry remembers the selection that produced its edit, even if the
-        // user subsequently deselected everything before invoking history.
-        let old = Snapshot {
-            project: std::mem::replace(&mut self.state.project, snapshot.project),
-            selection: snapshot.selection.clone(),
-        };
-        self.state.selection = snapshot.selection;
-        self.prune_selection();
-        if redo {
-            self.state.undo.push_back(old);
-        } else {
-            self.state.redo.push(old);
-        }
-        self.end_merge();
-        self.state.change = Some(self.state.project.clone());
-        Ok(Outcome {
-            changed: true,
-            created: Vec::new(),
-            placements: Vec::new(),
-        })
-    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn add_track() -> Command {
+        Command::AddTrack {
+            placement: crate::TrackPlacement::Auto,
+            name: "".into(),
+            kind: project::TrackKind::Video,
+        }
+    }
+    fn view(zoom: f64) -> Command {
+        Command::SetViewState {
+            zoom,
+            scroll: 0.0,
+            playhead: Tick::ZERO,
+        }
+    }
+
+    /// Each exit of a boundary that is not success leaves every restored field
+    /// as it was at entry, after the body changed all of them.
     #[test]
-    fn unwind_after_staged_publication_restores_command_state() {
-        let mut session =
-            Session::new(Project::empty(project::ProjectId(0), "".into()).unwrap(), 1).unwrap();
-        let before = session.state.clone();
-        let result: Result<()> = session.boundary(|s| {
-            s.commit(
-                Command::AddTrack {
-                    placement: crate::TrackPlacement::Auto,
-                    name: "".into(),
-                    kind: project::TrackKind::Video,
-                },
-                None,
-                false,
-                false,
-            )?;
-            panic!("injected command unwind");
-        });
-        assert!(matches!(result, Err(EditError::Panicked)));
-        assert!(Arc::ptr_eq(&before.project, session.project()));
-        assert_eq!(session.history_len(), (0, 0));
-        assert!(session.take_change().is_none());
-        assert_eq!(session.state.next_id, before.next_id);
-        assert_eq!(session.state.merge_key, before.merge_key);
+    fn refused_boundary_restores_every_checkpointed_field() {
+        #[derive(Clone, Copy, Debug)]
+        enum Exit {
+            Refusal,
+            Unwind,
+            RevisionExhausted,
+        }
+        for exit in [Exit::Refusal, Exit::Unwind, Exit::RevisionExhausted] {
+            let mut session =
+                Session::new(Project::empty(project::ProjectId(0), "".into()).unwrap(), 4).unwrap();
+            session.apply(add_track()).unwrap();
+            session.apply(view(2.0)).unwrap();
+            let state = session.state.clone();
+            let revision = session.revision.clone();
+            let metadata = session.metadata.clone();
+            let ledger = (session.ledger.sequence, session.ledger.events.len());
+            let result: Result<()> = session.boundary(|s| {
+                // Project, history, IDs, selection and the deferred change.
+                s.commit(add_track(), None, false, false)?;
+                if matches!(exit, Exit::RevisionExhausted) {
+                    // The body changed the project without advancing the
+                    // revision; the boundary then cannot advance it either.
+                    s.generation = u64::MAX;
+                    return Ok(());
+                }
+                // Metadata, revision and ledger events.
+                s.commit(view(3.0), None, false, false)?;
+                // Ripple policy.
+                s.commit(
+                    Command::TimelineSetRipple { enabled: true },
+                    None,
+                    false,
+                    false,
+                )?;
+                // Gesture entry and the staged preview flag.
+                s.commit(
+                    Command::TimelinePreview {
+                        commands: vec![add_track()],
+                    },
+                    None,
+                    false,
+                    false,
+                )?;
+                assert!(s.gesture.is_some() && s.timeline_preview && s.ripple);
+                assert!(!Arc::ptr_eq(&s.revision, &revision));
+                match exit {
+                    Exit::Unwind => panic!("injected command unwind"),
+                    _ => Err(EditError::Invalid("injected refusal")),
+                }
+            });
+            match exit {
+                Exit::Refusal => assert!(matches!(result, Err(EditError::Invalid(_))), "{exit:?}"),
+                Exit::Unwind => assert!(matches!(result, Err(EditError::Panicked)), "{exit:?}"),
+                Exit::RevisionExhausted => {
+                    assert!(matches!(result, Err(EditError::Limit)), "{exit:?}")
+                }
+            }
+            assert!(
+                Arc::ptr_eq(&state.project, &session.state.project),
+                "{exit:?}"
+            );
+            assert_eq!(session.history_len(), (state.undo.len(), 0), "{exit:?}");
+            assert_eq!(session.state.next_id, state.next_id, "{exit:?}");
+            assert_eq!(session.state.merge_key, state.merge_key, "{exit:?}");
+            assert!(
+                Arc::ptr_eq(&state.selection, &session.state.selection),
+                "{exit:?}"
+            );
+            assert_eq!(
+                session.state.change.as_ref().map(Arc::as_ptr),
+                state.change.as_ref().map(Arc::as_ptr),
+                "{exit:?}"
+            );
+            assert!(
+                session.gesture.is_none() && !session.timeline_preview,
+                "{exit:?}"
+            );
+            assert!(!session.ripple, "{exit:?}");
+            assert!(Arc::ptr_eq(&revision, &session.revision), "{exit:?}");
+            assert!(session.metadata == metadata, "{exit:?}");
+            assert_eq!(
+                (session.ledger.sequence, session.ledger.events.len()),
+                ledger,
+                "{exit:?}"
+            );
+        }
     }
 }

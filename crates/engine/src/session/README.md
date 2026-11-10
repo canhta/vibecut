@@ -30,7 +30,7 @@ Required nullable keyframe fields stay required; `NewItem.source_asset` may be o
 
 `take_change()` drains a single coalesced committed-project snapshot. It returns None during previews and groups, including for an older undrained event. Commit publishes one change; cancellation or failure restores the previous pending event. Consumers render previews from `project()` and use committed changes for persistence and processing. Begin, commit and cancel return no newly created IDs; individual preview commands return their provisional IDs.
 
-Commands and groups catch unwinding panics, restore their engine state and return `EditError::Panicked` without formatting payloads. Aborts, OOM and double-panic termination cannot be recovered. The application owns panic-hook policy. Errors preserve project, history, merge state and undrained changes; successful undo/redo always breaks merging. App presentation, scopes and preferences are not Session state.
+Commands and groups catch unwinding panics, restore their engine state and return `EditError::Panicked` without formatting payloads. What a refused or unwound command restores, and what it deliberately keeps, is the [rollback contract](state/README.md#rollback). Aborts, OOM and double-panic termination cannot be recovered. The application owns panic-hook policy. Errors preserve project, history, merge state and undrained changes; successful undo/redo always breaks merging. App presentation, scopes and preferences are not Session state.
 
 ## Project lifecycle and view state
 
