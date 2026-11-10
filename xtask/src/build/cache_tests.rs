@@ -5,21 +5,21 @@ use super::queue::*;
 use super::slot::*;
 use super::*;
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headroom() {
-    let root = std::env::temp_dir().join(format!("vibecut-switch-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
     fs::create_dir_all(root.join("crates/example")).unwrap();
-    crate::checked(&root, "git", &["init", "-q"]).unwrap();
+    crate::checked(root, "git", &["init", "-q"]).unwrap();
     fs::write(
         root.join("crates/example/Cargo.toml"),
         "[package]\nname = 'example'\n",
     )
     .unwrap();
-    crate::checked(&root, "git", &["add", "."]).unwrap();
+    crate::checked(root, "git", &["add", "."]).unwrap();
     let base = root.join("cache");
     fs::create_dir_all(base.join("locks")).unwrap();
     let deps = base.join("target/slot-1/debug/deps");
@@ -39,7 +39,7 @@ fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headro
         .unwrap()
         .set_modified(UNIX_EPOCH)
         .unwrap();
-    prepare(&base, &root, 1, |_| Ok(31 * GIB)).unwrap();
+    prepare(&base, root, 1, |_| Ok(31 * GIB)).unwrap();
     assert!(!deps.join("libexample-old.rlib").exists());
     assert!(!deps.join("test-old.exe").exists());
     assert!(!deps.join("old.o").exists());
@@ -47,14 +47,13 @@ fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headro
     assert!(fs::metadata(&source).unwrap().modified().unwrap() > UNIX_EPOCH);
     assert_eq!(owner(&base.join("locks"), 1), root);
     assert!(
-        prepare(&base, &root, 1, |_| Ok(29 * GIB))
+        prepare(&base, root, 1, |_| Ok(29 * GIB))
             .unwrap_err()
             .contains("still below")
     );
     assert!(!base.join("target/slot-1").exists());
     let mut headroom = [29 * GIB, 31 * GIB].into_iter();
-    prepare(&base, &root, 1, |_| Ok(headroom.next().unwrap())).unwrap();
-    fs::remove_dir_all(root).unwrap();
+    prepare(&base, root, 1, |_| Ok(headroom.next().unwrap())).unwrap();
 }
 
 fn age_tree(path: &Path, when: SystemTime) {
@@ -81,28 +80,16 @@ fn age_tree(path: &Path, when: SystemTime) {
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
 }
 
-fn cache_base() -> PathBuf {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    // Parallel tests may read the clock within its resolution; the counter
-    // keeps each fixture owned by exactly one test.
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let base = std::env::temp_dir().join(format!(
-        "vibecut-prune-{}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = fs::remove_dir_all(&base);
-    fs::create_dir_all(base.join("locks")).unwrap();
+fn cache_base() -> tempfile::TempDir {
+    let base = tempfile::tempdir().unwrap();
+    fs::create_dir_all(base.path().join("locks")).unwrap();
     base
 }
 
 #[test]
 fn cache_prune_drops_stale_sessions_and_slots_but_keeps_fresh_or_held_work() {
-    let base = cache_base();
+    let directory = cache_base();
+    let base = directory.path();
     let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
 
     let busy = base.join("target/slot-1/debug/incremental");
@@ -124,18 +111,18 @@ fn cache_prune_drops_stale_sessions_and_slots_but_keeps_fresh_or_held_work() {
     fs::write(stale.join("debug/incremental/session/artifact"), b"old").unwrap();
     age_tree(&stale, old);
 
-    prune_slots(&base, SystemTime::now(), 1 << 40, false).unwrap();
+    prune_slots(base, SystemTime::now(), 1 << 40, false).unwrap();
     assert!(busy.join("stale").exists(), "a held slot was pruned");
     assert!(!mixed.join("stale").exists());
     assert!(mixed.join("fresh").exists());
     assert!(!stale.exists(), "an untouched whole slot was kept");
     drop(held);
-    fs::remove_dir_all(base).unwrap();
 }
 
 #[test]
 fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
-    let base = cache_base();
+    let directory = cache_base();
+    let base = directory.path();
     let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
     let deps = base.join("target/slot-1/debug/deps");
     fs::create_dir_all(&deps).unwrap();
@@ -154,19 +141,19 @@ fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
     assert!(fresh.exists(), "dry run removed the fresh file");
 
     // Total exceeds the budget; the fresh artifact alone does not.
-    prune_slots(&base, SystemTime::now(), 5000, false).unwrap();
+    prune_slots(base, SystemTime::now(), 5000, false).unwrap();
     assert!(!stale.exists(), "a stale dependency was kept");
     assert!(fresh.exists(), "a fresh artifact was pruned");
     assert!(
         base.join("target/slot-1").exists(),
         "the slot was cleared even though stale entries restored the budget"
     );
-    fs::remove_dir_all(base).unwrap();
 }
 
 #[test]
 fn cache_prune_ages_out_slots_beyond_the_current_count() {
-    let base = cache_base();
+    let directory = cache_base();
+    let base = directory.path();
     let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
     let beyond = base.join("target/slot-9/debug");
     fs::create_dir_all(&beyond).unwrap();
@@ -176,7 +163,7 @@ fn cache_prune_ages_out_slots_beyond_the_current_count() {
     fs::create_dir_all(&fresh).unwrap();
     fs::write(fresh.join("artifact"), b"new").unwrap();
 
-    prune_slots(&base, SystemTime::now(), 1 << 40, false).unwrap();
+    prune_slots(base, SystemTime::now(), 1 << 40, false).unwrap();
     assert!(
         !base.join("target/slot-9").exists(),
         "a stale slot beyond the current capacity was kept"
@@ -185,22 +172,21 @@ fn cache_prune_ages_out_slots_beyond_the_current_count() {
         base.join("target/slot-12").exists(),
         "a fresh slot beyond the current capacity was pruned"
     );
-    fs::remove_dir_all(base).unwrap();
 }
 
 #[test]
 fn cache_prune_clears_an_idle_slot_over_budget_and_dry_run_changes_nothing() {
-    let base = cache_base();
+    let directory = cache_base();
+    let base = directory.path();
     let slot = base.join("target/slot-1/debug");
     fs::create_dir_all(&slot).unwrap();
     fs::write(slot.join("artifact"), vec![0u8; 8192]).unwrap();
 
-    prune_slots(&base, SystemTime::now(), 0, true).unwrap();
+    prune_slots(base, SystemTime::now(), 0, true).unwrap();
     assert!(slot.exists(), "dry run removed the slot");
 
-    prune_slots(&base, SystemTime::now(), 0, false).unwrap();
+    prune_slots(base, SystemTime::now(), 0, false).unwrap();
     assert!(!base.join("target/slot-1").exists());
-    fs::remove_dir_all(base).unwrap();
 }
 
 // Must 4: a worktree switch keeps a warm slot unless that slot alone is over

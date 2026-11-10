@@ -418,14 +418,13 @@ fn real_model_parity_and_exact_tails() {
 fn malformed_or_truncated_weights_are_rejected_before_parser_or_inference() {
     use std::path::Path;
     use vision::{TractVision, VisionPaths};
-    let root = std::env::temp_dir().join(format!("vibecut-vision-corrupt-{}", std::process::id()));
-    std::fs::create_dir_all(&root).unwrap();
-    let file = root.join("face_detection_yunet_2026may.onnx");
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("face_detection_yunet_2026may.onnx");
     for data in [vec![0u8; 3], vec![0u8; 229738], vec![0u8; 229739]] {
         std::fs::write(&file, data).unwrap();
         let result = TractVision::load(
             VisionPaths {
-                yunet: &root,
+                yunet: root.path(),
                 clip: Path::new("missing"),
                 light_asd: Path::new("missing"),
             },
@@ -435,7 +434,6 @@ fn malformed_or_truncated_weights_are_rejected_before_parser_or_inference() {
         );
         assert!(matches!(result, Err(Error::ModelIntegrity)));
     }
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -87,15 +87,16 @@ fn cargo_children_resolve_external_oracles_with_native_dlls() {
         assert!(command.status().unwrap().success());
         return;
     }
-    let directory = env::temp_dir().join(format!("vibecut oracle space-{}", std::process::id()));
+    let directory = tempfile::tempdir().unwrap();
     let base = directory
+        .path()
         .join(".cache/vibecut/ffmpeg")
         .join(host().unwrap());
     let prefix = base.join(format!(
         "fixture-{}",
         patch_id(&patches().unwrap()).unwrap()
     ));
-    let external = directory.join("external");
+    let external = directory.path().join("external");
     fs::create_dir_all(prefix.join("bin")).unwrap();
     fs::create_dir_all(&external).unwrap();
     fs::write(prefix.join("BUILD.txt"), "fixture").unwrap();
@@ -108,12 +109,11 @@ fn cargo_children_resolve_external_oracles_with_native_dlls() {
     let result = Command::new(env::current_exe().unwrap())
         .args(["--exact", TEST, "--nocapture"])
         .env(CHILD, "configure")
-        .env("USERPROFILE", &directory)
-        .env("SHERPA_ONNX_LIB_DIR", &directory)
+        .env("USERPROFILE", directory.path())
+        .env("SHERPA_ONNX_LIB_DIR", directory.path())
         .env("PATH", env::join_paths(paths).unwrap())
         .status()
         .unwrap();
-    fs::remove_dir_all(&directory).unwrap();
     assert!(result.success());
 }
 
@@ -143,18 +143,17 @@ fn provisioning_paths_preserve_native_home_and_shell_arguments() {
         assert_eq!(output, prefix);
         return;
     }
-    let directory = env::temp_dir().join(format!(
-        "vibecut provision Đặng space-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
+    let directory = tempfile::Builder::new()
+        .prefix("vibecut provision Đặng space-")
+        .tempdir()
+        .unwrap();
     let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     for value in [
-        directory.as_os_str(),
+        directory.path().as_os_str(),
         std::ffi::OsStr::new("relative"),
         std::ffi::OsStr::new(""),
     ] {
-        let valid = value == directory.as_os_str();
+        let valid = value == directory.path().as_os_str();
         let status = Command::new(env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -164,7 +163,7 @@ fn provisioning_paths_preserve_native_home_and_shell_arguments() {
             .env(
                 CHILD,
                 if valid {
-                    directory.as_os_str()
+                    directory.path().as_os_str()
                 } else {
                     std::ffi::OsStr::new("invalid")
                 },
@@ -175,7 +174,6 @@ fn provisioning_paths_preserve_native_home_and_shell_arguments() {
             .unwrap();
         assert!(status.success());
     }
-    fs::remove_dir_all(&directory).unwrap();
 }
 
 #[test]
@@ -292,9 +290,13 @@ fn patch_discovery_uses_the_invoking_worktrees_manifest() {
         );
         return;
     }
-    let directory = env::temp_dir().join(format!("vibecut-runtime-patches-{}", std::process::id()));
-    fs::create_dir_all(directory.join("patches")).unwrap();
-    fs::write(directory.join("patches/runtime.patch"), b"runtime fixture").unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir_all(directory.path().join("patches")).unwrap();
+    fs::write(
+        directory.path().join("patches/runtime.patch"),
+        b"runtime fixture",
+    )
+    .unwrap();
     let status = Command::new(env::current_exe().unwrap())
         .args([
             "--exact",
@@ -302,10 +304,9 @@ fn patch_discovery_uses_the_invoking_worktrees_manifest() {
             "--nocapture",
         ])
         .env(CHILD, "1")
-        .env("CARGO_MANIFEST_DIR", &directory)
+        .env("CARGO_MANIFEST_DIR", directory.path())
         .status()
         .unwrap();
-    fs::remove_dir_all(directory).unwrap();
     assert!(status.success());
 }
 
@@ -368,16 +369,16 @@ fn unpinned_zlib_version_is_refused() {
 
 #[test]
 fn zlib_checksum_mismatch_returns_a_typed_error_and_removes_the_archive() {
-    let base = env::temp_dir().join(format!(
-        "vibecut-zlib-checksum-typed-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&base);
-    fs::create_dir_all(base.join("sources")).unwrap();
-    fs::write(base.join("sources/zlib-1.4.archive"), b"tampered zlib").unwrap();
-    let actual = sha256(&base.join("sources/zlib-1.4.archive")).unwrap();
+    let base = tempfile::tempdir().unwrap();
+    fs::create_dir_all(base.path().join("sources")).unwrap();
+    fs::write(
+        base.path().join("sources/zlib-1.4.archive"),
+        b"tampered zlib",
+    )
+    .unwrap();
+    let actual = sha256(&base.path().join("sources/zlib-1.4.archive")).unwrap();
     let mut receipt = String::new();
-    let error = zlib_source(&base, "1.4", &mut receipt).unwrap_err();
+    let error = zlib_source(base.path(), "1.4", &mut receipt).unwrap_err();
     assert_eq!(
         error,
         SourceError::ChecksumMismatch {
@@ -387,31 +388,31 @@ fn zlib_checksum_mismatch_returns_a_typed_error_and_removes_the_archive() {
             actual,
         }
     );
-    assert!(!base.join("sources/zlib-1.4.archive").exists());
-    assert!(!base.join("sources/zlib-1.4").exists());
+    assert!(!base.path().join("sources/zlib-1.4.archive").exists());
+    assert!(!base.path().join("sources/zlib-1.4").exists());
     assert!(receipt.is_empty());
-    fs::remove_dir_all(base).unwrap();
 }
 
 #[test]
 fn zlib_checksum_mismatch_leaves_no_provisioned_prefix() {
-    let base = env::temp_dir().join(format!(
-        "vibecut-zlib-checksum-prefix-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&base);
-    fs::create_dir_all(base.join("sources")).unwrap();
-    fs::write(base.join("sources/zlib-1.4.archive"), b"tampered zlib").unwrap();
+    let base = tempfile::tempdir().unwrap();
+    fs::create_dir_all(base.path().join("sources")).unwrap();
+    fs::write(
+        base.path().join("sources/zlib-1.4.archive"),
+        b"tampered zlib",
+    )
+    .unwrap();
     let patch_id = patch_id(&patches().unwrap()).unwrap();
-    let prefix = base.join(format!("1.4-opus1.0-vpx1.0-zlib1.4-{patch_id}"));
-    let error = build_source(&base, "linux-aarch64", "1.4", "1.0", "1.0", "1.4").unwrap_err();
+    let prefix = base
+        .path()
+        .join(format!("1.4-opus1.0-vpx1.0-zlib1.4-{patch_id}"));
+    let error = build_source(base.path(), "linux-aarch64", "1.4", "1.0", "1.0", "1.4").unwrap_err();
     assert!(
         error.contains("zlib 1.4 source checksum mismatch"),
         "{error}"
     );
     assert!(!prefix.exists());
-    assert!(!base.join("sources/zlib-1.4.archive").exists());
-    fs::remove_dir_all(base).unwrap();
+    assert!(!base.path().join("sources/zlib-1.4.archive").exists());
 }
 
 #[test]

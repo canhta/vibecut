@@ -213,14 +213,10 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
     assert_eq!(thumbs.calls(), 1);
 
     // Image/video thumbnails are cached; a second editor hits the same cache.
-    let root = std::env::temp_dir().join(format!(
-        "vibecut-thumbnail-test-{}-reuse",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
+    let root = tempfile::tempdir().unwrap();
     let first = Arc::new(Thumbs::ready());
     let mut editor = new_editor();
-    editor.set_thumbnail_root(root.clone());
+    editor.set_thumbnail_root(root.path().to_path_buf());
     editor
         .set_import_probe(Arc::new(FixedProbe {
             id: 1,
@@ -237,7 +233,7 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
     drop(editor);
     let second = Arc::new(Thumbs::ready());
     let mut editor = new_editor();
-    editor.set_thumbnail_root(root.clone());
+    editor.set_thumbnail_root(root.path().to_path_buf());
     editor
         .set_import_probe(Arc::new(FixedProbe {
             id: 1,
@@ -262,7 +258,7 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
     )
     .unwrap();
     let mut reopened = Editor::new(session, playback, Preferences::default());
-    reopened.set_thumbnail_root(root.clone());
+    reopened.set_thumbnail_root(root.path().to_path_buf());
     reopened
         .set_import_probe(Arc::new(FixedProbe {
             id: 1,
@@ -283,7 +279,6 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
         "reopen restores the content-keyed image"
     );
     drop(reopened);
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -378,15 +373,11 @@ fn failed_thumbnail_leaves_the_asset_ready_with_a_placeholder() {
 
 #[test]
 fn media_panel_renders_probing_ready_and_unsupported_badges() {
-    let root = std::env::temp_dir().join(format!(
-        "vibecut-thumbnail-test-{}-shot",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
+    let root = tempfile::tempdir().unwrap();
     let release = Arc::new(AtomicBool::new(false));
     let thumbs = Arc::new(Thumbs::gated(release.clone()));
     let mut editor = new_editor();
-    editor.set_thumbnail_root(root.clone());
+    editor.set_thumbnail_root(root.path().to_path_buf());
     editor
         .set_import_probe(Arc::new(FixedProbe {
             id: 1,
@@ -439,7 +430,6 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();
     println!("media screenshot: {}", path.display());
-    let _ = std::fs::remove_dir_all(root);
 }
 
 struct ProbeGate {

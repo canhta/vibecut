@@ -663,16 +663,13 @@ mod tests {
 
     #[test]
     fn failed_publication_preserves_existing_chunk() {
-        let directory =
-            std::env::temp_dir().join(format!("vibecut-speech-publication-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
-        let output = OutputFile::new(&directory, 0).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let output = OutputFile::new(directory.path(), 0).unwrap();
         std::fs::write(&output.final_path, b"previous chunk").unwrap();
         let final_path = output.final_path.clone();
         // A staging file lost before publication must not delete an older result.
         assert!(output.commit().is_err());
         assert_eq!(std::fs::read(&final_path).unwrap(), b"previous chunk");
-        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -533,19 +533,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn tempdir() -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "vibecut-i18n-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(path.join("apps/vibecut/src/i18n")).unwrap();
-        path
-    }
-
     #[test]
     fn parser_accepts_wrapped_rows_and_rejects_missing_vi() {
         let rows = r#"
@@ -600,7 +587,9 @@ mod tests {
 
     #[test]
     fn audit_uses_exact_keys_and_catches_multiline_and_raw_literals() {
-        let root = tempdir();
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("apps/vibecut/src/i18n")).unwrap();
         let catalog = r#"catalog! {
             Save { key: "save", en: "Save", vi: "Lưu" },
             SaveAs { key: "save_as", en: "Save as", vi: "Lưu thành" },
@@ -628,7 +617,7 @@ fn ui() {
 "##,
         )
         .unwrap();
-        let error = check(&root).unwrap_err();
+        let error = check(root).unwrap_err();
         assert!(error.contains("empty English row"), "{error}");
         assert!(error.contains("unused catalog key `save`"), "{error}");
         assert!(error.contains("unused catalog key `unused`"), "{error}");
@@ -641,6 +630,5 @@ fn ui() {
         ] {
             assert!(error.contains(callee), "{callee}: {error}");
         }
-        fs::remove_dir_all(root).unwrap();
     }
 }

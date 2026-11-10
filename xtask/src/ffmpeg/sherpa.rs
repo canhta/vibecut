@@ -214,9 +214,10 @@ mod tests {
         let duplicate = format!("{valid}{valid}");
         let invalid_version = valid.replace("2.0.1", "2..1");
         let missing = valid.replace("sherpa-onnx-sys", "another-crate");
-        let root =
-            std::env::temp_dir().join(format!("sherpa cache Tiếng Việt {}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let root = tempfile::Builder::new()
+            .prefix("sherpa cache Tiếng Việt ")
+            .tempdir()
+            .unwrap();
         for (index, (arch, lock, damage, expected)) in [
             ("x86_64", valid, "", ""),
             ("aarch64", valid, "", ""),
@@ -233,7 +234,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let case = root.join(index.to_string());
+            let case = root.path().join(index.to_string());
             fs::create_dir(&case).unwrap();
             fs::write(case.join("Cargo.lock"), lock).unwrap();
             let platform = if arch == "aarch64" { "arm64" } else { "x64" };
@@ -266,6 +267,5 @@ mod tests {
                 .status().unwrap();
             assert!(status.success(), "case {index}");
         }
-        fs::remove_dir_all(root).unwrap();
     }
 }

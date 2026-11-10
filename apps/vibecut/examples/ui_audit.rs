@@ -25,7 +25,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -144,6 +144,7 @@ impl App {
 struct AuditApp {
     app: App,
     _model_cache: Option<tempfile::TempDir>,
+    _sound_library: Option<tempfile::TempDir>,
 }
 impl AuditApp {
     fn busy(&self) -> bool {
@@ -742,6 +743,7 @@ fn harness_sized(app: App, scale: f32, size: [f32; 2]) -> AppHarness {
         .build_eframe(|_| AuditApp {
             app,
             _model_cache: None,
+            _sound_library: None,
         })
 }
 
@@ -2599,6 +2601,7 @@ fn shorts_scene(
         .build_eframe(|_| AuditApp {
             app: App::Shorts(Box::new(shorts)),
             _model_cache: None,
+            _sound_library: None,
         });
     app.run_steps(3);
     if scene == "generating" {
@@ -2679,6 +2682,7 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
         Locale::En
     };
     let state = state.strip_suffix("-vi").unwrap_or(state);
+    let mut sound_library = None;
     let mut editor = empty_editor(theme, locale)?;
     if matches!(state, "media" | "offline") {
         editor.set_import_probe(Arc::new(CompletedProbe))?;
@@ -2705,13 +2709,8 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
         _ => vibecut::panels::AssetsTab::Media,
     };
     if state == "offline" {
-        static NEXT_SOUNDS: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "vibecut-ui-audit-sounds-{}-{}",
-            std::process::id(),
-            NEXT_SOUNDS.fetch_add(1, Ordering::Relaxed)
-        ));
-        let library = Arc::new(libraries::sounds::SoundLibrary::open(&root)?);
+        let directory = tempfile::tempdir()?;
+        let library = Arc::new(libraries::sounds::SoundLibrary::open(directory.path())?);
         library.save(&libraries::sounds::SoundResult {
             id: 1,
             name: "Night Drive".into(),
@@ -2724,6 +2723,7 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
             downloads: 100,
         })?;
         editor.set_sound_library(library)?;
+        sound_library = Some(directory);
     }
     if state == "loading" {
         editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
@@ -2744,6 +2744,7 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
         }
     }
     let mut app = harness_sized(App::Assets(Box::new(editor)), scale, [1727.0, 1029.0]);
+    app.state_mut()._sound_library = sound_library;
     app.run_steps(4);
     Ok(app)
 }
