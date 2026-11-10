@@ -1,7 +1,35 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use project::*;
+use time::{SourceRange, Tick};
 
 const OPTIONS: &[&str] = &["off", "low", "high"];
+
+/// A real project candidate carrying exactly these effects on one text item.
+fn project_with_effects(effects: Vec<EffectInstance>) -> project::Result<Project> {
+    let mut data = Project::empty(ProjectId(1), "effects".into())?.into_data();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "Text".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects,
+            animations: Default::default(),
+            id: ItemId(1),
+            hidden: false,
+            source_asset: None,
+            source_range: SourceRange::new(Tick(0), Tick(10)).unwrap(),
+            start: Tick(0),
+            retime: Default::default(),
+            content: ItemParams::Text(TextParams::new("id")),
+        }],
+    });
+    Project::new(data)
+}
 fn param(kind: EffectParamKind, default: EffectValue) -> EffectParamDefinition {
     EffectParamDefinition {
         id: "p",
@@ -220,6 +248,66 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
         }
     );
     assert!(effect_definition("black_white").unwrap().params.is_empty());
+}
+
+#[test]
+fn instance_ids_follow_the_shared_identifier_grammar_statically_and_animated() {
+    let max = "a".repeat(64);
+    let over = "a".repeat(65);
+    // (id, accepted)
+    let rows = [
+        ("", false),
+        (" ", false),
+        ("bad id", false),
+        ("a.b", false),
+        ("a/b", false),
+        ("é", false),
+        (over.as_str(), false),
+        ("a", true),
+        (max.as_str(), true),
+        ("1leading", true),
+        ("_leading", true),
+        ("-leading", true),
+    ];
+    for kind in ["color_grade", "blur"] {
+        for (id, accepted) in rows {
+            let instance = effect_definition(kind).unwrap().instance(id);
+            let validated = instance.validate();
+            if accepted {
+                validated.unwrap();
+                project_with_effects(vec![instance]).unwrap();
+            } else {
+                assert!(
+                    matches!(validated, Err(Error::Invalid("effect instance id"))),
+                    "{kind} {id:?}"
+                );
+                assert!(
+                    matches!(
+                        project_with_effects(vec![instance]),
+                        Err(Error::Invalid("effect instance id"))
+                    ),
+                    "{kind} {id:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn instance_id_errors_preserve_kind_and_duplicate_guards() {
+    let mut unknown = effect_definition("color_grade").unwrap().instance("bad id");
+    unknown.kind = "nope".into();
+    assert!(matches!(
+        unknown.validate(),
+        Err(Error::Invalid("effect kind"))
+    ));
+    assert!(matches!(
+        project_with_effects(vec![
+            effect_definition("color_grade").unwrap().instance("same"),
+            effect_definition("color_grade").unwrap().instance("same"),
+        ]),
+        Err(Error::Invalid("duplicate effect id"))
+    ));
 }
 
 #[test]

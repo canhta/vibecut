@@ -8,25 +8,26 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 
 | Command | Does |
 |---|---|
-| `vibecut-cli scenes <file>` | Detect reviewed-marker candidates without editing a project |
+| `vibecut-cli scenes <file>` | Detect scene-change candidates without editing a project |
 | `vibecut-cli media waveform <project> --asset <id>` | Generate and cache one asset's waveform peaks |
 | `vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]` | Generate and cache one clip's strip frames |
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
-| `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
+| `vibecut-cli exec <project> <command_id> <json>` | Run one engine command under the project writer lease |
+| `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli mcp <project>` / `mcp --attach --socket <endpoint>` | Serve [MCP control](mcp.md) over stdio, headless or attached to the app |
-| `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
+| `vibecut-cli export <project> --out <mp4\|mov\|webm>` | Export saved scene(s) to the container selected by the extension |
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |
 | `vibecut-cli cut <project> --remove-pauses [--min-pause-ms N] [--pad-ms N] [--crossfade-ms N] [--dry-run]` | List detected pauses, or remove them as one undoable edit |
 | `vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]` | List cue/word output times, or delete a measured word range as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
-| `vibecut-cli chapters <project> --language <tag> [--max-chapters N] [--export <dir>]` | Generate reviewed chapters, title and description, and optionally export the sidecars |
-| `vibecut-cli fillers <project> --language <tag> --llm [--include-markers]` | Classify fillers through the lent text provider and list reviewed candidates |
-| `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
+| `vibecut-cli chapters <project> --language <tag> [--max-chapters N] [--export <dir>]` | Generate chapters, title and description, and optionally export the sidecars |
+| `vibecut-cli fillers <project> --language <tag> --llm [--include-markers]` | Classify fillers through the lent text provider and list candidates |
+| `vibecut-cli providers` | List transcription, translation, clip, chapter and filler providers offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
 | `vibecut-cli fonts list\|resolve\|download` | Search bundled, system and catalog fonts, resolve a family, or download a catalog font |
@@ -37,13 +38,11 @@ Add `--json` for a machine-readable result on stdout; without it stdout is human
 
 `export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` 1920×1080 (default: project canvas); `--overwrite` replaces an existing output; `--allow-degraded` is the consent described in [Export admission](#export-admission).
 
-Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta":100}'` and `exec <project> timeline.trim '{"items":[1,2],"edge":"end","delta":-100}'`. Times are integer output ticks. Optional move `placement` is the tagged track/above/below placement used by insertion; omitted, each item keeps its track. Each invocation saves one atomic edit. Interactive preview stays in an app-owned Session ([engine preview contract](../../../crates/engine/src/session/edit/README.md#timeline-placement)).
-
 ## Fonts
 
 `fonts list [--query <text>]` lists families whose name contains the text, prefix matches first then alphabetical, from bundled, OS-installed and the curated downloadable catalog, one entry per name (bundled over cached download over system install over uncached download). Each entry has `origin` (`bundled`, `system`, `google`), `state` (`available`, `not_downloaded`), `styles`, and for bundled and catalog families `license` id and `source` URL. `fonts resolve <family>` loads a family as a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid`, `unknown`) and the `effective_family` layout uses; any state but `loaded` exits 4 and layout falls back to Inter. Neither uses the network.
 
-`fonts download <family> --accept-license` is the only network action. It prints family, licence id, source URL and byte count to stderr and refuses with exit 5 without the flag. Files are fetched over HTTPS, verified against pinned size and SHA-256, stored with a licence file and per-file attribution under `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing. A cached family whose files no longer match their pins reports `cache_invalid` until downloaded again. The three commands are adapters over the registry entries `fonts.list`, `fonts.load` and `fonts.download`; a `control` session reaches the same operations with the font store lent by its composition root.
+`fonts download <family> --accept-license` is the only network action. It prints family, licence id, source URL and byte count to stderr and refuses with exit 5 without the flag. Files are fetched over HTTPS, verified against pinned size and SHA-256, stored with a licence file and per-file attribution under `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing. Font cache validation, load state and bundled/system fallback are owned by the [font catalog](../../../crates/libraries/src/font_catalog/README.md). The three commands are adapters over the registry entries `fonts.list`, `fonts.load` and `fonts.download`; a `control` session reaches the same operations with the font store lent by its composition root.
 
 ## Captions
 
@@ -51,7 +50,7 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 
 ## Media generation
 
-`media waveform <project> --asset <id>` runs the engine's `GenerateWaveform` job for one project asset, waits for it, publishes the validated peak summary into the artifact cache and prints its sample rate, channel count, total samples and bucket count. A warm entry completes without opening the source, so a second run needs the media only while its cache entry survives. `media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]` warms the clip's visible output range (the whole clip when omitted) on the same 16:9 tile grid the display reads at that timeline zoom, then prints the cached source positions. Both commands read the project under the writer lease, never edit it and publish into the `waveform` and `thumbnails` directories under the default VibeCut cache root, shared with the control session. The same two jobs are registered as `media.generate_waveform {asset}` and `media.generate_clip_thumbnails {item, visible, pixels_per_second}`; a control caller without attached media caches gets a typed refusal.
+`media waveform <project> --asset <id>` runs the engine's `GenerateWaveform` job for one project asset, waits for it, publishes the validated peak summary into the artifact cache and prints its sample rate, channel count, total samples and bucket count. A warm entry completes without opening the source, so a second run needs the media only while its cache entry survives. `media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]` warms the clip's visible output range (the whole clip when omitted) on the same 16:9 tile grid the display reads at that timeline zoom, then prints the cached source positions. Both commands read the project under the writer lease, never edit it and publish into the `waveform` and `thumbnails` directories under the default VibeCut cache root, shared with the control session. The same two jobs are the registry commands `media.generate_waveform` and `media.generate_clip_thumbnails` (see the generated [command reference](commands.md)); a control caller without attached media caches gets a typed refusal.
 
 ## Pause removal
 
@@ -59,21 +58,17 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 
 ## Filler removal
 
-`exec <project> timeline.filler_candidates '{"language":"vi","include_markers":false}'` lists the active scene's visible lexicon filler occurrences in output ticks. Each carries a stable `id` (`filler:<item>:<cue>:<source word start>`), its caption item and retained cue, output `range`, `kind` (`filled_pause` or `discourse_marker`) and `edited_cue`; it writes nothing. Filled pauses are the default and `include_markers: true` adds discourse markers. A language without a shipped lexicon refuses with a typed error instead of returning an empty list, and cues without measured words contribute no candidates.
-
-`exec <project> timeline.remove_fillers '{"ids":["filler:4:cue-1:0"],"confirm_edited":false}'` cuts those candidates through the shared word-span cutter and saves one undoable edit. A lexicon id must still name a visible candidate of the active scene; an id from `fillers.classify` resolves to one visible measured word, so a lexicon-independent word can be reviewed and cut. An id that no visible word matches is stale and refuses the whole edit; an empty or duplicate selection refuses too, and a candidate in an edited cue requires `confirm_edited: true`. The cut ripples the timeline like `transcript.delete_range`, and cue text and word timings stay untouched.
+Local lexicon candidates and removal are the registry commands `timeline.filler_candidates` and `timeline.remove_fillers`; the generated [command reference](commands.md) owns their schemas, candidate shape and refusal rules.
 
 `fillers <project> --language vi|en|zh|zh-Hans|zh-Hant --llm [--include-markers] [--provider openai|anthropic] [--model <id>] [--yes-upload]` runs the engine's opt-in `ClassifyFillers` job over the active scene's visible measured words. The provider and model are the explicit user choice (OpenAI `gpt-6-luna` or Anthropic `claude-sonnet-5-5`; no fallback); `--yes-upload` approves the exact provider, payload and cost printed on stderr, while without it the run refuses with exit 5 before any request. The model returns only exact word IDs from the transcript that was sent; an unknown or duplicate ID fails the job with the typed `InvalidSegments` reason instead of being dropped. Candidates use the same `id`, `range`, `kind` and `edited_cue` shape as `timeline.filler_candidates`, so the same `timeline.remove_fillers` applies them. `--include-markers` also allows discourse markers. `providers --operation fillers` lists the two providers offline; local lexicon detection remains the synchronous `timeline.filler_candidates` command and is never an automatic fallback.
 
 ## Chapters
 
-`chapters <project> --language vi|en|zh|zh-Hans|zh-Hant [--max-chapters 10] [--provider openai|anthropic] [--model <id>] [--export <dir>] [--yes-upload]` runs the engine's `GenerateChapters` job over the active scene's caption cues in output time. The provider and model are the user's explicit choice (OpenAI `gpt-6-luna` or Anthropic `claude-sonnet-5-5`; no fallback); `--yes-upload` approves the exact provider, payload and cost printed on stderr, while without it the run refuses with exit 5 before any request. Chapter starts snap to cue starts and increase inside the scene duration; an empty transcript, an unsupported language, cues without that language's text, overlapping or blank cues and a bound outside 1..=50 refuse with a typed reason and exit 5. `--export <dir>` publishes `<project>.txt` and `<project>.json` into an existing directory through the shared atomic publication owner; an existing file refuses and the project is never edited. The same two operations are registered as `chapters.generate {language, max_chapters}` and `chapters.export_sidecars {dir, document}`; the document from `job_status` is the (possibly edited) one exported. `providers --operation chapters` lists the two providers offline.
+`chapters <project> --language vi|en|zh|zh-Hans|zh-Hant [--max-chapters 10] [--provider openai|anthropic] [--model <id>] [--export <dir>] [--yes-upload]` runs the engine's `GenerateChapters` job over the active scene's caption cues in output time. The provider and model are the user's explicit choice (OpenAI `gpt-6-luna` or Anthropic `claude-sonnet-5-5`; no fallback); `--yes-upload` approves the exact provider, payload and cost printed on stderr, while without it the run refuses with exit 5 before any request. Chapter starts snap to cue starts and increase inside the scene duration; an empty transcript, an unsupported language, cues without that language's text, overlapping or blank cues and a bound outside 1..=50 refuse with a typed reason and exit 5. `--export <dir>` publishes `<project>.txt` and `<project>.json` into an existing directory through the shared atomic publication owner; an existing file refuses and the project is never edited. The registry commands `chapters.generate` and `chapters.export_sidecars` and their schemas are in the generated [command reference](commands.md). `providers --operation chapters` lists the two providers offline.
 
 ## Transcript deletion
 
-`transcript <project>` prints the active scene's caption cues and measured words with their output tick ranges, paired word text, and `protected` (explicitly edited cue text) and `locked` (track) flags; it writes nothing. `--item <id> --cue <id> --words <first>-<last> [--json]` deletes that cue's inclusive zero-based word range through `transcript.delete_range` and saves. Consecutive words form one cut span, words separated by an unselected word stay separate, and the edit closes vacated tails through the ripple path as one undoable edit. A word in another scene refuses with `SceneBoundary`, an edited cue with `Protected` and a locked track with `Locked`; each leaves the project unchanged and exits 5. A cut never rewrites cue text or timings.
-
-`exec <project> transcript.merge_cues '{"cue_ids":[{"item":4,"cue":"cue-1"},{"item":4,"cue":"cue-2"}]}'` merges adjacent cues of one caption item into the earliest cue and saves one undoable edit. Text joins in time order per language with its word spacing (one space for vi/en, none for zh/ja) and measured word timings concatenate; non-adjacent, cross-item, cross-track, protected and locked selections refuse with a typed reason and leave the project unchanged.
+`transcript <project>` prints the active scene's caption cues and measured words with their output tick ranges, paired word text, and `protected` (explicitly edited cue text) and `locked` (track) flags; it writes nothing. `--item <id> --cue <id> --words <first>-<last> [--json]` deletes that cue's inclusive zero-based word range through `transcript.delete_range` and saves. Consecutive words form one cut span, words separated by an unselected word stay separate, and the edit closes vacated tails through the ripple path as one undoable edit. A word in another scene refuses with `SceneBoundary`, an edited cue with `Protected` and a locked track with `Locked`; each leaves the project unchanged and exits 5. A cut never rewrites cue text or timings. `transcript.merge_cues` and the other transcript registry commands are documented in the generated [command reference](commands.md).
 
 ## Subtitles
 
@@ -92,24 +87,10 @@ ASR checkpoints are content-addressed complete windows in the model cache. A res
 `commands --json` is the authoritative generated catalog: `api_version`, `registry_hash`, the static control `limits` and `entries`, each with command ID, label, effect, JSON Schema 2020-12 input/output shapes and a fixture example. `schema --json` returns the same `api_version`/`registry_hash` with the request, response and event envelope schemas. There is no CLI-side command table ([architecture](../../engineering/architecture.md#contracts)). `exec` takes a command ID and its `params` object:
 
 ```sh
-vibecut-cli project new demo.vibecut
 vibecut-cli exec demo.vibecut timeline.add_track '{"name":"Video","kind":"video"}'
-vibecut-cli exec demo.vibecut batch '{"commands":[
-  {"command":"timeline.add_track","params":{"name":"Overlay","kind":"video"}},
-  {"command":"bookmark.add","params":{"start":0,"duration":1,"note":"intro","color":[0,0,0,255]}}
-]}'
-vibecut-cli project info demo.vibecut --json
 ```
 
-`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel scroll, integer-tick playhead), persists view metadata and leaves project bytes unchanged. `project.rename` takes `{"name":"My project"}`; `project.save` takes `{}`. Missing or corrupt metadata defaults on open. `project new` uses the registered creation command; `exec` refuses creation inside an existing session. Project info and edits refuse a busy writer.
-
-`timeline.set_speed {"items":[1,2],"speed":2.0,"maintain_pitch":true}` retimes the listed items together (pass a linked video and audio item in one call), keeping each source window; `export` renders that speed with pitch preserved or following speed.
-
-Keyframed parameters are registry commands: `keyframes.set_param`, `.add`, `.remove`, `.retime`, `.set_handle`, `.scale_time`. `export` evaluates the saved curves through render's single project evaluator.
-
-`audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades a clip edge in both export and preview.
-
-Fields are required; unknown command, parameter and model fields are refused. Wire types are the Serde shapes of their crates; the [engine contract](../../../crates/engine/src/session/README.md#public-entry-points) covers the registry and JSON limits.
+The remaining `project.*`, `timeline.*`, `keyframes.*` and `audio.*` registry commands, including their schemas and examples, are documented in the generated [command reference](commands.md). Fields are required; unknown command, parameter and model fields are refused. Wire types are the Serde shapes of their crates; the [engine contract](../../../crates/engine/src/session/README.md#public-entry-points) covers the registry and JSON limits.
 
 ## Control session
 

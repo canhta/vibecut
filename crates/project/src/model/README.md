@@ -32,7 +32,7 @@ Each item's typed `ItemParams` determines its track kind. Video and audio items 
 
 `VideoParams.crop` is the optional source region a video or image item shows: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the whole source frame, finite, positive and contained in `0..=1`. Absent means the full frame. The crop follows the item through trim, retime, split, undo/redo and persistence because it is item content, not render state.
 
-Missing referenced asset IDs are invalid; missing files are valid. After loading, `SourceAsset::availability()` gives relink state, and relinking verifies content before keeping the asset ID. Source paths are absolute native paths; working-directory changes never reinterpret them.
+Missing referenced asset IDs are invalid; missing files are valid and carry media-owned relink state ([media source](../../../media/src/source/README.md)). Source paths are absolute native paths; working-directory changes never reinterpret them.
 
 Audio items carry `AudioParams::source`. The default `upload` references a project asset. `library` records the provider identity, attribution, licence, source page and exact preview URL of the cached bytes, validated (positive provider id, HTTPS URLs, bounded text) and persisted so export can write attribution and licence metadata.
 

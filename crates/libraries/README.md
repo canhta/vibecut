@@ -9,4 +9,4 @@ Use `fonts::FontStore` for discovery, verified loading and explicit downloads, a
 | `font_catalog/` | Resolves font assets for project rendering. | [Font catalog](src/font_catalog/README.md) |
 | `sound_library/` | Provides licensed sound assets for projects. | [Sound library](src/sound_library/README.md) |
 
-`cargo test -p libraries` runs the contracts, including the `fonts.*` control path through the real store.
+Follow [verification](../../docs/engineering/verification.md#checks) for tests and evidence.
