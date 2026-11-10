@@ -706,8 +706,11 @@ impl EffectFrame {
 
 pub type EffectEvaluator = fn(&EffectFrame) -> Result<Vec<EffectPass>>;
 
-/// The item-local time at which an effect holds the item's content.
-pub type ContentTime = fn(&EffectFrame) -> Tick;
+/// Remap the evolving content time (item-local ticks) in stack order. The frame's
+/// `local`/`seconds` and resolved parameters always use the real item-local clock.
+/// Returns item-local ticks, or a typed parameter/time failure; never resets time
+/// on failure. Only content is remapped, independently of transform and audio.
+pub type ContentTime = fn(&EffectFrame, Tick) -> Result<Tick>;
 
 /// The evaluator of an effect kind; a kind without one is unsupported.
 pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
@@ -749,10 +752,10 @@ fn chroma_key(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
 }
 /// Test kind paired with project's `test-kinds` feature: holds the item's content
 /// at `rate` frames per second, as Low Frame Rate does.
-fn hold_time_content(frame: &EffectFrame) -> Tick {
-    let rate = frame.scalar("rate").unwrap_or(2.0).clamp(1.0, 60.0);
-    let held = (frame.seconds * rate).floor() / rate;
-    Tick::from_seconds_f64(held, Rounding::Floor).unwrap_or(frame.local)
+fn hold_time_content(frame: &EffectFrame, content: Tick) -> Result<Tick> {
+    let rate = frame.scalar("rate")?;
+    let held = (content.seconds() * rate).floor() / rate;
+    Ok(Tick::from_seconds_f64(held, Rounding::Floor)?)
 }
 /// The test kind's evaluator: an identity grade whose hue uniform carries the
 /// quality flag, so a test can see which frame the renderer built.
@@ -767,7 +770,8 @@ fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
 
 /// The item-local time at which `item`'s content is sampled after its enabled
 /// effects' content-time remaps, applied in stack order. Each remap resolves its
-/// parameters at the time the previous remaps produced, so two holds chain. Only
+/// parameters at the real item-local time, while remapping the evolving content
+/// time from the previous remap. Both coordinates are ticks. Only
 /// the content is held: transform, crop, opacity and effects keep the real time.
 /// Without a remap the time is returned unchanged, so handles outside the item's
 /// extent keep sampling exactly; a remapped time is clamped into the item's range.
@@ -778,13 +782,8 @@ pub fn content_time(item: &Item, local: Tick, width: u32, height: u32) -> Result
         let Some(remap) = content_remap(&effect.kind) else {
             continue;
         };
-        at = remap(&EffectFrame::new(
-            &item.animations,
-            effect,
-            at,
-            width,
-            height,
-        )?);
+        let frame = EffectFrame::new(&item.animations, effect, local, width, height)?;
+        at = remap(&frame, at)?;
         remapped = true;
     }
     if remapped {

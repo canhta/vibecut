@@ -1065,3 +1065,106 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
     let pass = mirror([4.0, 2.0, 1.0, 0.0]);
     assert_eq!(pass.values().as_ref(), [4.0, 2.0, 1.0, 0.0]);
 }
+
+#[test]
+fn chained_remaps_sample_content_in_order_but_all_parameters_keep_real_time() {
+    use project::*;
+    use time::Tick;
+    struct Recording(Vec<Tick>);
+    impl SourceProvider for Recording {
+        fn status(
+            &mut self,
+            _: &media::SourceAsset,
+            _: bool,
+            _: &dyn ExecutionHooks,
+        ) -> render::Result<Option<UnavailableReason>> {
+            Ok(None)
+        }
+        fn video(
+            &mut self,
+            _: &media::SourceAsset,
+            _: ItemId,
+            at: Tick,
+            hooks: &dyn ExecutionHooks,
+        ) -> render::Result<Option<Image>> {
+            self.0.push(at);
+            Ok(Some(Image::new(4, 4, [0.0, 0.25, 0.0, 1.0], hooks)?))
+        }
+        fn audio(
+            &mut self,
+            _: &media::SourceAsset,
+            _: ItemId,
+            _: i64,
+            n: usize,
+            rate: u32,
+            hooks: &dyn ExecutionHooks,
+        ) -> render::Result<AudioBlock> {
+            AudioBlock::new(rate, 2, n, MemoryKind::Decoded, hooks)
+        }
+    }
+    let hold = |id, rate| {
+        effect_definition("hold_time")
+            .unwrap()
+            .instance(id)
+            .with("rate", EffectValue::Scalar(rate))
+            .unwrap()
+    };
+    let key = effect_definition("chroma_key").unwrap().instance("key");
+    let mut data = content_scene(vec![hold("first", 2.0), hold("later", 3.0), key]).into_data();
+    let item = &mut data.scene_mut().timeline.main.items[0];
+    for (path, before, after) in [
+        ("effects.later.params.rate", 3.0, 4.0),
+        ("effects.key.params.intensity", 100.0, 0.0),
+        ("transform.positionX", 0.0, 1.0),
+        ("opacity", 1.0, 0.5),
+    ] {
+        let mut first = Keyframe::new(Tick::ZERO, ParamValue::Scalar(before));
+        first.segment = Segment::Step;
+        item.animations
+            .set(
+                AnimationPath::new(path).unwrap(),
+                Param::Value(
+                    Channel::new(
+                        ParamValue::Scalar(before),
+                        vec![first, Keyframe::new(tick(3, 5), ParamValue::Scalar(after))],
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+    }
+    let project = Project::new(data).unwrap();
+    let item = &project.data().scene().timeline.main.items[0];
+    let real = tick(4, 5);
+    // First holds .8 to .5; later rate is 4 at real .8 (3 at held .5).
+    // Using the real rate leaves .5, whereas the old code produced 1/3.
+    assert_eq!(content_time(item, real, 4, 4).unwrap(), tick(1, 2));
+    let later = EffectFrame::new(&item.animations, &item.effects[1], real, 4, 4).unwrap();
+    assert_eq!(later.local, real);
+    assert_eq!(later.scalar("rate").unwrap(), 4.0);
+    assert_eq!(
+        EffectFrame::new(&item.animations, &item.effects[1], tick(1, 2), 4, 4)
+            .unwrap()
+            .scalar("rate")
+            .unwrap(),
+        3.0
+    );
+    let mut sources = Recording(vec![]);
+    let mut renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let frame = renderer
+        .render_frame(real, &mut sources, &Hooks::default())
+        .unwrap();
+    assert_eq!(sources.0, [tick(1, 2)]);
+    // Actual pixels prove transform x=1, key intensity=0 and opacity=.5 on the real clock.
+    assert_eq!(frame.pixels()[0], [0.0, 0.0, 0.0, 1.0]);
+    assert_eq!(frame.pixels()[2], [0.0, 0.125, 0.0, 1.0]);
+    let mut plain = item.clone();
+    plain.effects.clear();
+    for handle in [tick(-1, 2), tick(5, 2)] {
+        assert_eq!(content_time(&plain, handle, 4, 4).unwrap(), handle);
+    }
+    assert_eq!(content_time(item, tick(-1, 2), 4, 4).unwrap(), Tick::ZERO);
+    assert_eq!(content_time(item, tick(5, 2), 4, 4).unwrap(), tick(2, 1));
+}
