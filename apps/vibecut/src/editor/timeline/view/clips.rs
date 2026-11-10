@@ -497,7 +497,7 @@ impl State {
         });
         let y = inner.top() + audio::line_fraction(db) * inner.height();
         let dragging = self.volume_drag.is_some_and(|drag| drag.item == item.id);
-        if !dragging && (pointer.y - y).abs() > 6.0 {
+        if !dragging && (!response.hovered() || (pointer.y - y).abs() > 6.0) {
             return;
         }
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
@@ -640,7 +640,7 @@ impl State {
                 });
             }
             if response.drag_started() && self.fade_drag.is_none() {
-                self.begin_fade_drag(cx, ui, item, edge);
+                self.begin_fade_drag(ui, item, edge);
             }
             self.fade_curve_menu(cx, item, edge, fade, &response);
             let _ = response.on_hover_text(label);

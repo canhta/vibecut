@@ -442,7 +442,7 @@ impl Editor {
         self.prune_selection();
     }
     /// Discard the open gesture and show the project it started from.
-    fn discard_gesture(&mut self) {
+    pub(super) fn discard_gesture(&mut self) {
         if self.session.gesture_active() {
             match self.session.cancel_gesture() {
                 // Closing a preview lifetime fences even a net-zero drag.

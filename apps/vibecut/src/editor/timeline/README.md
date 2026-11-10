@@ -4,6 +4,8 @@ Each item has a 16 px chevron opening its keyframe lanes. The open set is presen
 
 A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee selects, drag retimes with the clips' snapping candidates in one engine gesture, and Delete removes selected diamonds through `keyframes.delete_selection` in one undo step. Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`. Audio clips draw a draggable volume line using the linear-gain squared map over -60..20 dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes show on the line and in the lane.
 
+Audio clips also carry a fade handle in each bottom corner. Dragging stages `audio.set_fade` through the engine's replacement preview, so release publishes one undo step and returning to the press point preserves a split fade's offset without history. Escape, loss of window focus, hiding the timeline or losing an editable audio target restores the entry project. The stored window clamps to the clip and against the other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a handle re-shapes that edge as one `audio.set_fade` command. Bottom-corner placement is a new design approved for the uncaptured timeline controls; duration fields belong to Properties.
+
 ## Preview axis
 
 The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as
@@ -18,7 +20,6 @@ off returns both the counter and the player to the playhead. The hover time is
 presentation state: it never enters Project JSON, the transport or the undo
 history, and clicking the ruler still moves the playhead while the guide keeps
 following the pointer.
-Audio clips also carry a fade handle in each bottom corner. Dragging one stages `audio.set_fade` inside the engine's gesture, so the release publishes exactly one undo step, Escape restores the entry fade, and the stored window clamps to the clip and against the other edge. The gain curve is sampled through the project's own fade-curve evaluation; right-clicking a handle re-shapes that edge as one `audio.set_fade` command.
 
 ## Markers
 

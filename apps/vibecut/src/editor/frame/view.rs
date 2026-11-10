@@ -50,7 +50,12 @@ impl Editor {
         self.frame.panels.clear();
         self.tick();
         // History and external commands can remove what the timeline is editing.
-        self.timeline.forget_missing(&self.session);
+        let missing_fade = self.timeline.forget_missing(&self.session);
+        let interrupted_fade = (!ui.input(|input| input.focused) || self.player.fullscreen)
+            && self.timeline.cancel_fade_drag();
+        if missing_fade || interrupted_fade {
+            self.discard_gesture();
+        }
         if !self.dialogs.export.is_open()
             && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
             && self.player.crop.is_none()

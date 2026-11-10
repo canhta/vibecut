@@ -104,7 +104,7 @@ pub(in crate::editor::timeline) struct FadeDrag {
     /// Duration the handle was grabbed with, so a press alone changes nothing.
     pub(in crate::editor::timeline) base: Tick,
     pub(in crate::editor::timeline) press_x: f32,
-    /// Longest fade the clip admits; the engine also clamps against the other edge.
+    /// Longest fade the clip and the other edge admit.
     pub(in crate::editor::timeline) room: Tick,
     /// Duration last staged by this gesture.
     pub(in crate::editor::timeline) duration: Tick,
@@ -412,8 +412,8 @@ impl State {
     pub(in crate::editor::timeline) fn x_at(&self, at: Tick, left: f32) -> f32 {
         left + (at.seconds() as f32 - self.scroll) * self.zoom
     }
-    /// Drop presentation state that points at things an undo or an agent removed.
-    pub(in crate::editor) fn forget_missing(&mut self, session: &engine::Session) {
+    /// Drop missing presentation targets; return whether a fade needs rollback.
+    pub(in crate::editor) fn forget_missing(&mut self, session: &engine::Session) -> bool {
         let data = session.project().data();
         if self
             .track_rename
@@ -438,10 +438,20 @@ impl State {
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
         self.expanded.retain(|id| existing.contains(id));
-        if self
-            .fade_drag
-            .is_some_and(|drag| !existing.contains(&drag.item))
-        {
+        let fade_data = session
+            .preview_project()
+            .unwrap_or(session.project())
+            .data();
+        let cancel_fade = self.fade_drag.is_some_and(|drag| {
+            !fade_data.scene().timeline.iter().any(|track| {
+                !track.locked
+                    && track.items.iter().any(|item| {
+                        item.id == drag.item
+                            && matches!(item.content, project::ItemParams::Audio(_))
+                    })
+            })
+        });
+        if cancel_fade || !session.gesture_active() {
             self.fade_drag = None;
         }
         if self.bookmark_popover.as_ref().is_some_and(|popover| {
@@ -453,6 +463,7 @@ impl State {
         }) {
             self.bookmark_popover = None;
         }
+        cancel_fade
     }
     /// A refused scene rename keeps the typed name open for another try.
     pub(in crate::editor) fn keep_scene_rename(&mut self, scene: project::SceneId, name: String) {

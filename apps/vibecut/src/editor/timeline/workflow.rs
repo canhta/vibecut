@@ -1,10 +1,10 @@
 //! Applies the timeline workflows.
+mod fades;
 mod interaction;
 mod item_drag;
 mod snapping;
 mod viewport;
 mod volume;
-mod fades;
 
 pub(super) use snapping::frame_snap;
 pub(super) use viewport::{

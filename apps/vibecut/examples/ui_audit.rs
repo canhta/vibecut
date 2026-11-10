@@ -701,6 +701,30 @@ const SCENES: &[Scene] = &[
         build: timeline_multi,
     },
     Scene {
+        name: "timeline-fades-clamped",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_fades(theme, scale, "clamped"),
+    },
+    Scene {
+        name: "timeline-fades-cancelled",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_fades(theme, scale, "cancelled"),
+    },
+    Scene {
+        name: "timeline-fades-split",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_fades(theme, scale, "split"),
+    },
+    Scene {
+        name: "timeline-fades-menu-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_fades(theme, scale, "menu"),
+    },
+    Scene {
         name: "preview-axis",
         reference_dark: None,
         reference_light: None,
@@ -2127,6 +2151,76 @@ fn preview_axis_ends(theme: Theme, scale: f32, at: Tick) -> Result<AppHarness, F
 fn timeline_multi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (editor, _) = media_editor(theme, Locale::En)?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+// New bottom-corner design: the reference captures only panel duration fields.
+fn timeline_fades(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
+    let locale = if state == "menu" {
+        Locale::Vi
+    } else {
+        Locale::En
+    };
+    let (mut editor, _) = media_editor(theme, locale)?;
+    let audio = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Audio(_)))
+        .ok_or("missing audio clip")?
+        .id;
+    for (edge, seconds, curve) in [
+        (project::FadeEdge::Out, 3, project::FadeCurve::Exponential),
+        (project::FadeEdge::In, 20, project::FadeCurve::EqualPower),
+    ] {
+        editor.session.apply(Command::SetFade {
+            item: audio,
+            edge,
+            duration: Tick(seconds * SECOND),
+            curve,
+        })?;
+    }
+    if state == "split" {
+        editor.session.apply(Command::SplitAt {
+            item: audio,
+            at: Tick(2 * SECOND),
+        })?;
+    }
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    let handle = format!("timeline.item.{}.fade_in", audio.0);
+    if state == "menu" {
+        app.get(By::new().predicate(|node| node.author_id() == Some(handle.as_str())))
+            .click_secondary();
+    } else if state == "cancelled" {
+        let entry = app
+            .state()
+            .session()
+            .ok_or("missing editor")?
+            .project()
+            .clone();
+        let from = widget_rect(&app, &handle)?.center();
+        let zoom = app.state().inspect()?.zoom;
+        app.drag_at(from);
+        app.run_steps(1);
+        app.hover_at(egui::pos2(from.x - zoom, from.y));
+        app.run_steps(2);
+        app.key_press(egui::Key::Escape);
+        app.run_steps(2);
+        app.drop_at(from);
+        app.run_steps(2);
+        assert_eq!(
+            app.state().session().ok_or("missing editor")?.project(),
+            &entry
+        );
+    }
     wait_for_presented(&mut app)?;
     app.run_steps(3);
     Ok(app)

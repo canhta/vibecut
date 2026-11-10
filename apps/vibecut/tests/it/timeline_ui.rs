@@ -4280,12 +4280,7 @@ fn fade_handle(id: ItemId, edge: &str) -> String {
 }
 
 /// Press a fade handle and move the pointer by `travel` seconds without releasing.
-fn grab_fade(
-    harness: &mut Harness<'_, Editor>,
-    id: ItemId,
-    edge: &str,
-    travel: f32,
-) -> egui::Pos2 {
+fn grab_fade(harness: &mut Harness<'_, Editor>, id: ItemId, edge: &str, travel: f32) -> egui::Pos2 {
     let zoom = harness.state().inspect().unwrap().zoom;
     let handle = widget(harness, &fade_handle(id, edge));
     let from = handle.center();
@@ -4308,7 +4303,9 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
     let widgets = h.state().inspect().unwrap().widgets;
     for edge in ["fade_in", "fade_out"] {
         assert!(
-            widgets.iter().any(|widget| widget.id == fade_handle(audio, edge)),
+            widgets
+                .iter()
+                .any(|widget| widget.id == fade_handle(audio, edge)),
             "audio clips expose a {edge} handle"
         );
         for other in [video, text] {
@@ -4340,6 +4337,13 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
     let history = h.state().session.history_len();
     let to = grab_fade(&mut h, audio, "fade_in", 2.0);
     assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
+    let guiding = h.state().inspect().unwrap();
+    assert!(
+        guiding.hover_time.is_some(),
+        "fade drags retain the preview-axis guide"
+    );
+    assert_eq!(guiding.preview_at, guiding.hover_time);
+    assert_eq!(guiding.position, Tick::ZERO);
     assert!(h.state().session.gesture_active());
     assert_eq!(
         h.state().session.history_len(),
@@ -4353,14 +4357,20 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
     assert!(h.state().session.transaction_active());
     h.key_press(egui::Key::Escape);
     h.run_steps(2);
-    assert!(!h.state().session.gesture_active(), "Escape closes the gesture");
+    assert!(
+        !h.state().session.gesture_active(),
+        "Escape closes the gesture"
+    );
     assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
     assert_eq!(
         h.state().session.project(),
         &committed,
         "Escape restores the entry project byte for byte"
     );
-    assert_eq!(serde_json::to_vec(h.state().session.project().data()).unwrap(), bytes);
+    assert_eq!(
+        serde_json::to_vec(h.state().session.project().data()).unwrap(),
+        bytes
+    );
     assert_eq!(h.state().session.history_len(), history);
     h.drop_at(to);
     h.run_steps(2);
@@ -4433,6 +4443,35 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
         project::FadeCurve::EqualPower
     );
 
+    for edge in ["fade_in", "fade_out"] {
+        for (name, curve) in [
+            ("linear", project::FadeCurve::Linear),
+            ("exponential", project::FadeCurve::Exponential),
+            ("equal_power", project::FadeCurve::EqualPower),
+        ] {
+            let before = h.state().session.project().clone();
+            let history = h.state().session.history_len();
+            let handle = fade_handle(audio, edge);
+            h.get(By::new().predicate(move |node| node.author_id() == Some(handle.as_str())))
+                .click_secondary();
+            h.run_steps(2);
+            let entry = fade_handle(audio, &format!("{edge}.curve.{name}"));
+            h.get(By::new().predicate(move |node| node.author_id() == Some(entry.as_str())))
+                .click();
+            h.run_steps(2);
+            let fade = if edge == "fade_in" {
+                fades(h.state(), audio).fade_in
+            } else {
+                fades(h.state(), audio).fade_out
+            };
+            assert_eq!(fade.curve, curve);
+            assert_eq!(h.state().session.history_len().0, history.0 + 1);
+            undo(&mut h);
+            assert_eq!(h.state().session.project(), &before);
+            redo(&mut h);
+        }
+    }
+
     // A visible curve for each edge in the audit screenshot.
     let to = grab_fade(&mut h, audio, "fade_in", -7.0);
     h.drop_at(to);
@@ -4448,4 +4487,253 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
     let path = target.join("p1-66-fades.png");
     image.save(&path).unwrap();
     eprintln!("fade screenshot: {}", path.display());
+}
+
+#[test]
+fn fade_handles_short_clips_clamp_without_moving_volume_or_keyframes() {
+    for duration in [Tick(SECOND / 2), Tick(SECOND / 30)] {
+        let mut f = fixture();
+        let audio = audio_item(&f.editor);
+        assert!(
+            f.editor
+                .session
+                .apply(Command::TrimEnd {
+                    item: audio,
+                    at: Tick::ZERO
+                })
+                .is_err(),
+            "zero-length audio clips are refused by the consumed contract"
+        );
+        f.editor
+            .session
+            .apply(Command::TrimEnd {
+                item: audio,
+                at: duration,
+            })
+            .unwrap();
+        f.editor
+            .session
+            .apply(Command::SetViewState {
+                zoom: 3.0 / duration.seconds(),
+                scroll: 0.0,
+                playhead: Tick::ZERO,
+            })
+            .unwrap();
+        f.editor
+            .session
+            .apply(Command::SetAnimatedParam {
+                item: audio,
+                path: project::BuiltinPath::Volume.into(),
+                param: project::Param::new(project::ParamValue::Scalar(-60.0)).unwrap(),
+            })
+            .unwrap();
+        f.editor
+            .session
+            .apply(Command::AddKeyframe {
+                item: audio,
+                path: project::BuiltinPath::Volume.into(),
+                component: None,
+                key: project::Keyframe::new(Tick::ZERO, project::ParamValue::Scalar(-60.0)),
+            })
+            .unwrap();
+        let animations = item(&f.editor, audio).animations.clone();
+        let source = item(&f.editor, audio).source_range;
+        let mut h = harness(f.editor);
+        h.run_steps(3);
+        let lane = format!("timeline.item.{}.lanes", audio.0);
+        h.get(By::new().predicate(move |node| node.author_id() == Some(lane.as_str())))
+            .click();
+        h.run_steps(2);
+        let history = h.state().session.history_len();
+        // Grab where the fade target overlaps the zero-time volume diamond.
+        let from = widget(&h, &fade_handle(audio, "fade_in")).center() + egui::vec2(-6.0, 6.0);
+        let to = from + egui::vec2(h.state().inspect().unwrap().zoom, 0.0);
+        h.drag_at(from);
+        h.run_steps(1);
+        h.hover_at(to);
+        h.run_steps(2);
+        h.drop_at(to);
+        h.run_steps(2);
+        assert_eq!(fades(h.state(), audio).fade_in.duration, duration);
+        assert_eq!(h.state().session.history_len().0, history.0 + 1);
+        let to = grab_fade(&mut h, audio, "fade_out", -1.0);
+        h.drop_at(to);
+        h.run_steps(2);
+        assert_eq!(fades(h.state(), audio).fade_out.duration, Tick::ZERO);
+        assert_eq!(
+            h.state().session.history_len().0,
+            history.0 + 1,
+            "no room means no history"
+        );
+        assert_eq!(item(h.state(), audio).source_range, source);
+        assert_eq!(item(h.state(), audio).animations, animations);
+        assert_eq!(item(h.state(), audio).start, Tick::ZERO);
+        assert!(!h.state().session.gesture_active());
+    }
+}
+
+#[test]
+fn fade_handles_split_offsets_reverse_without_history_and_abort_exactly() {
+    for edge in [project::FadeEdge::In, project::FadeEdge::Out] {
+        let mut f = fixture();
+        let original = audio_item(&f.editor);
+        f.editor
+            .session
+            .apply(Command::SetFade {
+                item: original,
+                edge,
+                duration: Tick(8 * SECOND),
+                curve: project::FadeCurve::Linear,
+            })
+            .unwrap();
+        let cut = f
+            .editor
+            .session
+            .apply(Command::SplitAt {
+                item: original,
+                at: Tick(if edge == project::FadeEdge::In { 2 } else { 8 } * SECOND),
+            })
+            .unwrap();
+        let audio = if edge == project::FadeEdge::In {
+            cut.created
+                .iter()
+                .find_map(|id| match id {
+                    CreatedId::Item(id) => Some(*id),
+                    _ => None,
+                })
+                .unwrap()
+        } else {
+            original
+        };
+        let edge_id = if edge == project::FadeEdge::In {
+            "fade_in"
+        } else {
+            "fade_out"
+        };
+        let mut h = harness(f.editor);
+        h.run_steps(3);
+        let entry = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        let from = widget(&h, &fade_handle(audio, edge_id)).center();
+        let travel = if edge == project::FadeEdge::In {
+            -1.0
+        } else {
+            1.0
+        };
+        grab_fade(&mut h, audio, edge_id, travel);
+        assert_eq!(h.state().session.history_len(), history);
+        assert_eq!(
+            h.state().session.project(),
+            &entry,
+            "committed content stays untouched"
+        );
+        assert_ne!(h.state().session.preview_project().unwrap(), &entry);
+        h.hover_at(from);
+        h.run_steps(2);
+        h.drop_at(from);
+        h.run_steps(2);
+        assert_eq!(
+            h.state().session.project(),
+            &entry,
+            "{edge:?} reversal retains the split offset"
+        );
+        assert_eq!(h.state().session.history_len(), history);
+
+        for abort in [
+            "escape",
+            "focus",
+            "removed",
+            "locked",
+            "external_cancel",
+            "fullscreen",
+        ] {
+            let to = grab_fade(&mut h, audio, edge_id, travel);
+            assert!(h.state().session.gesture_active());
+            match abort {
+                "escape" => h.key_press(egui::Key::Escape),
+                "focus" => {
+                    // Match egui-winit: native focus updates both raw state and event.
+                    h.input_mut().focused = false;
+                    h.event(egui::Event::WindowFocused(false));
+                }
+                "removed" => {
+                    h.state_mut()
+                        .session
+                        .apply(Command::Delete { items: vec![audio] })
+                        .unwrap();
+                }
+                "locked" => {
+                    let track = item_track(h.state(), audio);
+                    h.state_mut()
+                        .session
+                        .apply(Command::SetTrackLocked {
+                            track,
+                            locked: true,
+                        })
+                        .unwrap();
+                }
+                "external_cancel" => {
+                    h.state_mut().session.cancel_gesture().unwrap();
+                }
+                "fullscreen" => {
+                    h.state_mut().activate("preview.fullscreen").unwrap();
+                }
+                _ => unreachable!(),
+            }
+            h.run_steps(2);
+            assert!(
+                !h.state().session.gesture_active(),
+                "{edge:?} {abort} closes the gesture"
+            );
+            assert_eq!(
+                h.state().session.project(),
+                &entry,
+                "{edge:?} {abort} restores entry"
+            );
+            assert_eq!(h.state().session.history_len(), history);
+            if abort == "fullscreen" {
+                h.key_press(egui::Key::Escape);
+                h.run_steps(2);
+            }
+            h.input_mut().focused = true;
+            h.event(egui::Event::WindowFocused(true));
+            h.drop_at(to);
+            h.run_steps(2);
+            assert_eq!(
+                h.state().session.project(),
+                &entry,
+                "a stale release cannot edit"
+            );
+        }
+        // The other edge sees only the audible 6 s window of the 8 s split fade.
+        let other = if edge == project::FadeEdge::In {
+            "fade_out"
+        } else {
+            "fade_in"
+        };
+        let to = grab_fade(&mut h, audio, other, 10.0 * travel);
+        h.drop_at(to);
+        h.run_steps(2);
+        let remaining = fades(h.state(), audio);
+        let changed = if edge == project::FadeEdge::In {
+            remaining.fade_out
+        } else {
+            remaining.fade_in
+        };
+        assert_eq!(
+            changed.duration,
+            Tick(2 * SECOND),
+            "clamp against the split window, not its whole duration"
+        );
+        assert_eq!(h.state().session.history_len().0, history.0 + 1);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run_steps(2);
+        assert_eq!(h.state().session.project(), &entry);
+
+        // A surviving handle remains usable after every abort.
+        let to = grab_fade(&mut h, audio, edge_id, travel);
+        h.drop_at(to);
+        h.run_steps(2);
+        assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    }
 }
