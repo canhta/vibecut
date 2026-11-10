@@ -1,5 +1,4 @@
-//! Effects-panel tile previews. The engine owns scheduling, accounting and the
-//! bounded thumbnail cache; this module only keeps the panel's latest state.
+//! Effects-panel preview admission over engine-owned jobs, accounting and cache.
 
 use crate::{Result, egui};
 use engine::effect_thumbnails::EffectThumbnails;
@@ -7,7 +6,7 @@ use engine::jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, System
 use engine::{ByteBudget, ByteBudgetHooks};
 use project::EffectInstance;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -28,6 +27,7 @@ pub enum EffectPreviewStatus {
 struct Entry {
     job: Option<JobId>,
     cancel: Option<CancelToken>,
+    requested: Option<EffectInstance>,
     status: Status,
 }
 enum Status {
@@ -37,12 +37,13 @@ enum Status {
 }
 
 /// One cache per editor. Jobs start only when the effects panel first needs a
-/// tile, and the same thumbnail contract serves retry and live refresh.
+/// tile; retry replaces that kind's static request through the same contract.
 pub struct EffectPreviews {
     runner: JobRunner,
     cache: EffectThumbnails,
     source: Arc<render::Image>,
     entries: BTreeMap<String, Entry>,
+    deferred: VecDeque<String>,
 }
 
 impl EffectPreviews {
@@ -80,6 +81,7 @@ impl EffectPreviews {
             cache,
             source,
             entries: BTreeMap::new(),
+            deferred: VecDeque::new(),
         })
     }
 
@@ -91,33 +93,49 @@ impl EffectPreviews {
         Self::new(cache, budget)
     }
 
-    /// Admit one preview per effect kind. A refused submission is a rendered
-    /// failure state, not a silent blank tile.
+    /// Request one preview per kind. Only queue saturation defers admission;
+    /// every other refusal remains an explicit failure tile.
     pub fn ensure(&mut self, kind: &str, effect: &EffectInstance) {
         if self.entries.contains_key(kind) {
             return;
         }
-        let entry = match self
+        let entry = self.request(effect.clone());
+        if entry.requested.is_some() {
+            self.deferred.push_back(kind.to_owned());
+        }
+        self.entries.insert(kind.to_owned(), entry);
+    }
+
+    fn request(&mut self, effect: EffectInstance) -> Entry {
+        match self
             .cache
             .submit(&mut self.runner, self.source.clone(), effect.clone())
         {
             Ok((job, cancel)) => Entry {
                 job: Some(job),
                 cancel: Some(cancel),
+                requested: None,
+                status: Status::Pending,
+            },
+            Err(engine::EditError::QueueFull) => Entry {
+                job: None,
+                cancel: None,
+                requested: Some(effect),
                 status: Status::Pending,
             },
             Err(error) => Entry {
                 job: None,
                 cancel: None,
+                requested: None,
                 status: Status::Failed(error.to_string()),
             },
-        };
-        self.entries.insert(kind.to_owned(), entry);
+        }
     }
 
     /// Submit again after a failure. The previous job, if any, is cancelled
     /// before the engine cache/runner sees another request.
     pub fn retry(&mut self, kind: &str, effect: &EffectInstance) {
+        self.deferred.retain(|pending| pending != kind);
         if let Some(entry) = self.entries.remove(kind)
             && let Some(cancel) = entry.cancel
         {
@@ -126,7 +144,7 @@ impl EffectPreviews {
         self.ensure(kind, effect);
     }
 
-    /// Pump the engine runner and retain only terminal truth the tile can show.
+    /// Drain submitted jobs before admitting deferred tile requests.
     pub fn tick(&mut self) -> Result<()> {
         self.runner.tick()?;
         let kinds: Vec<String> = self
@@ -143,6 +161,9 @@ impl EffectPreviews {
                 continue;
             };
             let Some(snapshot) = self.runner.snapshot(job) else {
+                entry.status = Status::Failed(engine::EditError::JobNotRetained.to_string());
+                entry.job = None;
+                entry.cancel = None;
                 continue;
             };
             match snapshot.state {
@@ -178,15 +199,37 @@ impl EffectPreviews {
                 | JobState::Backoff => {}
             }
         }
+        // Consume outputs before filling the bounded runner again. FIFO keeps
+        // a retry behind existing requests, and a permanent refusal moves on.
+        while let Some(kind) = self.deferred.pop_front() {
+            let Some(effect) = self
+                .entries
+                .get_mut(&kind)
+                .and_then(|entry| entry.requested.take())
+            else {
+                continue;
+            };
+            let entry = self.request(effect);
+            let deferred = entry.requested.is_some();
+            self.entries.insert(kind.clone(), entry);
+            if deferred {
+                self.deferred.push_front(kind);
+                break;
+            }
+        }
         Ok(())
     }
 
-    /// Pump the engine runner until every submitted tile is terminal or the
+    /// Pump the engine runner until every requested tile is terminal or the
     /// timeout passes; this blocks the caller and is meant for audits that
     /// capture a settled panel. The engine runner stays the only renderer.
     pub fn settle(&mut self, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
-        while self.entries.values().any(|entry| entry.job.is_some()) {
+        while self
+            .entries
+            .values()
+            .any(|entry| matches!(entry.status, Status::Pending))
+        {
             self.tick()?;
             if Instant::now() >= deadline {
                 return Err(crate::Error::PreviewUnavailable(

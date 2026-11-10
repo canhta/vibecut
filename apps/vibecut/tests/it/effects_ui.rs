@@ -923,6 +923,352 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
 }
 
 struct BlockingPreview;
+
+struct PreviewGate {
+    state: std::sync::Mutex<(bool, usize, usize)>, // released, calls, active
+    changed: std::sync::Condvar,
+    failure: Option<u8>,
+    order: std::sync::Mutex<Vec<&'static str>>,
+    cancelled: std::sync::atomic::AtomicUsize,
+}
+impl PreviewGate {
+    fn new(released: bool, failure: Option<u8>) -> Self {
+        Self {
+            state: std::sync::Mutex::new((released, 0, 0)),
+            changed: Default::default(),
+            failure,
+            order: Default::default(),
+            cancelled: Default::default(),
+        }
+    }
+    fn wait_started(&self) {
+        let (state, timeout) = self
+            .changed
+            .wait_timeout_while(
+                self.state.lock().unwrap(),
+                std::time::Duration::from_secs(10),
+                |s| s.1 == 0,
+            )
+            .unwrap();
+        assert!(
+            !timeout.timed_out() && state.1 > 0,
+            "real thumbnail worker never started"
+        );
+    }
+    fn release(&self) {
+        self.state.lock().unwrap().0 = true;
+        self.changed.notify_all();
+    }
+}
+impl render::effects::EffectCompositor for PreviewGate {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
+    fn apply(
+        &self,
+        current: &render::Image,
+        passes: &[render::effects::EffectPass],
+        inputs: render::effects::EffectInputs<'_>,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::Image> {
+        let mut state = self.state.lock().unwrap();
+        state.1 += 1;
+        state.2 += 1;
+        self.order.lock().unwrap().push(passes[0].entry_point());
+        self.changed.notify_all();
+        while !state.0 && !hooks.cancelled() {
+            state = self
+                .changed
+                .wait_timeout(state, std::time::Duration::from_millis(2))
+                .unwrap()
+                .0;
+        }
+        state.2 -= 1;
+        drop(state);
+        if hooks.cancelled() {
+            self.cancelled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            return Err(render::Error::Cancelled);
+        }
+        if passes.iter().any(|p| p.entry_point() == "gaussian") {
+            match self.failure {
+                Some(0) => return Err(render::Error::Invalid("test preview")),
+                Some(1) => {
+                    return Err(render::Error::Budget {
+                        requested: 1,
+                        limit: 0,
+                    });
+                }
+                Some(2) => return Err(render::Error::Cancelled),
+                _ => {}
+            }
+        }
+        render::effects::CpuEffects.apply(current, passes, inputs, hooks)
+    }
+}
+
+#[test]
+fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
+    use vibecut::effect_previews::EffectPreviews;
+    let definitions: Vec<_> = project::effect_definitions()
+        .iter()
+        .filter(|definition| definition.shelf.in_library())
+        .collect();
+    assert_eq!(definitions.len(), 12);
+    // Five is the smallest request set that exceeds the real four-entry queue.
+    for count in [5, definitions.len()] {
+        let mut previews = EffectPreviews::cpu().unwrap();
+        for definition in definitions.iter().take(count) {
+            previews.ensure(definition.id, &definition.instance(definition.id));
+        }
+        let statuses = previews.statuses();
+        assert_eq!(statuses.len(), count);
+        assert!(
+            statuses
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Pending),
+            "queue pressure must defer requests, not fail them: {statuses:?}"
+        );
+        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        for definition in definitions.iter().take(count) {
+            assert_eq!(
+                previews.status(definition.id),
+                Some(EffectPreviewStatus::Ready),
+                "{}: {:?}",
+                definition.id,
+                previews.failure(definition.id)
+            );
+            let image = previews.image(definition.id).unwrap();
+            assert_eq!(image.size, [320, 180]);
+        }
+    }
+    // Replacing a full, unpumped queue leaves only deferred entries: the old
+    // cancelled jobs still occupy the runner but none belongs to a current tile.
+    let mut previews = EffectPreviews::cpu().unwrap();
+    for definition in definitions.iter().take(4) {
+        previews.ensure(definition.id, &definition.instance(definition.id));
+    }
+    for definition in definitions.iter().take(4) {
+        previews.retry(definition.id, &definition.instance(definition.id));
+    }
+    assert!(
+        matches!(
+            previews.settle(std::time::Duration::ZERO),
+            Err(vibecut::Error::PreviewUnavailable(_))
+        ),
+        "deferred-only work must not falsely settle"
+    );
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Pending)
+    );
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+}
+
+#[test]
+fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
+    use vibecut::effect_previews::EffectPreviews;
+    for retry in [false, true] {
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let gate = Arc::new(PreviewGate::new(false, None));
+        let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+        let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+        let blur = project::effect_definition("blur").unwrap().instance("blur");
+        for definition in project::effect_definitions()
+            .iter()
+            .filter(|d| d.shelf.in_library())
+        {
+            previews.ensure(definition.id, &definition.instance(definition.id));
+        }
+        previews.tick().unwrap();
+        gate.wait_started();
+        assert!(matches!(
+            previews.settle(std::time::Duration::from_millis(20)),
+            Err(vibecut::Error::PreviewUnavailable(_))
+        ));
+        assert_eq!(
+            previews
+                .statuses()
+                .values()
+                .filter(|s| **s == EffectPreviewStatus::Pending)
+                .count(),
+            12
+        );
+        if retry {
+            let replacement = blur
+                .clone()
+                .with("intensity", EffectValue::Scalar(0.0))
+                .unwrap();
+            // Retry one active and one deferred kind; ordinary ensure cannot duplicate either.
+            previews.retry("blur", &replacement);
+            let extract = project::effect_definition("extract")
+                .unwrap()
+                .instance("extract");
+            previews.retry("extract", &extract);
+            previews.ensure("blur", &blur);
+            gate.release();
+            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(previews.statuses().len(), 12);
+            assert!(
+                previews
+                    .statuses()
+                    .values()
+                    .all(|s| *s == EffectPreviewStatus::Ready)
+            );
+            let mut expected = EffectPreviews::cpu().unwrap();
+            expected.ensure("blur", &replacement);
+            expected.settle(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                previews.image("blur").unwrap(),
+                expected.image("blur").unwrap(),
+                "cancelled old blur cannot replace the fresh identity request"
+            );
+            assert!(gate.state.lock().unwrap().1 > 1, "other kinds progressed");
+            let order = gate.order.lock().unwrap();
+            assert_eq!(
+                order.iter().filter(|kind| **kind == "extract").count(),
+                1,
+                "a deferred retry admits exactly one fresh job"
+            );
+            assert!(
+                order.iter().position(|kind| *kind == "invert").unwrap()
+                    < order.iter().position(|kind| *kind == "extract").unwrap(),
+                "retry must join behind already deferred requests: {order:?}"
+            );
+        }
+        drop(previews); // Includes blocked active, queued and deferred requests in the first row.
+        assert_eq!(
+            gate.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "old active job observes cancellation on retry or Drop"
+        );
+        assert_eq!(gate.state.lock().unwrap().2, 0, "adapter joined on drop");
+        assert_eq!(
+            budget.snapshot().unwrap().used,
+            0,
+            "source, jobs and cache leases released"
+        );
+    }
+}
+
+#[test]
+fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
+    use vibecut::effect_previews::EffectPreviews;
+    for failure in [0, 1, 2] {
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let adapter = Arc::new(PreviewGate::new(true, Some(failure)));
+        let cache =
+            engine::effect_thumbnails::EffectThumbnails::new(adapter.clone(), budget.clone());
+        let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+        for definition in project::effect_definitions()
+            .iter()
+            .filter(|d| d.shelf.in_library())
+        {
+            let mut effect = definition.instance(definition.id);
+            if definition.id == "tint" {
+                effect.params.clear();
+            } // Validation still refuses behind a full queue.
+            previews.ensure(definition.id, &effect);
+        }
+        assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
+        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        for (kind, status) in previews.statuses() {
+            assert_eq!(
+                status,
+                if kind == "blur" || kind == "tint" {
+                    EffectPreviewStatus::Failed
+                } else {
+                    EffectPreviewStatus::Ready
+                },
+                "failure {failure}, kind {kind}"
+            );
+        }
+        let calls = adapter.state.lock().unwrap().1;
+        for _ in 0..3 {
+            previews.tick().unwrap();
+        }
+        assert_eq!(
+            adapter.state.lock().unwrap().1,
+            calls,
+            "terminal errors are not transient admission"
+        );
+        assert!(previews.failure("blur").is_some());
+        drop(previews);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
+    use vibecut::effect_previews::EffectPreviews;
+    let limit = 16 << 20;
+    let budget = ByteBudget::new(limit).unwrap();
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(
+        Arc::new(render::effects::CpuEffects),
+        budget.clone(),
+    );
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    let identity = project::effect_definition("channel_mix")
+        .unwrap()
+        .instance("channel_mix");
+    previews.ensure("channel_mix", &identity);
+    let blur = project::effect_definition("blur").unwrap().instance("blur");
+    previews.ensure("blur", &blur);
+    previews.tick().unwrap();
+    // Wait without ticking away the completed result. Once working images are
+    // released, only source + runner result ceiling + packed cache image remain.
+    let retained = 320 * 180 * 16 + 320 * 320 * 4 + 320 * 180 * 4;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while budget.snapshot().unwrap().used != retained {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "identity job did not release its work images"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    // The runner must evict that unconsumed result to admit the next real job.
+    let pressure = budget
+        .reserve(engine::ByteOwner::JobResults, limit - retained - 1)
+        .unwrap();
+    while previews.status("channel_mix") == Some(EffectPreviewStatus::Pending) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "evicted ID left Pending forever"
+        );
+        previews.tick().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(
+        previews.status("channel_mix"),
+        Some(EffectPreviewStatus::Failed)
+    );
+    assert_eq!(
+        previews.failure("channel_mix"),
+        Some(engine::EditError::JobNotRetained.to_string().as_str())
+    );
+    drop(pressure);
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+
 impl render::effects::EffectCompositor for BlockingPreview {
     fn frame<'a>(
         &'a self,
@@ -1037,13 +1383,27 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
         .settle_previews(std::time::Duration::from_secs(10))
         .unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert!(!statuses.is_empty());
+    assert_eq!(statuses.len(), 12);
     assert!(
         statuses
             .values()
-            .all(|status| *status != EffectPreviewStatus::Pending),
+            .all(|status| *status == EffectPreviewStatus::Ready),
         "{statuses:?}"
     );
+    harness.run_steps(3);
+    for definition in project::effect_definitions()
+        .iter()
+        .filter(|d| d.shelf.in_library())
+    {
+        assert!(has_widget(
+            &harness,
+            &format!("effects.tile.{}.ready", definition.id)
+        ));
+        assert!(!has_widget(
+            &harness,
+            &format!("effects.preview.retry.{}", definition.id)
+        ));
+    }
 
     let blocking: Arc<dyn render::effects::EffectCompositor> = Arc::new(BlockingPreview);
     let failing: Arc<dyn render::effects::EffectCompositor> = Arc::new(FailingPreview);
