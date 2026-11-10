@@ -7,7 +7,10 @@ use super::{
 /// Library shelves in the order the panel lists them; the four the effect
 /// port fills. Empty shelves keep their place and show the empty state.
 const SHELVES: [(project::EffectShelf, Text); 4] = [
-    (project::EffectShelf::BlurDetail, Text::EffectShelfBlurDetail),
+    (
+        project::EffectShelf::BlurDetail,
+        Text::EffectShelfBlurDetail,
+    ),
     (project::EffectShelf::Colour, Text::EffectShelfColour),
     (project::EffectShelf::Distort, Text::EffectShelfDistort),
     (project::EffectShelf::Stylize, Text::EffectShelfStylize),
@@ -59,10 +62,7 @@ impl View<'_> {
                 )
                 .on_hover_text(self.tr(label));
             self.remember(
-                format!(
-                    "effects.category.{}",
-                    shelf.map_or("all", shelf_id)
-                ),
+                format!("effects.category.{}", shelf.map_or("all", shelf_id)),
                 &response,
                 None,
             );

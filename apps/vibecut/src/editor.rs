@@ -675,7 +675,10 @@ fn effect_preview_instance(
         }
         "color_replace" => {
             instance = instance
-                .with("target", project::EffectValue::Color(project::Color([0, 0, 255, 255])))
+                .with(
+                    "target",
+                    project::EffectValue::Color(project::Color([0, 0, 255, 255])),
+                )
                 .ok()?
                 .with(
                     "replace",
