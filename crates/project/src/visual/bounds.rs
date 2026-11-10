@@ -2,6 +2,10 @@
 use crate::{Error, Result};
 /// Bounds apply before any typed JSON allocation, including ignored fields.
 pub const MAX_BYTES: usize = 16 << 20;
+/// Comma/colon budget. A caption item may hold 100,000 cues, each about 18
+/// separators with a shared style id; 2,000,000 admits that model ceiling while
+/// [`MAX_BYTES`] still bounds every allocation.
+pub const MAX_SEPARATORS: usize = 2_000_000;
 pub fn check(bytes: &[u8]) -> Result<()> {
     if bytes.len() > MAX_BYTES {
         return Err(Error::TooLarge("JSON bytes"));
@@ -38,7 +42,7 @@ pub fn check(bytes: &[u8]) -> Result<()> {
                 }
                 b',' | b':' => {
                     separators += 1;
-                    if separators > 200000 {
+                    if separators > MAX_SEPARATORS {
                         return Err(Error::TooLarge("JSON structure"));
                     }
                 }

@@ -97,6 +97,7 @@ impl Generator for LocalVideoWorkflow {
             asset: outcome.asset.id(),
             transcript: outcome.transcript,
             cues: captions::CueTrack {
+                styles: Vec::new(),
                 cues: outcome.source_cues,
             },
             energy: outcome.energy,

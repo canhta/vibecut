@@ -39,6 +39,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
                 cues: captions::CueTrack {
+                    styles: Vec::new(),
                     cues: vec![captions::Cue {
                         id: "stress".into(),
                         range,

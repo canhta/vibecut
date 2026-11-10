@@ -16,6 +16,7 @@ pub fn lang(tag: &str) -> LanguageTag {
 }
 pub fn cues(source: &str) -> CueTrack {
     CueTrack {
+        styles: Vec::new(),
         cues: (0..3)
             .map(|i| Cue {
                 id: format!("cue-{i}").into(),

@@ -385,6 +385,7 @@ fn seed() -> Session {
                 start: Tick::ZERO,
                 content: ItemParams::Caption(project::CaptionParams {
                     cues: captions::CueTrack {
+                        styles: Vec::new(),
                         cues: vec![captions::Cue {
                             id: "cue-1".into(),
                             range: SourceRange::new(Tick::ZERO, duration).unwrap(),
@@ -3222,6 +3223,7 @@ fn interview_filler_candidates_match_the_manual_read() {
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
                 cues: captions::CueTrack {
+                    styles: Vec::new(),
                     cues: vec![captions::Cue {
                         id: "interview-09".into(),
                         range,

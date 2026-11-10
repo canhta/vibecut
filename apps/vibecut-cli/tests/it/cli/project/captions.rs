@@ -61,8 +61,10 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
     };
     let cue = params.cues.cues.first().unwrap();
     assert_eq!(cue.texts.values().next().unwrap().text.as_str(), "Hello");
-    assert_eq!(cue.style.as_ref().unwrap().alignment.numpad, 2);
-    assert!(cue.style.as_ref().unwrap().bold);
+    let style = params.cues.style_of(cue).unwrap();
+    assert_eq!(style.alignment.numpad, 2);
+    assert!(style.bold);
+    assert_eq!(params.cues.styles.len(), 1);
 }
 
 #[test]

@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures")]
 use captions::{
-    AssWarningKind, HorizontalAlignment, VerticalAlignment, ass::MAX_ASS_BYTES, parse_ass,
+    AssWarningKind, Cue, CueStyleId, CueTrack, HorizontalAlignment, LanguageTag, MAX_CUE_STYLES,
+    VerticalAlignment, ass::MAX_ASS_BYTES, parse_ass,
 };
-use time::{Rounding, Tick};
+use time::{Rounding, SourceRange, Tick};
 
 fn tick(seconds: f64) -> Tick {
     Tick::from_seconds_f64(seconds, Rounding::Nearest).unwrap()
@@ -393,6 +394,39 @@ fn hostile_style_values_are_replaced_with_a_warning() {
     let mut style = import.cues[0].style.clone();
     style.alignment.horizontal = HorizontalAlignment::Right;
     assert!(!style.is_valid());
+}
+
+#[test]
+fn cue_track_shares_one_bounded_style_table() {
+    let import = one_cue(DEFAULT_STYLE, "Hi");
+    let style = import.cues[0].style.clone();
+    let mut track = CueTrack::default();
+    let id = track.intern_style(style.clone()).unwrap();
+    assert_eq!(id, CueStyleId(0));
+    assert_eq!(track.intern_style(style.clone()), Some(id));
+    assert_eq!(track.styles.len(), 1);
+    track.cues.push(Cue {
+        id: "1".into(),
+        range: SourceRange::new(Tick::ZERO, Tick(1)).unwrap(),
+        source_lang: LanguageTag::parse("en").unwrap(),
+        texts: std::collections::BTreeMap::new(),
+        word_ranges: Vec::new(),
+        style: Some(id),
+    });
+    assert_eq!(track.style_of(&track.cues[0]), Some(&style));
+    let json = serde_json::to_string(&track).unwrap();
+    assert_eq!(serde_json::from_str::<CueTrack>(&json).unwrap(), track);
+    // A stale id resolves to nothing; the table stops at its cap.
+    let mut dangling = track.clone();
+    dangling.cues[0].style = Some(CueStyleId(u16::MAX));
+    assert!(dangling.style_of(&dangling.cues[0]).is_none());
+    let mut full = CueTrack {
+        styles: vec![style.clone(); MAX_CUE_STYLES],
+        cues: Vec::new(),
+    };
+    let mut other = style;
+    other.bold = !other.bold;
+    assert!(full.intern_style(other).is_none());
 }
 
 #[test]

@@ -614,7 +614,7 @@ pub fn subtitle_file(
             "subtitle export requires a caption track",
         ));
     }
-    let mut mapped = captions::CueTrack { cues: Vec::new() };
+    let mut mapped = captions::CueTrack::default();
     for item in &track.items {
         let project::ItemParams::Caption(params) = &item.content else {
             continue;

@@ -4,11 +4,11 @@ Versioned project JSON, the writer lease, atomic files, recovery snapshots, opti
 
 ## Envelope and limits
 
-`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (21). Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
+`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (22). Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
 
 ProjectId is stored as a canonical decimal string to keep all u64 bits for control clients; other IDs are numeric. Leases, hashes and receipts are not persisted in the envelope.
 
-Ingestion and serialization cap JSON at 16 MiB, nesting at 64, individual raw JSON strings at 1 MiB and combined comma/colon separators at 200,000, including ignored fields. These aggregate budgets can be reached before model caps: 10,000 assets, 256 tracks, 100,000 total items and bookmarks, 100,000 cues per caption item, 1 MiB per stored text. Exceeding a budget returns an error; nothing is truncated or repaired. JSON diagnostics expose line and column only. Raw serde use skips the ingestion budgets.
+Ingestion and serialization cap JSON at 16 MiB, nesting at 64, individual raw JSON strings at 1 MiB and combined comma/colon separators at 2,000,000, including ignored fields. These aggregate budgets can be reached before model caps: 10,000 assets, 256 tracks, 100,000 total items and bookmarks, 100,000 cues per caption item with a shared style table of at most 1,024 distinct styles, 1 MiB per stored text. Exceeding a budget returns an error; nothing is truncated or repaired. JSON diagnostics expose line and column only. Raw serde use skips the ingestion budgets.
 
 Read-only `load` reads at most 16 MiB + 1 byte, including when a file grows while reading. `WriterLease::save` serializes completely before touching the destination.
 

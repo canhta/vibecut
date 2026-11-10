@@ -161,7 +161,10 @@ impl EditMapping {
             }
         }
         cues.sort_by_key(|cue| cue.range.start());
-        Ok(CueTrack { cues })
+        Ok(CueTrack {
+            styles: source.styles.clone(),
+            cues,
+        })
     }
 }
 
@@ -187,6 +190,7 @@ mod tests {
     fn track(ranges: &[(i64, i64)]) -> CueTrack {
         let language = LanguageTag::parse("vi").unwrap();
         CueTrack {
+            styles: Vec::new(),
             cues: ranges
                 .iter()
                 .enumerate()

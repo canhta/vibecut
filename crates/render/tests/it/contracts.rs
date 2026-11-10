@@ -1108,7 +1108,10 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             source_range: range,
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
-                cues: captions::CueTrack { cues },
+                cues: captions::CueTrack {
+                    styles: Vec::new(),
+                    cues,
+                },
             }),
         }],
     });

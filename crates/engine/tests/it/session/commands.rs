@@ -2055,6 +2055,7 @@ fn caption_project() -> Project {
             start: Tick(1000),
             content: ItemParams::Caption(CaptionParams {
                 cues: CueTrack {
+                    styles: Vec::new(),
                     cues: vec![cue.clone()],
                 },
             }),
@@ -4283,10 +4284,12 @@ fn captions_import_is_one_undo_step_and_persists_style() {
             .as_str(),
         "Hello"
     );
+    assert_eq!(params.cues.styles.len(), 1);
+    assert_eq!(params.cues.cues[0].style, Some(captions::CueStyleId(0)));
     assert_eq!(
-        params.cues.cues[0]
-            .style
-            .as_ref()
+        params
+            .cues
+            .style_of(&params.cues.cues[0])
             .unwrap()
             .font_family
             .as_str(),
@@ -4311,7 +4314,11 @@ fn captions_import_is_one_undo_step_and_persists_style() {
     else {
         panic!("expected caption item")
     };
-    assert_eq!(reloaded.cues.cues[0].style, Some(ass_style()));
+    assert_eq!(reloaded.cues.cues[0].style, Some(captions::CueStyleId(0)));
+    assert_eq!(
+        reloaded.cues.style_of(&reloaded.cues.cues[0]).unwrap(),
+        &ass_style()
+    );
 
     s.apply(Command::Undo {}).unwrap();
     assert!(
@@ -4329,6 +4336,22 @@ fn captions_import_is_one_undo_step_and_persists_style() {
             .iter()
             .any(|asset| asset.id() == AssetId(30))
     );
+
+    s.apply(Command::Redo {}).unwrap();
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap();
+    let ItemParams::Caption(params) = &item.content else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.styles, vec![ass_style()]);
+    assert_eq!(params.cues.cues[0].style, Some(captions::CueStyleId(0)));
 }
 
 #[test]
@@ -4366,7 +4389,8 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     assert_eq!(s.project(), &after);
     assert_ne!(after, before);
 
-    // Hostile placement and size: refused whole, never a panic or an unsaveable project.
+    // Hostile placement, count and style bursts are refused whole, never a
+    // panic or an unsaveable project.
     let make = |count: usize, start: Tick| {
         let Command::ImportCaptions {
             asset,
@@ -4394,7 +4418,37 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
             cues,
         }
     };
-    for (count, start) in [(5_000, Tick(0)), (1, Tick(i64::MAX - 10)), (1, Tick(-1))] {
+    let make_unique_styles = |count: usize| {
+        let Command::ImportCaptions {
+            asset,
+            language,
+            track,
+            name,
+            ..
+        } = ass_import()
+        else {
+            panic!("expected import command")
+        };
+        let cues = (0..count)
+            .map(|index| captions::AssCue {
+                range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
+                text: format!("line {index}").into(),
+                style: captions::CueStyle {
+                    font_size_ratio: 0.001 + index as f32 * 0.0001,
+                    ..ass_style()
+                },
+            })
+            .collect();
+        Command::ImportCaptions {
+            asset,
+            language,
+            start: Tick(0),
+            track,
+            name,
+            cues,
+        }
+    };
+    for (count, start) in [(1, Tick(i64::MAX - 10)), (1, Tick(-1))] {
         let mut fresh = session();
         let untouched = fresh.project().clone();
         assert!(
@@ -4403,13 +4457,44 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
         );
         assert_eq!(fresh.project(), &untouched);
     }
+    let mut fresh = session();
+    fresh.apply(make(20_000, Tick(0))).unwrap();
+    let encoded = project::encode(fresh.project().as_ref(), false).unwrap();
+    let loaded = project::decode(&encoded).unwrap();
+    let ItemParams::Caption(params) = &loaded
+        .project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap()
+        .content
+    else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.cues.len(), 20_000);
+    assert_eq!(params.cues.styles.len(), 1);
+    assert!(
+        params
+            .cues
+            .cues
+            .iter()
+            .all(|cue| cue.style == Some(captions::CueStyleId(0)))
+    );
+
+    let mut fresh = session();
+    let untouched = fresh.project().clone();
     assert!(matches!(
-        session().apply(make(5_000, Tick(0))),
+        fresh.apply(make_unique_styles(captions::MAX_CUE_STYLES + 1)),
         Err(engine::EditError::Limit)
     ));
-    let mut fresh = session();
-    fresh.apply(make(1_000, Tick(0))).unwrap();
-    project::decode(&project::encode(fresh.project().as_ref(), false).unwrap()).unwrap();
+    assert_eq!(fresh.project(), &untouched);
+    assert!(matches!(
+        session().apply(make(captions::ass::MAX_ASS_CUES + 1, Tick(0))),
+        Err(engine::EditError::Limit)
+    ));
 }
 
 #[test]
@@ -5070,6 +5155,7 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
                 cues: captions::CueTrack {
+                    styles: Vec::new(),
                     cues: vec![captions::Cue {
                         id: "cue-1".into(),
                         range: range(0, 1000),
@@ -5232,7 +5318,10 @@ fn caption_words_item(id: u64, start: i64, source: (i64, i64), cues: Vec<caption
         source_range: range(source.0, source.1),
         start: Tick(start),
         content: ItemParams::Caption(project::CaptionParams {
-            cues: captions::CueTrack { cues },
+            cues: captions::CueTrack {
+                styles: Vec::new(),
+                cues,
+            },
         }),
     }
 }

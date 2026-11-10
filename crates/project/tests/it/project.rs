@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use captions::{Cue, CueText, CueTrack, LanguageTag};
+use captions::{Cue, CueStyleId, CueText, CueTrack, LanguageTag};
 use media::{AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, TimeBase};
 use project::*;
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -140,7 +140,10 @@ fn populated(path: PathBuf) -> Project {
         }),
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
-            cues: CueTrack { cues: vec![cue] },
+            cues: CueTrack {
+                styles: Vec::new(),
+                cues: vec![cue],
+            },
         }),
         ItemParams::Overlay(OverlayParams {
             color: Color([40, 50, 60, 255]),
@@ -270,6 +273,19 @@ fn model_trust_boundaries() {
     cases.push(d);
     let mut d = base.clone();
     d.canvas.width = 0;
+    cases.push(d);
+    let mut d = base.clone();
+    let caption = d
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find_map(|item| match &mut item.content {
+            ItemParams::Caption(params) => Some(params),
+            _ => None,
+        })
+        .unwrap();
+    caption.cues.cues[0].style = Some(CueStyleId(0));
     cases.push(d);
     for (width, height) in [(0, 360), (640, 0), (u32::MAX, u32::MAX)] {
         let mut d = base.clone();
@@ -658,7 +674,7 @@ fn hostile_json_is_bounded_and_errors_redact_text() {
     assert!(matches!(decode(&huge), Err(Error::TooLarge(_))));
     let deep = format!("{}0{}", "[".repeat(65), "]".repeat(65));
     assert!(matches!(decode(deep.as_bytes()), Err(Error::TooLarge(_))));
-    let array = format!("[{}0]", "0,".repeat(200001));
+    let array = format!("[{}0]", "0,".repeat(MAX_SEPARATORS + 1));
     assert!(matches!(decode(array.as_bytes()), Err(Error::TooLarge(_))));
     let text = format!("\"{}\"", "x".repeat((1 << 20) + 1));
     assert!(matches!(decode(text.as_bytes()), Err(Error::TooLarge(_))));

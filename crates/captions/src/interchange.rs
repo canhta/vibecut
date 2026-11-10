@@ -236,7 +236,10 @@ pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Impo
         .enumerate()
         .map(|(index, block)| cue(block, index + 1, &language, decode_entities))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut track = CueTrack { cues };
+    let mut track = CueTrack {
+        styles: Vec::new(),
+        cues,
+    };
     warnings.extend(track.repair()?);
     Ok(Import { track, warnings })
 }

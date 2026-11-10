@@ -101,6 +101,7 @@ fn shipped_lexicons_match_known_filled_pauses_per_language() {
     for case in cases {
         let words = words(case.words);
         let track = CueTrack {
+            styles: Vec::new(),
             cues: vec![cue("cue", case.tag, case.text, words.clone(), false)],
         };
         let found = detect(&track, case.tag);
@@ -130,6 +131,7 @@ fn shipped_lexicons_match_known_filled_pauses_per_language() {
 fn discourse_markers_are_opt_in_and_keep_their_kind() {
     let words = words(4);
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue(
             "cue",
             "en",
@@ -162,12 +164,14 @@ fn discourse_markers_are_opt_in_and_keep_their_kind() {
 fn ordinary_word_uses_are_not_candidates_by_default() {
     let english_words = words(3);
     let english = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("en", "en", "I like it.", english_words, false)],
     };
     assert!(detect(&english, "en").is_empty());
 
     // Vietnamese question particle: "Anh đi à?" keeps its meaning by default.
     let vietnamese = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("vi", "vi", "Anh đi à?", words(3), false)],
     };
     assert!(detect(&vietnamese, "vi").is_empty());
@@ -181,6 +185,7 @@ fn ordinary_word_uses_are_not_candidates_by_default() {
 
     let chinese_words = words(5);
     let chinese = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("zh", "zh", "那个人很好", chinese_words.clone(), false)],
     };
     assert!(detect(&chinese, "zh").is_empty());
@@ -200,6 +205,7 @@ fn ordinary_word_uses_are_not_candidates_by_default() {
 fn adjacent_filled_pauses_merge_and_ids_are_stable() {
     let words = words(2);
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue-7", "en", "Uh uh.", words.clone(), true)],
     };
     let first = detect(&track, "en");
@@ -224,6 +230,7 @@ fn only_timed_whole_words_qualify() {
     let mismatched = cue("mismatched", "en", "Um uh.", words(1), false);
     let inside_words = cue("inside", "en", "likely umbrella.", words(2), false);
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![untimed, mismatched, inside_words, timed],
     };
     let found = detect(&track, "en");
@@ -241,6 +248,7 @@ fn unknown_language_is_a_typed_refusal() {
     assert!(matches!(error, Error::NoFillerLexicon));
     let regional = FillerLexicon::builtin(&lang("vi-VN")).expect("primary subtag selects vi");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue", "vi-VN", "Ừm.", words(1), false)],
     };
     assert_eq!(
@@ -325,6 +333,7 @@ fn a_caller_lexicon_adds_a_language_without_detector_changes() {
     )
     .expect("caller lexicon");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue", "fr", "Euh, oui.", words(2), false)],
     };
     let found = detect_fillers(&track, &french, false).expect("detect");
@@ -342,6 +351,7 @@ fn lexicon_phrases_are_nfc_normalized() {
     )
     .expect("decomposed caller lexicon");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue", "fr", "Café.", words(1), false)],
     };
     assert_eq!(
@@ -359,6 +369,7 @@ fn longest_phrase_wins_without_overlap() {
     )
     .expect("lexicon");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue", "en", "You know.", words(2), false)],
     };
     let found = detect_fillers(&track, &lexicon, true).expect("detect");
@@ -377,6 +388,7 @@ fn longest_phrase_wins_without_overlap() {
 fn a_same_primary_tag_finds_the_cue_text() {
     let lexicon = FillerLexicon::builtin(&lang("zh")).expect("zh lexicon");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![cue("cue", "zh-Hant", "嗯。", words(1), false)],
     };
     let found = detect_fillers(&track, &lexicon, false).expect("detect");
@@ -388,6 +400,7 @@ fn translated_text_is_never_paired_with_source_word_times() {
     let mut translated = cue("cue", "en", "Um.", words(1), false);
     translated.source_lang = lang("vi");
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![translated],
     };
     assert!(detect(&track, "en").is_empty());
@@ -396,6 +409,7 @@ fn translated_text_is_never_paired_with_source_word_times() {
 #[test]
 fn candidate_ids_are_unique_across_a_track() {
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![
             cue("a", "en", "Um, uh.", words(2), false),
             cue("b", "en", "Er.", words(1), false),
@@ -446,6 +460,7 @@ fn interview_excerpt_matches_the_manual_filler_read() {
         })
         .collect();
     let track = CueTrack {
+        styles: Vec::new(),
         cues: vec![Cue {
             id: "interview-09".into(),
             range: SourceRange::new(words.first().unwrap().start(), words.last().unwrap().end())

@@ -10,6 +10,7 @@ mod transition;
 mod typography;
 
 pub use blend::BlendMode;
+pub use bounds::MAX_SEPARATORS;
 pub(crate) use bounds::{MAX_BYTES, Writer, check};
 pub use crop::Crop;
 pub use effects::{

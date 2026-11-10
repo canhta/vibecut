@@ -93,7 +93,10 @@ fn session() -> Session {
             start: Tick(0),
             animations: Default::default(),
             content: ItemParams::Caption(CaptionParams {
-                cues: CueTrack { cues },
+                cues: CueTrack {
+                    styles: Vec::new(),
+                    cues,
+                },
             }),
         }],
     });

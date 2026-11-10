@@ -17,7 +17,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'static str,

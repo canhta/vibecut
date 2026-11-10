@@ -87,6 +87,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
         },
     ];
     let cues = captions::CueTrack {
+        styles: Vec::new(),
         cues: transcript
             .segments
             .iter()

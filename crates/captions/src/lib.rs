@@ -173,9 +173,14 @@ impl CueAlignment {
         })
     }
 }
+/// Ceiling on distinct styles shared by one cue track. Real ASS files use a
+/// handful; a hostile per-cue override burst stops here instead of growing the
+/// persisted table without bound.
+pub const MAX_CUE_STYLES: usize = 1_024;
+
 /// Imported static cue styling. Sizes and margins are ratios of the ASS script
-/// resolution so the values survive a different project canvas; `None` style
-/// means the caller owns presentation defaults.
+/// resolution so the values survive a different project canvas; cues without a
+/// style id use the caller's presentation defaults.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CueStyle {
@@ -211,6 +216,23 @@ impl CueStyle {
             && bounded(self.margin_vertical_ratio, 10.0)
     }
 }
+/// Stable index into [`CueTrack::styles`].
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct CueStyleId(pub u16);
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Cue {
     pub id: NfcText,
@@ -221,9 +243,9 @@ pub struct Cue {
     /// imported or estimated cues; never invented from proportional text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub word_ranges: Vec<SourceRange>,
-    /// Static style preserved from an ASS import; absent for generated/SRT/VTT cues.
+    /// Shared style preserved from an ASS import; absent for generated/SRT/VTT cues.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<CueStyle>,
+    pub style: Option<CueStyleId>,
 }
 impl Cue {
     /// Automatic results refuse to overwrite edited text; explicit replacement opts in.
@@ -290,6 +312,9 @@ pub(crate) fn word_tokens(text: &str) -> impl Iterator<Item = &str> {
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CueTrack {
+    /// Distinct styles shared by cues through [`CueStyleId`]; never repeated per cue.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<CueStyle>,
     pub cues: Vec<Cue>,
 }
 /// Recoverable categories, with one-based cue/line positions and no user text.
@@ -320,6 +345,26 @@ pub enum WarningKind {
     EstimatedTiming,
 }
 impl CueTrack {
+    /// Reuse an equal table entry or append `style`; `None` when the bounded
+    /// table is full, so the caller can refuse the whole import.
+    pub fn intern_style(&mut self, style: CueStyle) -> Option<CueStyleId> {
+        if let Some(index) = self.styles.iter().position(|value| value == &style) {
+            return u16::try_from(index).ok().map(CueStyleId);
+        }
+        if self.styles.len() >= MAX_CUE_STYLES {
+            return None;
+        }
+        let id = CueStyleId(u16::try_from(self.styles.len()).ok()?);
+        self.styles.push(style);
+        Some(id)
+    }
+
+    /// The style a cue references in this track, or `None` when it has none or
+    /// the id is out of range.
+    pub fn style_of(&self, cue: &Cue) -> Option<&CueStyle> {
+        cue.style.and_then(|id| self.styles.get(usize::from(id.0)))
+    }
+
     /// Stable-sort by start, clamp negative starts, then shift overlaps preserving duration.
     pub fn repair(&mut self) -> Result<Vec<Warning>, Error> {
         let mut warnings = Vec::new();

@@ -58,7 +58,10 @@ fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item
         source_range: range(source.0, source.1),
         start: Tick(start),
         content: ItemParams::Caption(CaptionParams {
-            cues: CueTrack { cues },
+            cues: CueTrack {
+                styles: Vec::new(),
+                cues,
+            },
         }),
     }
 }

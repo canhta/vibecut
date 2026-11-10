@@ -187,6 +187,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let dir = tempfile::tempdir().unwrap();
     let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
     let cues = CueTrack {
+        styles: Vec::new(),
         cues: vec![
             cue(
                 "a",
@@ -660,7 +661,10 @@ fn storage_ceiling_refuses_before_publishing_and_preserves_previous_files() {
         ..batch(
             1,
             vec![ClipShort::new("Cap", vec![segment(0, 1, 0)])],
-            CueTrack { cues: vec![cue] },
+            CueTrack {
+                styles: Vec::new(),
+                cues: vec![cue],
+            },
             dir.path(),
         )
     };
@@ -694,6 +698,7 @@ fn existing_destination_is_preserved_and_sidecars_are_not_published() {
             1,
             vec![ClipShort::new("Existing", vec![segment(0, 1, 0)])],
             CueTrack {
+                styles: Vec::new(),
                 cues: vec![cue("a", 0, 1, &[("vi", "Xin chào")])],
             },
             dir.path(),
@@ -723,6 +728,7 @@ fn bilingual_ordered_segments_export_mp4_and_subtitle_sidecars() {
     let path = fixture(dir.path(), 1);
     let source = project(SourceAsset::import(AssetId(1), path).unwrap());
     let cues = CueTrack {
+        styles: Vec::new(),
         cues: vec![Cue {
             id: "speech".into(),
             range: short_range(1, 8),
@@ -1100,6 +1106,7 @@ fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
             1,
             vec![ClipShort::new("Resume", vec![short_segment(1, 3)])],
             CueTrack {
+                styles: Vec::new(),
                 cues: vec![Cue {
                     id: "speech".into(),
                     range: short_range(1, 3),

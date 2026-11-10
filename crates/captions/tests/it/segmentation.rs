@@ -110,6 +110,7 @@ fn unicode_tables_preserve_text_and_export() {
             );
         }
         let track = captions::CueTrack {
+            styles: Vec::new(),
             cues: output.cues.iter().map(|c| c.cue.clone()).collect(),
         };
         for format in [Format::Srt, Format::WebVtt] {

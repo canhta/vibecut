@@ -174,6 +174,7 @@ fn han_variant_selection_retains_source_timing_through_segmentation_and_srt() {
             .all(|c| c.cue.source_lang == language("zh-Hans"))
     );
     let track = captions::CueTrack {
+        styles: Vec::new(),
         cues: output.cues.iter().map(|c| c.cue.clone()).collect(),
     };
     let compact = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();

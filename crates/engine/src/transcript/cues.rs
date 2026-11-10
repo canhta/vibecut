@@ -74,6 +74,7 @@ pub fn build_session(
             start: Tick::ZERO,
             content: ItemParams::Caption(CaptionParams {
                 cues: CueTrack {
+                    styles: Vec::new(),
                     cues: cues.to_vec(),
                 },
             }),

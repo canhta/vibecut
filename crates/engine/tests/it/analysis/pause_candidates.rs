@@ -126,6 +126,7 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
         start: Tick::ZERO,
         content: ItemParams::Caption(project::CaptionParams {
             cues: captions::CueTrack {
+                styles: Vec::new(),
                 cues: vec![captions::Cue {
                     id: "cue-1".into(),
                     range: range(0, 12),

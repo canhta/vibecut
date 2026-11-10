@@ -405,6 +405,14 @@ fn validate(data: &ProjectData) -> Result<()> {
                     if p.cues.cues.len() > 100000 {
                         return Err(Error::TooLarge("cues"));
                     }
+                    if p.cues.styles.len() > captions::MAX_CUE_STYLES {
+                        return Err(Error::TooLarge("cue styles"));
+                    }
+                    for style in &p.cues.styles {
+                        if !style.is_valid() {
+                            return Err(Error::Invalid("cue style"));
+                        }
+                    }
                     let mut ids = BTreeSet::new();
                     for cue in &p.cues.cues {
                         text(&cue.id)?;
@@ -422,10 +430,11 @@ fn validate(data: &ProjectData) -> Result<()> {
                                 text(reference)?;
                             }
                         }
-                        if let Some(style) = &cue.style
-                            && !style.is_valid()
+                        if cue
+                            .style
+                            .is_some_and(|id| usize::from(id.0) >= p.cues.styles.len())
                         {
-                            return Err(Error::Invalid("cue style"));
+                            return Err(Error::Invalid("cue style reference"));
                         }
                     }
                 }

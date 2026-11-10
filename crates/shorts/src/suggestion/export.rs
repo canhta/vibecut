@@ -26,6 +26,7 @@ pub fn prepare_export(
         }
     }
     let mut track = CueTrack {
+        styles: Vec::new(),
         cues: outcome.source_cues.clone(),
     };
     let mut translation_cost = Cost::Free;

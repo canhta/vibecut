@@ -30,14 +30,18 @@ pub(super) fn import_captions(
     }
     let asset_id = asset.id();
     let mut end = Tick::ZERO;
-    let mut converted = Vec::with_capacity(cues.len());
+    let mut cue_track = captions::CueTrack {
+        styles: Vec::new(),
+        cues: Vec::with_capacity(cues.len()),
+    };
     for (index, cue) in cues.into_iter().enumerate() {
         if !cue.style.is_valid() || cue.range.start() < Tick::ZERO {
             return Err(EditError::Invalid("imported cue style or timing"));
         }
         end = end.max(cue.range.end());
+        let style = cue_track.intern_style(cue.style).ok_or(EditError::Limit)?;
         let id = format!("ass-{}", index.saturating_add(1)).into();
-        converted.push(captions::Cue {
+        cue_track.cues.push(captions::Cue {
             id,
             range: cue.range,
             source_lang: language.clone(),
@@ -50,7 +54,7 @@ pub(super) fn import_captions(
                 },
             )]),
             word_ranges: Vec::new(),
-            style: Some(cue.style),
+            style: Some(style),
         });
     }
     let source_range = SourceRange::new(Tick::ZERO, end)?;
@@ -113,9 +117,7 @@ pub(super) fn import_captions(
                 source_asset: Some(asset_id),
                 source_range,
                 start,
-                content: ItemParams::Caption(project::CaptionParams {
-                    cues: captions::CueTrack { cues: converted },
-                }),
+                content: ItemParams::Caption(project::CaptionParams { cues: cue_track }),
             },
         },
         created,
@@ -124,8 +126,8 @@ pub(super) fn import_captions(
         copied_text_bytes,
     )?
     .into_data();
-    // Per-cue styles are large: a result that cannot be encoded could not be
-    // saved or re-opened, so refuse it before the session accepts it.
+    // Imported content must survive a save: a result that cannot be encoded
+    // could not be saved or re-opened, so refuse it before the session accepts it.
     project::encode(&project::Project::new(data.clone())?, false).map_err(|_| EditError::Limit)?;
     Ok(data)
 }
@@ -427,7 +429,7 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
         source_lang,
         texts,
         word_ranges,
-        style: first.style.clone(),
+        style: first.style,
     };
     drop(selected);
     let selected: std::collections::BTreeSet<_> = cue_ids.iter().map(|id| id.cue.clone()).collect();
