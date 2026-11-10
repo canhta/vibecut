@@ -30,6 +30,37 @@ impl Session {
         caller: Caller<'_>,
         runner: &mut JobRunner,
     ) -> Result<Response> {
+        let (response, _) = self.control_admitted(request, caller, runner)?;
+        Ok(response)
+    }
+
+    /// Trusted in-process adapter entry: the same bounds, admission, receipts and
+    /// events as [`Session::control_request`], but an execution refusal keeps its
+    /// typed cause so the adapter can map the exit codes its own transport documents.
+    /// Wire clients see only the closed [`ErrorCode`] on the response.
+    pub fn control_typed(
+        &mut self,
+        request: Request,
+        caller: Caller<'_>,
+        runner: &mut JobRunner,
+    ) -> Result<ControlResult> {
+        match self.control_admitted(request, caller, runner)? {
+            (_, Some(error)) => Err(error),
+            (response, None) => match response.value {
+                ResponseValue::Result(value) => Ok(value),
+                // A replayed refusal carries only its wire code; the adapter maps it
+                // as the generic refusal it is.
+                ResponseValue::Error(_) => Err(EditError::Unsupported("replayed control refusal")),
+            },
+        }
+    }
+
+    fn control_admitted(
+        &mut self,
+        request: Request,
+        caller: Caller<'_>,
+        runner: &mut JobRunner,
+    ) -> Result<(Response, Option<EditError>)> {
         crate::session::budget(&request.params)?;
         let frame = bounded_json(&request, MAX_FRAME_BYTES)?;
         parse_frame(&frame)?;
@@ -41,9 +72,8 @@ impl Session {
             return Err(EditError::Limit);
         }
         let before = self.revision();
-        let result = self.admit_and_run(&request, &caller, runner);
-        match result {
-            Ok(response) => Ok(response),
+        match self.admit_and_run(&request, &caller, runner) {
+            Ok(admitted) => Ok(admitted),
             Err(error) => {
                 let code = ErrorCode::from_error(&error);
                 self.ledger.push(
@@ -54,15 +84,18 @@ impl Session {
                         code,
                     },
                 );
-                Ok(Response {
-                    api_version: API_VERSION,
-                    registry_hash: registry_hash().into(),
-                    session_id: self.session_id().into(),
-                    request_id: request.request_id,
-                    rev_before: before,
-                    rev_after: self.revision(),
-                    value: ResponseValue::Error(code),
-                })
+                Ok((
+                    Response {
+                        api_version: API_VERSION,
+                        registry_hash: registry_hash().into(),
+                        session_id: self.session_id().into(),
+                        request_id: request.request_id,
+                        rev_before: before,
+                        rev_after: self.revision(),
+                        value: ResponseValue::Error(code),
+                    },
+                    Some(error),
+                ))
             }
         }
     }
@@ -74,7 +107,7 @@ impl Session {
         request: &Request,
         caller: &Caller<'_>,
         runner: &mut JobRunner,
-    ) -> Result<Response> {
+    ) -> Result<(Response, Option<EditError>)> {
         if request.api_version != API_VERSION {
             return Err(EditError::SchemaMismatch);
         }
@@ -127,7 +160,7 @@ impl Session {
             }
             let key = (caller.principal.to_owned(), key.clone());
             if let Some(response) = self.replay_receipt(&key, fingerprint, &request.request_id)? {
-                return Ok(response);
+                return Ok((response, None));
             }
             self.check_receipt_capacity()?;
             if request.base_rev.as_ref() != Some(&self.revision()) {
@@ -143,9 +176,12 @@ impl Session {
         let before = self.revision();
         // All mutation response shapes have a fixed small bound (at most 1024
         // created IDs). Reads/images never occupy the no-eviction receipt ledger.
-        let value = match self.run_control(command, runner, fingerprint, caller) {
-            Ok(value) => ResponseValue::Result(value),
-            Err(error) => ResponseValue::Error(ErrorCode::from_error(&error)),
+        let (value, failure) = match self.run_control(command, runner, fingerprint, caller) {
+            Ok(value) => (ResponseValue::Result(value), None),
+            Err(error) => (
+                ResponseValue::Error(ErrorCode::from_error(&error)),
+                Some(error),
+            ),
         };
         let response = Response {
             api_version: API_VERSION,
@@ -160,7 +196,7 @@ impl Session {
             self.store_receipt(key, fingerprint, &response)?;
         }
         self.push_control_event(&request.request_id, &response);
-        Ok(response)
+        Ok((response, failure))
     }
 }
 

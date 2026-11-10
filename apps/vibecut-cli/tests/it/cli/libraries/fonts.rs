@@ -40,6 +40,13 @@ fn fonts_list_and_resolve_are_offline_and_download_requires_acceptance() {
             .unwrap()
             .starts_with("https://github.com/google/fonts/")
     );
+    let human = font_cli(&[os("fonts"), os("list"), os("--query"), os("lobster")]);
+    assert_eq!(code(&human), 0);
+    assert!(
+        String::from_utf8_lossy(&human.stdout).starts_with("Lobster\tgoogle\tnot_downloaded\t"),
+        "{}",
+        String::from_utf8_lossy(&human.stdout)
+    );
 
     let bundled = font_cli(&[os("fonts"), os("resolve"), os("inter"), os("--json")]);
     assert_eq!(code(&bundled), 0);

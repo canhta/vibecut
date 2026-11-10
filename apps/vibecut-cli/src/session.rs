@@ -3,8 +3,10 @@ mod control;
 mod export;
 mod job;
 mod leased;
+mod libraries;
 mod media_cache;
 mod paths;
+mod registry;
 mod runtime;
 
 pub(crate) use control::{control, save_control_state};
@@ -13,8 +15,10 @@ use export::export_project_with;
 pub(crate) use export::{Aspect, export_job_key, export_project, export_settings};
 pub(crate) use job::run_job;
 pub(crate) use leased::{Edit, History, WritePolicy, run_leased};
+pub(crate) use libraries::{with_fonts, with_sounds};
 pub(crate) use media_cache::{thumbnail_cache, waveform_cache};
 pub(crate) use paths::{resolve_target, same_target};
+pub(crate) use registry::{Lent, run as run_command, session as standalone_session};
 pub(crate) use runtime::{cli_runner, cli_runtime};
 
 use crate::args::CliError;

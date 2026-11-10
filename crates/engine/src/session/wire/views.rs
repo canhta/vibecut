@@ -68,6 +68,54 @@ pub struct FontLoad {
     pub styles: Vec<String>,
 }
 
+/// Where a sound search page came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SoundSource {
+    Remote,
+    Local,
+}
+
+/// One sound search result; also the record `sounds.save` upserts. Attribution is
+/// precomputed by the library so every surface and export shows the same text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SoundEntry {
+    pub id: u64,
+    pub name: String,
+    pub author: String,
+    pub licence: String,
+    pub attribution: String,
+    pub source_url: String,
+    pub audio_url: String,
+    pub duration_ms: u64,
+    pub downloads: u64,
+}
+
+/// One bounded page of sound search results. `commercial_only` echoes the switch
+/// the request asked for, since a provider payload does not carry it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SoundPage {
+    pub source: SoundSource,
+    pub count: u64,
+    pub page: u32,
+    pub page_size: u32,
+    pub has_next: bool,
+    pub commercial_only: bool,
+    pub results: Vec<SoundEntry>,
+}
+
+/// The record a `sounds.save` upsert produced.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedSoundEntry {
+    pub id: u64,
+    pub saved_at_unix_ms: u64,
+    pub attribution: String,
+    pub licence: String,
+}
+
 /// Published snapshot receipt; the PNG itself stays in `SnapshotImage`.
 #[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct SnapshotResult {

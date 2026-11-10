@@ -6,9 +6,9 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::{
-    Allow, finish, fixture_chapters, font_access, media_access, ok, request, runner, seed, submit,
-    with_audio, with_loudness, with_source_audio, with_thumbnails, with_video, with_waveform,
-    with_words, write_png, write_video, write_wav,
+    Allow, finish, fixture_chapters, font_access, media_access, ok, request, runner, seed,
+    sound_access, submit, with_audio, with_loudness, with_source_audio, with_thumbnails,
+    with_video, with_waveform, with_words, write_png, write_video, write_wav,
 };
 use engine::control::{self, Caller, ControlResult};
 use engine::jobs::{JobState, SystemClock};
@@ -155,6 +155,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         }
         let req = request(&s, spec.id, params, "example");
         let fonts = font_access();
+        let sounds = sound_access();
         let result = s
             .control_request(
                 req,
@@ -163,6 +164,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     external: false,
                     policy: &Allow,
                     fonts: Some(&fonts),
+                    sounds: Some(&sounds),
                     media: Some(&media),
                     chapters: Some(&chapters),
                 },
@@ -387,6 +389,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.restore",
             "project.thumbnail",
             "sounds.add_to_timeline",
+            "sounds.save",
+            "sounds.search",
+            "sounds.unsave",
             "timeline.commit_preview",
             "timeline.discard_preview",
             "timeline.preview",

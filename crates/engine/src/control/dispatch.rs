@@ -30,6 +30,11 @@ impl From<ProviderOption> for ProviderView {
 fn font_access<'a>(caller: &Caller<'a>) -> Result<&'a super::FontAccess<'a>> {
     caller.fonts.ok_or(crate::FontError::Unavailable.into())
 }
+fn sound_access<'a>(caller: &Caller<'a>) -> Result<&'a super::SoundAccess<'a>> {
+    caller
+        .sounds
+        .ok_or(EditError::Unsupported("sound library unavailable").into())
+}
 impl Session {
     pub(super) fn run_control(
         &mut self,
@@ -96,6 +101,26 @@ impl Session {
                     paths: Vec::new(),
                 })
             }
+            Command::SoundsSearch {
+                query,
+                page,
+                page_size,
+                commercial_only,
+            } => Ok(ControlResult::SoundSearch {
+                page: (sound_access(caller)?.search)(&super::SoundQuery {
+                    query,
+                    page,
+                    page_size,
+                    commercial_only,
+                })?,
+            }),
+            Command::SoundsSave { sound } => Ok(ControlResult::SoundSaved {
+                saved: (sound_access(caller)?.save)(&sound)?,
+            }),
+            Command::SoundsUnsave { id } => Ok(ControlResult::SoundUnsaved {
+                id,
+                removed: (sound_access(caller)?.unsave)(id)?,
+            }),
             Command::JobStatus { job } => {
                 let mut snapshot =
                     JobView::from(runner.snapshot(job).ok_or(EditError::JobNotRetained)?);

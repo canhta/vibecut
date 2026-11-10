@@ -1,7 +1,9 @@
 # Control
 
 Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
-`snapshot_and_subscribe`, `JobOutput`; `Caller.chapters` lends the process `TextAccess`.
+`Session::control_typed`, `snapshot_and_subscribe`, `JobOutput`; `Caller.fonts` and
+`Caller.sounds` lend the process asset libraries and `Caller.chapters` lends the process
+`TextAccess`.
 
 ## Control admission, revisions and receipts
 
@@ -17,6 +19,11 @@ Effectful requests require `base_rev`; a revision that is not current refuses wi
 [wire](../session/wire/README.md#wire-contract)).
 An invalid candidate returns InvalidParams without consuming IDs, advancing revision or emitting
 a project change; its refusal receipt can be replayed.
+
+`Session::control_typed` is the in-process adapter entry: the same bounds, admission, receipts
+and events as `control_request`, but an execution refusal keeps its typed cause so the adapter
+can map the exit codes its own transport documents. Wire callers use `control_request` and see
+only the closed `ErrorCode`.
 
 Session and project lifecycle creation and disk saves belong to `Session::create`/`Autosave`;
 direct Session edit and control execution return a typed refusal for those commands, and their
@@ -48,8 +55,9 @@ rerunning an uncertain mutation. Inspection and catalog responses are capped at 
 reads refuse instead of truncating or mixing revisions.
 
 Commands that need process state declare it. `fonts.*` needs the attached font store, the media
-generation commands and their display reads need the attached `MediaAccess`, and
-`chapters.generate`, `chapters.export_sidecars` and `fillers.classify` need the lent
+generation commands and their display reads need the attached `MediaAccess`, `sounds.*` needs
+the attached sound library, and `chapters.generate`, `chapters.export_sidecars` and
+`fillers.classify` need the lent
 [`TextAccess`](../providers/README.md#transcript-text-generation) that owns the chosen adapters
 and the human approval. A caller without them refuses `Unsupported` or `Permission` before any
 input, adapter or network work. `MediaAccess::open` / `open_in` create the waveform and thumbnail
@@ -90,6 +98,17 @@ completed job whose bytes were evicted refuses `job_not_retained`.
 - **Process caches.** `MediaAccess` also serves `media.detect_scenes`: it submits against the
   lent artifact cache and publishes the entry when `job_status` first sees the job completed.
   Loudness measurement takes no cache.
+
+## Asset-library commands
+
+`sounds.search`, `sounds.save` and `sounds.unsave` are read-effect commands over the lent
+`SoundAccess`: they never enter project history or advance a revision, and a caller without the
+access refuses `Unsupported`. The access object owns the library root and the provider
+credential, so a command carries neither — no path and no token enters its parameters. It
+chooses remote search when the credential is present and degrades to the saved local library
+without it. All three are `grant = Human`, so an agent transport refuses them and a human-owned
+composition supplies the one library root. `sounds.save` is an idempotent upsert and
+`sounds.unsave` an idempotent removal, so replaying either is safe.
 
 ## Control events and resynchronization
 

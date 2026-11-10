@@ -262,6 +262,7 @@ impl Inbox {
             external: true,
             policy: grants,
             fonts: None,
+            sounds: None,
             media,
             chapters,
         };

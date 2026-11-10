@@ -198,6 +198,8 @@ mod preview;
 
 mod timeline;
 
+mod control;
+
 use search::{hex, retry_after, url};
 
 pub use search::commercial;

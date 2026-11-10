@@ -1,5 +1,6 @@
 //! Owns the leased CLI control session through its final save.
 use super::Context;
+use super::libraries::with_fonts;
 use crate::args::CliError;
 use crate::output::Output;
 use engine::control::FontAccess;
@@ -8,7 +9,6 @@ use engine::control::{
 };
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
 use engine::{Command, EditError, Session, control};
-use libraries::fonts::FontStore;
 use project::{Project, WriterLease};
 use serde_json::{Value, json};
 use std::io;
@@ -45,6 +45,16 @@ pub(crate) fn control(
     allow_overwrite: bool,
     save: bool,
 ) -> Result<Output, CliError> {
+    with_fonts(|fonts| control_with(context, project_path, allow_overwrite, save, fonts))
+}
+
+fn control_with(
+    context: &Context,
+    project_path: PathBuf,
+    allow_overwrite: bool,
+    save: bool,
+    fonts: Option<&FontAccess<'_>>,
+) -> Result<Output, CliError> {
     // One process is one engine Session. The lease is held from load to the
     // final save, so no other writer can interleave during the stream.
     let mut lease = WriterLease::acquire(&project_path)?;
@@ -55,25 +65,6 @@ pub(crate) fn control(
         project_path.clone(),
         project::metadata_path(&project_path)?,
     ])?;
-    // Without a user cache location the font commands refuse; the session still serves edits.
-    let store = FontStore::native().ok();
-    let list = |query: Option<&str>| match &store {
-        Some(store) => store.list(query),
-        None => Err(engine::FontError::Unavailable.into()),
-    };
-    let load = |family: &str| match &store {
-        Some(store) => store.load(family),
-        None => Err(engine::FontError::Unavailable.into()),
-    };
-    let download = |runner: &mut JobRunner, family: &str, accepted: bool| match &store {
-        Some(store) => store
-            .submit_download(runner, family, accepted)
-            .map(|(job, _)| job),
-        None => Err(engine::FontError::Unavailable.into()),
-    };
-    let fonts = store
-        .as_ref()
-        .map(|_| FontAccess::new(&list, &load, &download));
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
@@ -152,7 +143,8 @@ pub(crate) fn control(
             principal: "vibecut-cli",
             external: true,
             policy: &policy,
-            fonts: fonts.as_ref(),
+            fonts,
+            sounds: None,
             media: media.as_ref(),
             chapters: None,
         };

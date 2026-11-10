@@ -22,6 +22,6 @@ pub use results::{ControlResult, JobOutput, JobView, ProviderView};
 pub use views::{
     ChangeKind, ChapterSidecars, DetectionResult, FillerCandidate, FontEntry, FontLoad,
     FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState, LoudnessResult,
-    Measured, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult, SceneCandidate,
-    SnapshotResult,
+    Measured, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult, SavedSoundEntry,
+    SceneCandidate, SnapshotResult, SoundEntry, SoundPage, SoundSource,
 };

@@ -3,16 +3,12 @@ use crate::args::CliError;
 use crate::args::{one_utf8, utf8};
 use crate::output::Output;
 use crate::output::wait_for_job;
-use crate::session::Context;
-use engine::control::FontLoadState;
-use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use libraries::fonts::FontStore;
-use serde_json::json;
+use crate::session::{Context, Lent, cli_runner, run_command, standalone_session, with_fonts};
+use engine::control::{ControlResult, FontLoadState};
+use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::io;
 use std::io::Write as _;
-use std::sync::Arc;
-use std::time::Duration;
 
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli fonts list [--query <text>] | resolve <family> | download <family> --accept-license";
@@ -35,7 +31,10 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
                     }
                 }
             }
-            let entries = FontStore::native()?.list(query.as_deref())?;
+            let entries = match fonts_call(context, "fonts.list", json!({"query": query}))? {
+                ControlResult::Fonts { entries } => entries,
+                _ => return Err(CliError::Rejected("fonts.list returned no listing")),
+            };
             let human = entries
                 .iter()
                 .map(|entry| {
@@ -53,7 +52,10 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
         "resolve" => {
             let family = one_utf8(rest, "usage: vibecut-cli fonts resolve <family>")?;
-            let font = FontStore::native()?.load(&family)?;
+            let font = match fonts_call(context, "fonts.load", json!({"family": family}))? {
+                ControlResult::Font { font } => font,
+                _ => return Err(CliError::Rejected("fonts.load returned no font")),
+            };
             let state = json_name(&font.state);
             let human = match font.state {
                 FontLoadState::Loaded => format!("{}: loaded", font.family),
@@ -83,6 +85,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ))),
     }
 }
+
 fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli fonts download <family> --accept-license";
     let mut args = args.into_iter();
@@ -99,9 +102,11 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             }
         }
     }
-    let store = FontStore::native()?;
-    let entry = store
-        .list(Some(&family))?
+    let entries = match fonts_call(context, "fonts.list", json!({"query": family}))? {
+        ControlResult::Fonts { entries } => entries,
+        _ => return Err(CliError::Rejected("fonts.list returned no listing")),
+    };
+    let entry = entries
         .into_iter()
         .find(|entry| {
             entry.family.eq_ignore_ascii_case(family.trim())
@@ -125,22 +130,7 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             "font download requires --accept-license after reviewing licence and source",
         ));
     }
-    let budget = context.budget()?;
-    let mut runner = JobRunner::new(
-        RunnerConfig {
-            concurrency: [1, 1, 1],
-            queue: 4,
-            retained: 4,
-            network_attempts: 3,
-            backoff: Duration::from_millis(500),
-            progress_interval: Duration::from_millis(100),
-        },
-        budget,
-        Arc::new(SystemClock::default()),
-    )?;
-    let (id, _) = store.submit_download(&mut runner, &family, true)?;
-    wait_for_job(&mut runner, id)?;
-    runner.shutdown();
+    fonts_download_job(context, &entry.family, accepted)?;
     Ok(Output::new(
         json!({"family": entry.family, "status": "downloaded"}),
         format!("downloaded {}", entry.family),
@@ -148,6 +138,56 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         0,
     ))
 }
+
+/// Submit the download on a standalone runner and wait on that same runner so the
+/// job's publication fence survives to completion.
+fn fonts_download_job(context: &Context, family: &str, accepted: bool) -> Result<(), CliError> {
+    let mut session = standalone_session()?;
+    let mut runner = cli_runner(context.budget()?)?;
+    let result = with_fonts(|fonts| {
+        match run_command(
+            &mut session,
+            &mut runner,
+            Lent {
+                fonts,
+                ..Lent::default()
+            },
+            "fonts.download",
+            json!({"family": family, "accept_license": accepted}),
+            true,
+        )? {
+            ControlResult::JobAccepted { job, .. } => {
+                wait_for_job(&mut runner, job)?;
+                Ok(())
+            }
+            _ => Err(CliError::Rejected("fonts.download did not start a job")),
+        }
+    });
+    runner.shutdown();
+    result
+}
+
+/// Run one font command in a standalone session with the per-user store lent.
+fn fonts_call(context: &Context, command: &str, params: Value) -> Result<ControlResult, CliError> {
+    let mut session = standalone_session()?;
+    let mut runner = cli_runner(context.budget()?)?;
+    let result = with_fonts(|fonts| {
+        run_command(
+            &mut session,
+            &mut runner,
+            Lent {
+                fonts,
+                ..Lent::default()
+            },
+            command,
+            params,
+            false,
+        )
+    });
+    runner.shutdown();
+    result
+}
+
 fn json_name<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .ok()

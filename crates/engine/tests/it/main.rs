@@ -68,6 +68,7 @@ pub(crate) mod wire {
                 external: false,
                 policy: &Allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: None,
             },

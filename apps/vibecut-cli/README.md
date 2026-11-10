@@ -22,7 +22,7 @@ Headless `vibecut-cli` process adapter. Parses native command-line arguments, di
 | `output.rs` / `output/` | Shapes results, progress and upload disclosures. | [Output](src/output/README.md) |
 | `session.rs` / `session/` | Holds the leased control session and export admission. | [Session](src/session/README.md) |
 
-Every in-process edit builds a typed `engine::Command`; the wire boundary is the only string-id path: `exec` (id and JSON come from the caller), `control` frames and MCP tool calls.
+Every in-process project edit builds a typed `engine::Command`. Workflow and asset-library adapters send their registry request through the control entry too, so the wire boundary remains the only string-id path: `exec` (id and JSON come from the caller), `control` frames, MCP tool calls and the one-shot registry helper.
 
 ## Entry points
 

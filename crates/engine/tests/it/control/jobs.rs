@@ -34,6 +34,7 @@ fn submit_media(
         external: true,
         policy: &Allow,
         fonts: None,
+        sounds: None,
         media: Some(media),
         chapters: None,
     };
@@ -55,6 +56,7 @@ fn media_status(
         external: true,
         policy: &Allow,
         fonts: None,
+        sounds: None,
         media: Some(media),
         chapters: None,
     };
@@ -270,6 +272,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 external: true,
                 policy: &allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: None,
             },
@@ -293,6 +296,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 external: false,
                 policy: &allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: Some(&chapters),
             },
@@ -312,6 +316,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 external: false,
                 policy: &allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: Some(&chapters),
             },
@@ -356,6 +361,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 external: false,
                 policy: &allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: None,
             },
@@ -396,6 +402,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 external: false,
                 policy: &allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: None,
             },
@@ -590,6 +597,7 @@ fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
     let access = engine::control::FontAccess::new(&list, &load, &download);
     let lent = |policy| Caller {
         fonts: Some(&access),
+        sounds: None,
         ..caller(policy)
     };
     let mut s = session();
@@ -778,6 +786,7 @@ fn scene_detection_returns_candidates_warms_the_cache_and_refuses_bad_input() {
         external: true,
         policy: &Allow,
         fonts: None,
+        sounds: None,
         media,
         chapters: None,
     };
@@ -1077,6 +1086,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         external: true,
         policy: &Allow,
         fonts: None,
+        sounds: None,
         media: Some(&media),
         chapters: None,
     };
@@ -1098,6 +1108,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             external: true,
             policy: &Allow,
             fonts: None,
+            sounds: None,
             media: Some(&media),
             chapters: None,
         };

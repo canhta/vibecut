@@ -125,6 +125,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 external: true,
                 policy: &Allow,
                 fonts: None,
+                sounds: None,
                 media: None,
                 chapters: None,
             },

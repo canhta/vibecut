@@ -129,6 +129,7 @@ fn edit_code(error: &EditError) -> (&'static str, u8) {
         ) => ("setup", 4),
         EditError::Ai(ai::Error::Chapters(_)) => ("rejected", 5),
         EditError::Ai(_) => ("ai", 4),
+        EditError::Sounds(error) => sound_code(error),
         EditError::JobFailure(error) => edit_code(error),
         EditError::Providers(
             providers::Error::ConsentRequired | providers::Error::AutoLanguageUnsupported,

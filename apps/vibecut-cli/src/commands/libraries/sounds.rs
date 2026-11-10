@@ -3,17 +3,21 @@ use crate::args::CliError;
 use crate::args::{parse_i64, parse_u32, parse_u64, utf8};
 use crate::output::tick_json;
 use crate::output::{Output, hex, json_path};
-use crate::session::{Context, Edit, History, WritePolicy, run_leased};
+use crate::session::{
+    Context, Edit, History, Lent, WritePolicy, cli_runner, run_command, run_leased,
+    standalone_session, with_sounds,
+};
+use engine::control::{ControlResult, SoundEntry, SoundSource};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use time::Tick;
 
-/// `sounds` owns no provider logic: it composes engine's direct Freesound client,
-/// durable local library and cached-add service. Without a token search falls back
-/// to saved local sounds; add never touches the network.
-pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
+/// `sounds` owns no provider logic: it composes the lent library and cached-add
+/// service. Search runs remote with a user token and degrades to the saved local
+/// library without one; add never touches the network.
+pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds search|save|unsave|add ...".into())
@@ -21,17 +25,17 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
     let action = utf8(&action, "sounds action")?;
     let rest: Vec<OsString> = args.collect();
     match action {
-        "search" => sounds_search(rest),
-        "save" => sounds_save(rest),
-        "unsave" => sounds_unsave(rest),
+        "search" => sounds_search(context, rest),
+        "save" => sounds_save(context, rest),
+        "unsave" => sounds_unsave(context, rest),
         "add" => sounds_add(rest),
         other => Err(CliError::Usage(format!(
             "unknown sounds action: {other}; expected search, save, unsave or add"
         ))),
     }
 }
-fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
-    use libraries::sounds::{SearchRequest, SearchSource, SoundClient, Token};
+
+fn sounds_search(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let mut library = None;
     let mut page = 1u32;
@@ -64,16 +68,20 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
     }
     let library_path =
         library.ok_or_else(|| CliError::Usage("sounds search requires --library <dir>".into()))?;
-    let library = libraries::sounds::SoundLibrary::open(&library_path)?;
-    let request = SearchRequest {
-        query: query.join(" "),
-        page,
-        page_size,
-        commercial_only,
-    };
-    let page = match Token::from_env()? {
-        Some(token) => SoundClient::ureq(token).search(&request)?,
-        None => library.search_local(&request)?,
+    let query = query.join(" ");
+    let page = match sounds_call(
+        context,
+        &library_path,
+        "sounds.search",
+        json!({
+            "query": query,
+            "page": page,
+            "page_size": page_size,
+            "commercial_only": commercial_only,
+        }),
+    )? {
+        ControlResult::SoundSearch { page } => page,
+        _ => return Err(CliError::Rejected("sounds.search returned no page")),
     };
     let results: Vec<Value> = page
         .results
@@ -93,8 +101,8 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
         })
         .collect();
     let source = match page.source {
-        SearchSource::Remote => "remote",
-        SearchSource::Local => "local",
+        SoundSource::Remote => "remote",
+        SoundSource::Local => "local",
     };
     let value = json!({
         "source": source,
@@ -102,7 +110,7 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
         "page": page.page,
         "page_size": page.page_size,
         "has_next": page.has_next,
-        "commercial_only": commercial_only,
+        "commercial_only": page.commercial_only,
         "results": results,
     });
     let mut human = format!(
@@ -120,8 +128,8 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
     }
     Ok(Output::new(value, human.trim_end().to_owned(), false, 0))
 }
-fn sounds_save(args: Vec<OsString>) -> Result<Output, CliError> {
-    use libraries::sounds::{SoundLibrary, SoundResult};
+
+fn sounds_save(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let library = PathBuf::from(args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds save <library> <sound-json>".into())
@@ -138,23 +146,26 @@ fn sounds_save(args: Vec<OsString>) -> Result<Output, CliError> {
     if raw.len() > 64 * 1024 {
         return Err(CliError::Usage("sound JSON is too large".into()));
     }
-    let sound: SoundResult =
+    let sound: SoundEntry =
         serde_json::from_str(raw).map_err(|_| CliError::Usage("invalid sound JSON".into()))?;
-    let saved = SoundLibrary::open(&library)?.save(&sound)?;
+    let saved = match sounds_call(context, &library, "sounds.save", json!({"sound": sound}))? {
+        ControlResult::SoundSaved { saved } => saved,
+        _ => return Err(CliError::Rejected("sounds.save returned no record")),
+    };
     Ok(Output::new(
         json!({
-            "id": saved.sound.id,
+            "id": saved.id,
             "saved_at_unix_ms": saved.saved_at_unix_ms,
-            "attribution": saved.sound.attribution,
-            "licence": saved.sound.licence,
+            "attribution": saved.attribution,
+            "licence": saved.licence,
         }),
-        format!("saved sound {}", saved.sound.id),
+        format!("saved sound {}", saved.id),
         false,
         0,
     ))
 }
-fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
-    use libraries::sounds::SoundLibrary;
+
+fn sounds_unsave(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let library = PathBuf::from(args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds unsave <library> <id>".into())
@@ -165,10 +176,13 @@ fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
             "usage: vibecut-cli sounds unsave <library> <id>".into(),
         ));
     }
-    let changed = SoundLibrary::open(&library)?.unsave(id)?;
+    let removed = match sounds_call(context, &library, "sounds.unsave", json!({"id": id}))? {
+        ControlResult::SoundUnsaved { removed, .. } => removed,
+        _ => return Err(CliError::Rejected("sounds.unsave returned no record")),
+    };
     Ok(Output::new(
-        json!({"id": id, "removed": changed}),
-        if changed {
+        json!({"id": id, "removed": removed}),
+        if removed {
             format!("unsaved sound {id}")
         } else {
             format!("sound {id} was not saved")
@@ -177,6 +191,7 @@ fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
         0,
     ))
 }
+
 fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
     use libraries::sounds::{SoundLibrary, add_saved};
     let mut args = args.into_iter();
@@ -247,4 +262,30 @@ fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
         false,
         0,
     ))
+}
+
+/// Run one library command through the registry with the opened root and token lent.
+fn sounds_call(
+    context: &Context,
+    library: &Path,
+    command: &str,
+    params: Value,
+) -> Result<ControlResult, CliError> {
+    let mut session = standalone_session()?;
+    let mut runner = cli_runner(context.budget()?)?;
+    let result = with_sounds(library, |sounds| {
+        run_command(
+            &mut session,
+            &mut runner,
+            Lent {
+                sounds: Some(sounds),
+                ..Lent::default()
+            },
+            command,
+            params,
+            false,
+        )
+    });
+    runner.shutdown();
+    result
 }

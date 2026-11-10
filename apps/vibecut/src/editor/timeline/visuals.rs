@@ -199,6 +199,7 @@ impl Media {
                 external: false,
                 policy: &EditorPolicy,
                 fonts: None,
+                sounds: None,
                 media: Some(access.as_ref()),
                 chapters: None,
             },

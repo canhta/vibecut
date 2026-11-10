@@ -587,6 +587,9 @@ pub(crate) fn apply(
         | Command::FontsList { .. }
         | Command::FontsLoad { .. }
         | Command::FontsDownload { .. }
+        | Command::SoundsSave { .. }
+        | Command::SoundsSearch { .. }
+        | Command::SoundsUnsave { .. }
         | Command::ExportSubtitles { .. }
         | Command::BurnSubtitles { .. }
         | Command::DuplicateProject { .. }

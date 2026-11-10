@@ -8,6 +8,7 @@
 
 use engine::control::{
     self, Caller, ControlResult, ErrorCode, FontAccess, Policy, Request, Response, ResponseValue,
+    SoundAccess,
 };
 use engine::jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, Command, Session};
@@ -75,6 +76,7 @@ fn control<'a>(
             external: true,
             policy: &Allow,
             fonts,
+            sounds: None,
             media: None,
             chapters: None,
         },
@@ -93,6 +95,30 @@ fn error(response: Response, code: ErrorCode) {
         matches!(response.value, ResponseValue::Error(found) if found == code),
         "{response:?}"
     );
+}
+fn control_sounds(
+    s: &mut Session,
+    r: &mut JobRunner,
+    sounds: Option<&SoundAccess<'_>>,
+    id: &str,
+    params: Value,
+    key: &str,
+) -> Response {
+    let req = request(s, id, params, key);
+    s.control_request(
+        req,
+        Caller {
+            principal: "test",
+            external: true,
+            policy: &Allow,
+            fonts: None,
+            sounds,
+            media: None,
+            chapters: None,
+        },
+        r,
+    )
+    .unwrap()
 }
 fn finish(r: &mut JobRunner, id: JobId) {
     for _ in 0..20_000 {
@@ -230,6 +256,123 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
         s.revision(),
         revision,
         "font commands are not project edits"
+    );
+    assert!(!s.can_undo());
+}
+
+fn sound(id: u64, downloads: u64) -> libraries::sounds::SoundResult {
+    libraries::sounds::SoundResult {
+        id,
+        name: "Whoosh".into(),
+        author: "Freesound user".into(),
+        licence: "Creative Commons 0".into(),
+        attribution: "Whoosh by Freesound user (Creative Commons 0)".into(),
+        source_url: format!("https://freesound.org/s/{id}/"),
+        audio_url: format!("https://cdn.example/{id}.mp3"),
+        duration_ms: 100,
+        downloads,
+    }
+}
+
+#[test]
+fn sound_commands_return_typed_results_and_never_edit_the_project() {
+    let root = tempfile::tempdir().unwrap();
+    let library = libraries::sounds::SoundLibrary::open(root.path()).unwrap();
+    library.save(&sound(5, 10)).unwrap();
+    let search = |query: &engine::control::SoundQuery| {
+        let request = libraries::sounds::SearchRequest {
+            query: query.query.clone(),
+            page: query.page,
+            page_size: query.page_size,
+            commercial_only: query.commercial_only,
+        };
+        Ok(library
+            .search_local(&request)?
+            .into_control(query.commercial_only))
+    };
+    let save =
+        |entry: &engine::control::SoundEntry| -> engine::Result<engine::control::SavedSoundEntry> {
+            Ok(library
+                .save(&libraries::sounds::SoundResult::from(entry))?
+                .into())
+        };
+    let unsave = |id: u64| -> engine::Result<bool> { Ok(library.unsave(id)?) };
+    let sounds = SoundAccess::new(&search, &save, &unsave);
+    let mut s = session();
+    let mut r = runner();
+    let revision = s.revision();
+
+    let ControlResult::SoundSearch { page } = ok(control_sounds(
+        &mut s,
+        &mut r,
+        Some(&sounds),
+        "sounds.search",
+        json!({"query":"whoosh","page":1,"page_size":15,"commercial_only":true}),
+        "a",
+    )) else {
+        panic!("sounds.search result");
+    };
+    assert_eq!(page.source, engine::control::SoundSource::Local);
+    assert_eq!(page.results.len(), 1);
+    assert_eq!(page.results[0].id, 5);
+    assert!(page.commercial_only);
+
+    let entry = engine::control::SoundEntry::from(sound(6, 20));
+    let ControlResult::SoundSaved { saved } = ok(control_sounds(
+        &mut s,
+        &mut r,
+        Some(&sounds),
+        "sounds.save",
+        json!({"sound": entry.clone()}),
+        "b",
+    )) else {
+        panic!("sounds.save result");
+    };
+    assert_eq!(saved.id, 6);
+    assert_eq!(saved.licence, "Creative Commons 0");
+
+    let ControlResult::SoundUnsaved { id, removed } = ok(control_sounds(
+        &mut s,
+        &mut r,
+        Some(&sounds),
+        "sounds.unsave",
+        json!({"id":6}),
+        "c",
+    )) else {
+        panic!("sounds.unsave result");
+    };
+    assert_eq!((id, removed), (6, true));
+    let ControlResult::SoundUnsaved { removed, .. } = ok(control_sounds(
+        &mut s,
+        &mut r,
+        Some(&sounds),
+        "sounds.unsave",
+        json!({"id":6}),
+        "d",
+    )) else {
+        panic!("sounds.unsave result");
+    };
+    assert!(!removed);
+
+    // A session without the lent library refuses every sound command; none edits.
+    let mut bare = session();
+    for (id, params) in [
+        (
+            "sounds.search",
+            json!({"query":"","page":1,"page_size":15,"commercial_only":true}),
+        ),
+        ("sounds.save", json!({"sound": entry})),
+        ("sounds.unsave", json!({"id":5})),
+    ] {
+        error(
+            control_sounds(&mut bare, &mut r, None, id, params, "e"),
+            ErrorCode::Refused,
+        );
+    }
+    assert_eq!(
+        s.revision(),
+        revision,
+        "sound commands are not project edits"
     );
     assert!(!s.can_undo());
 }

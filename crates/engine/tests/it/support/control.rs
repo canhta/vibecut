@@ -38,6 +38,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         external: true,
         policy,
         fonts: None,
+        sounds: None,
         media: None,
         chapters: None,
     }
@@ -615,6 +616,36 @@ pub(crate) fn fake_fonts_download(
 /// Synthetic capability for registry dispatch; real-store coverage lives in `libraries`.
 pub(crate) fn font_access() -> engine::control::FontAccess<'static> {
     engine::control::FontAccess::new(&fake_fonts_list, &fake_fonts_load, &fake_fonts_download)
+}
+pub(crate) fn fake_sound_search(
+    query: &engine::control::SoundQuery,
+) -> engine::Result<engine::control::SoundPage> {
+    Ok(engine::control::SoundPage {
+        source: engine::control::SoundSource::Local,
+        count: 0,
+        page: query.page,
+        page_size: query.page_size,
+        has_next: false,
+        commercial_only: query.commercial_only,
+        results: Vec::new(),
+    })
+}
+pub(crate) fn fake_sound_save(
+    sound: &engine::control::SoundEntry,
+) -> engine::Result<engine::control::SavedSoundEntry> {
+    Ok(engine::control::SavedSoundEntry {
+        id: sound.id,
+        saved_at_unix_ms: 0,
+        attribution: sound.attribution.clone(),
+        licence: sound.licence.clone(),
+    })
+}
+pub(crate) fn fake_sound_unsave(_: u64) -> engine::Result<bool> {
+    Ok(true)
+}
+/// Synthetic capability for registry dispatch; real-library coverage lives in `libraries`.
+pub(crate) fn sound_access() -> engine::control::SoundAccess<'static> {
+    engine::control::SoundAccess::new(&fake_sound_search, &fake_sound_save, &fake_sound_unsave)
 }
 pub(crate) fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     for _ in 0..10000 {

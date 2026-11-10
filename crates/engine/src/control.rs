@@ -10,7 +10,8 @@ pub use crate::session::wire::{
     MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER,
     MAX_TEXT_BYTES, OutputSpan, PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame,
     PreviewResult, ProviderView, RECEIPT_RESERVATION, Request, Response, ResponseValue, Revision,
-    Snapshot, bounded_json, contract_schema, parse_frame, reference_markdown, registry_hash,
+    SavedSoundEntry, Snapshot, SoundEntry, SoundPage, SoundSource, bounded_json, contract_schema,
+    parse_frame, reference_markdown, registry_hash,
 };
 
 mod admission;
@@ -58,6 +59,40 @@ impl<'a> FontAccess<'a> {
         }
     }
 }
+/// The three sound-library operations the process lends to control commands. The
+/// access object owns the library root and the provider credential, so the command
+/// carries neither; it chooses remote or local search by the credential's presence.
+/// Admission, grants and revision checks run before any operation is invoked.
+#[derive(Clone, Copy)]
+pub struct SoundAccess<'a> {
+    search: &'a dyn Fn(&SoundQuery) -> Result<SoundPage>,
+    save: &'a dyn Fn(&SoundEntry) -> Result<SavedSoundEntry>,
+    unsave: &'a dyn Fn(u64) -> Result<bool>,
+}
+impl<'a> SoundAccess<'a> {
+    /// `search` serves `sounds.search` and degrades to the saved local library when
+    /// the credential is absent, `save` serves `sounds.save`, and `unsave` serves
+    /// `sounds.unsave`, returning whether an entry was removed.
+    pub fn new(
+        search: &'a dyn Fn(&SoundQuery) -> Result<SoundPage>,
+        save: &'a dyn Fn(&SoundEntry) -> Result<SavedSoundEntry>,
+        unsave: &'a dyn Fn(u64) -> Result<bool>,
+    ) -> Self {
+        Self {
+            search,
+            save,
+            unsave,
+        }
+    }
+}
+/// One bounded sound-search request in the form the lent library takes.
+#[derive(Clone, Debug)]
+pub struct SoundQuery {
+    pub query: String,
+    pub page: u32,
+    pub page_size: u32,
+    pub commercial_only: bool,
+}
 pub struct Caller<'a> {
     pub principal: &'a str,
     pub external: bool,
@@ -65,6 +100,9 @@ pub struct Caller<'a> {
     /// The process font operations behind `fonts.list`, `fonts.load` and `fonts.download`.
     /// Without them those commands are refused with [`crate::FontError::Unavailable`].
     pub fonts: Option<&'a FontAccess<'a>>,
+    /// The process sound library behind `sounds.search`, `sounds.save` and
+    /// `sounds.unsave`. Without it those commands refuse `Unsupported`.
+    pub sounds: Option<&'a SoundAccess<'a>>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
     /// One mutex instance is shared by the desktop timeline display and the
@@ -148,6 +186,7 @@ mod tests {
                     external: true,
                     policy: &Allow,
                     fonts: None,
+                    sounds: None,
                     media: None,
                     chapters: None,
                 },

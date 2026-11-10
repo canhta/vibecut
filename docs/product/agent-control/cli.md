@@ -43,7 +43,7 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 
 `fonts list [--query <text>]` lists families whose name contains the text, prefix matches first then alphabetical, from bundled, OS-installed and the curated downloadable catalog, one entry per name (bundled over cached download over system install over uncached download). Each entry has `origin` (`bundled`, `system`, `google`), `state` (`available`, `not_downloaded`), `styles`, and for bundled and catalog families `license` id and `source` URL. `fonts resolve <family>` loads a family as a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid`, `unknown`) and the `effective_family` layout uses; any state but `loaded` exits 4 and layout falls back to Inter. Neither uses the network.
 
-`fonts download <family> --accept-license` is the only network action. It prints family, licence id, source URL and byte count to stderr and refuses with exit 5 without the flag. Files are fetched over HTTPS, verified against pinned size and SHA-256, stored with a licence file and per-file attribution under `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing. A cached family whose files no longer match their pins reports `cache_invalid` until downloaded again. A `control` session reaches the same operations as `fonts.list`, `fonts.load` and `fonts.download`.
+`fonts download <family> --accept-license` is the only network action. It prints family, licence id, source URL and byte count to stderr and refuses with exit 5 without the flag. Files are fetched over HTTPS, verified against pinned size and SHA-256, stored with a licence file and per-file attribution under `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing. A cached family whose files no longer match their pins reports `cache_invalid` until downloaded again. The three commands are adapters over the registry entries `fonts.list`, `fonts.load` and `fonts.download`; a `control` session reaches the same operations with the font store lent by its composition root.
 
 ## Captions
 
@@ -171,9 +171,11 @@ With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"
 
 ## Sounds
 
-`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]` calls Freesound APIv2 when `FREESOUND_API_KEY` is set and otherwise searches saved local sounds. Results are commercial-only by default, sorted by downloads, each with author, licence, attribution, source page and preview URL. The token is never printed, stored or put in a URL. Provider failures use the codes `auth`, `quota`, `rate_limit`, `network`, `setup`; a missing credential degrades to local search.
+`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]` runs the registry command `sounds.search`, calling Freesound APIv2 when `FREESOUND_API_KEY` is set and otherwise searching saved local sounds. Results are commercial-only by default, sorted by downloads, each with author, licence, attribution, source page and preview URL. The CLI opens `--library` and reads the credential in its composition root; neither is a command parameter, and the token is never printed, stored or put in a URL. Provider failures use the codes `auth`, `quota`, `rate_limit`, `network`, `setup`; a missing credential degrades to local search.
 
-`sounds save <library> <sound-json>` and `sounds unsave <library> <id>` update the local library. `sounds add <project> <library> <id> [--start <ticks>]` requires a cached preview and commits one undoable audio item with `sourceType=library`, attribution and licence metadata. Cached previews are keyed by the exact provider URL.
+`sounds save <library> <sound-json>` and `sounds unsave <library> <id>` run `sounds.save` and `sounds.unsave` against the same lent library. `sounds add <project> <library> <id> [--start <ticks>]` requires a cached preview and commits one undoable audio item with `sourceType=library`, attribution and licence metadata. Cached previews are keyed by the exact provider URL.
+
+The three library commands are read-effect registry entries (they never enter project undo) and declare `grant = Human`, so an agent transport cannot search, save or unsave the human's library.
 
 ## Clip suggestions
 

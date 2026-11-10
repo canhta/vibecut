@@ -1,5 +1,5 @@
 //! Verifies native sounds command behaviour.
-use crate::cli::process::{cli, os};
+use crate::cli::process::{cli, error_json, os};
 use serde_json::{Value, json};
 
 fn wav_fixture() -> Vec<u8> {
@@ -69,6 +69,20 @@ fn sounds_cli_saves_searches_and_adds_a_cached_sound_offline() {
         value["results"][0]["attribution"],
         "Whoosh by Freesound user (Creative Commons 0)"
     );
+    let human = cli(&[
+        os("sounds"),
+        os("search"),
+        os("--library"),
+        library.as_os_str(),
+        os("Whoosh"),
+    ]);
+    assert_eq!(human.status.code(), Some(0), "{human:?}");
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.starts_with("1 result(s) from local; page 1 of size 15"),
+        "{text}"
+    );
+    assert!(text.contains("Whoosh"), "{text}");
 
     let output = cli(&[
         os("sounds"),
@@ -166,4 +180,16 @@ fn sounds_cli_refuses_missing_cache_and_invalid_arguments() {
         .code(),
         Some(2)
     );
+    // Provider/parameter refusals keep the sound-family code through the registry.
+    let invalid = cli(&[
+        os("sounds"),
+        os("search"),
+        os("--library"),
+        library.as_os_str(),
+        os("--page"),
+        os("0"),
+        os("--json"),
+    ]);
+    assert_eq!(invalid.status.code(), Some(5), "{invalid:?}");
+    assert_eq!(error_json(&invalid)["error"]["code"], "sounds");
 }
