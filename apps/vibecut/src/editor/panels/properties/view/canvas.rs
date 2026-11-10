@@ -2,9 +2,9 @@
 use super::Panel;
 use crate::i18n;
 use crate::{
-    color_picker::palette,
     editor::properties::{Action, ColorTarget, Id, Text, egui, theme},
     kit,
+    services::color_picker::palette,
 };
 use project::AspectPreset;
 

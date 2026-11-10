@@ -7,3 +7,6 @@ The one read-only context and the one write context every editor area receives.
 `Desk` is lent to one area for one frame. Its entries push the selection, apply typed engine commands, report the failure, resync the preview once per committed change and record preference edits in the app's own history; `request` queues a cross-area intention the frame drains after the area returns. `View` is the read-only projection a workflow reads while it holds the desk: session, selection, preferences and playhead.
 
 `bench` mounts one area alone in an offscreen harness for area tests. Layers and import direction: [structure](../../../../../docs/engineering/structure.md).
+
+The write context can adopt a fully validated preference candidate after its related
+project command succeeds, without making an independent preference-history entry.

@@ -147,7 +147,7 @@ impl State {
         actions.extend(self.end_scrub(false));
         let color = target.color(project)?;
         self.color_base = Some(project.clone());
-        let mut picker = crate::color_picker::Picker::new(target, color);
+        let mut picker = crate::services::color_picker::Picker::new(color);
         // Hang off the panel's left edge, below its tab strip, unless a row anchors it.
         picker.anchor = anchor.or_else(|| {
             self.area.map(|panel| {
@@ -157,7 +157,7 @@ impl State {
                 )
             })
         });
-        self.picker = Some(picker);
+        self.picker = Some(super::color_picker::Draft { target, picker });
         Ok(actions)
     }
 

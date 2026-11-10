@@ -72,17 +72,6 @@ impl<A, M> Scene<A, M> {
 }
 
 impl<A: 'static, M: 'static> Bench<A, M> {
-    /// Mount an area the caller keeps beside the editor.
-    pub(crate) fn new(
-        editor: Editor,
-        area: A,
-        show: fn(&mut A, &Context<'_>, &mut egui::Ui) -> Vec<M>,
-        route: fn(&mut Desk<'_>, Vec<M>),
-        size: egui::Vec2,
-    ) -> Self {
-        Self::mount(editor, Some(area), None, show, route, size)
-    }
-
     /// Mount an area the editor's own facade also writes between frames.
     pub(crate) fn hosted(
         editor: Editor,
@@ -162,8 +151,9 @@ mod tests {
     use crate::editor::{BTreeSet, Editor, ItemId, egui, properties};
     use crate::preferences::Preferences;
     use crate::services::playback::{Files, Playback};
+    use egui_kittest::kittest::{By, Queryable};
     use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, TrackPlacement};
-    use project::{ItemParams, Project, ProjectId, TrackKind};
+    use project::{Color, ItemParams, Project, ProjectId, TrackKind};
     use std::sync::Arc;
     use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
@@ -215,7 +205,8 @@ mod tests {
         let mut editor = Editor::new(session, playback, Preferences::default());
         editor.selection = BTreeSet::from([item]);
         editor
-            .set_preference(
+            .preferences
+            .set(
                 "properties_tabs",
                 serde_json::json!({"graphic": "blending"}),
             )
@@ -224,9 +215,10 @@ mod tests {
     }
 
     fn bench(editor: Editor) -> Bench<properties::State, properties::Action> {
-        Bench::new(
+        Bench::hosted(
             editor,
-            properties::State::default(),
+            |editor| std::mem::take(&mut editor.properties),
+            |editor, state| editor.properties = state,
             properties::show,
             properties::apply,
             egui::vec2(360.0, 900.0),
@@ -287,5 +279,120 @@ mod tests {
             "a refused edit leaves the preview alone"
         );
         assert_eq!(keyframes(bench.editor(), item), 0);
+    }
+
+    #[test]
+    fn colour_commits_publish_project_and_recents_together() {
+        for (full_preferences, locked) in [(true, false), (false, true), (false, false)] {
+            let (mut editor, item) = audio_editor();
+            if full_preferences {
+                let preferences = &mut editor.preferences;
+                for index in 0..64 {
+                    preferences.windows.insert(
+                        format!("{index:064}"),
+                        crate::preferences::WindowGeometry {
+                            size: [12345.678, 12345.678],
+                            position: Some([-12345.678, -23_456.79]),
+                            maximized: false,
+                        },
+                    );
+                }
+                for index in 0..128 {
+                    let mut next = preferences.clone();
+                    next.sections.insert(format!("section.{index:032}"), false);
+                    next.sections.insert("x".into(), false);
+                    if serde_json::to_vec(&next).unwrap().len() > 16384 {
+                        break;
+                    }
+                    next.sections.remove("x");
+                    *preferences = next;
+                }
+                let base = preferences.clone();
+                for length in 1..=64 {
+                    *preferences = base.clone();
+                    preferences.sections.insert("x".repeat(length), false);
+                    if serde_json::to_vec(&preferences).unwrap().len() == 16384 {
+                        break;
+                    }
+                }
+                assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), 16384);
+                preferences.validate().unwrap();
+            }
+            if locked {
+                let track = editor
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .find(|track| track.items.iter().any(|candidate| candidate.id == item))
+                    .unwrap()
+                    .id;
+                editor
+                    .session
+                    .apply(Command::SetTrackFlags {
+                        track,
+                        hidden: false,
+                        muted: false,
+                        locked: true,
+                    })
+                    .unwrap();
+            }
+            editor
+                .open_color_picker(properties::ColorTarget::GraphicFill(item))
+                .unwrap();
+            let mut bench = bench(editor);
+            let before = bench.editor().session.project().clone();
+            let preferences = bench.editor().preferences.clone();
+            let history = bench.editor().session.history_len();
+            let color = Color([17, 34, 51, 68]);
+            let harness = bench.harness_mut();
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some("color.hex")))
+                .focus();
+            harness.run_steps(1);
+            harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            harness.event(egui::Event::Text("#11223344".into()));
+            harness.key_press(egui::Key::Enter);
+            harness.run_steps(3);
+            if full_preferences || locked {
+                assert_eq!(bench.editor().session.project(), &before);
+                assert_eq!(bench.editor().session.history_len(), history);
+                assert_eq!(bench.editor().preferences, preferences);
+                assert!(bench.editor().error.is_some());
+            } else {
+                assert_ne!(bench.editor().session.project(), &before);
+                assert_eq!(bench.editor().session.history_len().0, history.0 + 1);
+                assert_eq!(bench.editor().preferences.recent_colors, [color]);
+                bench.editor_mut().activate("edit.undo").unwrap();
+                assert_eq!(
+                    bench.editor().session.project(),
+                    &before,
+                    "recent colours must not insert a separate preference undo step"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn refused_header_activation_keeps_details_then_accepts_a_retry() {
+        let (mut editor, _) = audio_editor();
+        editor.activate("inspector.details").unwrap();
+        let mut bench = bench(editor);
+        let before = bench.editor().session.project().clone();
+        let history = bench.editor().session.history_len();
+        // An agent can leave a stale selected ID before the next panel input.
+        bench.editor_mut().selection = BTreeSet::from([ItemId(u64::MAX)]);
+        bench.click("inspector.project");
+        assert!(bench.editor().properties.details());
+        assert!(bench.editor().error.is_some());
+        assert_eq!(bench.editor().session.project(), &before);
+        assert_eq!(bench.editor().session.history_len(), history);
+        bench.editor_mut().selection.clear();
+        bench.click("inspector.project");
+        assert!(!bench.editor().properties.details());
+        bench.click("inspector.details");
+        assert!(bench.editor().properties.details());
     }
 }

@@ -536,10 +536,10 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
 fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     #[cfg(not(target_os = "macos"))]
     {
-        let mut native = vibecut::color_picker::NativeEyedropper::default();
+        let mut native = vibecut::services::color_picker::NativeEyedropper::default();
         assert_eq!(
             native.state,
-            vibecut::color_picker::EyedropperState::Unavailable
+            vibecut::services::color_picker::EyedropperState::Unavailable
         );
         assert!(matches!(
             native.start(),
@@ -585,12 +585,12 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     );
     harness
         .state_mut()
-        .set_eyedropper(vibecut::color_picker::NativeEyedropper::unavailable())
+        .set_eyedropper(vibecut::services::color_picker::NativeEyedropper::unavailable())
         .unwrap();
     click(&mut harness, "color.eyedropper");
     assert_eq!(
         harness.state().inspect().unwrap().eyedropper,
-        Some(vibecut::color_picker::EyedropperState::Unavailable)
+        Some(vibecut::services::color_picker::EyedropperState::Unavailable)
     );
     assert!(has_widget(&harness, "color.eyedropper.status"));
     let dir = tempfile::tempdir().unwrap();
@@ -608,7 +608,7 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-45-colour.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();
-    let swatch = vibecut::color_picker::palette::solid(5).unwrap();
+    let swatch = vibecut::services::color_picker::palette::solid(5).unwrap();
     click(&mut harness, "color.swatch.5");
     assert!(matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==swatch));
     click(&mut harness, "color.recent.1");

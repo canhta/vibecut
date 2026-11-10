@@ -1739,8 +1739,8 @@ fn inspector_color(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
             .first()
             .copied()
             .ok_or("colour audit item")?;
-        editor.open_color_picker(vibecut::color_picker::ColorTarget::GraphicFill(item))?;
-        editor.set_eyedropper(vibecut::color_picker::NativeEyedropper::unavailable())?;
+        editor.open_color_picker(vibecut::ColorTarget::GraphicFill(item))?;
+        editor.set_eyedropper(vibecut::services::color_picker::NativeEyedropper::unavailable())?;
     }
     app.run_steps(3);
     Ok(app)

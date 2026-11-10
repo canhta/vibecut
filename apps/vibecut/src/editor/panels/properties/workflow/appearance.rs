@@ -33,17 +33,19 @@ impl State {
         command: engine::Command,
         recent: Vec<project::Color>,
     ) -> Result<()> {
+        let mut preferences = desk.view().preferences.clone();
+        preferences.set("recent_colors", serde_json::to_value(recent)?)?;
         desk.end_merge();
         if let Err(error) = desk.apply_result(command, false) {
             // The engine refused: show the committed project again.
             desk.sync();
             return Err(error);
         }
-        if let Some(picker) = self.picker.as_mut() {
-            picker.original = picker.color;
+        if let Some(draft) = self.picker.as_mut() {
+            draft.picker.original = draft.picker.color;
         }
         self.color_base = Some(desk.view().session.project().clone());
-        desk.store_preference("recent_colors", serde_json::to_value(recent)?)?;
+        desk.adopt_preferences(preferences);
         Ok(())
     }
 }

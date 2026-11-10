@@ -256,10 +256,7 @@ fn open_picker(
     color: project::Color,
     swatch: Rect,
 ) {
-    let mut picker = crate::color_picker::Picker::new(
-        crate::color_picker::ColorTarget::Bookmark(open.bookmark),
-        color,
-    );
+    let mut picker = crate::services::color_picker::Picker::new(color);
     picker.anchor = Some(egui::pos2(
         swatch.right(),
         swatch.bottom() + theme::space::XS,

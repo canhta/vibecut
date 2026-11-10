@@ -1,13 +1,13 @@
 //! Stores the shared editor presentation context.
 
 use super::panels::player::{PreviewGuide, TextCaret};
-use super::properties::color_picker::EyedropperState;
 use super::{
     Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, Icon, ImportFailure,
     ImportQueue, ItemId, KeybindingIssue, MediaSort, MediaView, PathBuf, Playback, Preferences,
     SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason, WidgetState, actions, egui,
     theme,
 };
+use crate::services::color_picker::EyedropperState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AssetState {

@@ -29,7 +29,6 @@ pub use widgets::WidgetState;
 mod timing;
 use timing::{display_short_time, display_time};
 
-use crate::editor::panels::properties::color_picker::ColorTarget;
 use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes};
 use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
@@ -56,6 +55,7 @@ use engine::{
 };
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
+use properties::ColorTarget;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -135,7 +135,7 @@ impl Editor {
     /// Inject the native capability boundary for an open picker.
     pub fn set_eyedropper(
         &mut self,
-        sampler: properties::color_picker::NativeEyedropper,
+        sampler: crate::services::color_picker::NativeEyedropper,
     ) -> Result<()> {
         self.properties.set_eyedropper(sampler)
     }

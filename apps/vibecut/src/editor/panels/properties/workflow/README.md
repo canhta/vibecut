@@ -9,3 +9,8 @@ shared read view and writes only through the shared desk, so no area method reac
 `Editor` fields; `apply` drains the area's actions after the frame has released its read
 borrow and lends the area its own state apart from the editor. Every project change goes
 through the shared write context and therefore through an engine command.
+
+Refused header activation preserves the current Project/Details choice and does not
+stop later requests in the routing pass. Colour commits validate the full recent-colour
+preference candidate before publication; a refused candidate changes neither project
+history nor the remembered colour.

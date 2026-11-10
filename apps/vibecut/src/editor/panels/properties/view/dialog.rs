@@ -5,9 +5,10 @@ use crate::editor::properties::{Action, egui};
 impl Panel<'_, '_> {
     /// Draw the open picker and turn its events into previews and commits.
     pub(super) fn picker_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut picker) = self.state.picker.take() else {
+        let Some(mut draft) = self.state.picker.take() else {
             return;
         };
+        let picker = &mut draft.picker;
         let event = picker.ui(ctx, self.cx.locale, &self.cx.preferences.recent_colors);
         for (id, response) in event.widgets {
             self.remember(id, &response);
@@ -17,7 +18,7 @@ impl Panel<'_, '_> {
             self.actions.push(Action::SyncPreview);
             return;
         }
-        match picker
+        match draft
             .target
             .command(self.cx.session.project(), picker.color)
         {
@@ -37,6 +38,6 @@ impl Panel<'_, '_> {
                 self.actions.push(Action::SyncPreview);
             }
         }
-        self.state.picker = Some(picker);
+        self.state.picker = Some(draft);
     }
 }

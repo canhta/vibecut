@@ -6,7 +6,7 @@ A lane is 20 px high, one per nonempty animation channel (audio always offers vo
 
 ## Markers
 
-The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared colour window plus a reset to the engine default, a duration field in seconds stepped by 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo step; drafts stay in the panel and the project changes only when the frame runs the command. Escape closes the colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
+The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared colour window plus a reset to the engine default, a duration field in seconds stepped by 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo step; drafts stay in the panel and the project changes only when the frame runs the command. The target-free [colour service](../../services/color_picker/README.md) supplies the controls; the marker target and commit action stay in timeline. Escape closes the colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
 
 ## Track controls
 

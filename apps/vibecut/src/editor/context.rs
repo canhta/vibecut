@@ -374,6 +374,15 @@ impl<'a> Desk<'a> {
         Ok(())
     }
 
+    /// Adopt a fully validated preference candidate after its project edit
+    /// succeeds, without adding an app-history entry.
+    pub(in crate::editor) fn adopt_preferences(
+        &mut self,
+        preferences: crate::preferences::Preferences,
+    ) {
+        self.editor.preferences = preferences;
+    }
+
     /// Close any open merge so the next command is one undo step.
     pub(in crate::editor) fn end_merge(&mut self) {
         self.editor.session.end_merge();

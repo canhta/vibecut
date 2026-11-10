@@ -1,11 +1,11 @@
 //! Holds the timeline's own presentation state and viewport arithmetic.
 
-use crate::color_picker::Picker;
 use crate::editor::timeline::{
     Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, KeyframeSelection, MAX_ZOOM,
     MIN_ZOOM_FLOOR, Rect, Rounding, SourceRange, Tick, TrackId, egui,
     workflow::{anchored_scroll, fit_zoom},
 };
+use crate::services::color_picker::Picker;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::editor::timeline) enum DragMode {

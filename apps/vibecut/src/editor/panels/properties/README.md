@@ -1,14 +1,18 @@
 # Properties
 
 Interface: `State`, `Action`, `Widget`, `show`, `apply`, `element_kind`, `ElementKind`,
-`PropertiesTab`, `SharedField`, `shared_fields`, `color_picker`, `font_picker`,
+`PropertiesTab`, `SharedField`, `shared_fields`, `ColorTarget`, `font_picker`,
 `font_picker::State`.
 
 The area owns its drafts, scrub gestures, picker and popovers, its font catalog
 backend, the effect reorder draft and its gesture contracts, and returns `Action`
 values the frame routes. A workflow reads the editor through the shared read view and
 writes through the shared desk; every project change goes through an engine command and
-the area never writes project JSON.
+the area never writes project JSON. Colour targets and their draft-to-command mapping
+belong here; the target-free controls come from the shared
+[colour service](../../../services/color_picker/README.md). A colour commit validates
+the complete preference candidate before ending coalescing or publishing the project
+edit and adopts it only after that edit succeeds, without a preference undo step.
 
 
 Animatable rows (Transform scale, position and rotation, Blending opacity, Audio

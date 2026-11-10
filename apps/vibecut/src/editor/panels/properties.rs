@@ -1,6 +1,6 @@
 //! Owns the properties area: its presentation state, the whole-panel `show`
 //! interface and the actions the frame routes on its behalf.
-pub mod color_picker;
+mod color_picker;
 pub mod font_picker;
 mod gesture;
 mod mask_picker;
@@ -11,6 +11,7 @@ mod state;
 mod view;
 mod workflow;
 
+pub use color_picker::ColorTarget;
 pub use registry::{ElementKind, PropertiesTab};
 pub use shared_field::{SharedField, shared_fields};
 pub(in crate::editor) use state::{Action, Widget, element_kind};
@@ -20,8 +21,8 @@ pub(in crate::editor) use workflow::{
 };
 
 use crate::editor::{
-    Arc, BTreeSet, BUTTON_ICON, Color32, ColorTarget, Context, Error, Icon, Id, ItemId, ItemParams,
-    Rect, Result, SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
+    Arc, BTreeSet, BUTTON_ICON, Color32, Context, Error, Icon, Id, ItemId, ItemParams, Rect,
+    Result, SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
     AUDIO_GAIN_SCRUB, EffectReorder, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
@@ -45,7 +46,7 @@ pub(in crate::editor) struct State {
     details: bool,
     scrub: Option<ScrubDrag>,
     reorder: Option<gesture::EffectReorder>,
-    picker: Option<color_picker::Picker>,
+    picker: Option<color_picker::Draft>,
     /// Project the open picker previews against; a different project closes it.
     color_base: Option<Arc<project::Project>>,
     /// Font picker popover, its catalog and download.
@@ -109,22 +110,25 @@ impl State {
 
     /// The open colour draft, for the automation read.
     pub(in crate::editor) fn color_preview(&self) -> Option<project::Color> {
-        self.picker.as_ref().map(|picker| picker.color)
+        self.picker.as_ref().map(|draft| draft.picker.color)
     }
 
     /// The armed screen sampler's state, for the automation read.
-    pub(in crate::editor) fn eyedropper(&self) -> Option<color_picker::EyedropperState> {
-        self.picker.as_ref().map(|picker| picker.native.state)
+    pub(in crate::editor) fn eyedropper(
+        &self,
+    ) -> Option<crate::services::color_picker::EyedropperState> {
+        self.picker.as_ref().map(|draft| draft.picker.native.state)
     }
 
     /// Inject the native capability boundary for an open picker.
     pub(in crate::editor) fn set_eyedropper(
         &mut self,
-        sampler: color_picker::NativeEyedropper,
+        sampler: crate::services::color_picker::NativeEyedropper,
     ) -> Result<()> {
         self.picker
             .as_mut()
             .ok_or(Error::Invalid("closed colour picker"))?
+            .picker
             .native = sampler;
         Ok(())
     }

@@ -12,10 +12,9 @@ use engine::{ByteBudget, Command, Session};
 use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::sync::Arc;
 use vibecut::{
-    Editor,
-    color_picker::palette,
-    egui,
+    Editor, egui,
     preferences::Preferences,
+    services::color_picker::palette,
     services::playback::{Files, Playback},
 };
 

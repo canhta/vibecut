@@ -31,10 +31,11 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
     for action in actions {
         let result = match action {
             Action::Activate(id) => {
-                desk.act(id);
                 // Activation runs on the editor, which holds a placeholder while
-                // this pass carries the area state; keep the switch it wrote.
-                state.set_details(desk.editor().properties.details());
+                // this pass carries the area state. A refusal did not write it.
+                if desk.act(id) {
+                    state.set_details(desk.editor().properties.details());
+                }
                 Ok(())
             }
             Action::SetField { item, field, value } => {
