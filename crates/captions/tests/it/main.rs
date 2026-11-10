@@ -3,5 +3,6 @@
 mod ass;
 mod filler;
 mod interchange;
+mod language;
 mod segmentation;
 mod timing;

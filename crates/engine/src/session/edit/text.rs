@@ -349,7 +349,7 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
             let Some(value) = cue.texts.get(&language) else {
                 continue;
             };
-            if !text.is_empty() && !value.text.as_str().is_empty() {
+            if !text.is_empty() && !value.text.as_str().is_empty() && language.joins_with_space() {
                 text.push(' ');
             }
             text.push_str(value.text.as_str());

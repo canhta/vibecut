@@ -5344,6 +5344,8 @@ fn merge_project(edited: bool, locked: bool) -> Session {
         merge_cue("câu-3", 900, 1200, "năm", &[(900, 1000)], false),
     ];
     let english = captions::LanguageTag::parse("en").unwrap();
+    let chinese = captions::LanguageTag::parse("zh").unwrap();
+    let japanese = captions::LanguageTag::parse("ja").unwrap();
     for (index, cue) in cues.iter_mut().enumerate() {
         let text = match index {
             0 => "one two",
@@ -5356,6 +5358,32 @@ fn merge_project(edited: bool, locked: bool) -> Session {
                 text: text.into(),
                 edited: index == 1,
                 translation_ref: Some("translation/1".into()),
+            },
+        );
+        let text = match index {
+            0 => "你好",
+            1 => "世界",
+            _ => "第三",
+        };
+        cue.texts.insert(
+            chinese.clone(),
+            captions::CueText {
+                text: text.into(),
+                edited: false,
+                translation_ref: None,
+            },
+        );
+        let text = match index {
+            0 => "こんにちは",
+            1 => "世界",
+            _ => "三",
+        };
+        cue.texts.insert(
+            japanese.clone(),
+            captions::CueText {
+                text: text.into(),
+                edited: false,
+                translation_ref: None,
             },
         );
     }
@@ -5787,6 +5815,37 @@ fn transcript_merge_joins_adjacent_cues_as_one_undo_step() {
             .as_str(),
         "Một hai ba bốn năm"
     );
+}
+
+#[test]
+fn transcript_merge_joins_text_by_language_word_spacing() {
+    let mut s = merge_project(false, false);
+    s.execute(
+        "transcript.merge_cues",
+        json!({"cue_ids":[{"item":4,"cue":"câu-2"},{"item":4,"cue":"câu-1"}]}),
+    )
+    .unwrap();
+    // The merged cue carries several scripts; each language keeps its own rule.
+    let merged = s
+        .transcript()
+        .unwrap()
+        .cues
+        .first()
+        .cloned()
+        .expect("one merged cue");
+    for (language, expected) in [
+        ("vi", "Một hai ba bốn"),
+        ("en", "one two three four"),
+        ("zh", "你好世界"),
+        ("ja", "こんにちは世界"),
+    ] {
+        let tag = captions::LanguageTag::parse(language).unwrap();
+        assert_eq!(
+            merged.texts.get(&tag).map(|text| text.text.as_str()),
+            Some(expected),
+            "{language} join"
+        );
+    }
 }
 
 #[test]
