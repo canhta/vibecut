@@ -32,6 +32,8 @@ Built-in kinds: `blur` has `intensity` 0–100 (default 15, animatable). `color_
 
 `EffectInstance::set_scalar` validates a registered parameter id and value before replacing the parameter; unknown ids and invalid values keep the previous parameter.
 
+The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector` so render's tests prove the content-time and preview-quality seams through the real evaluation path. It is off in every production build; nothing else in this crate refers to it.
+
 ## Video transitions
 
 `Timeline.transitions` owns `Transition` entities with a project-wide unique `TransitionId`, track, outgoing and incoming item IDs, kind, output start, duration and `TransitionAlignment` (start, center, end, custom). The two items must be adjacent and touching on the same video track and contain video or generated solid overlays. `TRANSITION_DEFINITIONS` is the admitted catalog; each entry carries the kind id, our name, family, browser shelf and typed parameter definitions. It currently holds cross dissolve, dip to black, dip to white and dip to colour, all Dissolve family on the Basic shelf. Unknown kinds return `UnsupportedTransition` with a bounded kind name, including during file ingestion.

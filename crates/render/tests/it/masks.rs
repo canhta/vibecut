@@ -178,6 +178,9 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
     }
     struct WrongDimensions;
     impl render::effects::EffectCompositor for WrongDimensions {
+        fn supports(&self, _: &str) -> bool {
+            true
+        }
         fn apply(
             &self,
             _: &Image,

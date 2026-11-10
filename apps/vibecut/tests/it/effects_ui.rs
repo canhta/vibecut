@@ -710,6 +710,9 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
 
 struct BlockingPreview;
 impl render::effects::EffectCompositor for BlockingPreview {
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
     fn apply(
         &self,
         _: &render::Image,
@@ -725,6 +728,9 @@ impl render::effects::EffectCompositor for BlockingPreview {
 }
 struct FailingPreview;
 impl render::effects::EffectCompositor for FailingPreview {
+    fn supports(&self, _: &str) -> bool {
+        true
+    }
     fn apply(
         &self,
         _: &render::Image,
