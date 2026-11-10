@@ -4565,16 +4565,17 @@ fn ass_import() -> Command {
         start: Tick(100),
         track: None,
         name: Some("Imported captions".into()),
+        styles: vec![ass_style()],
         cues: vec![
             captions::AssCue {
                 range: range(0, 254_016_000_000),
                 text: "Hello".into(),
-                style: ass_style(),
+                style: captions::CueStyleId(0),
             },
             captions::AssCue {
                 range: range(508_032_000_000, 762_048_000_000),
                 text: "World".into(),
-                style: ass_style(),
+                style: captions::CueStyleId(0),
             },
         ],
     }
@@ -4704,6 +4705,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
         start,
         track,
         name,
+        styles,
         cues,
     } = command
     else {
@@ -4715,6 +4717,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
         "start": start.0,
         "track": track,
         "name": name,
+        "styles": serde_json::to_value(&styles).unwrap(),
         "cues": serde_json::to_value(&cues).unwrap(),
     });
     let before = s.project().clone();
@@ -4722,12 +4725,24 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     assert!(outcome.changed);
     assert_eq!(s.project().data().scene().timeline.track_count(), 4);
 
-    let mut bad = params;
+    let mut bad = params.clone();
     bad["cues"][0]["range"]["end"] = json!(0);
     let after = s.project().clone();
     assert!(crate::wire::run(&mut s, "captions.import", bad).is_err());
     assert_eq!(s.project(), &after);
     assert_ne!(after, before);
+
+    // A cue that names a style outside the table, or a style the model would
+    // refuse, leaves the project untouched.
+    let mut dangling = params.clone();
+    dangling["cues"][0]["style"] = json!(7);
+    let after = s.project().clone();
+    assert!(s.execute("captions.import", dangling).is_err());
+    assert_eq!(s.project(), &after);
+    let mut invalid = params.clone();
+    invalid["styles"][0]["font_size_ratio"] = json!(0.0);
+    assert!(s.execute("captions.import", invalid).is_err());
+    assert_eq!(s.project(), &after);
 
     // Hostile placement, count and style bursts are refused whole, never a
     // panic or an unsaveable project.
@@ -4746,7 +4761,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
             .map(|index| captions::AssCue {
                 range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
                 text: format!("line {index}").into(),
-                style: ass_style(),
+                style: captions::CueStyleId(0),
             })
             .collect();
         Command::ImportCaptions {
@@ -4755,6 +4770,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
             start,
             track,
             name,
+            styles: vec![ass_style()],
             cues,
         }
     };
@@ -4769,14 +4785,17 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
         else {
             panic!("expected import command")
         };
+        let styles: Vec<_> = (0..count)
+            .map(|index| captions::CueStyle {
+                font_size_ratio: 0.001 + index as f32 * 0.0001,
+                ..ass_style()
+            })
+            .collect();
         let cues = (0..count)
             .map(|index| captions::AssCue {
                 range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
                 text: format!("line {index}").into(),
-                style: captions::CueStyle {
-                    font_size_ratio: 0.001 + index as f32 * 0.0001,
-                    ..ass_style()
-                },
+                style: captions::CueStyleId(index as u16),
             })
             .collect();
         Command::ImportCaptions {
@@ -4785,6 +4804,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
             start: Tick(0),
             track,
             name,
+            styles,
             cues,
         }
     };

@@ -16,6 +16,7 @@ pub(super) fn import_captions(
     start: Tick,
     track: Option<TrackId>,
     name: Option<captions::NfcText>,
+    styles: Vec<captions::CueStyle>,
     cues: Vec<captions::AssCue>,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
@@ -25,21 +26,26 @@ pub(super) fn import_captions(
     if cues.is_empty() || cues.len() > captions::ass::MAX_ASS_CUES {
         return Err(EditError::Limit);
     }
+    if styles.iter().any(|style| !style.is_valid()) {
+        return Err(EditError::Invalid("imported cue style"));
+    }
+    if styles.len() > captions::MAX_CUE_STYLES {
+        return Err(EditError::Limit);
+    }
     if start < Tick::ZERO {
         return Err(EditError::Invalid("negative output start"));
     }
     let asset_id = asset.id();
     let mut end = Tick::ZERO;
     let mut cue_track = captions::CueTrack {
-        styles: Vec::new(),
+        styles,
         cues: Vec::with_capacity(cues.len()),
     };
     for (index, cue) in cues.into_iter().enumerate() {
-        if !cue.style.is_valid() || cue.range.start() < Tick::ZERO {
+        if usize::from(cue.style.0) >= cue_track.styles.len() || cue.range.start() < Tick::ZERO {
             return Err(EditError::Invalid("imported cue style or timing"));
         }
         end = end.max(cue.range.end());
-        let style = cue_track.intern_style(cue.style).ok_or(EditError::Limit)?;
         let id = format!("ass-{}", index.saturating_add(1)).into();
         cue_track.cues.push(captions::Cue {
             id,
@@ -54,7 +60,7 @@ pub(super) fn import_captions(
                 },
             )]),
             word_ranges: Vec::new(),
-            style: Some(style),
+            style: Some(cue.style),
         });
     }
     let source_range = SourceRange::new(Tick::ZERO, end)?;
@@ -139,6 +145,7 @@ pub(super) fn execute_import_captions(
     start: Tick,
     track: Option<TrackId>,
     name: Option<captions::NfcText>,
+    styles: Vec<captions::CueStyle>,
     cues: Vec<captions::AssCue>,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
@@ -152,6 +159,7 @@ pub(super) fn execute_import_captions(
         start,
         track,
         name,
+        styles,
         cues,
         created,
         next,

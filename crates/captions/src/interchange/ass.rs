@@ -7,7 +7,7 @@
 
 mod style;
 
-use crate::{CueStyle, Error, NfcText, WarningKind};
+use crate::{CueStyle, CueStyleId, CueTrack, Error, NfcText, WarningKind};
 use style::{
     StyleRecord, alignment, color, default_style, legacy_alignment, map_style, ratio, rgba,
 };
@@ -81,22 +81,25 @@ impl AssWarningKind {
     }
 }
 
-/// One parsed dialogue event.
+/// One parsed dialogue event and the id of its style in [`AssImport::styles`].
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssCue {
     pub range: SourceRange,
     pub text: NfcText,
-    pub style: CueStyle,
+    pub style: CueStyleId,
 }
 
-/// Counts and warnings from a successful import. Parsing never aborts on one
-/// bad line; only document-size and collection ceilings return an error.
+/// Cues, the shared style table they reference, and warnings from a successful
+/// import. Parsing never aborts on one bad line; only document-size and
+/// collection ceilings return an error.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssImport {
     pub cues: Vec<AssCue>,
-    pub styles: usize,
+    /// Interned cue styles in first-use order; equal ASS styles and equal
+    /// override results share one entry. Cues reference them by [`CueStyleId`].
+    pub styles: Vec<CueStyle>,
     pub skipped_cues: usize,
     pub skipped_styles: usize,
     pub play_res_x: u32,
@@ -128,6 +131,11 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
     let mut style_format: Option<Vec<String>> = None;
     let mut event_format: Option<Vec<String>> = None;
     let mut styles: std::collections::BTreeMap<String, StyleRecord> =
+        std::collections::BTreeMap::new();
+    // The parser interns each used style once; equal styles and equal override
+    // results share one entry, so no cue ever carries a second full style copy.
+    let mut cue_styles = CueTrack::default();
+    let mut mapped_styles: std::collections::BTreeMap<String, CueStyle> =
         std::collections::BTreeMap::new();
     let mut skipped_styles = 0usize;
     let mut cues = Vec::new();
@@ -164,6 +172,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                     "playresx" => {
                         if let Some(value) = value {
                             play_res_x = value;
+                            mapped_styles.clear();
                         } else if value.is_none() {
                             warn(
                                 &mut warnings,
@@ -176,6 +185,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                     "playresy" => {
                         if let Some(value) = value {
                             play_res_y = value;
+                            mapped_styles.clear();
                         } else {
                             warn(
                                 &mut warnings,
@@ -455,18 +465,26 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                                 AssWarningKind::MissingStyle,
                             );
                         }
-                        let (mut style, clamped) = base.map_or_else(
-                            || (default_style(play_res_x, play_res_y), false),
-                            |record| map_style(record, play_res_x, play_res_y),
-                        );
-                        if clamped {
-                            warn(
-                                &mut warnings,
-                                &mut suppressed,
-                                line_number,
-                                AssWarningKind::Limit,
-                            );
-                        }
+                        // Map one ASS style record once, not once per cue that uses it.
+                        let mut style = match mapped_styles.get(&requested) {
+                            Some(mapped) => mapped.clone(),
+                            None => {
+                                let (mapped, clamped) = base.map_or_else(
+                                    || (default_style(play_res_x, play_res_y), false),
+                                    |record| map_style(record, play_res_x, play_res_y),
+                                );
+                                if clamped {
+                                    warn(
+                                        &mut warnings,
+                                        &mut suppressed,
+                                        line_number,
+                                        AssWarningKind::Limit,
+                                    );
+                                }
+                                mapped_styles.insert(requested.clone(), mapped.clone());
+                                mapped
+                            }
+                        };
                         if let Some(overrides) = stripped.overrides {
                             apply_overrides(
                                 &mut style,
@@ -500,6 +518,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                             );
                             style = default_style(play_res_x, play_res_y);
                         }
+                        let style = cue_styles.intern_style(style).ok_or(Error::TooLarge)?;
                         cues.push(AssCue {
                             range,
                             text: NfcText::from(stripped.text),
@@ -524,7 +543,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
     }
     Ok(AssImport {
         cues,
-        styles: styles.len(),
+        styles: cue_styles.styles,
         skipped_cues,
         skipped_styles,
         play_res_x: play_res_x.round().clamp(1.0, MAX_PLAY_RES) as u32,

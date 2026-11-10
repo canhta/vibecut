@@ -65,11 +65,12 @@ pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport,
         start: request.start,
         track: request.track,
         name: request.name.clone(),
+        styles: import.styles.clone(),
         cues: import.cues.clone(),
     };
     Ok(AssImportReport {
         cues: import.cues.len(),
-        styles: import.styles,
+        styles: import.styles.len(),
         skipped_cues: import.skipped_cues,
         skipped_styles: import.skipped_styles,
         warnings: import.warnings,

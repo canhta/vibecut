@@ -548,6 +548,214 @@ fn long_cues_fit_portrait_landscape_and_partial_source_items() {
 }
 
 #[test]
+fn imported_cue_style_paints_preview_and_export_like_the_equivalent_caption_style() {
+    let h = Hooks::default();
+    let at = tick(1, 2);
+    let imported = with_cue_style(
+        scene(&[("en", "Styled")]),
+        vec![imported_style(8)],
+        Some(captions::CueStyleId(0)),
+    );
+    let plain = scene(&[("en", "Styled")]);
+    let mut expected = RenderSettings::from_project(&plain);
+    expected.caption_style = CaptionStyle {
+        font: "Noto Serif".into(),
+        font_style: "Bold".into(),
+        // 5/64 of 1080 output lines.
+        size: 84.375,
+        color: [255, 60, 60, 255],
+        outline: Some(CaptionOutline {
+            color: [0, 0, 255, 255],
+            width: 2.0,
+        }),
+        background: None,
+        position: CaptionPosition::Top,
+        safe_area_percent: 6.25,
+        max_lines: 2,
+    };
+    let expected = Renderer::new(&plain, expected)
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    let mut renderer = Renderer::new(&imported, RenderSettings::from_project(&imported)).unwrap();
+    let preview = renderer.preview_frame(at, &mut Empty, &h).unwrap();
+    let exported = renderer.render_frame(at, &mut Empty, &h).unwrap();
+    assert_eq!(preview.pixels(), exported.pixels(), "one render path");
+    assert_eq!(
+        preview.pixels(),
+        expected.pixels(),
+        "imported font, weight, size, colours, outline and top position"
+    );
+    let project_style = Renderer::new(&plain, RenderSettings::from_project(&plain))
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    assert_ne!(preview.pixels(), project_style.pixels());
+}
+
+#[test]
+fn cues_without_a_style_keep_the_project_caption_style() {
+    let h = Hooks::default();
+    let at = tick(1, 2);
+    let p = scene(&[("en", "Plain")]);
+    let baseline = Renderer::new(&p, RenderSettings::from_project(&p))
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    let unstyled = with_cue_style(scene(&[("en", "Plain")]), Vec::new(), None);
+    let mut renderer = Renderer::new(&unstyled, RenderSettings::from_project(&unstyled)).unwrap();
+    assert_eq!(
+        renderer.preview_frame(at, &mut Empty, &h).unwrap().pixels(),
+        baseline.pixels()
+    );
+    assert_eq!(
+        renderer.render_frame(at, &mut Empty, &h).unwrap().pixels(),
+        baseline.pixels()
+    );
+}
+
+#[test]
+fn imported_alignment_underline_and_margins_place_the_cue() {
+    let h = Hooks::default();
+    let at = tick(1, 2);
+    let mut style = imported_style(1);
+    style.margin_left_ratio = 0.3;
+    style.margin_right_ratio = 0.0;
+    style.underline = true;
+    let underlined = with_cue_style(
+        scene(&[("en", "Left")]),
+        vec![style.clone()],
+        Some(captions::CueStyleId(0)),
+    );
+    style.underline = false;
+    let plain = with_cue_style(
+        scene(&[("en", "Left")]),
+        vec![style],
+        Some(captions::CueStyleId(0)),
+    );
+    let background = with_cue_style(scene(&[("en", "Left")]), Vec::new(), None);
+    let gap = Renderer::new(&background, RenderSettings::from_project(&background))
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut Empty, &h)
+        .unwrap();
+    let mut renderer =
+        Renderer::new(&underlined, RenderSettings::from_project(&underlined)).unwrap();
+    let preview = renderer.preview_frame(at, &mut Empty, &h).unwrap();
+    let exported = renderer.render_frame(at, &mut Empty, &h).unwrap();
+    assert_eq!(preview.pixels(), exported.pixels());
+    let (min_x, min_y, _, _, count) = ink(&preview, &gap);
+    // Left alignment starts the text at the 30% left margin, and bottom
+    // alignment keeps it below the middle.
+    assert!((104..=125).contains(&min_x), "left margin, got {min_x}");
+    assert!(min_y > 320, "bottom position, got {min_y}");
+    let without = Renderer::new(&plain, RenderSettings::from_project(&plain))
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    let (_, _, _, _, plain_count) = ink(&without, &gap);
+    assert!(
+        count > plain_count,
+        "underline adds ink: {count} vs {plain_count}"
+    );
+}
+
+#[test]
+fn hostile_imported_margins_clamp_and_extreme_font_size_refuses_typed() {
+    let h = Hooks::default();
+    let at = tick(1, 2);
+    let mut style = imported_style(2);
+    style.margin_left_ratio = 10.0;
+    style.margin_right_ratio = 10.0;
+    style.margin_vertical_ratio = 10.0;
+    let clamped = with_cue_style(
+        scene(&[("en", "Clamped")]),
+        vec![style],
+        Some(captions::CueStyleId(0)),
+    );
+    let background = with_cue_style(scene(&[("en", "Clamped")]), Vec::new(), None);
+    let gap = Renderer::new(&background, RenderSettings::from_project(&background))
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut Empty, &h)
+        .unwrap();
+    let image = Renderer::new(&clamped, RenderSettings::from_project(&clamped))
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    let (min_x, _, max_x, _, _) = ink(&image, &gap);
+    // Oversized ASS margins never empty the destination: both sides cap at 40%.
+    assert!((142..=150).contains(&min_x), "left cap, got {min_x}");
+    assert!((210..=218).contains(&max_x), "right cap, got {max_x}");
+
+    let mut huge = imported_style(2);
+    huge.font_size_ratio = 10.0;
+    let huge = with_cue_style(
+        scene(&[("en", "Huge")]),
+        vec![huge],
+        Some(captions::CueStyleId(0)),
+    );
+    assert!(matches!(
+        Renderer::new(&huge, RenderSettings::from_project(&huge))
+            .unwrap()
+            .render_frame(at, &mut Empty, &h),
+        Err(Error::Invalid("scaled font size"))
+    ));
+}
+
+fn imported_style(numpad: u8) -> captions::CueStyle {
+    captions::CueStyle {
+        font_family: "Noto Serif".into(),
+        // 5/64 of PlayResY, i.e. exactly 84.375 pixels at 1080 output lines.
+        font_size_ratio: 5.0 / 64.0,
+        primary_color: [255, 60, 60, 255],
+        outline_color: [0, 0, 255, 255],
+        background_color: [0, 0, 0, 0],
+        border_style: 1,
+        alignment: captions::CueAlignment::from_numpad(numpad).unwrap(),
+        margin_left_ratio: 0.0625,
+        margin_right_ratio: 0.0625,
+        margin_vertical_ratio: 0.0625,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    }
+}
+
+fn with_cue_style(
+    p: project::Project,
+    styles: Vec<captions::CueStyle>,
+    id: Option<captions::CueStyleId>,
+) -> project::Project {
+    let mut data = p.into_data();
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    let project::ItemParams::Caption(params) = &mut item.content else {
+        panic!("expected caption item")
+    };
+    params.cues.styles = styles;
+    params.cues.cues[0].style = id;
+    project::Project::new(data).unwrap()
+}
+
+/// Bounding box and pixel count of the pixels that differ from `background`.
+fn ink(image: &Image, background: &Image) -> (usize, usize, usize, usize, usize) {
+    let mut bounds = (usize::MAX, usize::MAX, 0, 0);
+    let mut count = 0;
+    for (n, (a, b)) in image.pixels().iter().zip(background.pixels()).enumerate() {
+        if a != b {
+            let (x, y) = (n % 360, n / 360);
+            bounds = (
+                bounds.0.min(x),
+                bounds.1.min(y),
+                bounds.2.max(x),
+                bounds.3.max(y),
+            );
+            count += 1;
+        }
+    }
+    (bounds.0, bounds.1, bounds.2, bounds.3, count)
+}
+
+#[test]
 fn extreme_font_scaling_is_a_typed_refusal_before_raster_scratch() {
     let mut d = scene(&[("vi", "X")]).into_data();
     d.canvas.width = 1;

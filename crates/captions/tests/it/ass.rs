@@ -9,6 +9,11 @@ fn tick(seconds: f64) -> Tick {
     Tick::from_seconds_f64(seconds, Rounding::Nearest).unwrap()
 }
 
+/// The style a parsed cue references in the import's shared table.
+fn cue_style(import: &captions::AssImport, cue: usize) -> &captions::CueStyle {
+    &import.styles[usize::from(import.cues[cue].style.0)]
+}
+
 fn doc(play_res: &str, style: &str, dialogue: &str) -> String {
     format!(
         "[Script Info]\nScriptType: v4.00+\n{play_res}\n\n[V4+ Styles]\n\
@@ -26,13 +31,13 @@ fn styled_ass_maps_supported_fields_and_per_cue_overrides() {
     );
     let import = parse_ass(text.as_bytes()).unwrap();
     assert_eq!(import.cues.len(), 1);
-    assert_eq!(import.styles, 1);
+    assert_eq!(import.styles.len(), 1);
     assert_eq!(import.skipped_cues, 0);
     let cue = &import.cues[0];
     assert_eq!(cue.range.start(), tick(1.5));
     assert_eq!(cue.range.end(), tick(3.0));
     assert_eq!(cue.text.as_str(), "Hello\nworld");
-    let style = &cue.style;
+    let style = cue_style(&import, 0);
     assert_eq!(style.font_family.as_str(), "Arial");
     assert!((style.font_size_ratio - 30.0 / 1080.0).abs() < 1e-6);
     assert_eq!(style.primary_color, [255, 0, 0, 255]);
@@ -62,7 +67,7 @@ fn play_resolution_scales_ratio_for_small_scripts() {
     let import = parse_ass(text.as_bytes()).unwrap();
     assert_eq!(import.play_res_x, 384);
     assert_eq!(import.play_res_y, 288);
-    let style = &import.cues[0].style;
+    let style = cue_style(&import, 0);
     assert!((style.font_size_ratio - 18.5 / 288.0).abs() < 1e-6);
     assert_eq!(style.alignment.numpad, 1);
     assert_eq!(style.alignment.horizontal, HorizontalAlignment::Left);
@@ -149,7 +154,7 @@ fn short_style_records_are_counted_as_malformed() {
 Format: Name, Fontname, Fontsize\n\
 Style: Broken\n";
     let import = parse_ass(text.as_bytes()).unwrap();
-    assert_eq!(import.styles, 0);
+    assert_eq!(import.styles.len(), 0);
     assert_eq!(import.skipped_styles, 1);
     assert!(
         import
@@ -332,15 +337,15 @@ fn one_cue(style: &str, text: &str) -> captions::AssImport {
 fn override_tags_follow_ass_semantics() {
     // Tags inside a `\t(...)` transform never reach the static style.
     let import = one_cue(DEFAULT_STYLE, "{\\t(0,500,\\fs90\\i1)\\u1}Hi");
-    let style = &import.cues[0].style;
+    let style = cue_style(&import, 0);
     assert!((style.font_size_ratio - 60.0 / 1080.0).abs() < 1e-6);
     assert!(!style.italic && style.underline);
     // A bare `\b` restores the style value; repeating it never toggles.
     let import = one_cue(DEFAULT_STYLE, "{\\b0}{\\b}{\\b}Hi");
-    assert!(import.cues[0].style.bold);
+    assert!(cue_style(&import, 0).bold);
     // `\c` keeps the style's alpha.
     let import = one_cue(DEFAULT_STYLE, "{\\c&H0000FF&}Hi");
-    assert_eq!(import.cues[0].style.primary_color, [255, 0, 0, 127]);
+    assert_eq!(cue_style(&import, 0).primary_color, [255, 0, 0, 127]);
     // Vector drawings are shapes, not text.
     let import = one_cue(DEFAULT_STYLE, "{\\p1}m 0 0 l 100 0 100 100{\\p0}Logo");
     assert_eq!(import.cues[0].text.as_str(), "Logo");
@@ -372,9 +377,9 @@ fn hostile_style_values_are_replaced_with_a_warning() {
         (DEFAULT_STYLE, false),
     ] {
         let import = one_cue(style, "Hi");
-        let cue = &import.cues[0];
-        assert!(cue.style.is_valid(), "{style}");
-        assert!(cue.style.font_size_ratio > 0.01, "{style}");
+        let cue = cue_style(&import, 0);
+        assert!(cue.is_valid(), "{style}");
+        assert!(cue.font_size_ratio > 0.01, "{style}");
         let warned = import.warnings.iter().any(|w| {
             matches!(
                 w.kind,
@@ -388,10 +393,10 @@ fn hostile_style_values_are_replaced_with_a_warning() {
         "Style: Default,Courier,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,0,0,0,2,0,0,0,1",
         "Hi",
     );
-    assert_eq!(import.cues[0].style.font_family.as_str(), "Courier");
+    assert_eq!(cue_style(&import, 0).font_family.as_str(), "Courier");
     assert!(import.warnings.is_empty());
     // Mismatched numpad/horizontal/vertical never validates.
-    let mut style = import.cues[0].style.clone();
+    let mut style = cue_style(&import, 0).clone();
     style.alignment.horizontal = HorizontalAlignment::Right;
     assert!(!style.is_valid());
 }
@@ -399,7 +404,7 @@ fn hostile_style_values_are_replaced_with_a_warning() {
 #[test]
 fn cue_track_shares_one_bounded_style_table() {
     let import = one_cue(DEFAULT_STYLE, "Hi");
-    let style = import.cues[0].style.clone();
+    let style = cue_style(&import, 0).clone();
     let mut track = CueTrack::default();
     let id = track.intern_style(style.clone()).unwrap();
     assert_eq!(id, CueStyleId(0));
@@ -430,13 +435,59 @@ fn cue_track_shares_one_bounded_style_table() {
 }
 
 #[test]
+fn ass_import_interns_one_bounded_table_entry_per_style() {
+    let text = doc(
+        "PlayResX: 1920\nPlayResY: 1080",
+        "Style: Default,Arial,60,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1\n\
+         Style: Alt,Courier,40,&H000000FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,0,0,0,1",
+        "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,One\n\
+         Dialogue: 0,0:00:01.00,0:00:02.00,Alt,,0,0,0,,Two\n\
+         Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,Three\n\
+         Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\\fs30}Four\n\
+         Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,{\\fs30}Five",
+    );
+    let import = parse_ass(text.as_bytes()).unwrap();
+    assert_eq!(import.cues.len(), 5);
+    assert_eq!(
+        import.styles.len(),
+        3,
+        "two ASS styles plus one override result"
+    );
+    assert_eq!(import.cues[0].style, CueStyleId(0));
+    assert_eq!(import.cues[2].style, import.cues[0].style);
+    assert_eq!(import.cues[1].style, CueStyleId(1));
+    assert_eq!(import.cues[3].style, import.cues[4].style);
+    assert_ne!(import.cues[3].style, import.cues[0].style);
+    assert!((cue_style(&import, 3).font_size_ratio - 30.0 / 1080.0).abs() < 1e-6);
+
+    // The shared table is capped: more distinct used styles refuse the whole
+    // document instead of growing it without bound.
+    let mut dialogue = String::new();
+    for index in 1..=MAX_CUE_STYLES + 1 {
+        dialogue.push_str(&format!(
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{{\\fs{index}}}Cue {index}\n"
+        ));
+    }
+    let text = doc(
+        "PlayResX: 1920\nPlayResY: 1080",
+        "Style: Default,Arial,60,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1",
+        &dialogue,
+    );
+    assert!(matches!(
+        parse_ass(text.as_bytes()),
+        Err(captions::Error::TooLarge)
+    ));
+}
+
+#[test]
 fn legacy_ssa_styles_use_ssa_alignment_and_decimal_colours() {
     let text = "[V4 Styles]\n\
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\n\
 Style: Default,Arial,20,16711680,0,255,0,0,0,1,2,0,6,0,0,0,0,0\n\
 [Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
 Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hi\n";
-    let style = &parse_ass(text.as_bytes()).unwrap().cues[0].style;
+    let document = parse_ass(text.as_bytes()).unwrap();
+    let style = cue_style(&document, 0);
     // SSA 6 is top centre, i.e. numpad 8.
     assert_eq!(style.alignment.numpad, 8);
     assert_eq!(style.alignment.vertical, VerticalAlignment::Top);

@@ -266,6 +266,7 @@ pub(crate) fn apply(
             start,
             track,
             name,
+            styles,
             cues,
         } => {
             data = text::execute_import_captions(
@@ -275,6 +276,7 @@ pub(crate) fn apply(
                 start,
                 track,
                 name,
+                styles,
                 cues,
                 created,
                 next,

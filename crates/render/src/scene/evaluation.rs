@@ -75,33 +75,7 @@ impl<'a> Renderer<'a> {
             .copied()
             .unwrap_or_else(|| {
                 if matches!(item.content, ItemParams::Caption(_)) {
-                    let style = &self.settings.caption_style;
-                    let inset = f64::from(style.safe_area_percent) / 100.0;
-                    let decoration = style
-                        .outline
-                        .as_ref()
-                        .map_or(0.0, |o| o.width)
-                        .max(style.background.as_ref().map_or(0.0, |b| b.padding));
-                    let height = ((f64::from(style.size) * style.max_lines as f64 * 2.0
-                        + f64::from(decoration) * 2.0
-                        + 4.0)
-                        / 1080.0)
-                        .min(1.0 - 2.0 * inset);
-                    let y = match style.position {
-                        CaptionPosition::Top => inset,
-                        CaptionPosition::Middle => (1.0 - height) / 2.0,
-                        CaptionPosition::Bottom => 1.0 - inset - height,
-                    };
-                    Placement {
-                        destination: Rect {
-                            x: inset,
-                            y,
-                            width: 1.0 - 2.0 * inset,
-                            height,
-                        },
-                        fit: Fit::Stretch,
-                        ..Default::default()
-                    }
+                    self.settings.caption_style.cue_placement(None)
                 } else if let ItemParams::Text(params) = &item.content {
                     let width = 0.8;
                     let height = 0.25;
@@ -433,7 +407,9 @@ impl<'a> Renderer<'a> {
                                     }
                                     value.push_str(text.text.as_str());
                                 }
-                                let style = self.settings.caption_style.clone();
+                                let cue_style = p.cues.style_of(cue);
+                                let style = self.settings.caption_style.for_cue(cue_style);
+                                let caption_placement = style.cue_placement(cue_style);
                                 let scale = self.settings.height as f32 / 1080.0;
                                 let background = style.background.as_ref().map(|b| {
                                     TextBox::uniform(b.padding * scale, b.radius * scale, b.color)
@@ -442,17 +418,19 @@ impl<'a> Renderer<'a> {
                                     &value,
                                     style.size,
                                     style.color,
-                                    placement,
+                                    caption_placement,
                                     Some(&style),
                                     TextFace {
                                         family: style.font.as_str(),
                                         style: style.font_style.as_str(),
+                                        align: super::caption::align(cue_style),
+                                        decoration: super::caption::decoration(cue_style),
                                         ..Default::default()
                                     },
                                     background,
                                     hooks,
                                 )?;
-                                draw(&mut out, &image, placement, hooks)?;
+                                draw(&mut out, &image, caption_placement, hooks)?;
                             }
                         }
                     }

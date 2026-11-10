@@ -31,12 +31,14 @@ fn prepare_reads_counts_warnings_and_builds_the_command() {
     assert_eq!(report.styles, 1);
     assert_eq!(report.skipped_cues, 1);
     assert!(!report.warnings.is_empty());
-    let Command::ImportCaptions { cues, .. } = report.command else {
+    let Command::ImportCaptions { styles, cues, .. } = &report.command else {
         panic!("wrong command")
     };
+    assert_eq!(styles.len(), 1);
+    assert_eq!(styles[0].font_family.as_str(), "Arial");
     assert_eq!(cues.len(), 1);
     assert_eq!(cues[0].text.as_str(), "Hello");
-    assert_eq!(cues[0].style.font_family.as_str(), "Arial");
+    assert_eq!(cues[0].style, captions::CueStyleId(0));
 }
 
 #[test]
