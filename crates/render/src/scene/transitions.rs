@@ -3,8 +3,6 @@ use crate::{Error, ExecutionHooks, Image, Result, check};
 use project::{TransitionParamDef, TransitionParams, TransitionValue, transition_definition};
 use rayon::prelude::*;
 
-pub mod thumbnail;
-
 /// Rows evaluated between cancellation checks.
 const ROW_GROUP: usize = 8;
 
@@ -298,11 +296,35 @@ mod tests {
         TransitionParamDef { id, name: id, kind }
     }
     const DEFS: &[TransitionParamDef] = &[
-        def("num", K::Float { min: 0., max: 100., default: 25., unit: "%" }),
-        def("choice", K::Choice { options: CHOICES, default: 1 }),
+        def(
+            "num",
+            K::Float {
+                min: 0.,
+                max: 100.,
+                default: 25.,
+                unit: "%",
+            },
+        ),
+        def(
+            "choice",
+            K::Choice {
+                options: CHOICES,
+                default: 1,
+            },
+        ),
         def("flag", K::Bool { default: false }),
-        def("color", K::Color { default: Color([255, 0, 0, 7]) }),
-        def("point", K::Point { default: [0.5, 0.25] }),
+        def(
+            "color",
+            K::Color {
+                default: Color([255, 0, 0, 7]),
+            },
+        ),
+        def(
+            "point",
+            K::Point {
+                default: [0.5, 0.25],
+            },
+        ),
         def("angle", K::Angle { default: 180. }),
         def("seed", K::Seed { default: 1 }),
     ];
@@ -311,7 +333,10 @@ mod tests {
     fn params_resolve_overrides_and_defaults_and_refuse_wrong_ids_and_types() {
         let none = TransitionParams::new();
         let p = Params::new(DEFS, &none);
-        assert_eq!((p.num("num").unwrap(), p.fraction("num").unwrap()), (25., 0.25));
+        assert_eq!(
+            (p.num("num").unwrap(), p.fraction("num").unwrap()),
+            (25., 0.25)
+        );
         assert_eq!(p.choice("choice").unwrap(), 1);
         assert!(!p.flag("flag").unwrap());
         // The stored alpha is ignored: dips are always opaque.
@@ -323,7 +348,10 @@ mod tests {
             ("num".to_owned(), TransitionValue::Float(50.)),
             ("choice".to_owned(), TransitionValue::Choice(0)),
             ("flag".to_owned(), TransitionValue::Bool(true)),
-            ("color".to_owned(), TransitionValue::Color(Color([0, 0, 255, 255]))),
+            (
+                "color".to_owned(),
+                TransitionValue::Color(Color([0, 0, 255, 255])),
+            ),
             ("point".to_owned(), TransitionValue::Point([1., 0.])),
             ("angle".to_owned(), TransitionValue::Angle(90.)),
             ("seed".to_owned(), TransitionValue::Seed(9)),

@@ -8,6 +8,7 @@ mod evaluation;
 pub mod mask;
 mod raster;
 pub(crate) mod transform;
+pub mod transition_thumbnail;
 pub mod transitions;
 pub mod viewport;
 
