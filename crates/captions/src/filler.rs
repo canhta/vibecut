@@ -132,7 +132,8 @@ impl FillerLexicon {
     }
 
     /// The shipped lexicon for a language tag: its primary subtag selects the
-    /// reviewed data file, and the full requested tag is retained for cue lookup.
+    /// reviewed data file, and the full requested tag is retained although cues
+    /// are matched by primary subtag.
     pub fn builtin(language: &LanguageTag) -> Result<Self, Error> {
         let json = BUILTIN
             .iter()
@@ -145,8 +146,9 @@ impl FillerLexicon {
     }
 }
 
-/// Detect whole-word filler candidates in source order. Every cue's text in the
-/// lexicon language is tokenized with UAX #29 and paired index-for-index with
+/// Detect whole-word filler candidates in source order. Each cue whose source
+/// language shares the lexicon's primary subtag contributes its source text
+/// (`Cue::source_text`), tokenized with UAX #29 and paired index-for-index with
 /// `Cue::word_ranges`; a cue whose counts disagree has no measured word timing
 /// and contributes nothing. Only `FilledPause` entries match unless
 /// `include_markers` is set, when `DiscourseMarker` entries also match. The
