@@ -61,4 +61,13 @@ impl Editor {
             self.desk().fail(error.to_string());
         }
     }
+
+    /// Wait for every submitted effect preview to reach a terminal tile state.
+    /// The audit calls this before capture so job timing cannot choose pixels.
+    pub fn settle_previews(&mut self, timeout: std::time::Duration) -> crate::Result<()> {
+        if let Some(previews) = &mut self.effect_previews {
+            previews.settle(timeout)?;
+        }
+        Ok(())
+    }
 }

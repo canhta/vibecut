@@ -1161,6 +1161,29 @@ fn wait_for_presented(app: &mut AppHarness) -> Result<(), Failure> {
     Err("preview frame was not presented".into())
 }
 
+/// Capture settled pixels: wait for every async effect preview, then load the
+/// finished textures and paint the frame the audit reads.
+fn settle(app: &mut AppHarness) -> Result<(), Failure> {
+    let timeout = Duration::from_secs(10);
+    match &mut app.state_mut().app {
+        App::Editor(editor) | App::Player(editor) | App::Assets(editor) => {
+            editor.settle_previews(timeout)?;
+        }
+        App::Home { workspace, .. } => {
+            if let Some(editor) = workspace.focused_editor_mut() {
+                editor.settle_previews(timeout)?;
+            }
+        }
+        App::Shorts(shorts) => {
+            if let Some(editor) = shorts.preview_mut() {
+                editor.settle_previews(timeout)?;
+            }
+        }
+    }
+    app.run_steps(2);
+    Ok(())
+}
+
 fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failure> {
     let mut session = empty_session("Launch cut")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
@@ -2266,6 +2289,7 @@ fn main() -> Result<(), Failure> {
         for scale in SCALES {
             let mut app = (scene.build)(*theme, scale)?;
             app.run_steps(2);
+            settle(&mut app)?;
             let image = app.render().map_err(std::io::Error::other)?;
             let image = opaque(image, vibecut::window_color(theme.dark()));
             let file = format!("{variant}@{}x.png", scale as u32);

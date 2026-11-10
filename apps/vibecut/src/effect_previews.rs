@@ -7,7 +7,11 @@ use engine::effect_thumbnails::EffectThumbnails;
 use engine::jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock};
 use project::EffectParams;
 use render::{ExecutionHooks, MemoryKind, Reservation};
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 /// Tile preview source edge. Smaller than the engine's 320 px admission cap so
 /// the effect is legible in the assets panel without extra downsampling.
@@ -197,6 +201,23 @@ impl EffectPreviews {
                 | JobState::Publishing
                 | JobState::Backoff => {}
             }
+        }
+        Ok(())
+    }
+
+    /// Pump the engine runner until every submitted tile is terminal or the
+    /// timeout passes; this blocks the caller and is meant for audits that
+    /// capture a settled panel. The engine runner stays the only renderer.
+    pub fn settle(&mut self, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        while self.entries.values().any(|entry| entry.job.is_some()) {
+            self.tick()?;
+            if Instant::now() >= deadline {
+                return Err(crate::Error::PreviewUnavailable(
+                    "effect previews did not settle",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(2));
         }
         Ok(())
     }

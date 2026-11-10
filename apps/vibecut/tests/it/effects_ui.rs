@@ -788,6 +788,63 @@ fn effect_preview_tiles_render_pending_failed_and_ready_states() {
 }
 
 #[test]
+fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
+    let settled = fixture();
+    let mut harness = build(settled.editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.tab.effects");
+    harness
+        .state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    let statuses = harness.state().inspect().unwrap().effect_previews;
+    assert!(!statuses.is_empty());
+    assert!(
+        statuses
+            .values()
+            .all(|status| *status != EffectPreviewStatus::Pending),
+        "{statuses:?}"
+    );
+
+    let blocking: Arc<dyn render::effects::EffectCompositor> = Arc::new(BlockingPreview);
+    let failing: Arc<dyn render::effects::EffectCompositor> = Arc::new(FailingPreview);
+    for (source, timeout, expected) in [
+        (blocking, 50, None),
+        (failing, 10_000, Some(EffectPreviewStatus::Failed)),
+    ] {
+        let fixture = fixture();
+        let video = fixture.video;
+        let mut harness = build(fixture.editor);
+        inject_previews(&mut harness, source);
+        harness.run_steps(3);
+        select(&mut harness, video);
+        click(&mut harness, "assets.tab.effects");
+        let result = harness
+            .state_mut()
+            .settle_previews(std::time::Duration::from_millis(timeout));
+        match expected {
+            None => assert!(matches!(
+                result.unwrap_err(),
+                vibecut::Error::PreviewUnavailable(_)
+            )),
+            Some(status) => {
+                result.unwrap();
+                assert_eq!(
+                    harness
+                        .state()
+                        .inspect()
+                        .unwrap()
+                        .effect_previews
+                        .get("blur")
+                        .copied(),
+                    Some(status)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn effect_preferences_round_trip_through_the_app_store() {
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("preferences.json"));
