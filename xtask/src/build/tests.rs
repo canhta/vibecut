@@ -1402,21 +1402,23 @@ enum Owned {
 }
 
 #[test]
-fn free_slot_choice_prefers_own_then_warm_gone_then_longest_idle_then_empty() {
+fn free_slot_choice_prefers_own_then_warm_gone_then_lowest_live_then_empty() {
     use Owned::*;
     // (slots: number, warm, owner, idle seconds; expected slot; cleared records)
     #[allow(clippy::type_complexity)]
-    let rows: [(&[(usize, bool, Owned, u64)], usize, &[usize]); 7] = [
+    let rows: [(&[(usize, bool, Owned, u64)], usize, &[usize]); 8] = [
         // A warm free slot beats a lower empty one.
         (&[(1, false, Nobody, 0), (2, true, Live("x"), 5)], 2, &[]),
         // A warm slot whose worktree is gone beats an idler live owner.
         (&[(1, true, Live("x"), 900), (2, true, Gone, 5)], 2, &[2]),
-        // Among live owners the longest idle gives up its slot.
+        // Among live owners the lowest number gives up its slot, however idle.
         (
             &[(1, true, Live("x"), 5), (2, true, Live("y"), 900)],
-            2,
+            1,
             &[],
         ),
+        // Among gone owners the longest idle goes first.
+        (&[(1, true, Gone, 5), (2, true, Gone, 900)], 2, &[1, 2]),
         // Only empty slots remain: the lowest number, as before.
         (&[(1, false, Nobody, 0), (2, false, Gone, 0)], 1, &[2]),
         // The requester's own warm slot wins over a gone warm one.
