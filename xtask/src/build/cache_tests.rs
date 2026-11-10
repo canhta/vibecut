@@ -134,7 +134,8 @@ fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
 
     // Dry-run budgeting must account for regular dependency files too.
     let used = used_bytes(&base.join("target/slot-1")).unwrap();
-    let freed = prune_stale_deps(&base.join("target/slot-1"), 4, SystemTime::now(), true).unwrap();
+    let slot = base.join("target/slot-1");
+    let freed = prune_deps(&slot, SystemTime::now(), used, 5000, true).unwrap();
     assert!(freed >= 8192, "dry run did not count the stale file");
     assert!(used.saturating_sub(freed) <= 5000);
     assert!(stale.exists(), "dry run removed the stale file");
@@ -148,6 +149,21 @@ fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
         base.join("target/slot-1").exists(),
         "the slot was cleared even though stale entries restored the budget"
     );
+
+    // Still over the budget with only fresh dependencies: the oldest go first
+    // and the slot stays warm; with only non-dependency bytes over the budget it is cleared.
+    let older = deps.join("libolder-123.rlib");
+    fs::write(&older, vec![0u8; 8192]).unwrap();
+    age_tree(&older, SystemTime::now() - Duration::from_secs(60));
+    prune_slots(base, SystemTime::now(), 5000, false).unwrap();
+    assert!(!older.exists(), "the oldest fresh dependency was kept");
+    assert!(
+        fresh.exists(),
+        "a newer dependency was pruned before an older one"
+    );
+    fs::write(slot.join("debug/artifact"), vec![0u8; 8192]).unwrap();
+    prune_slots(base, SystemTime::now(), 4096, false).unwrap();
+    assert!(!slot.exists(), "an unprunable slot over budget was kept");
 }
 
 #[test]

@@ -22,8 +22,8 @@ pub(super) const STALE_AGE: Duration = Duration::from_secs(2 * 24 * 60 * 60);
 pub(crate) const CACHE_SLOT_LIMIT: u64 = 40 * GIB;
 
 /// Prune the shared build cache: sessions and whole slots untouched for two
-/// days go first; an over-budget free slot drops stale dependencies before
-/// being cleared under its lock if it still exceeds the budget.
+/// days go first; an over-budget free slot drops dependencies oldest first
+/// and is cleared under its lock only if it still exceeds the budget.
 /// Held slots are left alone because a build is using their artifacts.
 pub(crate) fn prune_cache(dry_run: bool) -> Result<(), String> {
     prune_slots(&cache()?, SystemTime::now(), CACHE_SLOT_LIMIT, dry_run)
@@ -131,25 +131,22 @@ pub(super) fn prune_incrementals(slot: &Path, now: SystemTime, dry_run: bool) ->
     Ok(())
 }
 
-/// Remove build artifacts older than the stale age under every profile's
-/// `deps` directory. Runs only for an idle slot that is over budget, so a warm
-/// slot is preserved when its stale entries alone bring it back under the
-/// limit. Returns the bytes removed (or that a dry run would remove).
-pub(super) fn prune_stale_deps(
-    path: &Path,
-    depth: usize,
-    now: SystemTime,
-    dry_run: bool,
-) -> io::Result<u64> {
+/// One dependency artifact of an idle slot, found under a profile's `deps`.
+struct Dep {
+    modified: SystemTime,
+    bytes: u64,
+    path: PathBuf,
+}
+
+fn collect_deps(path: &Path, depth: usize, out: &mut Vec<Dep>) -> io::Result<()> {
     if depth == 0 {
-        return Ok(0);
+        return Ok(());
     }
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
-        Err(error) if changed_under_us(&error) => return Ok(0),
+        Err(error) if changed_under_us(&error) => return Ok(()),
         Err(error) => return Err(error),
     };
-    let mut freed = 0;
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
@@ -166,25 +163,20 @@ pub(super) fn prune_stale_deps(
             continue;
         }
         if path.file_name().is_some_and(|name| name == "deps") {
-            freed += prune_stale_dep_entries(&path, now, dry_run)?;
+            collect_dep_entries(&path, out)?;
         } else {
-            freed += prune_stale_deps(&path, depth - 1, now, dry_run)?;
+            collect_deps(&path, depth - 1, out)?;
         }
     }
-    Ok(freed)
+    Ok(())
 }
 
-pub(super) fn prune_stale_dep_entries(
-    deps: &Path,
-    now: SystemTime,
-    dry_run: bool,
-) -> io::Result<u64> {
+fn collect_dep_entries(deps: &Path, out: &mut Vec<Dep>) -> io::Result<()> {
     let entries = match fs::read_dir(deps) {
         Ok(entries) => entries,
-        Err(error) if changed_under_us(&error) => return Ok(0),
+        Err(error) if changed_under_us(&error) => return Ok(()),
         Err(error) => return Err(error),
     };
-    let mut freed = 0;
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
@@ -192,10 +184,9 @@ pub(super) fn prune_stale_dep_entries(
             Err(error) => return Err(error),
         };
         let path = entry.path();
-        let stale = newest_modified(&path)?.is_some_and(|modified| older_than(modified, now));
-        if !stale {
+        let Some(modified) = newest_modified(&path)? else {
             continue;
-        }
+        };
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(error) if changed_under_us(&error) => continue,
@@ -206,13 +197,42 @@ pub(super) fn prune_stale_dep_entries(
         } else {
             file_bytes(&metadata)
         };
-        if dry_run {
-            eprintln!("[cleanup] would remove stale dependency {}", path.display());
-        } else {
-            eprintln!("[cleanup] remove stale dependency {}", path.display());
-            remove_entry(&path)?;
+        out.push(Dep {
+            modified,
+            bytes,
+            path,
+        });
+    }
+    Ok(())
+}
+
+/// Shrink an idle slot that holds `used` bytes toward `limit` by removing its
+/// dependency artifacts oldest first. Every stale artifact goes, then fresher
+/// ones only while the slot is still over the limit, so a slot is cleared whole
+/// only when this cannot reach the limit. Returns the bytes removed (or that a
+/// dry run would remove).
+pub(super) fn prune_deps(
+    slot: &Path,
+    now: SystemTime,
+    used: u64,
+    limit: u64,
+    dry_run: bool,
+) -> io::Result<u64> {
+    let mut deps = Vec::new();
+    collect_deps(slot, 4, &mut deps)?;
+    deps.sort_by_key(|dep| dep.modified);
+    let mut freed = 0;
+    for dep in deps {
+        if used.saturating_sub(freed) <= limit && !older_than(dep.modified, now) {
+            break;
         }
-        freed += bytes;
+        if dry_run {
+            eprintln!("[cleanup] would remove dependency {}", dep.path.display());
+        } else {
+            eprintln!("[cleanup] remove dependency {}", dep.path.display());
+            remove_entry(&dep.path)?;
+        }
+        freed += dep.bytes;
     }
     Ok(freed)
 }
@@ -284,7 +304,7 @@ pub(super) fn prune_slots(
             .map_err(|error| format!("{}: {error}", slot.display()))?;
         let used = used_bytes(&slot).map_err(|error| format!("{}: {error}", slot.display()))?;
         if used > size_limit {
-            let freed = prune_stale_deps(&slot, 4, now, dry_run)
+            let freed = prune_deps(&slot, now, used, size_limit, dry_run)
                 .map_err(|error| format!("{}: {error}", slot.display()))?;
             let remaining = if dry_run {
                 used.saturating_sub(freed)
@@ -296,13 +316,13 @@ pub(super) fn prune_slots(
                     &slot,
                     dry_run,
                     &format!(
-                        "{:.1} GiB over the size budget",
+                        "{:.1} GiB over the size budget after pruning dependencies",
                         remaining as f64 / GIB as f64
                     ),
                 )?;
             } else if freed > 0 {
                 eprintln!(
-                    "[cleanup] slot retained after pruning {:.1} GiB of stale dependencies",
+                    "[cleanup] slot retained after pruning {:.1} GiB of dependencies",
                     freed as f64 / GIB as f64
                 );
             }

@@ -1,6 +1,6 @@
 //! Warm target slots: lease lifetime, owner records and worktree switch preparation.
 use super::{
-    cache::{CACHE_SLOT_LIMIT, remove_dir, used_bytes},
+    cache::{CACHE_SLOT_LIMIT, prune_deps, remove_dir, used_bytes},
     environment::GIB,
     queue::Lock,
 };
@@ -78,7 +78,7 @@ pub(super) fn owner(locks: &Path, number: usize) -> PathBuf {
         .unwrap_or_default()
 }
 /// Clear the held slot when disk headroom is gone, or when a switched slot's own
-/// artifacts exceed the per-slot budget. The total size of the shared cache never
+/// artifacts still exceed the per-slot budget after dependency pruning. The total size of the shared cache never
 /// clears a slot; `cleanup` owns aging out the whole cache, so a warm switch keeps
 /// its dependency artifacts.
 pub(super) fn switch_overflow(used: u64, free: u64) -> bool {
@@ -98,8 +98,17 @@ pub(super) fn prepare(
     let used = if switched {
         // A switch keeps the slot's dependency artifacts; only this slot's own
         // size, not the total of every warm slot, decides whether clearing is
-        // cheaper. Cache-wide pruning belongs to `cleanup`.
-        used_bytes(&target).map_err(|e| e.to_string())?
+        // cheaper. Cache-wide pruning belongs to `cleanup`. An oversized slot
+        // first sheds its oldest dependencies and is cleared only if that
+        // cannot bring it under the budget.
+        let used = used_bytes(&target).map_err(|e| e.to_string())?;
+        if used > CACHE_SLOT_LIMIT {
+            prune_deps(&target, SystemTime::now(), used, CACHE_SLOT_LIMIT, false)
+                .map_err(|e| e.to_string())?;
+            used_bytes(&target).map_err(|e| e.to_string())?
+        } else {
+            used
+        }
     } else {
         0
     };

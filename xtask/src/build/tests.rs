@@ -1392,6 +1392,89 @@ fn slots_beyond_a_shrunk_count_are_reused_not_deleted() {
     assert!(root.join("target/slot-9/debug/artifact").is_file());
 }
 
+/// Slot facts for one selection row: warm directory, owner record and idle age.
+#[derive(Clone, Copy)]
+enum Owned {
+    Requester,
+    Live(&'static str),
+    Gone,
+    Nobody,
+}
+
+#[test]
+fn free_slot_choice_prefers_own_then_warm_gone_then_longest_idle_then_empty() {
+    use Owned::*;
+    // (slots: number, warm, owner, idle seconds; expected slot; cleared records)
+    #[allow(clippy::type_complexity)]
+    let rows: [(&[(usize, bool, Owned, u64)], usize, &[usize]); 7] = [
+        // A warm free slot beats a lower empty one.
+        (&[(1, false, Nobody, 0), (2, true, Live("x"), 5)], 2, &[]),
+        // A warm slot whose worktree is gone beats an idler live owner.
+        (&[(1, true, Live("x"), 900), (2, true, Gone, 5)], 2, &[2]),
+        // Among live owners the longest idle gives up its slot.
+        (
+            &[(1, true, Live("x"), 5), (2, true, Live("y"), 900)],
+            2,
+            &[],
+        ),
+        // Only empty slots remain: the lowest number, as before.
+        (&[(1, false, Nobody, 0), (2, false, Gone, 0)], 1, &[2]),
+        // The requester's own warm slot wins over a gone warm one.
+        (&[(1, true, Gone, 900), (2, true, Requester, 5)], 2, &[1]),
+        // An owned slot stays first even when its directory was pruned.
+        (&[(1, true, Gone, 900), (2, false, Requester, 5)], 2, &[1]),
+        // Free warm slots above a lower busy-free empty one are still found.
+        (&[(1, false, Gone, 0), (3, true, Gone, 1)], 3, &[1, 3]),
+    ];
+    for (index, (slots, expected, cleared)) in rows.into_iter().enumerate() {
+        let directory = Directory::new();
+        let base = &directory.0;
+        let locks = base.join("locks");
+        fs::create_dir_all(&locks).unwrap();
+        let requester = base.join("requester");
+        fs::create_dir_all(&requester).unwrap();
+        for name in ["x", "y"] {
+            fs::create_dir_all(base.join(name)).unwrap();
+        }
+        let now = SystemTime::now();
+        for (number, warm, owned, idle) in slots {
+            let owner = match owned {
+                Owned::Requester => requester.clone(),
+                Owned::Live(name) => base.join(name),
+                Owned::Gone => base.join("removed"),
+                Owned::Nobody => PathBuf::new(),
+            };
+            fs::write(
+                locks.join(format!("slot-{number}.owner")),
+                owner.to_str().unwrap(),
+            )
+            .unwrap();
+            let jobs = locks.join(format!("slot-{number}.jobs"));
+            fs::write(&jobs, "2").unwrap();
+            File::options()
+                .write(true)
+                .open(jobs)
+                .unwrap()
+                .set_modified(now - Duration::from_secs(*idle))
+                .unwrap();
+            if *warm {
+                fs::create_dir_all(base.join(format!("target/slot-{number}/debug"))).unwrap();
+            }
+        }
+        let mut queue = Queue::enter(&locks).unwrap();
+        let admission = test_admission(slots.iter().map(|slot| slot.0).max().unwrap(), false);
+        let slot = claim(&mut queue, &requester, admission, || None, || None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(slot.number, expected, "row {index}");
+        for number in cleared {
+            // The chosen slot is rewritten by `prepare`; others are cleared here.
+            let record = fs::read_to_string(locks.join(format!("slot-{number}.owner"))).unwrap();
+            assert_eq!(record, "", "row {index}: record of slot-{number} was kept");
+        }
+    }
+}
+
 #[test]
 fn child_exit_or_kill_releases_slot_lease() {
     for label in ["wrapped", "killed"] {
