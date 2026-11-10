@@ -390,12 +390,9 @@ fn decode(
             .ok_or(SoundError::InvalidResponse)?;
         let mut decoder = AudioDecoder::new(&stream).map_err(SoundError::Media)?;
         let mut resampler = None;
-        let mut append = |frame: &media::AudioFrame| -> Sound<()> {
+        let mut append = |frame: &media::AudioFrame| -> Sound<bool> {
             check()?;
             let count = frame.samples().checked_mul(2).ok_or(SoundError::Limit)?;
-            if output.len().checked_add(count).is_none_or(|n| n > limit) {
-                return Err(SoundError::Limit);
-            }
             let _planes = reserve(
                 budget,
                 ByteOwner::DecodedFrames,
@@ -406,7 +403,8 @@ fn decode(
             let planes = frame.planar_f32().map_err(SoundError::Media)?;
             let left = planes.first().map(Vec::as_slice).unwrap_or_default();
             let right = planes.get(1).map(Vec::as_slice).unwrap_or(left);
-            for index in 0..left.len().max(right.len()) {
+            let remaining = limit.checked_sub(output.len()).ok_or(SoundError::Limit)? / 2;
+            for index in 0..left.len().max(right.len()).min(remaining) {
                 if index % 4096 == 0 {
                     check()?;
                 }
@@ -416,10 +414,11 @@ fn decode(
                 output.push(left.get(index).copied().unwrap_or(0.0));
                 output.push(right.get(index).copied().unwrap_or(0.0));
             }
-            Ok(())
+            Ok(output.len() == limit)
         };
         let mut eof = false;
-        loop {
+        let mut capped = false;
+        'decode: loop {
             check()?;
             while let Some(frame) = decoder.pull_frame().map_err(SoundError::Media)? {
                 check()?;
@@ -435,7 +434,10 @@ fn decode(
                     .convert(&frame)
                     .map_err(SoundError::Media)?
                 {
-                    append(&frame)?;
+                    if append(&frame)? {
+                        capped = true;
+                        break 'decode;
+                    }
                 }
             }
             if eof {
@@ -453,7 +455,8 @@ fn decode(
                 }
             }
         }
-        if let Some(resampler) = resampler.as_mut()
+        if !capped
+            && let Some(resampler) = resampler.as_mut()
             && let Some(frame) = resampler.flush().map_err(SoundError::Media)?
         {
             append(&frame)?;
@@ -743,7 +746,6 @@ mod tests {
             (wav(80), 1),
             (wav(80), 1024),
             (vec![1, 2, 3], 16 << 20),
-            (wav(121 * 8000), 16 << 20),
         ] {
             let (sink, rx, budget) = sink(limit);
             let result = play(sink, bytes.clone()).join().unwrap();
@@ -860,5 +862,195 @@ mod tests {
         ));
         assert!(rx.try_recv().is_err());
         assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+
+    fn excerpt_wav(seconds: u32, rate: u32, channels: u16) -> Vec<u8> {
+        let frames = seconds as usize * rate as usize;
+        let size = u32::try_from(frames * usize::from(channels) * 2).unwrap();
+        let mut bytes = wav(0);
+        bytes[4..8].copy_from_slice(&(36 + size).to_le_bytes());
+        bytes[22..24].copy_from_slice(&channels.to_le_bytes());
+        bytes[24..28].copy_from_slice(&rate.to_le_bytes());
+        bytes[28..32].copy_from_slice(&(rate * u32::from(channels) * 2).to_le_bytes());
+        bytes[32..34].copy_from_slice(&(channels * 2).to_le_bytes());
+        bytes[40..44].copy_from_slice(&size.to_le_bytes());
+        for frame in 0..frames {
+            let signal: i16 = if frame < 119 * rate as usize {
+                8192
+            } else if frame < 120 * rate as usize {
+                16384
+            } else {
+                -24576
+            };
+            for channel in 0..channels {
+                bytes.extend_from_slice(
+                    &(if channel == 0 { signal } else { -signal / 2 }).to_le_bytes(),
+                );
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn preview_excerpt_counts_prefix_and_stops_decoder_work() {
+        use std::cell::Cell;
+        let pcm_bytes = 120 * 8_000 * 2 * size_of::<f32>();
+        let mut prefix_work = usize::MAX - 8;
+        for seconds in [120, 119, 121, 386] {
+            let budget = ByteBudget::new(16 << 20).unwrap();
+            let armed = Cell::new(false);
+            let work = Cell::new(0);
+            // Reuse cancellation's existing conversion boundary, without a decoder hook.
+            // Once copying begins, count EVERY subsequent checkpoint, including reads/
+            // conversions that might otherwise decode a discarded tail.
+            let pcm = decode(&excerpt_wav(seconds, 8_000, 2), 8_000, &budget, &|| {
+                if budget.snapshot().unwrap().used > pcm_bytes as u64 {
+                    armed.set(true);
+                }
+                if armed.get() {
+                    work.set(work.get() + 1);
+                    if work.get() > prefix_work + 8 {
+                        return Err(SoundError::Cancelled);
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+            if seconds == 120 {
+                prefix_work = work.get();
+            }
+            if seconds >= 120 {
+                assert_eq!(work.get(), prefix_work, "tail must add no decoder work");
+            }
+            let frames = seconds.min(120) as usize * 8_000;
+            assert_eq!(pcm.samples.len(), frames * 2);
+            assert_eq!(budget.snapshot().unwrap().used, pcm_bytes as u64);
+            assert!(pcm.samples.capacity() * size_of::<f32>() <= pcm_bytes);
+            for (frame, stereo) in pcm.samples.chunks_exact(2).enumerate() {
+                let expected = if frame < 119 * 8_000 { 0.25 } else { 0.5 };
+                assert_eq!(stereo, [expected, -expected / 2.0], "prefix frame {frame}");
+            }
+            eprintln!(
+                "excerpt {seconds}s: {frames} stereo frames, {} decoder checkpoints, {} PCM bytes",
+                work.get(),
+                pcm.samples.len() * 4
+            );
+            drop(pcm);
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
+    }
+
+    #[test]
+    fn preview_excerpt_mono_and_rate_conversion_match_ffmpeg_prefix() {
+        if !testkit::oracle::require("preview excerpt conversion") {
+            return;
+        }
+        for (seconds, input_rate, rate, channels) in [
+            (1, 16_000, 11_025, 1),
+            (121, 16_000, 8_000, 1),
+            (121, 11_025, 16_000, 2),
+        ] {
+            let bytes = excerpt_wav(seconds, input_rate, channels);
+            let budget = ByteBudget::new(64 << 20).unwrap();
+            let pcm = decode(&bytes, rate, &budget, &|| Ok(())).unwrap();
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("source.wav");
+            std::fs::write(&path, &bytes).unwrap();
+            let reference = testkit::oracle::command("ffmpeg")
+                .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
+                .arg(&path)
+                .args([
+                    "-t",
+                    "120",
+                    "-ac",
+                    "2",
+                    "-ar",
+                    &rate.to_string(),
+                    "-f",
+                    "f32le",
+                    "pipe:1",
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                reference.status.success(),
+                "{}",
+                String::from_utf8_lossy(&reference.stderr)
+            );
+            let count = seconds.min(120) as usize * rate as usize * 2;
+            assert_eq!(pcm.samples.len(), count);
+            assert_eq!(reference.stdout.len(), count * 4);
+            let error = pcm
+                .samples
+                .iter()
+                .zip(reference.stdout.chunks_exact(4))
+                .map(|(actual, expected)| {
+                    (*actual - f32::from_le_bytes(expected.try_into().unwrap())).abs()
+                })
+                .fold(0.0_f32, f32::max);
+            assert!(
+                error < 1e-5,
+                "{input_rate}->{rate} Hz/{channels}ch: {error}"
+            );
+            assert_eq!(
+                budget.snapshot().unwrap().used,
+                120 * u64::from(rate) * 2 * 4
+            );
+            eprintln!(
+                "excerpt oracle {seconds}s {input_rate}->{rate}Hz/{channels}ch: {count} samples, max error {error}"
+            );
+            drop(pcm);
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
+    }
+
+    #[test]
+    fn preview_excerpt_cancel_during_conversion_releases_prefix_storage() {
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let pcm_bytes = 120 * 8_000 * 2 * size_of::<f32>();
+        let converted = AtomicBool::new(false);
+        let result = decode(&excerpt_wav(386, 8_000, 2), 8_000, &budget, &|| {
+            if budget.snapshot().unwrap().used > pcm_bytes as u64 {
+                converted.store(true, Ordering::Release);
+                return Err(SoundError::Cancelled);
+            }
+            Ok(())
+        });
+        assert!(converted.load(Ordering::Acquire));
+        assert!(matches!(result, Err(SoundError::Cancelled)));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+
+    #[test]
+    fn preview_excerpt_real_sink_waits_for_long_drain_and_stops() {
+        let (sink, rx, budget) = sink(32 << 20);
+        let bytes = excerpt_wav(386, 8_000, 2);
+        for stop in [false, true] {
+            let worker = play(sink.clone(), bytes.clone());
+            let pump = pump(&rx);
+            pump.observed(0);
+            if stop {
+                pump.fill(0, 100);
+                sink.stop().unwrap();
+                assert!(matches!(worker.join().unwrap(), Err(SoundError::Cancelled)));
+            } else {
+                // 256 interleaved samples =128 stereo frames =16ms at this device.
+                for block in 0..7500 {
+                    let data = pump.fill(block * 16, 100 + block * 16);
+                    assert!(
+                        data.chunks_exact(2)
+                            .all(|pair| pair[0] > 0.0 && pair[1] < 0.0)
+                    );
+                }
+                pump.clock.store(120_099_999_999, Ordering::Release);
+                pump.observed(120_099_999_999);
+                assert!(!worker.is_finished());
+                assert!(budget.snapshot().unwrap().used > 7_680_000);
+                pump.clock.store(120_100_000_000, Ordering::Release);
+                worker.join().unwrap().unwrap();
+            }
+            pump.closed();
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
     }
 }

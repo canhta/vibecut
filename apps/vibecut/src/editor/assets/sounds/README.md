@@ -10,7 +10,12 @@ author, duration, licence and precomputed attribution.
 
 Save and unsave are local-library operations outside project history. Preview uses the
 engine play/stop seam and an app-owned cpal sink on the retained preview worker,
-capped at 120 seconds (longer material refuses, rather than playing an excerpt).
+capped at min(EOF, 120 seconds), including ordinary longer tracks. The continuous
+resampler clips its crossing frame to the remaining stereo capacity and stops
+packet/frame processing immediately at the cap, without draining the rest of the
+song. Earlier EOF still drains the decoder/resampler. Encoded input must fit the
+existing 32 MiB ceiling; staging that bounded input is separate from decoding its
+prefix. Cancellation remains checked before conversion and during sample copying.
 Play stays pending until CPAL's stream clock reaches the predicted DAC end of the
 last samples, or stop/error; callback submission alone is not drain or proof of
 physical audibility. Missing callbacks/device failure are typed NoAudioDevice.
