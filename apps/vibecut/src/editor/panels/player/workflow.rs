@@ -1,7 +1,8 @@
 //! Applies player transport requests.
+use super::preview;
 use crate::editor::{
     DEFAULT_ZOOM, Editor, Error, FrameRate, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick,
-    Vec2, display_time, drop_frame, egui, preview,
+    Vec2, display_time, drop_frame, egui,
 };
 
 pub(super) fn format_timecode(at: Tick, rate: FrameRate) -> String {
@@ -105,10 +106,10 @@ impl Editor {
     }
     pub(in crate::editor) fn open_snapshot_dialog(&mut self) -> Result<()> {
         if self.session.project().duration() == Tick::ZERO {
-            self.snapshot.error = Some(engine::control::ErrorCode::EmptyProject);
+            self.player.snapshot.error = Some(engine::control::ErrorCode::EmptyProject);
             return Err(Error::Engine(engine::EditError::EmptyProject));
         }
-        self.snapshot.open();
+        self.player.snapshot.open();
         self.lifecycle_action = Some(crate::lifecycle::EditorAction::SnapshotSave);
         Ok(())
     }
@@ -124,6 +125,7 @@ impl Editor {
             .unwrap_or_default();
         let budget = self.playback.budget().clone();
         match self
+            .player
             .snapshot
             .save(&mut self.session, budget, at, &path, protected)
         {
@@ -143,7 +145,7 @@ impl Editor {
         }
     }
     pub fn snapshot_save_cancelled(&mut self) {
-        self.snapshot.cancel();
+        self.player.snapshot.cancel();
     }
     /// Tests and non-window callers consume the same lifecycle request the
     /// workspace turns into the native picker.
@@ -163,7 +165,7 @@ impl Editor {
     pub fn copy_snapshot(&mut self, ctx: &egui::Context) -> Result<()> {
         let at = self.playback.position()?;
         if let Err(error) = preview::copy(&self.session, at, ctx) {
-            self.snapshot.error = Some(match &error {
+            self.player.snapshot.error = Some(match &error {
                 Error::Engine(engine::EditError::EmptyProject) => {
                     engine::control::ErrorCode::EmptyProject
                 }
@@ -172,7 +174,7 @@ impl Editor {
             self.desk().fail(error.to_string());
             return Err(error);
         }
-        self.snapshot.error = None;
+        self.player.snapshot.error = None;
         self.set_toast(self.tr(Text::SnapshotCopy), None);
         Ok(())
     }

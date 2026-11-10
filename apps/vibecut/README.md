@@ -21,7 +21,6 @@ Each module's contract is its README.
 | `capture.rs` | [Capture](src/capture/README.md) |
 | `color_picker.rs` / `color_picker/` | [Colour picker](src/color_picker/README.md) |
 | `control.rs` | [Control](src/control/README.md) |
-| `crop.rs` | [Crop](src/crop/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
 | `editor/assets/` | [Assets](src/editor/assets/README.md) |
 | `editor/assets/sounds/` | [Sounds tab](src/editor/assets/sounds/README.md) |
@@ -34,7 +33,9 @@ Each module's contract is its README.
 | `editor/frame/` | [Editor frame](src/editor/frame/README.md) |
 | `editor/frame/input/` | [Keybindings](src/editor/frame/input/README.md) |
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |
-| `editor/player/` | [Editor player](src/editor/player/README.md) |
+| `editor/panels/` | [Editor panels](src/editor/panels/README.md) |
+| `editor/panels/player/` | [Editor player](src/editor/panels/player/README.md) |
+| `editor/panels/player/crop/` | [Crop](src/editor/panels/player/crop/README.md) |
 | `editor/properties/` | [Properties](src/editor/properties/README.md) |
 | `editor/properties/font_picker/` | [Font picker](src/editor/properties/font_picker/README.md) |
 | `editor/properties/mask_picker/` | [Mask picker](src/editor/properties/mask_picker/README.md) |
@@ -57,9 +58,7 @@ Each module's contract is its README.
 | `lifecycle.rs` | [Project lifecycle](src/lifecycle/README.md) |
 | `media_panel.rs` | [Media library](src/media_panel/README.md) |
 | `panels.rs` | [Panels](src/panels/README.md) |
-| `playback.rs` | [Playback and limits](src/playback/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |
-| `preview.rs` | [Preview transport](src/preview/README.md) |
 | `selection.rs` | [Selection](src/selection/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |

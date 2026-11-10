@@ -21,7 +21,7 @@ impl Editor {
             visuals: &self.media,
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
-            key_color_pick: self.key_color_pick.clone(),
+            key_color_pick: self.player.key_color_pick.clone(),
         }
     }
     /// Run `paint` with the timeline state and its context, then route what it returns.

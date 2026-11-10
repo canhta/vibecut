@@ -2,19 +2,18 @@
 use crate::i18n;
 mod assets;
 mod captions;
-mod crop;
 pub(crate) mod dialogs;
 mod frame;
-pub use crop::{Aspect as CropAspect, Inspection as CropInspection};
 pub(crate) use frame::{Context, Desk, Request};
-mod player;
+pub(crate) mod panels;
+pub(crate) use panels::player::KeyPick;
+pub use panels::player::crop::{Aspect as CropAspect, Inspection as CropInspection};
 pub mod properties;
 mod timeline;
 mod widgets;
 
 mod state;
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
-pub(crate) use state::KeyPick;
 use state::{
     AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
     PreferenceCommand, PreferenceHistory, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT,
@@ -49,7 +48,6 @@ use crate::{
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
     preferences::{Preferences, drag_panel},
-    preview,
 };
 use engine::{
     Command, CreatedId, ItemParamPatch, NewItem, Session,
@@ -177,20 +175,17 @@ impl Editor {
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),
             effect_drag: None,
-            key_color_pick: None,
             last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
             frame: frame::State::default(),
-            player: player::State::new(preferences_fit, preferences_zoom),
+            player: panels::player::State::new(preferences_fit, preferences_zoom),
             timeline: {
                 let mut state = timeline::State::new(zoom, scroll);
                 state.restore_lanes(timeline_lanes);
                 state
             },
             media,
-            fullscreen_commanded: false,
-            snapshot: preview::SnapshotDialog::default(),
             error: None,
             persistence_error: None,
             configured: false,
@@ -213,7 +208,6 @@ impl Editor {
             media_reveal: None,
             media_delete_confirm: None,
             dialogs: dialogs::State::default(),
-            crop: None,
             shortcuts_open: false,
             shortcut_tab: ShortcutTab::Timeline,
             shortcut_recording: None,
@@ -285,9 +279,9 @@ impl Editor {
             preview_fullscreen: self.player.fullscreen,
             timecode: self.current_timecode(),
             timecode_editing: self.player.timecode_edit.is_some(),
-            snapshot_dialog_open: self.snapshot.is_open(),
-            snapshot_saved: self.snapshot.saved.clone(),
-            snapshot_error: self.snapshot.error,
+            snapshot_dialog_open: self.player.snapshot.is_open(),
+            snapshot_saved: self.player.snapshot.saved.clone(),
+            snapshot_error: self.player.snapshot.error,
             importing: self.importing(),
             import_completed: self.import_completed,
             import_total: self.import_total,
@@ -358,13 +352,17 @@ impl Editor {
             sounds: self.sounds.as_ref().map(|sounds| sounds.view()),
             export_options: self.preferences.export,
             export: self.dialogs.export.inspect(),
-            crop: self.crop.as_ref().map(crop::Dialog::inspect),
+            crop: self
+                .player
+                .crop
+                .as_ref()
+                .map(panels::player::crop::Dialog::inspect),
             subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
             keybinding_issues: self.keybinding_issues.clone(),
             color_preview: self.properties.picker.as_ref().map(|p| p.color),
             eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
-            key_color_pick: self.key_color_pick.as_ref().map(|pick| pick.item),
+            key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
             font_picker: self
                 .properties
                 .font_picker

@@ -1,5 +1,0 @@
-# Preview transport and snapshot
-
-The preview panel renders the transport toolbar, an editable `HH:MM:SS:FF` timecode with the project duration, and Fit / 25 / 50 / 75 / 100 / 150 / 200% zoom presets with continuous 0.25–16× steps. Timecode format and parse come from `time`'s DF/NDF owner (`29.97`/`59.94` use `;`, other rates `:`). Enter dispatches `playback.seek`; Esc or invalid text restores the previous value. Ctrl/Cmd+wheel and pinch zoom; plain wheel or two-finger scroll pans only above 100%; middle-drag pans within canvas bounds. Fullscreen covers the window and sends the native viewport request; Esc or the toggle exits. The fit flag, explicit scale and last snapshot directory persist in the preference document.
-
-Snapshots go through the engine's `preview.snapshot {time, path}`: the toolbar or context menu opens the native PNG save picker, a picked destination is published atomically, cancel is a no-op. Empty projects refuse with the typed `Project is empty` error; write failures stay typed with no success toast. Copy uses `engine::snapshot::image` for the same frame and hands it to egui's OS clipboard. Neither edits the project or history.

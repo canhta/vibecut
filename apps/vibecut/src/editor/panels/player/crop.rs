@@ -1,5 +1,9 @@
 //! Transient source-normalized crop interaction; project owns the contract.
+mod dialog;
+
 use crate::{Error, Result, egui};
+pub use dialog::{Aspect, Inspection};
+pub(crate) use dialog::{Dialog, available, open, show};
 
 /// Smallest crop edge, as a fraction of the source, so a handle never collapses
 /// the rectangle.

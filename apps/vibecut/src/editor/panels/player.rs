@@ -1,4 +1,7 @@
 //! Owns preview presentation state behind the player panel interface.
+pub mod crop;
+pub mod playback;
+pub mod preview;
 mod snap;
 mod state;
 mod text;
@@ -8,10 +11,10 @@ mod workflow;
 
 use crate::{editor::Context, egui};
 use project::ItemId;
-pub(super) use state::State;
+pub(crate) use state::{KeyPick, State};
 
 /// Requests are applied by the frame after rendering releases its read borrow.
-pub(super) enum Action {
+pub(crate) enum Action {
     Command(String),
     Copy,
     Retry,
@@ -51,6 +54,6 @@ pub(super) enum Action {
     },
 }
 
-pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
+pub(crate) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
     view::show(state, cx, ui)
 }

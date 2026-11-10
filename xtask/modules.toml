@@ -193,18 +193,6 @@ name = "effect_previews"
 group = "assets"
 
 [[crate.module]]
-name = "preview"
-group = "player"
-
-[[crate.module]]
-name = "playback"
-group = "player"
-
-[[crate.module]]
-name = "crop"
-group = "player"
-
-[[crate.module]]
 name = "panels"
 group = "properties"
 

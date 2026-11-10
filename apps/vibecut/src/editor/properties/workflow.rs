@@ -62,7 +62,7 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
                 value,
             } => desk.editor().set_keyframe_at(item, &field, time, value),
             Action::SetKeyColorPick(pick) => {
-                desk.editor().key_color_pick = pick;
+                desk.editor().player.key_color_pick = pick;
                 Ok(())
             }
             Action::ToggleChromaKey { item, enabled } => {
@@ -72,7 +72,7 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
             Action::ResetKeyColor { item, effect } => desk.editor().reset_key_color(item, &effect),
             Action::SetSection { key, open } => desk.editor().set_section_open(key, open),
             Action::SetTab { kind, tab } => {
-                desk.editor().key_color_pick = None;
+                desk.editor().player.key_color_pick = None;
                 desk.editor().properties.chroma_staged = None;
                 let mut next = desk.editor().preferences.properties_tabs.clone();
                 next.insert(kind.to_owned(), tab.to_owned());

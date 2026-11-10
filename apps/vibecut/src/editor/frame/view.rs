@@ -10,11 +10,11 @@ impl Editor {
         );
         super::super::properties::apply(&mut self.desk(), actions);
         // The eyedropper belongs to one selected clip's panel.
-        if self.key_color_pick.as_ref().is_some_and(|pick| {
+        if self.player.key_color_pick.as_ref().is_some_and(|pick| {
             super::super::properties::single(&self.selection) != Some(pick.item)
                 || self.properties.details
         }) {
-            self.key_color_pick = None;
+            self.player.key_color_pick = None;
         }
         if !self.session.transaction_active() {
             self.desk().select();
@@ -50,14 +50,14 @@ impl Editor {
         self.timeline.forget_missing(&self.session);
         if !self.dialogs.export.is_open()
             && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
-            && self.crop.is_none()
+            && self.player.crop.is_none()
         {
             self.keyboard(ui.ctx());
         }
-        if self.player.fullscreen != self.fullscreen_commanded {
+        if self.player.fullscreen != self.player.fullscreen_commanded {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.player.fullscreen));
-            self.fullscreen_commanded = self.player.fullscreen;
+            self.player.fullscreen_commanded = self.player.fullscreen;
         }
         if self.player.fullscreen {
             let rect = ui.max_rect();
@@ -179,7 +179,7 @@ impl Editor {
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
         self.show_export(ui);
-        super::super::crop::show(self, ui.ctx());
+        super::super::panels::player::crop::show(self, ui.ctx());
         if let Some(subtitles) = &mut self.subtitles {
             let widgets = subtitles.dialogs(
                 ui.ctx(),
@@ -260,9 +260,9 @@ impl Editor {
     }
     /// Render the player through its read-only boundary, then route its requests.
     pub(in crate::editor) fn show_player(&mut self, ui: &mut egui::Ui) {
-        use super::super::player::{self, Action};
+        use super::super::panels::player::{self, Action};
         self.player.failed = self.error.is_some() || self.playback.error().is_some();
-        self.player.snapshot_failed = self.snapshot.error.is_some();
+        self.player.snapshot_failed = self.player.snapshot.error.is_some();
         let placeholder =
             player::State::new(self.preferences.preview_fit, self.preferences.preview_zoom);
         let mut state = std::mem::replace(&mut self.player, placeholder);
@@ -299,7 +299,7 @@ impl Editor {
                 Action::CommitTimecode => self.commit_timecode(),
                 Action::Retry => {
                     self.player.timecode_error = None;
-                    self.snapshot.error = None;
+                    self.player.snapshot.error = None;
                     self.action("preview.retry");
                 }
                 Action::Copy => {
@@ -313,7 +313,7 @@ impl Editor {
                     }
                 }
                 Action::PickKeyColor(color) => {
-                    if let Some(pick) = self.key_color_pick.take()
+                    if let Some(pick) = self.player.key_color_pick.take()
                         && let Err(error) =
                             self.pick_key_color(pick.item, pick.effect.as_deref(), color)
                     {

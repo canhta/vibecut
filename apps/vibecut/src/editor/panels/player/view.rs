@@ -633,7 +633,7 @@ fn canvas(
     if middle && (r.hovered() || r.dragged()) {
         state.view.pan(delta, stage.size(), size);
     }
-    if cx.key_color_pick.is_none() {
+    if state.key_color_pick.is_none() {
         r.context_menu(|ui| {
             menu(
                 ui,
@@ -718,7 +718,7 @@ fn canvas(
             Rect::from_center_size(stage.center(), Vec2::splat(kit::icon::DENSE)),
         );
     }
-    if cx.key_color_pick.is_some() {
+    if state.key_color_pick.is_some() {
         if r.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }

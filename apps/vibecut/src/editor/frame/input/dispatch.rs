@@ -2,9 +2,10 @@
 
 use crate::editor::{
     ActionTarget, Command, CreatedId, Editor, EngineAction, Error, ItemId, PREFERENCE_COMMAND,
-    Result, Text, Tick, UiAction, actions, preview,
+    Result, Text, Tick, UiAction, actions,
 };
 use crate::i18n;
+use crate::preview;
 
 impl Editor {
     fn split_targets(&self) -> Vec<ItemId> {
@@ -263,7 +264,7 @@ impl Editor {
             ActionTarget::Ui {
                 action: UiAction::Crop,
                 ..
-            } => crate::editor::crop::available(self),
+            } => crate::editor::panels::player::crop::available(self),
             ActionTarget::Ui { .. } => true,
         }
     }

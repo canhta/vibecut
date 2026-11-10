@@ -1,7 +1,14 @@
 //! Crop dialog over the shared crop control and the item crop patch.
 
-use super::{Editor, Icon, ItemId, Result, Text, egui, theme};
-use crate::i18n::{self, Locale};
+use crate::{
+    Result,
+    editor::{Desk, Editor, panels::player::crop::control},
+    egui,
+    i18n::{self, Locale, Text},
+    kit as theme,
+    kit::Icon,
+};
+use project::ItemId;
 
 /// Aspect shapes the dialog offers, in the reference order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,7 +142,7 @@ struct Target {
 
 /// The single selected video or image clip, with its source pixel aspect.
 fn target(editor: &Editor) -> Option<Target> {
-    let id = super::properties::single(&editor.selection)?;
+    let id = crate::editor::properties::single(&editor.selection)?;
     let project = editor.session.project();
     let data = project.data();
     let item = data
@@ -168,7 +175,7 @@ fn target(editor: &Editor) -> Option<Target> {
 }
 
 /// Transient dialog over one clip's existing crop.
-pub(super) struct Dialog {
+pub(crate) struct Dialog {
     item: ItemId,
     original: Option<project::Crop>,
     crop: project::Crop,
@@ -187,7 +194,7 @@ impl Dialog {
         }
     }
 
-    pub(super) fn inspect(&self) -> Inspection {
+    pub(crate) fn inspect(&self) -> Inspection {
         Inspection {
             item: self.item,
             aspect: self.aspect,
@@ -202,14 +209,14 @@ impl Dialog {
 }
 
 /// Open the dialog for the selected clip; a non-croppable target refuses.
-pub(super) fn open(editor: &mut Editor) -> Result<()> {
+pub(crate) fn open(editor: &mut Editor) -> Result<()> {
     let target = target(editor).ok_or(crate::Error::Unsupported("crop target"))?;
-    editor.crop = Some(Dialog::new(target));
+    editor.player.crop = Some(Dialog::new(target));
     Ok(())
 }
 
 /// Whether the current selection has a source frame the dialog can show.
-pub(super) fn available(editor: &Editor) -> bool {
+pub(crate) fn available(editor: &Editor) -> bool {
     target(editor).is_some()
 }
 
@@ -226,8 +233,8 @@ struct Output {
 
 /// Draw the open dialog over the frame's context. Every gesture stays in the
 /// dialog; only Apply reaches the engine, as one undo step.
-pub(super) fn show(editor: &mut Editor, ctx: &egui::Context) {
-    let Some(mut dialog) = editor.crop.take() else {
+pub(crate) fn show(editor: &mut Editor, ctx: &egui::Context) {
+    let Some(mut dialog) = editor.player.crop.take() else {
         return;
     };
     let Some(target) = target(editor) else {
@@ -254,16 +261,16 @@ pub(super) fn show(editor: &mut Editor, ctx: &egui::Context) {
         Some(Action::Apply) => {
             if let Err(error) = dialog.apply(&mut editor.desk()) {
                 editor.desk().fail(error.to_string());
-                editor.crop = Some(dialog);
+                editor.player.crop = Some(dialog);
             }
         }
-        None => editor.crop = Some(dialog),
+        None => editor.player.crop = Some(dialog),
     }
 }
 
 impl Dialog {
     /// One documented crop patch, or no history entry when the box is unchanged.
-    fn apply(&self, desk: &mut super::Desk<'_>) -> Result<()> {
+    fn apply(&self, desk: &mut Desk<'_>) -> Result<()> {
         let patch = self.patch();
         if patch == self.original {
             return Ok(());
@@ -342,7 +349,7 @@ impl Dialog {
                     ui.add_space(24.0);
                     ui.vertical(|ui| {
                         ui.set_width(430.0);
-                        match crate::crop::control(
+                        match control(
                             ui,
                             "crop.preview",
                             &mut self.crop,

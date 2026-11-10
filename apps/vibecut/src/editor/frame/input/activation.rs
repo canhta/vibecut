@@ -3,8 +3,9 @@
 use crate::editor::{
     ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, PREFERENCE_COMMAND,
     Preferences, Result, SelectionScopes, TICKS_PER_SECOND, Text, Tick, UiAction, ZOOM_STEP,
-    actions, media_panel, preview,
+    actions, media_panel,
 };
+use crate::preview;
 
 impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
@@ -184,7 +185,7 @@ impl Editor {
                     }
                 }
                 UiAction::Export => self.open_export()?,
-                UiAction::Crop => crate::editor::crop::open(self)?,
+                UiAction::Crop => crate::editor::panels::player::crop::open(self)?,
                 UiAction::RunExport => self.run_export(self.preferences.export)?,
                 action @ (UiAction::ExportMarkIn | UiAction::ExportMarkOut) => {
                     let mut options = self.preferences.export;

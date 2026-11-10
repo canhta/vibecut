@@ -4,7 +4,7 @@ use super::{
     Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, EyedropperState, Icon,
     ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView, PathBuf,
     Playback, Preferences, Rect, SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason,
-    actions, egui, preview, theme,
+    actions, egui, theme,
 };
 
 #[derive(Clone, Debug)]
@@ -218,7 +218,7 @@ pub struct Inspection {
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
-    pub crop: Option<super::crop::Inspection>,
+    pub crop: Option<super::panels::player::crop::Inspection>,
     pub models: Option<crate::model_manager::ModelInspection>,
     pub subtitles: Option<crate::subtitles::Inspection>,
     /// Unknown actions, invalid chords and conflicts from the persisted map.
@@ -332,14 +332,6 @@ pub(super) struct EffectReorder {
     pub(super) item: ItemId,
     pub(super) effect: String,
 }
-/// The chroma-key eyedropper is armed for one item; the next player click
-/// samples the rendered preview frame. `effect` is `None` while the Chroma key
-/// switch is on but the clip has no effect yet, so the first pick adds it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct KeyPick {
-    pub(crate) item: ItemId,
-    pub(crate) effect: Option<String>,
-}
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
 #[derive(Clone, Copy, Debug)]
@@ -451,18 +443,14 @@ pub struct Editor {
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
-    /// Armed chroma-key eyedropper, cleared by its pick, Escape or a selection change.
-    pub(super) key_color_pick: Option<KeyPick>,
     pub(super) last_view: project::ViewState,
     pub(super) widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
     pub(super) frame: super::frame::State,
-    pub(super) player: super::player::State,
+    pub(super) player: super::panels::player::State,
     pub(super) timeline: super::timeline::State,
     /// Cache-only clip visuals and the generation jobs they request.
     pub(super) media: super::timeline::Media,
-    pub(super) fullscreen_commanded: bool,
-    pub snapshot: preview::SnapshotDialog,
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::EditError>>,
     pub(super) configured: bool,
@@ -486,8 +474,6 @@ pub struct Editor {
     pub(super) media_reveal: Option<MediaReveal>,
     pub(super) media_delete_confirm: Option<Vec<AssetId>>,
     pub(super) dialogs: super::dialogs::State,
-    /// Open crop dialog for one video or image clip.
-    pub(super) crop: Option<super::crop::Dialog>,
     pub(super) shortcuts_open: bool,
     pub(super) shortcut_tab: ShortcutTab,
     pub(super) shortcut_recording: Option<&'static str>,
