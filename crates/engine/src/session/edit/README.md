@@ -1,94 +1,85 @@
 # Edit commands
 
-The kernel error carries no feature concept. The [shorts crate](../../../../shorts/README.md) owns `BoundaryFailure`, the typed payload of a clip-boundary refusal, plus suggestion, snapping and batch export.
+Interface: the registered `Command` variants with `Effect::Edit` and their parameter types
+`Placement`, `TrackPlacement`, `TrimEdge`, `ItemParamPatch`, `Move` and `NewItem`; `apply` and
+`check_budget` are crate-private.
+
+Per-command fields, effects, availability and examples are the declaration in
+[`session/commands.rs`](../commands.rs) and the generated
+[command reference](../../../../../docs/product/agent-control/commands.md). This page holds
+only the rules that span commands.
 
 ## Import policy
 
-`import.add_asset` raises project FPS to the greatest video stream rate, compared as exact rationals by `time::FrameRate`; it never lowers FPS. `timeline.insert` applies the same ratchet for the inserted visual source, including preloaded assets. Audio and image sources (including animated images) do not change FPS. A raised source rate that cannot produce exact positive canvas ticks refuses the command atomically.
+`import.add_asset` and every inserted visual item raise project FPS to the greatest video-stream
+rate, compared as exact rationals, and never lower it. Audio and image sources, including
+animated images, do not change FPS. A raised rate that cannot produce exact positive canvas
+ticks refuses the command atomically ([`ratchet_fps`](media_edits.rs)).
 
-When all scene timelines are empty and `original_canvas_size` is null, the first inserted visual source sets canvas width and height, the `original` preset, the last-custom size and that original size. Later inserts, including after deleting all items or switching scenes, keep it. Existing audio, text or overlay items prevent this automatic initialization. Batches execute in supplied order, so simultaneous first inserts have one deterministic winner. All policy changes share the import/insert history step; failed commands, cancelled gestures and failed batches publish none of them. Ephemeral assets stay in project storage and available to insert and render, while the desktop media library omits them and its selection uses only visible assets.
-
-`media.remove { assets }` removes a nonempty, unique list of at most 100,000 existing asset IDs as one undo step. It refuses missing IDs with `NoAsset` and any reference in any scene with `AssetsInUse(Vec<AssetUsage>)`, listing the asset and its item IDs. Refusal preserves the entire project and history; removal deletes records only, keeping source files and unrelated content. Undo restores the exact records and their project order.
+The first visual insertion while every scene timeline is empty and `original_canvas_size` is
+null sets canvas width and height, the `original` preset, the last custom size and that original
+size; later inserts keep it, including after deleting all items or switching scenes. Batches
+execute in caller order, so simultaneous first inserts have one deterministic winner. FPS,
+canvas and insertion share one history step ([`execute_insert_item`](clips.rs)).
 
 ## Timeline placement
 
-`timeline.move_items { items, delta, placement? }` moves a nonempty unique selection by one signed output-tick delta. Omitted or null placement keeps each member's track. An explicit placement uses the insertion placement owner; an above/below drop allocates one destination per source track, keeping the group's horizontal offsets. Empty-main origin correction shifts the whole selection, including audio partners, by the same amount. The caller supplies every linked partner in `items`; there is no implicit link model. Invalid IDs, locked tracks, incompatible kinds, overlaps, negative times and arithmetic overflow refuse the entire edit, including any new tracks. Snapping is a caller decision.
-
-`timeline.trim { items, edge, delta }` moves every selected start or end edge (`edge: start | end`) by the same signed output-tick delta. It delegates to the trim owner for source ranges, playback rates, keyframes, cues and fades. A refused member, an overlap, or an edge that cannot represent the exact shared delta at its playback rate refuses the entire group.
-
-`timeline.preview { commands }` stages a bounded batch in the gesture transaction state. Each call replaces the whole candidate from the entry snapshot, so deltas are absolute from drag start. An empty explicit pointer gesture can enter replacement mode; a candidate that already differs from its entry refuses promotion, keeping its staged edits. `project()` is the committed snapshot; `preview_project()` exposes the candidate only while a gesture is active. `timeline.commit_preview {}` publishes one undo step and one change event; `timeline.discard_preview {}` restores the exact entry project, history and pending change without a history entry. A net-zero commit preserves redo. A failed replacement keeps the previous valid candidate. Save, undo, selection changes and nested gestures refuse while preview is active. Preview IDs stay retired after discard. Preview commands are human gesture controls; external agents use atomic batches and undo.
-
-`timeline.insert { placement, item }` performs track choice, optional allocation and insertion as one atomic undo step. `placement` is a tagged object with `mode: auto` (the default), `track` with a track ID, or `above`/`below` with a reference track ID. `Outcome.placements` reports the final track and item IDs for allocated items still present after the command or batch; `created` reports only new IDs in allocation order.
-
-Auto video insertion uses the unlocked main track when magnet is enabled. It picks the nearest clip edge at the requested start (ties before), inserts without replacing content, then packs the main track from zero. This is separate from same-track ripple deletion and trim. With magnet disabled, or for other kinds, auto chooses the first unlocked compatible track whose requested half-open range is free: main, overlays in screen order, then audio in screen order. If none fits it creates a secondary track at the top of its group. A locked main falls back to secondary tracks. The first insertion or move into empty main clamps to zero even with magnet disabled. Simultaneous moves shift the earliest main-targeted item to zero and preserve relative spacing; other destination tracks keep their requested times. Later explicit placements onto occupied main keep their requested time. Explicit track placement refuses overlaps and incompatible kinds. Negative starts and checked arithmetic overflow refuse atomically, including track and ID allocation.
-
-`timeline.add_track { name, kind, placement }` uses `mode: auto` by default, or `above`/`below` with a reference ID. Relative placement respects the project owner's groups: non-audio above main, audio below main; crossing these boundaries refuses. Creating a track does not edit its reference, even when it is locked. Compatibility is determined by `ItemParams::kind()` in project; empty reserved track kinds remain available but cannot receive unsupported item kinds.
+`Placement::Auto` uses the unlocked main track for video when magnet is enabled or main is
+empty, choosing the nearest clip edge at the requested start (ties before) and inserting
+without replacing content; otherwise it takes the first unlocked compatible track whose
+requested half-open range is free, in main, overlay then audio order, and creates a secondary
+track at the top of its group when none fits. An explicit `track` refuses overlaps and
+incompatible kinds. A first insertion onto empty main clamps to zero. The caller supplies every
+linked partner explicitly: there is no implicit link model, and snapping is a caller decision.
+Negative starts and checked arithmetic overflow refuse the whole edit, including track and ID
+allocation ([`placement_track`](tracks.rs), [`placement_start`](clips.rs)).
 
 ## Transient selection and shared fields
 
-`timeline.set_item_param` also accepts the exact `transform.positionX`, `transform.positionY`, `transform.scaleX`, `transform.scaleY` and `transform.rotate` patch fields with numeric values. They set a constant override on project's channel and refuse non-finite or out-of-bounds input atomically; audio items are incompatible. The `crop` patch sets or clears project's source-normalized `VideoParams.crop` on video and image items in one undo step; it refuses zero or negative size, non-finite values, rectangles outside the source and audio targets. `background_color` (text) and `graphic_stroke` (solid overlay) set hex-text overrides on the `background.color` and `params.strokeColor` channels; `graphic_fill` edits the overlay's static colour. All colours use project's straight-alpha RGBA8 value. `project.set_background` sets that value on the canvas in one history step. `project.set_canvas` writes a validated width and height and an optional fixed preset (the `original` preset resolves the retained first-visual size); a custom width or height commits its nearest even size on each odd axis (ties up) so the canvas can always export, and custom sizes are recorded as the last custom size. `project.set_fps` stores an exact positive rational. Each is one history step. Masks use `masks.update`.
+`timeline.set_item_param` and `timeline.set_item_param_many` apply one typed `ItemParamPatch`.
+Text content and font patches copy at most the control owner's `MAX_TEXT_BYTES` budget per
+command tree, including nested batches. The single-item command refuses an incompatible target;
+the many-item command skips incompatible kinds. Missing IDs, duplicates, invalid values and
+locked compatible items refuse the whole edit ([`parameters.rs`](parameters.rs)).
 
-`set_selection(BTreeSet<ItemId>)` validates existing IDs, breaks merge continuity and changes no Project content, revision or history length. A change during an active gesture or group refuses. `selection()` exposes the current item IDs. Each bounded undo snapshot keeps the selection that produced the edit; undo and redo restore both. Deleted IDs are pruned from current selection. Scope selections (mask points, keyframes) are app-owned. Selection is absent from project JSON and optional persisted metadata.
-
-`timeline.set_item_param_many` applies one typed `patch` to a nonempty, unique `items` list (at most 100,000 IDs); the registry owns the patch fields and ranges. All numbers must be finite. Text content and font patches copy at most the control owner's `MAX_TEXT_BYTES` budget across compatible targets per command tree, including nested batches; excess expansion refuses atomically. The command keeps unrelated fields and skips incompatible item kinds; missing IDs, duplicates, invalid values and locked compatible items refuse the entire edit. An all-incompatible selection is a no-op. One changed command is one undo step.
+`Session::set_selection` validates existing IDs, breaks merge continuity and changes no project
+content, revision or history length; a change during a gesture or group refuses. Undo and redo
+restore the selection that produced each snapshot, and deleted IDs are pruned. Scope selections
+(mask points, keyframes) are app-owned.
 
 ## Edit semantics and limits
 
-Commands build a private candidate, then validate through `Project::new` before publishing one snapshot. Failure leaves project, history and allocation untouched. Each batch child must also yield a valid project; a failed child rolls back the whole batch. Typed commands admit at most 1024 commands and nesting depth 16. JSON dispatch additionally caps depth at 32, nodes at 200,000, each collection at 100,000 entries and aggregate string and key bytes at 4 MiB before deserialization. The caller already owns the Value; these caps bound added processing, not its initial allocation. Project and source constructors keep their own limits.
+Every command builds a private candidate, validates it through `Project::new` and publishes one
+snapshot. A refusal or unwind restores project, history, selection, merge state, ID counter and
+pending change ([`apply`](../edit.rs), [rollback](../state/README.md#rollback)). One command is one
+undo step; a batch or group is one step, and a failed child rolls the whole batch back.
 
-- `timeline.add_track` inserts a secondary track at the highest position for its group. `track.remove` refuses the mandatory main track and removes secondary contents in the same undo step. `track.set_muted` accepts Video/Audio; `track.set_hidden` accepts all kinds except Audio. Hidden filters visual output; muted filters audio, independently, for preview and export. `track.set_magnet` persists main-track magnet state, undoable with the project; gap-closing belongs to the ripple edit policy, not this preference.
-- `timeline.insert` places an item without shifting or overwriting its neighbors.
-- `move_item` / `move_items` set absolute output positions and destination tracks. Multi-move removes all selected items first, permitting swaps. Duplicate IDs fail; wrong track kinds, overlap and missing references fail whole-candidate validation. Touching half-open intervals are valid.
-- `split_at` uses an output tick strictly inside the identified item, keeping the left ID and allocating a right ID with continuous source timing. At a retimed item the source cut comes from project's mapping, so the pieces touch exactly at the requested tick, the right piece ends at the original end, and its keyframes move by the left piece's output length.
-- `trim_start` / `trim_end` set absolute output edges, adjusting source edges at the item's speed with checked arithmetic (project's mapping keeps the other edge fixed). No implicit frame snapping occurs.
-- `timeline.set_speed {items, speed, maintain_pitch}` retimes unique video/audio items atomically, keeping each source window: the duration follows, keyframes stretch by `old / new` and, on the magnetic main track, later items shift by the duration change; elsewhere growth that would overlap a neighbour refuses. Pass every linked video/audio item in one call to keep them in sync. Speed is the decimal 0.01-5 (rounded to 0.001); generated items refuse. Known media handles bound extension; generated content has no media endpoint.
-- Caption mapping clips retained cues through captions' mapping owner, preserving source cue IDs, languages, text, translation references and edit flags. A trim commits retained cue content; a later independent extension cannot recover discarded cues. Gesture, closure-group, batch and equal-key merged trims rebuild each preview from retained entry cues rather than the previous clipped preview. Selected `retranslate` target edits update that retained content and remap the visible view, preserving hidden and unselected cues and unclipped source ranges. An explicit `set_item_param` replaces the full retained content; splitting establishes separate retained content for each piece. Refusal rolls back retained content with the candidate. Retention ends at commit, cancel or a merge boundary. Undo restores the original snapshot and all its cue content.
-- Ripple policy is independent of app preferences: `Session::apply_with_ripple` and `execute_with_ripple` pass it explicitly for one atomic command, including replacement previews. Headless `timeline.edit { commands, ripple }` supplies the policy for a whole batch; nested policy wrappers refuse. Headless `timeline.set_ripple` sets the session default (off initially, no project or history entry, refused during a transaction). One post-command diff, after the whole batch, closes same-track vacated tails from delete, tail trim or leftward movement. It subtracts every occupied span, closes overlapping group tails once and never shifts another track. Cross-track moves, splits and hide/mute leave followers unchanged. The edit and its shifts publish as one undo step; previews rebuild from their baseline, including on reversal.
-- `delete` lifts identified items, leaving gaps when ripple policy is off. `ripple_delete` removes one item and shifts later items on that track left by its duration, preserving earlier gaps; other tracks and bookmarks stay fixed. No cross-track sync lock exists.
-- `timeline.remove_pauses { spans, crossfade_ms }` applies reviewed output-time spans with no analysis. Spans must be nonempty, at most 4,096, ascending, non-overlapping, inside the timeline and free of every native caption word span; any invalid span refuses the whole edit. Every track is split at the span boundaries inside its items and each piece fully inside a span is deleted, so identical spans keep aligned tracks aligned. The edit always closes vacated tails through the ripple path even when the session policy is off, publishes as one undo step, and a nonzero crossfade sets an equal-power fade pair on the surviving edges of each join. Reviewed spans come from `timeline.pause_candidates`; the command cannot verify the pad the caller used, so the candidate settings keep `crossfade_ms <= pad_ms`.
-- `transcript.delete_range { word_ids }` removes measured caption words as reviewed output spans through the same cutter. Each `WordId` (`item`, retained `cue`, index) must address a word of the active scene and appear once; an id in another scene returns `SceneBoundary`, a cue whose source text is edited returns `Protected`, and a locked track returns `Locked`. Consecutive selected words join one span, words separated by an unselected word produce separate spans, and any span that would split an unselected word refuses the whole edit. The cut deletes the word audio and captions on every track, closes the vacated tails through the ripple path, keeps every retained cue's text, languages, edit flags and timings, never rewrites transcript text, and publishes as one undo step; joins are hard edits at the word boundaries, so the command takes no crossfade. A text change stays an explicit `retranslate`/cue edit, not a cut.
-- `transcript.merge_cues { cue_ids }` merges two or more adjacent cues of one caption item into the earliest cue. Each `CueId` (`item`, retained `cue`) must address a cue of the active scene and appear once; cues in another item return `CuesAcrossItems`, cues on different tracks return `CuesAcrossTracks`, a selection whose ranges do not touch end-to-start returns `CuesNotAdjacent`, an id in another scene returns `SceneBoundary`, and an edited source text returns `Protected`. The merged cue keeps the earliest cue's ID and style, joins each language's present text in time order with that language's word separator (one space for vi/en and other spaced languages, none for zh/ja through `LanguageTag::joins_with_space`), and concatenates measured word timings; a selection mixing timed and untimed cues refuses rather than losing alignment. The merge rewrites the retained source track and rebuilds the visible cue view through the mapping owner, so trimmed items and repeated source occurrences stay consistent. It publishes as one undo step and never silently rewrites transcript text beyond the join; the caller supplies IDs in any order.
-- `timeline.remove_fillers { ids, confirm_edited }` removes reviewed filler candidates as measured words through the same cutter and ripple path as `transcript.delete_range`. A lexicon candidate must still name a visible candidate of the active scene in a fresh detection over every shipped cue language; an id the lexicon does not produce is resolved as one visible measured word, because `fillers.classify` may review lexicon-independent words. An id no visible word matches is stale and refuses the whole edit; empty, duplicate and oversized selections refuse too. A candidate in a cue whose source text is edited returns `Protected` unless `confirm_edited` is true. The cut deletes the word audio and captions on every track, closes the vacated tails, keeps cue text, languages and timings and publishes as one undo step; joins are hard edits at the word boundaries. The ids come from `timeline.filler_candidates` or `fillers.classify`; the removal detects filled pauses and discourse markers alike, because the id identifies the word rather than the query's marker setting.
-- `set_item_param` replaces the complete typed ItemParams. `track.set_flags` replaces all three flags and is permitted on locked tracks so they can unlock. All item edits, insertion, moving into or out of, and track removal refuse locks. `track.set_locked` toggles the same barrier for one track.
-- `track.rename` changes a track's display name and `track.reorder` moves a secondary track to a zero-based index inside its own section (overlays top to bottom, audio top to bottom); the mandatory main track refuses. Both, with `track.set_locked`, are project data with exact undo/redo and persistence and remain permitted on a locked track, while item structural edits and track removal return `EditError::Locked`. Secondary tracks start unlocked.
-- `track.remove` removes its items together. `bookmark.add` accepts a nonnegative output position and duration and a normalized note; `bookmark.toggle { at }` frame-snaps the time to the nearest project-rate frame, removes the bookmark starting that frame or adds one with zero duration, an empty note and the marker default colour; `bookmark.update { bookmark, note?, color?, duration? }` changes any subset, refuses a negative duration and clamps a duration to the scene end minus the bookmark start; `bookmark.remove` deletes it. An empty or already satisfied update refuses. `bookmark.move` changes its start while preserving duration and refuses missing, negative or overflowing targets. Asset, track and bookmark additions, changes and removals are validated with the rest of the candidate and each is one undo step.
+Typed commands admit at most 1024 commands and nesting depth 16; each collection is capped at
+100,000 entries and text at 4 MiB. JSON dispatch additionally caps depth at 32 and nodes at
+200,000 before deserialization ([`check_budget`](../edit.rs), [limits](../wire/limits.rs)).
 
-Errors are typed `EditError` categories with safe IDs and static diagnostics and retained project, time and caption sources. No raw JSON diagnostics or parameter text is returned. Commands perform no IO or retries.
+Locks protect item structure and item properties: item edits, insertion, moves into or out of a
+track and track removal refuse a locked track; `track.set_flags`, `track.rename`,
+`track.reorder` and `track.set_locked` remain permitted on one, so it can be unlocked
+([`tracks.rs`](tracks.rs)).
 
-## Keyframe commands
+Ripple policy is independent of app preferences. `Session::apply_with_ripple` and
+`execute_with_ripple` pass it for one atomic command, `timeline.edit` supplies it for a whole
+batch, nested policy wrappers refuse, and `timeline.set_ripple` sets the session default (off
+initially, no project or history entry, refused during a transaction). One post-command diff
+closes same-track tails vacated by delete, tail trim or leftward movement; it never shifts
+another track, and cross-track moves, splits and hide/mute leave followers unchanged. The edit
+and its shifts publish as one undo step ([`close_vacated_tails`](clips.rs),
+[session](../README.md#transactions-gestures-and-changes)).
 
-Project owns the [parameter model and evaluator](../../../../project/src/animation/README.md#animated-parameters-and-retime); the registry owns the `keyframes.*` fields. `set_param` installs or replaces a validated static or animated override; other edits select its path and an optional RGBA component (null for scalar and discrete params; RGBA requires r/g/b/a). `toggle_at` adds the key at an exact time with the caller's evaluated value or removes the key already there. `retime` refuses an occupied time. `scale_time` stretches all item channels and handle times by a positive rational without changing media playback or item duration. Missing paths or keys, invalid handles, locks and failed budgets preserve the entire candidate and history. Begin and commit one gesture for a drag; cancel restores the original curves. Range edits call project's checked translation, keeping out-of-window keys.
-
-## Effect commands
-
-`effects.add`, `remove`, `reorder`, `toggle` and `update_param` mutate the project stack through atomic history. Locked or missing items, duplicate IDs, unknown instances, wrong types and out-of-range intensity refuse. Scalar animation overrides use `keyframes.set_param` at `effects.<id>.params.intensity`; remove deletes those animation paths in the same undo step. Reorder requires an exact permutation and preserves instance identity and animation paths. Param edits replace one static scalar; an existing animation still overrides it. Availability requires an unlocked visual item; audio refuses all effect edits.
-
-Derived illustrations use the [effect thumbnail contract](../../artifacts/README.md#effect-thumbnails).
-
-## Mask edits
-
-`masks.add`, `remove`, `update` and `reorder` operate on the project-owned ordered mask vector. Update selects by the mask's stable ID; reorder requires an exact permutation. Missing or duplicate identities, invalid parameters and locked tracks refuse the entire command or batch. Removal also removes that mask's animation channels; undo restores both.
-
-## Scene commands
-
-`scene.create` appends an empty secondary scene without switching and returns `CreatedId::Scene`. `scene.delete` atomically deletes the selected non-main scenes; any unknown or main ID refuses the whole edit, and deleting the active scene selects main. Create, rename and multi-delete each use one undo step; delete undo restores scene timelines, items and bookmarks together.
-
-`scene.switch` selects an existing scene, clears item selection and ends edit coalescing without adding undo history or clearing redo. It is refused during gestures and transactions and inside batches. Undo/redo keeps the selected scene when it exists in the restored snapshot; otherwise it uses the snapshot's valid scene choice. All timeline commands target the active scene; allocation scans every scene on load and never reuses a live scene, track, item or bookmark ID.
-
-Zoom, horizontal scroll and playhead are kept per scene in project's optional metadata sidecar, outside undo; removed scenes' views are pruned. Canvas, fps and background are shared. Rendering, audio mixing and CLI export use the active scene by default; export settings can resolve explicit scopes through project's `SceneScope` and `for_scene`.
-
-## Visual item fields
-
-`timeline.set_item_param` accepts `blendMode` and a finite 0..=1 `opacity`; the same patch works in `set_item_param_many`. The single-item command refuses audio targets; the shared command skips them. Locked or missing targets refuse atomically. Blend changes keep animation; setting constant opacity replaces its animation channel, as `keyframes.set_param` does.
-
-## Audio controls
-
-`set_item_param` and `set_item_param_many` accept `volume` (finite -60..20 dB, step 0.01) and `muted` patches on audio and video items. Constant edits replace the corresponding animation override; keyframe commands edit scalar `volume` or held bool `muted` paths. Locked or missing targets and invalid grids refuse atomically.
-
-`audio.set_fade {item, edge, duration, curve}` sets one clip fade on audio and video items. A negative duration, a non-audible item or a locked track refuses atomically; a duration beyond the clip is clamped to the clip minus the other edge, so the two fades never overlap. `split_at` is non-destructive: both pieces keep the whole shape of any fade reaching them and record the part the other piece holds (`Fades::split`), so the summed envelope is unchanged by a cut inside a fade, at its boundary or off the sample grid. Moving a trim edge starts a fresh fade of the audible length there; trimming to the existing position preserves the fade phase. Stored durations beyond the shortened clip stay, and render clamps the window. Render owns mastering, sample timing and latency compensation.
+Errors are typed `EditError` categories with safe IDs and static diagnostics; commands perform
+no IO and no retries.
 
 ## Video transitions
 
-`transition.add` allocates a transition ID and clamps duration through project's handle rules. `transition.move` slides the span over its cut, clamping to available handles and updating its alignment. `transition.set_duration` resizes following that alignment. Locked tracks refuse all four transition commands. IDs use the same nonreused counter as items, tracks and bookmarks; `CreatedId::Transition` reports additions.
-
-Clip edits revalidate the affected active timeline before publishing: transitions follow moved cuts, clamp after shortening, and disappear when adjacency or handles are lost. Splits extend the transition's ordered side pieces while keeping the original span and progress. Explicit trim, move and delete edits detach pieces that no longer form a contiguous chain reaching the cut, then revalidate the remaining side extents. Splits keep the original retime processing window for both video mapping and audio replay. Failed edits publish neither item nor transition changes. Audio stays on its mixer path; transitions are video-only. [Project](../../../../project/src/visual/README.md#video-transitions) owns the admitted kinds and invariant mathematics.
+Clip edits revalidate the affected timeline before publishing: transitions follow moved cuts,
+clamp after shortening and disappear when adjacency or handles are lost. A split extends the
+ordered side pieces while keeping the span; explicit trim, move and delete detach pieces that no
+longer form a contiguous chain reaching the cut. Failed edits publish neither item nor
+transition changes. Transitions are video-only; [project](../../../../project/src/visual/README.md#video-transitions)
+owns the admitted kinds and the invariant mathematics.

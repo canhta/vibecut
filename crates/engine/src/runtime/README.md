@@ -1,43 +1,116 @@
 # Runtime
 
-Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`, `admit_loudness`.
-
-`Cost::add` accumulates provider estimates with saturation and currency rules. `JobRunner::batch_capacity` bounds downstream batches by resource concurrency and retained terminal results.
+Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`,
+`admit_loudness`.
 
 ## Background jobs and byte policy
 
-`jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads. `submit(spec, task)` returns a JobId and CancelToken; `tick()` joins finished workers, admits queued work and observes progress. The application calls it from its event loop. `JobContext` implements `ai::ExecutionHooks`; other domain owners receive its cancellation and progress functions through their own hooks. Engine disables ai's default native feature: composing an adapter is an app choice.
+`jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.
+`submit(spec, task)` returns a `JobId` and `CancelToken`; `tick()` joins finished workers,
+admits queued work and observes progress, and the application calls it from its event loop.
+`JobContext` implements `ai::ExecutionHooks`; other domain owners receive its cancellation and
+progress functions through their own hooks. Engine disables ai's default native feature:
+composing an adapter is an app choice.
 
-The task closure returns complete bytes or a typed `EditError` with retained AI/IO sources. It must not apply commands or publish partial files. Independently complete ASR chunks can be committed as checkpoints inside a task.
+The task closure returns complete bytes or a typed `EditError` with retained AI/IO sources. It
+must not apply commands or publish partial files. Independently complete ASR chunks may be
+committed as checkpoints inside a task. Executing closures run inside `catch_unwind`; OS thread
+creation failures are returned. `shutdown` and Drop cancel and join all active workers.
+Adapters must check cancellation and put finite timeouts on blocking IO; a noncooperating
+adapter can delay shutdown, and abort or OOM cannot be recovered.
 
-Executing closures run inside `catch_unwind`; `thread::Builder::spawn` returns OS creation failures. `shutdown` and Drop cancel and join all active workers. Adapters must check cancellation and put finite timeouts on blocking IO; a noncooperating adapter can delay shutdown. Abort and OOM cannot be recovered.
+`ByteBudget::child(limit)` adds per-project admission while retaining leases against the parent
+app policy. Admission refuses on either limit and rolls back partial reservations; releasing a
+child lease releases aggregate accounting. One shared budget is cloned into every owner and its
+snapshot publishes total used/limit and per-owner bytes. `reserve(owner, bytes)` returns a
+lifetime-bound lease, and owners reserve before allocating, including overlapping batches and
+actual pixel storage. On byte pressure every reservation reclaims unpinned persistent artifacts
+in one aggregate LRU order; oversized reservations fail before eviction, and pressure from active
+work and readers can defer queued jobs until their leases release. Reclamation unlinks files
+synchronously outside accounting and registry locks, so reserve before execution and never in an
+audio callback. Unlink failures return typed IO errors and leave charges intact for a later
+retry. Atomic reader pins exclude in-use files and a read's requested entry. `used` includes
+every category; `limited_used()` excludes model bytes, which free-disk preflight admits. Model
+files stay pinned and cannot starve ordinary work admission. Reservations are declared
+allocation ceilings, not an allocator sandbox or RSS measurement; captured task data is
+caller-owned and must be bounded. The preferences owner supplies the aggregate limit.
 
-`ByteBudget::child(limit)` adds per-project admission while retaining leases against the parent app policy. Admission refuses on either limit and rolls back partial reservations; releasing a child lease releases aggregate accounting. Artifacts registered by a child participate in the parent's aggregate LRU using one root recency clock. Model disk reporting also propagates through child leases. Separate root policies reserve persistence headroom independently from export and preview memory at the app composition boundary.
+`RunnerConfig` admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000 pending jobs,
+1..=10,000 terminal results and 1..=10 network attempts. Admission checks the sum of declared
+work and maximum result bytes against the aggregate, and a full queue returns `QueueFull`.
+Resource- or byte-blocked tasks stay queued while other classes run. Result memory is reserved
+before execution and the returned `Vec` capacity must fit that reservation; terminal results keep
+their reservation until taken, dropped or evicted oldest-first, and consumers must handle an
+evicted ID as absent. Outputs taken by consumers keep accounting leases until dropped.
 
-One shared `ByteBudget` is cloned into every owner. Its snapshot publishes total used/limit and per-owner bytes for decoded frames, compositor intermediates, in-flight export, persistent artifacts, cache readers/staging, job results and native model disk usage. `used` includes every category; `limited_used()` excludes `model_bytes()`, which are admitted by free-disk preflight rather than the memory ceiling. Model files stay pinned and cannot starve ordinary work admission.
+`drain_events()` is a coalescing event channel: one latest snapshot per admitted or retained job,
+bounded by pending jobs plus configured concurrency plus terminal retention. Intermediate events
+can be replaced; this is not an audit log. Worker progress is finite 0..=1 and accepts at most
+one update per configured interval (minimum 10 ms, including stage changes); `tick` forwards only
+changed snapshots, and terminal and cancelling states bypass the limit. Slow consumers cannot
+block workers.
 
-`reserve(owner, bytes)` returns a lifetime-bound lease; owners reserve before allocating, including overlapping batches and actual pixel storage. The engine defines policy; frame and glyph inner loops stay in their data-owning crates. On byte pressure, every reservation reclaims unpinned persistent artifacts in one aggregate LRU order, including artifacts owned by other open caches. Reopened entries register with the same policy. Oversized reservations fail before eviction; pressure from active work and readers can still defer queued jobs until their leases release. Reclamation unlinks files synchronously outside accounting and registry locks, so reserve before execution, never in an audio callback. Unlink failures return typed IO errors and leave charges intact for a later retry. Atomic reader pins exclude in-use files and a read's requested entry from reclamation; competing reclaimers can yield temporary BudgetFull. Reservations are declared allocation ceilings, not an allocator sandbox or RSS measurement. Captured task data is caller-owned and must be bounded. An adapter must not charge the same reservation a second time. The preferences owner supplies the aggregate limit.
+Cancellation is checked before execution and again before promoting success; late partial
+success is discarded. `JobContext::commit_publication` atomically seals cancellation before
+publishing an irreversible complete artifact and sets the Publish stage. A cancellation that
+wins the seal prevents publication; once sealed, late cancellation is ignored and a transient
+publication error is not retried. The closure must do its final cancellation-aware validation
+before sealing, and failure never yields a `JobOutput`.
 
-RunnerConfig admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000 pending jobs and 1..=10,000 terminal results. Admission checks the sum of declared work and maximum result bytes against the aggregate. Queue-full submission returns `QueueFull`. Resource- or byte-blocked tasks stay queued while other classes can run. Result memory is reserved before execution; the returned Vec capacity must fit that reservation. Working reservations release on completion or backoff. Terminal results keep their reservation until taken, dropped, or evicted oldest-first at the retention bound or to make room for new work; consumers must handle an evicted ID as absent. Outputs taken by consumers keep accounting leases until dropped.
+`Transcribe`, `Translate`, `SuggestClips`, `GenerateChapters`, `ClassifyFillers`,
+`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry `NetworkTransient` or an
+`ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured
+schema failure). An `ai` rate limit carrying
+`Retry-After` raises that attempt's backoff, capped at five minutes. Auth, quota, payload,
+invalid, cancelled and all other errors, and local, preview, export and import jobs, run once.
+Retry attempts are bounded by `RunnerConfig::network_attempts` with configured exponential
+backoff through an injected monotonic `Clock`; workers and bytes release during backoff. If the
+pending queue filled while the attempt ran, retry is refused and the typed transient failure is
+kept. The closure must revalidate request consent and aggregate monetary authorization on every
+attempt; the runner never grants consent or performs automatic provider fallback.
 
-`drain_events()` is a coalescing event channel: one latest snapshot per admitted or retained job, bounded by pending + configured concurrency + terminal retention. Intermediate events can be replaced; this is not an audit log. Worker progress is finite 0..=1 and accepts at most one update per configured interval (minimum 10 ms, including stage changes); `tick` forwards only changed snapshots. Terminal and cancelling states bypass this limit. Slow consumers cannot block workers.
-
-Cancellation is checked before execution and again before promoting success; late partial success is discarded. `JobContext::commit_publication` atomically seals cancellation before publishing an irreversible complete artifact and sets the Publish stage. A cancellation that wins the seal prevents publication; once sealed, late cancellation is ignored and even a transient publication error is not retried. The closure must do its final cancellation-aware validation before sealing. Failure never yields a JobOutput.
-
-Transcribe, Translate and DownloadModel jobs in the Network class retry NetworkTransient or an `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured schema failure). An `ai` rate limit carrying `Retry-After` raises that attempt's backoff to at least the provider delay, capped at five minutes. Auth, quota, payload, invalid, cancelled and all other errors, plus local, preview, export and import jobs, run once. Retry attempts are bounded to 1..=10, with configured exponential backoff through an injected monotonic Clock. Workers and bytes release during backoff. If the pending queue filled while the attempt ran, retry is refused and the typed transient failure is kept. The closure must revalidate request consent and aggregate monetary authorization on every attempt; the runner never grants consent or performs automatic provider fallback.
-
-`submit_for_session(session, spec, task)` binds its JobOutput to the original Session and revision; `output.apply(session, command)` uses that identity. Jobs submitted without a Session cannot apply edits through this method. `Session::job_target()` captures the identity for externally adapted work, and `apply_job_result(target, command)` refuses stale identity and active previews or groups, then uses the normal atomic command boundary. Every changed edit, undo/redo and changed preview invalidates older targets, even if undo restores equal content. Every group or gesture squash, including a net-zero group, and transaction rollback or unwind invalidates targets captured inside its preview lifetime. Call `saved()` after a successful save; it refuses an active transaction and invalidates pre-save targets. Opening another Session gives a new identity. A valid old artifact may remain cached without being applied.
+`submit_for_session(session, spec, task)` binds its `JobOutput` to the original Session and
+revision; `output.apply(session, command)` uses that identity. `Session::job_target()` captures
+the identity for externally adapted work, and `apply_job_result(target, command)` refuses stale
+identity and active previews or groups before using the normal atomic command boundary. Every
+changed edit, undo/redo and changed preview invalidates older targets, even if undo restores
+equal content, as does every group or gesture squash and transaction rollback. `saved()` refuses
+during a transaction and invalidates pre-save targets. Opening another Session gives a new
+identity; a valid old artifact may stay cached without being applied.
 
 ## Render execution
 
-`submit_export` submits an immutable Project snapshot to the runner's export resource class. JobContext implements render's ExecutionHooks, leasing actual buffers from the shared ByteBudget under decoded, compositor and export owners rather than declaring a second whole-job charge. Render owns pixels, audio and output policy; the job never applies editing commands. Completion returns an empty JobOutput after the complete file has been atomically published.
+`submit_export` submits an immutable Project snapshot to the runner's export resource class.
+`JobContext` implements render's `ExecutionHooks`, leasing actual buffers from the shared
+`ByteBudget` under decoded, compositor and export owners rather than declaring a second
+whole-job charge. Render owns pixels, audio and output policy; the job never applies editing
+commands. Completion returns an empty `JobOutput` after the complete file has been atomically
+published.
 
-`ByteBudgetHooks::new(budget, cancel)` is the one adapter from render's memory kinds to the aggregate owners; it owns no policy of its own. JobContext delegates its reserve to it, and cover images, snapshots, effect previews and transition thumbnails construct it. Refusal keeps an IO source or reports `Budget` with the real remaining bytes, so render's conversion loop can lower its worker count before failing; the cancellation probe is optional. Effect previews keep their 16 MiB budget and transition thumbnails their 1 MiB budget, both now charged to their real decoded, compositor or export owner.
+`ByteBudgetHooks::new(budget, cancel)` is the one adapter from render's memory kinds to the
+aggregate owners and owns no policy of its own; JobContext delegates its reserve to it, and cover
+images, snapshots, effect previews and transition thumbnails construct it. Refusal keeps an IO
+source or reports `Budget` with the real remaining bytes, so render's conversion loop can lower
+its worker count before failing; the cancellation probe is optional.
 
-Stages expose admission, rendering, mixing, encoding, finalization and publication. Cancellation uses the [shared publication fence](../runtime/staged_publication/README.md#completed-export-publication). Crash and power-loss durability are not established.
+Stages expose admission, rendering, mixing, encoding, finalization and publication. Cancellation
+uses the [shared publication fence](staged_publication/README.md#completed-export-publication).
+Crash and power-loss durability are not established.
 
-`submit_export_with_sources` is the export job with an injected render source factory, constructed on the engine worker. `submit_export` supplies `FileSources`. Both share one scheduler, byte accounting, typed result and publication fence. `Session::execute_export(runner, key, Command)` submits one already-admitted export command; callers never decode JSON at this layer.
+`submit_export_with_sources` is the export job with an injected render source factory,
+constructed on the engine worker; `submit_export` supplies `FileSources`. Both share one
+scheduler, byte accounting, typed result and publication fence.
+`Session::execute_export(runner, key, Command)` submits one already-admitted export command;
+callers never decode JSON at this layer.
 
 ## Render kernel execution
 
-`JobContext` supplies render's scheduling hook: up to eight workers, capped by available parallelism. Each row batch borrows disjoint buffers, runs one task on the job thread and uses scoped engine workers for the rest. It reserves 512 KiB per extra worker stack before spawning, runs sequentially when the extra stacks do not fit, catches worker panics as typed render failures, and joins all tasks on success, cancellation, refusal and unwind. There is no detached work or retained pixel pool. Default hooks outside engine are sequential. Job-class limits bound simultaneous jobs; each job can have at most seven additional row workers during a batch. Native FFmpeg conversion gets the same concurrency bound and holds its separately charged worker allowance for the converter/encoder lifetime; render and media keep their pixel and codec ownership.
+`JobContext` supplies render's scheduling hook: up to eight workers, capped by available
+parallelism. Each row batch borrows disjoint buffers, runs one task on the job thread and uses
+scoped engine workers for the rest. It reserves 512 KiB per extra worker stack before spawning,
+runs sequentially when the extra stacks do not fit, catches worker panics as typed render
+failures, and joins all tasks on success, cancellation, refusal and unwind. There is no detached
+work or retained pixel pool; default hooks outside engine are sequential. Each job can have at
+most seven additional row workers during a batch. Native FFmpeg conversion gets the same
+concurrency bound and holds its separately charged worker allowance for the converter/encoder
+lifetime.

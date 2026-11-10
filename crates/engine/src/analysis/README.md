@@ -1,75 +1,145 @@
 # Analysis
 
-Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapters`, `fillers`, `AnalysisRequest`, `AnalysisJob`.
+Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapters`, `fillers`,
+`AnalysisRequest`, `AnalysisJob`.
 
-`audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains. `audio.clear_loudness {scope}` removes it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and ordering only. See [loudness normalization](#loudness-normalization).
+Every workflow here measures source media, never mutates a project, and returns a typed
+`EditError`. A request binds its source content and settings into a cache key; `submit` queues
+one local or network job; `finish` validates and caches complete output, so cancellation before
+runner promotion leaves no cache entry and cache pressure preserves the runner output for a retry.
+Job progress, cancellation and byte admission belong to the [job runner](../runtime/README.md#background-jobs-and-byte-policy).
 
 ## Loudness normalization
 
-`loudness::submit_loudness(runner, cache, project, sources)` queues one CPU `MeasureLoudness` job that runs render's [two-pass planner](../../../render/src/audio/README.md#audio-clock-and-headroom) over the production mix graph for the targets set by `audio.set_loudness`. It reports `Mix` progress, honours cancellation, and surfaces failures as typed `JobFailure`. It never edits the project: `LoudnessJob::finish` validates the result (`LoudnessResult`: gains plus the measured numbers per clip and master), caches it as `ArtifactKind::Loudness`, and the caller applies it with `audio.apply_loudness`.
+`audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target
+(-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains; `audio.clear_loudness` removes
+it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and
+ordering only ([`LoudnessTarget`](../../../project/src/model/settings.rs)).
 
-The gains' `key` is `loudness::content_key`: a hash of the active scene's audible items (timing, source content, volume/mute and their automation), track mutes, sample rate and both targets. The master fader is excluded because measurement ignores it. Identical content and targets hit the cache without decoding.
+`loudness::submit_loudness(runner, cache, project, sources)` queues one CPU `MeasureLoudness` job
+that runs render's two-pass planner over the production mix graph for the configured targets. It
+reports `Mix` progress, honours cancellation and surfaces failures as typed `JobFailure`. It
+never edits the project: `LoudnessJob::finish` validates the result (gains plus the measured
+numbers per clip and master), caches it as `ArtifactKind::Loudness`, and the caller applies it
+with `audio.apply_loudness`. The gains' key is `loudness::content_key`: a hash of the active
+scene's audible items (timing, source content, volume/mute and their automation), track mutes,
+sample rate and both targets; the master fader is excluded because measurement ignores it.
 
-`submit_export*` calls `admit_loudness` (owned by `runtime/`, also exported as `loudness::admit`), which refuses `LoudnessStale` when a target is set and the stored gains are missing or measured for different audio, so preview (which applies stored gains as is) and export cannot disagree. Undo restores the gains with the content. Limits: 4,096 clips, 1 MiB result.
+`submit_export*` calls `admit_loudness` (owned by `runtime/`, exported as `loudness::admit`),
+which refuses `LoudnessStale` when a target is set and the stored gains are missing or measured
+for different audio, so preview and export cannot disagree. Undo restores the gains with the
+content. Limits: `LoudnessGains::MAX_CLIPS` 4096 clips and a 1 MiB result.
 
 ## Scene detection
 
-`scene_detection::DetectionRequest::new(asset, source_range, DetectionSettings)` produces source-time `SceneCandidate`s with exact decoded PTS, `HardCut`/`Fade` and a normalized measured-change confidence (not a calibrated probability). `submit` runs one local CPU `DetectScenes` job; `DetectionJob::finish` validates and caches complete output as `SceneDetection`. Keys bind source content, source range, all thresholds and the versioned recipe. A warm hit opens no source. Analysis never touches a Session; cancellation before runner promotion leaves no cache entry. Cache pressure preserves the runner output for retry. Shot analysis invokes this same detector.
+`scene_detection::DetectionRequest::new(asset, source_range, DetectionSettings)` produces
+source-time `SceneCandidate`s with exact decoded PTS, `HardCut`/`Fade` and a normalized
+measured-change confidence (not a calibrated probability). `submit` runs one local CPU
+`DetectScenes` job; `DetectionJob::finish` validates and caches complete output as
+`SceneDetection`. Keys bind source content, source range, all thresholds and the versioned
+recipe; a warm hit opens no source. Shot analysis invokes this same detector in its RGB-only
+hard-cut mode.
 
-The 32x18 RGB sample grid uses 16 histogram bins per channel. A hard cut requires both normalized adjacent mean absolute RGB difference and normalized histogram L1 distance >= `hard_threshold` (default 0.28, admitted 0.01..=1). Gradual transitions collect a regular-PTS run of adjacent RGB changes >= `fade_step` (default 0.005, admitted 0.001..=0.1 and below hard threshold) and below hard threshold. Once a run ends, its end-to-anchor RGB change must reach `fade_threshold` (default 0.20, admitted 0.01..=1). Runs are limited to two seconds: an overlong or irregular-PTS run stays rejected until a quiet frame or hard cut ends it, so continuous motion cannot restart a fade anchor every two seconds. A fade's marker is the observed midpoint frame, earlier on ties. Hard cuts take priority over a preceding fade within the minimum spacing; the close fade is removed. Defaults leave at least 0.5 seconds from endpoints and previous markers (`min_scene`, admitted 0..=10 seconds); the first observed frame is an anchor, never a change candidate.
+Candidates are conservative and require review; no general accuracy is claimed.
+`apply_reviewed(session, item, result, selected_indexes)` validates explicit unique indexes,
+matching source identity and strict source-time item bounds, converts source to output ticks
+through project's retime mapping, and applies descending `SplitAt` commands grouped into one
+transaction and one undo step within the command limit. An empty selection does nothing and any
+refusal publishes nothing.
 
-These heuristics can miss same-histogram cuts and long, subtle or irregular fades, and can mistake motion or lighting for a transition. Candidates require review; no general accuracy is claimed.
-
-`apply_reviewed(session, item, result, selected_indexes)` validates explicit unique indexes, matching source identity and strict source-time item bounds. Project's retime mapping converts source to output ticks. Descending `SplitAt` commands keep the target ID in batches, grouped into one transaction and one undo step, each batch within the command limit. An empty selection does nothing; any refusal publishes nothing. Unselected candidates never create a split. The desktop owns the review surface.
-
-Limits: one day, 16 Mi-pixel frames, 4095 candidates, 1 MiB serialized result. Decode streams through media's `decode_shot_frames` in <=300-second, <=100,000-frame slices including preroll. Only two fixed 1824-byte signatures and a bounded marker vector persist, so memory does not grow with duration. Jobs reserve 192 MiB for overlapping decode and conversion frames, 16 MiB workspace and 1 MiB retained output; these are reservations, not a native decoder RSS guarantee. Media keeps its native allocation and decoder ceilings, including refusal of geometry changes before packed conversion.
-
-The Mac-only `duration_scaling_bounds_peak_memory` test measures resident memory of fresh subprocesses through `/usr/bin/time -l` for 300 versus 12,000 decoded 64×64 frames: each peak must stay below 192 MiB and growth within 16 MiB. Windows and Linux memory measurement is unverified.
+Limits: one day, 16 Mi-pixel frames, 4095 candidates, 1 MiB serialized result. Decode streams
+through media's `decode_shot_frames` in ≤300-second, ≤100,000-frame slices including preroll.
 
 ## Speech activity
 
-`speech_activity::SpeechActivityRequest::new(asset, range, SpeechActivitySettings)` produces contiguous source-time `SpeechActivitySpan`s classified as speech or pause, each with a heuristic confidence. `submit` runs one local CPU `AnalyzeSpeechActivity` job; `finish` validates and caches complete output as `SpeechActivity`. Keys bind source content, source range, the thresholds and the versioned recipe. A warm hit opens no source. Cancellation before runner promotion leaves no cache entry, and cache pressure preserves the runner output for retry.
+`speech_activity::SpeechActivityRequest::new(asset, range, SpeechActivitySettings)` produces
+contiguous source-time `SpeechActivitySpan`s classified as speech or pause, each with a
+heuristic confidence (not a calibrated probability). `submit` runs one local CPU
+`AnalyzeSpeechActivity` job; `finish` validates and caches complete output as `SpeechActivity`.
+Keys bind source content, source range, the thresholds and the versioned recipe. Adjacent
+same-activity spans merge and spans always cover the requested range contiguously.
 
-Decode reuses media's speech splitter: `extract_speech_windows_with_cancel` in [chunk.rs](../../../media/src/audio/chunk.rs) is media's one speech-window entry, used here with zero overlap. There is no second decode path and no file is written. Each 20 ms frame is media's existing speech energy frame (`ENERGY_FRAME_SAMPLES`, 320 samples at 16 kHz in [extract.rs](../../../media/src/audio/extract.rs)), so a boundary is quantized to at most one frame.
-
-The noise floor is the 10th percentile of the minimum frame RMS in each 1.5 s subwindow. The subwindow is the minimum-search window of minimum-statistics noise estimation ([Martin 2001](https://www.csd.uoc.gr/~hy578/2005/projects/ieee_sp_tsap_2001009_05jul_0504mart.pdf), which tracks the minimum of the noisy signal over a finite window), applied here to broadband frame RMS; the 10th-percentile low floor and its 6 dB margin are the offline `percentile` estimator in [auditok](https://auditok.readthedocs.io/en/latest/examples.html#automatic-energy-threshold), applied there to frame energies and here to the subwindow minima. The gate is `min(floor + 6 dB, median frame - 12 dB)`: the 12 dB guard is twice the margin and keeps the gate below the median frame, so a continuous speech segment cannot become its own floor. A silence shorter than 0.5 s between speech runs is hangover and stays speech; a speech run shorter than 0.1 s between pauses stays pause. Both defaults are FFmpeg's [whisper](https://ffmpeg.org/ffmpeg-filters.html#whisper-1) filter VAD defaults (`vad_min_silence_duration`, `vad_min_speech_duration`). Short speech is removed before short silence so one click cannot split a long pause into two short ones. Adjacent same-activity spans merge, and spans always cover the requested range contiguously.
-
-`confidence` is the span's mean frame margin normalized over the gate-to-full-scale span: above the gate for speech, below it for pause. It is a heuristic score, not a calibrated probability. The gate follows the measured room tone, so a steady floor around -45 dBFS is silence while the speech above it stays speech.
-
-Limits: one day, 288,000 spans (twice the 144,000 default 0.1 s speech + 0.5 s pause cycles in one day), 32 MiB serialized result and a 96 MiB workspace (one f32 frame per 20 ms is 17.3 MB/day). Decode retains at most one media-default 10-minute PCM window (600 s at 16 kHz mono f32, 38.4 MB). A source without an audio stream is `Unsupported`; a deleted or unreadable source fails the job with the media error; overflow is `Limit`.
+Limits: one day, 288,000 spans, 32 MiB serialized result and a 96 MiB workspace. A source
+without an audio stream is `Unsupported`; a deleted or unreadable source fails the job with the
+media error; overflow is `Limit`.
 
 ## Waveform peaks
 
-`waveform::WaveformRequest::new(asset)` admits a mono or stereo audio source whose stream rate is 8-192 kHz. Its key binds the source content hash, sample rate, channel count and the versioned recipe, so changed content never hits the old entry. `submit` runs one local CPU `GenerateWaveform` job whose decode is media's [source peak summary](../../../media/src/audio/README.md#source-peaks); a warm cache hit opens no source. `finish` validates and caches complete output as `ArtifactKind::Waveform`; an undecodable cached payload is regenerated, and cancellation before runner promotion leaves no entry.
+`waveform::WaveformRequest::new(asset)` admits a mono or stereo audio source whose stream rate is
+8-192 kHz. Its key binds the source content hash, sample rate, channel count and the versioned
+recipe. `submit` runs one local CPU `GenerateWaveform` job; a warm cache hit opens no source.
+`finish` validates and caches complete output as `ArtifactKind::Waveform`; an undecodable cached
+payload is regenerated.
 
-`waveform::display(asset, item, visible, columns, cache)` is the cache-only display query. It clamps the visible output range to the clip, maps each of `columns` output slices through the project item's trim and retime mapping (`project::Item::source_time_at`), reduces the covered 128-sample buckets to one min/max bar per slice and returns `Ready(bars)`, `Pending` when no summary is cached, `Failed` when the cached summary cannot be decoded, or `Unsupported` when the source has no mono or stereo audio. It never decodes media and never blocks on a job. Bars combine all channels; `over` marks a bar whose any sample leaves -1..=1 so the timeline can draw a >0 dBFS tip.
+`waveform::display(asset, item, visible, columns, cache)` is the cache-only display query. It
+clamps the visible output range to the clip, maps each of `columns` output slices through the
+project item's trim and retime mapping, reduces the covered 128-sample buckets to one min/max bar
+per slice, and returns `Ready(bars)`, `Pending` when no summary is cached, `Failed` when the
+cached summary cannot be decoded, or `Unsupported` when the source has no mono or stereo audio.
+It never decodes media and never blocks on a job. Bars combine all channels; `over` marks a bar
+whose any sample leaves -1..=1.
 
-Limits: columns 1..=4096, one 64 MiB summary (about 3.1 h at 48 kHz stereo), and a mismatched asset or an out-of-clip visible range is `Invalid`. The job reserves 16 MiB for decoded frames and 64 MiB for its result. Cancelled generation leaves the previous content's cache entry intact; project JSON is never touched.
-
-`media.generate_waveform {asset}` runs the same request as one control job for a project asset; `job_status` publishes the completed summary through the attached media caches, so a warm request completes without opening the source. A caller without those caches refuses with `Unsupported`.
+Limits: columns 1..=4096 and one 64 MiB summary. A mismatched asset or an out-of-clip visible
+range is `Invalid`. `media.generate_waveform {asset}` runs the same request as one control job
+and publishes the completed summary through the attached media caches; a caller without those
+caches refuses `Unsupported`.
 
 ## Pause candidates
 
-`pause_candidates::PauseCandidatesRequest::new(project, PauseSettings { min_pause_ms, pad_ms, crossfade_ms })` plans one CPU `AnalyzePauses` job over the active scene's audible items. The job reuses the Speech activity detector and decode; there is no second decode path. Each contiguous audible source interval of an asset is decoded once, every pause is inset by `pad` on its speech sides (a pause clipped by an item edge keeps no pad there), mapped to output time through project's retime owner, merged across tracks and every range covered by a native caption word span (`Item::word_spans`) is subtracted, so a candidate never cuts inside a word. The result is `PauseCandidates { spans, analyzed_sources }` in output time; `timeline.remove_pauses` consumes exactly those spans. Cancellation, typed media/provider failures and progress are the job runner's.
+`pause_candidates::PauseCandidatesRequest::new(project, PauseSettings { min_pause_ms, pad_ms,
+crossfade_ms })` plans one CPU `AnalyzePauses` job over the active scene's audible items. Each
+contiguous audible source interval is decoded once, every pause is inset by `pad` on its speech
+sides (a pause clipped by an item edge keeps no pad there), mapped to output time, merged across
+tracks, and every range covered by a native caption word span is subtracted, so a candidate
+never cuts inside a word. The result is `PauseCandidates { spans, analyzed_sources }` in output
+time, and `timeline.remove_pauses` consumes exactly those spans.
 
-The job holds no artifact cache: an engine Session owns none, so a repeated query decodes again; there is no badge of a warm result. Defaults, each cited:
+The job holds no artifact cache: an engine Session owns none, so a repeated query decodes again.
+Defaults:
 
 | Setting | Default | Source |
 |---|---|---|
-| `min_pause_ms` | 500 | FFmpeg `whisper` filter `vad_min_silence_duration` default, the same run length the Speech activity detector uses |
-| `pad_ms` | 20 | one detector frame (`ENERGY_FRAME_SAMPLES` 320 samples at 16 kHz), the boundary resolution of the measured pause |
-| `crossfade_ms` | 20 | equal to the pad so the equal-power fade pair consumes only retained silence; the curve is project's `FadeCurve::EqualPower` default |
+| `min_pause_ms` | 500 | FFmpeg `whisper` filter `vad_min_silence_duration`, the run length the speech detector uses |
+| `pad_ms` | 20 | one detector frame (320 samples at 16 kHz), the boundary resolution of the measured pause |
+| `crossfade_ms` | 20 | equal to the pad so the equal-power fade pair consumes only retained silence |
 
-`pad_ms` is kept silence on each side of a cut, and `crossfade_ms` must not exceed it, so a join never attenuates a speech frame. Settings admit 0..=10 s; the result is bounded at 4,096 spans and 1 MiB. An inaudible timeline completes with zero spans rather than refusing, so an empty project and a project without audio share one state. Limits: one day and 96 MiB workspace per source window, 40 MiB decode, the same as Speech activity.
+`pad_ms` is kept silence on each side of a cut and `crossfade_ms` must not exceed it. Settings
+admit 0..=10 s; the result is bounded at 4096 spans and 1 MiB. An inaudible timeline completes
+with zero spans rather than refusing. Limits: one day and 96 MiB workspace per source window,
+40 MiB decode.
 
 ## Chapter generation
 
-`chapters::ChapterRequest::new(project, language, max_chapters)` reads every caption cue of the active scene that carries text in `language`, maps its range to output time through `Item::output_time_of` and builds the validated `ai::chapters::ChapterInput`: segment id `<item>:<cue>`, cue text and output range; settings carry the requested language, the 1..=50 chapter bound and the scene duration. Cues whose text is missing in that language are skipped, so a project with only another language refuses `EmptyTranscript`. An unsupported language, an empty transcript, a zero/oversized bound, overlapping or blank cues and an oversized payload refuse through `ai::chapters::ChapterRefusal` before any job or provider work.
+`chapters::ChapterRequest::new(project, language, max_chapters)` reads every caption cue of the
+active scene that carries text in `language`, maps its range to output time and builds the
+validated `ai::chapters::ChapterInput` (segment id `<item>:<cue>`, cue text, output range) with
+the requested language, the 1..=50 chapter bound and the scene duration. Cues missing that
+language are skipped, so a project with only another language refuses `EmptyTranscript`. An
+unsupported language, an empty transcript, a zero or oversized bound, overlapping or blank cues
+and an oversized payload refuse through `ai::chapters::ChapterRefusal` before any job or
+provider work.
 
-`submit` asks the lent [`TextAccess`](../providers/README.md#transcript-text-generation) for the exact consent token (scope, estimate and provider configuration) and only then queues one network `GenerateChapters` job. The job snapshots the input, calls `ai::chapters::generate_chapters` with the job context as its execution hooks (progress and cancellation), bounds the result at 1 MiB and decodes it through the versioned `ChapterDocument::from_json` validator. `chapters.generate {language, max_chapters}` accepts exactly this request; `job_status` publishes the completed document in `JobView.chapters`. A caller without a lent access refuses `ConsentRequired`; a declined approval refuses before the adapter or credential is used. The job has no artifact cache and never mutates the project.
+`submit` asks the lent [`TextAccess`](../providers/README.md#transcript-text-generation) for the
+exact consent token and only then queues one network `GenerateChapters` job. The job bounds its
+result at 1 MiB and decodes it through the versioned `ChapterDocument::from_json` validator.
+`chapters.generate {language, max_chapters}` accepts exactly this request; `job_status` publishes
+the completed document in `JobView.chapters`. A caller without a lent access refuses
+`ConsentRequired`. The job has no artifact cache and never mutates the project.
 
 ## Filler classification
 
-`fillers::FillerRequest::new(project, language, include_markers)` reads every visible measured word of the active scene whose cue language has the requested primary subtag, builds each stable candidate ID (`filler:<item>:<cue>:<source word start>`), and sends the exact bounded `ai::fillers::FillerInput`. A transcript with no timed word in that language refuses `EmptyTranscript`, an unsupported language refuses `UnsupportedLanguage`, and lossy or duplicate word IDs refuse `InvalidSegments` before any job or provider work. The local `timeline.filler_candidates` command stays synchronous and lexicon-only; this job is the opt-in network path and never falls back to it.
+`fillers::FillerRequest::new(project, language, include_markers)` reads every visible measured
+word of the active scene whose cue language has the requested primary subtag, builds each stable
+candidate ID (`filler:<item>:<cue>:<source word start>`) and sends the exact bounded
+`ai::fillers::FillerInput`. A transcript with no timed word in that language refuses
+`EmptyTranscript`, an unsupported language refuses `UnsupportedLanguage`, and lossy or duplicate
+word IDs refuse `InvalidSegments` before any job or provider work. The local
+`timeline.filler_candidates` command stays synchronous and lexicon-only; this job is the opt-in
+network path and never falls back to it.
 
-`submit` asks the lent `TextAccess::prepare_fillers` for the exact consent token and queues one network `ClassifyFillers` job. The job calls `ai::fillers::classify_fillers` with its context as execution hooks, maps each returned ID back to this job's exact visible word table, sorts by output start, bounds the candidate list at 1 MiB and fails the job with the typed `InvalidSegments` reason if an ID does not exist in the sent transcript. `job_status` publishes `JobView.fillers`; `timeline.remove_fillers` consumes the same IDs. A caller without a lent access refuses `ConsentRequired`. No artifact cache is used and the project is never mutated.
+`submit` asks the lent `TextAccess::prepare_fillers` for the exact consent token and queues one
+network `ClassifyFillers` job. Each returned ID is mapped back to this job's visible word table,
+sorted by output start, bounded at 1 MiB, and an ID that does not exist in the sent transcript
+fails the job with the typed `InvalidSegments` reason. `job_status` publishes `JobView.fillers`;
+`timeline.remove_fillers` consumes the same IDs. A caller without a lent access refuses
+`ConsentRequired`. No artifact cache is used and the project is never mutated.

@@ -1,7 +1,5 @@
 # Completed export publication
 
-## Completed export publication
-
 `sanitize_file_name` is the shared portable name sanitizer used by the desktop export dialog. It normalizes NFC, replaces forbidden characters, trims trailing dots and spaces, escapes reserved device stems case-insensitively even with extensions, and limits output to 255 UTF-8 bytes without splitting a grapheme. Empty export names use `Untitled Project`. `default_file_name` reserves the extension inside that limit. Snapshot names keep their `-` replacement and `snapshot` fallback, with space reserved for the timecode and PNG suffix.
 
 The `publication` module owns admission and staged writing for completed exports and snapshots. It admits the captured project sources and the adapter's protected active project and metadata paths before staging and again after sync, then seals cancellation before publishing through project's atomic writer. Canonical paths (including case-folded missing names on Windows), hard links, live source content identity and protected directories refuse project and source aliases even when a source changed since import. The atomic writer also refuses reserved writer-control destinations. Refusal or storage failure preserves the previous destination and removes staging files.

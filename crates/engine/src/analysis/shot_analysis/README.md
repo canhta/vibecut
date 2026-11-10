@@ -1,25 +1,52 @@
 # Per-shot analysis
 
-## Per-shot analysis
+`AnalysisRequest::new` binds a shared `SourceAsset`, an explicit source range, ordered disjoint
+source-time speech ranges, the loaded adapter's complete `VisionFingerprint` bytes and
+`AnalysisSettings`. `cut_threshold` admits 0.01..=1 (default 0.28) and `min_shot` 0.04..=10 s
+(default 0.5 s). Speech ranges must be ordered, disjoint and inside the requested range; without
+speech evidence an absent visible speaker is Unknown, never a speech claim.
 
-`AnalysisRequest::new` binds a shared `SourceAsset`, explicit source range, ordered disjoint source-time speech ranges, the loaded adapter's complete `VisionFingerprint` bytes and `AnalysisSettings`. `submit` queues one local CPU `AnalyzeShots` job through `JobRunner`; the composition root supplies the owned `VisionDetector`. The optional `vision` feature permits composing the tract adapter. There is no download, remote call, project edit, layout selection or fallback.
+`submit` queues one local CPU `AnalyzeShots` job through `JobRunner`; the composition root
+supplies the owned `VisionDetector`, and the optional `vision` feature permits composing the
+tract adapter. There is no download, remote call, project edit, layout selection or fallback.
 
-Limits: one day, 4096 detected shots, 64 tracks per shot, 16 Mi-pixel packed video frames and 32 MiB of serialized output. Work reserves 192 MiB for overlapping frames, 384 MiB for bounded crops, summaries and JSON, and 32 MiB for retained output. Model weights and adapter plans remain caller-owned; reservations are not an RSS guarantee. Oversize admission is a typed refusal. A shot refuses if it accumulates more than 64 tracks.
+Limits: one day, 4096 detected shots, 64 tracks per shot, 16 Mi-pixel packed video frames and
+32 MiB of serialized output. Work reserves 192 MiB for overlapping frames, 384 MiB for bounded
+crops, summaries and JSON, and 32 MiB for retained output. Model weights and adapter plans remain
+caller-owned; reservations are not an RSS guarantee. Oversize admission is a typed refusal, and a
+shot refuses if it accumulates more than 64 tracks.
 
-Cut discovery uses the shared [scene detector](../README.md#scene-detection) in its RGB-only hard-cut mode: adjacent mean-absolute RGB threshold, per-channel floating normalization and accumulation order, and minimum shot length. This mode disables histogram gating and fade tracking, so equal-histogram spatial cuts remain shot boundaries and fades cannot suppress a real cut. Reviewed scene candidates use the histogram and fade policy. The detector recipe enters the shot cache version (v5).
+Cut discovery uses the shared [scene detector](../README.md#scene-detection) in its RGB-only
+hard-cut mode, which disables histogram gating and fade tracking, so equal-histogram spatial cuts
+remain shot boundaries and fades cannot suppress a real cut. Reviewed scene candidates keep the
+histogram and fade policy.
 
-Within each cut, frames are sampled on the source-audio-anchored 25 Hz grid by presentation interval. YuNet runs every third sample (8.33 Hz); gated IoU >=0.3 matches boxes one-to-one within 0.4 s. Boxes are held between detections, never interpolated across a missing observation. Tracks reset at every cut, have stable shot-local integer IDs and require at least 13 observed samples (0.52 s). Returned boxes use source pixels; cross-shot identity requires the optional embedding evidence below.
+Each shot reports source-pixel `FaceTrack` boxes with stable shot-local integer IDs, a
+`people_count`, a `SpeakerState`, a `Scene` and one `SecondAnalysis` per second of its range.
+`SpeakerState` is Visible (a shot-local reference), OffScreenSpeech or Unknown. OffScreenSpeech
+requires supplied speech evidence plus audio and adequate negative evidence: either no observed
+faces, or ASD scores covering every observed face sample. Incomplete coverage keeps the affected
+bin and whole shot Unknown even if another visible track has negative scores; a confirmed visible
+speaker still takes precedence, and missing audio or insufficient evidence stays Unknown. Speech overlap is never inferred from a face detector or arbitrary noise.
+`continuity_hint` retains the last confirmed shot-local reference across cuts, including listener
+shots, but never assigns that reference to another shot's face; cross-shot identity is carried by
+`FaceTrack::identity`.
 
-Each shot submits successive <=3 s ranges to `media::mfcc_range_with_progress` on the same source asset. The cold-source pass reports `Preparing`, then requested-range work reports `Analyzing`; the runner may coalesce progress. The shared cancellation flag reaches media decoding directly, and both MFCC callbacks check the job token. Preparation checkpoints never become retries or enlarged shot budgets. Exact 100 Hz MFCC timestamps are joined four-to-one to video crops. Only contiguous 25..=75-frame ASD runs are submitted; shorter tails, missing audio and track gaps are not padded. Inference cancellation or error aborts without publishing partial scores.
+With an embedding adapter attached, the matcher compares sampled crops against fixed earlier
+anchors: every cosine must be at least 0.30 and the winner must exceed every alternative anchor
+by at least 0.08. Two simultaneous tracks claiming one anchor are both Unknown, a shot's tracks
+never match each other, and unmatched tracks seed separate anchors while their public identity
+stays None. Confirmed matches never update anchor embeddings; embeddings are never serialized and
+only confident anchor references enter artifacts. The transient gallery admits 1024 anchors with
+at most three descriptors each, and excess is a typed `Limit`. Reopened identities must refer to a
+prior existing anchor, never a future or current shot or another predicted match, and cannot be
+shared by simultaneous tracks. Layout consumers resolve a visible speaker's local reference
+through its shot's track identity, not the continuity hint.
 
-One-second bins and whole shots aggregate +/-2-frame-smoothed ASD probabilities. A new visible speaker requires mean >=0.5; within one shot a previously visible track can persist at >=0.4 for the next bin. Ties choose the lower track ID. People counts use tracks present for at least half a second in a bin (all samples for a shorter tail); the shot count is the median bin count. The face gate yields camera evidence; faceless frames run CLIP at most once per second. Camera/screen votes determine the shot class, with camera on a tie and Unknown without evidence.
-
-`SpeakerState` is Visible (a shot-local reference), OffScreenSpeech or Unknown. OffScreenSpeech requires supplied speech evidence plus audio and adequate negative evidence: either no observed faces, or ASD scores covering every observed face sample. Face presence and score coverage include short tracks removed by the people-count dwell filter. Incomplete coverage keeps the affected bin and whole shot Unknown even if another visible track has negative scores; a confirmed visible speaker still takes precedence. Missing audio or insufficient ASD evidence stays Unknown. Speech overlap is not inferred from a face detector or arbitrary noise. `continuity_hint` retains the last confirmed shot-local reference across cuts, including listener shots. It never assigns that reference to another shot's face; cross-shot identity is carried by `FaceTrack::identity`.
-
-When an embedding adapter is attached, at most three fresh aligned observations per track (about one second apart) are sampled. Missing or poor landmarks, or an unavailable adapter, leave no descriptor. Matching compares all sampled crops against fixed earlier anchors: every cosine must be at least 0.30 and the winner must exceed every alternative anchor by at least 0.08. Two simultaneous tracks claiming one anchor are both Unknown; a shot's tracks never match each other. Unmatched tracks seed separate anchors for future observations but their public identity stays None (Unknown). Confirmed matches never update anchor embeddings. Layout consumers resolve a visible speaker's local reference through its shot's track identity, not the continuity hint. No face identity implies speech activity.
-
-The transient gallery admits 1024 anchors with at most three descriptors each; excess is a typed Limit. Embeddings are never serialized; only confident anchor references enter artifacts. Reopened identities must refer to a prior existing anchor, never a future or current shot or another predicted match, and cannot be shared by simultaneous tracks. The 0.30 threshold comes from a small agent-labelled interview calibration; it is a conservative sample-specific operating point, not a general face accuracy claim.
-
-`AnalysisJob::finish` returns None while pending, propagates typed terminal failures and cancellation, validates a complete retained result, then stores it in `ArtifactCache`. Cache pressure leaves the runner output available for another finish attempt. Cancelling before runner promotion leaves no cache entry; no partial shot or checkpoint is persisted. `ShotAnalysis` keys bind source content, exact requested range, speech evidence, detector/model fingerprint, settings and analysis recipe. Reopened payloads additionally validate their bound fingerprints, partition, tracks, probabilities and continuity hints; stale payloads are `CacheCorrupt`, never a hit.
-
-The ignored `real_vision_analysis_smoke` test requires `--features vision`, `VIBECUT_VISION_MODELS` (the verified catalog-named files), `VIBECUT_VISION_SOURCE` (the permitted bounded source) and optional integer `VIBECUT_VISION_START`/`VIBECUT_VISION_DURATION` in seconds. It prints only aggregate analysis. Seven-layout integration and general speaker/cut accuracy are separate acceptance, not established by a green build.
+`AnalysisJob::finish` returns None while pending, propagates typed terminal failures and
+cancellation, validates a complete retained result, then stores it in `ArtifactCache`. Cache
+pressure leaves the runner output available for another finish attempt; cancelling before runner
+promotion leaves no cache entry. `AnalysisRequest` keys bind source content, exact requested
+range, speech evidence, detector and model fingerprint, settings and analysis recipe. Reopened payloads
+validate their bound fingerprints, partition, tracks, probabilities and continuity hints, and a
+stale payload is `CacheCorrupt`, never a hit.

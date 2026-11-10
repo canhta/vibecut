@@ -5,13 +5,12 @@ Domain crates own processing algorithms, decoded/raster storage and persisted pr
 Widgets, device state, app preferences and authenticated transports live in consumers.
 
 `submit_scene_exports_with_sources` admits portable `render::OutputOptions`, resolves all scene
-snapshots and runs them as one cancellable job. Every scene file is finalized in private
-temporary storage before user output publication begins; cancellation or rendering failure
-removes private files and preserves destinations. Publication uses the job fence and per-file
-atomic publication. A filesystem failure while publishing several outputs can leave earlier
-complete outputs; it never publishes a partial file. The caller owns project-file protection and
-the output grant authorizes every generated path. Control API version 2 requires
-`export.settings` with this typed contract.
+snapshots and runs them as one cancellable job. Every scene file is finalized in private staging
+before user output publication begins; cancellation or rendering failure removes private files
+and preserves destinations. Publication uses the job fence and per-file atomic publication, so a
+filesystem failure while publishing several outputs can leave earlier complete outputs but never
+a partial file. The caller owns project-file protection and the output grant authorizes every
+generated path.
 
 | Folder | Responsibility | Contract |
 |---|---|---|
