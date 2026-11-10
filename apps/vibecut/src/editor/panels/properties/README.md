@@ -57,8 +57,13 @@ catalog key colour. Every value goes through an effect command; a command that a
 
 Lists the selected clip's ordered stack. Each header has a drag-reorder handle (either
 direction; cancels on selection or inspector change), an enable toggle and remove.
-Scalar parameters use the scrub contract above. Empty stacks, disabled effects, locked
-tracks, audio clips, unsupported kinds, missed drops and the engine's effect limit show
+Scalar parameters use the scrub contract above. Static channel choices use the
+catalogue's exact index order in a compact dropdown; Reverse, Solid colour and Invert
+use labelled checkboxes. Their model values are read each frame; actual changes use
+one effects.update_param edit (choice index or bool0/1), with no keyframe diamond.
+Locked tracks disable these controls. Popup identity includes item/effect/parameter,
+so selection changes cannot apply an old popup to a different clip.
+Empty stacks, disabled effects, locked tracks, audio clips, unsupported kinds, missed drops and the engine's effect limit show
 an explicit state or localized refusal. Edits go only through `effects.add`,
 `effects.reorder`, `effects.toggle`, `effects.remove` and `effects.update_param`.
 

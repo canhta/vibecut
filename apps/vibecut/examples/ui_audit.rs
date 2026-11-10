@@ -611,6 +611,24 @@ const SCENES: &[Scene] = &[
         build: inspector_blend,
     },
     Scene {
+        name: "inspector-effects",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects"),
+    },
+    Scene {
+        name: "inspector-effects-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-vi"),
+    },
+    Scene {
+        name: "inspector-effects-threshold",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-threshold"),
+    },
+    Scene {
         name: "inspector-video",
         reference_dark: None,
         reference_light: None,
@@ -1778,8 +1796,31 @@ fn capture_columns(editor: &mut Editor) -> Result<(), Failure> {
 }
 
 fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness, Failure> {
-    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    let (mut editor, item) = media_editor(
+        theme,
+        if tab.ends_with("-vi") {
+            Locale::Vi
+        } else {
+            Locale::En
+        },
+    )?;
     capture_columns(&mut editor)?;
+    let tab = if tab.starts_with("effects") {
+        let kinds: &[&str] = if tab == "effects-threshold" {
+            &["extract"]
+        } else {
+            &["invert", "color_pass", "color_replace"]
+        };
+        for kind in kinds {
+            editor.session.apply(Command::AddEffect {
+                item,
+                effect: project::effect_definition(kind)?.instance(*kind),
+            })?;
+        }
+        "effects"
+    } else {
+        tab
+    };
     editor.selection = [item].into_iter().collect();
     editor
         .preferences
@@ -2575,7 +2616,9 @@ fn main() -> Result<(), Failure> {
             let image = opaque(image, vibecut::window_color(theme.dark()));
             let file = format!("{variant}@{}x.png", scale as u32);
             image.save(output.join(&file))?;
-            if (scene.name.starts_with("assets-") || scene.name.starts_with("export-"))
+            if (scene.name.starts_with("assets-")
+                || scene.name.starts_with("export-")
+                || scene.name.starts_with("inspector-effects"))
                 && scale == 1.0
             {
                 let geometry:Vec<_>=app.state().inspect()?.widgets.into_iter().map(|widget|serde_json::json!({

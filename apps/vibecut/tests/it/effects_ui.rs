@@ -1504,3 +1504,239 @@ fn effects_panel_renders_tiles_stack_and_preview() {
         assert!(image.width() > 0 && image.height() > 0);
     }
 }
+
+#[test]
+fn discrete_effect_controls_commit_once_and_restore_with_undo_redo() {
+    for (kind, key, choices) in [
+        ("invert", "channel", true),
+        ("color_pass", "reverse", false),
+        ("color_replace", "solid", false),
+        ("extract", "invert", false),
+    ] {
+        let f = fixture();
+        let video = f.video;
+        let mut editor = f.editor;
+        if choices {
+            editor.preferences.locale = vibecut::i18n::Locale::Vi;
+        }
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item: video,
+                effect: project::effect_definition(kind)
+                    .unwrap()
+                    .instance("discrete"),
+            })
+            .unwrap();
+        add_effect(&mut editor.session, video, "untouched", false);
+        let mut harness = build(editor);
+        harness.run_steps(3);
+        open_effect_tabs(&mut harness, video);
+        let id = format!("effects.discrete.param.{key}");
+        assert!(has_widget(&harness, &id), "missing {kind}.{key}");
+        assert!(!has_widget(&harness, &format!("{id}.keyframe")));
+        assert!(has_widget(
+            &harness,
+            "effects.untouched.param.intensity.keyframe"
+        ));
+        let values: Vec<_> = if choices {
+            [1, 2, 3, 4, 0, 0]
+                .into_iter()
+                .map(EffectValue::Choice)
+                .collect()
+        } else {
+            vec![EffectValue::Bool(true), EffectValue::Bool(false)]
+        };
+        for value in values {
+            let before = item(&harness, video);
+            let history = harness.state().session.history_len().0;
+            if let EffectValue::Choice(index) = value {
+                click(&mut harness, &id);
+                let option = format!("{id}.{index}");
+                let label = ["RGB", "Đỏ", "Xanh lá", "Xanh dương", "Độ trong suốt"][index as usize];
+                assert_eq!(
+                    harness
+                        .get(By::new().predicate(|n| n.author_id() == Some(option.as_str())))
+                        .accesskit_node()
+                        .label(),
+                    Some(label.to_owned())
+                );
+                click(&mut harness, &option);
+            } else {
+                click(&mut harness, &id);
+            }
+            let mut expected = before.clone();
+            expected.effects[0].params.insert(key.into(), value);
+            assert_eq!(item(&harness, video), expected, "{kind}.{key} {value:?}");
+            let changed = expected != before;
+            assert_eq!(
+                harness.state().session.history_len().0,
+                history + usize::from(changed)
+            );
+            if changed {
+                harness.state_mut().activate("edit.undo").unwrap();
+                harness.run_steps(2);
+                assert_eq!(item(&harness, video), before);
+                match before.effects[0].value(key).unwrap() {
+                    EffectValue::Bool(on) => assert_eq!(
+                        harness
+                            .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                            .accesskit_node()
+                            .toggled(),
+                        Some(if *on {
+                            egui::accesskit::Toggled::True
+                        } else {
+                            egui::accesskit::Toggled::False
+                        })
+                    ),
+                    EffectValue::Choice(index) => {
+                        click(&mut harness, &id);
+                        assert_eq!(
+                            harness
+                                .get(By::new().predicate(
+                                    |n| n.author_id() == Some(format!("{id}.{index}").as_str())
+                                ))
+                                .accesskit_node()
+                                .toggled(),
+                            Some(egui::accesskit::Toggled::True)
+                        );
+                        harness.key_press(egui::Key::Escape);
+                        harness.run_steps(2);
+                    }
+                    _ => unreachable!(),
+                }
+                harness.state_mut().activate("edit.redo").unwrap();
+                harness.run_steps(2);
+                assert_eq!(item(&harness, video), expected);
+            }
+            if let EffectValue::Bool(on) = value {
+                assert_eq!(
+                    harness
+                        .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                        .accesskit_node()
+                        .toggled(),
+                    Some(if on {
+                        egui::accesskit::Toggled::True
+                    } else {
+                        egui::accesskit::Toggled::False
+                    })
+                );
+            } else if let EffectValue::Choice(index) = value {
+                click(&mut harness, &id);
+                assert_eq!(
+                    harness
+                        .get(
+                            By::new().predicate(
+                                |n| n.author_id() == Some(format!("{id}.{index}").as_str())
+                            )
+                        )
+                        .accesskit_node()
+                        .toggled(),
+                    Some(egui::accesskit::Toggled::True)
+                );
+                harness.key_press(egui::Key::Escape);
+                harness.run_steps(2);
+            }
+            click(&mut harness, "inspector.group.basic");
+            click(&mut harness, "inspector.tab.effects");
+            assert_eq!(item(&harness, video), expected);
+        }
+        harness
+            .state_mut()
+            .session
+            .apply(Command::SetTrackLocked {
+                track: f.main,
+                locked: true,
+            })
+            .unwrap();
+        harness.run_steps(3);
+        let before = harness.state().session.project().clone();
+        let history = harness.state().session.history_len();
+        assert!(
+            harness
+                .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+                .accesskit_node()
+                .is_disabled()
+        );
+        click(&mut harness, &id);
+        assert_eq!(harness.state().session.project(), &before);
+        assert_eq!(harness.state().session.history_len(), history);
+    }
+}
+
+#[test]
+fn discrete_effect_popups_follow_selection_removal_and_locked_tracks() {
+    let f = fixture();
+    let (video, image, main) = (f.video, f.image, f.main);
+    let mut editor = f.editor;
+    for item in [video, image] {
+        editor
+            .session
+            .apply(Command::AddEffect {
+                item,
+                effect: project::effect_definition("invert")
+                    .unwrap()
+                    .instance("same"),
+            })
+            .unwrap();
+    }
+    editor
+        .preferences
+        .properties_tabs
+        .insert("image".into(), "effects".into());
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    let id = "effects.same.param.channel";
+    click(&mut harness, id);
+    assert!(has_widget(&harness, &format!("{id}.4")));
+    let before = item(&harness, video);
+    select(&mut harness, image);
+    assert!(
+        !has_widget(&harness, &format!("{id}.4")),
+        "old item's popup is absent"
+    );
+    click(&mut harness, id);
+    click(&mut harness, &format!("{id}.4"));
+    assert_eq!(item(&harness, video), before);
+    assert_eq!(
+        effects(&harness, image)[0].value("channel"),
+        Some(&EffectValue::Choice(4))
+    );
+    click(&mut harness, id);
+    click(&mut harness, "inspector.group.basic");
+    assert!(!has_widget(&harness, &format!("{id}.4")));
+    click(&mut harness, "inspector.tab.effects");
+    click(&mut harness, id);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::RemoveEffect {
+            item: image,
+            effect: "same".into(),
+        })
+        .unwrap();
+    harness.run_steps(3);
+    assert!(!has_widget(&harness, &format!("{id}.4")));
+    select(&mut harness, video);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track: main,
+            locked: true,
+        })
+        .unwrap();
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    assert!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .accesskit_node()
+            .is_disabled()
+    );
+    click(&mut harness, id);
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().session.history_len(), history);
+}
