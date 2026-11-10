@@ -738,7 +738,7 @@ impl render::effects::EffectCompositor for FailingPreview {
         _: render::effects::EffectInputs<'_>,
         _: &dyn render::ExecutionHooks,
     ) -> render::Result<render::Image> {
-        Err(render::Error::Unsupported("test preview"))
+        Err(render::Error::Invalid("test preview"))
     }
 }
 
