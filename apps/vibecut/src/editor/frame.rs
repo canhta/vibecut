@@ -12,6 +12,7 @@ mod view;
 mod workflow;
 
 pub(crate) use desk::{Desk, Request};
+pub use input::{AppCommand, PreviewZoom};
 
 use super::state::PreferenceHistory;
 use super::widgets::Widgets;

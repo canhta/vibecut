@@ -33,7 +33,7 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, Inspection, egui,
+    AppCommand, Editor, Inspection, PreviewZoom, egui,
     i18n::Locale,
     import::ImportProbe,
     model_manager::ModelManager,
@@ -1341,7 +1341,7 @@ fn player_variant(theme: Theme, scale: f32, variant: &str) -> Result<AppHarness,
         editor.preferences.locale = Locale::Vi;
     }
     if variant == "zoomed" {
-        editor.dispatch("preview.set_zoom", serde_json::json!({"zoom":1.25}))?;
+        editor.dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(1.25)))?;
     }
     if matches!(variant, "loading" | "failed") {
         editor.playback = Playback::new(

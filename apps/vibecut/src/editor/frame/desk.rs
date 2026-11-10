@@ -142,10 +142,14 @@ impl<'a> Desk<'a> {
         }
     }
 
-    /// Run the app dispatcher, reporting a failure; preference edits do not
-    /// touch the preview.
-    pub(in crate::editor) fn dispatch(&mut self, id: &str, params: serde_json::Value) -> bool {
-        match self.editor.dispatch(id, params) {
+    /// Record one preference edit in the app's own history, reporting a failure;
+    /// preference edits never touch the preview or the project document.
+    pub(in crate::editor) fn set_preference(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> bool {
+        match self.editor.set_preference(key, value) {
             Ok(()) => true,
             Err(error) => {
                 self.fail(error.to_string());

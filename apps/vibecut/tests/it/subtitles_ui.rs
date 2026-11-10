@@ -140,9 +140,7 @@ fn cue_actions_preserve_focused_caption_draft() {
             .to_owned();
         let before = track(h.state()).cues[0].range;
         if direct {
-            h.state_mut()
-                .dispatch(action, serde_json::json!({}))
-                .unwrap();
+            h.state_mut().activate(action).unwrap();
             h.run_steps(3);
         } else {
             click(&mut h, action);

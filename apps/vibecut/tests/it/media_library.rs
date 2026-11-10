@@ -24,7 +24,7 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    AppCommand, Editor, egui,
     import::{ImportProbe, ThumbnailSource},
     media_panel::{MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     preferences::{PreferenceStore, Preferences},
@@ -562,7 +562,7 @@ fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
     harness
         .state_mut()
-        .dispatch("media.reveal", serde_json::json!({"asset":30}))
+        .dispatch(AppCommand::RevealMedia(AssetId(30)))
         .unwrap();
     harness.run_steps(3);
     let inspection = harness.state().inspect().unwrap();

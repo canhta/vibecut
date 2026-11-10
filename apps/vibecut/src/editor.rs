@@ -4,6 +4,7 @@ mod assets;
 mod captions;
 pub(crate) mod dialogs;
 mod frame;
+pub use frame::{AppCommand, PreviewZoom};
 pub(crate) use frame::{Context, Desk, Request};
 pub(crate) mod panels;
 pub(crate) use panels::player::KeyPick;
@@ -88,9 +89,6 @@ const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
 const RULER_LABEL_SPACING: f32 = 160.0;
 const RULER_TICK_SPACING: f32 = 18.0;
 const LABEL_CHARS: usize = 120;
-
-/// App action id for every preference edit; engine history is untouched.
-pub const PREFERENCE_COMMAND: &str = "ui.prefs.set";
 
 impl Editor {
     pub(crate) fn theme(ctx: &egui::Context, dark: bool) {

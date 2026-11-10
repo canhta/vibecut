@@ -26,9 +26,9 @@ pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
 pub use editor::properties::font_picker;
 pub use editor::{
-    AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor, Inspection,
-    PREFERENCE_COMMAND, PreviewAxis, PreviewGuide, ShortcutRow, ShortcutTab, ShortcutsInspection,
-    Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, WidgetState,
+    AppCommand, AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor,
+    Inspection, PreviewAxis, PreviewGuide, PreviewZoom, ShortcutRow, ShortcutTab,
+    ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, WidgetState,
 };
 pub use eframe::egui;
 

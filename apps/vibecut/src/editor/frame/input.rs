@@ -6,3 +6,5 @@ mod keybindings;
 mod keyboard;
 mod preferences;
 mod selection;
+
+pub use dispatch::{AppCommand, PreviewZoom};

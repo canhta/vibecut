@@ -1,6 +1,6 @@
 //! Applies font picker actions: preferences, catalog commands and selection.
 use super::super::font_picker::{Action, Download};
-use crate::editor::{Editor, PREFERENCE_COMMAND};
+use crate::editor::Editor;
 use crate::preferences;
 use crate::{Error, Result};
 use engine::control::FontLoadState;
@@ -62,10 +62,7 @@ impl Editor {
         let mut preferences = self.preferences.font_picker.clone();
         preferences.tab = tab;
         self.properties.font_picker.category = super::super::font_picker::Category::All;
-        self.dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "font_picker", "value": preferences}),
-        )
+        self.set_preference("font_picker", serde_json::to_value(preferences)?)
     }
 
     fn font_favorite(&mut self, family: &str, favorite: bool) -> Result<()> {
@@ -75,10 +72,7 @@ impl Editor {
             preferences.favorites.push(family.to_owned());
             preferences.favorites.sort();
         }
-        self.dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "font_picker", "value": preferences}),
-        )
+        self.set_preference("font_picker", serde_json::to_value(preferences)?)
     }
 
     fn font_select(&mut self, family: &str) -> Result<()> {

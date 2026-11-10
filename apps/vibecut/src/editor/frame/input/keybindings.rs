@@ -1,8 +1,6 @@
 //! Maintains editor shortcut bindings.
 
-use crate::editor::{
-    Editor, Error, Keymap, PREFERENCE_COMMAND, Result, ShortcutTab, Text, actions, egui,
-};
+use crate::editor::{AppCommand, Editor, Error, Keymap, Result, ShortcutTab, Text, actions, egui};
 use crate::i18n;
 
 impl Editor {
@@ -27,10 +25,7 @@ impl Editor {
         &mut self,
         keybindings: actions::KeybindingPreferences,
     ) -> Result<()> {
-        self.dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "keybindings", "value": keybindings}),
-        )
+        self.set_preference("keybindings", serde_json::to_value(keybindings)?)
     }
     /// Open the shortcuts dialog. Rows read the live effective bindings, so a
     /// command or undo elsewhere is reflected on the next frame.
@@ -49,10 +44,10 @@ impl Editor {
     /// Record one chord for an action. The dialog calls this after a key press;
     /// tests also use it for chord text no egui key event can produce.
     pub fn record_shortcut(&mut self, action: &str, chord: &str) -> Result<()> {
-        match self.dispatch(
-            actions::KEYBINDINGS_SET_COMMAND,
-            serde_json::json!({"action": action, "bindings": [chord]}),
-        ) {
+        match self.dispatch(AppCommand::SetKeybinding {
+            action: action.to_owned(),
+            chords: vec![chord.to_owned()],
+        }) {
             Ok(()) => {
                 self.frame.shortcut_error = None;
                 self.frame.shortcut_recording = None;

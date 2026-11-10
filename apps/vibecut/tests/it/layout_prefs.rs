@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 use vibecut::{
-    Editor, PREFERENCE_COMMAND, egui,
+    Editor, egui,
     preferences::{DEFAULT_PANELS, PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };
@@ -74,7 +74,6 @@ fn drag(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
 
 #[test]
 fn theme_toggle_uses_app_history_and_leaves_the_project_untouched() {
-    assert_eq!(PREFERENCE_COMMAND, "ui.prefs.set");
     let mut harness = build(editor(Preferences::default()));
     harness.run_steps(3);
     let project = harness.state().session.project().clone();
@@ -92,31 +91,22 @@ fn theme_toggle_uses_app_history_and_leaves_the_project_untouched() {
 }
 
 #[test]
-fn ui_prefs_set_dispatches_typed_preference_params() {
+fn preference_edits_set_typed_values_and_leave_project_history_alone() {
     let mut editor = editor(Preferences::default());
     let project = editor.session.project().clone();
     editor
-        .dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "dark", "value": false}),
-        )
+        .set_preference("dark", serde_json::json!(false))
         .unwrap();
     assert!(!editor.preferences.dark);
     assert_eq!(editor.session.project(), &project);
     editor
-        .dispatch(
-            "ui.prefs.set",
-            serde_json::json!({"key": "panels", "value": [0.30, 0.20, 0.45]}),
-        )
+        .set_preference("panels", serde_json::json!([0.30, 0.20, 0.45]))
         .unwrap();
     assert_eq!(editor.preferences.panels, [0.30, 0.20, 0.45]);
     assert_eq!(editor.session.project(), &project);
     assert!(
         editor
-            .dispatch(
-                "ui.prefs.set",
-                serde_json::json!({"key": "panels", "value": [0.9, 0.9, 0.9]}),
-            )
+            .set_preference("panels", serde_json::json!([0.9, 0.9, 0.9]))
             .is_err()
     );
     assert_eq!(editor.preferences.panels, [0.30, 0.20, 0.45]);

@@ -1,13 +1,14 @@
 # Editor presentation
 
-Interface: `Editor`, `Inspection`, `WidgetState`, `AssetInspection`, `AssetState`,
-`PreviewAxis`, `PreviewGuide`, `ShortcutRow`, `ShortcutTab`, `ShortcutsInspection`,
-`TextCaret`, `Client`, `Sounds`, `SoundsMode`, `SoundsProblem`, `SoundsView`,
-`CropAspect`, `CropInspection`, `PREFERENCE_COMMAND`.
+Interface: `Editor`, `AppCommand`, `PreviewZoom`, `Inspection`, `WidgetState`,
+`AssetInspection`, `AssetState`, `PreviewAxis`, `PreviewGuide`, `ShortcutRow`,
+`ShortcutTab`, `ShortcutsInspection`, `TextCaret`, `Client`, `Sounds`, `SoundsMode`,
+`SoundsProblem`, `SoundsView`, `CropAspect`, `CropInspection`.
 
 `Editor` is the public facade over the areas. `Editor::ui` runs without a window or
 device. `activate` maps stable widget IDs to engine `execute` for every project edit
-and to app-owned transport, preferences and selection; `inspect` exposes
+and to app-owned transport, preferences and selection; `dispatch` takes one typed
+`AppCommand` for the app-owned commands; `inspect` exposes
 enabled/focus/rect/current view, playing, position, selection, zoom, snapping and the
 active snap-indicator target. The project is the Session's immutable snapshot. Every
 interactive control, including each timeline item and trim handle, exposes a

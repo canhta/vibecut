@@ -1,6 +1,6 @@
 //! Renders the export dialog into the frame requests.
 use super::{Action, State, dialog::DialogAction};
-use crate::editor::{Context, PREFERENCE_COMMAND, Text, egui};
+use crate::editor::{Context, Text, egui};
 
 pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> Vec<Action> {
     let mut actions = Vec::new();
@@ -68,10 +68,9 @@ pub(super) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
             editor.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportSave);
         }
         Action::Options(options) => {
-            editor.desk().dispatch(
-                PREFERENCE_COMMAND,
-                serde_json::json!({"key": "export", "value": options}),
-            );
+            editor
+                .desk()
+                .set_preference("export", serde_json::json!(options));
         }
         Action::Saved(saved) => {
             editor.preferences.export_directory = saved.parent().map(|path| path.to_owned());

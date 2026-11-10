@@ -1,11 +1,35 @@
 //! Adapts editor actions to engine commands.
 
 use crate::editor::{
-    ActionTarget, Command, CreatedId, Editor, EngineAction, Error, ItemId, PREFERENCE_COMMAND,
-    Result, Text, Tick, UiAction, actions,
+    ActionTarget, AssetId, Command, CreatedId, Editor, EngineAction, Error, ItemId, Result, Text,
+    Tick, UiAction, actions,
 };
 use crate::i18n;
 use crate::services::preview;
+
+/// One app-owned command the frame applies; none of them mutate project history.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AppCommand {
+    /// `export.run`: start the export sheet with typed caller settings.
+    Export(crate::export::ExportOptions),
+    /// `playback.seek`: move the shared transport to an absolute tick.
+    Seek(Tick),
+    /// `preview.set_zoom`: fit the frame or set an explicit scale.
+    PreviewZoom(PreviewZoom),
+    /// `ui.keybindings.set`: replace one action's chords.
+    SetKeybinding { action: String, chords: Vec<String> },
+    /// `ui.keybindings.reset`: reset one action's chords, or every override.
+    ResetKeybindings { action: Option<String> },
+    /// `media.reveal`: reveal one library asset.
+    RevealMedia(AssetId),
+}
+
+/// The two forms of `preview.set_zoom`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PreviewZoom {
+    Fit,
+    Zoom(f32),
+}
 
 impl Editor {
     fn split_targets(&self) -> Vec<ItemId> {
@@ -136,86 +160,31 @@ impl Editor {
     pub(in crate::editor) fn action(&mut self, id: &str) {
         self.desk().act(id);
     }
-    /// App action dispatcher shared by UI and agents. Preference edits use
-    /// `ui.prefs.set` with `{"key": ..., "value": ...}` typed params.
-    pub fn dispatch(&mut self, id: &str, params: serde_json::Value) -> Result<()> {
-        if id == "export.run" {
-            let options: crate::export::ExportOptions = serde_json::from_value(params)?;
-            return self.run_export(options);
-        }
-        if id == "playback.seek" {
-            let time = params
-                .get("time")
-                .and_then(serde_json::Value::as_i64)
-                .ok_or(Error::Invalid("seek time"))?;
-            let at = Tick(time).clamp(Tick::ZERO, self.session.project().duration());
-            self.playback
-                .seek(at, self.playback.playing(), self.session.project().clone())?;
-            self.remember_view()?;
-            return Ok(());
-        }
-        if id == "preview.set_zoom" {
-            let viewport = self.player.viewport;
-            let canvas = self.preview_canvas_size();
-            if params
-                .get("fit")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false)
-            {
-                self.set_preview_fit()?;
-            } else {
-                let zoom = params
-                    .get("zoom")
-                    .and_then(serde_json::Value::as_f64)
-                    .ok_or(Error::Invalid("preview zoom"))?;
-                let zoom =
-                    preview::normalize_zoom(zoom as f32).ok_or(Error::Invalid("preview zoom"))?;
-                self.set_preview_zoom(zoom, viewport, canvas)?;
+    /// App command dispatcher shared by UI and agents. Every variant is typed;
+    /// preference edits have their own entry and never touch engine history.
+    pub fn dispatch(&mut self, command: AppCommand) -> Result<()> {
+        match command {
+            AppCommand::Export(options) => self.run_export(options),
+            AppCommand::Seek(at) => {
+                let at = at.clamp(Tick::ZERO, self.session.project().duration());
+                self.playback
+                    .seek(at, self.playback.playing(), self.session.project().clone())?;
+                self.remember_view()
             }
-            return Ok(());
+            AppCommand::PreviewZoom(PreviewZoom::Fit) => self.set_preview_fit(),
+            AppCommand::PreviewZoom(PreviewZoom::Zoom(zoom)) => {
+                let viewport = self.player.viewport;
+                let canvas = self.preview_canvas_size();
+                let zoom = preview::normalize_zoom(zoom).ok_or(Error::Invalid("preview zoom"))?;
+                self.set_preview_zoom(zoom, viewport, canvas)
+            }
+            AppCommand::SetKeybinding { action, chords } => self.set_keybinding(&action, chords),
+            AppCommand::ResetKeybindings { action } => match action {
+                Some(action) => self.reset_keybinding(&action),
+                None => self.reset_keybindings(),
+            },
+            AppCommand::RevealMedia(asset) => self.activate(&format!("media.reveal.{}", asset.0)),
         }
-        if id == actions::KEYBINDINGS_SET_COMMAND {
-            let action = params
-                .get("action")
-                .and_then(serde_json::Value::as_str)
-                .ok_or(Error::Invalid("keybinding action"))?;
-            let chords = params
-                .get("bindings")
-                .cloned()
-                .ok_or(Error::Invalid("keybinding chords"))
-                .and_then(|value| {
-                    serde_json::from_value::<Vec<String>>(value)
-                        .map_err(|_| Error::Invalid("keybinding chords"))
-                })?;
-            return self.set_keybinding(action, chords);
-        }
-        if id == actions::KEYBINDINGS_RESET_COMMAND {
-            let action = params.get("action").and_then(serde_json::Value::as_str);
-            return if let Some(action) = action {
-                self.reset_keybinding(action)
-            } else {
-                self.reset_keybindings()
-            };
-        }
-        if id == PREFERENCE_COMMAND {
-            let key = params
-                .get("key")
-                .and_then(serde_json::Value::as_str)
-                .ok_or(Error::Invalid("preference key"))?;
-            let value = params
-                .get("value")
-                .cloned()
-                .ok_or(Error::Invalid("preference value"))?;
-            return self.set_preference(key, value);
-        }
-        if id == "media.reveal" {
-            let asset = params
-                .get("asset")
-                .and_then(serde_json::Value::as_u64)
-                .ok_or(Error::Invalid("media identity"))?;
-            return self.activate(&format!("media.reveal.{asset}"));
-        }
-        self.activate(id)
     }
     /// Availability is shared by widget admission and direct/key activation.
     /// Engine predicates remain engine-owned; selection and app workflows are local.

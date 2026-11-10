@@ -161,10 +161,8 @@ impl Editor {
         } else {
             lanes.insert(project, items);
         }
-        self.desk().dispatch(
-            crate::editor::PREFERENCE_COMMAND,
-            serde_json::json!({"key":"timeline_lanes","value":lanes}),
-        );
+        self.desk()
+            .set_preference("timeline_lanes", serde_json::json!(lanes));
     }
     /// Delete every selected keyframe as one undo step.
     pub(in crate::editor) fn delete_keyframes(

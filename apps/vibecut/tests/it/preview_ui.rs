@@ -19,7 +19,7 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    AppCommand, Editor, PreviewZoom, egui,
     i18n::Text,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
@@ -823,15 +823,15 @@ fn zoom_presets_clamp_reverse_and_leave_the_project_untouched() {
     // The same command clamps hostile values and reverses a round trip.
     assert!(
         h.state_mut()
-            .dispatch("preview.set_zoom", serde_json::json!({"zoom": 100.0}))
+            .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(100.0)))
             .is_err()
     );
     assert!(h.state().inspect().unwrap().preview_fit);
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"zoom": 2.0}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(2.0)))
         .unwrap();
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"zoom": 0.5}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(0.5)))
         .unwrap();
     assert!((h.state().inspect().unwrap().preview_zoom - 0.5).abs() < 1e-6);
     assert_eq!(json(h.state().session.project()), bytes);
@@ -846,7 +846,7 @@ fn ctrl_wheel_and_pinch_zoom_while_plain_wheel_pans_and_middle_drag_pans() {
     ));
     let bytes = json(h.state().session.project());
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"zoom": 2.0}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(2.0)))
         .unwrap();
     let before = h.state().inspect().unwrap();
     wheel(&mut h, egui::vec2(0.0, -20.0), egui::Modifiers::COMMAND);
@@ -911,7 +911,7 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
     assert!(!inspect.preview_fit);
     assert!((inspect.preview_zoom - 2.5).abs() < 1e-6);
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"zoom": 1.25}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(1.25)))
         .unwrap();
     prefs = h.state().preferences.clone();
     store.save(&prefs).unwrap();
@@ -922,7 +922,7 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
 
     // A successful save records its directory in the same preference document.
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"fit": true}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Fit))
         .unwrap();
     let out = dir.path().join("frame.png");
     h.state_mut().snapshot_picked_file(out.clone()).unwrap();
@@ -1085,10 +1085,7 @@ fn edit_after_timecode_seek_resyncs_playback_and_clamps_at_the_new_end() {
         Preferences::default(),
     ));
     h.state_mut()
-        .dispatch(
-            "playback.seek",
-            serde_json::json!({"time": 4 * TICKS_PER_SECOND}),
-        )
+        .dispatch(AppCommand::Seek(Tick(4 * TICKS_PER_SECOND)))
         .unwrap();
     assert_eq!(
         h.state().inspect().unwrap().position,
@@ -1216,7 +1213,7 @@ fn preview_toolbar_render_screenshot() {
         Preferences::default(),
     ));
     h.state_mut()
-        .dispatch("preview.set_zoom", serde_json::json!({"zoom": 1.5}))
+        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(1.5)))
         .unwrap();
     h.run_steps(3);
     let image = h.render().expect("offscreen render");

@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::{ExportFormat, ExportOptions, ExportQuality};
 use crate::editor::frame::bench::Bench;
-use crate::editor::{Editor, egui};
+use crate::editor::{AppCommand, Editor, egui};
 use crate::preferences::{PreferenceStore, Preferences};
 use crate::services::playback::{Files, Playback, Sources};
 use crate::{Error, i18n::Locale};
@@ -771,18 +771,12 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     let rate = bench.editor().session.project().data().canvas.fps;
     bench
         .editor_mut()
-        .dispatch(
-            "playback.seek",
-            serde_json::json!({"time":rate.tick_of(1).unwrap().0}),
-        )
+        .dispatch(AppCommand::Seek(rate.tick_of(1).unwrap()))
         .unwrap();
     bench.editor_mut().activate("export.mark_in").unwrap();
     bench
         .editor_mut()
-        .dispatch(
-            "playback.seek",
-            serde_json::json!({"time":rate.tick_of(2).unwrap().0}),
-        )
+        .dispatch(AppCommand::Seek(rate.tick_of(2).unwrap()))
         .unwrap();
     bench.editor_mut().activate("export.mark_out").unwrap();
     assert_eq!(
@@ -861,7 +855,7 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     let options = bench.editor().preferences.export;
     bench
         .editor_mut()
-        .dispatch("export.run", serde_json::to_value(options).unwrap())
+        .dispatch(AppCommand::Export(options))
         .unwrap();
     assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
     assert_eq!(

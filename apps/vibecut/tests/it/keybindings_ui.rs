@@ -9,7 +9,7 @@ use egui_kittest::kittest::{By, Queryable};
 use engine::Command;
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, PREFERENCE_COMMAND, ShortcutTab, actions, egui,
+    AppCommand, Editor, ShortcutTab, actions, egui,
     i18n::{self, Locale},
     preferences::PreferenceStore,
 };
@@ -154,13 +154,10 @@ fn binding_changes_use_app_history_and_leave_the_project_untouched() {
     let project = editor.session.project().clone();
     let project_can_undo = editor.session.can_undo();
     editor
-        .dispatch(
-            actions::KEYBINDINGS_SET_COMMAND,
-            serde_json::json!({
-                "action": "timeline.snap",
-                "bindings": ["Ctrl+Shift+N"]
-            }),
-        )
+        .dispatch(AppCommand::SetKeybinding {
+            action: "timeline.snap".to_owned(),
+            chords: vec!["Ctrl+Shift+N".to_owned()],
+        })
         .unwrap();
     assert_eq!(
         editor.preferences.keybindings.bindings["timeline.snap"],
@@ -224,14 +221,11 @@ fn unknown_actions_are_reported() {
     let fixture = fixture();
     let mut editor = fixture.editor;
     editor
-        .dispatch(
-            PREFERENCE_COMMAND,
+        .set_preference(
+            "keybindings",
             serde_json::json!({
-                "key": "keybindings",
-                "value": {
-                    "bindings": {"future.action": ["Ctrl+K"]},
-                    "isCustomized": ["future.action"]
-                }
+                "bindings": {"future.action": ["Ctrl+K"]},
+                "isCustomized": ["future.action"]
             }),
         )
         .unwrap();
@@ -270,7 +264,7 @@ fn shift_arrows_and_j_l_both_seek_one_second() {
 }
 
 #[test]
-fn registered_delete_target_is_executed_by_keys_buttons_and_direct_dispatch() {
+fn registered_delete_target_is_executed_by_keys_buttons_and_direct_activation() {
     for ripple in [false, true] {
         for entry in ["key", "button", "dispatch"] {
             let fixture = fixture();
@@ -299,10 +293,7 @@ fn registered_delete_target_is_executed_by_keys_buttons_and_direct_dispatch() {
                 "button" => h
                     .get(By::new().predicate(|n| n.author_id() == Some("timeline.delete")))
                     .click(),
-                "dispatch" => h
-                    .state_mut()
-                    .dispatch("timeline.delete", serde_json::json!({}))
-                    .unwrap(),
+                "dispatch" => h.state_mut().activate("timeline.delete").unwrap(),
                 _ => panic!("invalid test action entry"),
             }
             h.run_steps(3);
@@ -351,11 +342,7 @@ fn disabled_engine_and_app_selection_states_refuse_every_action_entry() {
             editor.activate("timeline.delete"),
             Err(vibecut::Error::ActionDisabled("timeline.delete"))
         ));
-        assert!(
-            editor
-                .dispatch("timeline.delete", serde_json::json!({}))
-                .is_err()
-        );
+        assert!(editor.activate("timeline.delete").is_err());
         let mut h = harness(editor);
         h.run_steps(3);
         assert!(
@@ -707,13 +694,12 @@ fn shortcuts_bindings_and_reset_state_roundtrip_through_the_preference_store() {
     assert_eq!(loaded.keybindings.effective_chords(snap), ["Ctrl+Shift+N"]);
 
     editor
-        .dispatch(
-            actions::KEYBINDINGS_RESET_COMMAND,
-            serde_json::json!({"action": "timeline.snap"}),
-        )
+        .dispatch(AppCommand::ResetKeybindings {
+            action: Some("timeline.snap".to_owned()),
+        })
         .unwrap();
     editor
-        .dispatch(actions::KEYBINDINGS_RESET_COMMAND, serde_json::json!({}))
+        .dispatch(AppCommand::ResetKeybindings { action: None })
         .unwrap();
     store.save(&editor.preferences).unwrap();
     let reloaded = store.load().unwrap();

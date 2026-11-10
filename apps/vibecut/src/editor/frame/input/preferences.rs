@@ -1,10 +1,10 @@
 //! Persists editor preferences.
 
-use crate::editor::{Editor, PREFERENCE_COMMAND, PreferenceCommand, Result};
+use crate::editor::{Editor, PreferenceCommand, Result};
 
 impl Editor {
-    /// One command (`ui.prefs.set`) for every user-visible preference edit.
-    /// App history is separate from Project history and never changes Project JSON.
+    /// One entry for every user-visible preference edit. App history is
+    /// separate from Project history and never changes Project JSON.
     pub fn set_preference(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
         let before = self.preferences.get(key)?;
         self.preferences.set(key, value)?;
@@ -26,17 +26,12 @@ impl Editor {
     pub fn set_section_open(&mut self, key: &str, open: bool) -> Result<()> {
         let mut sections = self.preferences.sections.clone();
         sections.insert(key.to_owned(), open);
-        self.dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "sections", "value": sections}),
-        )
+        self.set_preference("sections", serde_json::to_value(sections)?)
     }
     pub(in crate::editor) fn record_layout_change(&mut self, before: [f32; 3]) {
         let after = self.preferences.panels;
         self.preferences.panels = before;
-        self.desk().dispatch(
-            PREFERENCE_COMMAND,
-            serde_json::json!({"key": "panels", "value": after}),
-        );
+        self.desk()
+            .set_preference("panels", serde_json::json!(after));
     }
 }

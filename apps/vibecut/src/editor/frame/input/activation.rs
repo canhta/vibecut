@@ -1,8 +1,8 @@
 //! Routes editor actions through the facade.
 
 use crate::editor::{
-    ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, PREFERENCE_COMMAND,
-    Preferences, Result, SelectionScopes, Text, UiAction, ZOOM_STEP, actions, media_panel,
+    ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, Preferences, Result,
+    SelectionScopes, Text, UiAction, ZOOM_STEP, actions, media_panel,
 };
 use crate::services::playback::Transport;
 use crate::services::preview;
@@ -98,10 +98,7 @@ impl Editor {
                         MediaView::Grid => MediaView::List,
                         MediaView::List => MediaView::Grid,
                     };
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key":"media_view", "value":view}),
-                    )?;
+                    self.set_preference("media_view", serde_json::to_value(view)?)?;
                 }
                 UiAction::MediaSort | UiAction::MediaSortBy(_) => {
                     let key = match action {
@@ -109,10 +106,7 @@ impl Editor {
                         _ => self.preferences.media_sort.key,
                     };
                     let next = media_panel::next_sort(self.preferences.media_sort, key);
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key":"media_sort", "value":next}),
-                    )?;
+                    self.set_preference("media_sort", serde_json::to_value(next)?)?;
                 }
                 UiAction::RequestDeleteMedia => {
                     self.request_media_delete(self.media_selection.iter().copied().collect())
@@ -205,10 +199,7 @@ impl Editor {
                     }
                     options.output.scene = render::SceneChoice::Active;
                     options.output.range = render::RangeChoice::InOut { start, end };
-                    self.dispatch(
-                        crate::editor::PREFERENCE_COMMAND,
-                        serde_json::json!({"key":"export","value":options}),
-                    )?;
+                    self.set_preference("export", serde_json::to_value(options)?)?;
                 }
                 UiAction::ExportInOut => {
                     let mut options = self.preferences.export;
@@ -300,26 +291,17 @@ impl Editor {
                 UiAction::Escape => self.cancel_interaction(),
                 UiAction::Snap => {
                     let after = !self.preferences.snapping;
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key":"snapping", "value":after}),
-                    )?;
+                    self.set_preference("snapping", serde_json::json!(after))?;
                 }
                 UiAction::Ripple => {
                     let after = !self.preferences.ripple;
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key":"ripple", "value":after}),
-                    )?;
+                    self.set_preference("ripple", serde_json::json!(after))?;
                 }
                 UiAction::ZoomIn => self.zoom_timeline(ZOOM_STEP),
                 UiAction::ZoomOut => self.zoom_timeline(1.0 / ZOOM_STEP),
                 UiAction::Theme => {
                     let after = !self.preferences.dark;
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key": "dark", "value": after}),
-                    )?;
+                    self.set_preference("dark", serde_json::json!(after))?;
                 }
                 UiAction::Locale => {
                     let after = if self.preferences.locale == Locale::En {
@@ -327,18 +309,12 @@ impl Editor {
                     } else {
                         Locale::En
                     };
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({"key": "locale", "value": after}),
-                    )?;
+                    self.set_preference("locale", serde_json::to_value(after)?)?;
                 }
                 UiAction::ResetLayout => {
-                    self.dispatch(
-                        PREFERENCE_COMMAND,
-                        serde_json::json!({
-                            "key": "panels",
-                            "value": Preferences::default().panels,
-                        }),
+                    self.set_preference(
+                        "panels",
+                        serde_json::to_value(Preferences::default().panels)?,
                     )?;
                 }
                 UiAction::OpenModels => self.open_models()?,

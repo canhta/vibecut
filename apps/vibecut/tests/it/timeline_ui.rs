@@ -14,7 +14,7 @@ use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind}
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    AppCommand, Editor, egui,
     i18n::Locale,
     preferences::Preferences,
     services::playback::{Files, Playback},
@@ -3108,7 +3108,7 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
     harness.run_steps(2);
     harness
         .state_mut()
-        .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+        .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
         .unwrap();
     harness.run_steps(2);
     let opacity = project::AnimationPath::new("opacity").unwrap();
@@ -3316,7 +3316,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     // A keyframe drag snaps to the playhead like a clip edge does.
     harness
         .state_mut()
-        .dispatch("playback.seek", serde_json::json!({"time": 3 * SECOND}))
+        .dispatch(AppCommand::Seek(Tick(3 * SECOND)))
         .unwrap();
     harness.run_steps(2);
     let key = widget(
@@ -3688,7 +3688,7 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     let mut h = harness(fixture.editor);
     h.run_steps(3);
     h.state_mut()
-        .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+        .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
         .unwrap();
     h.run_steps(2);
     let undo = |h: &mut Harness<'_, Editor>| {
@@ -3704,7 +3704,7 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     };
     let seek = |h: &mut Harness<'_, Editor>| {
         h.state_mut()
-            .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+            .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
             .unwrap();
         h.run_steps(1);
     };
