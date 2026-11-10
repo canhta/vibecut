@@ -305,14 +305,13 @@ fn caption_editor() -> vibecut::Editor {
     )
     .unwrap();
     session
-        .execute(
-            "import.add_asset",
-            json!({"asset":{
-                "ephemeral":true, "id":1, "path":std::env::temp_dir().join("control-caption.srt"),
-                "content_hash":media::ContentHash::from_bytes(b"control caption"),
-                "probe":{"format":"srt","duration":null,"streams":[]}
-            }}),
-        )
+        .apply(Command::AddAsset {
+            asset: testkit::source::asset(1, std::env::temp_dir().join("control-caption.srt"))
+                .ephemeral(true)
+                .format("srt")
+                .content_hash(media::ContentHash::from_bytes(b"control caption"))
+                .build(),
+        })
         .unwrap();
     let language = captions::LanguageTag::parse("vi").unwrap();
     session

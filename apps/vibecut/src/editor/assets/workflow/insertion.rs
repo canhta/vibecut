@@ -8,7 +8,7 @@ use crate::editor::assets::{
 
 impl Editor {
     /// Insert selected assets in library order; engine owns track and overlap policy.
-    pub(in crate::editor) fn insert_selected_assets(&mut self, command: engine::CommandKind) {
+    pub(in crate::editor) fn insert_selected_assets(&mut self) {
         let selected: Vec<SourceAsset> = self
             .session
             .project()
@@ -79,12 +79,10 @@ impl Editor {
                         }),
                     },
                 };
-                let outcome = session.execute(
-                    command.id(),
-                    serde_json::json!({
-                        "placement": engine::Placement::Auto, "item": item,
-                    }),
-                )?;
+                let outcome = session.apply(Command::InsertItem {
+                    placement: engine::Placement::Auto,
+                    item,
+                })?;
                 let placed = outcome
                     .placements
                     .first()

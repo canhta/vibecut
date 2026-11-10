@@ -72,9 +72,14 @@ impl Editor {
     ) -> Result<()> {
         let [r, g, b, _] = color.0;
         let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-        self.desk().edit_result(
-            "effects.update_param",
-            serde_json::json!({"item": item, "effect": effect, "key": "key_color", "value": packed}),
+        self.desk().apply_result(
+            engine::Command::UpdateEffectParam {
+                item,
+                effect: effect.to_owned(),
+                key: "key_color".into(),
+                value: packed,
+            },
+            false,
         )?;
         Ok(())
     }
@@ -131,10 +136,10 @@ impl Editor {
             params,
         };
         let before = self.session.project().clone();
-        match self.session.execute(
-            "effects.add",
-            serde_json::json!({"item": item, "effect": effect}),
-        ) {
+        match self
+            .session
+            .apply(engine::Command::AddEffect { item, effect })
+        {
             Ok(_) => {
                 self.select_single(item);
                 let text = self.tr(Text::EffectAdded).to_owned();
@@ -181,15 +186,22 @@ impl Editor {
         })
     }
     pub(in crate::editor) fn remove_effect(&mut self, item: ItemId, effect: &str) {
-        self.desk().edit(
-            "effects.remove",
-            serde_json::json!({"item": item, "effect": effect}),
+        let _ = self.desk().apply_result(
+            engine::Command::RemoveEffect {
+                item,
+                effect: effect.to_owned(),
+            },
+            false,
         );
     }
     pub(in crate::editor) fn toggle_effect(&mut self, item: ItemId, effect: &str, enabled: bool) {
-        self.desk().edit(
-            "effects.toggle",
-            serde_json::json!({"item": item, "effect": effect, "enabled": enabled}),
+        let _ = self.desk().apply_result(
+            engine::Command::ToggleEffect {
+                item,
+                effect: effect.to_owned(),
+                enabled,
+            },
+            false,
         );
     }
     pub(in crate::editor) fn reorder_effect(
@@ -231,9 +243,12 @@ impl Editor {
         if order == current {
             return;
         }
-        self.desk().edit(
-            "effects.reorder",
-            serde_json::json!({"item": item, "order": order}),
+        let _ = self.desk().apply_result(
+            engine::Command::ReorderEffects {
+                item,
+                order: order.clone(),
+            },
+            false,
         );
     }
     pub(in crate::editor) fn set_effect_param(
@@ -254,9 +269,13 @@ impl Editor {
             .find(|candidate| candidate.id == item)
             .is_some_and(|candidate| candidate.effects.iter().any(|e| e.id == effect));
         if present {
-            self.desk().run(
-                "effects.update_param",
-                serde_json::json!({"item": item, "effect": effect, "key": key, "value": value}),
+            self.desk().apply_result(
+                engine::Command::UpdateEffectParam {
+                    item,
+                    effect: effect.to_owned(),
+                    key: key.to_owned(),
+                    value,
+                },
                 false,
             )?;
         } else {
@@ -279,9 +298,11 @@ impl Editor {
                 enabled: true,
                 params,
             };
-            self.desk().run(
-                "effects.add",
-                serde_json::json!({"item": item, "effect": instance}),
+            self.desk().apply_result(
+                engine::Command::AddEffect {
+                    item,
+                    effect: instance,
+                },
                 false,
             )?;
         }

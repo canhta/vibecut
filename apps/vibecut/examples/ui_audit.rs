@@ -12,7 +12,9 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, TrackPlacement};
+use engine::{
+    ByteBudget, Command, CreatedId, ItemParamPatch, NewItem, Placement, Session, TrackPlacement,
+};
 use media::{AssetData, AssetId, ContentHash, MediaError, SourceAsset, SourceStream, StreamKind};
 use project::{
     AudioParams, Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextParams, TrackId,
@@ -1265,10 +1267,11 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
 
 fn timeline_zoom(theme: Theme, scale: f32, zoom: f64) -> Result<AppHarness, Failure> {
     let (mut editor, _) = media_editor(theme, Locale::En)?;
-    editor.session.execute(
-        "project.set_view_state",
-        serde_json::json!({"zoom":zoom,"scroll":0,"playhead":0}),
-    )?;
+    editor.session.apply(Command::SetViewState {
+        zoom,
+        scroll: 0.0,
+        playhead: Tick::ZERO,
+    })?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
@@ -1279,10 +1282,10 @@ fn player_editor(theme: Theme, empty: bool) -> Result<Editor, Failure> {
     let mut session = empty_session("Interview")?;
     let rate = FrameRate::FPS_30;
     let duration = rate.tick_of((3600 + 18 * 60 + 28) * 30 + 6)?;
-    session.execute(
-        "scene.rename",
-        serde_json::json!({"scene":session.project().data().current_scene_id,"name":"Timeline 01"}),
-    )?;
+    session.apply(Command::RenameScene {
+        scene: session.project().data().current_scene_id,
+        name: "Timeline 01".into(),
+    })?;
     if !empty {
         let mut asset: AssetData = source_asset(
             1,
@@ -1620,14 +1623,14 @@ fn inspector_blend_locale(theme: Theme, scale: f32, locale: Locale) -> Result<Ap
             color: Color([200, 80, 120, 128]),
         }),
     )?;
-    session.execute(
-        "timeline.set_item_param",
-        serde_json::json!({"item":item,"patch":{"field":"blendMode","value":"multiply"}}),
-    )?;
-    session.execute(
-        "timeline.set_item_param",
-        serde_json::json!({"item":item,"patch":{"field":"opacity","value":0.5}}),
-    )?;
+    session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::BlendMode(project::BlendMode::Multiply),
+    })?;
+    session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::Opacity(0.5),
+    })?;
     let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
     playback.set_device_available(true);
     let mut prefs = preferences(theme, locale);
@@ -1921,10 +1924,11 @@ fn timeline_main(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     playback.set_device_available(true);
     // 11.24 s puts the playhead 54 px left of the 12 s label, as in the capture.
     let playhead = Tick((11.24 * SECOND as f64) as i64);
-    session.execute(
-        "project.set_view_state",
-        serde_json::json!({"zoom":1.7875,"scroll":575.0,"playhead":playhead.0}),
-    )?;
+    session.apply(Command::SetViewState {
+        zoom: 1.7875,
+        scroll: 575.0,
+        playhead,
+    })?;
     let mut editor = Editor::new(session, playback, preferences(theme, Locale::En));
     let project = editor.session.project().clone();
     editor.playback.seek(playhead, false, project)?;
@@ -2010,7 +2014,7 @@ fn scene_delete(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut session = empty_session("Scenes")?;
     let mut ids = Vec::new();
     for name in ["Opening", "Closing"] {
-        let created = session.execute("scene.create", serde_json::json!({"name": name}))?;
+        let created = session.apply(Command::CreateScene { name: name.into() })?;
         if let Some(CreatedId::Scene(id)) = created.created.first() {
             ids.push(*id);
         }
@@ -2217,10 +2221,11 @@ impl ImportProbe for ProgressProbe {
 
 fn export_dialog(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, _) = media_editor(theme, Locale::En)?;
-    editor.session.execute(
-        "project.set_canvas",
-        serde_json::json!({"width":360,"height":640}),
-    )?;
+    editor.session.apply(Command::SetCanvas {
+        width: 360,
+        height: 640,
+        preset: None,
+    })?;
     editor.activate("file.export")?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
     wait_for_presented(&mut app)?;

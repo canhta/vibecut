@@ -112,14 +112,8 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
                 desk.sync();
                 Ok(())
             }
-            Action::ColorPreview { command, params } => {
-                desk.editor().preview_color(command, params)
-            }
-            Action::ColorCommit {
-                command,
-                params,
-                recent,
-            } => desk.editor().commit_color(command, params, recent),
+            Action::ColorPreview { command } => desk.editor().preview_color(command),
+            Action::ColorCommit { command, recent } => desk.editor().commit_color(command, recent),
             Action::Font(action) => desk.editor().font_action(action),
             Action::Mask(action) => desk.editor().mask_action(action),
             Action::Error(message) => {

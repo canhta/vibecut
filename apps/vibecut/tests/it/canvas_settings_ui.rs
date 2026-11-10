@@ -8,7 +8,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, Session};
+use engine::{ByteBudget, Command, Session};
 use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::sync::Arc;
 use vibecut::{
@@ -172,10 +172,10 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
     harness
         .state_mut()
         .session
-        .execute(
-            "project.set_fps",
-            serde_json::json!({"num":24000,"den":1001}),
-        )
+        .apply(Command::SetFps {
+            num: 24000,
+            den: 1001,
+        })
         .unwrap();
     harness.run_steps(3);
     assert_eq!(canvas(&harness).fps, time::FrameRate::FPS_23_976);

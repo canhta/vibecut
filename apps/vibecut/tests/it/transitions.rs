@@ -4,7 +4,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, Session};
+use engine::{ByteBudget, Command, Session};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TransitionAlignment,
 };
@@ -333,9 +333,17 @@ fn drag_to_cut_is_one_edit_and_cancel_misses_stale_or_reversed_drags_are_inert()
         }
         if mode == "present" {
             let track = editor.session.project().data().scene().timeline.main.id;
-            editor.session.execute("transition.add", serde_json::json!({
-                "track":track, "from":1, "to":2, "kind":"cross_dissolve", "duration":SECOND/2, "alignment":"center"
-            })).unwrap();
+            editor
+                .session
+                .apply(Command::AddTransition {
+                    track,
+                    from: ItemId(1),
+                    to: ItemId(2),
+                    kind: "cross_dissolve".into(),
+                    duration: Tick(SECOND / 2),
+                    alignment: TransitionAlignment::Center,
+                })
+                .unwrap();
         }
         let mut h = build(editor);
         open(&mut h);
@@ -351,7 +359,9 @@ fn drag_to_cut_is_one_edit_and_cancel_misses_stale_or_reversed_drags_are_inert()
             "stale" => {
                 h.state_mut()
                     .session
-                    .execute("project.rename", serde_json::json!({"name":"Changed"}))
+                    .apply(Command::RenameProject {
+                        name: "Changed".into(),
+                    })
                     .unwrap();
                 h.run_steps(2);
             }

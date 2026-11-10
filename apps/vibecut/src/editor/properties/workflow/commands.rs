@@ -8,11 +8,9 @@ impl Editor {
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
         let patch = item_patch(field, value)?;
-        let items = self.selection.clone();
-        self.desk().edit_result(
-            "timeline.set_item_param_many",
-            serde_json::json!({"items":items,"patch":patch}),
-        )?;
+        let items = self.selection.iter().copied().collect();
+        self.desk()
+            .apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
         Ok(())
     }
     /// Toggle one diamond over its fields at the playhead as one undo step: keys
@@ -37,16 +35,13 @@ impl Editor {
                 } else {
                     field.as_str()
                 };
-                session.execute(
-                    "keyframes.toggle_at",
-                    serde_json::json!({
-                        "item": item,
-                        "path": path,
-                        "component": null,
-                        "time": time,
-                        "value": {"kind": "scalar", "value": value},
-                    }),
-                )?;
+                session.apply(engine::Command::ToggleKeyframe {
+                    item,
+                    path: project::AnimationPath::new(path)?,
+                    component: None,
+                    time,
+                    value: project::ParamValue::Scalar(*value),
+                })?;
             }
             Ok(())
         })?;
@@ -91,10 +86,8 @@ impl Editor {
             return self.set_speed(item, speed, maintain_pitch);
         }
         let patch = item_patch(field, value)?;
-        self.desk().edit_result(
-            "timeline.set_item_param",
-            serde_json::json!({"item":item,"patch":patch}),
-        )?;
+        self.desk()
+            .apply_result(engine::Command::SetItemField { item, patch }, false)?;
         Ok(())
     }
 }

@@ -94,18 +94,17 @@ impl ColorTarget {
         &self,
         project: &project::Project,
         color: Color,
-    ) -> Result<(&'static str, serde_json::Value)> {
+    ) -> Result<engine::Command> {
         if *self == Self::Canvas {
-            return Ok((
-                "project.set_background",
-                serde_json::json!({"color": color}),
-            ));
+            return Ok(engine::Command::SetBackground { color });
         }
         if let Self::Bookmark(bookmark) = self {
-            return Ok((
-                "bookmark.update",
-                serde_json::json!({"bookmark": bookmark, "color": color}),
-            ));
+            return Ok(engine::Command::UpdateBookmark {
+                bookmark: *bookmark,
+                note: None,
+                color: Some(color),
+                duration: None,
+            });
         }
         if let Self::MaskStroke { item, mask } = self {
             let mut value = project
@@ -119,30 +118,30 @@ impl ColorTarget {
                 .cloned()
                 .ok_or(Error::Invalid("mask colour target"))?;
             value.stroke.color = color;
-            return Ok((
-                "masks.update",
-                serde_json::json!({"item":item,"mask":value}),
-            ));
+            return Ok(engine::Command::UpdateMask {
+                item: *item,
+                mask: value,
+            });
         }
         if let Self::EffectKeyColor { item, effect } = self {
             let [r, g, b, _] = color.0;
             let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-            return Ok((
-                "effects.update_param",
-                serde_json::json!({"item":item,"effect":effect,"key":"key_color","value":packed}),
-            ));
+            return Ok(engine::Command::UpdateEffectParam {
+                item: *item,
+                effect: effect.clone(),
+                key: "key_color".into(),
+                value: packed,
+            });
         }
-        let field = match self {
-            Self::Text(_) => "text_color",
-            Self::Background(_) => "text_background_color",
-            Self::GraphicFill(_) => "graphic_fill",
-            Self::GraphicStroke(_) => "graphic_stroke",
+        let item = self.item().ok_or(Error::Invalid("colour target"))?;
+        let patch = match self {
+            Self::Text(_) => engine::ItemParamPatch::TextColor(color),
+            Self::Background(_) => engine::ItemParamPatch::TextBackgroundColor(color),
+            Self::GraphicFill(_) => engine::ItemParamPatch::GraphicFill(color),
+            Self::GraphicStroke(_) => engine::ItemParamPatch::GraphicStroke(color),
             _ => return Err(Error::Invalid("colour target")),
         };
-        Ok((
-            "timeline.set_item_param",
-            serde_json::json!({"item":self.item(),"patch":{"field":field,"value":color}}),
-        ))
+        Ok(engine::Command::SetItemField { item, patch })
     }
 }
 

@@ -184,10 +184,9 @@ fn cue_edit_selection_seek_split_merge_nudge_and_history_use_real_controls() {
         h.run_steps(2);
         h.state_mut()
             .session
-            .execute(
-                "project.rename",
-                serde_json::json!({"name":"Concurrent project rename"}),
-            )
+            .apply(Command::RenameProject {
+                name: "Concurrent project rename".into(),
+            })
             .unwrap();
         h.run_steps(2);
         click(&mut h, "assets.tab.media");
@@ -638,7 +637,9 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
             _ => {
                 h.state_mut()
                     .session
-                    .execute("project.rename", serde_json::json!({"name":"Changed"}))
+                    .apply(Command::RenameProject {
+                        name: "Changed".into(),
+                    })
                     .unwrap();
                 click(&mut h, "subtitles.consent.approve");
             }

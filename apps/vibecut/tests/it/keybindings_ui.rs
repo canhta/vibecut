@@ -6,6 +6,7 @@
 )]
 use super::timeline_ui::{fixture, harness, widget};
 use egui_kittest::kittest::{By, Queryable};
+use engine::Command;
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, PREFERENCE_COMMAND, ShortcutTab, actions, egui,
@@ -285,12 +286,12 @@ fn registered_delete_target_is_executed_by_keys_buttons_and_direct_dispatch() {
             let command = route.command(ripple);
             let mut expected =
                 engine::Session::new((**editor.session.project()).clone(), 50).unwrap();
-            let params = if ripple {
-                serde_json::json!({"item":item})
-            } else {
-                serde_json::json!({"items":[item]})
+            let expected_command = match command {
+                engine::CommandKind::Delete => Command::Delete { items: vec![item] },
+                engine::CommandKind::RippleDelete => Command::RippleDelete { item },
+                other => panic!("delete route must build delete or ripple delete: {other:?}"),
             };
-            expected.execute(command.id(), params).unwrap();
+            expected.apply(expected_command).unwrap();
             let mut h = harness(editor);
             h.run_steps(3);
             match entry {

@@ -348,9 +348,8 @@ impl Editor {
     }
 
     pub(in crate::editor) fn execute_engine_action(&mut self, route: EngineAction) -> Result<()> {
-        let command = route.command(self.preferences.ripple);
         if route == EngineAction::InsertMedia {
-            self.insert_selected_assets(command);
+            self.insert_selected_assets();
             return Ok(());
         }
         let commands = self.engine_commands(route)?;

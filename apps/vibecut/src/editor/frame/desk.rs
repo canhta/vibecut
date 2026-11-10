@@ -55,23 +55,6 @@ impl<'a> Desk<'a> {
             .set_selection(self.editor.selection.clone())
     }
 
-    /// Push the selection and run one command without reporting or resyncing.
-    pub(in crate::editor) fn run(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-        ripple: bool,
-    ) -> engine::Result<engine::Outcome> {
-        self.push_selection()?;
-        if ripple {
-            self.editor
-                .session
-                .execute_with_ripple(command, params, true)
-        } else {
-            self.editor.session.execute(command, params)
-        }
-    }
-
     /// Push the selection and apply one typed command without reporting or
     /// resyncing.
     pub(in crate::editor) fn run_command(
@@ -109,21 +92,6 @@ impl<'a> Desk<'a> {
         }
     }
 
-    /// One widget edit: push selection, apply, report the failure and resync
-    /// the preview once when the project changed.
-    pub(in crate::editor) fn edit(&mut self, command: &str, params: serde_json::Value) -> bool {
-        self.edit_outcome(command, params).is_some()
-    }
-
-    /// The same entry for callers that need the engine outcome.
-    pub(in crate::editor) fn edit_outcome(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-    ) -> Option<engine::Outcome> {
-        self.edit_with_ripple_outcome(command, params, false)
-    }
-
     /// Stage a preview and always show it; a reversal must restore the entry
     /// frame even when the engine reports no net change.
     pub(in crate::editor) fn preview(&mut self, command: Command, ripple: bool) -> bool {
@@ -137,48 +105,6 @@ impl<'a> Desk<'a> {
                 false
             }
         }
-    }
-
-    /// The edit entry for callers that propagate the failure.
-    pub(in crate::editor) fn edit_result(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-    ) -> crate::Result<engine::Outcome> {
-        self.edit_with_ripple_result(command, params, false)
-    }
-
-    /// The ripple-aware edit entry for callers that propagate the failure.
-    pub(in crate::editor) fn edit_with_ripple_result(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-        ripple: bool,
-    ) -> crate::Result<engine::Outcome> {
-        let before = self.editor.session.project().clone();
-        let result = self.run(command, params, ripple);
-        match result {
-            Ok(outcome) => {
-                if outcome.changed || !Arc::ptr_eq(&before, self.editor.session.project()) {
-                    self.sync();
-                }
-                Ok(outcome)
-            }
-            Err(error) => {
-                self.fail(error.to_string());
-                Err(error.into())
-            }
-        }
-    }
-
-    /// The edit entry for callers that need the outcome and the ripple policy.
-    pub(in crate::editor) fn edit_with_ripple_outcome(
-        &mut self,
-        command: &str,
-        params: serde_json::Value,
-        ripple: bool,
-    ) -> Option<engine::Outcome> {
-        self.edit_with_ripple_result(command, params, ripple).ok()
     }
 
     /// The typed-command entry for callers that propagate the failure.

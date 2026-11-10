@@ -13,7 +13,7 @@ impl Editor {
             Action::Choose { item, shape } => self.choose_mask(item, shape),
             Action::Update { item, mask } => {
                 self.desk()
-                    .edit_result("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
+                    .apply_result(engine::Command::UpdateMask { item, mask }, false)?;
                 Ok(())
             }
         }
@@ -28,9 +28,12 @@ impl Editor {
         match (shape, current) {
             (None, None) => return Ok(()),
             (None, Some(mask)) => {
-                self.desk().edit_result(
-                    "masks.remove",
-                    serde_json::json!({"item":item,"mask":mask.id}),
+                self.desk().apply_result(
+                    engine::Command::RemoveMask {
+                        item,
+                        mask: mask.id,
+                    },
+                    false,
                 )?;
             }
             (Some(shape), Some(mut mask)) => {
@@ -39,14 +42,14 @@ impl Editor {
                 }
                 mask.shape = shape;
                 self.desk()
-                    .edit_result("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
+                    .apply_result(engine::Command::UpdateMask { item, mask }, false)?;
             }
             (Some(shape), None) => {
                 let rotation = Choice::of(&shape).map_or(0.0, |choice| choice.default_rotation());
                 let mut mask = project::Mask::new("mask1", shape);
                 mask.rotation = rotation;
                 self.desk()
-                    .edit_result("masks.add", serde_json::json!({"item":item,"mask":mask}))?;
+                    .apply_result(engine::Command::AddMask { item, mask }, false)?;
             }
         }
         Ok(())

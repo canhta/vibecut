@@ -124,13 +124,14 @@ impl Editor {
             return;
         }
         self.session.end_merge();
-        match self.session.execute(
-            "transition.add",
-            serde_json::json!({
-                "track": cut.track, "from": cut.from, "to": cut.to, "kind": kind,
-                "duration": TICKS_PER_SECOND / 2, "alignment": "center",
-            }),
-        ) {
+        match self.session.apply(engine::Command::AddTransition {
+            track: cut.track,
+            from: cut.from,
+            to: cut.to,
+            kind: kind.to_owned(),
+            duration: Tick(TICKS_PER_SECOND / 2),
+            alignment: TransitionAlignment::Center,
+        }) {
             Ok(_) => self.desk().sync(),
             Err(error) => {
                 tracing::warn!(category = "transition_apply", %error, "transition refused");

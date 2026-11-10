@@ -11,7 +11,7 @@ use crate::{
     services::playback::{Files, Playback},
 };
 use engine::{
-    ByteBudget, EditError, Session,
+    ByteBudget, Command, EditError, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
@@ -854,10 +854,11 @@ impl EditorWindow {
         editor.activate("transport.pause")?;
         let at = editor.playback.position()?;
         let view = editor.session.metadata().view;
-        editor.session.execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
-        )?;
+        editor.session.apply(Command::SetViewState {
+            zoom: view.zoom,
+            scroll: view.scroll,
+            playhead: at,
+        })?;
         let id = editor.session.project().data().id;
         self.retry_save = Some((path.clone(), leave, close, journal_only));
         self.save_as_from = path.as_ref().map(|_| id);
@@ -1606,7 +1607,7 @@ fn run(
                     if let Some(path) = path {
                         autosave.save_as(path)?;
                     } else {
-                        autosave.execute("project.save", serde_json::json!({}))?;
+                        autosave.apply(Command::SaveProject {})?;
                     }
                     autosave.flush()?;
                     if autosave.saving() || autosave.is_dirty() {
@@ -1614,7 +1615,7 @@ fn run(
                     }
                 }
                 if leave || close {
-                    autosave.execute("project.thumbnail", serde_json::json!({}))?;
+                    autosave.apply(Command::ThumbnailProject {})?;
                 }
                 Ok(())
             })();

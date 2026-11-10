@@ -24,12 +24,11 @@ impl Editor {
     /// Show a colour draft without touching the editable session.
     pub(in crate::editor::properties) fn preview_color(
         &mut self,
-        command: &'static str,
-        params: serde_json::Value,
+        command: engine::Command,
     ) -> Result<()> {
         let result = (|| -> Result<()> {
             let mut draft = Session::new(self.session.project().as_ref().clone(), 1)?;
-            draft.execute(command, params)?;
+            draft.apply(command)?;
             let at = self.playback.position().unwrap_or(Tick::ZERO);
             self.playback.seek(at, false, draft.project().clone())?;
             Ok(())
@@ -42,14 +41,13 @@ impl Editor {
     /// Commit a released colour as one undoable command and remember it as recent.
     pub(in crate::editor::properties) fn commit_color(
         &mut self,
-        command: &'static str,
-        params: serde_json::Value,
+        command: engine::Command,
         recent: Vec<project::Color>,
     ) -> Result<()> {
         let mut preferences = self.preferences.clone();
         preferences.set("recent_colors", serde_json::to_value(recent)?)?;
         self.session.end_merge();
-        if let Err(error) = self.desk().edit_result(command, params) {
+        if let Err(error) = self.desk().apply_result(command, false) {
             // The engine refused: show the committed project again.
             self.desk().sync();
             return Err(error);

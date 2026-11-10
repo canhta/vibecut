@@ -1,6 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use egui_kittest::kittest::{By, Queryable};
+use engine::{Command, NewItem, Placement};
+use project::{Color, ItemParams, OverlayParams};
 use std::time::{Duration, Instant};
+use time::{SourceRange, Tick};
 use vibecut::{egui, preferences::Preferences, workspace::Workspace};
 fn idle(app: &mut Workspace) {
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -35,10 +38,11 @@ fn create_save_exit_reopen_view_state_and_schema_refusal_preserve_disk() {
     app.focused_editor_mut()
         .unwrap()
         .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":2,"scroll":55,"playhead":0}),
-        )
+        .apply(Command::SetViewState {
+            zoom: 2.0,
+            scroll: 55.0,
+            playhead: Tick::ZERO,
+        })
         .unwrap();
     app.persist(Some(path.clone()), true, false, false).unwrap();
     assert!(app.busy());
@@ -306,10 +310,9 @@ fn recovered_projects_save_and_leave_in_sequence_without_changing_originals() {
         app.focused_editor_mut()
             .unwrap()
             .session
-            .execute(
-                "project.rename",
-                serde_json::json!({"name":format!("recovered {id}")}),
-            )
+            .apply(Command::RenameProject {
+                name: format!("recovered {id}").into(),
+            })
             .unwrap();
         app.persist(None, true, false, true).unwrap();
         idle(&mut app);
@@ -496,16 +499,27 @@ fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
     let before = std::fs::read(&path).unwrap();
     let session = &mut app.focused_editor_mut().unwrap().session;
     let frame = session.project().data().canvas.fps.tick_of(1).unwrap();
-    session.execute("timeline.insert", serde_json::json!({
-        "placement":{"mode":"auto"},
-        "item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":frame.0},
-        "start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}
-    })).unwrap();
     session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":1,"scroll":0,"playhead":frame.0*10}),
-        )
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: SourceRange::new(Tick::ZERO, frame).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Overlay(OverlayParams {
+                    color: Color([255, 0, 0, 255]),
+                }),
+            },
+        })
+        .unwrap();
+    session
+        .apply(Command::SetViewState {
+            zoom: 1.0,
+            scroll: 0.0,
+            playhead: Tick(frame.0 * 10),
+        })
         .unwrap();
     app.persist(None, false, true, true).unwrap();
     idle(&mut app);
@@ -568,7 +582,7 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
         app.editor_mut(id)
             .unwrap()
             .session
-            .execute("project.rename", serde_json::json!({"name":name}))
+            .apply(Command::RenameProject { name: name.into() })
             .unwrap();
     }
     app.editor_mut(first)

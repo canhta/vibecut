@@ -108,12 +108,10 @@ pub(in crate::editor) enum Action {
     /// The preview returns to the project (picker closed or failed).
     SyncPreview,
     ColorPreview {
-        command: &'static str,
-        params: serde_json::Value,
+        command: engine::Command,
     },
     ColorCommit {
-        command: &'static str,
-        params: serde_json::Value,
+        command: engine::Command,
         recent: Vec<project::Color>,
     },
     /// Font picker commands, preferences and family selection.

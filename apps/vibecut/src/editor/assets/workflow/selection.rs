@@ -1,7 +1,7 @@
 //! Maintains asset selection.
 
 use crate::editor::assets::{
-    Arc, AssetId, AssetState, AssetsTab, BTreeMap, BTreeSet, Editor, Error, MEDIA_REVEAL,
+    Arc, AssetId, AssetState, AssetsTab, BTreeMap, BTreeSet, Command, Editor, Error, MEDIA_REVEAL,
     MediaReveal, Result, SourceAsset, Text, UnsupportedReason, egui, error_detail, media_panel,
 };
 use crate::i18n;
@@ -172,10 +172,7 @@ impl Editor {
         };
         let count = ids.len() as u64;
         let before = self.session.project().clone();
-        match self.session.execute(
-            engine::CommandKind::RemoveAssets.id(),
-            serde_json::json!({ "assets": ids }),
-        ) {
+        match self.session.apply(Command::RemoveAssets { assets: ids }) {
             Ok(_) => {
                 self.media_selection.clear();
                 self.media_anchor = None;

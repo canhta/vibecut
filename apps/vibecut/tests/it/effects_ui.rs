@@ -10,7 +10,9 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
-use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
+use project::{
+    Color, EffectInstance, EffectParams, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind,
+};
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -98,17 +100,14 @@ fn insert(
 
 fn add_effect(session: &mut Session, item: ItemId, id: &str, enabled: bool) {
     session
-        .execute(
-            "effects.add",
-            serde_json::json!({
-                "item": item,
-                "effect": {
-                    "id": id,
-                    "enabled": enabled,
-                    "params": {"kind": "blur", "intensity": 15.0}
-                }
-            }),
-        )
+        .apply(Command::AddEffect {
+            item,
+            effect: EffectInstance {
+                id: id.into(),
+                enabled,
+                params: EffectParams::Blur { intensity: 15.0 },
+            },
+        })
         .unwrap();
 }
 
@@ -662,10 +661,12 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
     let mut editor = locked.editor;
     editor
         .session
-        .execute(
-            "track.set_flags",
-            serde_json::json!({"track": main, "muted": false, "hidden": false, "locked": true}),
-        )
+        .apply(Command::SetTrackFlags {
+            track: main,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
         .unwrap();
     let mut harness = build(editor);
     harness.run_steps(3);
@@ -1015,22 +1016,18 @@ fn click_pos(harness: &mut Harness<Editor>, pos: egui::Pos2) {
 
 fn add_chroma_effect(session: &mut Session, item: ItemId) {
     session
-        .execute(
-            "effects.add",
-            serde_json::json!({
-                "item": item,
-                "effect": {
-                    "id": "chroma_key",
-                    "enabled": true,
-                    "params": {
-                        "kind": "chroma_key",
-                        "key_color": [0, 255, 0, 255],
-                        "intensity": project::CHROMA_KEY_INTENSITY_DEFAULT,
-                        "shadow": 0.0
-                    }
-                }
-            }),
-        )
+        .apply(Command::AddEffect {
+            item,
+            effect: EffectInstance {
+                id: "chroma_key".into(),
+                enabled: true,
+                params: EffectParams::ChromaKey {
+                    key_color: Color([0, 255, 0, 255]),
+                    intensity: project::CHROMA_KEY_INTENSITY_DEFAULT,
+                    shadow: 0.0,
+                },
+            },
+        })
         .unwrap();
 }
 

@@ -21,19 +21,15 @@ impl Panel<'_, '_> {
             .target
             .command(self.cx.session.project(), picker.color)
         {
-            Ok((command, params)) => {
+            Ok(command) => {
                 if event.commit && picker.color != picker.original {
                     let mut recent = self.cx.preferences.recent_colors.clone();
                     recent.retain(|c| *c != picker.color);
                     recent.insert(0, picker.color);
                     recent.truncate(16);
-                    self.actions.push(Action::ColorCommit {
-                        command,
-                        params,
-                        recent,
-                    });
+                    self.actions.push(Action::ColorCommit { command, recent });
                 } else if event.preview {
-                    self.actions.push(Action::ColorPreview { command, params });
+                    self.actions.push(Action::ColorPreview { command });
                 }
             }
             Err(error) => {

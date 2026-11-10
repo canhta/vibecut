@@ -165,10 +165,9 @@ fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() 
     let editor = app.editor_mut(second).unwrap();
     editor
         .session
-        .execute(
-            "project.rename",
-            serde_json::json!({"name":"unsaved second"}),
-        )
+        .apply(engine::Command::RenameProject {
+            name: "unsaved second".into(),
+        })
         .unwrap();
     editor.activate("file.export").unwrap();
     editor

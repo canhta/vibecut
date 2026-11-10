@@ -10,9 +10,9 @@ use egui_kittest::{
 };
 use engine::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobView};
 use engine::jobs::{JobId, JobKind, JobStage, JobState};
-use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
+use engine::{ByteBudget, Command, CreatedId, ItemParamPatch, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
-use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
+use project::{Color, ItemId, ItemParams, Project, ProjectId, TextBackground, TrackId, TrackKind};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
@@ -550,7 +550,18 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     let mut fixture = fixture();
     // A screenshot needs a healthy generated preview, not the offline media
     // deliberately retained by the general panel fixture.
-    fixture.editor.session.execute("delete",serde_json::json!({"items":[fixture.video,fixture.silent_video,fixture.image,fixture.audio]})).unwrap();
+    fixture
+        .editor
+        .session
+        .apply(Command::Delete {
+            items: vec![
+                fixture.video,
+                fixture.silent_video,
+                fixture.image,
+                fixture.audio,
+            ],
+        })
+        .unwrap();
     fixture
         .editor
         .playback
@@ -626,16 +637,17 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
             harness
                 .state_mut()
                 .session
-                .execute(
-                    "timeline.set_item_param",
-                    serde_json::json!({
-                        "item": fixture.text,
-                        "patch": {"field": "text_background", "value": {
-                            "color": [1, 2, 3, 4], "padding_x": 17.0, "padding_y": 15.0,
-                            "offset_x": 0.0, "offset_y": 0.0, "radius": 9.0
-                        }}
-                    }),
-                )
+                .apply(Command::SetItemField {
+                    item: fixture.text,
+                    patch: ItemParamPatch::TextBackground(Some(TextBackground {
+                        color: Color([1, 2, 3, 4]),
+                        padding_x: 17.0,
+                        padding_y: 15.0,
+                        offset_x: 0.0,
+                        offset_y: 0.0,
+                        radius: 9.0,
+                    })),
+                })
                 .unwrap();
             harness.run_steps(2);
         }
@@ -1548,7 +1560,18 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     use project::{TextAlign, TextDecoration};
     let mut fixture = fixture();
     // A healthy generated preview for the screenshot, as the colour test does.
-    fixture.editor.session.execute("delete",serde_json::json!({"items":[fixture.video,fixture.silent_video,fixture.image,fixture.audio]})).unwrap();
+    fixture
+        .editor
+        .session
+        .apply(Command::Delete {
+            items: vec![
+                fixture.video,
+                fixture.silent_video,
+                fixture.image,
+                fixture.audio,
+            ],
+        })
+        .unwrap();
     fixture
         .editor
         .playback
