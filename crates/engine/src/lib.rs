@@ -2,6 +2,8 @@
 pub mod control;
 mod session;
 pub(crate) use session::transitions;
+use session::wire::ErrorCode;
+pub use session::wire::Failure;
 pub use session::{
     Availability, ChapterSidecars, Command, CommandKind, CommandSpec, CreatedId, CueId,
     DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement,
@@ -190,3 +192,90 @@ pub enum EditError {
 pub type Result<T> = std::result::Result<T, EditError>;
 
 pub use runtime::{default_file_name, sanitize_file_name};
+
+impl EditError {
+    fn classification(&self) -> (ErrorCode, bool) {
+        use ErrorCode as C;
+        let code = match self {
+            Self::SchemaMismatch => C::SchemaMismatch,
+            Self::SessionGone => C::SessionGone,
+            Self::StaleRevision => C::StaleRevision,
+            Self::Permission => C::Permission,
+            Self::IdempotencyConflict => C::IdempotencyConflict,
+            Self::ReceiptCapacity => C::ReceiptCapacity,
+            Self::ResyncRequired => C::ResyncRequired,
+            Self::JobNotRetained => C::JobNotRetained,
+            Self::UnknownCommand => C::UnknownCommand,
+            Self::InvalidParams => C::InvalidParams,
+            Self::Limit => C::Limit,
+            Self::Cancelled => C::Cancelled,
+            Self::QueueFull => C::QueueFull,
+            Self::TransactionActive | Self::NoGesture => C::TransactionActive,
+            Self::EmptyProject => C::EmptyProject,
+            Self::Panicked => C::Failed,
+            Self::BudgetFull | Self::ArtifactTooLarge => C::Budget,
+            Self::StaleResult => C::StaleResult,
+            Self::WorkerPanicked => C::WorkerFailure,
+            Self::JobPoisoned | Self::CacheCorrupt => C::Job,
+            Self::NetworkTransient => return (C::Job, true),
+            Self::JobFailure(inner) => inner.code(),
+            Self::Sounds(inner) => inner.code(),
+            Self::Font(inner) => inner.code(),
+            Self::Providers(inner) => inner.code(),
+            Self::Transcript(inner) => inner.code(),
+            Self::Render(render::Error::Unavailable(_)) => C::Unavailable,
+            Self::Render(_) => C::Render,
+            Self::Media(_) => C::Media,
+            Self::Ai(inner) => {
+                return (
+                    if matches!(inner, ai::Error::Chapters(_)) {
+                        C::Refused
+                    } else {
+                        C::Ai
+                    },
+                    inner.is_transient(),
+                );
+            }
+            Self::Io(_) | Self::Project(project::Error::Io(_)) => C::Io,
+            Self::Project(project::Error::Busy) => C::Busy,
+            Self::Project(project::Error::Conflict) => C::Conflict,
+            Self::Project(project::Error::Media(_)) => C::Media,
+            Self::ControlIdentity
+            | Self::CacheBusy
+            | Self::ModelResponse
+            | Self::StorageFull
+            | Self::RecoveryCorrupt
+            | Self::RecoveryBusy
+            | Self::SaveAsRequired
+            | Self::PersistenceFailed(_)
+            | Self::LoudnessStale
+            | Self::NoTrack(_)
+            | Self::NoAsset(_)
+            | Self::AssetsInUse(_)
+            | Self::NoItem(_)
+            | Self::Locked(_)
+            | Self::SceneBoundary
+            | Self::Protected
+            | Self::CuesNotAdjacent
+            | Self::CuesAcrossTracks
+            | Self::CuesAcrossItems
+            | Self::Overlap(_)
+            | Self::Invalid(_)
+            | Self::Unsupported(_)
+            | Self::NoHistory
+            | Self::IdExhausted
+            | Self::Project(_)
+            | Self::Time(_)
+            | Self::Captions(_) => C::Refused,
+        };
+        (code, false)
+    }
+}
+impl Failure for EditError {
+    fn code(&self) -> ErrorCode {
+        self.classification().0
+    }
+    fn transient(&self) -> bool {
+        self.classification().1
+    }
+}

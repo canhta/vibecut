@@ -229,7 +229,7 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
         )
         .unwrap();
     assert_eq!(failure_publishes, 1);
-    error(failure, ErrorCode::Failed);
+    error(failure, ErrorCode::Io);
     assert_eq!(s.revision(), before_failure);
 
     let mut replay_publishes = 0;
@@ -251,7 +251,7 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
         )
         .unwrap();
     assert_eq!(replay_publishes, 0);
-    error(replay_failure, ErrorCode::Failed);
+    error(replay_failure, ErrorCode::Io);
     assert_eq!(s.revision(), before_failure);
 
     let conflict = run(

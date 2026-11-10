@@ -991,10 +991,27 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
     let inspect = h.state().inspect().unwrap();
     assert!(matches!(
         inspect.snapshot_error,
-        Some(engine::control::ErrorCode::Failed | engine::control::ErrorCode::Refused)
+        Some(engine::control::ErrorCode::Refused)
     ));
     assert!(inspect.snapshot_saved.is_none());
     assert!(inspect.import_toast.is_none());
+    assert_eq!(json(h.state().session.project()), bytes);
+
+    let parent_file = dir.path().join("parent-file");
+    std::fs::write(&parent_file, b"preserved").unwrap();
+    let error = h
+        .state_mut()
+        .snapshot_picked_file(parent_file.join("frame.png"))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        vibecut::Error::Engine(engine::EditError::Invalid("snapshot write failed"))
+    ));
+    let inspect = h.state().inspect().unwrap();
+    assert_eq!(inspect.snapshot_error, Some(engine::control::ErrorCode::Io));
+    assert!(inspect.snapshot_saved.is_none());
+    assert!(inspect.import_toast.is_none());
+    assert_eq!(std::fs::read(&parent_file).unwrap(), b"preserved");
     assert_eq!(json(h.state().session.project()), bytes);
 
     click(&mut h, "preview.retry");
