@@ -305,36 +305,75 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
 }
 #[test]
 fn failed_batch_at_every_position_preserves_redo_and_pending_event() {
-    for position in 0..5 {
+    let pending = || {
         let mut s = Session::new(project(), 1).unwrap();
         s.apply(Command::Delete {
             items: vec![ItemId(11)],
         })
         .unwrap();
         s.undo().unwrap();
-        let before = s.project().clone();
-        let history = s.history_len();
-        let mut commands = vec![
-            Command::BookmarkAdd {
-                start: Tick(0),
-                duration: Tick(0),
-                note: "".into(),
-                color: Color([0; 4])
-            };
-            4
-        ];
-        commands.insert(
-            position,
+        s
+    };
+    let bookmark = || Command::BookmarkAdd {
+        start: Tick(0),
+        duration: Tick(0),
+        note: "".into(),
+        color: Color([0; 4]),
+    };
+    let mut reference = pending();
+    reference.redo().unwrap();
+    let expected_ids = reference.apply(bookmark()).unwrap().created;
+    for (failure, message) in [
+        (
             Command::Delete {
                 items: vec![ItemId(99)],
             },
-        );
-        assert!(s.apply(Command::Batch { commands }).is_err());
-        assert!(Arc::ptr_eq(&before, s.project()));
-        assert_eq!(s.history_len(), history);
-        assert!(Arc::ptr_eq(&before, &s.take_change().unwrap()));
-        assert!(s.can_redo());
-        s.redo().unwrap();
+            None,
+        ),
+        (
+            Command::Inspect {},
+            Some("export commands require job submission"),
+        ),
+        (Command::Undo {}, Some("session control inside batch")),
+        (
+            Command::Snapshot {
+                time: Tick(0),
+                path: "unsubmitted-snapshot.png".into(),
+            },
+            Some("export commands require job submission"),
+        ),
+        (
+            Command::Preview { frames: vec![0] },
+            Some("export commands require job submission"),
+        ),
+        (
+            Command::TimelineEdit {
+                commands: vec![],
+                ripple: true,
+            },
+            Some("nested ripple policy"),
+        ),
+    ] {
+        for position in 0..5 {
+            let mut s = pending();
+            let before = s.project().clone();
+            let history = s.history_len();
+            let mut commands = vec![bookmark(); 4];
+            commands.insert(position, failure.clone());
+            let result = s.apply(Command::Batch { commands });
+            if let Some(expected) = message {
+                assert!(matches!(result, Err(EditError::Invalid(actual)) if actual == expected));
+            } else {
+                assert!(matches!(result, Err(EditError::NoItem(ItemId(99)))));
+            }
+            assert!(Arc::ptr_eq(&before, s.project()));
+            assert_eq!(s.history_len(), history);
+            assert!(Arc::ptr_eq(&before, &s.take_change().unwrap()));
+            assert!(s.can_redo());
+            s.redo().unwrap();
+            assert_eq!(s.apply(bookmark()).unwrap().created, expected_ids);
+            assert_eq!(s.project(), reference.project());
+        }
     }
 }
 #[test]
