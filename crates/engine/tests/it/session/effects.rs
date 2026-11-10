@@ -1,6 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+use engine::jobs::*;
 use engine::{Command, Session};
 use project::*;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    mpsc,
+};
+use std::time::Duration;
 use time::{FrameRate, SourceRange, Tick};
 fn blur(id: &str, intensity: f64) -> EffectInstance {
     effect_definition("blur")
@@ -370,8 +377,177 @@ impl render::ExecutionHooks for Hooks {
         Ok(Box::new(Lease))
     }
 }
-struct CountingEffects(std::sync::atomic::AtomicUsize);
+#[derive(Default)]
+struct CountingEffects {
+    calls: AtomicUsize,
+    queries: AtomicUsize,
+    unsupported: Option<bool>,
+}
 impl render::effects::EffectCompositor for CountingEffects {
+    fn supports(&self, _: &str) -> bool {
+        self.queries.fetch_add(1, Ordering::SeqCst);
+        self.unsupported.unwrap_or(true)
+    }
+    fn apply(
+        &self,
+        image: &render::Image,
+        passes: &[render::effects::EffectPass],
+        inputs: render::effects::EffectInputs<'_>,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::Image> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.unsupported.is_some() {
+            return Err(render::Error::Unsupported("missing effect pipeline"));
+        }
+        render::effects::CpuEffects.apply(image, passes, inputs, hooks)
+    }
+}
+fn pump(r: &mut JobRunner, id: JobId) -> JobSnapshot {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        r.tick().unwrap();
+        let state = r.snapshot(id).unwrap();
+        if matches!(
+            state.state,
+            JobState::Completed | JobState::Cancelled | JobState::Failed
+        ) {
+            return state;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+}
+fn thumbnail_runner(budget: &engine::ByteBudget, clock: Arc<dyn Clock>) -> JobRunner {
+    JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 4,
+            retained: 4,
+            network_attempts: 1,
+            backoff: Duration::from_millis(10),
+            progress_interval: Duration::from_millis(10),
+        },
+        budget.clone(),
+        clock,
+    )
+    .unwrap()
+}
+#[test]
+fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
+    use engine::effect_thumbnails::*;
+    use render::effects::*;
+    let source = Arc::new(
+        render::Image::from_working_pixels(
+            32,
+            18,
+            (0..32 * 18).map(|i| [((i % 7) + 1) as f32 / 16.0, 0.1, 0.2, 1.0]),
+            &Hooks,
+        )
+        .unwrap(),
+    );
+    let original = effect_definition("color_grade")
+        .unwrap()
+        .instance("preview")
+        .with("brightness", EffectValue::Scalar(15.0))
+        .unwrap();
+    let passes =
+        evaluate_effect(&Animations::default(), &original, Tick::ZERO, 32, 18, true).unwrap();
+    let expected = CpuEffects
+        .apply(
+            &source,
+            &passes,
+            EffectInputs {
+                input: &source,
+                below: &source,
+                coverage: None,
+            },
+            &Hooks,
+        )
+        .unwrap()
+        .rgba8(13, &Hooks)
+        .unwrap()
+        .bytes;
+    assert_ne!(expected, source.rgba8(13, &Hooks).unwrap().bytes);
+    for unsupported in [None, Some(false), Some(true)] {
+        let budget = engine::ByteBudget::new(64 << 20).unwrap();
+        let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+        let adapter = Arc::new(CountingEffects {
+            unsupported,
+            ..Default::default()
+        });
+        let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
+        let calls = |runs| if unsupported == Some(false) { 0 } else { runs };
+        for n in 0..2 {
+            let (id, _) = cache
+                .submit(&mut runner, source.clone(), original.clone())
+                .unwrap();
+            assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+            let output = runner.take_output(id).unwrap();
+            assert_eq!(output.bytes().len(), 32 * 18 * 4);
+            assert_eq!(output.bytes(), expected);
+            assert_eq!(adapter.queries.load(Ordering::SeqCst), 1, "hit {n}");
+            assert_eq!(adapter.calls.load(Ordering::SeqCst), calls(1));
+        }
+        let (id, token) = cache
+            .submit(
+                &mut runner,
+                source.clone(),
+                original
+                    .clone()
+                    .with("brightness", EffectValue::Scalar(49.0))
+                    .unwrap(),
+            )
+            .unwrap();
+        token.cancel();
+        assert_eq!(pump(&mut runner, id).state, JobState::Cancelled);
+        assert!(runner.take_output(id).is_none());
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), calls(1));
+        for n in 0..MAX_THUMBNAILS {
+            let effect = original
+                .clone()
+                .with("brightness", EffectValue::Scalar(n as f64 - 40.0))
+                .unwrap();
+            let (id, _) = cache.submit(&mut runner, source.clone(), effect).unwrap();
+            assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+            runner.take_output(id).unwrap();
+        }
+        assert_eq!(
+            budget.snapshot().unwrap().used,
+            MAX_THUMBNAILS as u64 * 32 * 18 * 4
+        );
+        let (id, _) = cache
+            .submit(&mut runner, source.clone(), original.clone())
+            .unwrap();
+        assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+        assert_eq!(runner.take_output(id).unwrap().bytes(), expected);
+        assert_eq!(
+            adapter.queries.load(Ordering::SeqCst),
+            MAX_THUMBNAILS + 2,
+            "evicted entry must execute again"
+        );
+        assert_eq!(
+            adapter.calls.load(Ordering::SeqCst),
+            calls(MAX_THUMBNAILS + 2)
+        );
+        let mut hostile = original.clone();
+        hostile
+            .params
+            .insert("brightness".into(), EffectValue::Scalar(f64::NAN));
+        assert!(cache.submit(&mut runner, source.clone(), hostile).is_err());
+        let large = Arc::new(render::Image::new(321, 1, [0.0; 4], &Hooks).unwrap());
+        assert!(cache.submit(&mut runner, large, original.clone()).is_err());
+        drop(cache);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+struct InterruptedEffects {
+    started: mpsc::SyncSender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    fail: Mutex<Option<render::Error>>,
+    calls: AtomicUsize,
+}
+impl render::effects::EffectCompositor for InterruptedEffects {
     fn supports(&self, _: &str) -> bool {
         true
     }
@@ -382,175 +558,153 @@ impl render::effects::EffectCompositor for CountingEffects {
         inputs: render::effects::EffectInputs<'_>,
         hooks: &dyn render::ExecutionHooks,
     ) -> render::Result<render::Image> {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        render::effects::CpuEffects.apply(image, passes, inputs, hooks)
-    }
-}
-fn pump(r: &mut engine::jobs::JobRunner, id: engine::jobs::JobId) -> engine::jobs::JobSnapshot {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        r.tick().unwrap();
-        let state = r.snapshot(id).unwrap();
-        if matches!(
-            state.state,
-            engine::jobs::JobState::Completed
-                | engine::jobs::JobState::Cancelled
-                | engine::jobs::JobState::Failed
-        ) {
-            return state;
-        }
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::yield_now();
-    }
-}
-#[test]
-fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
-    use engine::effect_thumbnails::*;
-    use engine::jobs::*;
-    use std::sync::{Arc, atomic::Ordering};
-    let budget = engine::ByteBudget::new(64 << 20).unwrap();
-    let mut runner = JobRunner::new(
-        RunnerConfig {
-            concurrency: [1, 1, 1],
-            queue: 4,
-            retained: 4,
-            network_attempts: 1,
-            backoff: std::time::Duration::from_millis(10),
-            progress_interval: std::time::Duration::from_millis(10),
-        },
-        budget.clone(),
-        Arc::new(SystemClock::default()),
-    )
-    .unwrap();
-    let adapter = Arc::new(CountingEffects(std::sync::atomic::AtomicUsize::new(0)));
-    let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
-    let source = Arc::new(render::Image::new(32, 18, [0.5, 0.0, 0.0, 1.0], &Hooks).unwrap());
-    for n in 0..2 {
-        let (id, _) = cache
-            .submit(&mut runner, source.clone(), blur("preview", 15.0))
-            .unwrap();
-        assert_eq!(pump(&mut runner, id).state, JobState::Completed);
-        assert_eq!(runner.take_output(id).unwrap().bytes().len(), 32 * 18 * 4);
-        assert_eq!(adapter.0.load(Ordering::SeqCst), 1, "hit {n}");
-    }
-    let (id, token) = cache
-        .submit(&mut runner, source.clone(), blur("preview", 99.0))
-        .unwrap();
-    token.cancel();
-    assert_eq!(pump(&mut runner, id).state, JobState::Cancelled);
-    assert!(runner.take_output(id).is_none());
-    assert_eq!(adapter.0.load(Ordering::SeqCst), 1);
-    for n in 0..MAX_THUMBNAILS {
-        let (id, _) = cache
-            .submit(
-                &mut runner,
-                source.clone(),
-                blur("preview", n as f64 + 30.0),
-            )
-            .unwrap();
-        assert_eq!(pump(&mut runner, id).state, JobState::Completed);
-        runner.take_output(id).unwrap();
-    }
-    assert_eq!(
-        budget.snapshot().unwrap().used,
-        MAX_THUMBNAILS as u64 * 32 * 18 * 4
-    );
-    let (id, _) = cache
-        .submit(&mut runner, source.clone(), blur("preview", 15.0))
-        .unwrap();
-    assert_eq!(pump(&mut runner, id).state, JobState::Completed);
-    runner.take_output(id).unwrap();
-    assert_eq!(adapter.0.load(Ordering::SeqCst), MAX_THUMBNAILS + 2);
-    assert!(
-        cache
-            .submit(&mut runner, source, {
-                let mut hostile = blur("preview", 15.0);
-                hostile
-                    .params
-                    .insert("intensity".into(), EffectValue::Scalar(f64::NAN));
-                hostile
-            })
-            .is_err()
-    );
-    let large = Arc::new(render::Image::new(321, 1, [0.0; 4], &Hooks).unwrap());
-    assert!(
-        cache
-            .submit(&mut runner, large, blur("preview", 15.0))
-            .is_err()
-    );
-}
-
-struct InterruptedEffects {
-    started: std::sync::mpsc::SyncSender<()>,
-    fail: bool,
-}
-impl render::effects::EffectCompositor for InterruptedEffects {
-    fn supports(&self, _: &str) -> bool {
-        true
-    }
-    fn apply(
-        &self,
-        _: &render::Image,
-        _: &[render::effects::EffectPass],
-        _: render::effects::EffectInputs<'_>,
-        hooks: &dyn render::ExecutionHooks,
-    ) -> render::Result<render::Image> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let output = render::effects::CpuEffects.apply(image, passes, inputs, hooks)?;
         self.started.send(()).unwrap();
-        if self.fail {
-            return Err(render::Error::Unsupported("test device"));
+        self.release
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
+        match self.fail.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(output),
         }
-        while !hooks.cancelled() {
-            std::thread::yield_now();
-        }
-        Err(render::Error::Cancelled)
     }
 }
 #[test]
 fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
-    use engine::{effect_thumbnails::*, jobs::*};
-    use std::sync::Arc;
-    for fail in [false, true] {
+    use engine::effect_thumbnails::*;
+    for fail in [
+        None,
+        Some(render::Error::Budget {
+            requested: 1,
+            limit: 0,
+        }),
+        Some(render::Error::Cancelled),
+        Some(render::Error::Invalid("test device data")),
+    ] {
         let budget = engine::ByteBudget::new(64 << 20).unwrap();
-        let mut runner = JobRunner::new(
-            RunnerConfig {
-                concurrency: [1, 1, 1],
-                queue: 4,
-                retained: 4,
-                network_attempts: 1,
-                backoff: std::time::Duration::from_millis(10),
-                progress_interval: std::time::Duration::from_millis(10),
-            },
-            budget.clone(),
-            Arc::new(SystemClock::default()),
-        )
-        .unwrap();
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        let cache = EffectThumbnails::new(
-            Arc::new(InterruptedEffects { started: tx, fail }),
-            budget.clone(),
-        );
+        let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+        let (started, ready) = mpsc::sync_channel(1);
+        let (release, wait) = mpsc::sync_channel(1);
+        let expected = fail.as_ref().map(std::mem::discriminant);
+        let adapter = Arc::new(InterruptedEffects {
+            started,
+            release: Mutex::new(wait),
+            fail: Mutex::new(fail),
+            calls: AtomicUsize::new(0),
+        });
+        let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
         let source = Arc::new(render::Image::new(32, 18, [0.0; 4], &Hooks).unwrap());
         let (id, token) = cache
             .submit(&mut runner, source, blur("preview", 15.0))
             .unwrap();
         runner.tick().unwrap();
-        rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
-        if !fail {
+        ready.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(
+            budget.snapshot().unwrap().used > 0,
+            "rendered output is still leased"
+        );
+        if expected.is_none() {
             token.cancel();
         }
+        release.send(()).unwrap();
         let result = pump(&mut runner, id);
-        if fail {
+        if let Some(expected) = expected {
             assert_eq!(result.state, JobState::Failed);
-            assert!(matches!(
-                result.error.as_deref(),
-                Some(engine::EditError::Render(render::Error::Unsupported(_)))
-            ));
+            let Some(engine::EditError::Render(error)) = result.error.as_deref() else {
+                panic!("typed adapter error was lost");
+            };
+            assert_eq!(std::mem::discriminant(error), expected);
         } else {
             assert_eq!(result.state, JobState::Cancelled);
         }
+        assert_eq!(
+            adapter.calls.load(Ordering::SeqCst),
+            1,
+            "nonretryable failure must not fall back"
+        );
         assert!(runner.take_output(id).is_none());
-        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert_eq!(
+            budget.snapshot().unwrap().used,
+            0,
+            "no cache or working leases survive"
+        );
     }
+}
+
+struct PublicationClock {
+    armed: AtomicBool,
+    entered: mpsc::SyncSender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+}
+impl Clock for PublicationClock {
+    fn now(&self) -> Duration {
+        if self.armed.swap(false, Ordering::SeqCst) {
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+        }
+        Duration::ZERO
+    }
+}
+#[test]
+fn thumbnail_publication_seals_late_cancellation_and_retains_cache() {
+    use engine::effect_thumbnails::*;
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let (entered, sealed) = mpsc::sync_channel(1);
+    let (release_clock, wait_clock) = mpsc::sync_channel(1);
+    let clock = Arc::new(PublicationClock {
+        armed: AtomicBool::new(false),
+        entered,
+        release: Mutex::new(wait_clock),
+    });
+    let mut runner = thumbnail_runner(&budget, clock.clone());
+    let (started, ready) = mpsc::sync_channel(1);
+    let (release_render, wait_render) = mpsc::sync_channel(1);
+    let adapter = Arc::new(InterruptedEffects {
+        started,
+        release: Mutex::new(wait_render),
+        fail: Mutex::new(None),
+        calls: AtomicUsize::new(0),
+    });
+    let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
+    let source = Arc::new(render::Image::new(32, 18, [0.2; 4], &Hooks).unwrap());
+    let effect = blur("preview", 15.0);
+    let (id, token) = cache
+        .submit(&mut runner, source.clone(), effect.clone())
+        .unwrap();
+    runner.tick().unwrap();
+    ready.recv_timeout(Duration::from_secs(10)).unwrap();
+    // No runner tick until this gate fires: the next clock read is the real
+    // commit_publication call, after its cancellation seal and before cache insertion.
+    clock.armed.store(true, Ordering::SeqCst);
+    release_render.send(()).unwrap();
+    sealed.recv_timeout(Duration::from_secs(10)).unwrap();
+    token.cancel();
+    assert!(
+        !token.cancelled(),
+        "the publication seal must ignore late cancellation"
+    );
+    release_clock.send(()).unwrap();
+    assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+    let expected = runner.take_output(id).unwrap().bytes().to_vec();
+    assert_eq!(expected.len(), 32 * 18 * 4);
+    let (id, _) = cache.submit(&mut runner, source, effect).unwrap();
+    assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+    assert_eq!(runner.take_output(id).unwrap().bytes(), expected);
+    assert_eq!(
+        adapter.calls.load(Ordering::SeqCst),
+        1,
+        "published result is cached"
+    );
+    assert_eq!(budget.snapshot().unwrap().used, 32 * 18 * 4);
+    drop(cache);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 #[test]

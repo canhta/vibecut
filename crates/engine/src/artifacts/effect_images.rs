@@ -3,7 +3,7 @@ use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError, Result};
 use project::EffectInstance;
-use render::effects::{EffectCompositor, EffectInputs};
+use render::effects::{EffectCompositor, apply_effect};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -19,8 +19,9 @@ struct Entry {
 }
 /// One cache per device adapter. No IO or GPU work runs under its cache lock.
 /// The desktop constructs this with its GPU adapter; headless tests may inject CPU.
-/// Failure is a typed engine/render error; unsupported GPU work is never replaced
-/// by a CPU result here. Caller supplies a bounded, accounted working-space image.
+/// Declared unsupported passes and adapter Unsupported errors use the shared CPU
+/// reference. Other typed failures propagate without publication. Caller supplies
+/// a bounded, accounted working-space image.
 #[derive(Clone)]
 pub struct EffectThumbnails {
     adapter: Arc<dyn EffectCompositor>,
@@ -40,6 +41,8 @@ impl EffectThumbnails {
     /// Content pixels, geometry and typed params key the cache, independently of
     /// playhead identity. Call on source/param changes; cadence is caller-driven.
     /// Cache hits are jobs too, preserving the same cancellation/result contract.
+    /// The shared executor retries only Unsupported on CPU; budget, cancellation
+    /// and invalid-data failures never fall back or publish an unfinished result.
     pub fn submit(
         &self,
         runner: &mut JobRunner,
@@ -105,16 +108,13 @@ impl EffectThumbnails {
                     source.height(),
                     true,
                 )?;
-                let image = cache.adapter.apply(
-                    &source,
-                    &passes,
-                    EffectInputs {
-                        input: &source,
-                        coverage: None,
-                        below: &source,
-                    },
+                let owned = render::Image::from_working_pixels(
+                    source.width(),
+                    source.height(),
+                    source.pixels().iter().copied(),
                     context,
                 )?;
+                let image = apply_effect(owned, &passes, &source, cache.adapter.as_ref(), context)?;
                 if image.width() != source.width() || image.height() != source.height() {
                     return Err(EditError::Invalid("thumbnail output dimensions"));
                 }

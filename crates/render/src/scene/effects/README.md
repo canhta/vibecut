@@ -4,6 +4,14 @@
 
 `EffectInputs.input` is required and immutable across every run and Unsupported retry of one instance; the current image is passed separately. All input dimensions are validated before pixel work, and retaining the instance image uses a hook-reserved working copy. A successive instance starts with the previous instance's final output.
 
+`apply_effect` is the single execution entry for scene instances and thumbnail jobs.
+It owns one instance input, borrows the unchanged backdrop, admits geometry/passes
+before copying, and splits consecutive adapter-supported and CPU runs. Unsupported
+from the adapter alone retries that run on CPU with the same immutable input;
+budget, cancellation, invalid-data and other errors propagate. Empty pass lists
+return exact working pixels through the same accounted ownership. Copies reserve
+through the caller's hooks before allocation.
+
 The registry also names an optional content-time remap per kind. `ContentTime` receives an `EffectFrame` resolved at real item-local time and a separate evolving content coordinate, both in ticks, and returns `Result<Tick>` with typed parameter/time failures. Each remap composes the preceding content coordinate while every frame and keyframe lookup keeps the original real clock. `content_time` applies the enabled effects' remaps in stack order before the item's content is fetched: only the media, text or sticker frame is held at the returned item-local time (clamped into the item's range), while transform, crop, opacity and every parameter keep the real time, and audio is unaffected. Without a remap the time is unchanged, so transition handles outside an item's extent keep sampling exactly. `EffectFrame.fine` carries the renderer's preview flag; a coarse evaluation may lower sample counts, iterations or scales only, never geometry, colour mapping or which pixels are affected.
 
 `image_ops.rs` owns the shared primitives the ports use: an edge-aware bilinear sample and a gaussian blur at a given sigma over the same kernel builder, plus the box downsample and bilinear upsample pair. Sampling uses texel-index coordinates: integers address exact texels. Image-edge geometry places pixel centres at `x+0.5` / `y+0.5` and subtracts 0.5 exactly once after mapping, before lookup (mirror and upsample alike). Each reserves its transients through the hooks and checks cancellation per row chunk.

@@ -111,10 +111,10 @@ pub trait EffectCompositor: Send + Sync {
     ) -> Result<()> {
         super::blend::composite(below, item, opacity, mode, hooks)
     }
-    /// Whether this compositor has a pipeline for `entry_point`. The renderer runs
+    /// Whether this compositor has a pipeline for `entry_point`. The executor runs
     /// unsupported passes on the CPU and keeps their supported neighbours here.
     fn supports(&self, entry_point: &str) -> bool;
-    /// Unsupported requests fall back to CPU at the renderer; other failures propagate.
+    /// Unsupported requests fall back to CPU at `apply_effect`; other failures propagate.
     /// `item` is the current run input; `inputs.input` is the immutable instance
     /// input. Implementations validate dimensions before work, reserve all transient
     /// bytes and check cancellation.
@@ -125,6 +125,66 @@ pub trait EffectCompositor: Send + Sync {
         inputs: EffectInputs<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image>;
+}
+/// Apply one effect instance's pass list: consecutive passes the adapter supports go
+/// to it as one run, the rest to the CPU reference. Each run starts from the previous
+/// run's output; the immutable instance input is retained separately for all runs
+/// and retries, with its working copy reserved through the hooks before allocation.
+/// Images use premultiplied linear working pixels and must share positive dimensions
+/// within Image's area bound. Geometry and every pass are admitted before copying.
+/// Only adapter Unsupported retries that run on CPU; invalid input, budget,
+/// cancellation and other failures propagate. Below is borrowed and unchanged.
+/// An empty list returns an exact accounted copy. All execution checks cancellation
+/// through the supplied hooks; a successive call captures its own instance input.
+pub fn apply_effect(
+    image: Image,
+    passes: &[EffectPass],
+    below: &Image,
+    adapter: &dyn EffectCompositor,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Image> {
+    check(hooks)?;
+    EffectInputs {
+        input: &image,
+        coverage: None,
+        below,
+    }
+    .validate(&image)?;
+    for pass in passes {
+        validate_pass(pass, image.width(), image.height())?;
+    }
+    let input = image;
+    let mut image = input.copy(hooks)?;
+    let cpu = CpuEffects;
+    let mut index = 0;
+    while index < passes.len() {
+        let first = passes.get(index).ok_or(Error::Invalid("effect run"))?;
+        let supported = adapter.supports(first.entry_point());
+        let mut end = index + 1;
+        while end < passes.len() {
+            let next = passes.get(end).ok_or(Error::Invalid("effect run"))?;
+            if adapter.supports(next.entry_point()) != supported {
+                break;
+            }
+            end += 1;
+        }
+        let run = passes.get(index..end).ok_or(Error::Invalid("effect run"))?;
+        let inputs = || EffectInputs {
+            input: &input,
+            coverage: None,
+            below,
+        };
+        image = if supported {
+            match adapter.apply(&image, run, inputs(), hooks) {
+                Err(Error::Unsupported(_)) => cpu.apply(&image, run, inputs(), hooks)?,
+                result => result?,
+            }
+        } else {
+            cpu.apply(&image, run, inputs(), hooks)?
+        };
+        index = end;
+    }
+    Ok(image)
 }
 pub struct CpuEffects;
 
@@ -823,4 +883,107 @@ pub fn evaluate_effect(
     let mut frame = EffectFrame::new(animations, effect, local, width, height)?;
     frame.fine = fine;
     evaluate(&frame)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod effect_run_tests {
+    use super::*;
+    use crate::MemoryKind;
+    use std::sync::Mutex;
+    struct Hooks;
+    struct Lease;
+    impl crate::Reservation for Lease {}
+    impl ExecutionHooks for Hooks {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, _: MemoryKind, _: u64) -> Result<Box<dyn crate::Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    struct Split {
+        mirror: bool,
+        retry: bool,
+        calls: Mutex<Vec<&'static str>>,
+    }
+    impl EffectCompositor for Split {
+        fn supports(&self, entry: &str) -> bool {
+            (entry == "mirror") == self.mirror
+        }
+        fn apply(
+            &self,
+            current: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            self.calls
+                .lock()
+                .unwrap()
+                .extend(passes.iter().map(EffectPass::entry_point));
+            if passes[0].entry_point() == "mirror" {
+                assert_ne!(
+                    current.pixels(),
+                    inputs.input.pixels(),
+                    "prefix must visibly modify current"
+                );
+            }
+            if self.retry {
+                return Err(Error::Unsupported("test retry"));
+            }
+            CpuEffects.apply(current, passes, inputs, hooks)
+        }
+    }
+    #[test]
+    fn instance_input_survives_both_run_boundaries_retry_and_successive_instances() {
+        let source = Image::from_working_pixels(
+            8,
+            4,
+            (0..32).map(|i| [((i % 7) + 1) as f32 / 16.0, 0.1, 0.2, 1.0]),
+            &Hooks,
+        )
+        .unwrap();
+        let mut passes = grade_passes(-50.0, 0.0, 0.0, 0.0).unwrap();
+        passes.push(EffectPass::Sample {
+            entry_point: "mirror",
+            uniforms: [4.0, 2.0, 1.0, 0.0].map(Uniform::Float).to_vec(),
+        });
+        let reference = |current: &Image| {
+            CpuEffects
+                .apply(
+                    current,
+                    &passes,
+                    EffectInputs {
+                        input: current,
+                        coverage: None,
+                        below: &source,
+                    },
+                    &Hooks,
+                )
+                .unwrap()
+        };
+        let once = reference(&source);
+        let twice = reference(&once);
+        for (mirror, retry) in [(false, false), (true, false), (true, true)] {
+            let adapter = Split {
+                mirror,
+                retry,
+                calls: Mutex::new(vec![]),
+            };
+            let first = apply_effect(
+                source.copy(&Hooks).unwrap(),
+                &passes,
+                &source,
+                &adapter,
+                &Hooks,
+            )
+            .unwrap();
+            assert_eq!(first.pixels(), once.pixels());
+            let second = apply_effect(first, &passes, &source, &adapter, &Hooks).unwrap();
+            assert_eq!(second.pixels(), twice.pixels());
+            let expected = if mirror { "mirror" } else { "grade" };
+            assert_eq!(*adapter.calls.lock().unwrap(), [expected, expected]);
+        }
+    }
 }

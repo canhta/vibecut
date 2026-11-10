@@ -99,6 +99,10 @@ bounds the edge and `MAX_THUMBNAILS` the cache, charged to the runner's shared b
 cache belongs to one adapter lifetime; keys hash source pixels, geometry and canonical typed
 params. Consumers request on source or param changes; there is no timer or fixed cadence.
 
-Work and readback run outside cache locks. Cancellation before the publication fence never caches
-an unfinished result. Typed GPU failure propagates without CPU fallback. Missing or oversized
-sources, invalid params, budget pressure, poisoned state and runner queue limits refuse.
+Work and readback run outside cache locks. Thumbnails use render's shared `apply_effect`
+executor: declared unsupported passes run on CPU and adapter `Unsupported` retries only
+that run on CPU. Other typed failures, including budget, cancellation and invalid data,
+propagate without fallback. The owned source copy is reserved through the job hooks.
+Cancellation before the publication fence never caches an unfinished result; late
+cancellation cannot undo publication. Missing or oversized sources, invalid params,
+budget pressure, poisoned state and runner queue limits refuse.

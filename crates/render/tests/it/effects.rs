@@ -118,6 +118,28 @@ fn effects_refuse_budget_cancel_and_invalid_pass() {
         horizontal: true,
         weights: vec![1.0],
     };
+    // The shared scene/thumbnail entry admits geometry/passes before reserving
+    // its retained input copy, even when the working budget is zero.
+    tiny.requested.store(0, Ordering::SeqCst);
+    let owned = || Image::new(16, 16, [0.2; 4], &hooks).unwrap();
+    let below = Image::new(1, 1, [0.0; 4], &hooks).unwrap();
+    assert!(matches!(
+        apply_effect(owned(), &[], &below, &CpuEffects, &tiny),
+        Err(Error::Invalid("effect input dimensions"))
+    ));
+    assert!(matches!(
+        apply_effect(
+            owned(),
+            std::slice::from_ref(&bad),
+            &image,
+            &CpuEffects,
+            &tiny
+        ),
+        Err(Error::Unsupported("effect pass"))
+    ));
+    assert_eq!(tiny.requested.load(Ordering::SeqCst), 0);
+    let empty = apply_effect(owned(), &[], &image, &CpuEffects, &hooks).unwrap();
+    assert_eq!(empty.pixels(), image.pixels());
     assert!(
         CpuEffects
             .apply(
