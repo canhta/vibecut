@@ -92,14 +92,21 @@ fn export_options_refuse_hostile_geometry_rates_versions_and_incompatible_codecs
             Err(Error::Unsupported(_))
         ));
     }
-    assert!(
-        OutputOptions {
-            fps: Some(time::FrameRate::new(31, 1).unwrap()),
-            ..Default::default()
-        }
-        .validate()
-        .is_err()
-    );
+    for fps in [
+        time::FrameRate::new(31, 1).unwrap(),
+        time::FrameRate::new(48_000, 1).unwrap(),
+        time::FrameRate::new(17, 1_001).unwrap(),
+    ] {
+        assert!(
+            OutputOptions {
+                fps: Some(fps),
+                ..Default::default()
+            }
+            .validate()
+            .is_err(),
+            "{fps}"
+        );
+    }
     let mut settings = ExportSettings::from_project(&p);
     assert!(
         OutputOptions {
@@ -121,6 +128,31 @@ fn export_options_refuse_hostile_geometry_rates_versions_and_incompatible_codecs
         },
     ] {
         assert!(options.apply(&mut settings).is_err());
+    }
+}
+
+#[test]
+fn export_refuses_a_rate_whose_frames_are_not_whole_ticks() {
+    let p = solid_project(1, 64, 64, [0, 0, 0, 255]);
+    let mut settings = ExportSettings::from_project(&p);
+    for fps in [
+        time::FrameRate::new(17, 1).unwrap(),
+        time::FrameRate::new(17, 1_001).unwrap(),
+    ] {
+        settings.fps = fps;
+        assert!(
+            matches!(
+                export(
+                    &p,
+                    TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                    &settings,
+                    std::path::Path::new("never-written.mp4"),
+                    &Hooks::default()
+                ),
+                Err(Error::Invalid("export settings/range"))
+            ),
+            "{fps}"
+        );
     }
 }
 

@@ -154,10 +154,7 @@ impl OutputOptions {
             return Err(Error::Invalid("output bit rate"));
         }
         if let Some(fps) = self.fps
-            && (!FrameRate::COMMON.contains(&fps)
-                || i128::from(time::TICKS_PER_SECOND) * i128::from(fps.den())
-                    % i128::from(fps.num())
-                    != 0)
+            && (!FrameRate::COMMON.contains(&fps) || !fps.has_exact_frame_ticks())
         {
             return Err(Error::Invalid("output frame rate"));
         }

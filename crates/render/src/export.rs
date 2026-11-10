@@ -126,9 +126,7 @@ pub fn export_with_sources(
         || range.end() > project.duration()
         || project.duration() == Tick::ZERO
         || frame <= Tick::ZERO
-        || (i128::from(time::TICKS_PER_SECOND) * i128::from(settings.fps.den()))
-            % i128::from(settings.fps.num())
-            != 0
+        || !settings.fps.has_exact_frame_ticks()
         || !matches!(settings.channels, 1 | 2)
         || settings.quality > 100
         || settings.bit_rate == 0

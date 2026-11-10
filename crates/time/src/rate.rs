@@ -139,6 +139,11 @@ impl FrameRate {
             .map_err(|_| TimeError::OutOfRange)
     }
 
+    /// Whether one frame of this rate is a whole number of ticks.
+    pub fn has_exact_frame_ticks(self) -> bool {
+        i128::from(TICKS_PER_SECOND) * i128::from(self.den) % i128::from(self.num) == 0
+    }
+
     /// Index of the frame containing `time`, floored toward negative infinity.
     ///
     /// # Errors
@@ -280,15 +285,39 @@ mod tests {
     }
 
     #[test]
-    fn common_frame_rates_have_exact_frame_durations() {
-        for rate in FrameRate::COMMON {
-            let duration = rate.frame_duration().unwrap();
-            assert_eq!(
-                i128::from(duration.0) * i128::from(rate.num()),
-                i128::from(TICKS_PER_SECOND) * i128::from(rate.den()),
-                "{rate}"
-            );
+    fn frame_ticks_are_exact_only_for_rates_that_divide_the_tick_rate() {
+        for (rate, exact) in [
+            (FrameRate::FPS_23_976, true),
+            (FrameRate::FPS_29_97, true),
+            (FrameRate::FPS_59_94, true),
+            (FrameRate::FPS_119_88, true),
+            (FrameRate::FPS_24, true),
+            (FrameRate::new(48_000, 1).unwrap(), true),
+            (FrameRate::new(TICKS_PER_SECOND, 1).unwrap(), true),
+            (FrameRate::new(1, 1).unwrap(), true),
+            (FrameRate::new(17, 1).unwrap(), false),
+            (FrameRate::new(31, 1).unwrap(), false),
+            (FrameRate::new(17, 1_001).unwrap(), false),
+            (FrameRate::new(TICKS_PER_SECOND + 1, 1).unwrap(), false),
+            (FrameRate::new(i64::MAX, 1).unwrap(), false),
+        ] {
+            assert_eq!(rate.has_exact_frame_ticks(), exact, "{rate}");
+            if exact {
+                let duration = rate.frame_duration().unwrap();
+                assert!(duration > Tick::ZERO, "{rate}");
+                assert_eq!(
+                    i128::from(duration.0) * i128::from(rate.num()),
+                    i128::from(TICKS_PER_SECOND) * i128::from(rate.den()),
+                    "{rate}"
+                );
+            }
         }
+        for rate in FrameRate::COMMON {
+            assert!(rate.has_exact_frame_ticks(), "{rate}");
+        }
+        let enormous = FrameRate::new(1, i64::MAX).unwrap();
+        assert!(enormous.has_exact_frame_ticks());
+        assert_eq!(enormous.frame_duration(), Err(TimeError::OutOfRange));
     }
 
     #[test]

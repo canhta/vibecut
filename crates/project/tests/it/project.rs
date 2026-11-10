@@ -305,6 +305,9 @@ fn model_trust_boundaries() {
     d.canvas.fps = FrameRate::new(17, 1).unwrap();
     cases.push(d);
     let mut d = base.clone();
+    d.canvas.fps = FrameRate::new(1, i64::MAX).unwrap();
+    cases.push(d);
+    let mut d = base.clone();
     d.settings.audio_sample_rate = 0;
     cases.push(d);
     let mut d = base.clone();

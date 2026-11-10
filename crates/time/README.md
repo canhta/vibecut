@@ -14,3 +14,5 @@ Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and th
 | `speed` | Maps constant playback speed to exact source and output durations. | [Speed](src/speed/README.md) |
 
 The crate root owns `TimeError` and re-exports the same public names. `TimeError` reports non-finite seconds, invalid rates, empty ranges, overflow and out-of-range results. No public operation panics on hostile input. Tests have no external oracle; expected values derive from exact rational arithmetic.
+
+`FrameRate::has_exact_frame_ticks` answers whether one frame is a whole number of ticks (`TICKS_PER_SECOND * den % num == 0`). Callers that require exact frame ticks admit a rate only through it; `FrameRate::COMMON` is a separate list of offered rates, not the tick-exactness rule.

@@ -177,10 +177,7 @@ fn validate(data: &ProjectData) -> Result<()> {
     }
     // Exact frame ticks are required by edit and render consumers.
     let frame = c.fps.frame_duration()?;
-    if frame <= Tick::ZERO
-        || (i128::from(time::TICKS_PER_SECOND) * i128::from(c.fps.den()) % i128::from(c.fps.num()))
-            != 0
-    {
+    if frame <= Tick::ZERO || !c.fps.has_exact_frame_ticks() {
         return Err(Error::Unsupported(
             "canvas rate must have exact positive frame ticks",
         ));
