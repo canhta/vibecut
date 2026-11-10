@@ -234,7 +234,8 @@ fn native_environment_probe() {
     let expected = if std::env::var("CARGO_BUILD_JOBS").as_deref() == Ok("7") {
         2 * TEST_CPUS
     } else {
-        (TEST_CPUS / 3).max(2)
+        // A lone build takes the whole host.
+        TEST_CPUS
     };
     assert_eq!(
         snapshot(&root.join("locks"), 2 * TEST_CPUS).unwrap(),
@@ -320,7 +321,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
         );
         let expected = jobs
             .map(str::to_owned)
-            .unwrap_or_else(|| (TEST_CPUS / 3).max(2).to_string());
+            .unwrap_or_else(|| TEST_CPUS.to_string());
         assert_eq!(
             fs::read_to_string(root.join("native.jobs")).unwrap(),
             expected
@@ -979,87 +980,70 @@ fn windows_processor_load_handles_samples_and_hostile_counters() {
     assert!(!processor_load_within_bound(None));
 }
 
+// Design 197: jobs come from the live leases, not a fixed share of the slot
+// ceiling. Each row is one admission in order; `released` drops that held
+// lease first, and a host change starts again with no leases.
 #[test]
-fn mixed_capacities_reserve_only_remaining_host_jobs() {
-    let directory = Directory::new();
-    let root = &directory.0;
-    let locks = root.join("locks");
-    let mut held = Vec::new();
-    for (ceiling, expected) in [(1, 20), (2, 10), (3, 6), (4, 4)] {
+fn admission_table_prices_jobs_by_live_leases_and_remaining_budget() {
+    let mut directory = Directory::new();
+    let mut held: Vec<slot::Slot> = Vec::new();
+    let mut cpus = 20;
+    for (label, host_cpus, released, expected) in [
+        ("alone", 20, None, Some(20)),
+        ("second", 20, None, Some(10)),
+        ("third", 20, None, Some(6)),
+        ("fourth, limited by the remaining budget", 20, None, Some(4)),
+        ("budget exhausted", 20, None, None),
+        ("one lease released", 20, Some(1), Some(5)),
+        ("alone, 4 CPUs", 4, None, Some(4)),
+        ("second, 4 CPUs", 4, None, Some(2)),
+        ("third, 4 CPUs floor at two jobs", 4, None, Some(2)),
+        ("budget exhausted, 4 CPUs", 4, None, None),
+    ] {
+        if host_cpus != cpus {
+            held.clear();
+            directory = Directory::new();
+            cpus = host_cpus;
+        }
+        if let Some(index) = released {
+            drop(held.remove(index));
+        }
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let budget = cpus * 2;
         let mut queue = Queue::enter(&locks).unwrap();
-        let slot = claim(
+        let claimed = claim(
             &mut queue,
             root,
             Admission {
-                cpus: 20,
-                ..test_admission(ceiling, false)
+                cpus,
+                ..test_admission(cpus.min(8), false)
             },
             || None,
             || None,
         )
-        .unwrap()
         .unwrap();
-        assert_eq!(slot.jobs, expected);
-        held.push(slot);
-        assert!(snapshot(&locks, 40).unwrap().1 <= 40);
+        match expected {
+            Some(expected) => {
+                let slot = claimed.unwrap_or_else(|| panic!("{label}: held admission"));
+                assert_eq!(slot.jobs, expected, "{label}: reserved jobs");
+                let reserved = held.iter().map(|slot| slot.jobs).sum::<usize>();
+                assert!(reserved + slot.jobs <= budget, "{label}: over budget");
+                held.push(slot);
+                // Stale metadata does not consume jobs, even when another
+                // slot number is selected.
+                assert_eq!(
+                    snapshot(&locks, budget).unwrap(),
+                    (held.len(), reserved + expected),
+                    "{label}: live leases and their reservations"
+                );
+            }
+            None => assert!(
+                claimed.is_none(),
+                "{label}: admitted a build without remaining jobs"
+            ),
+        }
     }
-    let mut next = Queue::enter(&locks).unwrap();
-    let admission = Admission {
-        cpus: 20,
-        ..test_admission(20, false)
-    };
-    assert!(
-        claim(&mut next, root, admission, || None, || None)
-            .unwrap()
-            .is_none()
-    );
-    // A released lease frees its entire reservation; stale metadata does
-    // not consume jobs, even when another slot number is selected.
-    drop(held.remove(1));
-    let replacement = claim(&mut next, root, admission, || None, || None)
-        .unwrap()
-        .unwrap();
-    assert_eq!(replacement.jobs, 2);
-    assert_eq!(snapshot(&locks, 40).unwrap().1, 32);
-
-    let directory = Directory::new();
-    let root = &directory.0;
-    let locks = root.join("locks");
-    let mut held = Vec::new();
-    for ceiling in [1, 2] {
-        let mut queue = Queue::enter(&locks).unwrap();
-        held.push(
-            claim(
-                &mut queue,
-                root,
-                Admission {
-                    cpus: 3,
-                    ..test_admission(ceiling, false)
-                },
-                || None,
-                || None,
-            )
-            .unwrap()
-            .unwrap(),
-        );
-    }
-    assert_eq!(snapshot(&locks, 6).unwrap().1, 5);
-    let mut next = Queue::enter(&locks).unwrap();
-    assert!(
-        claim(
-            &mut next,
-            root,
-            Admission {
-                cpus: 3,
-                ..test_admission(3, false)
-            },
-            || None,
-            || None
-        )
-        .unwrap()
-        .is_none(),
-        "one remaining job cannot admit a two-job build"
-    );
 
     // Must 2: a build admitted while free memory is under the floor caps its
     // own link/test fan-out; an above-floor snapshot keeps the normal formula,

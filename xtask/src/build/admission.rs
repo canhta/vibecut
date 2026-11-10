@@ -124,8 +124,11 @@ pub(super) fn claim(
             return Ok(None);
         }
         snapshot = memory();
+        // Share the CPUs that are actually free: a lone build takes the whole
+        // host, and each live lease ahead of it halves the remainder. The
+        // ceiling bounds leases, not jobs, so it does not price this build.
         pressured_jobs(
-            (admission.cpus / admission.max_slots).max(2).min(remaining),
+            (admission.cpus / (active + 1)).max(2).min(remaining),
             snapshot,
         )
     };
