@@ -116,11 +116,7 @@ impl GpuEffects {
         {
             return Err(Error::Unsupported("GPU effect dimensions"));
         }
-        for image in [Some(inputs.below), inputs.coverage].into_iter().flatten() {
-            if image.width() != item.width() || image.height() != item.height() {
-                return Err(Error::Invalid("effect input dimensions"));
-            }
-        }
+        inputs.validate(item)?;
         for pass in passes.clone() {
             if !self.pipelines.contains_key(pass.entry_point) {
                 return Err(Error::Unsupported("GPU shader entry"));
@@ -149,7 +145,7 @@ impl GpuEffects {
         // A sample pass also reads the image its effect instance started with;
         // other runs leave binding 6 on the current image instead of uploading.
         let instance = if passes.clone().any(|pass| pass.sample) {
-            Some(upload(item)?)
+            Some(upload(inputs.input)?)
         } else {
             None
         };
@@ -305,6 +301,7 @@ impl EffectCompositor for GpuEffects {
             item,
             std::iter::once(pass),
             EffectInputs {
+                input: item,
                 coverage: None,
                 below,
             },

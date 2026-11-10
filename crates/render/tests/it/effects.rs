@@ -43,6 +43,7 @@ fn gaussian_scaling_bounds_and_channel_energy() {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -62,6 +63,7 @@ fn gaussian_scaling_bounds_and_channel_energy() {
             &image,
             &[],
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -85,6 +87,7 @@ fn effects_refuse_budget_cancel_and_invalid_pass() {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image
             },
@@ -101,6 +104,7 @@ fn effects_refuse_budget_cancel_and_invalid_pass() {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image
             },
@@ -120,6 +124,7 @@ fn effects_refuse_budget_cancel_and_invalid_pass() {
                 &image,
                 &[bad],
                 EffectInputs {
+                    input: &image,
                     coverage: None,
                     below: &image
                 },
@@ -238,6 +243,7 @@ fn graded(grade: [f64; 4]) -> (Vec<[f32; 4]>, Vec<[f32; 4]>) {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -935,6 +941,7 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
                 &image,
                 &passes,
                 EffectInputs {
+                    input: &image,
                     coverage: None,
                     below: &image,
                 },
@@ -976,6 +983,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
             &image,
             &[pass],
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -997,6 +1005,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
             &image,
             &[mirror([4.0, 2.0, 1.0, 0.0])],
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -1044,6 +1053,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
             &image,
             &[mirror([4.0, 2.0, 1.0, 0.0])],
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image
             },

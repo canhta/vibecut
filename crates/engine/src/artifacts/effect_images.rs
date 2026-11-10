@@ -109,6 +109,7 @@ impl EffectThumbnails {
                     &source,
                     &passes,
                     EffectInputs {
+                        input: &source,
                         coverage: None,
                         below: &source,
                     },

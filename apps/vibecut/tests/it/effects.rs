@@ -83,6 +83,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         for intensity in [0.0, 15.0, 100.0] {
             let passes = blur_passes(intensity, w, h).unwrap();
             let inputs = || EffectInputs {
+                input: &image,
                 coverage: Some(&image),
                 below: &image,
             };
@@ -107,6 +108,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         ] {
             let passes = grade_passes(grade[0], grade[1], grade[2], grade[3]).unwrap();
             let inputs = || EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             };
@@ -129,6 +131,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         ] {
             let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
             let inputs = || EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             };
@@ -159,6 +162,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                 uniforms: values.map(Uniform::Float).to_vec(),
             }];
             let inputs = || EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             };
@@ -236,6 +240,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -247,6 +252,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             &image,
             &passes,
             EffectInputs {
+                input: &image,
                 coverage: None,
                 below: &image,
             },
@@ -330,6 +336,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                     &source,
                     &blur_passes(100.0, 320, 180).unwrap(),
                     EffectInputs {
+                        input: &source,
                         coverage: None,
                         below: &source,
                     },

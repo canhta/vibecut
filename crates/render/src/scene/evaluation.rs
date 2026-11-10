@@ -800,15 +800,19 @@ fn content_tick(item: &Item, local: Tick) -> Result<Tick> {
 }
 /// Apply one effect instance's pass list: consecutive passes the adapter supports go
 /// to it as one run, the rest to the CPU reference. Each run starts from the previous
-/// run's output, so a sample op's `input` is the image its instance started with.
+/// run's output; the immutable instance input is retained separately for all runs
+/// and retries, with its working copy reserved through the hooks before allocation.
 fn apply_run(
-    mut image: Image,
+    image: Image,
     passes: &[crate::effects::EffectPass],
     below: &Image,
     adapter: &dyn crate::effects::EffectCompositor,
     hooks: &dyn ExecutionHooks,
 ) -> Result<Image> {
     use crate::effects::{CpuEffects, EffectCompositor, EffectInputs};
+    check(hooks)?;
+    let input = image;
+    let mut image = input.copy(hooks)?;
     let cpu = CpuEffects;
     let mut index = 0;
     while index < passes.len() {
@@ -824,6 +828,7 @@ fn apply_run(
         }
         let run = passes.get(index..end).ok_or(Error::Invalid("effect run"))?;
         let inputs = || EffectInputs {
+            input: &input,
             coverage: None,
             below,
         };
@@ -842,4 +847,107 @@ fn apply_run(
 fn local_time(item: &Item, at: Tick) -> Result<Tick> {
     at.checked_sub(item.start)
         .ok_or(Error::Invalid("item source mapping"))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod effect_run_tests {
+    use super::*;
+    use crate::effects::*;
+    use std::sync::Mutex;
+    struct Hooks;
+    struct Lease;
+    impl crate::Reservation for Lease {}
+    impl ExecutionHooks for Hooks {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, _: MemoryKind, _: u64) -> Result<Box<dyn crate::Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    struct Split {
+        mirror: bool,
+        retry: bool,
+        calls: Mutex<Vec<&'static str>>,
+    }
+    impl EffectCompositor for Split {
+        fn supports(&self, entry: &str) -> bool {
+            (entry == "mirror") == self.mirror
+        }
+        fn apply(
+            &self,
+            current: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            self.calls
+                .lock()
+                .unwrap()
+                .extend(passes.iter().map(EffectPass::entry_point));
+            if passes[0].entry_point() == "mirror" {
+                assert_ne!(
+                    current.pixels(),
+                    inputs.input.pixels(),
+                    "prefix must visibly modify current"
+                );
+            }
+            if self.retry {
+                return Err(Error::Unsupported("test retry"));
+            }
+            CpuEffects.apply(current, passes, inputs, hooks)
+        }
+    }
+    #[test]
+    fn instance_input_survives_both_run_boundaries_retry_and_successive_instances() {
+        let source = Image::from_working_pixels(
+            8,
+            4,
+            (0..32).map(|i| [((i % 7) + 1) as f32 / 16.0, 0.1, 0.2, 1.0]),
+            &Hooks,
+        )
+        .unwrap();
+        let mut passes = grade_passes(-50.0, 0.0, 0.0, 0.0).unwrap();
+        passes.push(EffectPass::Sample {
+            entry_point: "mirror",
+            uniforms: [4.0, 2.0, 1.0, 0.0].map(Uniform::Float).to_vec(),
+        });
+        let reference = |current: &Image| {
+            CpuEffects
+                .apply(
+                    current,
+                    &passes,
+                    EffectInputs {
+                        input: current,
+                        coverage: None,
+                        below: &source,
+                    },
+                    &Hooks,
+                )
+                .unwrap()
+        };
+        let once = reference(&source);
+        let twice = reference(&once);
+        for (mirror, retry) in [(false, false), (true, false), (true, true)] {
+            let adapter = Split {
+                mirror,
+                retry,
+                calls: Mutex::new(vec![]),
+            };
+            let first = apply_run(
+                source.copy(&Hooks).unwrap(),
+                &passes,
+                &source,
+                &adapter,
+                &Hooks,
+            )
+            .unwrap();
+            assert_eq!(first.pixels(), once.pixels());
+            let second = apply_run(first, &passes, &source, &adapter, &Hooks).unwrap();
+            assert_eq!(second.pixels(), twice.pixels());
+            let expected = if mirror { "mirror" } else { "grade" };
+            assert_eq!(*adapter.calls.lock().unwrap(), [expected, expected]);
+        }
+    }
 }

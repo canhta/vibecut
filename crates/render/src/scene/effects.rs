@@ -76,10 +76,27 @@ impl EffectPass {
     }
 }
 /// Inputs share output geometry and the premultiplied linear working space.
-/// Blur consumes the item only; future passes can consume mask coverage/below.
+/// `apply` receives the evolving current image separately; `input` never changes
+/// during an instance, including CPU/device run boundaries and Unsupported retries.
 pub struct EffectInputs<'a> {
+    /// Immutable image at the start of this effect instance, shared by all runs.
+    pub input: &'a Image,
     pub coverage: Option<&'a Image>,
     pub below: &'a Image,
+}
+impl EffectInputs<'_> {
+    /// Refuse mismatched image geometry before allocating or doing pixel work.
+    pub fn validate(&self, current: &Image) -> Result<()> {
+        for image in [Some(self.input), Some(self.below), self.coverage]
+            .into_iter()
+            .flatten()
+        {
+            if (image.width(), image.height()) != (current.width(), current.height()) {
+                return Err(Error::Invalid("effect input dimensions"));
+            }
+        }
+        Ok(())
+    }
 }
 pub trait EffectCompositor: Send + Sync {
     /// Composite a masked/effected working item over its track backdrop.
@@ -98,7 +115,9 @@ pub trait EffectCompositor: Send + Sync {
     /// unsupported passes on the CPU and keeps their supported neighbours here.
     fn supports(&self, entry_point: &str) -> bool;
     /// Unsupported requests fall back to CPU at the renderer; other failures propagate.
-    /// Implementations must reserve all transient bytes and check cancellation.
+    /// `item` is the current run input; `inputs.input` is the immutable instance
+    /// input. Implementations validate dimensions before work, reserve all transient
+    /// bytes and check cancellation.
     fn apply(
         &self,
         item: &Image,
@@ -466,21 +485,24 @@ impl EffectCompositor for CpuEffects {
         &self,
         item: &Image,
         passes: &[EffectPass],
-        _: EffectInputs<'_>,
+        inputs: EffectInputs<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
         check(hooks)?;
+        inputs.validate(item)?;
+        for pass in passes {
+            validate_pass(pass)?;
+        }
         let mut a = item.copy(hooks)?;
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
         for pass in passes {
-            validate_pass(pass)?;
             let (horizontal, weights) = match pass {
                 EffectPass::Sample { entry_point, .. } => {
                     let op = sample_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
                     let values = pass.values();
                     let inputs = SampleInputs {
                         current: &a,
-                        input: item,
+                        input: inputs.input,
                     };
                     let width = a.width as usize;
                     crate::image::row_chunks(&mut b.pixels, width, hooks, |start, rows| {

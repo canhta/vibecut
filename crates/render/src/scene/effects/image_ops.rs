@@ -77,6 +77,7 @@ pub(super) fn blur(image: &Image, sigma: f32, hooks: &dyn ExecutionHooks) -> Res
         image,
         &passes,
         EffectInputs {
+            input: &image,
             coverage: None,
             below: image,
         },
