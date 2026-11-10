@@ -10,7 +10,7 @@ missing provider credential, auto-detection on a provider that is not local whis
 remote upload without consent. Display states the fact only, never a command to run: the CLI adds
 its `vibecut-cli model download <id>` hint and the desktop renders its own text from the variant.
 Callers that still return the kernel union wrap it as `EditError::Providers`; the wire maps consent
-to `Permission` and every other variant to `Refused`.
+to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-language to `Refused`.
 
 ## Provider selection and fallback
 

@@ -3,6 +3,7 @@ use super::Context;
 use super::libraries::with_fonts;
 use crate::args::CliError;
 use crate::output::Output;
+use engine::Failure;
 use engine::control::FontAccess;
 use engine::control::{
     Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
@@ -116,7 +117,7 @@ fn control_with(
         let value = match control::parse_frame(&bytes) {
             Ok(value) => value,
             Err(error) => {
-                let code = ErrorCode::from_error(&error);
+                let code = error.code();
                 write_control_error(&mut out, None, code, frame_error_message(&error))?;
                 last_exit = control_exit(code);
                 continue;
@@ -125,7 +126,7 @@ fn control_with(
         let request = match control::build_request(&session, value) {
             Ok(request) => request,
             Err(error) => {
-                let code = ErrorCode::from_error(&error);
+                let code = error.code();
                 write_control_error(
                     &mut out,
                     None,
@@ -172,7 +173,7 @@ fn control_with(
                     response
                 }
                 Err(error) => {
-                    let code = ErrorCode::from_error(&error);
+                    let code = error.code();
                     write_control_error(
                         &mut out,
                         Some(&request_id),
@@ -236,42 +237,40 @@ fn control_exit(code: ErrorCode) -> u8 {
         ErrorCode::UnknownCommand
         | ErrorCode::InvalidParams
         | ErrorCode::Limit
-        | ErrorCode::SchemaMismatch => 2,
-        ErrorCode::StaleRevision => 3,
+        | ErrorCode::SchemaMismatch
+        | ErrorCode::Budget => 2,
+        ErrorCode::StaleRevision | ErrorCode::StaleResult => 3,
         ErrorCode::Permission
         | ErrorCode::IdempotencyConflict
         | ErrorCode::ReceiptCapacity
         | ErrorCode::TransactionActive
         | ErrorCode::EmptyProject
-        | ErrorCode::Refused => 5,
+        | ErrorCode::Refused
+        | ErrorCode::Unavailable
+        | ErrorCode::Setup
+        | ErrorCode::Auth
+        | ErrorCode::Busy
+        | ErrorCode::Conflict
+        | ErrorCode::Media
+        | ErrorCode::Render
+        | ErrorCode::Ai
+        | ErrorCode::Job
+        | ErrorCode::Quota
+        | ErrorCode::RateLimit
+        | ErrorCode::Network
+        | ErrorCode::AudioDevice
+        | ErrorCode::Sounds
+        | ErrorCode::SoundLimit
+        | ErrorCode::SoundCancelled
+        | ErrorCode::SoundIo => 5,
         ErrorCode::SessionGone
         | ErrorCode::ResyncRequired
         | ErrorCode::JobNotRetained
         | ErrorCode::Cancelled
         | ErrorCode::QueueFull
-        | ErrorCode::Failed => 7,
-    }
-}
-
-fn error_code_name(code: ErrorCode) -> &'static str {
-    match code {
-        ErrorCode::UnknownCommand => "unknown_command",
-        ErrorCode::InvalidParams => "invalid_params",
-        ErrorCode::Limit => "limit",
-        ErrorCode::SchemaMismatch => "schema_mismatch",
-        ErrorCode::SessionGone => "session_gone",
-        ErrorCode::StaleRevision => "stale_revision",
-        ErrorCode::Permission => "permission",
-        ErrorCode::IdempotencyConflict => "idempotency_conflict",
-        ErrorCode::ReceiptCapacity => "receipt_capacity",
-        ErrorCode::ResyncRequired => "resync_required",
-        ErrorCode::JobNotRetained => "job_not_retained",
-        ErrorCode::Cancelled => "cancelled",
-        ErrorCode::QueueFull => "queue_full",
-        ErrorCode::TransactionActive => "transaction_active",
-        ErrorCode::EmptyProject => "empty_project",
-        ErrorCode::Refused => "refused",
-        ErrorCode::Failed => "failed",
+        | ErrorCode::Failed
+        | ErrorCode::Io
+        | ErrorCode::WorkerFailure => 7,
     }
 }
 
@@ -305,7 +304,7 @@ fn write_control_error(
     let mut value = json!({
         "status": "error",
         "exit_code": exit,
-        "error": {"code": error_code_name(code), "message": message, "exit_code": exit},
+        "error": {"code": code, "message": message, "exit_code": exit},
     });
     if let (Some(request_id), Value::Object(fields)) = (request_id, &mut value) {
         fields.insert("request_id".into(), json!(request_id));
@@ -371,6 +370,65 @@ fn drain_control_line(input: &mut impl BufRead) -> Result<(), CliError> {
         input.consume(take);
         if done {
             return Ok(());
+        }
+    }
+}
+
+#[cfg(test)]
+mod failure_frames {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+    use super::*;
+    #[test]
+    fn every_code_has_the_preserved_control_exit_and_serde_name() {
+        use ErrorCode as C;
+        let cases = [
+            (C::UnknownCommand, 2),
+            (C::InvalidParams, 2),
+            (C::Limit, 2),
+            (C::SchemaMismatch, 2),
+            (C::Budget, 2),
+            (C::StaleRevision, 3),
+            (C::StaleResult, 3),
+            (C::SessionGone, 7),
+            (C::ResyncRequired, 7),
+            (C::JobNotRetained, 7),
+            (C::Cancelled, 7),
+            (C::QueueFull, 7),
+            (C::Failed, 7),
+            (C::Io, 7),
+            (C::WorkerFailure, 7),
+            (C::Permission, 5),
+            (C::IdempotencyConflict, 5),
+            (C::ReceiptCapacity, 5),
+            (C::TransactionActive, 5),
+            (C::EmptyProject, 5),
+            (C::Refused, 5),
+            (C::Unavailable, 5),
+            (C::Setup, 5),
+            (C::Auth, 5),
+            (C::Busy, 5),
+            (C::Conflict, 5),
+            (C::Media, 5),
+            (C::Render, 5),
+            (C::Ai, 5),
+            (C::Job, 5),
+            (C::Quota, 5),
+            (C::RateLimit, 5),
+            (C::Network, 5),
+            (C::AudioDevice, 5),
+            (C::Sounds, 5),
+            (C::SoundLimit, 5),
+            (C::SoundCancelled, 5),
+            (C::SoundIo, 5),
+        ];
+        for (code, exit) in cases {
+            let mut bytes = Vec::new();
+            write_control_error(&mut bytes, Some("request"), code, "safe").unwrap();
+            let frame: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(frame["exit_code"], exit);
+            assert_eq!(frame["error"]["exit_code"], exit);
+            assert_eq!(frame["error"]["code"], json!(code));
+            assert_eq!(frame["request_id"], "request");
         }
     }
 }

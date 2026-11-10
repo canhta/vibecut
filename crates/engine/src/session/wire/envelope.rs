@@ -1,6 +1,5 @@
 //! Defines the versioned envelopes a transport exchanges with a session.
 use super::{ControlResult, JobView};
-use crate::EditError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -44,32 +43,34 @@ pub enum ErrorCode {
     Refused,
     Failed,
     EmptyProject,
+    Unavailable,
+    Setup,
+    Auth,
+    Busy,
+    Conflict,
+    Io,
+    Media,
+    Render,
+    Ai,
+    Job,
+    Quota,
+    RateLimit,
+    Network,
+    AudioDevice,
+    Sounds,
+    Budget,
+    StaleResult,
+    WorkerFailure,
+    SoundLimit,
+    SoundCancelled,
+    SoundIo,
 }
-impl ErrorCode {
-    pub fn from_error(error: &EditError) -> Self {
-        match error {
-            EditError::UnknownCommand => Self::UnknownCommand,
-            EditError::InvalidParams => Self::InvalidParams,
-            EditError::Limit | EditError::ArtifactTooLarge | EditError::BudgetFull => Self::Limit,
-            EditError::SchemaMismatch => Self::SchemaMismatch,
-            EditError::SessionGone => Self::SessionGone,
-            EditError::StaleRevision | EditError::StaleResult => Self::StaleRevision,
-            EditError::Permission => Self::Permission,
-            // Each substrate type declares its own wire class; the kernel only delegates.
-            EditError::Providers(error) => error.code(),
-            EditError::Transcript(error) => error.code(),
-            EditError::IdempotencyConflict => Self::IdempotencyConflict,
-            EditError::ReceiptCapacity => Self::ReceiptCapacity,
-            EditError::ResyncRequired => Self::ResyncRequired,
-            EditError::JobNotRetained => Self::JobNotRetained,
-            EditError::Cancelled => Self::Cancelled,
-            EditError::QueueFull => Self::QueueFull,
-            EditError::TransactionActive | EditError::NoGesture => Self::TransactionActive,
-            EditError::EmptyProject => Self::EmptyProject,
-            EditError::Panicked | EditError::WorkerPanicked | EditError::Io(_) => Self::Failed,
-            EditError::Project(project::Error::Io(_)) => Self::Failed,
-            _ => Self::Refused,
-        }
+/// Owner-local classification shared by control transports and job scheduling.
+/// Code delegation preserves the cause; transience defaults to no retry.
+pub trait Failure: std::error::Error + Send + Sync {
+    fn code(&self) -> ErrorCode;
+    fn transient(&self) -> bool {
+        false
     }
 }
 impl std::fmt::Debug for Request {

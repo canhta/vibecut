@@ -1,7 +1,8 @@
 //! Resynchronizes control listeners with committed state.
+use crate::Failure;
 use crate::jobs::{JobRunner, JobSnapshot};
 use crate::session::wire::{
-    ControlResult, Cursor, ErrorCode, Event, JobView, Payload, Response, ResponseValue, Snapshot,
+    ControlResult, Cursor, Event, JobView, Payload, Response, ResponseValue, Snapshot,
 };
 use crate::{EditError, Result, Session};
 
@@ -14,7 +15,7 @@ impl From<JobSnapshot> for JobView {
             progress: s.progress,
             state: s.state,
             attempts: s.attempts,
-            error: s.error.as_deref().map(ErrorCode::from_error),
+            error: s.error.as_deref().map(Failure::code),
             output: None,
         }
     }

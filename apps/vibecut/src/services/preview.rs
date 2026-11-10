@@ -336,11 +336,11 @@ fn error_for(code: ErrorCode) -> EditError {
         ErrorCode::EmptyProject => EditError::EmptyProject,
         ErrorCode::TransactionActive => EditError::TransactionActive,
         ErrorCode::Permission => EditError::Permission,
-        ErrorCode::Limit => EditError::Limit,
+        ErrorCode::Limit | ErrorCode::Budget => EditError::Limit,
         ErrorCode::InvalidParams => EditError::InvalidParams,
         ErrorCode::UnknownCommand => EditError::UnknownCommand,
         ErrorCode::SessionGone => EditError::SessionGone,
-        ErrorCode::StaleRevision => EditError::StaleRevision,
+        ErrorCode::StaleRevision | ErrorCode::StaleResult => EditError::StaleRevision,
         ErrorCode::IdempotencyConflict => EditError::IdempotencyConflict,
         ErrorCode::ReceiptCapacity => EditError::ReceiptCapacity,
         ErrorCode::ResyncRequired => EditError::ResyncRequired,
@@ -348,7 +348,27 @@ fn error_for(code: ErrorCode) -> EditError {
         ErrorCode::Cancelled => EditError::Cancelled,
         ErrorCode::QueueFull => EditError::QueueFull,
         ErrorCode::SchemaMismatch => EditError::SchemaMismatch,
-        ErrorCode::Refused | ErrorCode::Failed => EditError::Invalid("snapshot write failed"),
+        ErrorCode::Refused
+        | ErrorCode::Failed
+        | ErrorCode::Unavailable
+        | ErrorCode::Setup
+        | ErrorCode::Auth
+        | ErrorCode::Busy
+        | ErrorCode::Conflict
+        | ErrorCode::Io
+        | ErrorCode::Media
+        | ErrorCode::Render
+        | ErrorCode::Ai
+        | ErrorCode::Job
+        | ErrorCode::Quota
+        | ErrorCode::RateLimit
+        | ErrorCode::Network
+        | ErrorCode::AudioDevice
+        | ErrorCode::Sounds
+        | ErrorCode::WorkerFailure
+        | ErrorCode::SoundLimit
+        | ErrorCode::SoundCancelled
+        | ErrorCode::SoundIo => EditError::Invalid("snapshot write failed"),
     }
 }
 

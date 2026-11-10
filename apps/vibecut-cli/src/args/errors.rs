@@ -1,5 +1,5 @@
 //! Maps typed CLI refusals to stable process diagnostics.
-use engine::{EditError, providers, transcript};
+use engine::{EditError, Failure, control::ErrorCode, providers};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
@@ -44,15 +44,15 @@ impl CliError {
             Self::Project(project::Error::Io(_)) => ("io", 7),
             Self::Project(project::Error::Media(_)) => ("media", 6),
             Self::Project(_) => ("rejected", 5),
-            Self::Engine(error) => edit_code(error),
-            Self::Shorts(shorts::Error::Engine(error)) => edit_code(error),
+            Self::Engine(error) => failure_code(error.code()),
+            Self::Shorts(shorts::Error::Engine(error)) => failure_code(error.code()),
             Self::Shorts(_) => ("rejected", 5),
             Self::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
             Self::Render(_) => ("render", 6),
             Self::Media(_) => ("media", 6),
             Self::Time(_) => ("time", 5),
-            Self::Sounds(error) => sound_code(error),
-            Self::Job(error) => edit_code(error),
+            Self::Sounds(error) => failure_code(error.code()),
+            Self::Job(error) => failure_code(error.code()),
             Self::Io(_) => ("io", 7),
             Self::Rejected(_) => ("rejected", 5),
             Self::Unsupported(_) => ("unsupported", 5),
@@ -117,61 +117,43 @@ fn edit_message(error: &EditError) -> String {
     }
 }
 
-fn edit_code(error: &EditError) -> (&'static str, u8) {
-    match error {
-        EditError::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
-        EditError::Render(_) => ("render", 6),
-        EditError::Media(_) => ("media", 6),
-        EditError::Providers(
-            providers::Error::ModelMissing(_)
-            | providers::Error::RunnerMissing
-            | providers::Error::CredentialMissing(_),
-        ) => ("setup", 4),
-        EditError::Ai(ai::Error::Chapters(_)) => ("rejected", 5),
-        EditError::Ai(_) => ("ai", 4),
-        EditError::Sounds(error) => sound_code(error),
-        EditError::JobFailure(error) => edit_code(error),
-        EditError::Providers(
-            providers::Error::ConsentRequired | providers::Error::AutoLanguageUnsupported,
-        ) => ("rejected", 5),
-        EditError::Transcript(transcript::Error::NoSpeech | transcript::Error::LowConfidence) => {
-            ("rejected", 5)
-        }
-        EditError::Project(project::Error::Busy) => ("busy", 3),
-        EditError::Project(project::Error::Conflict) => ("conflict", 3),
-        EditError::Project(project::Error::Io(_)) => ("io", 7),
-        EditError::Project(project::Error::Media(_)) => ("media", 6),
-        EditError::UnknownCommand | EditError::InvalidParams | EditError::Limit => ("usage", 2),
-        EditError::Io(_) => ("io", 7),
-        EditError::Cancelled
-        | EditError::WorkerPanicked
-        | EditError::JobPoisoned
-        | EditError::QueueFull
-        | EditError::BudgetFull
-        | EditError::ArtifactTooLarge
-        | EditError::NetworkTransient
-        | EditError::StaleResult
-        | EditError::CacheCorrupt => ("job", 7),
-        _ => ("rejected", 5),
-    }
-}
-
-fn sound_code(error: &engine::SoundError) -> (&'static str, u8) {
-    match error {
-        engine::SoundError::NoCredentials => ("setup", 4),
-        engine::SoundError::Auth => ("auth", 4),
-        engine::SoundError::Quota => ("quota", 4),
-        engine::SoundError::RateLimit { .. } => ("rate_limit", 4),
-        engine::SoundError::Network | engine::SoundError::Server => ("network", 7),
-        engine::SoundError::NoAudioDevice => ("audio_device", 4),
-        engine::SoundError::Cancelled => ("cancelled", 7),
-        engine::SoundError::Limit => ("limit", 2),
-        engine::SoundError::NotCached
-        | engine::SoundError::InvalidResponse
-        | engine::SoundError::LibraryCorrupt
-        | engine::SoundError::Invalid(_) => ("sounds", 5),
-        engine::SoundError::Io(_) | engine::SoundError::Project(_) => ("io", 7),
-        engine::SoundError::Media(_) => ("media", 6),
+fn failure_code(code: ErrorCode) -> (&'static str, u8) {
+    match code {
+        ErrorCode::UnknownCommand | ErrorCode::InvalidParams | ErrorCode::Limit => ("usage", 2),
+        ErrorCode::Unavailable => ("unavailable", 4),
+        ErrorCode::Setup => ("setup", 4),
+        ErrorCode::Auth => ("auth", 4),
+        ErrorCode::Busy => ("busy", 3),
+        ErrorCode::Conflict => ("conflict", 3),
+        ErrorCode::Io | ErrorCode::SoundIo => ("io", 7),
+        ErrorCode::Media => ("media", 6),
+        ErrorCode::Render => ("render", 6),
+        ErrorCode::Ai => ("ai", 4),
+        ErrorCode::Job
+        | ErrorCode::QueueFull
+        | ErrorCode::Budget
+        | ErrorCode::StaleResult
+        | ErrorCode::WorkerFailure
+        | ErrorCode::Cancelled => ("job", 7),
+        ErrorCode::Quota => ("quota", 4),
+        ErrorCode::RateLimit => ("rate_limit", 4),
+        ErrorCode::Network => ("network", 7),
+        ErrorCode::AudioDevice => ("audio_device", 4),
+        ErrorCode::Sounds => ("sounds", 5),
+        ErrorCode::SoundLimit => ("limit", 2),
+        ErrorCode::SoundCancelled => ("cancelled", 7),
+        ErrorCode::SchemaMismatch
+        | ErrorCode::SessionGone
+        | ErrorCode::StaleRevision
+        | ErrorCode::Permission
+        | ErrorCode::IdempotencyConflict
+        | ErrorCode::ReceiptCapacity
+        | ErrorCode::ResyncRequired
+        | ErrorCode::JobNotRetained
+        | ErrorCode::TransactionActive
+        | ErrorCode::Refused
+        | ErrorCode::Failed
+        | ErrorCode::EmptyProject => ("rejected", 5),
     }
 }
 

@@ -1,9 +1,10 @@
 //! Admits bounded control requests.
 use super::{Caller, receipts::control_fingerprint};
+use crate::Failure;
 use crate::jobs::JobRunner;
 use crate::session::wire::{
-    API_VERSION, ControlResult, ErrorCode, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload,
-    Request, Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
+    API_VERSION, ControlResult, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload, Request,
+    Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
 };
 use crate::{Command, EditError, Effect, Lifecycle, Outcome, Result, Session};
 
@@ -75,7 +76,7 @@ impl Session {
         match self.admit_and_run(&request, &caller, runner) {
             Ok(admitted) => Ok(admitted),
             Err(error) => {
-                let code = ErrorCode::from_error(&error);
+                let code = error.code();
                 self.ledger.push(
                     &self.identity.0,
                     self.revision(),
@@ -178,10 +179,7 @@ impl Session {
         // created IDs). Reads/images never occupy the no-eviction receipt ledger.
         let (value, failure) = match self.run_control(command, runner, fingerprint, caller) {
             Ok(value) => (ResponseValue::Result(value), None),
-            Err(error) => (
-                ResponseValue::Error(ErrorCode::from_error(&error)),
-                Some(error),
-            ),
+            Err(error) => (ResponseValue::Error(error.code()), Some(error)),
         };
         let response = Response {
             api_version: API_VERSION,
@@ -254,7 +252,7 @@ impl Session {
         match self.admit_lifecycle_save(&request, &caller, publish) {
             Ok(response) => Ok(response),
             Err(error) => {
-                let code = ErrorCode::from_error(&error);
+                let code = error.code();
                 self.ledger.push(
                     &self.identity.0,
                     self.revision(),
@@ -335,7 +333,7 @@ impl Session {
                     placements: Vec::new(),
                 },
             }),
-            Err(error) => ResponseValue::Error(ErrorCode::from_error(&error)),
+            Err(error) => ResponseValue::Error(error.code()),
         };
         let response = Response {
             api_version: API_VERSION,

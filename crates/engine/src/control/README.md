@@ -124,3 +124,6 @@ together; cursors hold no queue. A slow or foreign cursor gets ResyncRequired an
 fresh snapshot. No durable replay or exhaustive transition log is promised; progress can
 coalesce. Terminal snapshots follow the runner's publication fence, and repeated polls do not
 duplicate unchanged terminal events. Dropping a cursor never cancels work.
+
+Refusal responses, receipts, events and job views consume the error owner's `Failure::code`.
+They keep only the safe category; typed in-process causes and static messages remain intact.

@@ -38,3 +38,7 @@ Entry points: use [Session commands](src/session/README.md#public-entry-points) 
 [control admission](src/control/README.md#control-admission-revisions-and-receipts) for transport adapters,
 [the job runner](src/runtime/README.md#background-jobs-and-byte-policy) for bounded work and
 [the subtitle workflow](src/subtitles/README.md#subtitle-workflow) for speech-to-caption composition.
+
+`EditError` retains typed sources and implements the wire's
+[Failure contract](src/session/wire/README.md). Error declaration owners state their
+codes; transports consume them rather than classify the engine union independently.

@@ -750,48 +750,215 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
 }
 
 #[test]
-fn provider_and_transcript_refusals_keep_their_wire_class() {
-    let cases = [
-        (
-            EditError::Providers(engine::providers::Error::ConsentRequired),
-            ErrorCode::Permission,
-        ),
-        (
-            EditError::Providers(engine::providers::Error::ModelMissing(
-                "whisper-large-v3-turbo",
-            )),
-            ErrorCode::Refused,
-        ),
-        (
-            EditError::Providers(engine::providers::Error::RunnerMissing),
-            ErrorCode::Refused,
-        ),
-        (
-            EditError::Providers(engine::providers::Error::CredentialMissing(
-                "OPENAI_API_KEY",
-            )),
-            ErrorCode::Refused,
-        ),
-        (
-            EditError::Providers(engine::providers::Error::AutoLanguageUnsupported),
-            ErrorCode::Refused,
-        ),
-        (
-            EditError::Transcript(engine::transcript::Error::NoSpeech),
-            ErrorCode::Refused,
-        ),
-        (
-            EditError::Transcript(engine::transcript::Error::LowConfidence),
-            ErrorCode::Refused,
-        ),
-    ];
-    for (error, code) in cases {
-        assert_eq!(ErrorCode::from_error(&error), code, "{error:?}");
+fn owner_failures_classify_publication_receipts_and_events() {
+    use ErrorCode as C;
+    use engine::EditError as E;
+    use engine::{
+        Failure, FontError as F, SoundError as S, providers::Error as P, transcript::Error as T,
+    };
+    use std::{io, sync::Arc};
+    macro_rules! row {
+        ($e:expr, $c:ident, $t:expr) => {
+            ($e, C::$c, $t)
+        };
     }
-    let kernel = EditError::Providers(engine::providers::Error::ModelMissing(
-        "whisper-large-v3-turbo",
-    ))
-    .to_string();
-    assert!(kernel.contains("whisper-large-v3-turbo"), "{kernel}");
-    assert!(!kernel.contains("vibecut-cli"), "{kernel}");
+    let mut cases = vec![
+        row!(E::SchemaMismatch, SchemaMismatch, false),
+        row!(E::SessionGone, SessionGone, false),
+        row!(E::StaleRevision, StaleRevision, false),
+        row!(E::Permission, Permission, false),
+        row!(E::IdempotencyConflict, IdempotencyConflict, false),
+        row!(E::ReceiptCapacity, ReceiptCapacity, false),
+        row!(E::ResyncRequired, ResyncRequired, false),
+        row!(E::JobNotRetained, JobNotRetained, false),
+        row!(E::ControlIdentity, Refused, false),
+        row!(E::CacheBusy, Refused, false),
+        row!(E::ModelResponse, Refused, false),
+        row!(E::StorageFull, Refused, false),
+        row!(E::RecoveryCorrupt, Refused, false),
+        row!(E::RecoveryBusy, Refused, false),
+        row!(E::SaveAsRequired, Refused, false),
+        row!(
+            E::PersistenceFailed(Arc::new(E::Io(io::Error::other("disk")))),
+            Refused,
+            false
+        ),
+        row!(E::QueueFull, QueueFull, false),
+        row!(E::BudgetFull, Budget, false),
+        row!(E::ArtifactTooLarge, Budget, false),
+        row!(E::Cancelled, Cancelled, false),
+        row!(E::WorkerPanicked, WorkerFailure, false),
+        row!(E::JobPoisoned, Job, false),
+        row!(E::NetworkTransient, Job, true),
+        row!(E::StaleResult, StaleResult, false),
+        row!(E::LoudnessStale, Refused, false),
+        row!(E::JobFailure(Arc::new(E::Limit)), Limit, false),
+        row!(E::CacheCorrupt, Job, false),
+        row!(E::Render(render::Error::Cancelled), Render, false),
+        row!(E::Media(media::MediaError::Cancelled), Media, false),
+        row!(E::Ai(ai::Error::Auth), Ai, false),
+        row!(E::Sounds(S::NoCredentials), Setup, false),
+        row!(E::Font(F::Unavailable), Refused, false),
+        row!(E::Providers(P::ConsentRequired), Permission, false),
+        row!(E::Transcript(T::NoSpeech), Refused, false),
+        row!(E::Io(io::Error::other("io")), Io, false),
+        row!(E::UnknownCommand, UnknownCommand, false),
+        row!(E::InvalidParams, InvalidParams, false),
+        row!(E::Limit, Limit, false),
+        row!(E::NoTrack(TrackId(1)), Refused, false),
+        row!(E::NoAsset(media::AssetId(1)), Refused, false),
+        row!(E::AssetsInUse(Vec::new()), Refused, false),
+        row!(E::NoItem(ItemId(1)), Refused, false),
+        row!(E::Locked(TrackId(1)), Refused, false),
+        row!(E::SceneBoundary, Refused, false),
+        row!(E::Protected, Refused, false),
+        row!(E::CuesNotAdjacent, Refused, false),
+        row!(E::CuesAcrossTracks, Refused, false),
+        row!(E::CuesAcrossItems, Refused, false),
+        row!(E::Overlap(TrackId(1)), Refused, false),
+        row!(E::EmptyProject, EmptyProject, false),
+        row!(E::Invalid("input"), Refused, false),
+        row!(E::Unsupported("capability"), Refused, false),
+        row!(E::Panicked, Failed, false),
+        row!(E::TransactionActive, TransactionActive, false),
+        row!(E::NoGesture, TransactionActive, false),
+        row!(E::NoHistory, Refused, false),
+        row!(E::IdExhausted, Refused, false),
+        row!(E::Project(project::Error::Busy), Busy, false),
+        row!(E::Time(time::TimeError::Overflow), Refused, false),
+        row!(E::Captions(captions::Error::TooLarge), Refused, false),
+        row!(E::Providers(P::ModelMissing("test")), Setup, false),
+        row!(E::Providers(P::RunnerMissing), Setup, false),
+        row!(E::Providers(P::CredentialMissing("test")), Setup, false),
+        row!(E::Providers(P::AutoLanguageUnsupported), Refused, false),
+        row!(E::Providers(P::ConsentRequired), Permission, false),
+        row!(E::Transcript(T::NoSpeech), Refused, false),
+        row!(E::Transcript(T::LowConfidence), Refused, false),
+        row!(E::Font(F::Unavailable), Refused, false),
+        row!(E::Font(F::NotDownloadable), Refused, false),
+        row!(E::Font(F::DownloadActive), Refused, false),
+        row!(E::Font(F::Integrity), Refused, false),
+        row!(E::Font(F::Response), Refused, false),
+        row!(
+            E::Font(F::Face(text::FontError::InvalidName)),
+            Refused,
+            false
+        ),
+        row!(E::Font(F::Catalog), Refused, false),
+        row!(E::Sounds(S::NoCredentials), Setup, false),
+        row!(E::Sounds(S::Auth), Auth, false),
+        row!(E::Sounds(S::Quota), Quota, false),
+        row!(
+            E::Sounds(S::RateLimit {
+                retry_after_seconds: Some(3)
+            }),
+            RateLimit,
+            false
+        ),
+        row!(E::Sounds(S::Network), Network, false),
+        row!(E::Sounds(S::Server), Network, false),
+        row!(E::Sounds(S::InvalidResponse), Sounds, false),
+        row!(E::Sounds(S::Limit), SoundLimit, false),
+        row!(E::Sounds(S::NoAudioDevice), AudioDevice, false),
+        row!(E::Sounds(S::NotCached), Sounds, false),
+        row!(E::Sounds(S::LibraryCorrupt), Sounds, false),
+        row!(E::Sounds(S::Cancelled), SoundCancelled, false),
+        row!(E::Sounds(S::Io(io::Error::other("io"))), SoundIo, false),
+        row!(
+            E::Sounds(S::Media(media::MediaError::Cancelled)),
+            Media,
+            false
+        ),
+        row!(E::Sounds(S::Project(project::Error::Busy)), SoundIo, false),
+        row!(E::Sounds(S::Invalid("input")), Sounds, false),
+        row!(
+            E::Render(render::Error::Unavailable(Vec::new())),
+            Unavailable,
+            false
+        ),
+        row!(
+            E::Render(render::Error::Io(io::Error::other("render"))),
+            Render,
+            false
+        ),
+        row!(E::Project(project::Error::Conflict), Conflict, false),
+        row!(
+            E::Project(project::Error::Io(io::Error::other("project"))),
+            Io,
+            false
+        ),
+        row!(
+            E::Project(project::Error::Media(media::MediaError::Cancelled)),
+            Media,
+            false
+        ),
+        row!(
+            E::Project(project::Error::Invalid("project")),
+            Refused,
+            false
+        ),
+        row!(
+            E::Ai(ai::Error::Chapters(
+                ai::chapters::ChapterRefusal::EmptyTranscript
+            )),
+            Refused,
+            false
+        ),
+        row!(E::Ai(ai::Error::Network), Ai, true),
+        row!(E::Ai(ai::Error::Timeout), Ai, true),
+        row!(E::Ai(ai::Error::Server), Ai, true),
+        row!(E::Ai(ai::Error::Schema), Ai, true),
+        row!(
+            E::Ai(ai::Error::RateLimit {
+                retry_after_seconds: Some(3)
+            }),
+            Ai,
+            true
+        ),
+        row!(E::Ai(ai::Error::Incomplete), Ai, false),
+    ];
+    for (inner, code) in [
+        (E::Limit, C::Limit),
+        (E::StaleResult, C::StaleResult),
+        (E::Io(io::Error::other("disk")), C::Io),
+        (
+            E::Render(render::Error::Unavailable(Vec::new())),
+            C::Unavailable,
+        ),
+    ] {
+        cases.push((
+            E::JobFailure(Arc::new(E::JobFailure(Arc::new(inner)))),
+            code,
+            false,
+        ));
+    }
+    let message = E::Providers(P::ModelMissing("test-model")).to_string();
+    assert!(message.contains("test-model"));
+    assert!(!message.contains("vibecut-cli"));
+    for (failure, code, transient) in cases {
+        assert_eq!(failure.transient(), transient, "{failure:?}");
+        let mut s = seed();
+        let r = runner();
+        let before = s.project().clone();
+        let rev = s.revision();
+        let history = s.history_len();
+        let mut cursor = s.snapshot_and_subscribe(&r).unwrap().cursor;
+        let req = request(&s, "project.save", json!({}), "failure");
+        error(
+            s.control_lifecycle_save(req.clone(), caller(&Allow), |_, _| Err(failure))
+                .unwrap(),
+            code,
+        );
+        error(
+            s.control_lifecycle_save(req, caller(&Allow), |_, _| panic!("replayed publication"))
+                .unwrap(),
+            code,
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+        assert!(
+            matches!(s.events(&mut cursor).unwrap().as_slice(), [control::Event { payload: Payload::CommandError { code: observed, .. }, .. }] if *observed == code)
+        );
+    }
 }
