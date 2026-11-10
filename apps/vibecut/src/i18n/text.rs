@@ -412,6 +412,7 @@ catalog! {
     TransitionDiamondReveal { key: "transition_diamond_reveal", en: "Diamond Reveal", vi: "Mở hình thoi" },
     TransitionDigitalGlitch { key: "transition_digital_glitch", en: "Digital Glitch", vi: "Nhiễu số" },
     TransitionDipBlack { key: "transition_dip_black", en: "Dip to black", vi: "Mờ qua đen" },
+    TransitionDipColour { key: "transition_dip_colour", en: "Dip to colour", vi: "Mờ qua màu" },
     TransitionDipWhite { key: "transition_dip_white", en: "Dip to white", vi: "Mờ qua trắng" },
     TransitionDissolve { key: "transition_dissolve", en: "Dissolve", vi: "Hòa tan" },
     TransitionDoubleDoors { key: "transition_double_doors", en: "Double Doors", vi: "Cửa đôi" },

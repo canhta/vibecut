@@ -8,6 +8,7 @@ pub(super) fn name(definition: &TransitionDefinition) -> Text {
         "cross_dissolve" => Text::TransitionCrossDissolve,
         "dip_to_black" => Text::TransitionDipBlack,
         "dip_to_white" => Text::TransitionDipWhite,
+        "dip_to_color" => Text::TransitionDipColour,
         "light_fade" => Text::TransitionLightFade,
         "film_fade" => Text::TransitionFilmFade,
         "soft_focus_fade" => Text::TransitionSoftFocusFade,
