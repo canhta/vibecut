@@ -88,17 +88,93 @@ impl ProjectLibrary {
         let root = root.canonicalize()?;
         let lease = WriterLease::acquire(&root.join("catalog.vibecut"))?;
         WriterLease::enable_directory_moves(&root)?;
-        // Retention is a catalog policy, so expired Trash entries leave before
-        // this handle lists anything. An entry that cannot be removed stays
-        // listed at zero days and is retried on the next open.
-        let _ = purge_expired(&root, now_ms());
-        Ok(Self {
+        let mut library = Self {
             root,
             _lease: lease,
             budget,
             undo: VecDeque::new(),
             redo: Vec::new(),
-        })
+        };
+        // Retention is a catalog policy, so expired Trash entries leave before
+        // this handle lists anything. Every candidate passes the same validated
+        // lease and tombstone boundary as an explicit purge; corrupt, mismatched
+        // and busy entries stay complete, and no clock means no expiry.
+        library.purge_expired();
+        Ok(library)
+    }
+    /// Automatic retention. Candidate identities are read first, then each one
+    /// passes the same validated lease and tombstone boundary as an explicit
+    /// purge; corrupt, mismatched and busy entries stay complete, and no clock
+    /// means no expiry.
+    fn purge_expired(&mut self) {
+        let Some(now_unix_ms) = now_ms() else {
+            return;
+        };
+        let Ok(retention) = RETENTION_DAYS.checked_mul(DAY_MS).ok_or(EditError::Limit) else {
+            return;
+        };
+        let Ok(entries) = fs::read_dir(&self.root) else {
+            return;
+        };
+        let mut expired = Vec::new();
+        for (count, entry) in entries.enumerate() {
+            if count >= MAX_ENTRIES * 4 {
+                return;
+            }
+            let Ok(entry) = entry else {
+                return;
+            };
+            let name = entry.file_name();
+            let Some(name) = name.to_str().and_then(|name| name.strip_prefix(TRASH)) else {
+                continue;
+            };
+            if name.len() != 16
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            {
+                continue;
+            }
+            let Some(trashed_unix_ms) = read_trash_record(&entry.path()) else {
+                continue;
+            };
+            if now_unix_ms.saturating_sub(trashed_unix_ms) < retention {
+                continue;
+            }
+            if let Ok(id) = u64::from_str_radix(name, 16).map(ProjectId) {
+                expired.push(id);
+            }
+        }
+        for id in expired {
+            // Busy, corrupt or mismatched entries refuse the lease and survive.
+            let _ = self.purge_entry(id);
+        }
+    }
+    /// The one permanent removal: admit the validated Trash entry, move it to an
+    /// unlisted tombstone, then clean up. A failed cleanup leaves a `.delete-*`
+    /// directory that is never listed, promoted or restored.
+    fn purge_entry(&mut self, id: ProjectId) -> Result<()> {
+        let lease = self.trash_lease(id)?;
+        let tomb = self.unique("delete")?;
+        lease.move_directory(&tomb)?;
+        self.clear_history();
+        let _ = fs::remove_dir_all(tomb);
+        Ok(())
+    }
+    /// Move one active project to Trash. A missing wall clock refuses before the
+    /// project is touched rather than recording an authoritative epoch.
+    fn move_to_trash(&mut self, target: ProjectId, now_unix_ms: Option<u64>) -> Result<()> {
+        let now_unix_ms = now_unix_ms.ok_or(EditError::Unsupported("system clock"))?;
+        let lease = self.lease(target)?;
+        write_trash_record(
+            &self.directory(target),
+            &TrashRecord {
+                unix_ms: now_unix_ms,
+            },
+        )?;
+        lease.move_directory(&self.trash_directory(target))?;
+        self.clear_history();
+        Ok(())
     }
     fn directory(&self, id: ProjectId) -> PathBuf {
         self.root.join(format!("{:016x}", id.0))
@@ -293,11 +369,7 @@ impl ProjectLibrary {
             Command::DeleteProject {} => {
                 // Confirmation belongs to the caller. Trash keeps the complete
                 // directory, so a restore never relinks media.
-                let lease = self.lease(target)?;
-                let trash = self.trash_directory(target);
-                write_trash_record(&self.directory(target), &TrashRecord { unix_ms: now_ms() })?;
-                lease.move_directory(&trash)?;
-                self.clear_history();
+                self.move_to_trash(target, now_ms())?;
             }
             Command::RestoreProject {} => {
                 let lease = self.trash_lease(target)?;
@@ -310,11 +382,7 @@ impl ProjectLibrary {
             }
             Command::PurgeProject {} => {
                 // Confirmation belongs to the caller, as for any permanent delete.
-                let lease = self.trash_lease(target)?;
-                let tomb = self.unique("delete")?;
-                lease.move_directory(&tomb)?;
-                self.clear_history();
-                let _ = fs::remove_dir_all(tomb);
+                self.purge_entry(target)?;
             }
             Command::ThumbnailProject {} => {
                 let lease = self.lease(target)?;
@@ -581,16 +649,19 @@ fn checkpoint(cancelled: &dyn Fn() -> bool) -> Result<()> {
     }
 }
 
-fn now_ms() -> u64 {
+/// A representable wall clock, or `None` when the host cannot supply one. The
+/// destructive retention policy treats `None` as "no expiry", never as epoch.
+fn now_ms() -> Option<u64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
-        .unwrap_or(0)
 }
 
 /// Write the move record before the directory moves, so a failed move leaves the
-/// entry active. Later deletions replace it.
+/// entry active. Publication replaces the directory entry through the atomic
+/// record owner: an existing hard link to project or media bytes is never edited
+/// in place, and symlink or writer-namespace destinations refuse.
 fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
     let path = directory.join(TRASH_RECORD);
     match fs::symlink_metadata(&path) {
@@ -603,13 +674,10 @@ fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
     }
     let bytes =
         serde_json::to_vec(record).map_err(|_| EditError::Invalid("library trash record"))?;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
+    if bytes.len() > 128 {
+        return Err(EditError::Limit);
+    }
+    project::atomic_write(&path, &bytes)?;
     Ok(())
 }
 
@@ -624,36 +692,6 @@ fn read_trash_record(directory: &Path) -> Option<u64> {
     let bytes = fs::read(path).ok()?;
     let record: TrashRecord = serde_json::from_slice(&bytes).ok()?;
     Some(record.unix_ms)
-}
-
-/// Purge Trash entries whose recorded age reaches the published retention.
-/// Removal errors leave the entry for the next open; nothing else is touched.
-fn purge_expired(root: &Path, now_unix_ms: u64) -> Result<()> {
-    let retention = RETENTION_DAYS.checked_mul(DAY_MS).ok_or(EditError::Limit)?;
-    for (count, entry) in fs::read_dir(root)?.enumerate() {
-        if count >= MAX_ENTRIES * 4 {
-            return Err(EditError::Limit);
-        }
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str().and_then(|name| name.strip_prefix(TRASH)) else {
-            continue;
-        };
-        if name.len() != 16
-            || !name
-                .bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        {
-            continue;
-        }
-        let Some(trashed_unix_ms) = read_trash_record(&entry.path()) else {
-            continue;
-        };
-        if now_unix_ms.saturating_sub(trashed_unix_ms) >= retention {
-            let _ = fs::remove_dir_all(entry.path());
-        }
-    }
-    Ok(())
 }
 
 fn private_directory(path: &Path, recursive: bool) -> std::io::Result<()> {
@@ -676,5 +714,40 @@ impl std::fmt::Debug for ProjectEntry {
             .field("id", &self.id)
             .field("duration", &self.duration)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_clock_refuses_a_trash_move_and_keeps_the_project_active() {
+        let root = tempfile::tempdir().expect("directory");
+        let mut library =
+            ProjectLibrary::open(root.path(), ByteBudget::new(16 << 20).expect("budget"))
+                .expect("library");
+        library
+            .execute(
+                ProjectId(1),
+                Command::CreateProject {
+                    id: ProjectId(1),
+                    name: "Clock".into(),
+                },
+            )
+            .expect("create");
+        assert!(matches!(
+            library.move_to_trash(ProjectId(1), None),
+            Err(EditError::Unsupported("system clock"))
+        ));
+        assert_eq!(library.list().expect("list").len(), 1);
+        assert!(library.list_trash().expect("trash").is_empty());
+        assert!(!library.directory(ProjectId(1)).join(TRASH_RECORD).exists());
+        // A representable clock still moves the same project.
+        library
+            .move_to_trash(ProjectId(1), Some(1_800_000_000_000))
+            .expect("trash");
+        assert_eq!(library.list_trash().expect("trash").len(), 1);
     }
 }

@@ -425,6 +425,18 @@ impl State {
         }
     }
 
+    /// A successful listing clears its own failure row, leaving unrelated
+    /// action notices (rename, duplicate, restore) intact.
+    fn clear_listing_notice(&mut self, text: Text) {
+        if self
+            .notice
+            .as_ref()
+            .is_some_and(|(shown, _)| *shown == text)
+        {
+            self.notice = None;
+        }
+    }
+
     fn apply(&mut self, event: Event) {
         match event {
             Event::Failed(error) => self.list_error = Some(error.to_string()),
@@ -433,6 +445,7 @@ impl State {
                 match result {
                     Ok(entries) => {
                         self.list_error = None;
+                        self.clear_listing_notice(Text::ProjectsListError);
                         self.set_entries(entries);
                     }
                     Err(error) => self.list_error = Some(error),
@@ -443,6 +456,7 @@ impl State {
                 match result {
                     Ok(entries) => {
                         self.list_error = None;
+                        self.clear_listing_notice(Text::ProjectsListError);
                         self.set_entries(entries);
                     }
                     Err(error) => {
@@ -514,6 +528,7 @@ impl State {
                 match result {
                     Ok(entries) => {
                         self.list_error = None;
+                        self.clear_listing_notice(Text::ProjectsTrashError);
                         self.set_trash(entries);
                     }
                     Err(error) => {
@@ -528,22 +543,36 @@ impl State {
                 entries,
             } => {
                 self.pending = self.pending.saturating_sub(1);
-                if let Ok(trash) = trash {
-                    self.set_trash(trash);
+                let trash_failed = trash.is_err();
+                match trash {
+                    Ok(trash) => {
+                        self.clear_listing_notice(Text::ProjectsTrashError);
+                        self.set_trash(trash);
+                    }
+                    Err(error) => self.list_error = Some(error),
                 }
-                if let Ok(entries) = entries {
-                    self.set_entries(entries);
+                match entries {
+                    Ok(entries) => {
+                        self.clear_listing_notice(Text::ProjectsListError);
+                        self.set_entries(entries);
+                    }
+                    Err(error) => self.list_error = Some(error),
                 }
                 self.selection.clear();
                 self.anchor = None;
                 if !failures.is_empty() {
                     self.notice = Some((Text::ProjectsRestoreFailed, Some(failures.join("; "))));
+                } else if trash_failed {
+                    self.notice = Some((Text::ProjectsTrashError, None));
                 }
             }
             Event::Purged { failures, trash } => {
                 self.pending = self.pending.saturating_sub(1);
                 match trash {
-                    Ok(trash) => self.set_trash(trash),
+                    Ok(trash) => {
+                        self.clear_listing_notice(Text::ProjectsTrashError);
+                        self.set_trash(trash);
+                    }
                     Err(error) => self.list_error = Some(error),
                 }
                 self.selection.clear();

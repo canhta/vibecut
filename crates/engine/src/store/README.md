@@ -37,8 +37,9 @@ confirmation before sending the command.
 
 Delete moves the complete project directory to a hidden sibling `.trash-<16-digit hex ID>`,
 so project, metadata, media and their links stay together; a store-owned `trash.json` records
-the Unix milliseconds of the move and is written before the rename, so a failed move leaves
-the entry active. Trash is not part of the active listing: `list_trash()` derives its rows
+the Unix milliseconds of the move and is published before the rename through the atomic record
+owner, so it never truncates a hard-linked project or media inode and a failed move leaves the
+entry active. Trash is not part of the active listing: `list_trash()` derives its rows
 from each trashed directory's own project file and record. A trashed project cannot be opened
 or edited, and neither name nor identity is released: a project that reuses the same ID makes
 restore refuse with `Conflict` rather than overwrite. Restore moves the directory back to its
@@ -46,12 +47,16 @@ ID directory and removes the record, so media links work again; a second restore
 an entry that is no longer trashed refuses. Purge moves the directory to a unique `.delete-*`
 tombstone and removes it, which is the only permanent deletion. A missing or corrupt record
 keeps an entry listed but untimed, so nothing is purged without an authoritative move time.
+An unavailable wall clock refuses a new move instead of recording an epoch, and it disables
+automatic expiry for that open.
 
 Trash keeps entries for `RETENTION_DAYS` (30) whole days, measured from the recorded move and
 presented by `ProjectEntry::trash_days_left`. `ProjectLibrary::open` purges expired entries
-before it lists anything; an entry that cannot be removed stays listed at zero days and is
-retried on the next open. Failed post-purge cleanup can leave an unlisted hidden directory;
-it is never promoted or reused.
+before it lists anything: each candidate passes the same regular-file, project-identity and
+writer-lease admission and the same tombstone move as an explicit purge, so a corrupt,
+mismatched or busy entry stays complete and is retried on the next open. An entry that cannot
+be removed stays listed at zero days. Failed post-purge cleanup can leave an unlisted hidden
+directory; it is never promoted or reused.
 
 Undo, redo, delete, restore and purge use the project-owned
 [directory-move barrier](../../../project/src/persistence/README.md#writer-lease-and-save-acknowledgement).

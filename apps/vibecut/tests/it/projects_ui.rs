@@ -883,6 +883,74 @@ fn trash_listing_failure_reports_and_retry_keeps_the_page_usable() {
 }
 
 #[test]
+fn restore_surfaces_a_trash_listing_failure_and_retry_recovers() {
+    let fixture = Fixture::new(&[("Alpha", missing()), ("Beta", missing())]);
+    let mut harness = fixture.build(Preferences::default());
+    for id in [1u64, 2] {
+        let menu = match id {
+            1 => "projects.card.0000000000000001.menu",
+            _ => "projects.card.0000000000000002.menu",
+        };
+        let delete = match id {
+            1 => "projects.card.0000000000000001.delete",
+            _ => "projects.card.0000000000000002.delete",
+        };
+        harness.get(by(menu)).click();
+        harness.run_steps(2);
+        harness.get(by(delete)).click();
+        harness.run_steps(2);
+        harness.get(by("projects.delete.confirm")).click();
+        idle(&mut harness);
+    }
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    let beta_path = fixture
+        .projects
+        .join(".trash-0000000000000002/project.vibecut");
+    let beta_project = std::fs::read(&beta_path).unwrap();
+    std::fs::write(&beta_path, b"not a project").unwrap();
+
+    // Alpha restores, but the refreshed Trash listing fails on Beta. The page
+    // must keep the previous rows, report the failure and stop treating the
+    // catalog as authoritative until Retry succeeds.
+    harness
+        .get(by("projects.card.0000000000000001"))
+        .click_modifiers(egui::Modifiers::NONE);
+    harness.run_steps(2);
+    harness.get(by("projects.toolbar.restore")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.entries().len(), 1);
+    assert!(harness.query_by_label("Couldn't load Trash.").is_some());
+    assert!(
+        harness.state().projects.settled_ids().is_none(),
+        "a failed restore listing is not an authoritative catalog"
+    );
+    assert_eq!(
+        harness.state().projects.trash().count(),
+        2,
+        "the previous Trash rows stay until a refresh succeeds"
+    );
+
+    std::fs::write(&beta_path, &beta_project).unwrap();
+    harness.get(by("projects.retry")).click();
+    idle(&mut harness);
+    assert!(harness.query_by_label("Couldn't load Trash.").is_none());
+    assert!(harness.state().projects.settled_ids().is_some());
+    assert_eq!(
+        harness
+            .state()
+            .projects
+            .trash()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>(),
+        vec![ProjectId(2)]
+    );
+    harness.get(by("projects.trash")).click();
+    idle(&mut harness);
+    assert_eq!(harness.state().projects.entries().len(), 1);
+}
+
+#[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-199-trash.png"]
 fn trash_screenshot() {
     let fixture = Fixture::new(&[

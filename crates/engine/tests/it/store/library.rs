@@ -570,3 +570,216 @@ fn corrupt_trashed_entries_are_reported_and_never_hidden() {
         Some(0)
     );
 }
+
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+fn trash_dir(root: &std::path::Path, id: u64) -> std::path::PathBuf {
+    root.join(format!(".trash-{id:016x}"))
+}
+
+fn write_record(directory: &std::path::Path, unix_ms: u64) {
+    fs::write(
+        directory.join("trash.json"),
+        format!("{{\"unix_ms\":{unix_ms}}}"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn expiry_admits_only_an_identifiable_unleased_entry() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    for id in [1, 2, 3, 4] {
+        create(&mut lib, id);
+        lib.execute(ProjectId(id), Command::DeleteProject {})
+            .unwrap();
+        write_record(&trash_dir(root.path(), id), 0);
+    }
+    // Corrupt id 2's project and give id 3 another project's identity.
+    fs::write(
+        trash_dir(root.path(), 2).join("project.vibecut"),
+        b"not a project",
+    )
+    .unwrap();
+    let identity = fs::read(trash_dir(root.path(), 1).join("project.vibecut")).unwrap();
+    fs::write(trash_dir(root.path(), 3).join("project.vibecut"), &identity).unwrap();
+    // A retained project writer lease keeps id 1 complete across the sweep.
+    let held = WriterLease::acquire(&trash_dir(root.path(), 1).join("project.vibecut")).unwrap();
+    drop(lib);
+    let reopened = library(root.path());
+    assert!(
+        !trash_dir(root.path(), 4).exists(),
+        "a validated, unleased expired entry is purged"
+    );
+    assert!(trash_dir(root.path(), 1).exists(), "a busy entry stays");
+    assert!(trash_dir(root.path(), 2).exists(), "a corrupt entry stays");
+    assert!(
+        trash_dir(root.path(), 3).exists(),
+        "a mismatched identity stays"
+    );
+    assert_eq!(
+        fs::read(trash_dir(root.path(), 1).join("project.vibecut")).unwrap(),
+        identity,
+        "the sweep never touches the held project bytes"
+    );
+    // The corrupt and mismatched entries are reported, never hidden; the held
+    // entry is retried once its writer lease is gone.
+    assert!(reopened.list_trash().is_err());
+    drop(held);
+    drop(reopened);
+    fs::remove_dir_all(trash_dir(root.path(), 2)).unwrap();
+    fs::remove_dir_all(trash_dir(root.path(), 3)).unwrap();
+    let reopened = library(root.path());
+    assert!(
+        !trash_dir(root.path(), 1).exists(),
+        "the freed entry expires on the next open"
+    );
+    assert!(reopened.list_trash().unwrap().is_empty());
+}
+
+#[test]
+fn expiry_needs_a_recorded_age_and_a_valid_clock() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    for id in [1, 2, 3, 4] {
+        create(&mut lib, id);
+        lib.execute(ProjectId(id), Command::DeleteProject {})
+            .unwrap();
+    }
+    let now = now_unix_ms();
+    let retention = 30 * 24 * 60 * 60 * 1000;
+    write_record(&trash_dir(root.path(), 1), now - retention + 60_000);
+    write_record(&trash_dir(root.path(), 2), now + 24 * 60 * 60 * 1000);
+    fs::write(
+        trash_dir(root.path(), 3).join("trash.json"),
+        vec![b'x'; 256],
+    )
+    .unwrap();
+    write_record(&trash_dir(root.path(), 4), now - retention);
+    drop(lib);
+    let reopened = library(root.path());
+    let ids: Vec<ProjectId> = reopened
+        .list_trash()
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect();
+    assert_eq!(ids, vec![ProjectId(1), ProjectId(2), ProjectId(3)]);
+    assert!(
+        !trash_dir(root.path(), 4).exists(),
+        "exactly 30 recorded days expires"
+    );
+    assert!(trash_dir(root.path(), 1).exists(), "one minute short stays");
+    assert!(trash_dir(root.path(), 2).exists(), "a future record stays");
+    assert!(
+        trash_dir(root.path(), 3).exists(),
+        "an unreadable record stays untimed"
+    );
+}
+
+#[test]
+fn expired_entry_moves_to_an_unlisted_tombstone_before_cleanup() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    lib.execute(ProjectId(1), Command::DeleteProject {})
+        .unwrap();
+    let trashed = trash_dir(root.path(), 1);
+    write_record(&trashed, 0);
+    let held_path = trashed.join("held.dat");
+    fs::write(&held_path, b"open").unwrap();
+    // A read handle can block the recursive cleanup on Windows. The atomic
+    // tombstone move already happened, so a partial cleanup can only leave an
+    // unlisted `.delete-*` directory, never a visible or restorable entry.
+    let held = fs::File::open(&held_path).unwrap();
+    drop(lib);
+    let reopened = library(root.path());
+    if trashed.exists() {
+        // The open handle refused the move: the entry is still complete and
+        // listed at zero days, never partly destroyed.
+        let entry = reopened.list_trash().unwrap().remove(0);
+        assert_eq!(entry.id, ProjectId(1));
+        assert_eq!(
+            project::load(&entry.path).unwrap().project.data().id,
+            ProjectId(1)
+        );
+    } else {
+        // The move admitted the entry; any failed cleanup is an unlisted tombstone.
+        assert!(reopened.list_trash().unwrap().is_empty());
+        assert!(reopened.list().unwrap().is_empty());
+    }
+    drop(held);
+    drop(reopened);
+    // Releasing the handle lets the next open finish the destructible entry.
+    let reopened = library(root.path());
+    assert!(reopened.list_trash().unwrap().is_empty());
+    assert!(!trashed.exists());
+}
+
+#[test]
+fn hard_linked_trash_record_never_truncates_project_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    let directory = root.path().join("0000000000000001");
+    let project = fs::read(directory.join("project.vibecut")).unwrap();
+    fs::hard_link(
+        directory.join("project.vibecut"),
+        directory.join("trash.json"),
+    )
+    .unwrap();
+    lib.execute(ProjectId(1), Command::DeleteProject {})
+        .unwrap();
+    assert_eq!(
+        fs::read(trash_dir(root.path(), 1).join("project.vibecut")).unwrap(),
+        project,
+        "publishing the record replaces the link, never the project inode"
+    );
+    lib.execute(ProjectId(1), Command::RestoreProject {})
+        .unwrap();
+    assert_eq!(
+        fs::read(directory.join("project.vibecut")).unwrap(),
+        project
+    );
+}
+
+#[test]
+fn hard_linked_trash_record_never_truncates_media_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    let external = root.path().join("clip.dat");
+    fs::write(&external, [7u8; 4096]).unwrap();
+    add_asset(&mut lib, 1, &external);
+    lib.execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(2) })
+        .unwrap();
+    let project = project::load(&lib.list().unwrap()[1].path).unwrap().project;
+    let media = project.data().assets[0].path().to_owned();
+    let bytes = fs::read(&media).unwrap();
+    let directory = root.path().join("0000000000000002");
+    fs::hard_link(&media, directory.join("trash.json")).unwrap();
+    lib.execute(ProjectId(2), Command::DeleteProject {})
+        .unwrap();
+    assert_eq!(
+        fs::read(
+            trash_dir(root.path(), 2)
+                .join("media")
+                .join(media.file_name().unwrap())
+        )
+        .unwrap(),
+        bytes,
+        "publishing the record never truncates the media inode"
+    );
+    lib.execute(ProjectId(2), Command::RestoreProject {})
+        .unwrap();
+    assert_eq!(fs::read(&media).unwrap(), bytes);
+    assert_eq!(
+        project::load(&lib.list().unwrap()[1].path).unwrap().project,
+        project
+    );
+}
