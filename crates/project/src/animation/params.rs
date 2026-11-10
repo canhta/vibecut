@@ -84,6 +84,14 @@ impl BuiltinPath {
     }
 }
 
+/// Item-local extension identifier grammar shared with persisted effect instances.
+pub(crate) fn identifier(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -108,12 +116,6 @@ impl AnimationPath {
         }
         if BuiltinPath::parse(&value).is_some() {
             return Ok(Self(value));
-        }
-        fn identifier(s: &str) -> bool {
-            !s.is_empty()
-                && s.len() <= 64
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         }
         let parts: Vec<_> = value.split('.').collect();
         let extension = match parts.as_slice() {

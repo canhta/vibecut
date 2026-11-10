@@ -1,6 +1,6 @@
 //! Persisted effect instances and the parameter model; evaluation and devices
 //! belong to render/apps.
-use crate::{AnimationPath, Color, Error, Result};
+use crate::{AnimationPath, Color, Error, Result, animation::identifier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -271,6 +271,9 @@ impl EffectInstance {
 
     pub fn validate(&self) -> Result<()> {
         let definition = self.definition()?;
+        if !identifier(&self.id) {
+            return Err(Error::Invalid("effect instance id"));
+        }
         if self.params.len() != definition.params.len() {
             return Err(Error::Invalid("effect parameter set"));
         }
@@ -280,9 +283,6 @@ impl EffectInstance {
                 .get(param.id)
                 .ok_or(Error::Invalid("effect parameter set"))?;
             param.check(value)?;
-        }
-        for id in definition.animated_ids() {
-            self.param_path(id)?;
         }
         Ok(())
     }
