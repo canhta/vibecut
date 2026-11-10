@@ -17,8 +17,11 @@ Local-first desktop video editor for macOS, Windows and Linux.
 | P1 | An agent chat inside the editor proposes edits from a prompt; the user previews them and applies or discards them as one step. |
 | P1 | Better reframing, batch operations, output quality; full editor parity, including footage clean-up (stabilize, noise, flicker) and a brand kit of reusable logos, colours, fonts and presets. |
 | P2 | Optional dubbing into Vietnamese, English or Chinese. |
+| P2 | Features that need a local model (subject cutout, body effects) install their weights through the model manager; voice presets are local audio processing. |
 
-Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions always go through user review.
+Out of scope: montage generation, automatic B-roll, voice cloning, generated media (AI avatars, image, video and style generation), beauty retouch, online asset and template stores, accounts, sharing and cloud sync. AI suggestions always go through user review.
+
+Built-in content (effects, transitions, filters, stickers, text and caption presets, templates) ships as a curated set with a recorded licence, or comes from files the user imports. Sounds and fonts may also be fetched, one item at a time on the user's action, from an open source whose terms are recorded. The editor works fully without a network and never requires an online catalogue.
 
 Build order: foundation (structure, build, test kit), the reference product's core editor features, AI editing in the editor and agent control, Home, then long video to shorts. Ticket priorities encode it ([issue tracker](../agents/issue-tracker.md)).
 
