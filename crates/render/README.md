@@ -9,6 +9,7 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 |---|---|---|---|
 | `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats`, `viewport` | [Working pixels and scene](src/scene/README.md) |
 | `scene/effects/` | Evaluates effect passes and owns the CPU reference table and imported cubes. | `EffectPass`, `EffectCompositor`, `CpuEffects`, `EffectFrame`, `evaluator`, `evaluate_effect`, `apply_effect`, `content_time`, `lut` | [Effect passes](src/scene/effects/README.md) |
+| `scene/transitions/` | Implements the ported transition kinds over the working frame. | (none) | [Transition kinds](src/scene/transitions/README.md) |
 | `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` | [Audio clock and headroom](src/audio/README.md) |
 | `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path` | [Export and publication](src/export/README.md) |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` | [source](src/image.rs) |
