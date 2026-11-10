@@ -3,6 +3,21 @@
 Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`,
 `admit_loudness`.
 
+## Default cache location
+
+`cache::CacheRoot::discover()` selects the per-user OS cache base using native environment
+paths: macOS `HOME/Library/Caches`, Windows `LOCALAPPDATA`, other systems `XDG_CACHE_HOME`
+when present, otherwise `HOME/.cache`. A missing or nonabsolute selected base returns
+`EditError::Unsupported` with safe static context. A present empty or relative XDG value
+refuses rather than falling back to HOME. Discovery performs no filesystem IO, creation,
+download, eviction or migration; Debug redacts the location.
+
+The named paths preserve the existing layout: `models()` is `<base>/VibeCut/models`,
+`fonts()` is `<base>/VibeCut/fonts`, `waveform()` is `<base>/VibeCut/models/waveform`, and
+`thumbnails()` is `<base>/VibeCut/models/thumbnails`. These defaults do not reinterpret
+caller-injected `ArtifactCache` or `MediaAccess::open_in` roots. Cache consumers retain
+their existing storage, budget and cleanup policy.
+
 ## Background jobs and byte policy
 
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.

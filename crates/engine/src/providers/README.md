@@ -63,7 +63,8 @@ fingerprint and result validation.
 ## Local model transfers
 
 `models::ModelTransfers` composes JobRunner, ArtifactCache and ai's shared streaming transport.
-`open_default` reuses `ai::models::cache_dir`; `new` accepts an already owned cache and injected
+`open_default` uses [runtime's `CacheRoot::models()`](../runtime/README.md#default-cache-location);
+unavailable discovery returns runtime's `EditError::Unsupported`. `new` accepts an already owned cache and injected
 `ModelIo`. The runner must share that cache's ByteBudget. There is one active transfer per cache,
 including queue and backoff; state mutexes cover ownership changes only, never network, file IO or
 verification.

@@ -70,6 +70,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/src/session/README.md#transactions-gestures-and-changes) |
 | Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts) |
 | Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy) |
+| Default model, font and media cache locations | [engine runtime](../../crates/engine/src/runtime/README.md#default-cache-location) |
 | Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [libraries fonts](../../crates/libraries/src/font_catalog/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/src/runtime/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/src/export/README.md#export-and-publication) |

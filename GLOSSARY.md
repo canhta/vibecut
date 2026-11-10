@@ -21,6 +21,7 @@ Language for the editor's privacy and execution boundaries.
 - **Provider catalog**: Offline capability data (operation, models, languages, local or remote, native timing) used to list and filter explicit provider choices without constructing an adapter or making a network call.
 - **Upload disclosure**: The exact remote request scope shown before consent: provider/model, operation, languages, audio duration, payload bytes, per-invocation cost ceiling and the provider's official policy links.
 - **Job**: A tracked editing operation with progress, cancellation, failure and checkpoint information.
+- **CacheRoot**: The discovered per-user cache location with named model, font and media artifact paths; [engine runtime](crates/engine/src/runtime/README.md#default-cache-location) owns its discovery and failures.
 - **Session**: The active project together with its command execution and undo/redo history.
 - **Segment**: Stable identified span of transcript text in source-media time.
 - **Timing unit**: Unit of recognized speech timing: segment, word, syllable, character, grapheme or token. A token can be part of a character or word.

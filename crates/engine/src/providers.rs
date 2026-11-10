@@ -11,8 +11,8 @@ pub(crate) use catalog::normalize_target;
 pub use catalog::{
     CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
     TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter, choose_filler,
-    choose_transcription, choose_translation, default_cache_root, local_asr_runner, model_info,
-    model_infos, normalize_target_tag, parse_language, provider_options, provider_options_for,
+    choose_transcription, choose_translation, local_asr_runner, model_info, model_infos,
+    normalize_target_tag, parse_language, provider_options, provider_options_for,
 };
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest};

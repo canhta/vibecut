@@ -48,7 +48,7 @@ impl Generator for LocalVideoWorkflow {
         )?;
         clip_suggest::check_suggestion_credentials(&provider, &credentials)
             .map_err(engine_error)?;
-        let root = engine::providers::default_cache_root()?;
+        let root = engine::cache::CacheRoot::discover()?.models();
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
         let runtime = engine::providers::Runtime {
             gipformer_runner: engine::providers::local_asr_runner(),

@@ -43,7 +43,7 @@ impl MediaAccess {
     /// root. One owner holds them so generation and display read the same
     /// entries; a second open of the same root reports [`EditError::CacheBusy`].
     pub fn open(budget: crate::ByteBudget) -> Result<Self, EditError> {
-        Self::open_in(&crate::providers::default_cache_root()?, budget)
+        Self::open_in(&crate::cache::CacheRoot::discover()?.models(), budget)
     }
 
     /// Open the two caches under an explicit root. The desktop keeps them with

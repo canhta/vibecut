@@ -742,3 +742,116 @@ fn curated_catalog_pins_licensed_files_and_is_accepted_by_the_store() {
         assert!(FontStore::new(root.path().to_path_buf(), bad, Vec::new, offline()).is_err());
     }
 }
+
+fn native_probe(mode: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "font_catalog::native_cache_child", "--nocapture"])
+        .env("VIBECUT_TEST_FONT_CACHE", mode)
+        .env_remove("HOME")
+        .env_remove("LOCALAPPDATA")
+        .env_remove("XDG_CACHE_HOME");
+    command
+}
+
+fn native_base(command: &mut std::process::Command, root: &Path) {
+    #[cfg(target_os = "windows")]
+    command
+        .env("LOCALAPPDATA", root)
+        .env("VIBECUT_TEST_FONT_BASE", root);
+    #[cfg(target_os = "macos")]
+    command
+        .env("HOME", root)
+        .env("VIBECUT_TEST_FONT_BASE", root.join("Library/Caches"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    command
+        .env("XDG_CACHE_HOME", root)
+        .env("VIBECUT_TEST_FONT_BASE", root);
+}
+
+fn run_native(command: &mut std::process::Command) {
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_discovery_is_lazy_and_uses_the_exact_font_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut command = native_probe("path");
+    native_base(&mut command, &dir.path().join("Phông chữ cache"));
+    run_native(&mut command);
+}
+
+#[test]
+fn native_refuses_unavailable_cache_as_runtime_unsupported() {
+    let dir = tempfile::tempdir().unwrap();
+    for selected in [None, Some(""), Some("relative fonts")] {
+        let mut command = native_probe("unavailable");
+        command.current_dir(dir.path());
+        if let Some(selected) = selected {
+            native_base(&mut command, Path::new(selected));
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        if selected.is_some() {
+            command.env("HOME", dir.path());
+        }
+        run_native(&mut command);
+    }
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn native_cache_child() {
+    let Ok(mode) = std::env::var("VIBECUT_TEST_FONT_CACHE") else {
+        return;
+    };
+    if mode == "unavailable" {
+        assert!(matches!(
+            FontStore::native(),
+            Err(EditError::Unsupported("OS cache location unavailable"))
+        ));
+        return;
+    }
+    let base = PathBuf::from(std::env::var_os("VIBECUT_TEST_FONT_BASE").unwrap());
+    let store = FontStore::native().unwrap();
+    assert!(!base.exists(), "native composition performs no cache IO");
+    // A synthetic inaccessible entry refuses before system scanning, font reads or
+    // transport. It distinguishes the real native root from models/fonts.
+    let fonts = base.join("VibeCut/fonts");
+    fs::create_dir_all(fonts.parent().unwrap()).unwrap();
+    #[cfg(windows)]
+    let hold = {
+        use std::os::windows::fs::OpenOptionsExt;
+        let family = curated_google_families()
+            .into_iter()
+            .find(|g| g.family == "Lobster")
+            .unwrap();
+        let entry = fonts.join(&family.slug);
+        fs::create_dir_all(&entry).unwrap();
+        let file = family.files.first().unwrap();
+        let sentry = entry.join(&file.name);
+        fs::File::create(&sentry)
+            .unwrap()
+            .set_len(file.size)
+            .unwrap();
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(sentry)
+            .unwrap()
+    };
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&fonts, &fonts).unwrap();
+    assert!(matches!(store.load("Lobster"), Err(EditError::Io(_))));
+    #[cfg(windows)]
+    {
+        drop(hold);
+        assert_eq!(fs::read_dir(fonts).unwrap().count(), 1);
+    }
+    assert!(!base.join("VibeCut/models").exists());
+}
