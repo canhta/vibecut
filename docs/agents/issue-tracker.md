@@ -16,9 +16,11 @@ Ticket headers use these exact fields; omit `Blocked by` when empty:
 Status: open | claimed | blocked | resolved | wontfix
 Type: task | research | bug
 Priority: P0 | P1 | P2 | P3 | P4
-Assignee: opencode | claude-sonnet | human | -
-Blocked by: NN, <milestone>/NN
+Assignee: <provider>/<model> | human | -
+Blocked by: - | NN, <milestone>/NN
 ```
+
+`Assignee` names the model that implements the ticket as `provider/model`, for example `opencode-go/deepseek-v4.1-flash` or `openai/gpt-6.1-sol`. `Blocked by` holds ticket ids only; put any condition or note in the body.
 
 Priority follows the [delivery order](../product/requirements.md#scope): P0 foundation, P1 core editor, P2 AI editing and agent control, P3 Home, P4 long video to shorts; a defect takes the priority of the feature it breaks. Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
 
