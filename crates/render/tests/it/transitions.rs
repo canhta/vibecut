@@ -6,6 +6,13 @@ use render::{Error, Result};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use time::{SourceRange, Tick};
 
+/// One row per catalogue kind: a 4x4 grid of mean 8-bit RGB at progress 0.25, 0.5 and 0.75.
+const ORACLE: &[(&str, [&str; 3])] = &[];
+
+/// The 4x4 mean-RGB fingerprint at the midpoint of the red-to-blue scene, for the kinds whose
+/// midpoint varies across the frame (the uniform kinds record an exact pixel in `midpoint`).
+const MIDPOINTS: &[(&str, &str)] = &[];
+
 fn scene(kind: &str) -> Project {
     let mut d = Project::empty(ProjectId(0), "transition goldens".into())
         .unwrap()
@@ -44,8 +51,9 @@ fn scene(kind: &str) -> Project {
     Project::new(d).unwrap()
 }
 
-/// The exact midpoint frame between pure red and pure blue, in linear light.
-/// `None` means the catalog kind has no golden yet.
+/// The exact midpoint frame between pure red and pure blue, in linear light, where the frame is
+/// one uniform colour; `None` when the kind varies across the frame, whose midpoint fingerprint
+/// is recorded in `MIDPOINTS`.
 fn midpoint(kind: &str) -> Option<[f32; 4]> {
     let linear = |v: u8| {
         let c = f32::from(v) / 255.;
@@ -114,12 +122,9 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
         let p = scene(def.kind);
         let h = Hooks::default();
         let mut r = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
-        let mid =
-            midpoint(def.kind).expect("every catalog kind needs its midpoint golden in `midpoint`");
         for (at, expected) in [
             (79, [1., 0., 0., 1.]),
             (80, [1., 0., 0., 1.]),
-            (100, mid),
             (120, [0., 0., 1., 1.]),
             (121, [0., 0., 1., 1.]),
         ] {
@@ -131,6 +136,23 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
                 "{} at {at}",
                 def.kind
             );
+        }
+        let im = r.render_frame(Tick(100), &mut Empty, &h).unwrap();
+        match midpoint(def.kind) {
+            Some(expected) => assert!(
+                im.pixels()
+                    .iter()
+                    .all(|p| p.iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-6)),
+                "{} at 100",
+                def.kind
+            ),
+            None => {
+                let recorded = MIDPOINTS
+                    .iter()
+                    .find(|(kind, _)| *kind == def.kind)
+                    .unwrap_or_else(|| panic!("{}: add its midpoint fingerprint", def.kind));
+                assert_eq!(&fingerprint(&im), recorded.1, "{} at 100", def.kind);
+            }
         }
         // Every tick around and across the half-open span yields opaque pixels;
         // the final in-span frame converges to the exact incoming endpoint.
@@ -606,4 +628,136 @@ fn thumbnails_are_generated_bounded_shared_and_evicted() {
         0,
         "no lease outlives the cache"
     );
+}
+
+/// A 4x4 grid of mean 8-bit RGB per cell, as 96 hex characters: one oracle row per progress.
+fn fingerprint(image: &Image) -> String {
+    let h = Hooks::default();
+    let bytes = image.rgba8(13, &h).unwrap();
+    let (width, height) = (image.width() as usize, image.height() as usize);
+    let mut sums = [[[0u64; 3]; 4]; 4];
+    let mut counts = [[0u64; 4]; 4];
+    for (n, px) in bytes.bytes.chunks_exact(4).enumerate() {
+        let (x, y) = (n % width, n / width);
+        let (column, row) = (x * 4 / width, y * 4 / height);
+        counts[row][column] += 1;
+        for (channel, value) in sums[row][column].iter_mut().zip(px) {
+            *channel += u64::from(*value);
+        }
+    }
+    let mut out = String::with_capacity(96);
+    for row in 0..4 {
+        for column in 0..4 {
+            let count = counts[row][column].max(1);
+            for channel in &sums[row][column] {
+                out.push_str(&format!("{:02x}", (channel / count).min(255) as u8));
+            }
+        }
+    }
+    out
+}
+
+/// The report's two procedural frames, premultiplied and opaque.
+fn oracle_frames(width: u32, height: u32) -> (Image, Image) {
+    let frame = |outgoing: bool| {
+        let pixels = (0..width * height).map(|n| {
+            let x = (n % width) as f32 + 0.5;
+            let y = (n / width) as f32 + 0.5;
+            let (w, h) = (width as f32, height as f32);
+            if outgoing {
+                let cell = (w / 8.).max(1.);
+                let checker = if ((x / cell).floor() + (y / cell).floor()) % 2. == 0. {
+                    0.15
+                } else {
+                    0.
+                };
+                [
+                    (0.2 + 0.7 * x / w + checker).min(1.),
+                    0.1 + 0.3 * y / h,
+                    0.05 + checker,
+                    1.,
+                ]
+            } else {
+                let disc = if (x - w * 0.62).hypot(y - h * 0.4) < h * 0.22 {
+                    0.6
+                } else {
+                    0.
+                };
+                [
+                    (0.05f32 + disc).min(1.),
+                    (0.2 + 0.2 * y / h + disc).min(1.),
+                    0.4 + 0.5 * y / h,
+                    1.,
+                ]
+            }
+        });
+        Image::from_working_pixels(width, height, pixels, &Hooks::default()).unwrap()
+    };
+    (frame(true), frame(false))
+}
+
+#[test]
+fn every_kind_matches_its_recorded_oracle_row_at_three_progress_points() {
+    let h = Hooks::default();
+    let (a, b) = oracle_frames(128, 72);
+    for definition in TRANSITION_DEFINITIONS {
+        let row = ORACLE
+            .iter()
+            .find(|(kind, _)| *kind == definition.kind)
+            .unwrap_or_else(|| panic!("{}: add its oracle row", definition.kind));
+        for (progress, expected) in [0.25f64, 0.5, 0.75].into_iter().zip(row.1) {
+            let image = transitions::apply(
+                definition.kind,
+                &TransitionParams::new(),
+                &a,
+                &b,
+                progress,
+                1.,
+                &h,
+            )
+            .unwrap();
+            assert_eq!(&fingerprint(&image), expected, "{} at {progress}", definition.kind);
+        }
+    }
+    assert_eq!(ORACLE.len(), TRANSITION_DEFINITIONS.len());
+}
+
+#[test]
+#[ignore = "prints the oracle table after an intended change"]
+fn print_oracle_rows() {
+    let h = Hooks::default();
+    let (a, b) = oracle_frames(128, 72);
+    for definition in TRANSITION_DEFINITIONS {
+        let prints: Vec<_> = [0.25f64, 0.5, 0.75]
+            .into_iter()
+            .map(|progress| {
+                format!(
+                    "\"{}\"",
+                    fingerprint(
+                        &transitions::apply(
+                            definition.kind,
+                            &TransitionParams::new(),
+                            &a,
+                            &b,
+                            progress,
+                            1.,
+                            &h,
+                        )
+                        .unwrap(),
+                    )
+                )
+            })
+            .collect();
+        println!("    (\"{}\", [{}]),", definition.kind, prints.join(", "));
+    }
+    for definition in TRANSITION_DEFINITIONS {
+        if midpoint(definition.kind).is_some() {
+            continue;
+        }
+        let p = scene(definition.kind);
+        let h = Hooks::default();
+        let mut r = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+        let im = r.render_frame(Tick(100), &mut Empty, &h).unwrap();
+        println!("    (\"{}\", \"{}\"),", definition.kind, fingerprint(&im));
+    }
 }
