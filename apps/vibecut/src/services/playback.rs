@@ -165,6 +165,7 @@ struct Request {
     render_state: Arc<RenderState>,
     effects: Option<Arc<dyn render::effects::EffectCompositor>>,
     epoch: u64,
+    generation: u64,
     project: Arc<project::Project>,
     start: Tick,
     origin: u64,
@@ -199,7 +200,7 @@ impl Request {
     }
 }
 pub struct Frame {
-    pub epoch: u64,
+    pub generation: u64,
     pub at: Tick,
     pub image: egui::ColorImage,
     /// Covers CPU ColorImage, egui upload and GPU texture retention. Native driver
@@ -225,6 +226,7 @@ pub struct Playback {
     request: Arc<Mutex<Request>>,
     output: Arc<Mutex<Output>>,
     port: Arc<AudioPort>,
+    preview_generation: Arc<AtomicU64>,
     budget: ByteBudget,
     shown: Option<Arc<Frame>>,
     last_callback: (u64, std::time::Instant),
@@ -258,6 +260,7 @@ impl Playback {
             render_state: Arc::new(RenderState::default()),
             effects: None,
             epoch: 1,
+            generation: 1,
             project: session.project().clone(),
             start: Tick::ZERO,
             origin: 0,
@@ -305,6 +308,7 @@ impl Playback {
             request,
             output,
             port,
+            preview_generation: Arc::new(AtomicU64::new(1)),
             budget,
             shown: None,
             last_callback: (0, std::time::Instant::now()),
@@ -319,6 +323,7 @@ impl Playback {
         self.cancels.clear();
         self.jobs.clear();
         for audio in [true, false] {
+            let preview_generation = self.preview_generation.clone();
             let (request, output, port, sources, budget) = (
                 self.request.clone(),
                 self.output.clone(),
@@ -328,21 +333,34 @@ impl Playback {
             );
             let submitted = self.runner.submit(self.spec, move |hooks| {
                 while !hooks.cancelled() {
-                    let epoch = port.epoch.load(Ordering::Acquire);
+                    let generation = if audio {
+                        &port.epoch
+                    } else {
+                        &preview_generation
+                    };
+                    let epoch = generation.load(Ordering::Acquire);
                     let result = if audio {
                         audio_loop(&request, &port, sources.as_ref(), hooks)
                     } else {
-                        video_loop(&request, &output, &port, &budget, sources.as_ref(), hooks)
+                        video_loop(
+                            &request,
+                            &output,
+                            &port,
+                            &preview_generation,
+                            &budget,
+                            sources.as_ref(),
+                            hooks,
+                        )
                     };
                     if let Err(error) = result
                         && !hooks.cancelled()
                     {
-                        if port.epoch.load(Ordering::Acquire) == epoch
-                            && let Ok(mut out) = output.lock()
+                        if let Ok(mut out) = output.lock()
+                            && generation.load(Ordering::Acquire) == epoch
                         {
                             out.error = Some(Arc::new(error));
                         }
-                        while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
+                        while !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch {
                             std::thread::sleep(Duration::from_millis(2));
                         }
                     }
@@ -441,11 +459,10 @@ impl Playback {
     pub fn playing(&self) -> bool {
         self.port.playing.load(Ordering::Acquire)
     }
-    /// Snapshot generation, bumped by every seek. Audio ring samples and
-    /// preview frames carry it, so callers can tell restored-snapshot output
-    /// from work produced for a superseded project.
+    /// Preview generation, bumped by seek and pointer requests. Frames and
+    /// uploads carry it; the independent audio epoch changes only with transport.
     pub fn generation(&self) -> u64 {
-        self.port.epoch.load(Ordering::Acquire)
+        self.preview_generation.load(Ordering::Acquire)
     }
     /// Apply one transport request against `project`, the immutable snapshot the
     /// preview renders. Play toggles, an end-position play restarts from zero,
@@ -497,15 +514,21 @@ impl Playback {
             return Err(Error::PreviewUnavailable("preview workers"));
         }
         let mut request = self.request.lock().map_err(|_| Error::Poisoned)?;
-        self.port.playing.store(false, Ordering::Release);
         let epoch = request
             .epoch
             .checked_add(1)
+            .ok_or(Error::Invalid("audio generation exhausted"))?;
+        let generation = request
+            .generation
+            .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
+        let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
+        self.port.playing.store(false, Ordering::Release);
         *request = Request {
             render_state: request.render_state.clone(),
             effects: request.effects.clone(),
             epoch,
+            generation,
             project,
             start: at,
             origin: self.port.submitted.load(Ordering::Acquire),
@@ -513,10 +536,9 @@ impl Playback {
             hover: None,
         };
         self.port.epoch.store(epoch, Ordering::Release);
+        self.preview_generation.store(generation, Ordering::Release);
         self.port.playing.store(playing, Ordering::Release);
-        drop(request);
         self.shown = None;
-        let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
         output.frames.clear();
         output.error = None;
         self.last_callback = (
@@ -534,22 +556,17 @@ impl Playback {
         if request.hover == at {
             return Ok(());
         }
-        let epoch = request
-            .epoch
+        let generation = request
+            .generation
             .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
-        request.hover = at;
-        request.epoch = epoch;
-        self.port.epoch.store(epoch, Ordering::Release);
-        drop(request);
-        self.shown = None;
         let mut output = self.output.lock().map_err(|_| Error::Poisoned)?;
+        request.hover = at;
+        request.generation = generation;
+        self.preview_generation.store(generation, Ordering::Release);
+        self.shown = None;
         output.frames.clear();
         output.error = None;
-        self.last_callback = (
-            self.port.submitted.load(Ordering::Acquire),
-            std::time::Instant::now(),
-        );
         Ok(())
     }
     /// Healthy clearing preserves transport. After worker failure, Retry keeps it
@@ -600,10 +617,10 @@ impl Playback {
             while output
                 .frames
                 .front()
-                .is_some_and(|f| f.epoch != request.epoch || f.at <= at)
+                .is_some_and(|f| f.generation != request.generation || f.at <= at)
             {
                 if let Some(frame) = output.frames.pop_front()
-                    && frame.epoch == request.epoch
+                    && frame.generation == request.generation
                 {
                     self.shown = Some(frame);
                 }
@@ -717,62 +734,61 @@ fn video_loop(
     request: &Mutex<Request>,
     output: &Mutex<Output>,
     port: &AudioPort,
+    generation: &AtomicU64,
     budget: &ByteBudget,
     factory: &dyn Sources,
     hooks: &engine::jobs::JobContext,
 ) -> Result<()> {
-    while !hooks.cancelled() {
-        let r = read_request(request)?;
-        let epoch = r.epoch;
-        let mut sources = factory.create();
-        let fps = r.project.data().canvas.fps;
-        // A held pointer time is one frame: never decode ahead of it, and never
-        // advance it with the audio clock.
-        let pinned = !r.playing || r.hover.is_some();
-        let mut next = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
-        let mut settings = r.render_state.settings(&r.project)?;
-        let scale = (640.0 / f64::from(settings.width))
-            .min(360.0 / f64::from(settings.height))
-            .min(1.0);
-        settings.width = (f64::from(settings.width) * scale).round().max(1.0) as u32;
-        settings.height = (f64::from(settings.height) * scale).round().max(1.0) as u32;
-        settings.effects = r.effects.clone();
-        let mut renderer = render::Renderer::new(&r.project, settings)?;
-        while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
-            let current = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
-            next = next.max(current);
-            if (pinned && next > current)
-                || output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES
-            {
-                std::thread::sleep(Duration::from_millis(2));
-                continue;
-            }
-            let at = fps.tick_of(next)?;
-            let image = renderer.render_frame(at, sources.as_mut(), hooks)?;
-            let lease = budget.reserve(
-                ByteOwner::DecodedFrames,
-                u64::from(image.width()) * u64::from(image.height()) * 12,
-            )?;
-            // The player paints over black; composite there in linear light before
-            // egui applies its transfer-encoded alpha blending.
-            let rgba = image.video_rgba8(13, hooks)?;
-            let frame = Arc::new(Frame {
-                epoch,
-                at,
-                image: egui::ColorImage::from_rgba_unmultiplied(
-                    [image.width() as usize, image.height() as usize],
-                    &rgba.bytes,
-                ),
-                _lease: lease,
-            });
-            let mut out = output.lock().map_err(|_| Error::Poisoned)?;
-            if port.epoch.load(Ordering::Acquire) == epoch {
-                out.frames.push_back(frame);
-            }
-            next = next
-                .checked_add(1)
-                .ok_or(Error::Invalid("frame overflow"))?;
+    let r = read_request(request)?;
+    let preview_generation = r.generation;
+    let mut sources = factory.create();
+    let fps = r.project.data().canvas.fps;
+    // A held pointer time is one frame: never decode ahead of it, and never
+    // advance it with the audio clock.
+    let pinned = !r.playing || r.hover.is_some();
+    let mut next = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
+    let mut settings = r.render_state.settings(&r.project)?;
+    let scale = (640.0 / f64::from(settings.width))
+        .min(360.0 / f64::from(settings.height))
+        .min(1.0);
+    settings.width = (f64::from(settings.width) * scale).round().max(1.0) as u32;
+    settings.height = (f64::from(settings.height) * scale).round().max(1.0) as u32;
+    settings.effects = r.effects.clone();
+    let mut renderer = render::Renderer::new(&r.project, settings)?;
+    while !hooks.cancelled() && generation.load(Ordering::Acquire) == preview_generation {
+        let current = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
+        next = next.max(current);
+        if (pinned && next > current)
+            || output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES
+        {
+            std::thread::sleep(Duration::from_millis(2));
+            continue;
         }
+        let at = fps.tick_of(next)?;
+        let image = renderer.render_frame(at, sources.as_mut(), hooks)?;
+        let lease = budget.reserve(
+            ByteOwner::DecodedFrames,
+            u64::from(image.width()) * u64::from(image.height()) * 12,
+        )?;
+        // The player paints over black; composite there in linear light before
+        // egui applies its transfer-encoded alpha blending.
+        let rgba = image.video_rgba8(13, hooks)?;
+        let frame = Arc::new(Frame {
+            generation: preview_generation,
+            at,
+            image: egui::ColorImage::from_rgba_unmultiplied(
+                [image.width() as usize, image.height() as usize],
+                &rgba.bytes,
+            ),
+            _lease: lease,
+        });
+        let mut out = output.lock().map_err(|_| Error::Poisoned)?;
+        if generation.load(Ordering::Acquire) == preview_generation {
+            out.frames.push_back(frame);
+        }
+        next = next
+            .checked_add(1)
+            .ok_or(Error::Invalid("frame overflow"))?;
     }
     Ok(())
 }

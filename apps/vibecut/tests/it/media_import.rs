@@ -1027,7 +1027,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
         }
         assert!(editor.playback.frame().is_some());
         if importing {
-            let old_epoch = editor.playback.frame().unwrap().epoch;
+            let old_epoch = editor.playback.frame().unwrap().generation;
             editor.set_import_probe(Arc::new(Probe::default())).unwrap();
             editor
                 .start_import(vec!["/tmp/vibecut-import/highfps.mp4".into()])
@@ -1042,7 +1042,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
                 editor.playback.poll().unwrap();
                 if let Some(frame) = editor.playback.frame() {
                     assert!(
-                        frame.epoch > old_epoch,
+                        frame.generation > old_epoch,
                         "import fences the old FPS generation"
                     );
                     break;

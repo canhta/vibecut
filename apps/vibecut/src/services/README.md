@@ -9,7 +9,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | Module | Holds |
 |---|---|
 | `playback` | Engine-scheduled frames, the device clock and the one transport mapping. The app runs no second scheduler. The audio callback only copies samples, zero-fills underruns and reports callback-to-playback latency; every DSP and mix decision belongs to render. Video follows the latency-corrected audio clock and skips past frames under load. |
-| `preview` | `View` (fit flag, explicit scale, pan offset, 0.25–16x), `FrameTexture` (one upload per playback epoch and tick, retaining its frame) and the snapshot boundary (`preview.snapshot`, clipboard copy). The player panel and the shorts window present their own chrome over the same state. |
+| `preview` | `View` (fit flag, explicit scale, pan offset, 0.25–16x), `FrameTexture` (one upload per preview generation and tick, retaining its frame) and the snapshot boundary (`preview.snapshot`, clipboard copy). The player panel and the shorts window present their own chrome over the same state. |
 | `crop` | The source-normalized crop model: `portrait` and `control` (edge and corner drag, ratio lock, 5% minimum edge, 1% and 10% arrow steps). The editor's crop dialog lives in the player panel. |
 | `color_picker` | [Target-free colour controls and native screen sampler](color_picker/README.md). Callers own project targets, publication and history. |
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
@@ -45,8 +45,11 @@ immutable project their preview renders.
 
 `set_hover` is a transient preview time for the timeline's preview axis: it renders one
 frame at the pointer time while the transport position, play state and audio stay put.
-Each pointer time fences the previous generation, so only the latest frame request
-survives; clearing it or a seek returns the preview to the transport.
+Each pointer time fences only the preview generation, so only the latest frame
+request survives; clearing it or a seek returns the preview to the transport.
+The independent audio epoch, queued PCM, source cursor, mixer state and callback
+health baseline are unchanged by pointer movement. Seek, pause and snapshot
+replacement invalidate both generations with checked increments.
 
 ## Preview and snapshot
 

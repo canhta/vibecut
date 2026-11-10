@@ -151,7 +151,7 @@ impl View {
     }
 }
 
-/// The rendered frame uploaded as a texture, keyed by the playback epoch and
+/// The rendered frame uploaded as a texture, keyed by the preview generation and
 /// tick it shows. One upload per new frame; the retained frame keeps the
 /// pixels alive while the texture refers to them.
 #[derive(Default)]
@@ -169,7 +169,7 @@ impl FrameTexture {
         name: &str,
         frame: &Arc<Frame>,
     ) -> Option<egui::TextureId> {
-        let key = (frame.epoch, frame.at);
+        let key = (frame.generation, frame.at);
         if self.key != Some(key) {
             if let Some(texture) = &mut self.texture {
                 texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);

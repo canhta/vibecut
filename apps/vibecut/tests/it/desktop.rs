@@ -285,7 +285,7 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
         assert!(Instant::now() < deadline, "{:?}", editor.playback.error());
         std::thread::sleep(Duration::from_millis(2));
     }
-    let first_epoch = editor.playback.frame().unwrap().epoch;
+    let first_epoch = editor.playback.frame().unwrap().generation;
     editor.activate("transport.forward").unwrap();
     assert!(editor.playback.frame().is_none());
     editor.activate("transport.play").unwrap();
@@ -304,7 +304,7 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
         port.fill(&mut audio, 0);
         editor.playback.poll().unwrap();
         if let Some(frame) = editor.playback.frame() {
-            assert!(frame.epoch > first_epoch);
+            assert!(frame.generation > first_epoch);
             break;
         }
         assert!(Instant::now() < deadline, "{:?}", editor.playback.error());
@@ -769,7 +769,7 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
     loop {
         editor.playback.poll().unwrap();
         if let Some(frame) = editor.playback.frame() {
-            assert!(frame.epoch > 1);
+            assert!(frame.generation > 1);
             assert!(frame.at <= at);
             assert_eq!(frame.image.pixels[0], egui::Color32::RED);
             break;
@@ -979,4 +979,372 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
         playback.poll().unwrap();
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+// The source gates work before publication, so callbacks consume prefilled
+// samples even if a superseded worker has not had a chance to run again.
+struct PreviewWork {
+    provider: u64,
+    start: i64,
+    frames: usize,
+    release: std::sync::mpsc::SyncSender<()>,
+}
+struct ControlledSources {
+    audio: bool,
+    work: std::sync::mpsc::Sender<PreviewWork>,
+    providers: std::sync::atomic::AtomicU64,
+}
+struct ControlledSource {
+    provider: u64,
+    audio: bool,
+    work: Option<std::sync::mpsc::Sender<PreviewWork>>,
+}
+impl vibecut::services::playback::Sources for ControlledSources {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        Box::new(ControlledSource {
+            provider: self
+                .providers
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            audio: self.audio,
+            work: Some(self.work.clone()),
+        })
+    }
+}
+impl ControlledSource {
+    fn gate(&self, start: i64, frames: usize, hooks: &dyn render::ExecutionHooks) {
+        if let Some(work) = &self.work {
+            let (release, receive) = std::sync::mpsc::sync_channel(1);
+            if work
+                .send(PreviewWork {
+                    provider: self.provider,
+                    start,
+                    frames,
+                    release,
+                })
+                .is_ok()
+            {
+                while !hooks.cancelled() {
+                    match receive.recv_timeout(Duration::from_millis(10)) {
+                        Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    }
+                }
+            }
+        }
+    }
+}
+impl render::SourceProvider for ControlledSource {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        at: Tick,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::Image>> {
+        if !self.audio {
+            self.gate(at.0, 0, hooks);
+        }
+        // Deliberately finish stale work even after cancellation, as an adapter
+        // already returning pixels may do. Publication must still fence it.
+        render::Image::new(64, 64, [at.seconds() as f32 / 10.0, 0.0, 0.0, 1.0], &Hooks).map(Some)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        start: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::AudioBlock> {
+        if self.audio {
+            self.gate(start, frames, hooks);
+        }
+        let mut block =
+            render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)?;
+        for plane in block.planes_mut() {
+            for (n, sample) in plane.iter_mut().enumerate() {
+                // A loud opening drives the limiter's envelope, followed by a
+                // quiet waveform whose recovery depends on retained DSP state.
+                let position = start + n as i64;
+                *sample = if position < 500 {
+                    2.0
+                } else {
+                    0.2 + (position % 97) as f32 / 1000.0
+                };
+            }
+        }
+        Ok(block)
+    }
+}
+fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Receiver<PreviewWork>) {
+    let duration = Tick(10 * TICKS_PER_SECOND);
+    let mut data = Project::empty(ProjectId(91), "Controlled preview".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    data.assets.push(
+        testkit::source::asset(1, std::env::temp_dir().join("controlled-preview"))
+            .duration(duration)
+            .stream(if audio {
+                testkit::source::audio().duration(duration).build()
+            } else {
+                testkit::source::video().duration(duration).build()
+            })
+            .build(),
+    );
+    let mut session = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let outcome = session
+        .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
+            name: "Source".into(),
+            kind: if audio {
+                TrackKind::Audio
+            } else {
+                TrackKind::Video
+            },
+        })
+        .unwrap();
+    let CreatedId::Track(track) = outcome.created[0] else {
+        panic!("track")
+    };
+    session
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Track { track },
+            item: NewItem {
+                source_asset: Some(media::AssetId(1)),
+                source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+                start: Tick::ZERO,
+                retime: Default::default(),
+                animations: Default::default(),
+                content: if audio {
+                    ItemParams::Audio(project::AudioParams {
+                        volume: 0.0,
+                        muted: false,
+                        source: Default::default(),
+                        fades: Default::default(),
+                    })
+                } else {
+                    ItemParams::Video(project::VideoParams {
+                        volume: 0.0,
+                        muted: true,
+                        source_audio_enabled: false,
+                        crop: None,
+                        fades: Default::default(),
+                    })
+                },
+            },
+        })
+        .unwrap();
+    let (send, receive) = std::sync::mpsc::channel();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(ControlledSources {
+            audio,
+            work: send,
+            providers: std::sync::atomic::AtomicU64::new(0),
+        }),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    (session, playback, receive)
+}
+fn next_preview_work(receive: &std::sync::mpsc::Receiver<PreviewWork>) -> PreviewWork {
+    receive
+        .recv_timeout(Duration::from_secs(10))
+        .expect("controlled source work")
+}
+fn wait_preview(playback: &mut Playback, at: Tick) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        playback.poll().unwrap();
+        if let Some(frame) = playback.frame() {
+            assert_eq!(frame.at, at, "a stale frame must never be shown");
+            break;
+        }
+        assert!(Instant::now() < deadline, "{:?}", playback.error());
+        std::thread::yield_now();
+    }
+}
+#[test]
+fn preview_axis_playing_hover_preserves_prefilled_pcm_source_cursor_and_dsp() {
+    let (session, mut playback, receive) = controlled_preview(true);
+    let project = serde_json::to_vec(session.project().data()).unwrap();
+    let history = session.history_len();
+    playback
+        .seek(Tick::ZERO, true, session.project().clone())
+        .unwrap();
+    let mut pending = next_preview_work(&receive);
+    let provider = pending.provider;
+    let latency = pending.frames as i64;
+    let mut end = 0;
+    // Entering the next source call proves the preceding block was mixed and
+    // published into the real ring; hold work after at least two full blocks.
+    while pending.start < 2400 {
+        assert_eq!(pending.start, end);
+        end += pending.frames as i64;
+        pending.release.send(()).unwrap();
+        pending = next_preview_work(&receive);
+    }
+    let port = playback.audio_port();
+    let mut actual = Vec::new();
+    for hover in [
+        Some(Tick(TICKS_PER_SECOND)),
+        Some(Tick(4 * TICKS_PER_SECOND)),
+        None,
+        Some(Tick(2 * TICKS_PER_SECOND)),
+        None,
+    ] {
+        playback.set_hover(hover).unwrap();
+        let mut samples = [0.0; 256];
+        port.fill(&mut samples, 0);
+        assert!(
+            samples.iter().all(|sample| *sample != 0.0),
+            "hover invalidated prefilled PCM"
+        );
+        actual.extend_from_slice(&samples);
+        assert!(playback.playing());
+    }
+    assert_eq!(pending.start, end);
+    assert_eq!(pending.provider, provider);
+    pending.release.send(()).unwrap();
+    let continued = next_preview_work(&receive);
+    assert_eq!(
+        continued.provider, provider,
+        "hover must retain the playing source/mixer"
+    );
+    assert_eq!(
+        continued.start,
+        end + pending.frames as i64,
+        "source cursor must stay continuous"
+    );
+    let published_frames = (continued.start - latency) as usize;
+    let mut after_hover = vec![0.0; published_frames * 2 - actual.len()];
+    port.fill(&mut after_hover, 0);
+    assert!(after_hover.iter().all(|sample| *sample != 0.0));
+    actual.extend_from_slice(&after_hover);
+    let mut reference = ControlledSource {
+        provider: 0,
+        audio: true,
+        work: None,
+    };
+    let expected = render::mix_audio(
+        session.project(),
+        0,
+        actual.len() / 2,
+        2,
+        &mut reference,
+        &Hooks,
+    )
+    .unwrap();
+    for (n, pair) in actual.chunks_exact(2).enumerate() {
+        for (channel, sample) in pair.iter().enumerate() {
+            assert!((*sample - expected.planes()[channel][n]).abs() < 1e-6);
+        }
+    }
+    assert_eq!(port.underrun_frames(), 0);
+    assert!(playback.position().unwrap() > Tick::ZERO);
+    assert_eq!(
+        serde_json::to_vec(session.project().data()).unwrap(),
+        project
+    );
+    assert_eq!(session.history_len(), history);
+    eprintln!(
+        "preview axis: {} nonzero PCM samples, zero underruns",
+        actual.len()
+    );
+}
+#[test]
+fn preview_axis_stale_pixels_are_fenced_after_rapid_hover_and_seek() {
+    let (session, mut playback, receive) = controlled_preview(false);
+    let stale = next_preview_work(&receive);
+    for seconds in [1, 5, 2, 8] {
+        playback
+            .set_hover(Some(Tick(seconds * TICKS_PER_SECOND)))
+            .unwrap();
+    }
+    stale.release.send(()).unwrap();
+    let latest = next_preview_work(&receive);
+    assert_eq!(latest.start, 8 * TICKS_PER_SECOND);
+    latest.release.send(()).unwrap();
+    wait_preview(&mut playback, Tick(8 * TICKS_PER_SECOND));
+    let first = playback.frame().unwrap().clone();
+    assert!(first.image.pixels.iter().all(|p| p.r() > 200 && p.g() == 0));
+    let context = egui::Context::default();
+    let mut texture = vibecut::services::preview::FrameTexture::default();
+    texture.update(&context, "axis", &first);
+    playback
+        .set_hover(Some(Tick(6 * TICKS_PER_SECOND)))
+        .unwrap();
+    let stale = next_preview_work(&receive);
+    playback
+        .seek(Tick(3 * TICKS_PER_SECOND), false, session.project().clone())
+        .unwrap();
+    stale.release.send(()).unwrap();
+    let replacement = next_preview_work(&receive);
+    assert_eq!(replacement.start, 3 * TICKS_PER_SECOND);
+    replacement.release.send(()).unwrap();
+    wait_preview(&mut playback, Tick(3 * TICKS_PER_SECOND));
+    let frame = playback.frame().unwrap();
+    assert!(frame.generation > first.generation);
+    assert!(
+        frame
+            .image
+            .pixels
+            .iter()
+            .all(|p| p.r() < 180 && p.r() > 100 && p.g() == 0)
+    );
+    texture.update(&context, "axis", frame);
+    assert_eq!(texture.presented(), Some(Tick(3 * TICKS_PER_SECOND)));
+    let generation = frame.generation;
+    let mut output = context.run_pass(Default::default(), |_| {});
+    output.textures_delta.clear();
+    let mut settings = render::RenderSettings::from_project(session.project());
+    let item = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .next()
+        .unwrap()
+        .id;
+    settings.placements.insert(
+        item,
+        render::Placement {
+            opacity: 0.0,
+            ..Default::default()
+        },
+    );
+    playback.set_render_settings(settings).unwrap();
+    wait_preview(&mut playback, Tick(3 * TICKS_PER_SECOND));
+    let frame = playback.frame().unwrap();
+    assert!(frame.generation > generation);
+    assert!(
+        frame
+            .image
+            .pixels
+            .iter()
+            .all(|p| *p == egui::Color32::BLACK)
+    );
+    let mut output = context.run_pass(Default::default(), |ctx| {
+        texture.update(ctx, "axis", frame);
+    });
+    assert_eq!(
+        output.textures_delta.set.len(),
+        1,
+        "same-tick replacement must upload new pixels"
+    );
+    output.textures_delta.clear();
 }

@@ -3084,7 +3084,7 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
     // committed generation rather than to a cancelled candidate.
     if let Some(frame) = h.state().playback.frame() {
         assert!(
-            frame.epoch <= generation,
+            frame.generation <= generation,
             "a cancelled-drag preview frame must not be visible"
         );
     }
