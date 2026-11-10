@@ -1,7 +1,7 @@
 //! Drives the export dialog alone over the one-area bench.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::{ExportFormat, ExportOptions, ExportQuality};
-use crate::editor::frame::bench::Bench;
+use crate::editor::context::bench::Bench;
 use crate::editor::{AppCommand, Editor, egui};
 use crate::preferences::{PreferenceStore, Preferences};
 use crate::services::playback::{Files, Playback, Sources};

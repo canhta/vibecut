@@ -1,5 +1,6 @@
 //! Stores the shared editor presentation context.
 
+use super::panels::player::{PreviewGuide, TextCaret};
 use super::{
     Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, EyedropperState, Icon,
     ImportFailure, ImportQueue, ItemId, KeybindingIssue, MediaSort, MediaView, PathBuf, Playback,
@@ -114,36 +115,6 @@ pub struct ShortcutsInspection {
     pub error: Option<String>,
     pub rows: Vec<ShortcutRow>,
 }
-/// Caret and selection geometry of the open inline text session.
-#[derive(Clone, Debug, PartialEq)]
-pub struct TextCaret {
-    /// Primary caret as a character index in the live buffer.
-    pub index: usize,
-    /// Selected character range; ends are equal when the caret is collapsed.
-    pub range: std::ops::Range<usize>,
-    /// Caret endpoints in text-layout pixels, canvas units with y down.
-    pub layout: [[f32; 2]; 2],
-    /// Caret endpoints in logical screen pixels.
-    pub screen: [[f32; 2]; 2],
-    /// Selected line quads in logical screen pixels, clockwise from top-left.
-    pub selection: Vec<[[f32; 2]; 4]>,
-}
-
-/// Axis of a preview snap guide.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PreviewAxis {
-    Vertical,
-    Horizontal,
-}
-
-/// A guide line the player draws while a preview gesture holds a snap.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PreviewGuide {
-    pub axis: PreviewAxis,
-    /// Canvas-pixel position: x for a vertical line, y for a horizontal one.
-    pub position: f64,
-}
-
 #[derive(Clone, Debug)]
 pub struct Inspection {
     pub widgets: Vec<WidgetState>,

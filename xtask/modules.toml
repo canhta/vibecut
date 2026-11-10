@@ -1,8 +1,7 @@
 # Intra-crate layer table; imports point toward lower layers.
 #
 # A crate may also add `[[crate.folder]]` tables with `path = "src/<folder>"` and
-# the same `layer` and `module` arrays, scoped to that folder's children. The
-# editor table lands with its area split; none are configured yet.
+# the same `layer` and `module` arrays, scoped to that folder's children.
 [[crate]]
 name = "engine"
 path = "crates/engine"
@@ -237,3 +236,64 @@ group = "editor"
 [[crate.module]]
 name = "shorts"
 group = "shorts"
+
+# Editor areas expose a State and a show returning actions; the frame routes
+# them, and the shared read/write context every area names sits lowest.
+[[crate.folder]]
+path = "src/editor"
+
+[[crate.folder.layer]]
+name = "contract"
+groups = ["context"]
+
+[[crate.folder.layer]]
+name = "areas"
+groups = ["assets", "captions", "dialogs", "panels", "properties", "timeline", "widgets"]
+
+[[crate.folder.layer]]
+name = "frame"
+groups = ["frame"]
+
+[[crate.folder.module]]
+name = "context"
+group = "context"
+
+[[crate.folder.module]]
+name = "timing"
+group = "context"
+
+[[crate.folder.module]]
+name = "assets"
+group = "assets"
+
+[[crate.folder.module]]
+name = "captions"
+group = "captions"
+
+[[crate.folder.module]]
+name = "dialogs"
+group = "dialogs"
+
+[[crate.folder.module]]
+name = "panels"
+group = "panels"
+
+[[crate.folder.module]]
+name = "properties"
+group = "properties"
+
+[[crate.folder.module]]
+name = "timeline"
+group = "timeline"
+
+[[crate.folder.module]]
+name = "widgets"
+group = "widgets"
+
+[[crate.folder.module]]
+name = "state"
+group = "frame"
+
+[[crate.folder.module]]
+name = "frame"
+group = "frame"

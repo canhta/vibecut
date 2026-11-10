@@ -1,9 +1,9 @@
 //! Renders the properties area: a 42 px tab strip, then collapsible sections of rows.
 
 use super::{
-    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, egui, element_kind, single,
-    theme,
+    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, egui, element_kind, theme,
 };
+use crate::editor::context::single;
 use crate::i18n;
 use crate::kit;
 

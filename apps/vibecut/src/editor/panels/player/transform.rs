@@ -1,7 +1,7 @@
 //! Direct transform gestures on the preview canvas.
 use super::{Action, Context, snap};
 use crate::{
-    editor::state::{PreviewAxis, PreviewGuide},
+    editor::panels::player::state::{PreviewAxis, PreviewGuide},
     egui::{self, CursorIcon, Pos2, Rect, Sense, Vec2},
     i18n::Text,
     kit,
@@ -46,7 +46,9 @@ impl State {
     }
 
     /// Caret and selection geometry of the open inline text session.
-    pub(in crate::editor) fn text_caret(&self) -> Option<crate::editor::state::TextCaret> {
+    pub(in crate::editor) fn text_caret(
+        &self,
+    ) -> Option<crate::editor::panels::player::state::TextCaret> {
         self.text.as_ref().and_then(super::text::Edit::caret)
     }
 }

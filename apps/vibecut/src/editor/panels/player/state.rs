@@ -39,6 +39,36 @@ impl State {
         }
     }
 }
+/// Caret and selection geometry of the open inline text session.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextCaret {
+    /// Primary caret as a character index in the live buffer.
+    pub index: usize,
+    /// Selected character range; ends are equal when the caret is collapsed.
+    pub range: std::ops::Range<usize>,
+    /// Caret endpoints in text-layout pixels, canvas units with y down.
+    pub layout: [[f32; 2]; 2],
+    /// Caret endpoints in logical screen pixels.
+    pub screen: [[f32; 2]; 2],
+    /// Selected line quads in logical screen pixels, clockwise from top-left.
+    pub selection: Vec<[[f32; 2]; 4]>,
+}
+
+/// Axis of a preview snap guide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// A guide line the player draws while a preview gesture holds a snap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreviewGuide {
+    pub axis: PreviewAxis,
+    /// Canvas-pixel position: x for a vertical line, y for a horizontal one.
+    pub position: f64,
+}
+
 /// The chroma-key eyedropper is armed for one item; the next player click
 /// samples the rendered preview frame. `effect` is `None` while the Chroma key
 /// switch is on but the clip has no effect yet, so the first pick adds it.
@@ -48,6 +78,6 @@ pub(crate) struct KeyPick {
     pub(crate) effect: Option<String>,
 }
 pub(in crate::editor) struct TimecodeEdit {
-    pub(super) text: String,
-    pub(super) focus: bool,
+    pub(in crate::editor) text: String,
+    pub(in crate::editor) focus: bool,
 }

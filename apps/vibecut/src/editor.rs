@@ -2,10 +2,11 @@
 use crate::i18n;
 mod assets;
 mod captions;
+mod context;
+pub(crate) use context::{Context, Desk, Request};
 pub(crate) mod dialogs;
 mod frame;
 pub use frame::{AppCommand, PreviewZoom};
-pub(crate) use frame::{Context, Desk, Request};
 pub(crate) mod panels;
 pub(crate) use panels::player::KeyPick;
 pub use panels::player::crop::{Aspect as CropAspect, Inspection as CropInspection};
@@ -15,14 +16,14 @@ mod widgets;
 
 mod state;
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
+pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
 use state::{
     AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
     PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
     SHORTCUT_TITLE_SIZE, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, Toast,
 };
 pub use state::{
-    AssetInspection, AssetState, Editor, Inspection, PreviewAxis, PreviewGuide, ShortcutRow,
-    ShortcutTab, ShortcutsInspection, TextCaret,
+    AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };
 pub use widgets::WidgetState;
 
@@ -422,11 +423,169 @@ impl Editor {
     }
     /// Upload one decoded thumbnail on first use; later frames reuse the handle.
     fn thumbnail_texture(&self, ctx: &egui::Context, id: AssetId) -> Option<egui::TextureHandle> {
-        frame::Thumbnails {
+        context::Thumbnails {
             images: &self.thumbnails,
             textures: &self.thumbnail_textures,
         }
         .texture(ctx, id)
+    }
+    /// Start the export sheet with typed caller settings without mutating
+    /// editable project content.
+    pub(in crate::editor) fn run_export(
+        &mut self,
+        options: dialogs::export::ExportOptions,
+    ) -> Result<()> {
+        if self.session.transaction_active() {
+            return Err(Error::Engine(engine::EditError::TransactionActive));
+        }
+        let project = self.session.project().clone();
+        let budget = self.playback.budget().clone();
+        let render = self.playback.render_state()?;
+        self.dialogs.export.run(&project, options, budget, render)
+    }
+    /// Open or raise the export dialog without changing project content.
+    pub(in crate::editor) fn open_export(&mut self) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        let render = self.playback.render_state()?;
+        let project = self.session.project().clone();
+        self.dialogs.export.open(budget, render, &project)
+    }
+    /// Accept the native export save picker's result without opening OS UI in tests.
+    pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
+        let protected = self
+            .session
+            .autosave()
+            .map(|s| s.protected_export_paths())
+            .transpose()?
+            .unwrap_or_default();
+        self.dialogs.export.save_to(path, protected)
+    }
+    /// Cancelling the native save dialog keeps the finished job for a later save.
+    pub fn export_save_cancelled(&mut self) {
+        self.dialogs.export.save_cancelled();
+    }
+    /// Default filename and last directory for the native save dialog.
+    pub fn export_save_defaults(&self) -> (String, Option<PathBuf>) {
+        self.dialogs.export.defaults(
+            self.session.project(),
+            self.preferences.export,
+            self.preferences.export_directory.clone(),
+        )
+    }
+    /// The completed attempt owns its container even if settings changed after failure.
+    pub fn export_save_format(&self) -> dialogs::export::ExportFormat {
+        self.dialogs
+            .export
+            .save_format(self.preferences.export.format)
+    }
+    /// The export dialog, for automation and test injection.
+    pub fn export_dialog(&mut self) -> Option<&mut dialogs::export::ExportDialog> {
+        self.dialogs.export.dialog_mut()
+    }
+    /// The export dialog state, for automation reads.
+    pub fn export_state(&self) -> Option<&dialogs::export::ExportDialog> {
+        self.dialogs.export.dialog()
+    }
+    /// Instantiate the one shared model cache on first use; it never fetches then.
+    pub fn open_models(&mut self) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        self.dialogs.models.open(budget)
+    }
+    /// Open the manager on a specific missing model, as `/09` does.
+    pub fn open_model(&mut self, id: &str) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        self.dialogs.models.open_model(budget, id)
+    }
+    /// Inject cache/transport/IO ownership for composition and tests.
+    pub fn set_model_manager(&mut self, models: dialogs::models::model_manager::ModelManager) {
+        self.dialogs.models.set(models);
+    }
+    pub(crate) fn take_model_manager(
+        &mut self,
+    ) -> Option<dialogs::models::model_manager::ModelManager> {
+        self.dialogs.models.take()
+    }
+    pub(crate) fn set_models_visible(&mut self, visible: bool) {
+        self.dialogs.models.set_visible(visible);
+    }
+    pub fn models(&self) -> Option<&dialogs::models::model_manager::ModelManager> {
+        self.dialogs.models.manager()
+    }
+    /// Native picker destination applied through the consumed `preview.snapshot`
+    /// command. Failure stays typed and never shows a success toast.
+    pub fn snapshot_picked_file(&mut self, path: PathBuf) -> Result<()> {
+        let at = self.playback.position()?;
+        let protected = self
+            .session
+            .autosave()
+            .map(|autosave| autosave.protected_export_paths())
+            .transpose()?
+            .unwrap_or_default();
+        let budget = self.playback.budget().clone();
+        match self
+            .player
+            .snapshot
+            .save(&mut self.session, budget, at, &path, protected)
+        {
+            Ok(()) => {
+                self.preferences
+                    .set("snapshot_directory", serde_json::to_value(path.parent())?)?;
+                self.set_toast(
+                    self.tr(Text::SnapshotSaved),
+                    Some(path.to_string_lossy().into_owned()),
+                );
+                Ok(())
+            }
+            Err(error) => {
+                self.desk().fail(error.to_string());
+                Err(error)
+            }
+        }
+    }
+    pub fn snapshot_save_cancelled(&mut self) {
+        self.player.snapshot.cancel();
+    }
+    /// Tests and non-window callers consume the same lifecycle request the
+    /// workspace turns into the native picker.
+    pub fn take_lifecycle_action(&mut self) -> Option<crate::lifecycle::EditorAction> {
+        self.lifecycle_action.take()
+    }
+    /// Default filename and last directory for the native snapshot dialog.
+    pub fn snapshot_save_defaults(&self) -> (String, Option<PathBuf>) {
+        let at = self.playback.position().unwrap_or(Tick::ZERO);
+        (
+            engine::snapshot::default_name(self.session.project(), at)
+                .unwrap_or_else(|_| "snapshot.png".into()),
+            self.preferences.snapshot_directory.clone(),
+        )
+    }
+    /// Put the current frame on the OS clipboard through egui's clipboard owner.
+    pub fn copy_snapshot(&mut self, ctx: &egui::Context) -> Result<()> {
+        let at = self.playback.position()?;
+        if let Err(error) = crate::services::preview::copy(&self.session, at, ctx) {
+            self.player.snapshot.error = Some(match &error {
+                Error::Engine(engine::EditError::EmptyProject) => {
+                    engine::control::ErrorCode::EmptyProject
+                }
+                _ => engine::control::ErrorCode::Failed,
+            });
+            self.desk().fail(error.to_string());
+            return Err(error);
+        }
+        self.player.snapshot.error = None;
+        self.set_toast(self.tr(Text::SnapshotCopy), None);
+        Ok(())
+    }
+    /// Shared transport and preview surface for dedicated review windows.
+    pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
+        if !self.configured {
+            Self::fonts(ui.ctx());
+            crate::kit::install(ui.ctx());
+            self.configured = true;
+        }
+        Self::theme(ui.ctx(), self.preferences.dark);
+        crate::kit::install_editor_density(ui.ctx());
+        self.show_player(ui);
     }
 }
 fn error_detail(error: &dyn std::error::Error) -> String {

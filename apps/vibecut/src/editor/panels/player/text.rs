@@ -1,7 +1,7 @@
 //! Positions and paints the inline text session from the text crate's layout.
 use super::Action;
 use crate::{
-    editor::state::TextCaret,
+    editor::panels::player::state::TextCaret,
     egui::{
         self, Rect,
         text::{CCursor, CCursorRange},

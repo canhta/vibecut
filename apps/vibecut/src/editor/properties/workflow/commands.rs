@@ -1,7 +1,8 @@
 //! Adapts property edits to engine patches.
 
+use crate::editor::context::single;
 use crate::editor::properties::{
-    Editor, ElementKind, Error, ItemId, ItemParamPatch, Result, element_kind, single,
+    Editor, ElementKind, Error, ItemId, ItemParamPatch, Result, element_kind,
 };
 
 impl Editor {

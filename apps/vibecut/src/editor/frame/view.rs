@@ -9,12 +9,12 @@ impl Editor {
         // Agents can change selection or the project between pointer events.
         let actions = self.properties.reconcile(
             self.session.project(),
-            super::super::properties::single(&self.selection),
+            crate::editor::context::single(&self.selection),
         );
         super::super::properties::apply(&mut self.desk(), actions);
         // The eyedropper belongs to one selected clip's panel.
         if self.player.key_color_pick.as_ref().is_some_and(|pick| {
-            super::super::properties::single(&self.selection) != Some(pick.item)
+            crate::editor::context::single(&self.selection) != Some(pick.item)
                 || self.properties.details
         }) {
             self.player.key_color_pick = None;

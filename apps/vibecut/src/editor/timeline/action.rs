@@ -1,8 +1,7 @@
 //! Names the requests the timeline panel hands back to the frame.
 
-use crate::editor::timeline::{
-    BTreeSet, ItemId, KeyframeSelection, Tick, egui, visuals::VisualRequest,
-};
+use crate::editor::context::visuals::VisualRequest;
+use crate::editor::timeline::{BTreeSet, ItemId, KeyframeSelection, Tick, egui};
 
 /// One timeline gesture command from the group move/trim contract.
 ///

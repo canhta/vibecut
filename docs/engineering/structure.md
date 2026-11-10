@@ -57,18 +57,21 @@ Lowest first; imports go down only, and a window never names another window.
 |---|---|
 | Foundation | `kit/` (tokens, icons, widgets, appearance), `i18n/`, `input/`; no engine knowledge |
 | Services | `services/`: playback, preview, crop, AI task progress, the editor session with autosave, capture, the GPU effects adapter |
-| Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs |
-| Frame | `editor/frame/`, `actions/`, `preferences/` |
+| Shared editor context | `editor/context/`: the read context, the one write context, thumbnails, the one-selected-item read and the clip display contract every editor area names |
+| Windows and areas | `home/`, `shorts/`, editor areas (`assets/`, `captions/`, `dialogs/`, `panels/`, `properties/`, `timeline/`, `widgets.rs`) |
+| Frame | `editor/frame/`, the `Editor` record (`editor/state.rs`), `actions/`, `preferences/` |
 | Composition root | `app/`: wiring, window registry, control attach |
 
 ```mermaid
 flowchart TB
   root[Composition root: app/] --> frame
-  frame[Frame: editor/frame, actions, preferences] --> areas
+  frame[Frame: editor/frame, state.rs, actions, preferences] --> areas
   subgraph areas[Windows and areas: never import each other]
-    home; shorts; assets; player; properties; timeline; dialogs
+    home; shorts; assets; player; properties; timeline; dialogs; widgets
   end
-  areas --> services[Services: services/]
+  areas --> context
+  context[Shared editor context: editor/context] --> services[Services: services/]
+  areas --> services
   services --> foundation[Foundation: kit, i18n, input]
 ```
 
@@ -82,7 +85,7 @@ flowchart LR
 
 The crate root holds exactly `kit/`, `i18n/`, `input/`, `services/`, `home/`, `shorts/`, `editor/`, `actions/`, `preferences/`, `app/`, `lib.rs` and `main.rs`; a new shared module goes into `services/` or `kit/`, never beside them. The engine `Session` owns the item selection; areas read it and never keep a copy.
 
-An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`.
+An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`. Inside `editor/`, `xtask/modules.toml` carries a folder table: `context/` is the lowest layer, the areas above it import nothing from each other, and `frame/` and the `Editor` record route above them; each new editor module adds its own line there.
 
 ## CLI (`apps/vibecut-cli/src`)
 

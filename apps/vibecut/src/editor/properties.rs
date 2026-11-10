@@ -7,7 +7,7 @@ mod state;
 mod view;
 mod workflow;
 
-pub(super) use state::{Action, Widget, element_kind, single};
+pub(super) use state::{Action, Widget, element_kind};
 pub(super) use view::show;
 pub(super) use workflow::apply;
 

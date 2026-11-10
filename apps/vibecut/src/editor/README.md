@@ -19,7 +19,8 @@ outer insets and draggable gutters. One write context is lent to one area for on
 frame: its edit entry pushes the selection, applies the command, reports the failure
 and resyncs the preview once per committed change, and cross-area intentions are
 queued and drained by the frame after that area returns. A read-only context carries
-session, selection, locale and theme into areas.
+session, selection, locale and theme into areas; both live in the shared context
+below every area.
 
 The assets, properties, timeline and captions areas and the player are folder
 interfaces with private view and workflow implementations; the export and model

@@ -6,7 +6,7 @@
 //! policy in [`crate::snapping`], the one the timeline also uses.
 
 use crate::{
-    editor::state::{PreviewAxis, PreviewGuide},
+    editor::panels::player::state::{PreviewAxis, PreviewGuide},
     snapping::{PREVIEW_SNAP_PIXELS, ROTATE_SNAP_DEGREES, ROTATE_SNAP_STEP, closest},
 };
 use project::ItemId;

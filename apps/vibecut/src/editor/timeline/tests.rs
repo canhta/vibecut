@@ -1,7 +1,7 @@
 //! Verifies the timeline interface: the actions `show` returns for each gesture.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 use super::*;
-use crate::editor::timeline::visuals::{
+use crate::editor::context::visuals::{
     StripState, StripTile, VisualQuery, VisualRequest, WaveBar, WaveState,
 };
 use egui_kittest::Harness;

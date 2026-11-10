@@ -1,8 +1,8 @@
 //! Owns the actions the properties area requests, the gesture bookkeeping on
 //! its state and the read-only projection of the selected element.
 use super::{
-    Arc, BTreeSet, ColorTarget, ElementKind, ItemId, ItemParams, Rect, ScrubTarget, State,
-    StreamKind, TrackKind, egui,
+    Arc, ColorTarget, ElementKind, ItemId, ItemParams, Rect, ScrubTarget, State, StreamKind,
+    TrackKind, egui,
 };
 
 /// A control the frame records for automation.
@@ -305,14 +305,6 @@ pub(in crate::editor) fn element_kind(
             })
         });
     Some((kind, has_audio))
-}
-
-/// The single selected item, if exactly one is selected.
-pub(in crate::editor) fn single(selection: &BTreeSet<ItemId>) -> Option<ItemId> {
-    if selection.len() != 1 {
-        return None;
-    }
-    selection.iter().next().copied()
 }
 
 #[cfg(test)]

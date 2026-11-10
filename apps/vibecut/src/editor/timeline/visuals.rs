@@ -5,117 +5,16 @@
 //! and submits the registered generation commands when a display is pending.
 //! It never decodes media and never builds a cache key.
 
-use crate::editor::timeline::{AssetId, ItemId, Tick, egui, theme};
+use crate::editor::timeline::{AssetId, Tick, egui, theme};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
 };
 
-/// One ready waveform column, linear amplitudes.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct WaveBar {
-    pub(in crate::editor) min: f32,
-    pub(in crate::editor) max: f32,
-    /// Any sample crossed full scale, so the display draws a `> 0 dBFS` tip.
-    pub(in crate::editor) over: bool,
-}
-
-/// Cache-only waveform state for one clip's visible range.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum WaveState {
-    Ready(Vec<WaveBar>),
-    Pending,
-    Failed,
-    Unsupported,
-}
-
-/// One cached strip tile: the output-time slice it fills and its frame texture.
-#[derive(Clone)]
-pub(crate) struct StripTile {
-    pub(in crate::editor) output: time::TimeRange,
-    pub(in crate::editor) texture: egui::TextureHandle,
-}
-
-/// Cache-only thumbnail strip state for one clip's visible range.
-#[derive(Clone)]
-pub(crate) enum StripState {
-    Ready(Vec<StripTile>),
-    Pending,
-    Failed,
-    Unsupported,
-}
-
-/// A generation command the panel asks the frame to run.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum VisualRequest {
-    Waveform {
-        asset: AssetId,
-    },
-    Thumbnails {
-        item: ItemId,
-        visible: time::TimeRange,
-        pixels_per_second: f64,
-    },
-}
-impl VisualRequest {
-    /// The cache family one in-flight job serves.
-    fn key(&self) -> VisualKey {
-        match self {
-            Self::Waveform { asset } => VisualKey::Waveform(*asset),
-            Self::Thumbnails { item, .. } => VisualKey::Thumbnails(*item),
-        }
-    }
-    /// The registered `JobControl` command and its typed parameters.
-    pub(in crate::editor) fn command(&self) -> (&'static str, serde_json::Value) {
-        match self {
-            Self::Waveform { asset } => (
-                "media.generate_waveform",
-                serde_json::json!({"asset": asset}),
-            ),
-            Self::Thumbnails {
-                item,
-                visible,
-                pixels_per_second,
-            } => (
-                "media.generate_clip_thumbnails",
-                serde_json::json!({
-                    "item": item,
-                    "visible": {"start": visible.start().0, "end": visible.end().0},
-                    "pixels_per_second": pixels_per_second,
-                }),
-            ),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum VisualKey {
-    Waveform(AssetId),
-    Thumbnails(ItemId),
-}
-
-/// Read-only clip visual queries shared by every timeline area.
-pub(crate) trait VisualQuery {
-    fn strip(
-        &self,
-        ctx: &egui::Context,
-        asset: &media::SourceAsset,
-        item: &project::Item,
-        visible: time::TimeRange,
-        pixels_per_second: f64,
-    ) -> StripState;
-    fn waveform(
-        &self,
-        asset: &media::SourceAsset,
-        item: &project::Item,
-        visible: time::TimeRange,
-        columns: usize,
-    ) -> WaveState;
-    /// Drain the generation commands the last paint asked for.
-    fn take_requests(&self) -> Vec<VisualRequest>;
-}
-
+use crate::editor::context::visuals::{
+    StripState, StripTile, VisualKey, VisualQuery, VisualRequest, WaveBar, WaveState,
+};
 /// Reserved texture slots for strip frames; the oldest frame is dropped first.
 const MAX_TEXTURES: usize = 512;
 /// Loopback policy for the editor's own registered commands.

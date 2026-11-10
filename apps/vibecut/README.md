@@ -24,6 +24,7 @@ Each module's contract is its README.
 | `editor/assets/view/` | [Assets view](src/editor/assets/view/README.md) |
 | `editor/assets/workflow/` | [Assets workflow](src/editor/assets/workflow/README.md) |
 | `editor/captions/` | [Captions panel](src/editor/captions/README.md) |
+| `editor/context/` | [Editor context](src/editor/context/README.md) |
 | `editor/dialogs/` | [Editor dialogs](src/editor/dialogs/README.md) |
 | `editor/dialogs/export/` | [Export dialog](src/editor/dialogs/export/README.md) |
 | `editor/dialogs/models/` | [Model manager](src/editor/dialogs/models/README.md) |

@@ -1,11 +1,12 @@
 //! Renders timeline clips.
 
+use crate::editor::context::visuals::{StripState, StripTile, WaveBar, WaveState};
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
     LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio,
     display_label, egui, icons, theme,
     view::{Ink, tr},
-    visuals::{self, StripState, WaveState},
+    visuals::{self},
 };
 use crate::i18n;
 
@@ -718,7 +719,7 @@ fn paint_strip_tiles(
     painter: &egui::Painter,
     strip: Rect,
     left: f32,
-    tiles: &[visuals::StripTile],
+    tiles: &[StripTile],
 ) {
     let visible = strip.intersect(painter.clip_rect());
     if !visible.is_positive() {
@@ -812,7 +813,7 @@ fn paint_bars(
     painter: &egui::Painter,
     area: Rect,
     visible: Rect,
-    bars: &[visuals::WaveBar],
+    bars: &[WaveBar],
     reach: f32,
     color: Color32,
     tip: Color32,

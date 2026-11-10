@@ -10,6 +10,8 @@ mod workflow;
 use crate::{editor::Context, egui};
 use project::ItemId;
 pub(crate) use state::{KeyPick, State};
+pub use state::{PreviewAxis, PreviewGuide, TextCaret};
+pub(in crate::editor) use workflow::format_timecode;
 
 /// Requests are applied by the frame after rendering releases its read borrow.
 pub(crate) enum Action {

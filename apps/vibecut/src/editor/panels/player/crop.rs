@@ -143,7 +143,7 @@ struct Target {
 
 /// The single selected video or image clip, with its source pixel aspect.
 fn target(editor: &Editor) -> Option<Target> {
-    let id = crate::editor::properties::single(&editor.selection)?;
+    let id = crate::editor::context::single(&editor.selection)?;
     let project = editor.session.project();
     let data = project.data();
     let item = data

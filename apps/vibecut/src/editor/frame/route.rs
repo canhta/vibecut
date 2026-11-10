@@ -1,5 +1,5 @@
 //! Routes the actions an area returns to the owners that apply them.
-use crate::editor::{Command, Context, Editor, ItemId, Tick, egui, timeline};
+use crate::editor::{Command, Context, Desk, Editor, ItemId, Request, Tick, egui, timeline};
 
 impl Editor {
     /// The read-only services every area receives.
@@ -539,6 +539,29 @@ impl Editor {
                 }
             }
             Err(error) => self.desk().fail(error.to_string()),
+        }
+    }
+    /// Lend the write context to one area for this frame.
+    pub(in crate::editor) fn desk(&mut self) -> Desk<'_> {
+        Desk::new(self)
+    }
+    /// Apply the requests areas queued; each runs once, in push order.
+    pub(in crate::editor) fn drain_requests(&mut self) {
+        while !self.requests.is_empty() {
+            for request in std::mem::take(&mut self.requests) {
+                match request {
+                    Request::Seek(at) => {
+                        if let Err(error) = self.seek(at) {
+                            self.desk().fail(error.to_string());
+                        }
+                    }
+                    Request::OpenModel(id) => {
+                        if let Err(error) = self.open_model(&id) {
+                            self.desk().fail(error.to_string());
+                        }
+                    }
+                }
+            }
         }
     }
 }
