@@ -246,6 +246,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.import", Effect::Edit, false, false),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
+        ("timeline.filler_candidates", Effect::Read, true, true),
+        ("timeline.remove_fillers", Effect::Edit, true, true),
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),

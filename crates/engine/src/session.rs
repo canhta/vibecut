@@ -15,6 +15,7 @@ pub use commands::{
     lifecycle, registry,
 };
 mod edit;
+pub(crate) mod filler;
 pub(crate) mod transcript;
 pub use transcript::{CueId, TranscriptCue, TranscriptView, TranscriptWord, WordId};
 mod transition_rules;

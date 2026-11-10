@@ -258,7 +258,7 @@ fn candidates(project: Project, settings: PauseSettings) -> PauseCandidates {
     result
 }
 
-fn overlaps(a: &engine::pause_candidates::PauseSpan, word: &SourceRange) -> bool {
+fn overlaps(a: &engine::pause_candidates::OutputSpan, word: &SourceRange) -> bool {
     word.start() < a.end && a.start < word.end()
 }
 

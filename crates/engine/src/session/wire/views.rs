@@ -1,5 +1,7 @@
 //! Defines the feature result views a control response carries.
 use super::Revision;
+use captions::NfcText;
+use project::ItemId;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use time::Tick;
@@ -188,10 +190,11 @@ impl std::fmt::Debug for PreviewFrame {
     }
 }
 
-/// One reviewed output-time span. Pause candidates produce these; removal consumes them.
+/// One reviewed output-time span. Candidate queries produce these; reviewed-span
+/// removals consume them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PauseSpan {
+pub struct OutputSpan {
     pub start: Tick,
     pub end: Tick,
 }
@@ -200,7 +203,26 @@ pub struct PauseSpan {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PauseCandidates {
-    pub spans: Vec<PauseSpan>,
+    pub spans: Vec<OutputSpan>,
     /// Distinct source ranges the analysis decoded; zero for an inaudible timeline.
     pub analyzed_sources: u64,
+}
+
+/// One visible lexicon filler occurrence in output time. `timeline.filler_candidates`
+/// produces these; `timeline.remove_fillers` consumes their `id`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FillerCandidate {
+    /// Stable occurrence identity to pass back to `timeline.remove_fillers`.
+    pub id: NfcText,
+    /// The caption item whose output occurrence this is.
+    pub item: ItemId,
+    /// The retained cue that owns the words.
+    pub cue: NfcText,
+    /// The visible output range the candidate words cover.
+    pub range: OutputSpan,
+    /// Whether the match is a filled pause or a discourse marker.
+    pub kind: captions::FillerKind,
+    /// Whether the cue's source text was edited, so removal needs confirmation.
+    pub edited_cue: bool,
 }

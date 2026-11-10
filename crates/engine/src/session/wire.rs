@@ -20,6 +20,6 @@ pub(crate) use ledger::{Ledger, Receipt};
 pub use limits::*;
 pub use results::{ControlResult, JobView, ProviderView};
 pub use views::{
-    FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState,
-    PauseCandidates, PauseSpan, PreviewFrame, PreviewResult, SnapshotResult,
+    FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind,
+    JobStage, JobState, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult, SnapshotResult,
 };

@@ -1,8 +1,8 @@
 //! Applies text commands to a candidate project.
 use super::{
-    Arc, Command, CreatedId, EditError, ItemId, ItemParams, NewItem, Placement, ProjectData,
-    Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement, TrimSources, apply, item,
-    set_range,
+    Arc, BTreeMap, BTreeSet, Command, CreatedId, EditError, ItemId, ItemParams, NewItem, Placement,
+    ProjectData, Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement, TrimSources, apply,
+    item, set_range,
 };
 
 /// Import parsed ASS cues as one caption item on a text track. The asset,
@@ -171,6 +171,54 @@ pub(super) fn execute_transcript_delete(
 ) -> Result<ProjectData> {
     let all = super::super::transcript::scene_words(data.scene())?;
     let selected = super::super::transcript::selected_words(&data, &all, &word_ids)?;
+    cut_selected_words(data, &selected, created, next, sources)
+}
+
+/// Removes reviewed lexicon filler candidates as measured words through the same
+/// cutter and ripple path as a word-range cut. Every id must still name a visible
+/// candidate of the active scene; an edited cue refuses without `confirm_edited`.
+pub(super) fn execute_remove_fillers(
+    data: ProjectData,
+    ids: Vec<captions::NfcText>,
+    confirm_edited: bool,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    if ids.is_empty() {
+        return Err(EditError::Invalid("empty filler selection"));
+    }
+    let mut unique = BTreeSet::new();
+    if ids.iter().any(|id| !unique.insert(id.clone())) {
+        return Err(EditError::Invalid("duplicate filler"));
+    }
+    let candidates: BTreeMap<_, _> = super::super::filler::scene_candidates(&data, None, true)?
+        .into_iter()
+        .map(|candidate| (candidate.id.clone(), candidate))
+        .collect();
+    let mut selected = BTreeSet::new();
+    for id in &ids {
+        let candidate = candidates
+            .get(id)
+            .ok_or(EditError::Invalid("stale filler candidate"))?;
+        if candidate.edited_cue && !confirm_edited {
+            return Err(EditError::Protected);
+        }
+        selected.extend(candidate.words().iter().cloned());
+    }
+    cut_selected_words(data, &selected, created, next, sources)
+}
+
+/// Remove exactly `selected` measured words as reviewed output spans. Consecutive
+/// selected words join one span; an unselected word inside a run refuses the edit.
+fn cut_selected_words(
+    data: ProjectData,
+    selected: &BTreeSet<crate::WordId>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let all = super::super::transcript::scene_words(data.scene())?;
     let mut spans: Vec<SourceRange> = Vec::new();
     let mut run: Option<(Tick, Tick)> = None;
     for word in &all {
@@ -204,7 +252,7 @@ pub(super) fn execute_transcript_delete(
         data,
         &spans,
         0,
-        super::clips::WordCut::Words(&selected),
+        super::clips::WordCut::Words(selected),
         created,
         next,
         sources,

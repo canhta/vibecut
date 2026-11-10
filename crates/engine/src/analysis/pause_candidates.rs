@@ -5,7 +5,7 @@
 //! through the item's retime owner, merges overlaps and removes every range covered
 //! by a native caption word span. The job holds no artifact cache: the Session owns
 //! none, so a repeated query decodes again.
-pub use crate::session::wire::{PauseCandidates, PauseSpan};
+pub use crate::session::wire::{OutputSpan, PauseCandidates};
 use crate::{
     EditError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
@@ -370,7 +370,7 @@ fn assemble(
                     let start = item.output_time_of(start)?;
                     let end = item.output_time_of(end)?;
                     if start < end {
-                        spans.push(PauseSpan { start, end });
+                        spans.push(OutputSpan { start, end });
                     }
                 }
             }
@@ -387,10 +387,10 @@ fn assemble(
     })
 }
 
-fn merge(spans: Vec<PauseSpan>) -> Vec<PauseSpan> {
+fn merge(spans: Vec<OutputSpan>) -> Vec<OutputSpan> {
     let mut spans = spans;
     spans.sort_by_key(|span| (span.start, span.end));
-    let mut merged: Vec<PauseSpan> = Vec::with_capacity(spans.len().min(MAX_PAUSE_SPANS));
+    let mut merged: Vec<OutputSpan> = Vec::with_capacity(spans.len().min(MAX_PAUSE_SPANS));
     for span in spans {
         if let Some(last) = merged.last_mut()
             && span.start <= last.end
@@ -404,7 +404,7 @@ fn merge(spans: Vec<PauseSpan>) -> Vec<PauseSpan> {
 }
 
 /// Subtract every word range from the sorted candidates in one sweep.
-fn subtract(spans: Vec<PauseSpan>, words: &[SourceRange]) -> Vec<PauseSpan> {
+fn subtract(spans: Vec<OutputSpan>, words: &[SourceRange]) -> Vec<OutputSpan> {
     let mut out = Vec::with_capacity(spans.len());
     let mut first = 0usize;
     for span in spans {
@@ -422,7 +422,7 @@ fn subtract(spans: Vec<PauseSpan>, words: &[SourceRange]) -> Vec<PauseSpan> {
                 continue;
             }
             if word.start() > cursor {
-                out.push(PauseSpan {
+                out.push(OutputSpan {
                     start: cursor,
                     end: word.start().min(span.end),
                 });
@@ -434,7 +434,7 @@ fn subtract(spans: Vec<PauseSpan>, words: &[SourceRange]) -> Vec<PauseSpan> {
             index += 1;
         }
         if cursor < span.end {
-            out.push(PauseSpan {
+            out.push(OutputSpan {
                 start: cursor,
                 end: span.end,
             });
@@ -450,18 +450,18 @@ mod tests {
     #[test]
     fn subtraction_splits_around_words_and_merge_unions_overlaps() {
         let spans = merge(vec![
-            PauseSpan {
+            OutputSpan {
                 start: Tick(10),
                 end: Tick(40),
             },
-            PauseSpan {
+            OutputSpan {
                 start: Tick(30),
                 end: Tick(60),
             },
         ]);
         assert_eq!(
             spans,
-            vec![PauseSpan {
+            vec![OutputSpan {
                 start: Tick(10),
                 end: Tick(60)
             }]
@@ -473,15 +473,15 @@ mod tests {
         assert_eq!(
             subtract(spans, &words),
             vec![
-                PauseSpan {
+                OutputSpan {
                     start: Tick(10),
                     end: Tick(20)
                 },
-                PauseSpan {
+                OutputSpan {
                     start: Tick(25),
                     end: Tick(50)
                 },
-                PauseSpan {
+                OutputSpan {
                     start: Tick(55),
                     end: Tick(60)
                 },

@@ -1,7 +1,7 @@
 //! Defines the typed results a control command returns.
 use super::{
-    ErrorCode, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState, PauseCandidates,
-    PreviewResult, Revision, SnapshotResult,
+    ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState,
+    PauseCandidates, PreviewResult, Revision, SnapshotResult,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -26,6 +26,9 @@ pub enum ControlResult {
     },
     Font {
         font: FontLoad,
+    },
+    Fillers {
+        candidates: Vec<FillerCandidate>,
     },
     JobAccepted {
         job: JobId,
@@ -61,6 +64,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Providers { .. } => "providers",
             Self::Fonts { .. } => "fonts",
             Self::Font { .. } => "font",
+            Self::Fillers { .. } => "fillers",
             Self::JobAccepted { .. } => "job_accepted",
             Self::Job { .. } => "job",
             Self::Snapshot { .. } => "snapshot",

@@ -19,7 +19,9 @@ struct Snapshot {
 /// A reviewed span cut needs the ripple pass wherever it is nested.
 fn cuts_spans(command: &Command) -> bool {
     match command {
-        Command::RemovePauses { .. } | Command::TranscriptDeleteRange { .. } => true,
+        Command::RemovePauses { .. }
+        | Command::TranscriptDeleteRange { .. }
+        | Command::RemoveFillers { .. } => true,
         Command::Batch { commands } => commands.iter().any(cuts_spans),
         _ => false,
     }

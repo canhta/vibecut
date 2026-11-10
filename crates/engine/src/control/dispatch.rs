@@ -66,6 +66,23 @@ impl Session {
             Command::FontsLoad { family } => Ok(ControlResult::Font {
                 font: (font_access(caller)?.load)(family.as_str())?,
             }),
+            Command::FillerCandidates {
+                language,
+                include_markers,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let candidates = crate::session::filler::scene_candidates(
+                    self.project().data(),
+                    Some(&language),
+                    include_markers,
+                )?
+                .into_iter()
+                .map(Into::into)
+                .collect();
+                Ok(ControlResult::Fillers { candidates })
+            }
             Command::FontsDownload {
                 family,
                 accept_license,

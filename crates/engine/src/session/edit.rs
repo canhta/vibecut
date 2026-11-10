@@ -61,6 +61,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             {
                 return Err(EditError::Limit);
             }
+            Command::RemoveFillers { ids, .. } if ids.len() > super::wire::MAX_COLLECTION => {
+                return Err(EditError::Limit);
+            }
             Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
@@ -329,6 +332,12 @@ pub(crate) fn apply(
         Command::TranscriptMergeCues { cue_ids } => {
             data = text::execute_transcript_merge(data, cue_ids, sources)?;
         }
+        Command::RemoveFillers {
+            ids,
+            confirm_edited,
+        } => {
+            data = text::execute_remove_fillers(data, ids, confirm_edited, created, next, sources)?;
+        }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
@@ -581,6 +590,7 @@ pub(crate) fn apply(
         | Command::Redo {}
         | Command::TimelineSetRipple { .. }
         | Command::PauseCandidates { .. }
+        | Command::FillerCandidates { .. }
         | Command::GenerateWaveform { .. }
         | Command::GenerateClipThumbnails { .. }
         | Command::TimelinePreview { .. }
