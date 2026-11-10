@@ -3,6 +3,7 @@ use super::admission::*;
 use super::environment::*;
 use super::queue::*;
 use super::receipt::*;
+use super::slot::owner;
 use super::*;
 use std::ffi::OsStr;
 use std::fs::{self, File};
@@ -1392,89 +1393,135 @@ fn slots_beyond_a_shrunk_count_are_reused_not_deleted() {
     assert!(root.join("target/slot-9/debug/artifact").is_file());
 }
 
-/// Slot facts for one selection row: warm directory, owner record and idle age.
-#[derive(Clone, Copy)]
-enum Owned {
-    Requester,
-    Live(&'static str),
-    Gone,
-    Nobody,
-}
-
+/// Replay of six worktrees over a host shaped like the maintainer's: slot-1..3
+/// warm, slot-4 owned but pruned, the rest empty with owner records of removed
+/// worktrees. Cold and switch counts must not exceed the lowest-number order.
 #[test]
-fn free_slot_choice_prefers_own_then_warm_gone_then_lowest_live_then_empty() {
-    use Owned::*;
-    // (slots: number, warm, owner, idle seconds; expected slot; cleared records)
-    #[allow(clippy::type_complexity)]
-    let rows: [(&[(usize, bool, Owned, u64)], usize, &[usize]); 8] = [
-        // A warm free slot beats a lower empty one.
-        (&[(1, false, Nobody, 0), (2, true, Live("x"), 5)], 2, &[]),
-        // A warm slot whose worktree is gone beats an idler live owner.
-        (&[(1, true, Live("x"), 900), (2, true, Gone, 5)], 2, &[2]),
-        // Among live owners the lowest number gives up its slot, however idle.
+fn replay_of_six_worktrees_keeps_cold_and_switch_builds_at_baseline() {
+    // (script, slot-1 pruned, max cold, max switch): baseline of the old order.
+    let rows = [
         (
-            &[(1, true, Live("x"), 5), (2, true, Live("y"), 900)],
+            "+D +A +E -D -A -E +F +B +C +D -F -B -C -D +E +A +F -E -A -F +B +C +D -B -C -D",
+            false,
             1,
-            &[],
+            8,
         ),
-        // Among gone owners the longest idle goes first.
-        (&[(1, true, Gone, 5), (2, true, Gone, 900)], 2, &[1, 2]),
-        // Only empty slots remain: the lowest number, as before.
-        (&[(1, false, Nobody, 0), (2, false, Gone, 0)], 1, &[2]),
-        // The requester's own warm slot wins over a gone warm one.
-        (&[(1, true, Gone, 900), (2, true, Requester, 5)], 2, &[1]),
-        // An owned slot stays first even when its directory was pruned.
-        (&[(1, true, Gone, 900), (2, false, Requester, 5)], 2, &[1]),
-        // Free warm slots above a lower busy-free empty one are still found.
-        (&[(1, false, Gone, 0), (3, true, Gone, 1)], 3, &[1, 3]),
+        (
+            "+A -A +A -A +B +C -B +B -C -B +D +A -D +D -A -D +E -E +E +F -E -F +A -A +B -B +C -C +D -D +E -E +F -F +A -A +A -A",
+            false,
+            1,
+            8,
+        ),
+        (
+            "+A -A +B +C -B +B -C -B +D +A -D +D -A -D +E -E +E +F -E -F +A -A +B -B +C -C +D -D +E -E +F -F +A -A +A -A",
+            true,
+            2,
+            8,
+        ),
     ];
-    for (index, (slots, expected, cleared)) in rows.into_iter().enumerate() {
+    for (index, (script, pruned, max_cold, max_switch)) in rows.into_iter().enumerate() {
         let directory = Directory::new();
         let base = &directory.0;
         let locks = base.join("locks");
         fs::create_dir_all(&locks).unwrap();
-        let requester = base.join("requester");
-        fs::create_dir_all(&requester).unwrap();
-        for name in ["x", "y"] {
-            fs::create_dir_all(base.join(name)).unwrap();
-        }
-        let now = SystemTime::now();
-        for (number, warm, owned, idle) in slots {
-            let owner = match owned {
-                Owned::Requester => requester.clone(),
-                Owned::Live(name) => base.join(name),
-                Owned::Gone => base.join("removed"),
-                Owned::Nobody => PathBuf::new(),
+        let worktrees: Vec<(char, PathBuf)> = "ABCDEF"
+            .chars()
+            .map(|name| (name, base.join(format!("wt-{name}"))))
+            .collect();
+        let path = |name: char| &worktrees.iter().find(|(n, _)| *n == name).unwrap().1;
+        for number in 1..=8usize {
+            let owner = match number {
+                1 => path('A').clone(),
+                3 => path('C').clone(),
+                4 => path('D').clone(),
+                _ => base.join(format!("gone-{number}")),
             };
             fs::write(
                 locks.join(format!("slot-{number}.owner")),
                 owner.to_str().unwrap(),
             )
             .unwrap();
-            let jobs = locks.join(format!("slot-{number}.jobs"));
-            fs::write(&jobs, "2").unwrap();
-            File::options()
-                .write(true)
-                .open(jobs)
-                .unwrap()
-                .set_modified(now - Duration::from_secs(*idle))
-                .unwrap();
-            if *warm {
+            fs::write(locks.join(format!("slot-{number}.jobs")), "2").unwrap();
+            if number <= 3 && !(pruned && number == 1) {
                 fs::create_dir_all(base.join(format!("target/slot-{number}/debug"))).unwrap();
             }
         }
-        let mut queue = Queue::enter(&locks).unwrap();
-        let admission = test_admission(slots.iter().map(|slot| slot.0).max().unwrap(), false);
-        let slot = claim(&mut queue, &requester, admission, || None, || None)
-            .unwrap()
-            .unwrap();
-        assert_eq!(slot.number, expected, "row {index}");
-        for number in cleared {
-            // The chosen slot is rewritten by `prepare`; others are cleared here.
-            let record = fs::read_to_string(locks.join(format!("slot-{number}.owner"))).unwrap();
-            assert_eq!(record, "", "row {index}: record of slot-{number} was kept");
+        for (_, dir) in &worktrees {
+            fs::create_dir_all(dir).unwrap();
         }
+        let mut held = std::collections::BTreeMap::new();
+        let (mut cold, mut switch) = (0, 0);
+        for op in script.split(' ') {
+            let name = op[1..].chars().next().unwrap();
+            if op.starts_with('-') {
+                held.remove(&name);
+                continue;
+            }
+            let root = path(name);
+            let mut queue = Queue::enter(&locks).unwrap();
+            let slot = claim(&mut queue, root, test_admission(8, false), || None, || None)
+                .unwrap()
+                .unwrap();
+            let target = base.join(format!("target/slot-{}", slot.number));
+            if !target.is_dir() {
+                cold += 1;
+            } else if owner(&locks, slot.number) != *root {
+                switch += 1;
+            }
+            fs::create_dir_all(target.join("debug")).unwrap();
+            fs::write(
+                locks.join(format!("slot-{}.owner", slot.number)),
+                root.to_str().unwrap(),
+            )
+            .unwrap();
+            held.insert(name, slot);
+        }
+        assert!(cold <= max_cold, "row {index}: {cold} cold builds");
+        assert!(switch <= max_switch, "row {index}: {switch} switch builds");
     }
+}
+
+/// Free-slot choice keeps the checkout's own slot first, then the lowest
+/// number, and clears owner records of worktrees that no longer exist.
+#[test]
+fn free_slot_choice_keeps_own_then_lowest_and_clears_gone_owner_records() {
+    let directory = Directory::new();
+    let base = &directory.0;
+    let locks = base.join("locks");
+    fs::create_dir_all(&locks).unwrap();
+    let requester = base.join("requester");
+    let live = base.join("live");
+    fs::create_dir_all(&requester).unwrap();
+    fs::create_dir_all(&live).unwrap();
+    for (number, owner) in [
+        (1, base.join("removed")),
+        (2, live.clone()),
+        (3, requester.clone()),
+    ] {
+        fs::write(
+            locks.join(format!("slot-{number}.owner")),
+            owner.to_str().unwrap(),
+        )
+        .unwrap();
+        fs::write(locks.join(format!("slot-{number}.jobs")), "2").unwrap();
+    }
+    let mut queue = Queue::enter(&locks).unwrap();
+    let slot = claim(
+        &mut queue,
+        &requester,
+        test_admission(3, false),
+        || None,
+        || None,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(slot.number, 3, "own slot first");
+    assert_eq!(fs::read_to_string(locks.join("slot-1.owner")).unwrap(), "");
+    assert_eq!(
+        PathBuf::from(fs::read_to_string(locks.join("slot-2.owner")).unwrap()),
+        live,
+        "a live owner's record was cleared"
+    );
 }
 
 #[test]

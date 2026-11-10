@@ -160,7 +160,7 @@ pub(super) fn claim(
     for (number, _) in &free {
         clear_gone_owner(&queue.locks, *number)?;
     }
-    free.sort_by_key(|(number, _)| preference(&queue.locks, *number, root));
+    free.sort_by_key(|(number, _)| (owner(&queue.locks, *number) != root, *number));
     let (number, mut lock) = free
         .into_iter()
         .next()
@@ -181,38 +181,6 @@ pub(super) fn claim(
     queue.leave()?;
     Ok(Some(Slot { lock, number, jobs }))
 }
-/// Lower sorts first: the checkout's own slot, then warm slots (owner gone
-/// before owner alive; gone owners by longest idle, live owners by number), and an empty slot only when no warm
-/// one is free. An owned slot stays first even when cold: the build there is
-/// paid once and grows the warm set, where taking another owner's slot only
-/// moves a switch rebuild onto that owner. Idle time is the last admission, recorded in `slot-N.jobs`.
-fn preference(locks: &Path, number: usize, root: &Path) -> (u8, bool, SystemTime, usize) {
-    let owned = owner(locks, number);
-    let warm = locks
-        .parent()
-        .is_some_and(|base| base.join(format!("target/slot-{number}")).is_dir());
-    let idle = fs::metadata(locks.join(format!("slot-{number}.jobs")))
-        .and_then(|meta| meta.modified())
-        .unwrap_or(SystemTime::UNIX_EPOCH);
-    let tier = if owned == root {
-        0
-    } else if warm {
-        1
-    } else {
-        2
-    };
-    // Idle time only orders slots whose worktree is gone. Live owners keep the
-    // lowest-number order, so switches concentrate on one slot and the other
-    // owners stay warm (replay: longest-idle across live owners spread them).
-    let alive = owned.is_dir();
-    (
-        tier,
-        alive,
-        if alive { SystemTime::UNIX_EPOCH } else { idle },
-        number,
-    )
-}
-
 fn clear_gone_owner(locks: &Path, number: usize) -> io::Result<()> {
     let owned = owner(locks, number);
     if !owned.as_os_str().is_empty() && !owned.is_dir() {
