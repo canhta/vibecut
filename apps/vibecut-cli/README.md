@@ -1,12 +1,12 @@
 # vibecut-cli
 
-Headless `vibecut-cli` process adapter. Parses native command-line arguments, dispatches
-edits through the engine registry, composes project writer leases and engine export
-jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
-timeline, codec, export-admission or provider logic and has no UI dependencies.
+## Purpose
 
-`lib.rs` wires the public `run`, `Output` and `CliError` entry points.
-The module doors follow [structure](../../docs/engineering/structure.md#cli-appsvibecut-clisrc):
+Headless `vibecut-cli` process adapter. Parses native command-line arguments, dispatches edits through the engine registry, composes project writer leases and engine export jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no timeline, codec, export-admission, provider or MCP protocol logic and has no UI dependencies. The MCP adapter itself lives in the [MCP crate](../../crates/mcp/README.md); this CLI only composes its `mcp` subcommand.
+
+## Module map
+
+`lib.rs` wires the public `run`, `Output` and `CliError` entry points. The module doors follow [structure](../../docs/engineering/structure.md#cli-appsvibecut-clisrc):
 
 | Module | Responsibility | Contract |
 |---|---|---|
@@ -18,12 +18,20 @@ The module doors follow [structure](../../docs/engineering/structure.md#cli-apps
 | `commands/media/` | Adapts export, normalize, probe and scene commands. | [Media commands](src/commands/media/README.md) |
 | `commands/media/batch/` | Runs one bounded export job file. | [Batch export](src/commands/media/batch/README.md) |
 | `commands/project/` | Adapts control, exec, lifecycle and caption commands. | [Project commands](src/commands/project/README.md) |
-| `mcp.rs` / `mcp/` | Serves the authenticated MCP tool surface. | [MCP](src/mcp/README.md) |
+| `mcp.rs` / `mcp/` | Composes the `mcp` subcommand over the MCP crate. | [MCP command](src/mcp/README.md) |
 | `output.rs` / `output/` | Shapes results, progress and upload disclosures. | [Output](src/output/README.md) |
 | `session.rs` / `session/` | Holds the leased control session and export admission. | [Session](src/session/README.md) |
 
 Every in-process edit builds a typed `engine::Command`; the wire boundary is the only string-id path: `exec` (id and JSON come from the caller), `control` frames and MCP tool calls.
 
-The [CLI contract](../../docs/product/agent-control/cli.md) owns syntax, supported commands, flags, output shapes and exit codes. `run(Vec<OsString>)` returns `Output` or `CliError`; the binary removes the global JSON flag, writes the selected result and maps `CliError::exit_code`. Paths keep their native representation until JSON output needs them; an unrepresentable path returns a typed unsupported error.
+## Entry points
 
-The single integration binary mirrors native command groups under `tests/it/cli/`. The `fixtures` door exposes project/media setup, `process` owns subprocess invocation, and `tests/it/media_fixture.rs` owns external media oracle fixtures. Progress is latest-only and throttled through engine; stderr stages are observational and cannot synchronize tests. Oracle tests need external FFmpeg/ffprobe: a missing tool prints a skip, required-oracle mode refuses a skip, and a found but failing tool fails. Run `cargo xtask ci --require-oracles` for the full check.
+The [CLI contract](../../docs/product/agent-control/cli.md) owns syntax, supported commands, flags, output shapes and exit codes. `run(Vec<OsString>)` returns `Output` or `CliError`; the binary removes the global JSON flag, writes the selected result and maps `CliError::exit_code`. Paths keep their native representation until JSON output needs them; an unrepresentable path returns a typed unsupported error. The `session` module exposes the one-shot writer-lease runner, the control stream, shared export admission, the engine request envelope filler and the runtime settings each command borrows.
+
+## Limits
+
+Each process starts with a 2 GiB memory setting through `Context::budget`; every job keeps its own engine budget. Bounded batch job files, control frames and MCP frames use the engine limits. The MCP subcommand's queue, connection and deadline bounds belong to the [MCP crate](../../crates/mcp/README.md#limits).
+
+## Tests
+
+The single integration binary mirrors native command groups under `tests/it/cli/`. The `fixtures` door exposes project/media setup, `process` owns subprocess invocation, and `tests/it/media_fixture.rs` owns external media oracle fixtures. `tests/it/mcp.rs` covers the `mcp` subcommand through its public headless adapter. Progress is latest-only and throttled through engine; stderr stages are observational and cannot synchronize tests. Oracle tests need external FFmpeg/ffprobe: a missing tool prints a skip, required-oracle mode refuses a skip, and a found but failing tool fails. Run `cargo xtask ci --require-oracles` for the full check.

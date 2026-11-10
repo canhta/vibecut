@@ -15,7 +15,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone)]
-pub(super) struct Handler {
+pub struct Handler {
     pub(super) project_routing: bool,
     pub(super) send: mpsc::Sender<Pending>,
     pub(super) full: bool,
@@ -27,6 +27,11 @@ impl Handler {
             full: false,
             project_routing: false,
         }
+    }
+
+    /// Serve every registry command as a tool, not only the curated surface.
+    pub fn all_tools(&mut self) {
+        self.full = true;
     }
 
     fn tools(&self, start: usize) -> Vec<Tool> {

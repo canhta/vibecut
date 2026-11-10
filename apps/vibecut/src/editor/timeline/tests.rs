@@ -555,9 +555,9 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
             .unwrap()
             .as_nanos()
     ));
-    let mut server = vibecut_cli::mcp::Server::bind_with_media(
+    let mut server = mcp::Server::bind_with_media(
         &endpoint,
-        vibecut_cli::mcp::Grants::default(),
+        mcp::Grants::default(),
         budget.clone(),
         Some(shared.clone()),
     )

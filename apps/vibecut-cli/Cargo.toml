@@ -15,11 +15,9 @@ workspace = true
 [dependencies]
 shorts.workspace = true
 libraries.workspace = true
-tracing = { workspace = true, default-features = false, features = ["std"] }
-rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-io"] }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "io-std", "net"] }
-interprocess = { version = "2.4.7", features = ["tokio"] }
-base64.workspace = true
+mcp.workspace = true
+rmcp = { workspace = true, default-features = false, features = ["server", "transport-io"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "io-std", "net"] }
 engine.workspace = true
 ai.workspace = true
 media.workspace = true
@@ -31,14 +29,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
-[target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["process"] }
-
-[target.'cfg(windows)'.dependencies]
-widestring = "1.2.1"
-win-authorization-sys = "0.1.0"
-
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { version = "1.54.1", features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 testkit.workspace = true

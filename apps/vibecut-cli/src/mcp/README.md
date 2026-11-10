@@ -1,7 +1,5 @@
-# MCP
+# mcp
 
-MCP surface: `grants` (trusted bounds), `inbox` (engine-side queue), `handler` (tool surface), `server` (desktop listener), `command` (the `mcp` CLI command), `socket`/`transport` (authenticated framing).
+The `vibecut-cli mcp` command: headless stdio serving and the attach proxy.
 
-`inbox` opens the same waveform and thumbnail caches the CLI control session lends, so an allowed agent call to `media.generate_waveform` or `media.generate_clip_thumbnails` runs instead of refusing for lack of a store.
-
-`mcp` owns the stdio protocol adapter and OS-permissioned attach transport, composed by the desktop app through this library. [MCP control](../../../../docs/product/agent-control/mcp.md) owns the tool surface, grants, bounds, lifecycle, cancellation/retry rules and client configuration. Engine owns schema, revision, receipt, job and rendering.
+`run` parses the native flags, then either proxies stdio to the running app's authenticated endpoint or holds the project writer lease for one headless process, serving the adapter's handler over stdio and saving changed content on EOF. The server, handler, grants, inbox and transport live in the [MCP crate](../../../../crates/mcp/README.md); this module only composes them with the CLI's argument, output, session and exit-code owners. `--all-tools`, `--output-dir`, `--attach`, `--socket` and `--no-save` are the full surface; attach refuses every grant and switch that belongs to the running app. The headless worker drains one queued request per 2 ms poll until the adapter reports every transport closed and the queue empty, then publishes through the session's save path. Tests: `cargo test -p vibecut-cli` covers the subcommand through `tests/it/mcp.rs`; the adapter's own contracts run in `cargo test -p mcp`.

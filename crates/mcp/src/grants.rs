@@ -1,5 +1,5 @@
 //! Holds the trusted command-line grants that bound every MCP client request.
-use crate::args::CliError;
+use crate::Error;
 use engine::{Command, EditError, GrantClass, control::Policy};
 use std::path::{Path, PathBuf};
 
@@ -10,11 +10,16 @@ pub struct Grants {
     selected_output: Option<PathBuf>,
 }
 impl Grants {
+    /// True when the human selected an output directory.
+    pub fn output_granted(&self) -> bool {
+        self.output.is_some()
+    }
+
     /// Admit a pre-existing output directory. Overwrites and imported paths remain refused.
-    pub fn output(directory: &Path) -> Result<Self, CliError> {
+    pub fn output(directory: &Path) -> Result<Self, Error> {
         let output = std::fs::canonicalize(directory)?;
         if !output.is_dir() {
-            return Err(CliError::Rejected("output directory is not a directory"));
+            return Err(Error::Rejected("output directory is not a directory"));
         }
         Ok(Self {
             output: Some(output),

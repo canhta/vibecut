@@ -3225,6 +3225,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp"
+version = "0.1.0"
+dependencies = [
+ "ai",
+ "base64 0.23.1",
+ "engine",
+ "interprocess",
+ "project",
+ "render",
+ "rmcp",
+ "rustix 1.1.6",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time 0.1.0",
+ "tokio",
+ "tracing",
+ "widestring",
+ "win-authorization-sys",
+]
+
+[[package]]
 name = "media"
 version = "0.1.0"
 dependencies = [
@@ -6471,6 +6494,7 @@ dependencies = [
  "engine",
  "image",
  "libraries",
+ "mcp",
  "media",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -6492,7 +6516,6 @@ dependencies = [
  "time 0.1.0",
  "tracing",
  "tracing-subscriber",
- "vibecut-cli",
 ]
 
 [[package]]
@@ -6500,15 +6523,13 @@ name = "vibecut-cli"
 version = "0.1.0"
 dependencies = [
  "ai",
- "base64 0.23.1",
  "engine",
- "interprocess",
  "libraries",
+ "mcp",
  "media",
  "project",
  "render",
  "rmcp",
- "rustix 1.1.6",
  "same-file",
  "serde",
  "serde_json",
@@ -6518,9 +6539,6 @@ dependencies = [
  "thiserror 2.0.21",
  "time 0.1.0",
  "tokio",
- "tracing",
- "widestring",
- "win-authorization-sys",
 ]
 
 [[package]]

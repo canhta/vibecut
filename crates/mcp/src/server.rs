@@ -1,6 +1,6 @@
 //! Listens for MCP clients inside the running desktop process.
-use super::{Grants, Inbox, socket};
-use crate::args::CliError;
+use super::{Grants, Handler, Inbox, socket};
+use crate::Error;
 use engine::{ByteBudget, control::MediaAccess};
 use std::{
     path::Path,
@@ -15,7 +15,7 @@ pub struct Server {
     runtime: Option<tokio::runtime::Runtime>,
 }
 impl Server {
-    pub fn bind(endpoint: &Path, grants: Grants, budget: ByteBudget) -> Result<Self, CliError> {
+    pub fn bind(endpoint: &Path, grants: Grants, budget: ByteBudget) -> Result<Self, Error> {
         let (handler, inbox) = Inbox::new(grants, budget)?;
         Self::listen(endpoint, handler, inbox)
     }
@@ -27,16 +27,12 @@ impl Server {
         grants: Grants,
         budget: ByteBudget,
         media: Option<Arc<Mutex<MediaAccess>>>,
-    ) -> Result<Self, CliError> {
+    ) -> Result<Self, Error> {
         let (handler, inbox) = Inbox::with_media(grants, budget, media)?;
         Self::listen(endpoint, handler, inbox)
     }
 
-    fn listen(
-        endpoint: &Path,
-        mut handler: super::Handler,
-        inbox: Inbox,
-    ) -> Result<Self, CliError> {
+    fn listen(endpoint: &Path, mut handler: Handler, inbox: Inbox) -> Result<Self, Error> {
         handler.project_routing = true;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)

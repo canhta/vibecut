@@ -1,7 +1,7 @@
 //! Wires the public headless CLI entry points.
 mod args;
 mod commands;
-pub mod mcp;
+mod mcp;
 mod output;
 mod session;
 

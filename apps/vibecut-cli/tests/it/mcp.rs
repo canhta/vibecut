@@ -270,7 +270,7 @@ fn attach_lost_response_replays_once_and_matches_stdio_results() {
     } else {
         root.path().join("private/control.sock")
     };
-    let mut server = vibecut_cli::mcp::Server::bind(
+    let mut server = mcp::Server::bind(
         &endpoint,
         Default::default(),
         engine::ByteBudget::new(2 << 30).unwrap(),

@@ -15,11 +15,12 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text, testkit |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, testkit |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, testkit |
+| mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time |
 | libraries | crates/libraries | External project assets: font catalog with verified download cache, licensed sound search, saved library and previews | engine, ai, media, project, text, time |
 | shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, ai, media, project, render, time, shorts, libraries, testkit |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts, libraries, testkit |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, testkit |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, shorts, libraries, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
@@ -38,16 +39,18 @@ flowchart BT
   engine --> render
   engine --> ai
   libraries --> engine
+  mcp --> engine
   shorts --> engine
   eval[clip-eval] --> shorts
   cli[vibecut-cli] --> shorts
   cli --> libraries
-  app[vibecut] --> cli
+  cli --> mcp
+  app[vibecut] --> mcp
   subgraph apps
     cli; app
   end
   subgraph core[headless core]
-    time; text; media; captions; project; ai; render; engine; libraries; shorts; eval
+    time; text; media; captions; project; ai; render; engine; mcp; libraries; shorts; eval
   end
 ```
 

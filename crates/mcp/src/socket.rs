@@ -141,7 +141,7 @@ async fn forward<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub(super) async fn proxy(endpoint: &Path) -> io::Result<()> {
+pub async fn proxy(endpoint: &Path) -> io::Result<()> {
     let stream = tokio::time::timeout(Duration::from_secs(5), Stream::connect(name(endpoint)?))
         .await
         .map_err(|_| io::ErrorKind::TimedOut)??;

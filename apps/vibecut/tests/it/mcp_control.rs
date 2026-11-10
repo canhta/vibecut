@@ -166,7 +166,7 @@ fn socket_edits_activate_editor() {
         } else {
             root.path().join("private/control.sock")
         };
-        let mut server = vibecut_cli::mcp::Server::bind_with_media(
+        let mut server = mcp::Server::bind_with_media(
             &endpoint,
             Default::default(),
             editor.playback.budget().clone(),

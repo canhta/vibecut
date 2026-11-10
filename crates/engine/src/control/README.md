@@ -1,7 +1,7 @@
 # Control
 
-Interface: `Caller`, `MediaAccess`, `Policy`, `Session::control_request`, `snapshot_and_subscribe`;
-`Caller.chapters` lends the process `TextAccess`.
+Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
+`snapshot_and_subscribe`; `Caller.chapters` lends the process `TextAccess`.
 
 ## Control admission, revisions and receipts
 

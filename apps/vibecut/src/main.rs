@@ -53,8 +53,8 @@ fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
     Ok(stream)
 }
 struct Native {
-    control: Option<vibecut_cli::mcp::Server>,
-    control_options: Option<(PathBuf, vibecut_cli::mcp::Grants)>,
+    control: Option<mcp::Server>,
+    control_options: Option<(PathBuf, mcp::Grants)>,
     workspace: Workspace,
     effects: Option<Arc<vibecut::effects::GpuEffects>>,
     store: PreferenceStore,
@@ -93,7 +93,7 @@ impl eframe::App for Native {
         if self.workspace.focused_project().is_some()
             && let Some((endpoint, grants)) = self.control_options.take()
         {
-            match vibecut_cli::mcp::Server::bind_with_media(
+            match mcp::Server::bind_with_media(
                 &endpoint,
                 grants,
                 self.workspace.control_budget(),
@@ -394,9 +394,9 @@ fn run() -> Result<()> {
     let control_options = control_socket
         .map(|endpoint| {
             let grants = match control_output.as_deref() {
-                Some(path) => vibecut_cli::mcp::Grants::output(path)
+                Some(path) => mcp::Grants::output(path)
                     .map_err(|_| Error::Invalid("control output directory"))?,
-                None => vibecut_cli::mcp::Grants::default(),
+                None => mcp::Grants::default(),
             };
             Ok::<_, Error>((endpoint, grants))
         })

@@ -3,7 +3,9 @@ use super::Context;
 use crate::args::CliError;
 use crate::output::Output;
 use engine::control::FontAccess;
-use engine::control::{Caller, ControlResult, ErrorCode, Policy, Request, Response, ResponseValue};
+use engine::control::{
+    Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
+};
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
 use engine::{Command, EditError, Session, control};
 use libraries::fonts::FontStore;
@@ -85,7 +87,7 @@ pub(crate) fn control(
         Arc::new(SystemClock::default()),
     )?;
     // Without a usable media cache the generation commands refuse; edits still run.
-    let media = crate::session::media_access(context.budget()?)
+    let media = MediaAccess::open(context.budget()?)
         .ok()
         .map(std::sync::Mutex::new);
     let policy = ControlPolicy { allow_overwrite };
@@ -129,7 +131,7 @@ pub(crate) fn control(
                 continue;
             }
         };
-        let request = match build_control_request(&session, value) {
+        let request = match control::build_request(&session, value) {
             Ok(request) => request,
             Err(error) => {
                 let code = ErrorCode::from_error(&error);
@@ -207,26 +209,6 @@ pub(crate) fn control(
         save_control_state(&mut session, &mut lease, project_dirty, metadata_dirty)?;
     }
     Ok(Output::new(Value::Null, String::new(), true, last_exit))
-}
-
-pub(crate) fn build_control_request(
-    session: &Session,
-    mut value: Value,
-) -> Result<Request, EditError> {
-    let Value::Object(fields) = &mut value else {
-        return Err(EditError::InvalidParams);
-    };
-    fields
-        .entry("api_version")
-        .or_insert_with(|| json!(control::API_VERSION));
-    fields
-        .entry("registry_hash")
-        .or_insert_with(|| json!(control::registry_hash()));
-    fields
-        .entry("session_id")
-        .or_insert_with(|| json!(session.session_id()));
-    let request: Request = serde_json::from_value(value).map_err(|_| EditError::InvalidParams)?;
-    Ok(request)
 }
 
 pub(crate) fn save_control_state(

@@ -1,6 +1,6 @@
 //! Queues validated MCP requests for the engine owner to execute one per poll.
 use super::{Grants, Handler};
-use crate::args::CliError;
+use crate::Error;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
     ByteBudget, EditError, Session,
@@ -41,10 +41,11 @@ pub struct Inbox {
     chapters: Option<Arc<TextAccess>>,
 }
 impl Inbox {
-    pub(super) fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), CliError> {
-        // Without a usable media cache the generation commands refuse; edits
-        // still run. Desktop composition attaches its own shared instance.
-        let media = crate::session::media_access(budget.clone())
+    /// Build an inbox with its own media cache; without a usable cache the
+    /// generation commands refuse and edits still run. Desktop composition
+    /// attaches its own shared instance instead.
+    pub fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), Error> {
+        let media = MediaAccess::open(budget.clone())
             .ok()
             .map(|access| Arc::new(Mutex::new(access)));
         Self::with_media(grants, budget, media)
@@ -56,7 +57,7 @@ impl Inbox {
         grants: Grants,
         budget: ByteBudget,
         media: Option<Arc<Mutex<MediaAccess>>>,
-    ) -> Result<(Handler, Self), CliError> {
+    ) -> Result<(Handler, Self), Error> {
         let (send, receive) = mpsc::channel(QUEUE);
         let runner = JobRunner::new(
             RunnerConfig {
@@ -113,6 +114,11 @@ impl Inbox {
         let result = self.execute(session, pending.value, publish);
         let _ = pending.reply.send(result);
         Ok(())
+    }
+
+    /// True once every client transport closed and no queued request remains.
+    pub fn drained(&self) -> bool {
+        self.receive.is_closed() && self.receive.is_empty()
     }
 
     /// Desktop routing envelope. `project_id` is a decimal-string ProjectId;
@@ -250,7 +256,7 @@ impl Inbox {
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
     ) -> engine::Result<Value> {
-        let request = crate::session::build_control_request(session, value)?;
+        let request = control::build_request(session, value)?;
         let caller = Caller {
             principal: "local-mcp",
             external: true,

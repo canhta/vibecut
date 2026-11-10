@@ -2,7 +2,6 @@
 use crate::args::CliError;
 use engine::ByteBudget;
 use engine::cache::ArtifactCache;
-use engine::control::MediaAccess;
 use engine::thumbnails::ThumbnailCache;
 
 const MAX_ENTRIES: usize = 128;
@@ -17,9 +16,4 @@ pub(crate) fn waveform_cache(budget: ByteBudget) -> Result<ArtifactCache, CliErr
 pub(crate) fn thumbnail_cache(budget: ByteBudget) -> Result<ThumbnailCache, CliError> {
     let root = engine::providers::default_cache_root()?.join("thumbnails");
     Ok(ThumbnailCache::open(&root, budget, MAX_ENTRIES)?)
-}
-
-/// Both caches one control session lends to its generation jobs.
-pub(crate) fn media_access(budget: ByteBudget) -> Result<MediaAccess, CliError> {
-    Ok(MediaAccess::open(budget)?)
 }

@@ -1,6 +1,6 @@
 //! Admits transport-neutral commands and runs control-only commands, the top engine layer.
 use crate::jobs::{JobId, JobRunner};
-use crate::{Command, Result};
+use crate::{Command, Result, Session};
 
 pub use crate::session::wire::{
     API_VERSION, ControlResult, Cursor, ErrorCode, Event, FillerCandidate, FontEntry, FontLoad,
@@ -73,6 +73,23 @@ pub struct Caller<'a> {
     /// Without it `chapters.generate` and `fillers.classify` refuse with
     /// [`crate::EditError::ConsentRequired`].
     pub chapters: Option<&'a crate::providers::TextAccess>,
+}
+
+/// Fills the request envelope from the running session and parses one command.
+pub fn build_request(session: &Session, mut value: serde_json::Value) -> Result<Request> {
+    let serde_json::Value::Object(fields) = &mut value else {
+        return Err(crate::EditError::InvalidParams);
+    };
+    fields
+        .entry("api_version")
+        .or_insert_with(|| serde_json::json!(API_VERSION));
+    fields
+        .entry("registry_hash")
+        .or_insert_with(|| serde_json::json!(registry_hash()));
+    fields
+        .entry("session_id")
+        .or_insert_with(|| serde_json::json!(session.session_id()));
+    serde_json::from_value(value).map_err(|_| crate::EditError::InvalidParams)
 }
 
 #[cfg(test)]

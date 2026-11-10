@@ -7,10 +7,7 @@ use std::{
 };
 
 /// Route desktop control by project id; focus is only the omitted-target default.
-pub fn poll_workspace(
-    workspace: &mut Workspace,
-    inbox: &mut vibecut_cli::mcp::Inbox,
-) -> Result<()> {
+pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Result<()> {
     inbox.retain_projects(|id| workspace.windows.contains_key(&id));
     for (id, window) in &workspace.windows {
         if let Some(editor) = &window.editor {
@@ -90,13 +87,8 @@ pub fn background(arguments: Vec<OsString>) -> Result<()> {
                 let budget = workspace.control_budget();
                 let media = workspace.media();
                 server = Some(
-                    vibecut_cli::mcp::Server::bind_with_media(
-                        &endpoint,
-                        Default::default(),
-                        budget,
-                        media,
-                    )
-                    .map_err(|_| Error::Invalid("control listener"))?,
+                    mcp::Server::bind_with_media(&endpoint, Default::default(), budget, media)
+                        .map_err(|_| Error::Invalid("control listener"))?,
                 );
             }
             if let Some(server) = &mut server {

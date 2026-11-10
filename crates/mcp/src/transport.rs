@@ -19,7 +19,7 @@ struct Outgoing {
     reply: oneshot::Sender<io::Result<()>>,
 }
 
-pub(super) struct Framed<R> {
+pub struct Framed<R> {
     read: BufReader<R>,
     write: Option<mpsc::Sender<Outgoing>>,
     writer: Option<tokio::task::JoinHandle<io::Result<()>>>,

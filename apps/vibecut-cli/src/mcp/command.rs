@@ -1,8 +1,8 @@
 //! Runs the `mcp` CLI command over stdio or the attach proxy.
-use super::{Framed, Grants, Inbox, socket};
 use crate::args::CliError;
 use crate::output::Output;
 use engine::Session;
+use mcp::{Framed, Grants, Inbox};
 use rmcp::ServiceExt;
 use serde_json::Value;
 use std::{
@@ -10,6 +10,15 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+
+/// Maps the adapter's refusals onto the CLI's stable exit codes.
+fn cli_error(error: mcp::Error) -> CliError {
+    match error {
+        mcp::Error::Rejected(reason) => CliError::Rejected(reason),
+        mcp::Error::Io(error) => CliError::Io(error),
+        mcp::Error::Engine(error) => CliError::Engine(error),
+    }
+}
 
 pub(crate) fn run(
     context: &crate::session::Context,
@@ -35,7 +44,8 @@ pub(crate) fn run(
                     &args
                         .next()
                         .ok_or(CliError::Rejected("output directory required"))?,
-                ))?
+                ))
+                .map_err(cli_error)?
             }
             Some("--all-tools") => full = true,
             Some("--no-save") => save = false,
@@ -51,13 +61,13 @@ pub(crate) fn run(
         .enable_all()
         .build()?;
     if attach {
-        if project.is_some() || full || grants.output.is_some() || !save {
+        if project.is_some() || full || grants.output_granted() || !save {
             return Err(CliError::Rejected(
                 "attach grants belong to the running app",
             ));
         }
         let socket = socket.ok_or(CliError::Rejected("attach requires --socket"))?;
-        runtime.block_on(socket::proxy(&socket))?;
+        runtime.block_on(mcp::proxy(&socket))?;
     } else {
         if socket.is_some() {
             return Err(CliError::Rejected("headless MCP does not bind a socket"));
@@ -71,12 +81,14 @@ pub(crate) fn run(
         session.restore_metadata(lease.metadata())?;
         let mut saved_project = session.project().as_ref().clone();
         let mut saved_metadata = session.metadata().clone();
-        let (mut handler, mut inbox) = Inbox::new(grants, context.budget()?)?;
-        handler.full = full;
+        let (mut handler, mut inbox) = Inbox::new(grants, context.budget()?).map_err(cli_error)?;
+        if full {
+            handler.all_tools();
+        }
         let worker = std::thread::spawn(move || -> Result<(), CliError> {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                 || -> Result<(), CliError> {
-                    while !inbox.receive.is_closed() || !inbox.receive.is_empty() {
+                    while !inbox.drained() {
                         inbox.poll(&mut session, |project, metadata| {
                             let _ = lease.save(project)?;
                             lease.save_metadata(metadata)?;

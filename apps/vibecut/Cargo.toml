@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 shorts.workspace = true
 libraries.workspace = true
-vibecut-cli = { path = "../vibecut-cli" }
+mcp.workspace = true
 pollster = "1.0.1"
 
 rfd = { version = "0.17.2", default-features = false }
