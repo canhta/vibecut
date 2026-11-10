@@ -764,7 +764,7 @@ fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
             start: Tick::ZERO,
             content: project::ItemParams::Text(project::TextParams {
                 font_size: 20.0,
-                ..project::TextParams::new("Xin chÃƒÂ o")
+                ..project::TextParams::new("Xin chào")
             }),
         }],
     });
