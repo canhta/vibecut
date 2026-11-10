@@ -10,28 +10,27 @@ pub use frame::{AppCommand, PreviewZoom};
 pub(crate) mod panels;
 pub(crate) use panels::player::KeyPick;
 pub use panels::player::crop::{Aspect as CropAspect, Inspection as CropInspection};
-pub mod properties;
+pub use panels::properties;
 mod timeline;
 mod widgets;
 
 mod state;
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
-use state::{
-    AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
-    PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
-    SHORTCUT_TITLE_SIZE, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, Toast,
-};
 pub use state::{
     AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
+};
+use state::{
+    AssetRow, MediaMarquee, MediaReveal, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT,
+    SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE, Toast,
 };
 pub use widgets::WidgetState;
 
 mod timing;
 use timing::{display_short_time, display_time};
 
-use crate::color_picker::{ColorTarget, EyedropperState, Picker};
-use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes, shared_fields};
+use crate::editor::panels::properties::color_picker::ColorTarget;
+use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes};
 use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
     Error, Result,
@@ -47,7 +46,7 @@ use crate::{
     kit as theme,
     kit::{self as icons, Icon},
     media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
-    panels::{AssetsTab, ElementKind, PropertiesTab},
+    panels::AssetsTab,
     preferences::{Preferences, drag_panel},
     services::playback::Playback,
 };
@@ -119,11 +118,62 @@ impl Editor {
     /// Inject the catalog command adapter. Production opens it lazily; tests
     /// and audits supply a recording fake.
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
-        self.font_backend = Some(backend);
+        self.properties.set_font_backend(backend);
     }
     /// Wire the My fonts tab once font import (80) supplies imported families.
     pub fn set_font_imports_available(&mut self, available: bool) {
-        self.properties.font_picker.has_imports = available;
+        self.properties.set_font_imports_available(available);
+    }
+    /// Open the shared colour picker on a target the workspace owns.
+    pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
+        let actions = self
+            .properties
+            .open_picker(self.session.project(), target, None)?;
+        properties::apply(&mut self.desk(), actions);
+        Ok(())
+    }
+    /// Inject the native capability boundary for an open picker.
+    pub fn set_eyedropper(
+        &mut self,
+        sampler: properties::color_picker::NativeEyedropper,
+    ) -> Result<()> {
+        self.properties.set_eyedropper(sampler)
+    }
+    /// The inspector and automation use the same registered atomic field edit.
+    pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
+        properties::set_shared_field(&mut self.desk(), field, value)
+    }
+    /// One element's committed field edit, through the singular registered command.
+    pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
+        properties::set_item_field(&mut self.desk(), item, field, value)
+    }
+    /// Adopt one chroma-key eyedropper pick for the selected clip.
+    pub(in crate::editor) fn pick_key_color(
+        &mut self,
+        item: ItemId,
+        effect: Option<&str>,
+        color: project::Color,
+    ) -> Result<()> {
+        let mut state = std::mem::take(&mut self.properties);
+        let result = {
+            let mut desk = self.desk();
+            state.pick_key_color(&mut desk, item, effect, color)
+        };
+        self.properties = state;
+        result
+    }
+    /// Attach one effect definition to a clip's stack as one undo step.
+    pub(in crate::editor) fn add_effect_to_item(&mut self, item: ItemId, kind: &str) {
+        properties::add_effect_to_item(&mut self.desk(), item, kind);
+    }
+    /// Poll the active font download; the frame ticks it once per frame.
+    pub(in crate::editor) fn poll_fonts(&mut self) {
+        self.properties.poll_fonts();
+    }
+    /// End the properties scrub gesture, if one is open.
+    pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
+        let actions = self.properties.end_scrub(commit);
+        properties::apply(&mut self.desk(), actions);
     }
     /// Adopt the workspace's one media cache instance for timeline display
     /// reads and generation. The same instance is lent to the MCP inbox.
@@ -227,7 +277,6 @@ impl Editor {
             sounds: None,
             sound_media_dir: None,
             subtitles: None,
-            font_backend: None,
             requests: Vec::new(),
         }
     }
@@ -369,13 +418,12 @@ impl Editor {
             subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
             keybinding_issues: self.frame.keybinding_issues.clone(),
-            color_preview: self.properties.picker.as_ref().map(|p| p.color),
-            eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
+            color_preview: self.properties.color_preview(),
+            eyedropper: self.properties.eyedropper(),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
             font_picker: self
                 .properties
-                .font_picker
-                .inspect(&self.preferences.font_picker),
+                .font_inspection(&self.preferences.font_picker),
             text_caret: self.player.transform.text_caret(),
             shortcuts: self.frame.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
@@ -612,25 +660,6 @@ fn effect_preview_instance(
         return Some(instance);
     }
     None
-}
-fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> ScrubSpec {
-    let (min, max) = match parameter.kind {
-        project::EffectParamKind::Float {
-            soft_min, soft_max, ..
-        } => (soft_min, soft_max),
-        _ => parameter.scalar_range().unwrap_or((0.0, 1.0)),
-    };
-    let step = if max - min <= 1.0 { 0.01 } else { 1.0 };
-    ScrubSpec {
-        field: "effect_param",
-        label: Text::EffectIntensity,
-        min,
-        max,
-        step,
-        pixels_per_step: 2.0,
-        decimals: if step < 1.0 { 2 } else { 0 },
-        suffix: "",
-    }
 }
 fn display_label(value: &str, limit: usize) -> String {
     let mut label: String = value.chars().take(limit.saturating_add(1)).collect();

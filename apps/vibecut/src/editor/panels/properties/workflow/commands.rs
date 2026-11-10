@@ -1,96 +1,101 @@
 //! Adapts property edits to engine patches.
+use super::super::read;
+use crate::editor::{Desk, Error, ItemId, ItemParamPatch, Result};
 
-use crate::editor::context::single;
-use crate::editor::properties::{
-    Editor, ElementKind, Error, ItemId, ItemParamPatch, Result, element_kind,
-};
+/// The inspector and automation use the same registered atomic field edit.
+pub(in crate::editor) fn set_shared_field(
+    desk: &mut Desk<'_>,
+    field: &str,
+    value: &str,
+) -> Result<()> {
+    let patch = item_patch(field, value)?;
+    let items = desk.view().selection.iter().copied().collect();
+    desk.apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
+    Ok(())
+}
 
-impl Editor {
-    /// The inspector and automation use the same registered atomic field edit.
-    pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
-        let patch = item_patch(field, value)?;
-        let items = self.selection.iter().copied().collect();
-        self.desk()
-            .apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
-        Ok(())
-    }
-    /// Toggle one diamond over its fields at the playhead as one undo step: keys
-    /// are removed when every field has one, otherwise added where missing.
-    pub fn toggle_keyframes(
-        &mut self,
-        item: ItemId,
-        fields: &[(String, f64)],
-        time: time::Tick,
-    ) -> Result<()> {
-        let all = fields.iter().all(|(field, _)| {
-            super::super::read::has_key_at(self.session.project(), item, field, time)
-        });
-        self.desk().transaction_result(|session| {
-            for (field, value) in fields {
-                let has = super::super::read::has_key_at(session.project(), item, field, time);
-                if has != all {
-                    continue;
-                }
-                let path = if field == "audio_gain" {
-                    project::BuiltinPath::Volume.as_str()
-                } else {
-                    field.as_str()
-                };
-                session.apply(engine::Command::ToggleKeyframe {
-                    item,
-                    path: project::AnimationPath::new(path)?,
-                    component: None,
-                    time,
-                    value: project::ParamValue::Scalar(*value),
-                })?;
+/// Toggle one diamond over its fields at the playhead as one undo step: keys
+/// are removed when every field has one, otherwise added where missing.
+pub(super) fn toggle_keyframes(
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    fields: &[(String, f64)],
+    time: time::Tick,
+) -> Result<()> {
+    let all = {
+        let view = desk.view();
+        fields
+            .iter()
+            .all(|(field, _)| read::has_key_at(view.session.project(), item, field, time))
+    };
+    desk.transaction_result(|session| {
+        for (field, value) in fields {
+            let has = read::has_key_at(session.project(), item, field, time);
+            if has != all {
+                continue;
             }
-            Ok(())
-        })?;
-        Ok(())
-    }
-
-    /// Upsert a key while the field already has a curve; the base stays untouched.
-    pub fn set_keyframe_at(
-        &mut self,
-        item: ItemId,
-        field: &str,
-        time: time::Tick,
-        value: f64,
-    ) -> Result<()> {
-        let path = if field == "audio_gain" {
-            project::AnimationPath::from(project::BuiltinPath::Volume)
-        } else {
-            project::AnimationPath::new(field)?
-        };
-        self.desk().apply_result(
-            engine::Command::AddKeyframe {
+            let path = if field == "audio_gain" {
+                project::BuiltinPath::Volume.as_str()
+            } else {
+                field.as_str()
+            };
+            session.apply(engine::Command::ToggleKeyframe {
                 item,
-                path,
+                path: project::AnimationPath::new(path)?,
                 component: None,
-                key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
-            },
-            false,
-        )?;
-        Ok(())
-    }
-
-    /// One element's committed field edit, through the singular registered command.
-    pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
-        if field == "speed" {
-            let speed = value
-                .trim()
-                .parse::<f64>()
-                .map_err(|_| Error::Invalid("speed"))?;
-            let (_, maintain_pitch, _) =
-                crate::editor::properties::read::retime_of(self.session.project(), item)
-                    .ok_or(Error::Invalid("speed"))?;
-            return self.set_speed(item, speed, maintain_pitch);
+                time,
+                value: project::ParamValue::Scalar(*value),
+            })?;
         }
-        let patch = item_patch(field, value)?;
-        self.desk()
-            .apply_result(engine::Command::SetItemField { item, patch }, false)?;
         Ok(())
+    })?;
+    Ok(())
+}
+
+/// Upsert a key while the field already has a curve; the base stays untouched.
+pub(super) fn set_keyframe_at(
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    field: &str,
+    time: time::Tick,
+    value: f64,
+) -> Result<()> {
+    let path = if field == "audio_gain" {
+        project::AnimationPath::from(project::BuiltinPath::Volume)
+    } else {
+        project::AnimationPath::new(field)?
+    };
+    desk.apply_result(
+        engine::Command::AddKeyframe {
+            item,
+            path,
+            component: None,
+            key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
+        },
+        false,
+    )?;
+    Ok(())
+}
+
+/// One element's committed field edit, through the singular registered command.
+pub(in crate::editor) fn set_item_field(
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    field: &str,
+    value: &str,
+) -> Result<()> {
+    if field == "speed" {
+        let speed = value
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| Error::Invalid("speed"))?;
+        let (_, maintain_pitch, _) =
+            read::retime_of(desk.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
+        return super::speed::set_speed(desk, item, speed, maintain_pitch);
     }
+    let patch = item_patch(field, value)?;
+    desk.apply_result(engine::Command::SetItemField { item, patch }, false)?;
+    Ok(())
 }
 
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
@@ -222,13 +227,4 @@ fn parse_percent(value: &str) -> Result<f32> {
         return Err(Error::Invalid("percentage"));
     }
     Ok(value)
-}
-
-impl Editor {
-    pub(in crate::editor) fn selected_item_id(&self) -> Option<ItemId> {
-        single(&self.selection)
-    }
-    pub(in crate::editor) fn element_kind(&self, id: ItemId) -> Option<(ElementKind, bool)> {
-        element_kind(self.session.project(), id)
-    }
 }

@@ -1819,7 +1819,7 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
             .click_modifiers(modifiers);
         harness.run_steps(2);
     }
-    let fields = vibecut::selection::shared_fields(
+    let fields = vibecut::shared_fields(
         harness.state().session.project(),
         &harness.state().selection,
     );

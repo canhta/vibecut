@@ -1,0 +1,121 @@
+//! Owns the properties gesture drafts a drag or typed edit holds.
+use crate::editor::{ItemId, Text};
+
+/// One scrub field's unit contract. Pixels per step are recorded in the app
+/// README; the inventory leaves the exact sensitivity unverified.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ScrubSpec {
+    pub(super) field: &'static str,
+    pub(super) label: Text,
+    pub(super) min: f64,
+    pub(super) max: f64,
+    pub(super) step: f64,
+    pub(super) pixels_per_step: f32,
+    pub(super) decimals: usize,
+    pub(super) suffix: &'static str,
+}
+impl ScrubSpec {
+    pub(in crate::editor) fn quantize(self, value: f64) -> f64 {
+        if !value.is_finite() {
+            return self.min;
+        }
+        let steps = ((value.clamp(self.min, self.max) - self.min) / self.step).round();
+        (self.min + steps * self.step).clamp(self.min, self.max)
+    }
+    pub(in crate::editor) fn format(self, value: f64) -> String {
+        format!("{:.*}", self.decimals, self.quantize(value))
+    }
+}
+pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec {
+    field: project::BuiltinPath::Opacity.as_str(),
+    label: Text::Opacity,
+    min: 0.0,
+    max: 1.0,
+    step: 0.01,
+    pixels_per_step: 4.0,
+    decimals: 2,
+    suffix: "",
+};
+pub(super) const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
+    field: "text_size",
+    label: Text::TextSize,
+    min: 1.0,
+    max: 4096.0,
+    step: 1.0,
+    pixels_per_step: 2.0,
+    decimals: 0,
+    suffix: "",
+};
+pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
+    field: "speed",
+    label: Text::Speed,
+    min: 0.01,
+    max: 5.0,
+    step: 0.01,
+    pixels_per_step: 2.0,
+    decimals: 2,
+    suffix: "x",
+};
+pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
+    field: "audio_gain",
+    label: Text::AudioGain,
+    min: -60.0,
+    max: 20.0,
+    step: 0.01,
+    pixels_per_step: 4.0,
+    decimals: 2,
+    suffix: "dB",
+};
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ScrubTarget {
+    Item(&'static str),
+    Effect { effect: String, key: String },
+}
+impl ScrubTarget {
+    pub(in crate::editor) fn draft_key(&self) -> String {
+        match self {
+            Self::Item(field) => (*field).to_owned(),
+            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}"),
+        }
+    }
+    pub(in crate::editor) fn widget_id(&self) -> String {
+        match self {
+            Self::Item(field) => format!("inspector.{field}.scrub"),
+            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}.scrub"),
+        }
+    }
+}
+#[derive(Clone, Debug)]
+pub(super) struct ScrubDrag {
+    pub(super) item: ItemId,
+    pub(super) target: ScrubTarget,
+    pub(super) start: f64,
+    pub(super) last: f64,
+}
+/// The effect row whose drag handle currently holds a reorder.
+#[derive(Clone, Debug)]
+pub(in crate::editor) struct EffectReorder {
+    pub(in crate::editor) item: ItemId,
+    pub(in crate::editor) effect: String,
+}
+
+/// The scrub contract of one effect parameter, from its admitted range.
+pub(super) fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> ScrubSpec {
+    let (min, max) = match parameter.kind {
+        project::EffectParamKind::Float {
+            soft_min, soft_max, ..
+        } => (soft_min, soft_max),
+        _ => parameter.scalar_range().unwrap_or((0.0, 1.0)),
+    };
+    let step = if max - min <= 1.0 { 0.01 } else { 1.0 };
+    ScrubSpec {
+        field: "effect_param",
+        label: Text::EffectIntensity,
+        min,
+        max,
+        step,
+        pixels_per_step: 2.0,
+        decimals: if step < 1.0 { 2 } else { 0 },
+        suffix: "",
+    }
+}

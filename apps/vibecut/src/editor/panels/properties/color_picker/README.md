@@ -12,7 +12,7 @@ During a slider drag a temporary engine Session supplies only the preview snapsh
 the editable Session, persistence and undo history stay unchanged. Release publishes
 one command and one undo step. Escape or closing discards the draft; selection or
 snapshot changes fence stale drafts. Recent colours are unique, newest-first, capped
-at sixteen in [preferences](../preferences/README.md).
+at sixteen in [preferences](../../../../preferences/README.md).
 
 The screen sampler is app-only: on macOS it calls AppKit `NSColorSampler` through the
 system JXA bridge, asynchronously, and RGB replaces the draft hex while keeping

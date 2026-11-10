@@ -137,7 +137,7 @@ impl State {
     }
 
     /// Open the colour popover for `target`, reading its current colour.
-    pub(super) fn open_picker(
+    pub(in crate::editor) fn open_picker(
         &mut self,
         project: &Arc<project::Project>,
         target: ColorTarget,
@@ -198,6 +198,19 @@ impl State {
             commit,
             changed: scrub.last != scrub.start,
         }]
+    }
+
+    /// Escape: drop the open scrub draft and report whether the drag moved.
+    pub(in crate::editor) fn cancel_scrub(&mut self) -> Option<bool> {
+        let scrub = self.scrub.take()?;
+        self.drafts.remove(&scrub.target.draft_key());
+        self.focus = None;
+        Some(scrub.last != scrub.start)
+    }
+
+    /// Escape: drop the open effect reorder draft.
+    pub(in crate::editor) fn cancel_reorder(&mut self) -> bool {
+        self.reorder.take().is_some()
     }
 
     /// Gestures belong to the element and view visible at pointer-down; agents

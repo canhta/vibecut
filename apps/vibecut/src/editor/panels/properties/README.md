@@ -1,11 +1,15 @@
 # Properties
 
-Interface: `State`, `Action`, `Widget`, `show`, `apply`, `element_kind`, `single`,
-`font_picker`, `font_picker::State`.
+Interface: `State`, `Action`, `Widget`, `show`, `apply`, `element_kind`, `ElementKind`,
+`PropertiesTab`, `SharedField`, `shared_fields`, `color_picker`, `font_picker`,
+`font_picker::State`.
 
-The area owns its drafts, scrub gestures, picker and popovers, and returns `Action`
-values the frame routes. Every project change goes through an engine command; the
-area never writes project JSON.
+The area owns its drafts, scrub gestures, picker and popovers, its font catalog
+backend, the effect reorder draft and its gesture contracts, and returns `Action`
+values the frame routes. A workflow reads the editor through the shared read view and
+writes through the shared desk; every project change goes through an engine command and
+the area never writes project JSON.
+
 
 Animatable rows (Transform scale, position and rotation, Blending opacity, Audio
 volume) carry a diamond toggle right of the label that adds or removes a key at the
@@ -76,4 +80,4 @@ rotation through `masks.update`, and None runs `masks.remove`. One mask per clip
 the panel; commands and agents keep the multi-mask engine. A locked track opens
 read-only.
 
-Panel design and measured controls: [editor window](../../../../../docs/product/ui/editor.md).
+Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).

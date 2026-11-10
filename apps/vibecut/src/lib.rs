@@ -2,7 +2,6 @@
 pub mod actions;
 pub mod appearance;
 pub mod capture;
-pub mod color_picker;
 pub mod control;
 mod editor;
 pub mod effect_previews;
@@ -24,7 +23,9 @@ pub mod subtitles;
 pub mod workspace;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
+pub use editor::properties::color_picker;
 pub use editor::properties::font_picker;
+pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fields};
 pub use editor::{
     AppCommand, AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor,
     Inspection, PreviewAxis, PreviewGuide, PreviewZoom, ShortcutRow, ShortcutTab,

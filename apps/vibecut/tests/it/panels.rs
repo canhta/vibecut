@@ -20,9 +20,9 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    Editor, ElementKind, PropertiesTab, egui,
     font_picker::{Backend, Status},
-    panels::{AssetsTab, ElementKind, PropertiesTab},
+    panels::AssetsTab,
     preferences::{FontTab, PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };

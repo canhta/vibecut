@@ -11,11 +11,11 @@ impl Editor {
             self.session.project(),
             crate::editor::context::single(&self.selection),
         );
-        super::super::properties::apply(&mut self.desk(), actions);
+        crate::editor::properties::apply(&mut self.desk(), actions);
         // The eyedropper belongs to one selected clip's panel.
         if self.player.key_color_pick.as_ref().is_some_and(|pick| {
             crate::editor::context::single(&self.selection) != Some(pick.item)
-                || self.properties.details
+                || self.properties.details()
         }) {
             self.player.key_color_pick = None;
         }
@@ -198,19 +198,17 @@ impl Editor {
         self.shortcuts_dialog(ui.ctx());
         if self
             .properties
-            .scrub
-            .as_ref()
-            .is_some_and(|scrub| !self.frame.widgets.contains_key(&scrub.target.widget_id()))
+            .scrub_widget()
+            .is_some_and(|id| !self.frame.widgets.contains_key(&id))
         {
             self.finish_scrub(false);
         }
-        if self.properties.reorder.as_ref().is_some_and(|drag| {
-            !self
-                .frame
-                .widgets
-                .contains_key(&format!("effects.row.{}.handle", drag.effect))
-        }) {
-            self.properties.reorder = None;
+        if self
+            .properties
+            .reorder_handle()
+            .is_some_and(|id| !self.frame.widgets.contains_key(&id))
+        {
+            self.properties.cancel_reorder();
         }
         self.finish_effect_drag(ui.ctx());
         self.finish_transition_drag(ui.ctx());
@@ -223,7 +221,7 @@ impl Editor {
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let mut properties = std::mem::take(&mut self.properties);
         let cx = self.context();
-        let actions = super::super::properties::show(&mut properties, &cx, ui);
+        let actions = crate::editor::properties::show(&mut properties, &cx, ui);
         drop(cx);
         self.properties = properties;
         for widget in self.properties.take_widgets() {
@@ -237,7 +235,7 @@ impl Editor {
         if !actions.is_empty() {
             ui.ctx().request_repaint();
         }
-        super::super::properties::apply(&mut self.desk(), actions);
+        crate::editor::properties::apply(&mut self.desk(), actions);
     }
     /// Paint the export dialog and route its requests.
     fn show_export(&mut self, ui: &mut egui::Ui) {

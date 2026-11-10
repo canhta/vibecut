@@ -1,14 +1,15 @@
 //! The versioned preference document composed from its feature-owned sections.
 
 use super::{FontPickerPreferences, WindowGeometry};
-use crate::{Error, Result};
 use crate::{
+    ElementKind, PropertiesTab,
     home::ProjectsPreferences,
     i18n::Locale,
     input::KeybindingPreferences,
     media_panel::{MediaSort, MediaView},
-    panels::{AssetsTab, ElementKind, PropertiesTab},
+    panels::AssetsTab,
 };
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

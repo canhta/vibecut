@@ -44,7 +44,9 @@ impl Editor {
                 .timeline
                 .iter()
                 .flat_map(|track| track.items.iter().map(|item| item.id))
-                .filter(|id| self.effect_refusal(*id).is_none())
+                .filter(|id| {
+                    crate::editor::properties::effect_refusal(self.session.project(), *id).is_none()
+                })
                 .collect()
         });
         let actions = paint(&mut state, &cx);
@@ -469,15 +471,12 @@ impl Editor {
             self.discard_gesture();
             return;
         }
-        if let Some(scrub) = self.properties.scrub.take() {
-            let changed = scrub.last != scrub.start;
+        if let Some(changed) = self.properties.cancel_scrub() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
                 self.desk().fail(error.to_string());
             }
-            self.properties.drafts.remove(&scrub.target.draft_key());
-            self.properties.focus = None;
             if changed {
                 self.desk().sync();
             }
@@ -502,7 +501,7 @@ impl Editor {
         if self.effect_drag.take().is_some() {
             return;
         }
-        if self.properties.reorder.take().is_some() {
+        if self.properties.cancel_reorder() {
             return;
         }
         if self.timeline.cancel_drag() {

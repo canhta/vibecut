@@ -20,7 +20,7 @@ impl Editor {
             }
             return;
         }
-        if self.properties.picker.is_some() {
+        if self.properties.picker_open() {
             return;
         }
         // The armed eyedropper is a one-click mode: Escape leaves it without

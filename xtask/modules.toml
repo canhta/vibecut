@@ -207,15 +207,11 @@ group = "assets"
 
 [[crate.module]]
 name = "panels"
-group = "properties"
+group = "assets"
 
 [[crate.module]]
 name = "selection"
-group = "properties"
-
-[[crate.module]]
-name = "color_picker"
-group = "properties"
+group = "editor"
 
 [[crate.module]]
 name = "snapping"
@@ -248,7 +244,7 @@ groups = ["context"]
 
 [[crate.folder.layer]]
 name = "areas"
-groups = ["assets", "captions", "dialogs", "panels", "properties", "timeline", "widgets"]
+groups = ["assets", "captions", "dialogs", "panels", "timeline", "widgets"]
 
 [[crate.folder.layer]]
 name = "frame"
@@ -279,10 +275,6 @@ name = "panels"
 group = "panels"
 
 [[crate.folder.module]]
-name = "properties"
-group = "properties"
-
-[[crate.folder.module]]
 name = "timeline"
 group = "timeline"
 
@@ -297,3 +289,20 @@ group = "frame"
 [[crate.folder.module]]
 name = "frame"
 group = "frame"
+
+# The two docked panels keep their own folder inside the editor; each owns one
+# area state.
+[[crate.folder]]
+path = "src/editor/panels"
+
+[[crate.folder.layer]]
+name = "areas"
+groups = ["panels", "properties"]
+
+[[crate.folder.module]]
+name = "player"
+group = "panels"
+
+[[crate.folder.module]]
+name = "properties"
+group = "properties"

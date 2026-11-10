@@ -18,7 +18,7 @@ impl Editor {
         Ok(())
     }
     pub(in crate::editor) fn add_effect_from_selection(&mut self, kind: &str) {
-        match self.selected_item_id() {
+        match crate::editor::context::single(&self.selection) {
             Some(item) => self.add_effect_to_item(item, kind),
             None => {
                 let text = self.tr(Text::EffectSelectClip).to_owned();
@@ -52,19 +52,6 @@ impl Editor {
         } else {
             let text = self.tr(Text::EffectDropMiss).to_owned();
             self.set_toast(&text, None);
-        }
-    }
-}
-
-impl Editor {
-    pub(in crate::editor) fn effect_name(
-        &self,
-        definition: &project::EffectDefinition,
-    ) -> &'static str {
-        match definition.id {
-            "blur" => self.tr(Text::EffectBlur),
-            "color_grade" => self.tr(Text::EffectColorGrade),
-            _ => definition.name,
         }
     }
 }

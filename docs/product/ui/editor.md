@@ -64,7 +64,7 @@ The model manager reuses the export modal's 12 px radius, 24 px inner margin and
 - Settings is a 480 px modal: 34 px tab bar with Draft, Edit, Performance, General; standard rows and fields, 16 px checkboxes.
 - The assets panel leads with the 42 px horizontal feature strip: Media, Audio, Text, Stickers, Effects, Transitions, Captions, Filters, Adjustment, Templates and the AI avatar, each a 16 px icon over a 12 px semibold label, active in the accent. Beneath it, a 120 px sub-navigation column and a 24 px tool row (Import, Record, search) sit above the asset grid or list. A selected element's properties view uses the 12 px type tabs at the strip row (active accent, no underline) and the 460×24 sub-tab bar; the empty and multi-select views keep the shared-field presentation, and `Project`/`Details` are the inspector header switch.
 
-Options, ranges and filename rules: [export dialog](../../../apps/vibecut/src/editor/dialogs/export/README.md). Scrub fields: [properties](../../../apps/vibecut/src/editor/properties/README.md).
+Options, ranges and filename rules: [export dialog](../../../apps/vibecut/src/editor/dialogs/export/README.md). Scrub fields: [properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 
 ## Preview
 
@@ -86,11 +86,11 @@ The shared colour window has hex plus labelled HSV and alpha entries and sliders
 
 ## Remove background
 
-Video and image items carry a `Remove BG` cell in their Basic sub-tab bar (desktop shot 221751 places it second of Basic, Remove BG, Mask, Retouch; our bar is Transform, Blending, Remove BG because Mask is a row in that group). The cell holds the panel from the web capture's Smart tools ▸ Remove background (`screens/18`), with the key colour, reset, `Intensity` (0–100, default 40) and `Shadow` (0–100, default 0). Row heights and the value column follow the property rows above; the three-cell bar keeps the measured 24 px control height and 4 px radius. [new] for the panel composition; the reveal order, toggle, eyedropper, reset and slider set are the web capture's measured controls. Reveal order and undo steps: [properties](../../../apps/vibecut/src/editor/properties/README.md#remove-bg-sub-tab).
+Video and image items carry a `Remove BG` cell in their Basic sub-tab bar (desktop shot 221751 places it second of Basic, Remove BG, Mask, Retouch; our bar is Transform, Blending, Remove BG because Mask is a row in that group). The cell holds the panel from the web capture's Smart tools ▸ Remove background (`screens/18`), with the key colour, reset, `Intensity` (0–100, default 40) and `Shadow` (0–100, default 0). Row heights and the value column follow the property rows above; the three-cell bar keeps the measured 24 px control height and 4 px radius. [new] for the panel composition; the reveal order, toggle, eyedropper, reset and slider set are the web capture's measured controls. Reveal order and undo steps: [properties](../../../apps/vibecut/src/editor/panels/properties/README.md#remove-bg-sub-tab).
 
 ## Font picker
 
-The text Font row opens a 320 px popover below the field, clamped inside the window: a search field, the source tabs All fonts, My fonts and Favorites, and inside All fonts a System/Google filter plus a disabled Custom category. Category chips use the app selected-chip roles: accent fill with on-accent ink for the chosen chip, field fill with text ink otherwise. Rows use fixed star, name, state and action columns, all left-aligned, and only informative rows carry state text on the row's centre line. No capture exists; the 320 px width, 288 px list ceiling and row spacing are [proposed]. Tabs, filters and download states: [font picker](../../../apps/vibecut/src/editor/properties/font_picker/README.md).
+The text Font row opens a 320 px popover below the field, clamped inside the window: a search field, the source tabs All fonts, My fonts and Favorites, and inside All fonts a System/Google filter plus a disabled Custom category. Category chips use the app selected-chip roles: accent fill with on-accent ink for the chosen chip, field fill with text ink otherwise. Rows use fixed star, name, state and action columns, all left-aligned, and only informative rows carry state text on the row's centre line. No capture exists; the 320 px width, 288 px list ceiling and row spacing are [proposed]. Tabs, filters and download states: [font picker](../../../apps/vibecut/src/editor/panels/properties/font_picker/README.md).
 
 ## Canvas settings
 

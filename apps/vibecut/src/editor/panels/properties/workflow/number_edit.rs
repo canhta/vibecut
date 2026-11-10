@@ -1,46 +1,44 @@
 //! Applies numeric editing gestures.
+use super::super::{State, gesture::ScrubSpec};
+use crate::editor::{Desk, Result, Text};
 
-use crate::editor::properties::{Editor, Result, ScrubSpec, Text, apply};
-
-impl Editor {
+impl State {
     /// Open the engine gesture for the scrub the panel recorded.
-    pub(in crate::editor::properties) fn begin_gesture(&mut self) -> Result<()> {
+    pub(super) fn begin_gesture(&mut self, desk: &mut Desk<'_>) -> Result<()> {
         let result = (|| -> Result<()> {
-            self.session.end_merge();
-            if self.session.transaction_active() {
-                self.session.cancel_gesture()?;
+            desk.end_merge();
+            if desk.view().session.transaction_active() {
+                desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))?;
             }
-            self.desk().push_selection()?;
-            self.session.begin_gesture()?;
+            desk.push_selection()?;
+            desk.with_session(|session| Ok(session.begin_gesture().map(|_| ())?))?;
             Ok(())
         })();
         if result.is_err() {
-            self.properties.scrub = None;
+            self.scrub = None;
         }
         result
     }
-    pub(in crate::editor::properties) fn end_gesture(
+
+    pub(super) fn end_gesture(
         &mut self,
+        desk: &mut Desk<'_>,
         commit: bool,
         changed: bool,
     ) -> Result<()> {
         let result = if commit && changed {
-            self.session.commit_gesture()
+            desk.with_session(|session| Ok(session.commit_gesture().map(|_| ())?))
         } else {
-            self.session.cancel_gesture()
+            desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))
         };
         if changed {
-            self.desk().sync();
+            desk.sync();
         }
-        result.map(|_| ()).map_err(Into::into)
-    }
-    pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
-        let actions = self.properties.end_scrub(commit);
-        apply(&mut self.desk(), actions);
+        result
     }
 }
 
-pub(in crate::editor::properties) fn transform_scrub(field: project::TransformField) -> ScrubSpec {
+pub(in crate::editor) fn transform_scrub(field: project::TransformField) -> ScrubSpec {
     use project::TransformField as F;
     let (min, max) = field.bounds();
     let label = match field {

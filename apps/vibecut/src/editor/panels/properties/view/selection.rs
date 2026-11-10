@@ -36,7 +36,7 @@ impl Panel<'_, '_> {
     pub(super) fn shared_field_controls(
         &mut self,
         ui: &mut egui::Ui,
-        fields: impl IntoIterator<Item = crate::selection::SharedField>,
+        fields: impl IntoIterator<Item = crate::editor::properties::SharedField>,
     ) {
         for field in fields {
             if field.id == "audio_muted" {
@@ -218,7 +218,7 @@ impl Panel<'_, '_> {
     pub(super) fn audio_mute_control(
         &mut self,
         ui: &mut egui::Ui,
-        field: &crate::selection::SharedField,
+        field: &crate::editor::properties::SharedField,
     ) {
         ui.add_space(theme::space::LG);
         let mut muted = field.value.as_deref() == Some("true");

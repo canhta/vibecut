@@ -16,7 +16,6 @@ Each module's contract is its README.
 | `actions.rs` / `actions/` | [Action registry](src/actions/README.md) |
 | `appearance.rs` | – |
 | `capture.rs` | [Capture](src/capture/README.md) |
-| `color_picker.rs` / `color_picker/` | [Colour picker](src/color_picker/README.md) |
 | `control.rs` | [Control](src/control/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
 | `editor/assets/` | [Assets](src/editor/assets/README.md) |
@@ -33,11 +32,12 @@ Each module's contract is its README.
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |
 | `editor/panels/` | [Editor panels](src/editor/panels/README.md) |
 | `editor/panels/player/` | [Editor player](src/editor/panels/player/README.md) |
-| `editor/properties/` | [Properties](src/editor/properties/README.md) |
-| `editor/properties/font_picker/` | [Font picker](src/editor/properties/font_picker/README.md) |
-| `editor/properties/mask_picker/` | [Mask picker](src/editor/properties/mask_picker/README.md) |
-| `editor/properties/view/` | [Properties view](src/editor/properties/view/README.md) |
-| `editor/properties/workflow/` | [Properties workflow](src/editor/properties/workflow/README.md) |
+| `editor/panels/properties/` | [Properties](src/editor/panels/properties/README.md) |
+| `editor/panels/properties/color_picker/` | [Colour picker](src/editor/panels/properties/color_picker/README.md) |
+| `editor/panels/properties/font_picker/` | [Font picker](src/editor/panels/properties/font_picker/README.md) |
+| `editor/panels/properties/mask_picker/` | [Mask picker](src/editor/panels/properties/mask_picker/README.md) |
+| `editor/panels/properties/view/` | [Properties view](src/editor/panels/properties/view/README.md) |
+| `editor/panels/properties/workflow/` | [Properties workflow](src/editor/panels/properties/workflow/README.md) |
 | `editor/timeline/` | [Timeline](src/editor/timeline/README.md) |
 | `editor/timeline/view/` | [Timeline view](src/editor/timeline/view/README.md) |
 | `editor/timeline/view/ruler/` | [Timeline ruler](src/editor/timeline/view/ruler/README.md) |

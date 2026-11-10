@@ -323,8 +323,8 @@ impl Editor {
                     self.playback.clear()?;
                     self.desk().clear_error();
                 }
-                UiAction::ProjectInspector => self.properties.details = false,
-                UiAction::DetailsInspector => self.properties.details = true,
+                UiAction::ProjectInspector => self.properties.set_details(false),
+                UiAction::DetailsInspector => self.properties.set_details(true),
                 UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
                 UiAction::PreviewFullscreen => self.player.fullscreen = !self.player.fullscreen,
                 UiAction::PreviewFit => self.set_preview_fit()?,

@@ -19,4 +19,4 @@ Loading, failed previews with Retry, no result, not downloaded, downloading with
 and download failed are explicit states. A failed registration falls back to the next
 available family.
 
-Design: [font picker](../../../../../../docs/product/ui/editor.md#font-picker).
+Design: [font picker](../../../../../../../docs/product/ui/editor.md#font-picker).

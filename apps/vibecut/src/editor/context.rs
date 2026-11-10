@@ -61,6 +61,14 @@ impl Context<'_> {
     }
 }
 
+/// Read-only view a workflow reads the editor through while it holds the desk.
+pub(in crate::editor) struct View<'a> {
+    pub(in crate::editor) session: &'a engine::Session,
+    pub(in crate::editor) selection: &'a std::collections::BTreeSet<project::ItemId>,
+    pub(in crate::editor) preferences: &'a crate::preferences::Preferences,
+    pub(in crate::editor) playhead: time::Tick,
+}
+
 /// Tooltip text from an action's first effective chord.
 fn shortcut_text(bindings: &actions::KeybindingPreferences, action: &str) -> Option<String> {
     let spec = actions::action(action)?;
@@ -285,13 +293,23 @@ impl<'a> Desk<'a> {
         key: &str,
         value: serde_json::Value,
     ) -> bool {
-        match self.editor.set_preference(key, value) {
+        match self.set_preference_result(key, value) {
             Ok(()) => true,
             Err(error) => {
                 self.fail(error.to_string());
                 false
             }
         }
+    }
+
+    /// Record one preference edit in the app's own history, for callers that
+    /// propagate the failure.
+    pub(in crate::editor) fn set_preference_result(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> crate::Result<()> {
+        self.editor.set_preference(key, value)
     }
 
     /// Queue a cross-area request; the frame drains it after this area returns.
@@ -302,5 +320,72 @@ impl<'a> Desk<'a> {
     /// The editor, for reads and state the edit entry does not own.
     pub(in crate::editor) fn editor(&mut self) -> &mut crate::editor::Editor {
         self.editor
+    }
+
+    /// Lend the read view for one workflow step.
+    pub(in crate::editor) fn view(&self) -> View<'_> {
+        View {
+            session: &self.editor.session,
+            selection: &self.editor.selection,
+            preferences: &self.editor.preferences,
+            playhead: self.editor.playback.position().unwrap_or(time::Tick::ZERO),
+        }
+    }
+
+    /// Run one catalog operation against the editable session.
+    pub(in crate::editor) fn with_session<T>(
+        &mut self,
+        run: impl FnOnce(&mut engine::Session) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        run(&mut self.editor.session)
+    }
+
+    /// Arm or leave the chroma-key eyedropper the player samples next.
+    pub(in crate::editor) fn arm_key_color_pick(&mut self, pick: Option<crate::editor::KeyPick>) {
+        self.editor.player.key_color_pick = pick;
+    }
+
+    /// Show a creator-facing toast for five seconds.
+    pub(in crate::editor) fn toast(&mut self, text: &str, detail: Option<String>) {
+        self.editor.set_toast(text, detail);
+    }
+
+    /// Select exactly one item, clearing every other selection.
+    pub(in crate::editor) fn select_single(&mut self, item: project::ItemId) {
+        self.editor.select_single(item);
+    }
+
+    /// Persist one section's open state as one preference edit.
+    pub(in crate::editor) fn set_section_open(
+        &mut self,
+        key: &str,
+        open: bool,
+    ) -> crate::Result<()> {
+        self.editor.set_section_open(key, open)
+    }
+
+    /// Write one preference without an app-history entry.
+    pub(in crate::editor) fn store_preference(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> crate::Result<()> {
+        self.editor.preferences.set(key, value)?;
+        Ok(())
+    }
+
+    /// Close any open merge so the next command is one undo step.
+    pub(in crate::editor) fn end_merge(&mut self) {
+        self.editor.session.end_merge();
+    }
+
+    /// Show a draft project at `at` without touching the editable session.
+    pub(in crate::editor) fn stage_frame(
+        &mut self,
+        at: time::Tick,
+        project: std::sync::Arc<project::Project>,
+    ) -> crate::Result<()> {
+        self.editor.playback.seek(at, false, project)?;
+        Ok(())
     }
 }
