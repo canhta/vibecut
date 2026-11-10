@@ -85,8 +85,8 @@ impl SpeechRequest {
         if text.as_str().len() > MAX_SPEECH_TEXT_BYTES {
             return Err(Error::Payload);
         }
-        crate::policy::nonempty(&text)?;
-        crate::policy::nonempty(&voice)?;
+        crate::contracts::policy::nonempty(&text)?;
+        crate::contracts::policy::nonempty(&voice)?;
         let script = language.script.as_str();
         if script.len() != 4 || !script.bytes().all(|b| b.is_ascii_alphabetic()) {
             return Err(Error::Invalid("speech script"));
@@ -224,7 +224,7 @@ impl SpeechCapabilities {
             &self.policy.training,
             &self.policy.voice_disclosure,
         ] {
-            crate::policy::nonempty(value)?;
+            crate::contracts::policy::nonempty(value)?;
         }
         let url = url::Url::parse(self.policy.policy_url.as_str())
             .map_err(|_| Error::Invalid("speech policy URL"))?;

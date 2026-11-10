@@ -1,4 +1,6 @@
-use crate::{Error, Operation, SampleRange};
+//! Binds exact provider scope, capability admission and per-invocation cost consent.
+use super::{Operation, SampleRange};
+use crate::Error;
 use captions::{LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
 

@@ -17,9 +17,10 @@ pub enum TranslationProvider {
     OpenAi { model: String },
     Anthropic { model: String },
 }
-/// One selectable chapter-generation provider with its explicit model identity.
+/// One selectable transcript-text provider with its explicit model identity. Chapter
+/// generation and filler classification share the same approved text models.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ChapterProvider {
+pub enum TextProvider {
     OpenAi { model: String },
     Anthropic { model: String },
 }
@@ -106,7 +107,7 @@ impl TranslationProvider {
         }
     }
 }
-impl ChapterProvider {
+impl TextProvider {
     pub fn id(&self) -> &'static str {
         match self {
             Self::OpenAi { .. } => "openai",
@@ -119,7 +120,7 @@ impl ChapterProvider {
         }
     }
 }
-const CHAPTER_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];
+const TEXT_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];
 pub fn provider_options() -> Vec<ProviderOption> {
     let tags = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect();
     vec![
@@ -189,7 +190,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::GenerateChapters,
             local: false,
             models: vec![ai::chapters::OPENAI_MODEL.into()],
-            languages: tags(&CHAPTER_LANGUAGES),
+            languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
         },
@@ -199,7 +200,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::GenerateChapters,
             local: false,
             models: vec![ai::anthropic::MODEL.into()],
-            languages: tags(&CHAPTER_LANGUAGES),
+            languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
         },
@@ -276,25 +277,30 @@ pub fn choose_translation(
         _ => Err(EditError::Unsupported("unknown translation provider")),
     }
 }
-pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<ChapterProvider, EditError> {
+pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<TextProvider, EditError> {
+    choose_text(CatalogOperation::GenerateChapters, provider, model)
+}
+fn choose_text(
+    operation: CatalogOperation,
+    provider: &str,
+    model: Option<&str>,
+) -> Result<TextProvider, EditError> {
     let option = provider_options()
         .into_iter()
-        .find(|option| {
-            option.operation == CatalogOperation::GenerateChapters && option.id == provider
-        })
-        .ok_or(EditError::Unsupported("unknown chapter provider"))?;
+        .find(|option| option.operation == operation && option.id == provider)
+        .ok_or(EditError::Unsupported("unknown text provider"))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
     if !option.models.iter().any(|value| value == model) {
         return Err(EditError::Unsupported("unsupported model for provider"));
     }
     match option.id {
-        "openai" => Ok(ChapterProvider::OpenAi {
+        "openai" => Ok(TextProvider::OpenAi {
             model: model.into(),
         }),
-        "anthropic" => Ok(ChapterProvider::Anthropic {
+        "anthropic" => Ok(TextProvider::Anthropic {
             model: model.into(),
         }),
-        _ => Err(EditError::Unsupported("unknown chapter provider")),
+        _ => Err(EditError::Unsupported("unknown text provider")),
     }
 }
 impl ModelInfo {

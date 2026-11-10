@@ -1,6 +1,6 @@
 //! Opens the chosen provider adapters with their model leases.
 use super::catalog::{
-    CatalogOperation, ChapterProvider, TranscriptionProvider, TranslationProvider, catalog_model,
+    CatalogOperation, TextProvider, TranscriptionProvider, TranslationProvider, catalog_model,
 };
 use super::consent::{Cost, UploadRequest};
 use crate::EditError;
@@ -438,47 +438,65 @@ pub(crate) fn build_translator(
 /// Build the selected chapter adapter; the exact configuration is what the
 /// chapter consent scope binds.
 pub(crate) fn open_chapter(
-    chapter: &ChapterProvider,
+    chapter: &TextProvider,
     credentials: &Credentials,
 ) -> Result<Arc<dyn ai::chapters::ChapterGenerator>, EditError> {
+    let (config, key) = text_credentials(
+        chapter,
+        ai::chapters::OPENAI_SETTINGS,
+        ai::chapters::ANTHROPIC_SETTINGS,
+        credentials,
+    )?;
     match chapter {
-        ChapterProvider::OpenAi { model } => {
-            let config = ai::ProviderConfig::new(
-                "openai".into(),
-                model.as_str().into(),
-                ai::chapters::OPENAI_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::openai::BACKEND.into(),
-                    base_url: ai::openai::BASE_URL.into(),
-                    auth_ref: "OPENAI_API_KEY".into(),
-                },
-            )?;
-            let value = ai::chapters::OpenAiChapterGenerator::new(
+        TextProvider::OpenAi { .. } => Ok(Arc::new(ai::chapters::OpenAiChapterGenerator::new(
+            config,
+            key,
+            Arc::new(UreqTransport::new()),
+        )?)),
+        TextProvider::Anthropic { .. } => {
+            Ok(Arc::new(ai::chapters::AnthropicChapterGenerator::new(
                 config,
-                credentials.openai()?.clone(),
+                key,
                 Arc::new(UreqTransport::new()),
-            )?;
-            Ok(Arc::new(value))
-        }
-        ChapterProvider::Anthropic { model } => {
-            let config = ai::ProviderConfig::new(
-                "anthropic".into(),
-                model.as_str().into(),
-                ai::chapters::ANTHROPIC_SETTINGS.into(),
-                Location::Remote {
-                    backend: ai::anthropic::BACKEND.into(),
-                    base_url: ai::anthropic::BASE_URL.into(),
-                    auth_ref: "ANTHROPIC_API_KEY".into(),
-                },
-            )?;
-            let value = ai::chapters::AnthropicChapterGenerator::new(
-                config,
-                credentials.anthropic()?.clone(),
-                Arc::new(UreqTransport::new()),
-            )?;
-            Ok(Arc::new(value))
+            )?))
         }
     }
+}
+fn text_credentials(
+    provider: &TextProvider,
+    openai_settings: &str,
+    anthropic_settings: &str,
+    credentials: &Credentials,
+) -> Result<(ai::ProviderConfig, ApiKey), EditError> {
+    let (id, backend, base_url, auth_ref, settings, key) = match provider {
+        TextProvider::OpenAi { .. } => (
+            "openai",
+            ai::openai::BACKEND,
+            ai::openai::BASE_URL,
+            "OPENAI_API_KEY",
+            openai_settings,
+            credentials.openai()?,
+        ),
+        TextProvider::Anthropic { .. } => (
+            "anthropic",
+            ai::anthropic::BACKEND,
+            ai::anthropic::BASE_URL,
+            "ANTHROPIC_API_KEY",
+            anthropic_settings,
+            credentials.anthropic()?,
+        ),
+    };
+    let config = ai::ProviderConfig::new(
+        id.into(),
+        provider.model().into(),
+        settings.into(),
+        Location::Remote {
+            backend: backend.into(),
+            base_url: base_url.into(),
+            auth_ref: auth_ref.into(),
+        },
+    )?;
+    Ok((config, key.clone()))
 }
 fn load_aligner(
     cache: &mut ArtifactCache,

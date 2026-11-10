@@ -5,7 +5,7 @@
 //! token the adapter receives. Without an affirmative approval it refuses before
 //! any adapter or credential is used.
 use super::adapters::{Credentials, open_chapter};
-use super::catalog::ChapterProvider;
+use super::catalog::TextProvider;
 use super::selection::Approval;
 use crate::EditError;
 use ai::chapters::{ChapterGenerator, ChapterInput, MAX_WIRE, MODE};
@@ -64,7 +64,7 @@ impl ChapterAccess {
 
     /// Build the selected provider's adapter and lend it with `approval`.
     pub fn open(
-        provider: ChapterProvider,
+        provider: TextProvider,
         credentials: &Credentials,
         approval: Box<dyn Approval + Send>,
     ) -> Result<Self, EditError> {

@@ -1,6 +1,8 @@
 //! Provider request contracts.
-use crate::{Consent, CostEstimate, Error, ProviderConfig, Scope, authorize};
+pub mod policy;
+use crate::Error;
 use captions::{LanguageTag, NfcText};
+pub use policy::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -108,7 +110,7 @@ impl Capabilities {
         {
             return Err(Error::UnsupportedLanguage);
         }
-        crate::policy::nonempty(&self.revision)?;
+        crate::contracts::policy::nonempty(&self.revision)?;
         if self
             .max_upload_bytes
             .is_some_and(|max| scope.max_bytes > max)

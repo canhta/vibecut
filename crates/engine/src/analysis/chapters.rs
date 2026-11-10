@@ -43,7 +43,7 @@ impl ChapterRequest {
         language: LanguageTag,
         max_chapters: usize,
     ) -> Result<Self, EditError> {
-        if !ai::chapters::supports_language(&language) {
+        if !ai::supports_text_language(&language) {
             return Err(ai::Error::from(ChapterRefusal::UnsupportedLanguage).into());
         }
         if !(1..=MAX_CHAPTERS).contains(&max_chapters) {

@@ -85,7 +85,7 @@ impl ChapterInput {
     /// Refuses empty, unsupported, unordered or oversized transcripts before consent.
     pub fn validate(&self) -> Result<(), ChapterRefusal> {
         let settings = &self.settings;
-        if !supports_language(&settings.language) {
+        if !crate::supports_text_language(&settings.language) {
             return Err(ChapterRefusal::UnsupportedLanguage);
         }
         if settings.duration <= Tick::ZERO || !(1..=MAX_CHAPTERS).contains(&settings.max_chapters) {
@@ -303,7 +303,7 @@ impl ChapterDocumentData {
         if self.schema_version != SCHEMA_VERSION {
             return Err(ChapterRefusal::SchemaVersion);
         }
-        if !supports_language(&self.language) {
+        if !crate::supports_text_language(&self.language) {
             return Err(ChapterRefusal::UnsupportedLanguage);
         }
         if self.duration <= Tick::ZERO
@@ -331,7 +331,7 @@ impl ChapterDocumentData {
         let mut languages = BTreeSet::new();
         for translation in &self.translations {
             if translation.language == self.language
-                || !supports_language(&translation.language)
+                || !crate::supports_text_language(&translation.language)
                 || !languages.insert(&translation.language)
                 || !valid_title(&translation.title)
                 || !valid_description(&translation.description)
@@ -431,7 +431,7 @@ pub fn translate_chapters(
     hooks: &dyn ExecutionHooks,
 ) -> Result<ChapterDocument, Error> {
     document.validate()?;
-    if target_language == *document.language() || !supports_language(&target_language) {
+    if target_language == *document.language() || !crate::supports_text_language(&target_language) {
         return Err(ChapterRefusal::InvalidTranslation.into());
     }
     let mut window = crate::TranslationWindow {
@@ -498,10 +498,6 @@ pub fn translate_chapters(
     .map_err(Into::into)
 }
 
-/// Whether chapter generation accepts this transcript language.
-pub fn supports_language(language: &LanguageTag) -> bool {
-    ["vi", "en", "zh", "zh-Hans", "zh-Hant"].contains(&language.as_str())
-}
 fn valid_title(text: &NfcText) -> bool {
     !text.as_str().trim().is_empty() && text.as_str().len() <= MAX_TITLE_BYTES
 }

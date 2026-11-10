@@ -18,10 +18,9 @@ Adapters cap response-parser allocation before building transport records; engin
 | `gipformer/` | [Local Gipformer](src/gipformer/README.md) |
 | `models.rs` | [Model catalog and language-neutral weights](src/models/README.md) |
 | `openai/` | [OpenAI adapters](src/openai/README.md) |
-| `policy.rs` | [Consent and cost](src/policy/README.md) |
 | `speech.rs` | [Speech synthesis](src/speech/README.md) |
 | `structured.rs` | [source](src/structured.rs) |
 | `translation.rs` | [Contextual text translation](src/translation/README.md) |
-| `transport.rs` | [source](src/transport.rs) |
+| `transport/` | [Shared HTTPS and structured text-model request](src/transport/README.md) |
 | `vision/` | [Local vision detectors](src/vision/README.md) |
 | `whisper/` | [Local Whisper](src/whisper/README.md) |

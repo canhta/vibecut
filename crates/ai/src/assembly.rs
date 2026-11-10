@@ -64,7 +64,7 @@ impl RecognitionSegment {
     }
 
     fn validate(&self, window: SampleRange) -> Result<(), Error> {
-        crate::policy::nonempty(&self.id)?;
+        crate::contracts::policy::nonempty(&self.id)?;
         if self.range.is_some_and(|r| !window.contains(r)) {
             return Err(Error::Invalid("segment outside audio"));
         }

@@ -11,7 +11,6 @@ pub mod elevenlabs;
 pub mod gipformer;
 pub mod models;
 pub mod openai;
-mod policy;
 pub mod speech;
 pub mod structured;
 mod translation;
@@ -22,7 +21,14 @@ pub use translation::*;
 pub mod whisper;
 pub use assembly::*;
 pub use contracts::*;
-pub use policy::*;
+
+/// Transcript-text operations accept these exact BCP 47 tags; `zh` is a request
+/// tag that adapters normalise rather than a distinct model language.
+pub const TEXT_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];
+/// Whether a transcript-text operation accepts this language.
+pub fn supports_text_language(language: &captions::LanguageTag) -> bool {
+    TEXT_LANGUAGES.contains(&language.as_str())
+}
 
 /// Safe categories only: adapters must not attach response bodies or credentials.
 #[derive(Debug, thiserror::Error)]

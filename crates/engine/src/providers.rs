@@ -8,7 +8,7 @@ pub use adapters::{Credentials, Providers, Runtime};
 pub(crate) use adapters::{IdleHooks, TranslatorKind, build_translator, translation_scope};
 pub(crate) use catalog::normalize_target;
 pub use catalog::{
-    CatalogOperation, ChapterProvider, ModelFileInfo, ModelInfo, ProviderOption,
+    CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
     TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter,
     choose_transcription, choose_translation, default_cache_root, local_asr_runner, model_info,
     model_infos, normalize_target_tag, parse_language, provider_options, provider_options_for,
