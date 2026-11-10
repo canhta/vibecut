@@ -60,6 +60,12 @@ fn click(h: &mut Harness<Editor>, id: &str) {
         .click();
     h.run_steps(3);
 }
+/// Activate a control by its automation id even when the scrolling grid clips it.
+fn activate(h: &mut Harness<Editor>, id: &str) {
+    h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click_accesskit();
+    h.run_steps(3);
+}
 fn widget(h: &Harness<Editor>, id: &str) -> vibecut::WidgetState {
     h.state()
         .inspect()
@@ -119,7 +125,20 @@ fn every_definition_applies_once_and_round_trips_with_history() {
     for definition in project::TRANSITION_DEFINITIONS {
         let before = h.state().session.project().clone();
         let history = h.state().session.history_len().0;
-        click(&mut h, &format!("transitions.add.{}", definition.kind));
+        activate(&mut h, &format!("transitions.add.{}", definition.kind));
+        assert_eq!(
+            h.state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .transitions
+                .len(),
+            1,
+            "{} did not apply",
+            definition.kind
+        );
         let tr = transition(&h);
         assert_eq!(tr.kind, definition.kind);
         assert_eq!(
