@@ -1,4 +1,4 @@
-//! Tracked Markdown outside `.scratch/` carries no tracker ids or private names.
+//! Tracked Markdown outside `.scratch/` carries no tracker ids.
 use super::{TEXT, Violation};
 use std::{collections::BTreeSet, fs, path::Path};
 
@@ -20,13 +20,6 @@ pub(super) fn check(root: &Path, tracked: &[String]) -> Result<BTreeSet<Violatio
                 detail: format!("tracker id `{id}`"),
             });
         }
-    }
-    for path in forbidden(root)? {
-        violations.insert(Violation {
-            path,
-            rule: TEXT,
-            detail: "contains a forbidden host or agent name".into(),
-        });
     }
     Ok(violations)
 }
@@ -125,51 +118,4 @@ fn boundary(bytes: &[u8], start: usize) -> bool {
 
 fn word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
-}
-
-fn forbidden(root: &Path) -> Result<BTreeSet<String>, String> {
-    let path = crate::checkout::main(root)?.join(".scratch/forbidden-names.txt");
-    if !path.exists() {
-        return Ok(BTreeSet::new());
-    }
-    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let patterns: Vec<&str> = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    if patterns.is_empty() {
-        return Ok(BTreeSet::new());
-    }
-    let mut args = vec!["grep", "-n", "-i", "-E"];
-    for pattern in &patterns {
-        args.push("-e");
-        args.push(pattern);
-    }
-    args.push("--");
-    args.push("*.md");
-    let out = crate::process::output(root, "git", &args)?;
-    match out.status.code() {
-        Some(1) => Ok(BTreeSet::new()),
-        Some(0) => {
-            let mut files = BTreeSet::new();
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let mut fields = line.splitn(3, ':');
-                let Some(file) = fields.next() else {
-                    continue;
-                };
-                let Some(content) = fields.nth(1) else {
-                    continue;
-                };
-                if file.starts_with(".scratch/") || attribution_added(content) {
-                    continue;
-                }
-                files.insert(file.to_owned());
-            }
-            Ok(files)
-        }
-        _ => Err(format!(
-            "name scan: {}",
-            String::from_utf8_lossy(&out.stderr)
-        )),
-    }
 }

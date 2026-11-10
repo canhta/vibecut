@@ -203,26 +203,6 @@ fn tracker_ids_fail_and_the_baseline_only_shrinks() {
 }
 
 #[test]
-fn forbidden_names_fail_but_attribution_added_fields_are_exempt() {
-    let tree = Tree::new();
-    tree.write("docs/README.md", "# Docs\n\n[Notes](notes.md)\n");
-    fs::create_dir_all(tree.0.join(".scratch")).unwrap();
-    fs::write(
-        tree.0.join(".scratch/forbidden-names.txt"),
-        "sentinelhost\n",
-    )
-    .unwrap();
-    tree.write("docs/notes.md", "# Notes\n\nSentinelHost appears here.\n");
-    let error = check(&tree.0).unwrap_err();
-    assert!(
-        error.contains("docs/notes.md: [text] docs check: contains a forbidden host or agent name"),
-        "{error}"
-    );
-    tree.write("docs/notes.md", "# Notes\n\nadded: sentinelhost\n");
-    check(&tree.0).unwrap();
-}
-
-#[test]
 fn links_anchors_and_reference_paths_are_rows_in_the_docs_table() {
     type Case = (
         &'static str,

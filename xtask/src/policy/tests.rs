@@ -305,7 +305,7 @@ fn assets_require_populated_sidecars_including_nested_sources() {
     assets::check(&ws.0).unwrap();
 }
 #[test]
-fn name_gate_checks_working_files_and_branch_messages_and_skips_missing_policy() {
+fn name_gate_checks_working_files_attribution_lines_and_branch_messages() {
     let ws = Workspace::new();
     checked(&ws.0, "git", &["init", "--initial-branch=main"]).unwrap();
     names::check(&ws.0).unwrap();
@@ -333,6 +333,10 @@ fn name_gate_checks_working_files_and_branch_messages_and_skips_missing_policy()
     .unwrap();
     names::check(&ws.0).unwrap();
     fs::write(ws.0.join("sample"), "FORBIDDEN_SENTINEL\n").unwrap();
+    checked(&ws.0, "git", &["add", "sample"]).unwrap();
+    assert!(names::check(&ws.0).unwrap_err().contains("tracked content"));
+    // Attribution `added:` lines are provenance, not a licence to leak a name.
+    fs::write(ws.0.join("sample"), "added: FORBIDDEN_SENTINEL\n").unwrap();
     checked(&ws.0, "git", &["add", "sample"]).unwrap();
     assert!(names::check(&ws.0).unwrap_err().contains("tracked content"));
     fs::write(ws.0.join("sample"), "clean again\n").unwrap();

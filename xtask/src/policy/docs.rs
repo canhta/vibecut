@@ -3,10 +3,10 @@
 //!
 //! Tracks the mechanical parts of the documentation rules: every tracked page is
 //! linked from `docs/README.md`, every crate and app README maps its folder
-//! modules, tracked Markdown outside `.scratch/` carries no tracker ids, private
-//! host and agent names or reference-checkout source paths, and every relative
-//! link and anchor resolves. Current violations live in
-//! `xtask/docs-baseline.txt`, which only shrinks.
+//! modules, tracked Markdown outside `.scratch/` carries no tracker ids or
+//! reference-checkout source paths, and every relative link and anchor resolves.
+//! Forbidden private names belong to `xtask::policy::names` and run before this
+//! gate. Current violations live in `xtask/docs-baseline.txt`, which only shrinks.
 use baseline::baseline;
 use std::{collections::BTreeSet, path::Path};
 

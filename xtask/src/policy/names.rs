@@ -1,4 +1,8 @@
 //! Forbidden-name policy: tracked files and branch commit messages carry no private names.
+//!
+//! There is no line exemption. Attribution `added:` lines carry provenance and
+//! tracker ids, so a private name there is still a leak; only the tracker-id
+//! scan skips those fields.
 use crate::checkout;
 use crate::process::{checked, output};
 use std::fs;
