@@ -1,6 +1,6 @@
 //! Transient nested scopes and shared inspector values; project edits stay in engine.
 use crate::egui::{Pos2, Rect};
-use project::{AnimationPath, ColorComponent, ItemId, ItemParams, Project};
+use project::{AnimationPath, BuiltinPath, ColorComponent, ItemId, ItemParams, Project};
 use std::collections::BTreeSet;
 use time::Tick;
 
@@ -154,7 +154,7 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                     Some(i.blend_mode.id().into())
                 }
                 ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
-                    let path = AnimationPath::new("opacity").ok()?;
+                    let path = AnimationPath::from(BuiltinPath::Opacity);
                     let value = i.animations.value_at(&path, Tick::ZERO).ok().flatten();
                     Some(match value {
                         Some(project::ParamValue::Scalar(v)) => v.clamp(0.0, 1.0).to_string(),

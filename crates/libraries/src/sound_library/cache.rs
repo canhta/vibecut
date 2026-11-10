@@ -1,7 +1,7 @@
 //! Reuses verified sound preview bytes.
 use super::{
-    AssetData, CachedSound, ContentHash, Error, MAX_AUDIO_BYTES, NEXT, Ordering, Path, PathBuf,
-    Result, Sound, SoundLibrary, SourceAsset, SourceProbe, Tick, Write, fs, url,
+    AssetData, CachedSound, ContentHash, Error, MAX_AUDIO_BYTES, Path, PathBuf, Result, Sound,
+    SoundLibrary, SourceAsset, SourceProbe, Tick, Write, fs, url,
 };
 impl SoundLibrary {
     pub fn cache_path(&self, url: &str) -> PathBuf {
@@ -35,40 +35,29 @@ impl SoundLibrary {
             return Err(Error::Invalid("cached audio"));
         }
         let path = self.cache_path(source);
-        let temp = self.audio.join(format!(
-            ".part-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let result = (|| {
-            let mut options = fs::OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut file = options.open(&temp)?;
-            file.write_all(bytes)?;
-            file.sync_all()?;
-            drop(file);
-            let cached = cached_from_path(temp.clone(), Some(source))?;
-            if cached.probe.duration.is_none_or(|d| d <= Tick::ZERO)
-                || !cached
-                    .probe
-                    .streams
-                    .iter()
-                    .any(|s| s.kind == media::StreamKind::Audio)
-            {
-                return Err(Error::InvalidResponse);
-            }
-            fs::rename(&temp, &path)?;
-            cached_from_path(path, Some(source))
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        result
+        project::atomic::stage_validated(
+            &path,
+            |file| {
+                file.write_all(bytes)?;
+                Ok(())
+            },
+            |staged| {
+                let cached = cached_from_path(staged.to_owned(), Some(source))?;
+                if cached.probe.duration.is_none_or(|d| d <= Tick::ZERO)
+                    || !cached
+                        .probe
+                        .streams
+                        .iter()
+                        .any(|s| s.kind == media::StreamKind::Audio)
+                {
+                    return Err(Error::InvalidResponse);
+                }
+                Ok(CachedSound {
+                    path: path.clone(),
+                    ..cached
+                })
+            },
+        )
     }
 }
 

@@ -166,13 +166,12 @@ fn channels(item: &project::Item, kind: TrackKind, locale: Locale) -> Vec<Channe
         }
     }
     if kind == TrackKind::Audio
-        && !lanes
-            .iter()
-            .any(|lane| lane.path.as_str() == "volume" && lane.component.is_none())
-        && let Ok(path) = project::AnimationPath::new("volume")
+        && !lanes.iter().any(|lane| {
+            lane.path.builtin() == Some(project::BuiltinPath::Volume) && lane.component.is_none()
+        })
     {
         lanes.push(ChannelLane {
-            path,
+            path: project::AnimationPath::from(project::BuiltinPath::Volume),
             component: None,
             label: i18n::text(locale, Text::AudioGain).to_owned(),
         });
@@ -198,14 +197,15 @@ fn component_of(param: &project::Param, index: usize) -> Option<project::ColorCo
 }
 /// Creator-facing lane labels; extension paths fall back to their last segment.
 fn lane_label(path: &str, locale: Locale) -> &str {
-    match path {
-        "transform.positionX" => i18n::text(locale, Text::PositionX),
-        "transform.positionY" => i18n::text(locale, Text::PositionY),
-        "transform.scaleX" => i18n::text(locale, Text::ScaleX),
-        "transform.scaleY" => i18n::text(locale, Text::ScaleY),
-        "transform.rotate" => i18n::text(locale, Text::Rotate),
-        "opacity" => i18n::text(locale, Text::Opacity),
-        "volume" => i18n::text(locale, Text::AudioGain),
+    use project::BuiltinPath as P;
+    match P::parse(path) {
+        Some(P::TransformPositionX) => i18n::text(locale, Text::PositionX),
+        Some(P::TransformPositionY) => i18n::text(locale, Text::PositionY),
+        Some(P::TransformScaleX) => i18n::text(locale, Text::ScaleX),
+        Some(P::TransformScaleY) => i18n::text(locale, Text::ScaleY),
+        Some(P::TransformRotate) => i18n::text(locale, Text::Rotate),
+        Some(P::Opacity) => i18n::text(locale, Text::Opacity),
+        Some(P::Volume) => i18n::text(locale, Text::AudioGain),
         _ => path.rsplit('.').next().unwrap_or(path),
     }
 }

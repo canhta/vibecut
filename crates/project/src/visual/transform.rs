@@ -1,5 +1,5 @@
 //! Units and editor bounds for the existing transform animation channels.
-use crate::{AnimationPath, Animations, Error, ParamValue, Result};
+use crate::{AnimationPath, Animations, BuiltinPath, Error, ParamValue, Result};
 use time::Tick;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,13 +19,13 @@ impl TransformField {
         Self::ScaleY,
         Self::Rotate,
     ];
-    pub const fn path(self) -> &'static str {
+    pub const fn builtin(self) -> BuiltinPath {
         match self {
-            Self::PositionX => "transform.positionX",
-            Self::PositionY => "transform.positionY",
-            Self::ScaleX => "transform.scaleX",
-            Self::ScaleY => "transform.scaleY",
-            Self::Rotate => "transform.rotate",
+            Self::PositionX => BuiltinPath::TransformPositionX,
+            Self::PositionY => BuiltinPath::TransformPositionY,
+            Self::ScaleX => BuiltinPath::TransformScaleX,
+            Self::ScaleY => BuiltinPath::TransformScaleY,
+            Self::Rotate => BuiltinPath::TransformRotate,
         }
     }
     /// Position is in project canvas pixels, scale is a ratio, rotation is degrees clockwise.
@@ -51,7 +51,7 @@ impl TransformField {
         Ok(value.clamp(min, max))
     }
     pub fn value_at(self, animations: &Animations, at: Tick) -> Result<f64> {
-        match animations.value_at(&AnimationPath::new(self.path())?, at)? {
+        match animations.value_at(&AnimationPath::from(self.builtin()), at)? {
             None => Ok(self.default_value()),
             Some(ParamValue::Scalar(value)) => self.clamp(value),
             _ => Err(Error::Invalid("transform scalar")),

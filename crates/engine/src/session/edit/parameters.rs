@@ -10,7 +10,7 @@ pub(super) fn apply_patch(
 ) -> Result<()> {
     if let Some((field, value)) = patch.transform() {
         target.animations.set(
-            project::AnimationPath::new(field.path())?,
+            project::AnimationPath::from(field.builtin()),
             project::Param::new(project::ParamValue::Scalar(value))?,
         )?;
         return Ok(());
@@ -27,7 +27,7 @@ pub(super) fn apply_patch(
         crate::ItemParamPatch::BlendMode(mode) => target.blend_mode = *mode,
         crate::ItemParamPatch::Opacity(value) => {
             target.animations.set(
-                project::AnimationPath::new("opacity")?,
+                project::AnimationPath::from(project::BuiltinPath::Opacity),
                 project::Param::new(project::ParamValue::Scalar(*value))?,
             )?;
         }
@@ -38,7 +38,7 @@ pub(super) fn apply_patch(
                 _ => {}
             }
             target.animations.set(
-                project::AnimationPath::new("volume")?,
+                project::AnimationPath::from(project::BuiltinPath::Volume),
                 project::Param::new(project::ParamValue::Scalar(f64::from(*v)))?,
             )?;
         }
@@ -49,7 +49,7 @@ pub(super) fn apply_patch(
                 _ => {}
             }
             target.animations.set(
-                project::AnimationPath::new("muted")?,
+                project::AnimationPath::from(project::BuiltinPath::Muted),
                 project::Param::new(project::ParamValue::Bool(*v))?,
             )?;
         }

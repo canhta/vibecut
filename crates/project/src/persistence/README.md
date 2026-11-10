@@ -38,6 +38,8 @@ A refused move leaves its source and the caller's history unchanged. An interrup
 
 `atomic_write` is the shared replacement primitive. It stages privately in the destination directory, writes, restores the previous file's permissions, syncs, then atomically replaces. Failed staging or publication cleans up and preserves prior bytes. Destination symlinks are refused; parent sync after publication is best effort. Ownership, ACLs, extended attributes and hard links are not preserved. Callers serialize writes to one target.
 
+`stage_validated` stages bytes in the destination directory, lets the caller validate the complete synced staging file, then publishes with `atomic_write`'s admission and failure guarantees. A refused validation preserves the prior destination and removes staging. Background caches use it so unvalidated bytes never replace a destination.
+
 `admit_destination` exposes the reserved-namespace and native filename admission to background publication consumers before they stage data. Source and active-project identity checks stay with the execution owner. `metadata_path` gives that owner the native sidecar name.
 
 ## Autosave snapshots

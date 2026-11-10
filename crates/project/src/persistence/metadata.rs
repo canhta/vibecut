@@ -2,7 +2,7 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -158,7 +158,11 @@ pub(crate) fn save(
     if bytes.len() > 524288 {
         return Err(Error::TooLarge("metadata"));
     }
-    super::atomic::atomic_write_checked(&path(project)?, &bytes, check)
+    super::atomic::stage_validated(
+        &path(project)?,
+        |file| file.write_all(&bytes).map_err(Error::from),
+        |_| check(),
+    )
 }
 
 impl std::fmt::Debug for Thumbnail {

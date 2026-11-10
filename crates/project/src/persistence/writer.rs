@@ -7,6 +7,7 @@ use media::ContentHash;
 use std::{
     ffi::OsString,
     fs::{self, File, TryLockError},
+    io::Write,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -270,7 +271,11 @@ impl WriterLease {
     pub fn save(&mut self, project: &Project) -> Result<SaveReceipt> {
         let bytes = crate::encode(project, true)?;
         self.checked_current()?;
-        atomic::atomic_write_checked(&self.path, &bytes, || self.checked_current().map(|_| ()))?;
+        atomic::stage_validated(
+            &self.path,
+            |file| file.write_all(&bytes).map_err(Error::from),
+            |_| self.checked_current().map(|_| ()),
+        )?;
         let hash = ContentHash::from_bytes(&bytes);
         self.baseline = Some(hash);
         Ok(SaveReceipt {

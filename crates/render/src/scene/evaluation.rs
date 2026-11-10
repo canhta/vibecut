@@ -8,7 +8,7 @@ use crate::{
     SourceProvider, Unavailable, check,
     image::{color, over},
 };
-use project::{AnimationPath, Item, ItemParams, ParamValue, Project};
+use project::{AnimationPath, BuiltinPath, Item, ItemParams, ParamValue, Project};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use time::Tick;
@@ -22,8 +22,7 @@ impl<'a> Renderer<'a> {
             text_cache: BTreeMap::new(),
             cache_stats: RasterCacheStats::default(),
             cache_clock: 0,
-            opacity_path: AnimationPath::new("opacity")
-                .map_err(|_| Error::Invalid("opacity animation path"))?,
+            opacity_path: AnimationPath::from(BuiltinPath::Opacity),
         })
     }
     pub fn text_cache_stats(&self) -> RasterCacheStats {
@@ -259,7 +258,7 @@ impl<'a> Renderer<'a> {
                         let stroke = color(
                             crate::color::at(
                                 &item.animations,
-                                "params.strokeColor",
+                                &AnimationPath::new("params.strokeColor")?,
                                 local,
                                 project::Color([0; 4]),
                             )?
@@ -296,34 +295,49 @@ impl<'a> Renderer<'a> {
                         let scale =
                             self.settings.width as f32 / self.project.data().canvas.width as f32;
                         // Style animations share the item clock; unkeyed fields keep the stored value.
-                        let fill = crate::color::at(&item.animations, "color", local, p.color)?;
+                        let fill = crate::color::at(
+                            &item.animations,
+                            &AnimationPath::from(BuiltinPath::Color),
+                            local,
+                            p.color,
+                        )?;
                         let background = match &p.background {
                             None => None,
                             Some(b) => {
-                                let scalar = |path: &str, base: f32| -> Result<f32> {
+                                let scalar = |path: BuiltinPath, base: f32| -> Result<f32> {
                                     scalar_at(&item.animations, path, local, base)
                                 };
                                 Some(TextBox {
-                                    padding_x: scalar("background.paddingX", b.padding_x)?
-                                        .clamp(0.0, project::TextBackground::MAX_EXTENT)
+                                    padding_x: scalar(
+                                        BuiltinPath::BackgroundPaddingX,
+                                        b.padding_x,
+                                    )?
+                                    .clamp(0.0, project::TextBackground::MAX_EXTENT)
                                         * scale,
-                                    padding_y: scalar("background.paddingY", b.padding_y)?
-                                        .clamp(0.0, project::TextBackground::MAX_EXTENT)
+                                    padding_y: scalar(
+                                        BuiltinPath::BackgroundPaddingY,
+                                        b.padding_y,
+                                    )?
+                                    .clamp(0.0, project::TextBackground::MAX_EXTENT)
                                         * scale,
-                                    offset_x: scalar("background.offsetX", b.offset_x)?.clamp(
-                                        -project::TextBackground::MAX_OFFSET,
-                                        project::TextBackground::MAX_OFFSET,
-                                    ) * scale,
-                                    offset_y: scalar("background.offsetY", b.offset_y)?.clamp(
-                                        -project::TextBackground::MAX_OFFSET,
-                                        project::TextBackground::MAX_OFFSET,
-                                    ) * scale,
-                                    radius: scalar("background.cornerRadius", b.radius)?
+                                    offset_x: scalar(BuiltinPath::BackgroundOffsetX, b.offset_x)?
+                                        .clamp(
+                                            -project::TextBackground::MAX_OFFSET,
+                                            project::TextBackground::MAX_OFFSET,
+                                        )
+                                        * scale,
+                                    offset_y: scalar(BuiltinPath::BackgroundOffsetY, b.offset_y)?
+                                        .clamp(
+                                            -project::TextBackground::MAX_OFFSET,
+                                            project::TextBackground::MAX_OFFSET,
+                                        )
+                                        * scale,
+                                    radius: scalar(BuiltinPath::BackgroundCornerRadius, b.radius)?
                                         .clamp(0.0, project::TextBackground::MAX_EXTENT)
                                         * scale,
                                     color: crate::color::at(
                                         &item.animations,
-                                        "background.color",
+                                        &AnimationPath::from(BuiltinPath::BackgroundColor),
                                         local,
                                         b.color,
                                     )?
@@ -741,8 +755,13 @@ fn item_crop(item: &Item, mut placement: Placement) -> Placement {
     placement
 }
 /// Finite scalar channel value at the item-local time, or the stored base when unkeyed.
-fn scalar_at(animations: &project::Animations, path: &str, at: Tick, base: f32) -> Result<f32> {
-    match animations.value_at(&project::AnimationPath::new(path)?, at)? {
+fn scalar_at(
+    animations: &project::Animations,
+    path: BuiltinPath,
+    at: Tick,
+    base: f32,
+) -> Result<f32> {
+    match animations.value_at(&AnimationPath::from(path), at)? {
         None => Ok(base),
         Some(ParamValue::Scalar(v)) if v.is_finite() => Ok(v as f32),
         _ => Err(Error::Invalid("text style animation value")),

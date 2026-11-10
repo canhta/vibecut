@@ -6,24 +6,25 @@ mod persistence;
 mod visual;
 
 pub use animation::{
-    AnimationPath, Animations, Channel, ColorComponent, CurveHandle, Cut, Extrapolation, Fade,
-    FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe, MAX_ANIMATION_PATHS,
-    MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Retime, RetimeWindow, Segment,
-    TangentMode,
+    AnimationPath, Animations, BuiltinPath, Channel, ColorComponent, CurveHandle, Cut,
+    Extrapolation, Fade, FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe,
+    MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Retime,
+    RetimeWindow, Segment, TangentMode,
 };
 pub use model::*;
 pub use persistence::atomic;
 pub use persistence::autosave;
 pub use persistence::{
-    FORMAT_ID, Loaded, METADATA_VERSION, Metadata, SCHEMA_VERSION, SaveReceipt, Thumbnail,
-    ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path, read_metadata,
+    FORMAT_ID, Loaded, MAX_SEPARATORS, METADATA_VERSION, Metadata, SCHEMA_VERSION, SaveReceipt,
+    Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path,
+    read_metadata,
 };
 pub use visual::{
     BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_COLOR_MAX, CHROMA_KEY_INTENSITY_DEFAULT,
     CHROMA_KEY_MAX, CHROMA_KEY_MIN, Crop, DEFAULT_WEIGHT, EffectDefinition, EffectInstance,
     EffectParamDefinition, EffectParams, EffectPlacement, GRADE_MAX, GRADE_MIN, MASK_SCALARS,
-    MAX_LETTER_SPACING, MAX_LINE_HEIGHT, MAX_SEPARATORS, Mask, MaskMode, MaskPath, MaskShape,
-    MaskStroke, MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS, TransformField, Transition,
+    MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath, MaskShape, MaskStroke,
+    MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS, TransformField, Transition,
     TransitionAlignment, TransitionDefinition, TransitionId, chroma_key_color, effect_definitions,
     transition_definition, valid_letter_spacing, valid_line_height, valid_weight,
 };

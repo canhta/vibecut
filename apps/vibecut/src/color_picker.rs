@@ -68,7 +68,7 @@ impl ColorTarget {
             (Self::GraphicFill(_), project::ItemParams::Overlay(p)) => Ok(p.color),
             (Self::GraphicStroke(_), project::ItemParams::Overlay(_)) => Ok(render::color::at(
                 &item.animations,
-                "params.strokeColor",
+                &project::AnimationPath::new("params.strokeColor")?,
                 time::Tick::ZERO,
                 Color([0; 4]),
             )?),

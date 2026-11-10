@@ -13,6 +13,68 @@ pub const MAX_ANIMATION_PATHS: usize = 64;
 pub const MAX_PROJECT_KEYS: usize = 100_000;
 pub(super) const MAX_VALUE: f64 = 1.0e12;
 
+/// Built-in animation channels: the fixed vocabulary persisted without an
+/// extension id. [`Self::as_str`] is the stored spelling and never changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BuiltinPath {
+    TransformPositionX,
+    TransformPositionY,
+    TransformScaleX,
+    TransformScaleY,
+    TransformRotate,
+    Opacity,
+    Volume,
+    Muted,
+    Color,
+    BackgroundColor,
+    BackgroundPaddingX,
+    BackgroundPaddingY,
+    BackgroundOffsetX,
+    BackgroundOffsetY,
+    BackgroundCornerRadius,
+}
+impl BuiltinPath {
+    pub const ALL: [Self; 15] = [
+        Self::TransformPositionX,
+        Self::TransformPositionY,
+        Self::TransformScaleX,
+        Self::TransformScaleY,
+        Self::TransformRotate,
+        Self::Opacity,
+        Self::Volume,
+        Self::Muted,
+        Self::Color,
+        Self::BackgroundColor,
+        Self::BackgroundPaddingX,
+        Self::BackgroundPaddingY,
+        Self::BackgroundOffsetX,
+        Self::BackgroundOffsetY,
+        Self::BackgroundCornerRadius,
+    ];
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TransformPositionX => "transform.positionX",
+            Self::TransformPositionY => "transform.positionY",
+            Self::TransformScaleX => "transform.scaleX",
+            Self::TransformScaleY => "transform.scaleY",
+            Self::TransformRotate => "transform.rotate",
+            Self::Opacity => "opacity",
+            Self::Volume => "volume",
+            Self::Muted => "muted",
+            Self::Color => "color",
+            Self::BackgroundColor => "background.color",
+            Self::BackgroundPaddingX => "background.paddingX",
+            Self::BackgroundPaddingY => "background.paddingY",
+            Self::BackgroundOffsetX => "background.offsetX",
+            Self::BackgroundOffsetY => "background.offsetY",
+            Self::BackgroundCornerRadius => "background.cornerRadius",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|path| path.as_str() == value)
+    }
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -24,30 +86,20 @@ impl TryFrom<String> for AnimationPath {
         Self::new(value)
     }
 }
+impl From<BuiltinPath> for AnimationPath {
+    fn from(value: BuiltinPath) -> Self {
+        Self(value.as_str().to_owned())
+    }
+}
 impl AnimationPath {
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
         if value.len() > 160 {
             return Err(Error::Invalid("animation path"));
         }
-        let builtin = matches!(
-            value.as_str(),
-            "transform.positionX"
-                | "transform.positionY"
-                | "transform.scaleX"
-                | "transform.scaleY"
-                | "transform.rotate"
-                | "opacity"
-                | "volume"
-                | "muted"
-                | "color"
-                | "background.color"
-                | "background.paddingX"
-                | "background.paddingY"
-                | "background.offsetX"
-                | "background.offsetY"
-                | "background.cornerRadius"
-        );
+        if BuiltinPath::parse(&value).is_some() {
+            return Ok(Self(value));
+        }
         fn identifier(s: &str) -> bool {
             !s.is_empty()
                 && s.len() <= 64
@@ -60,7 +112,7 @@ impl AnimationPath {
             ["effects" | "masks", id, "params", name] => identifier(id) && identifier(name),
             _ => false,
         };
-        if value.len() > 160 || (!builtin && !extension) {
+        if !extension {
             return Err(Error::Invalid("animation path"));
         }
         Ok(Self(value))
@@ -68,27 +120,28 @@ impl AnimationPath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    /// The typed built-in channel, or `None` for an extension path.
+    pub fn builtin(&self) -> Option<BuiltinPath> {
+        BuiltinPath::parse(&self.0)
+    }
     /// Independent scalar channels sharing an editor group, never forced equal.
-    pub fn scale_group() -> [&'static str; 2] {
-        ["transform.scaleX", "transform.scaleY"]
+    pub fn scale_group() -> [BuiltinPath; 2] {
+        [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY]
     }
     fn accepts(&self, param: &Param) -> bool {
-        if self.0.starts_with("params.")
-            || self.0.starts_with("effects.")
-            || self.0.starts_with("masks.")
-        {
+        let Some(builtin) = self.builtin() else {
             return true;
-        }
+        };
         let base = match param {
             Param::Value(c) => Some(c.base()),
             Param::Color(_) => None,
         };
-        if self.0 == "muted" {
-            matches!(base, Some(ParamValue::Bool(_)))
-        } else if matches!(self.0.as_str(), "color" | "background.color") {
-            matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
-        } else {
-            matches!(base, Some(ParamValue::Scalar(_)))
+        match builtin {
+            BuiltinPath::Muted => matches!(base, Some(ParamValue::Bool(_))),
+            BuiltinPath::Color | BuiltinPath::BackgroundColor => {
+                matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
+            }
+            _ => matches!(base, Some(ParamValue::Scalar(_))),
         }
     }
 }

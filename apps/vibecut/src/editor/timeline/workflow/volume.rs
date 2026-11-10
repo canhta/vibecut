@@ -54,9 +54,7 @@ impl State {
                 pointer.y,
             );
             if (db - volume.db).abs() > f32::EPSILON {
-                let Some(path) = volume_path() else {
-                    return;
-                };
+                let path = volume_path();
                 let command = if volume.keyed {
                     engine::Command::AddKeyframe {
                         item: volume.item,
@@ -98,8 +96,8 @@ impl State {
     }
 }
 
-fn volume_path() -> Option<project::AnimationPath> {
-    project::AnimationPath::new("volume").ok()
+fn volume_path() -> project::AnimationPath {
+    project::AnimationPath::from(project::BuiltinPath::Volume)
 }
 fn volume_channel<'a>(cx: &'a Context<'_>, item: ItemId) -> Option<&'a project::Channel> {
     cx.session
@@ -110,7 +108,7 @@ fn volume_channel<'a>(cx: &'a Context<'_>, item: ItemId) -> Option<&'a project::
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|candidate| candidate.id == item)
-        .and_then(|candidate| candidate.animations.get(&volume_path()?))
+        .and_then(|candidate| candidate.animations.get(&volume_path()))
         .and_then(|param| match param {
             project::Param::Value(channel) => Some(channel),
             project::Param::Color(_) => None,

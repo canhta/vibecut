@@ -560,7 +560,7 @@ fn volume_channel<'a>(
         .and_then(|candidate| {
             candidate
                 .animations
-                .get(&project::AnimationPath::new("volume").ok()?)
+                .get(&project::AnimationPath::from(project::BuiltinPath::Volume))
         })
         .and_then(|param| match param {
             project::Param::Value(channel) => Some(channel),

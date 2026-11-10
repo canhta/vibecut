@@ -124,18 +124,25 @@ fn independent_linear_rgba_components_and_discrete_fallback_hold() {
     }
     assert_eq!(
         AnimationPath::scale_group(),
-        ["transform.scaleX", "transform.scaleY"]
+        [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY]
     );
+    for path in BuiltinPath::ALL {
+        assert!(AnimationPath::new(path.as_str()).is_ok());
+        assert_eq!(BuiltinPath::parse(path.as_str()), Some(path));
+        assert_eq!(AnimationPath::from(path).builtin(), Some(path));
+    }
 }
 #[test]
 fn hostile_inputs_and_mutation_failures_are_bounded_and_atomic() {
     for name in [
         "",
         "transform.scale",
+        "transform.PositionX",
+        "background.unknown",
+        "background.color ",
         "effects..params.a",
         "effects.id.params.",
         "params.a.b",
-        "background.unknown",
         "../opacity",
     ] {
         assert!(AnimationPath::new(name).is_err());

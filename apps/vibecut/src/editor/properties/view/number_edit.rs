@@ -14,7 +14,14 @@ const SLIDER_FIELD: f32 = 54.0;
 
 /// Shared draft state for one numeric field; the model value stays in model units.
 fn percent(field: &str) -> bool {
-    matches!(field, "opacity" | "transform.scaleX" | "transform.scaleY")
+    matches!(
+        project::BuiltinPath::parse(field),
+        Some(
+            project::BuiltinPath::Opacity
+                | project::BuiltinPath::TransformScaleX
+                | project::BuiltinPath::TransformScaleY
+        )
+    )
 }
 
 fn unit(spec: ScrubSpec) -> &'static str {
@@ -53,7 +60,7 @@ fn parse(spec: ScrubSpec, text: &str) -> Option<f64> {
 
 /// Arrow steps move one displayed unit: a percent, a pixel, a degree.
 fn arrow_step(spec: ScrubSpec) -> f64 {
-    if spec.field == "transform.rotate" {
+    if project::BuiltinPath::parse(spec.field) == Some(project::BuiltinPath::TransformRotate) {
         1.0
     } else {
         spec.step
@@ -71,6 +78,8 @@ struct Layout {
 impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
+        let scale_x =
+            project::BuiltinPath::parse(spec.field) == Some(project::BuiltinPath::TransformScaleX);
         if let Some(time) = self.animated_time(item, spec.field) {
             // `write_field` receives `spec.format` model units, not display percent.
             let Ok(parsed) = value.trim().parse::<f64>() else {
@@ -84,10 +93,10 @@ impl Panel<'_, '_> {
                 time,
                 value,
             });
-            if self.state.uniform_scale && spec.field == "transform.scaleX" {
+            if self.state.uniform_scale && scale_x {
                 self.actions.push(Action::SetKeyframeAt {
                     item,
-                    field: "transform.scaleY".to_owned(),
+                    field: project::BuiltinPath::TransformScaleY.as_str().to_owned(),
                     time,
                     value,
                 });
@@ -95,25 +104,27 @@ impl Panel<'_, '_> {
             return;
         }
         self.set_item_field(item, spec.field, value);
-        if self.state.uniform_scale && spec.field == "transform.scaleX" {
-            self.set_item_field(item, "transform.scaleY", value);
+        if self.state.uniform_scale && scale_x {
+            self.set_item_field(item, project::BuiltinPath::TransformScaleY.as_str(), value);
         }
     }
 
     /// The playhead's item-relative time when this field already has keys and
     /// the playhead sits inside the item; an edit must then upsert a key.
     fn animated_time(&self, item: ItemId, field: &str) -> Option<time::Tick> {
-        if !matches!(
-            field,
-            "opacity"
-                | "audio_gain"
-                | "transform.positionX"
-                | "transform.positionY"
-                | "transform.scaleX"
-                | "transform.scaleY"
-                | "transform.rotate"
-        ) || !read::channel_has_keys(self.cx.session.project(), item, field)
-        {
+        let animatable = field == "audio_gain"
+            || matches!(
+                project::BuiltinPath::parse(field),
+                Some(
+                    project::BuiltinPath::Opacity
+                        | project::BuiltinPath::TransformPositionX
+                        | project::BuiltinPath::TransformPositionY
+                        | project::BuiltinPath::TransformScaleX
+                        | project::BuiltinPath::TransformScaleY
+                        | project::BuiltinPath::TransformRotate
+                )
+            );
+        if !animatable || !read::channel_has_keys(self.cx.session.project(), item, field) {
             return None;
         }
         let (start, end) = read::range_of(self.cx.session.project(), item)?;

@@ -278,7 +278,7 @@ impl Renderer<'_> {
             ItemParams::Overlay(p) if p.color.0[3] == 0 => {
                 let stroke = crate::color::at(
                     &item.animations,
-                    "params.strokeColor",
+                    &project::AnimationPath::new("params.strokeColor")?,
                     local,
                     project::Color([0; 4]),
                 )?;

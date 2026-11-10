@@ -1,8 +1,7 @@
 //! Inserts cached library sounds into a project.
 use super::{
-    CachedSound, EditError, Error, MAX_AUDIO_BYTES, NEXT, Ordering, Path, Placement, Read, Result,
-    Session, Sound, SoundLibrary, SoundResult, Tick, cached_from_path, fs, hex, private_directory,
-    validate_result,
+    CachedSound, EditError, Error, MAX_AUDIO_BYTES, Path, Placement, Read, Result, Session, Sound,
+    SoundLibrary, SoundResult, Tick, cached_from_path, fs, hex, private_directory, validate_result,
 };
 /// Copy a cached preview into project-owned media so library unsave, clear-all and
 /// URL invalidation can never remove bytes a project references. The file name is the
@@ -30,34 +29,24 @@ fn import_into_project(cached: &CachedSound, media_dir: &Path) -> Sound<(CachedS
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    let temp = media_dir.join(format!(
-        ".part-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| {
-        let mut options = fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut output = options.open(&temp)?;
-        let mut input = fs::File::open(&cached.path)?.take(MAX_AUDIO_BYTES + 1);
-        if std::io::copy(&mut input, &mut output)? > MAX_AUDIO_BYTES {
-            return Err(Error::Limit);
-        }
-        output.sync_all()?;
-        drop(output);
-        verified(&temp)?;
-        fs::rename(&temp, &path)?;
-        verified(&path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result.map(|imported| (imported, true))
+    let imported = project::atomic::stage_validated(
+        &path,
+        |output| {
+            let mut input = fs::File::open(&cached.path)?.take(MAX_AUDIO_BYTES + 1);
+            if std::io::copy(&mut input, output)? > MAX_AUDIO_BYTES {
+                return Err(Error::Limit);
+            }
+            Ok(())
+        },
+        |staged| {
+            let imported = verified(staged)?;
+            Ok(CachedSound {
+                path: path.clone(),
+                ..imported
+            })
+        },
+    )?;
+    Ok((imported, true))
 }
 /// Import a cached library preview into `media_dir` (project-owned media) and attach
 /// it as one audio item and one asset in one undo step. The asset references the

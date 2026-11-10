@@ -2,18 +2,18 @@
 
 pub mod atomic;
 pub mod autosave;
+mod bounds;
 mod metadata;
 mod streaming;
 mod writer;
 
 pub use atomic::atomic_write;
+pub use bounds::MAX_SEPARATORS;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 pub use writer::{SaveReceipt, WriterLease};
 
-use crate::{
-    Error, Project, Result,
-    visual::{MAX_BYTES, Writer, check},
-};
+use crate::{Error, Project, Result};
+use bounds::{MAX_BYTES, Writer, check};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";

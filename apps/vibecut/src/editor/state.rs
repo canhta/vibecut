@@ -358,7 +358,7 @@ impl ScrubSpec {
     }
 }
 pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec {
-    field: "opacity",
+    field: project::BuiltinPath::Opacity.as_str(),
     label: Text::Opacity,
     min: 0.0,
     max: 1.0,

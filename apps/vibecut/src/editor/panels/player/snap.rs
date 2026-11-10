@@ -405,7 +405,7 @@ mod tests {
         };
         item.animations
             .set(
-                AnimationPath::new(TransformField::Rotate.path()).unwrap(),
+                AnimationPath::from(TransformField::Rotate.builtin()),
                 Param::new(ParamValue::Scalar(90.0)).unwrap(),
             )
             .unwrap();

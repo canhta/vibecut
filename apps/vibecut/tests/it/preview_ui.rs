@@ -114,7 +114,7 @@ fn styled_text_project(params: TextParams, rotate: f64) -> Project {
     if rotate != 0.0 {
         item.animations
             .set(
-                project::AnimationPath::new(TransformField::Rotate.path()).unwrap(),
+                project::AnimationPath::from(TransformField::Rotate.builtin()),
                 project::Param::new(project::ParamValue::Scalar(rotate)).unwrap(),
             )
             .unwrap();

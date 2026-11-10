@@ -12,7 +12,7 @@ pub use keyframes::{
     TangentMode,
 };
 pub use params::{
-    AnimationPath, Animations, ColorComponent, MAX_ANIMATION_PATHS, MAX_PROJECT_KEYS, Param,
-    ParamValue,
+    AnimationPath, Animations, BuiltinPath, ColorComponent, MAX_ANIMATION_PATHS, MAX_PROJECT_KEYS,
+    Param, ParamValue,
 };
 pub use retime::{Cut, Retime, RetimeWindow};

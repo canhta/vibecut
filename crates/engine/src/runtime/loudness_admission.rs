@@ -50,7 +50,12 @@ pub fn content_key(data: &ProjectData) -> [u8; 32] {
             hash.update(&volume.to_bits().to_le_bytes());
             hash.update(&[u8::from(muted), u8::from(source_audio)]);
             for (path, param) in item.animations.iter() {
-                if matches!(path.as_str(), "volume" | "muted") {
+                if path.builtin().is_some_and(|path| {
+                    matches!(
+                        path,
+                        project::BuiltinPath::Volume | project::BuiltinPath::Muted
+                    )
+                }) {
                     hash.update(path.as_str().as_bytes());
                     // Param serialization is infallible for validated projects.
                     hash.update(&serde_json::to_vec(param).unwrap_or_default());

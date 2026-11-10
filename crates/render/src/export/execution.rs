@@ -117,10 +117,10 @@ pub(super) fn copy_plan<'a>(
         || item.start > range.start()
         || item.end()? < range.end()
         || item.animations.iter().any(|(path, _)| {
-            path.as_str() == "opacity"
+            path.builtin() == Some(project::BuiltinPath::Opacity)
                 || project::TransformField::ALL
                     .into_iter()
-                    .any(|field| path.as_str() == field.path())
+                    .any(|field| path.builtin() == Some(field.builtin()))
         })
     {
         return Ok(None);

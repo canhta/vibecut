@@ -44,7 +44,7 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
                 for field in project::TransformField::ALL {
                     if let Err(error) = desk.editor().set_item_field(
                         item,
-                        field.path(),
+                        field.builtin().as_str(),
                         &field.default_value().to_string(),
                     ) {
                         result = Err(error);

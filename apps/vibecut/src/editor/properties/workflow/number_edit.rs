@@ -52,7 +52,7 @@ pub(in crate::editor::properties) fn transform_scrub(field: project::TransformFi
     };
     let scale = matches!(field, F::ScaleX | F::ScaleY);
     ScrubSpec {
-        field: field.path(),
+        field: field.builtin().as_str(),
         label,
         min,
         max,

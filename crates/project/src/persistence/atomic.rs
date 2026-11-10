@@ -19,41 +19,51 @@ pub(super) fn parent(path: &Path) -> &Path {
 /// Destination symlinks and the reserved writer-control namespace are refused.
 /// Callers serialize writes to a given target.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    atomic_write_checked(path, bytes, || Ok(()))
+    stage_validated(
+        path,
+        |file| file.write_all(bytes).map_err(Error::from),
+        |_| Ok(()),
+    )
 }
-pub(crate) fn atomic_write_checked(
-    path: &Path,
-    bytes: &[u8],
-    before_publish: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    atomic_write_with(path, |file| file.write_all(bytes), before_publish)
-}
-fn atomic_write_with(
-    path: &Path,
-    write: impl FnOnce(&mut File) -> std::io::Result<()>,
-    before_publish: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    admit_destination(path)?;
-    let permissions = match fs::symlink_metadata(path) {
+/// Stage a file, let the caller validate the staged bytes, then publish.
+///
+/// The validator sees the complete, synced staging file at its sidecar path before
+/// it replaces the destination. Refusing there preserves the prior destination and
+/// removes staging. Destination admission, previous permissions, parent sync and
+/// the publish guarantees are [`atomic_write`]'s.
+pub fn stage_validated<T, E>(
+    destination: &Path,
+    write: impl FnOnce(&mut File) -> std::result::Result<(), E>,
+    validate: impl FnOnce(&Path) -> std::result::Result<T, E>,
+) -> std::result::Result<T, E>
+where
+    E: From<Error> + From<std::io::Error>,
+{
+    admit_destination(destination).map_err(E::from)?;
+    let permissions = match fs::symlink_metadata(destination) {
         Ok(meta) if meta.file_type().is_symlink() => {
-            return Err(Error::Invalid("save destination is a symlink"));
+            return Err(E::from(Error::Invalid("save destination is a symlink")));
         }
         Ok(meta) => Some(meta.permissions()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(E::from(e)),
     };
     let mut staged = tempfile::Builder::new()
         .prefix(".vibecut-")
-        .tempfile_in(parent(path))?;
+        .tempfile_in(parent(destination))
+        .map_err(E::from)?;
     write(staged.as_file_mut())?;
     if let Some(permissions) = permissions {
-        staged.as_file().set_permissions(permissions)?;
+        staged
+            .as_file()
+            .set_permissions(permissions)
+            .map_err(E::from)?;
     }
-    staged.as_file().sync_all()?;
-    before_publish()?;
-    staged.persist(path).map_err(|e| Error::Io(e.error))?;
-    sync_parent(path);
-    Ok(())
+    staged.as_file().sync_all().map_err(E::from)?;
+    let value = validate(staged.path())?;
+    staged.persist(destination).map_err(|e| E::from(e.error))?;
+    sync_parent(destination);
+    Ok(value)
 }
 pub(crate) fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     admit_destination(path)?;
@@ -146,13 +156,13 @@ mod tests {
         let path = dir.path().join("project.vibecut");
         fs::write(&path, b"old").unwrap();
         assert!(
-            atomic_write_with(
+            stage_validated(
                 &path,
                 |file| {
                     file.write_all(b"partial")?;
-                    Err(std::io::Error::other("full disk"))
+                    Err(Error::from(std::io::Error::other("full disk")))
                 },
-                || Ok(())
+                |_| Ok(()),
             )
             .is_err()
         );
@@ -165,7 +175,14 @@ mod tests {
         let path = dir.path().join("project.vibecut");
         fs::write(&path, b"old").unwrap();
         assert!(matches!(
-            atomic_write_checked(&path, b"new", || Err(Error::Conflict)),
+            stage_validated(
+                &path,
+                |file| file.write_all(b"new").map_err(Error::from),
+                |staged| {
+                    assert_eq!(fs::read(staged).unwrap(), b"new");
+                    Err::<(), Error>(Error::Conflict)
+                }
+            ),
             Err(Error::Conflict)
         ));
         assert_eq!(fs::read(&path).unwrap(), b"old");

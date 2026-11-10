@@ -24,11 +24,11 @@ pub fn hex(color: Color) -> String {
 /// Resolve an existing colour channel, including composite linear-light RGBA.
 pub fn at(
     animations: &project::Animations,
-    path: &str,
+    path: &project::AnimationPath,
     at: time::Tick,
     fallback: Color,
 ) -> Result<Color> {
-    match animations.value_at(&project::AnimationPath::new(path)?, at)? {
+    match animations.value_at(path, at)? {
         None => Ok(fallback),
         Some(project::ParamValue::Text(value)) => parse_hex(value.as_str()),
         Some(project::ParamValue::Color(values)) => {
@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(
             at(
                 &animations,
-                "params.strokeColor",
+                &project::AnimationPath::new("params.strokeColor").unwrap(),
                 time::Tick::ZERO,
                 Color([0; 4])
             )

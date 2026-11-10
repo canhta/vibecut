@@ -20,20 +20,29 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
     let item = find(project, item)?;
     if let Some(transform) = project::TransformField::ALL
         .into_iter()
-        .find(|f| f.path() == field)
+        .find(|f| f.builtin().as_str() == field)
     {
         return transform.value_at(&item.animations, Tick::ZERO).ok();
     }
+    if let Some(path) = project::BuiltinPath::parse(field) {
+        return match path {
+            project::BuiltinPath::Opacity if !matches!(&item.content, ItemParams::Audio(_)) => {
+                Some(
+                    match item
+                        .animations
+                        .value_at(&project::AnimationPath::from(path), Tick::ZERO)
+                        .ok()
+                        .flatten()
+                    {
+                        Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
+                        _ => 1.0,
+                    },
+                )
+            }
+            _ => None,
+        };
+    }
     match (field, &item.content) {
-        ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
-            let path = project::AnimationPath::new("opacity").ok()?;
-            Some(
-                match item.animations.value_at(&path, Tick::ZERO).ok().flatten() {
-                    Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
-                    _ => 1.0,
-                },
-            )
-        }
         ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
         ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),
         ("text_line_height", ItemParams::Text(params)) => Some(f64::from(params.line_height)),
@@ -66,39 +75,43 @@ pub(super) fn item_value_at(
     let item = find(project, item)?;
     if let Some(transform) = project::TransformField::ALL
         .into_iter()
-        .find(|f| f.path() == field)
+        .find(|f| f.builtin().as_str() == field)
     {
         return transform.value_at(&item.animations, at).ok();
+    }
+    let builtin = if field == "audio_gain" {
+        Some(project::BuiltinPath::Volume)
+    } else {
+        project::BuiltinPath::parse(field)
+    };
+    match builtin {
+        Some(project::BuiltinPath::Opacity) if !matches!(&item.content, ItemParams::Audio(_)) => {
+            let path = project::AnimationPath::from(project::BuiltinPath::Opacity);
+            return Some(match item.animations.value_at(&path, at).ok().flatten() {
+                Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
+                _ => 1.0,
+            });
+        }
+        Some(project::BuiltinPath::Volume) => {
+            let base = match &item.content {
+                ItemParams::Audio(params) => params.volume,
+                ItemParams::Video(params) => params.volume,
+                _ => return None,
+            };
+            let path = project::AnimationPath::from(project::BuiltinPath::Volume);
+            return Some(match item.animations.value_at(&path, at).ok().flatten() {
+                Some(project::ParamValue::Scalar(value)) => value,
+                _ => f64::from(base),
+            });
+        }
+        _ => {}
     }
     if let Some(rest) = field.strip_prefix("effects.")
         && let Some((effect, key)) = rest.split_once(".params.")
     {
         return effect_param_value_at(project, item.id, effect, key, at);
     }
-    match (field, &item.content) {
-        ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
-            let path = project::AnimationPath::new("opacity").ok()?;
-            Some(match item.animations.value_at(&path, at).ok().flatten() {
-                Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
-                _ => 1.0,
-            })
-        }
-        ("audio_gain", ItemParams::Audio(params)) => {
-            let path = project::AnimationPath::new("volume").ok()?;
-            Some(match item.animations.value_at(&path, at).ok().flatten() {
-                Some(project::ParamValue::Scalar(value)) => value,
-                _ => f64::from(params.volume),
-            })
-        }
-        ("audio_gain", ItemParams::Video(params)) => {
-            let path = project::AnimationPath::new("volume").ok()?;
-            Some(match item.animations.value_at(&path, at).ok().flatten() {
-                Some(project::ParamValue::Scalar(value)) => value,
-                _ => f64::from(params.volume),
-            })
-        }
-        _ => item_value(project, item.id, field),
-    }
+    item_value(project, item.id, field)
 }
 
 /// Whether the field owns any keys, so a field edit must update the curve.
@@ -107,7 +120,7 @@ pub(super) fn channel_has_keys(project: &project::Project, item: ItemId, field: 
         return false;
     };
     let path = if field == "audio_gain" {
-        project::AnimationPath::new("volume").ok()
+        Some(project::AnimationPath::from(project::BuiltinPath::Volume))
     } else {
         project::AnimationPath::new(field).ok()
     };
@@ -125,7 +138,7 @@ pub(super) fn has_key_at(project: &project::Project, item: ItemId, field: &str, 
         return false;
     };
     let path = if field == "audio_gain" {
-        project::AnimationPath::new("volume").ok()
+        Some(project::AnimationPath::from(project::BuiltinPath::Volume))
     } else {
         project::AnimationPath::new(field).ok()
     };

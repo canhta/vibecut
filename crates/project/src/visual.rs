@@ -1,7 +1,6 @@
-//! Persisted visual item properties and their bounds.
+//! Persisted visual item properties.
 
 mod blend;
-mod bounds;
 mod crop;
 mod effects;
 mod mask;
@@ -10,8 +9,6 @@ mod transition;
 mod typography;
 
 pub use blend::BlendMode;
-pub use bounds::MAX_SEPARATORS;
-pub(crate) use bounds::{MAX_BYTES, Writer, check};
 pub use crop::Crop;
 pub use effects::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_COLOR_MAX, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,

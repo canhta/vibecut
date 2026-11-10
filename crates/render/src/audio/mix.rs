@@ -382,8 +382,8 @@ pub(crate) fn mix_raw(
         {
             return Err(Error::Invalid("source audio block"));
         }
-        let volume_path = project::AnimationPath::new("volume")?;
-        let muted_path = project::AnimationPath::new("muted")?;
+        let volume_path = project::AnimationPath::from(project::BuiltinPath::Volume);
+        let muted_path = project::AnimationPath::from(project::BuiltinPath::Muted);
         let (volume, muted, fades) = match &item.content {
             ItemParams::Audio(p) => (p.volume, p.muted, p.fades),
             ItemParams::Video(p) => (p.volume, p.muted, p.fades),
@@ -487,7 +487,7 @@ pub(crate) fn has_source_audio(item: &project::Item) -> bool {
     if let Some((_, project::Param::Value(channel))) = item
         .animations
         .iter()
-        .find(|(path, _)| path.as_str() == "muted")
+        .find(|(path, _)| path.builtin() == Some(project::BuiltinPath::Muted))
     {
         channel.base() == &project::ParamValue::Bool(false)
             || channel

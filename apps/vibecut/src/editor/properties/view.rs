@@ -16,10 +16,11 @@ use super::{
 
 /// Fields that share one diamond: an X/Y pair keys together.
 fn diamond_group(field: &str) -> &str {
-    match field {
-        "transform.positionX" | "transform.positionY" => "transform.position",
-        "transform.scaleX" | "transform.scaleY" => "transform.scale",
-        other => other,
+    use project::BuiltinPath as P;
+    match P::parse(field) {
+        Some(P::TransformPositionX | P::TransformPositionY) => P::TransformPositionX.as_str(),
+        Some(P::TransformScaleX | P::TransformScaleY) => P::TransformScaleX.as_str(),
+        _ => field,
     }
 }
 /// Left edge of the value column inside a 39 px property row.
@@ -223,16 +224,18 @@ impl<'a, 'c> Panel<'a, 'c> {
             .iter()
             .copied()
             .filter(|spec| {
-                matches!(
-                    spec.field,
-                    "opacity"
-                        | "audio_gain"
-                        | "transform.positionX"
-                        | "transform.positionY"
-                        | "transform.scaleX"
-                        | "transform.scaleY"
-                        | "transform.rotate"
-                )
+                spec.field == "audio_gain"
+                    || matches!(
+                        project::BuiltinPath::parse(spec.field),
+                        Some(
+                            project::BuiltinPath::Opacity
+                                | project::BuiltinPath::TransformPositionX
+                                | project::BuiltinPath::TransformPositionY
+                                | project::BuiltinPath::TransformScaleX
+                                | project::BuiltinPath::TransformScaleY
+                                | project::BuiltinPath::TransformRotate
+                        )
+                    )
             })
             .collect();
         if animate.is_empty() {

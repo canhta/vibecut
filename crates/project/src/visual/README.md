@@ -1,6 +1,6 @@
 # Visual properties
 
-Persisted visual item properties and their bounds: transform, blend selection, masks, effects, video transitions, canvas bounds and text typography. Evaluation, coverage math and device work belong to render and the desktop app.
+Persisted visual item properties: transform, blend selection, masks, effects, video transitions, canvas bounds and text typography. Evaluation, coverage math and device work belong to render and the desktop app.
 
 ## Transform
 

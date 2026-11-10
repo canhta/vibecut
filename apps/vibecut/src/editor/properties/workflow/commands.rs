@@ -33,7 +33,7 @@ impl Editor {
                     continue;
                 }
                 let path = if field == "audio_gain" {
-                    "volume"
+                    project::BuiltinPath::Volume.as_str()
                 } else {
                     field.as_str()
                 };
@@ -62,11 +62,10 @@ impl Editor {
         value: f64,
     ) -> Result<()> {
         let path = if field == "audio_gain" {
-            "volume"
+            project::AnimationPath::from(project::BuiltinPath::Volume)
         } else {
-            field
+            project::AnimationPath::new(field)?
         };
-        let path = project::AnimationPath::new(path)?;
         self.desk().apply_result(
             engine::Command::AddKeyframe {
                 item,
@@ -103,7 +102,7 @@ impl Editor {
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
     if let Some(transform) = project::TransformField::ALL
         .into_iter()
-        .find(|f| f.path() == field)
+        .find(|f| f.builtin().as_str() == field)
     {
         let value = value
             .trim()
@@ -124,12 +123,14 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
             serde_json::from_value(serde_json::json!(value))
                 .map_err(|_| Error::Invalid("blend mode"))?,
         ),
-        "opacity" => ItemParamPatch::Opacity(
-            value
-                .trim()
-                .parse()
-                .map_err(|_| Error::Invalid("opacity"))?,
-        ),
+        _ if project::BuiltinPath::parse(field) == Some(project::BuiltinPath::Opacity) => {
+            ItemParamPatch::Opacity(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("opacity"))?,
+            )
+        }
         "audio_gain" => ItemParamPatch::AudioGain(
             value
                 .trim()

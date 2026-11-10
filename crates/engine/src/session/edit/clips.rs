@@ -629,7 +629,7 @@ pub(super) fn execute_extract_audio(
         {
             return Err(EditError::Invalid("source has no audio"));
         }
-        let path = project::AnimationPath::new("volume")?;
+        let path = project::AnimationPath::from(project::BuiltinPath::Volume);
         extracted.push(Extracted {
             video: id,
             start: item.start,
@@ -658,7 +658,10 @@ pub(super) fn execute_extract_audio(
         let id = ItemId(alloc(next)?);
         let mut animations = project::Animations::default();
         if let Some(param) = source.volume_keys {
-            animations.set(project::AnimationPath::new("volume")?, param)?;
+            animations.set(
+                project::AnimationPath::from(project::BuiltinPath::Volume),
+                param,
+            )?;
         }
         let source_asset = find_item(&data, source.video)
             .ok_or(EditError::NoItem(source.video))?

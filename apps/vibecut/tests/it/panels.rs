@@ -664,7 +664,7 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
             "inspector.graphic_stroke" => assert_eq!(
                 render::color::at(
                     &item(&harness, fixture.graphic).animations,
-                    "params.strokeColor",
+                    &project::AnimationPath::new("params.strokeColor").unwrap(),
                     Tick::ZERO,
                     Color([0; 4])
                 )
