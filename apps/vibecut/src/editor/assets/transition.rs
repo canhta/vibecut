@@ -72,6 +72,7 @@ impl Preview {
             start: Tick(70),
             duration: Tick(60),
             alignment: TransitionAlignment::Center,
+            params: Default::default(),
         });
         let project = Project::new(data)?;
         let mut settings = render::RenderSettings::from_project(&project);

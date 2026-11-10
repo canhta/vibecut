@@ -235,6 +235,7 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
                         start: Tick(2 * SECOND),
                         duration: Tick(4 * SECOND),
                         alignment: TransitionAlignment::Center,
+                        params: Default::default(),
                     });
             }
             _ => {}

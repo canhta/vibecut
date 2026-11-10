@@ -292,6 +292,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("transition.add", Effect::Edit, true, true),
         ("transition.move", Effect::Edit, true, true),
         ("transition.set_duration", Effect::Edit, true, true),
+        ("transition.set_param", Effect::Edit, true, true),
         ("transition.remove", Effect::Edit, true, true),
         ("masks.add", Effect::Edit, true, true),
         ("masks.remove", Effect::Edit, true, true),

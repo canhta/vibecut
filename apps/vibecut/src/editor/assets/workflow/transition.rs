@@ -72,6 +72,7 @@ pub(in crate::editor::assets) fn refusal(editor: &Editor, cut: Cut) -> Option<Te
         start: Tick::ZERO,
         duration: Tick::ZERO,
         alignment: TransitionAlignment::Center,
+        params: Default::default(),
     };
     let Ok(bounds) = probe.bounds(timeline, data) else {
         return Some(Text::TransitionHandles);

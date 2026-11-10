@@ -39,8 +39,28 @@ fn scene(kind: &str) -> Project {
         start: Tick(80),
         duration: Tick(40),
         alignment: TransitionAlignment::Center,
+        params: Default::default(),
     });
     Project::new(d).unwrap()
+}
+
+/// The exact midpoint frame between pure red and pure blue, in linear light.
+fn midpoint(kind: &str) -> [f32; 4] {
+    let linear = |v: u8| {
+        let c = f32::from(v) / 255.;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    match kind {
+        "cross_dissolve" => [0.5, 0., 0.5, 1.],
+        "dip_to_black" => [0., 0., 0., 1.],
+        "dip_to_white" => [1.; 4],
+        "dip_to_color" => [linear(217), linear(51), linear(51), 1.],
+        other => panic!("{other}: add its midpoint here"),
+    }
 }
 
 #[test]
@@ -61,7 +81,7 @@ fn viewport_hit_test_selects_visible_transition_contributors_in_source_handles()
         )
         .unwrap();
         for at in [79, 80, 81, 99, 100, 101, 119, 120] {
-            let expected = if definition.dip.is_some() {
+            let expected = if definition.kind.starts_with("dip_") {
                 if at < 100 {
                     Some(ItemId(10))
                 } else if at == 100 {
@@ -96,7 +116,7 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
         for (at, expected) in [
             (79, [1., 0., 0., 1.]),
             (80, [1., 0., 0., 1.]),
-            (100, def.dip.unwrap_or([0.5, 0., 0.5, 1.])),
+            (100, midpoint(def.kind)),
             (120, [0., 0., 1., 1.]),
             (121, [0., 0., 1., 1.]),
         ] {
@@ -350,4 +370,234 @@ fn transition_consumes_both_video_handles_at_exact_source_ticks() {
         };
         assert!(frame.pixels().iter().all(|p| *p == expected));
     }
+}
+
+fn frame(width: u32, height: u32, outgoing: bool) -> Image {
+    let pixels = (0..width * height).map(|n| {
+        let (x, y) = (
+            (n % width) as f32 / width as f32,
+            (n / width) as f32 / height as f32,
+        );
+        if outgoing {
+            [0.2 + 0.7 * x, 0.1 + 0.3 * y, 0.05, 1.]
+        } else {
+            [0.05, 0.2 + 0.2 * y, 0.4 + 0.5 * x, 1.]
+        }
+    });
+    Image::from_working_pixels(width, height, pixels, &Hooks::default()).unwrap()
+}
+/// The default parameters plus each parameter alone at its bounds or every choice.
+fn variants(definition: &TransitionDefinition) -> Vec<TransitionParams> {
+    let mut all = vec![TransitionParams::new()];
+    for param in definition.params {
+        let values = match param.kind {
+            TransitionParamKind::Float { min, max, .. } => {
+                vec![TransitionValue::Float(min), TransitionValue::Float(max)]
+            }
+            TransitionParamKind::Choice { options, .. } => (0..options.len() as u32)
+                .map(TransitionValue::Choice)
+                .collect(),
+            TransitionParamKind::Bool { .. } => {
+                vec![TransitionValue::Bool(false), TransitionValue::Bool(true)]
+            }
+            TransitionParamKind::Color { .. } => vec![
+                TransitionValue::Color(Color([0; 4])),
+                TransitionValue::Color(Color([255; 4])),
+            ],
+            TransitionParamKind::Point { .. } => vec![
+                TransitionValue::Point([0., 0.]),
+                TransitionValue::Point([1., 1.]),
+            ],
+            TransitionParamKind::Angle { .. } => vec![
+                TransitionValue::Angle(-1440.),
+                TransitionValue::Angle(1440.),
+            ],
+            TransitionParamKind::Seed { .. } => {
+                vec![TransitionValue::Seed(0), TransitionValue::Seed(9999)]
+            }
+        };
+        for value in values {
+            all.push(TransitionParams::from([(param.id.to_owned(), value)]));
+        }
+    }
+    all
+}
+fn mean_abs(a: &Image, b: &Image) -> f32 {
+    a.pixels()
+        .iter()
+        .zip(b.pixels())
+        .flat_map(|(x, y)| x.iter().zip(y).map(|(x, y)| (x - y).abs()))
+        .sum::<f32>()
+        / (a.pixels().len() * 4) as f32
+}
+
+#[test]
+fn every_registered_kind_meets_the_endpoint_finite_deterministic_continuous_contract() {
+    let mut registered: Vec<_> = transitions::registered_kinds().collect();
+    let mut catalogue: Vec<_> = TRANSITION_DEFINITIONS.iter().map(|d| d.kind).collect();
+    registered.sort_unstable();
+    catalogue.sort_unstable();
+    assert_eq!(
+        registered, catalogue,
+        "catalogue and dispatcher list one set"
+    );
+    let h = Hooks::default();
+    for definition in TRANSITION_DEFINITIONS {
+        for params in variants(definition) {
+            let case = format!("{} {params:?}", definition.kind);
+            for (w, ht) in [(16, 9), (1, 1), (1, 7), (7, 1), (2, 2)] {
+                let (a, b) = (frame(w, ht, true), frame(w, ht, false));
+                let run = |p: f64, scale: f32| {
+                    transitions::apply(definition.kind, &params, &a, &b, p, scale, &h).unwrap()
+                };
+                assert_eq!(run(0., 1.).pixels(), a.pixels(), "{case} p=0 is outgoing");
+                assert_eq!(run(1., 1.).pixels(), b.pixels(), "{case} p=1 is incoming");
+                assert_eq!(run(-3., 1.).pixels(), a.pixels(), "{case} clamps below");
+                assert_eq!(run(3., 1.).pixels(), b.pixels(), "{case} clamps above");
+                for scale in [1., 0.5, 4.] {
+                    for p in [0.001, 0.25, 0.5, 0.75, 0.999] {
+                        let image = run(p, scale);
+                        assert_eq!((image.width(), image.height()), (w, ht));
+                        assert!(
+                            image.pixels().iter().all(|px| px
+                                .iter()
+                                .all(|c| c.is_finite() && (-1e-6..=1. + 1e-6).contains(c))
+                                && px[..3].iter().all(|c| *c <= px[3] + 1e-6)),
+                            "{case} {w}x{ht} p={p} scale={scale}"
+                        );
+                        assert_eq!(
+                            image.pixels(),
+                            run(p, scale).pixels(),
+                            "{case} deterministic"
+                        );
+                    }
+                }
+                assert!(
+                    mean_abs(&run(0.001, 1.), &a) < 0.02,
+                    "{case} continuous at 0"
+                );
+                assert!(
+                    mean_abs(&run(0.999, 1.), &b) < 0.02,
+                    "{case} continuous at 1"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
+    let h = Hooks::default();
+    let (a, b) = (frame(8, 8, true), frame(8, 8, false));
+    let none = TransitionParams::new();
+    let wrong_type = TransitionParams::from([("hold".to_owned(), TransitionValue::Bool(true))]);
+    let unknown = TransitionParams::from([("nope".to_owned(), TransitionValue::Bool(true))]);
+    let short = frame(8, 4, false);
+    for (kind, params, other, p, scale) in [
+        ("spin_motion", &none, &b, 0.5, 1.),
+        ("cross_dissolve", &none, &short, 0.5, 1.),
+        ("cross_dissolve", &none, &b, f64::NAN, 1.),
+        ("cross_dissolve", &none, &b, f64::INFINITY, 1.),
+        ("cross_dissolve", &none, &b, 0.5, 0.),
+        ("cross_dissolve", &none, &b, 0.5, f32::NAN),
+        ("cross_dissolve", &none, &b, 0.5, -1.),
+        ("dip_to_color", &wrong_type, &b, 0.5, 1.),
+    ] {
+        assert!(
+            transitions::apply(kind, params, &a, other, p, scale, &h).is_err(),
+            "{kind} {p} {scale}"
+        );
+    }
+    // A stray override never changes a kind that does not read it.
+    transitions::apply("cross_dissolve", &unknown, &a, &b, 0.5, 1., &h).unwrap();
+    for kind in transitions::registered_kinds() {
+        let hooks = Cancel {
+            checks: AtomicUsize::new(0),
+            cancel_at: 0,
+            inner: Hooks::default(),
+        };
+        let (a, b) = (frame(64, 64, true), frame(64, 64, false));
+        let result = transitions::apply(kind, &none, &a, &b, 0.5, 1., &hooks);
+        assert!(matches!(result, Err(Error::Cancelled)), "{kind}");
+        assert_eq!(hooks.inner.used.load(Ordering::SeqCst), 0);
+    }
+    for (kind, p, sides) in [
+        ("cross_dissolve", 0., (true, false)),
+        ("cross_dissolve", 0.5, (true, true)),
+        ("dip_to_black", 0.49, (true, false)),
+        ("dip_to_white", 0.5, (false, false)),
+        ("dip_to_color", 0.51, (false, true)),
+    ] {
+        assert_eq!(
+            transitions::exposed_sides(kind, &none, p).unwrap(),
+            sides,
+            "{kind} {p}"
+        );
+    }
+    let hold = TransitionParams::from([("hold".to_owned(), TransitionValue::Float(50.))]);
+    assert_eq!(
+        transitions::exposed_sides("dip_to_color", &hold, 0.4).unwrap(),
+        (false, false)
+    );
+}
+
+#[test]
+fn thumbnails_are_generated_bounded_shared_and_evicted() {
+    let h = Hooks::default();
+    let cache = transitions::thumbnail::ThumbnailCache::new(2);
+    let none = TransitionParams::new();
+    let first = cache
+        .thumbnail("cross_dissolve", &none, (32, 18), 0.5, &h)
+        .unwrap();
+    assert_eq!((first.width(), first.height()), (32, 18));
+    let again = cache
+        .thumbnail("cross_dissolve", &none, (32, 18), 0.5, &h)
+        .unwrap();
+    assert!(
+        std::sync::Arc::ptr_eq(&first, &again),
+        "same key shares one image"
+    );
+    let other = cache
+        .thumbnail("dip_to_black", &none, (32, 18), 0.5, &h)
+        .unwrap();
+    assert_ne!(first.pixels(), other.pixels());
+    let start = cache
+        .thumbnail("cross_dissolve", &none, (32, 18), 0., &h)
+        .unwrap();
+    let end = cache
+        .thumbnail("cross_dissolve", &none, (32, 18), 1., &h)
+        .unwrap();
+    assert_ne!(start.pixels(), end.pixels(), "the two frames differ");
+    // Capacity two: the oldest entry was dropped, so the same key renders a new image.
+    let rerun = cache
+        .thumbnail("cross_dissolve", &none, (32, 18), 0.5, &h)
+        .unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&first, &rerun));
+    assert_eq!(first.pixels(), rerun.pixels());
+    for size in [(0, 9), (9, 0), (513, 9), (9, 513)] {
+        assert!(
+            cache
+                .thumbnail("cross_dissolve", &none, size, 0.5, &h)
+                .is_err()
+        );
+    }
+    for p in [f32::NAN, f32::INFINITY] {
+        assert!(
+            cache
+                .thumbnail("cross_dissolve", &none, (4, 4), p, &h)
+                .is_err()
+        );
+    }
+    assert!(
+        cache
+            .thumbnail("spin_motion", &none, (4, 4), 0.5, &h)
+            .is_err()
+    );
+    drop((first, again, other, start, end, rerun));
+    drop(cache);
+    assert_eq!(
+        h.used.load(Ordering::SeqCst),
+        0,
+        "no lease outlives the cache"
+    );
 }

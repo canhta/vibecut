@@ -82,4 +82,4 @@ clamp after shortening and disappear when adjacency or handles are lost. A split
 ordered side pieces while keeping the span; explicit trim, move and delete detach pieces that no
 longer form a contiguous chain reaching the cut. Failed edits publish neither item nor
 transition changes. Transitions are video-only; [project](../../../../project/src/visual/README.md#video-transitions)
-owns the admitted kinds and the invariant mathematics.
+owns the admitted kinds, parameter definitions and the invariant mathematics. `transition.set_param` replaces one parameter in a single undo step and refuses an unknown id, a value of another type or an out-of-range value without publishing.

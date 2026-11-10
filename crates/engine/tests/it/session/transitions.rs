@@ -46,7 +46,7 @@ fn add(
         track: TrackId(1),
         from: ItemId(10),
         to: ItemId(11),
-        kind: "cross_dissolve".into(),
+        kind: "dip_to_color".into(),
         duration: Tick(duration),
         alignment,
     })

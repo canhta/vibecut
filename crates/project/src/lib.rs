@@ -25,7 +25,8 @@ pub use visual::{
     EffectParamDefinition, EffectParams, EffectPlacement, GRADE_MAX, GRADE_MIN, MASK_SCALARS,
     MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath, MaskShape, MaskStroke,
     MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS, TransformField, Transition,
-    TransitionAlignment, TransitionDefinition, TransitionId, chroma_key_color, effect_definitions,
+    TransitionAlignment, TransitionDefinition, TransitionId, TransitionParamDef,
+    TransitionParamKind, TransitionParams, TransitionValue, chroma_key_color, effect_definitions,
     transition_definition, valid_letter_spacing, valid_line_height, valid_weight,
 };
 

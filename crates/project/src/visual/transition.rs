@@ -1,4 +1,6 @@
 //! Persisted video transition entities and their source-handle bounds.
+use super::transition_catalog::transition_definition;
+use super::transition_params::{TransitionParams, TransitionValue};
 use crate::{Error, Item, ItemId, ItemParams, ProjectData, Result, Timeline, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -20,44 +22,7 @@ pub enum TransitionAlignment {
     Custom,
 }
 
-/// The admitted catalog is shared by command validation and rendering.
-#[derive(Clone, Copy, Debug)]
-pub struct TransitionDefinition {
-    pub kind: &'static str,
-    pub name: &'static str,
-    pub family: &'static str,
-    /// None is a cross dissolve; Some is an opaque linear-light dip colour.
-    pub dip: Option<[f32; 4]>,
-}
-pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
-    TransitionDefinition {
-        kind: "cross_dissolve",
-        name: "Cross Dissolve",
-        family: "Dissolve",
-        dip: None,
-    },
-    TransitionDefinition {
-        kind: "dip_to_black",
-        name: "Dip to Black",
-        family: "Dissolve",
-        dip: Some([0., 0., 0., 1.]),
-    },
-    TransitionDefinition {
-        kind: "dip_to_white",
-        name: "Dip to White",
-        family: "Dissolve",
-        dip: Some([1.; 4]),
-    },
-];
-/// Look up an admitted kind; unsupported names return a typed error capped at 64 characters.
-pub fn transition_definition(kind: &str) -> Result<&'static TransitionDefinition> {
-    TRANSITION_DEFINITIONS
-        .iter()
-        .find(|d| d.kind == kind)
-        .ok_or_else(|| Error::UnsupportedTransition(kind.chars().take(64).collect()))
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 /// A video-only timeline span joining two adjacent clips over their shared cut.
 pub struct Transition {
@@ -73,8 +38,41 @@ pub struct Transition {
     pub start: Tick,
     pub duration: Tick,
     pub alignment: TransitionAlignment,
+    /// Overrides of the catalogue defaults, fixed for the whole transition.
+    pub params: TransitionParams,
 }
 impl Transition {
+    /// The value of a catalogue parameter: the override, else the definition default.
+    pub fn value(&self, id: &str) -> Result<TransitionValue> {
+        let def = transition_definition(&self.kind)?
+            .param(id)
+            .ok_or(Error::Invalid("transition parameter"))?;
+        Ok(self
+            .params
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| def.kind.default_value()))
+    }
+    /// Replace one parameter after checking its id, type and bounds.
+    pub fn set_param(&mut self, id: &str, value: TransitionValue) -> Result<()> {
+        let def = transition_definition(&self.kind)?
+            .param(id)
+            .ok_or(Error::Invalid("transition parameter"))?;
+        def.kind.validate(&value)?;
+        self.params.insert(id.to_owned(), value);
+        Ok(())
+    }
+    fn validate_params(&self) -> Result<()> {
+        let definition = transition_definition(&self.kind)?;
+        for (id, value) in &self.params {
+            definition
+                .param(id)
+                .ok_or(Error::Invalid("transition parameter"))?
+                .kind
+                .validate(value)?;
+        }
+        Ok(())
+    }
     /// Resolve both complete sides. Split pieces must remain contiguous and on
     /// the transition's track; edits that break a side invalidate the transition.
     fn sides<'a>(&self, timeline: &'a Timeline) -> Result<(&'a [Item], &'a [Item])> {
@@ -267,7 +265,7 @@ impl Transition {
         Ok(())
     }
     pub fn validate(&self, timeline: &Timeline, data: &ProjectData) -> Result<()> {
-        transition_definition(&self.kind)?;
+        self.validate_params()?;
         let (lo, cut, hi) = self.bounds(timeline, data)?;
         let end = self.end()?;
         if self.duration <= Tick::ZERO
@@ -383,6 +381,7 @@ mod tests {
             start: Tick(80),
             duration: Tick(40),
             alignment: Center,
+            params: Default::default(),
         }
     }
     #[test]
@@ -459,6 +458,188 @@ mod tests {
             Project::new(d),
             Err(Error::Invalid("overlapping transitions"))
         ));
+    }
+    #[test]
+    fn parameters_default_validate_persist_and_refuse_hostile_values() {
+        use crate::{TRANSITION_DEFINITIONS, TransitionParamKind as K, TransitionValue as V};
+        // Every kind of parameter, in and out of bounds.
+        const CHOICES: &[&str] = &["a", "b"];
+        for (kind, value, ok) in [
+            (
+                K::Float {
+                    min: 0.,
+                    max: 90.,
+                    default: 0.,
+                    unit: "%",
+                },
+                V::Float(90.),
+                true,
+            ),
+            (
+                K::Float {
+                    min: 0.,
+                    max: 90.,
+                    default: 0.,
+                    unit: "%",
+                },
+                V::Float(90.1),
+                false,
+            ),
+            (
+                K::Float {
+                    min: 0.,
+                    max: 90.,
+                    default: 0.,
+                    unit: "%",
+                },
+                V::Float(f64::NAN),
+                false,
+            ),
+            (
+                K::Float {
+                    min: 0.,
+                    max: 90.,
+                    default: 0.,
+                    unit: "%",
+                },
+                V::Float(f64::INFINITY),
+                false,
+            ),
+            (
+                K::Float {
+                    min: 0.,
+                    max: 90.,
+                    default: 0.,
+                    unit: "%",
+                },
+                V::Seed(1),
+                false,
+            ),
+            (
+                K::Choice {
+                    options: CHOICES,
+                    default: 0,
+                },
+                V::Choice(1),
+                true,
+            ),
+            (
+                K::Choice {
+                    options: CHOICES,
+                    default: 0,
+                },
+                V::Choice(2),
+                false,
+            ),
+            (
+                K::Choice {
+                    options: CHOICES,
+                    default: 0,
+                },
+                V::Choice(u32::MAX),
+                false,
+            ),
+            (K::Bool { default: false }, V::Bool(true), true),
+            (K::Bool { default: false }, V::Float(1.), false),
+            (
+                K::Color {
+                    default: Color([0; 4]),
+                },
+                V::Color(Color([1, 2, 3, 4])),
+                true,
+            ),
+            (
+                K::Color {
+                    default: Color([0; 4]),
+                },
+                V::Bool(true),
+                false,
+            ),
+            (K::Point { default: [0.5; 2] }, V::Point([0., 1.]), true),
+            (K::Point { default: [0.5; 2] }, V::Point([0., 1.5]), false),
+            (
+                K::Point { default: [0.5; 2] },
+                V::Point([f64::NAN, 0.]),
+                false,
+            ),
+            (K::Angle { default: 0. }, V::Angle(-1440.), true),
+            (K::Angle { default: 0. }, V::Angle(1440.5), false),
+            (K::Angle { default: 0. }, V::Angle(f64::NEG_INFINITY), false),
+            (K::Seed { default: 1 }, V::Seed(9999), true),
+            (K::Seed { default: 1 }, V::Seed(10_000), false),
+        ] {
+            assert_eq!(kind.validate(&value).is_ok(), ok, "{kind:?} {value:?}");
+            assert!(kind.validate(&kind.default_value()).is_ok());
+        }
+        // Catalogue entries are coherent and uniquely identified.
+        for (n, d) in TRANSITION_DEFINITIONS.iter().enumerate() {
+            assert!(d.params.iter().all(|p| p.is_coherent()), "{}", d.kind);
+            assert!(
+                d.params.iter().enumerate().all(|(i, p)| d
+                    .params
+                    .iter()
+                    .skip(i + 1)
+                    .all(|q| q.id != p.id))
+            );
+            assert!(
+                TRANSITION_DEFINITIONS
+                    .iter()
+                    .skip(n + 1)
+                    .all(|o| o.kind != d.kind)
+            );
+        }
+        // Defaults come from the definition; overrides replace them; refusals keep the old value.
+        let d = data();
+        let mut tr = transition();
+        tr.kind = "dip_to_color".into();
+        assert_eq!(tr.value("hold").unwrap(), V::Float(0.));
+        tr.set_param("hold", V::Float(40.)).unwrap();
+        tr.set_param("color", V::Color(Color([9, 8, 7, 255])))
+            .unwrap();
+        for (id, value) in [
+            ("hold", V::Float(91.)),
+            ("hold", V::Bool(true)),
+            ("color", V::Float(1.)),
+            ("missing", V::Float(1.)),
+        ] {
+            assert!(tr.set_param(id, value).is_err(), "{id}");
+        }
+        assert_eq!(tr.value("hold").unwrap(), V::Float(40.));
+        assert!(tr.value("missing").is_err());
+        tr.validate(&d.scene().timeline, &d).unwrap();
+        // The persisted form round-trips and is closed.
+        let json = serde_json::to_value(&tr).unwrap();
+        assert_eq!(
+            json["params"]["hold"],
+            serde_json::json!({"type": "float", "value": 40.0})
+        );
+        assert_eq!(
+            serde_json::from_value::<Transition>(json.clone()).unwrap(),
+            tr
+        );
+        for bad in [
+            serde_json::json!({"type": "float", "value": 40.0, "extra": 1}),
+            serde_json::json!({"type": "float"}),
+            serde_json::json!({"type": "float", "value": "40"}),
+        ] {
+            let mut j = json.clone();
+            j["params"]["hold"] = bad;
+            assert!(serde_json::from_value::<Transition>(j).is_err());
+        }
+        // Persisted hostile parameters refuse the whole project; nothing is repaired.
+        for (kind, id, value) in [
+            ("dip_to_color", "hold", V::Float(1e9)),
+            ("dip_to_color", "hold", V::Float(f64::NAN)),
+            ("dip_to_color", "unknown", V::Float(1.)),
+            ("cross_dissolve", "hold", V::Float(1.)),
+        ] {
+            let mut bad = d.clone();
+            let mut t = transition();
+            t.kind = kind.into();
+            t.params.insert(id.into(), value);
+            bad.scene_mut().timeline.transitions = vec![t];
+            assert!(Project::new(bad).is_err(), "{kind} {id}");
+        }
     }
     #[test]
     fn rendered_items_include_both_clips_of_an_overlapping_span() {

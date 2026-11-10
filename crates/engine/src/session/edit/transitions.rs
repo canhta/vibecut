@@ -27,6 +27,7 @@ pub(super) fn execute_add_transition(
         start: Tick::ZERO,
         duration: Tick::ZERO,
         alignment,
+        params: Default::default(),
     };
     crate::transitions::unlocked(&data.scene().timeline, &tr)?;
     let bounds = tr.bounds(&data.scene().timeline, &data)?;
@@ -81,6 +82,22 @@ pub(super) fn execute_set_transition_duration(
         .transitions
         .get_mut(n)
         .ok_or(EditError::Invalid("missing transition"))? = tr;
+
+    Ok(data)
+}
+pub(super) fn execute_set_transition_param(
+    mut data: ProjectData,
+    transition: project::TransitionId,
+    param: &str,
+    value: project::TransitionValue,
+) -> Result<ProjectData> {
+    let n = crate::transitions::find(&data, transition)?;
+    data.scene_mut()
+        .timeline
+        .transitions
+        .get_mut(n)
+        .ok_or(EditError::Invalid("missing transition"))?
+        .set_param(param, value)?;
 
     Ok(data)
 }

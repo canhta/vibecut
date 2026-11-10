@@ -153,6 +153,7 @@ pub(crate) fn apply(
             Command::AddTransition { .. }
                 | Command::MoveTransition { .. }
                 | Command::SetTransitionDuration { .. }
+                | Command::SetTransitionParam { .. }
                 | Command::RemoveTransition { .. }
                 | Command::Batch { .. }
         ))
@@ -178,6 +179,13 @@ pub(crate) fn apply(
             duration,
         } => {
             data = transitions::execute_set_transition_duration(data, transition, duration)?;
+        }
+        Command::SetTransitionParam {
+            transition,
+            param,
+            value,
+        } => {
+            data = transitions::execute_set_transition_param(data, transition, &param, value)?;
         }
         Command::RemoveTransition { transition } => {
             data = transitions::execute_remove_transition(data, transition)?;

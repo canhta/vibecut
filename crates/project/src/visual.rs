@@ -6,6 +6,8 @@ mod effects;
 mod mask;
 mod transform;
 mod transition;
+mod transition_catalog;
+mod transition_params;
 mod typography;
 
 pub use blend::BlendMode;
@@ -19,9 +21,10 @@ pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
 };
 pub use transform::TransformField;
-pub use transition::{
-    TRANSITION_DEFINITIONS, Transition, TransitionAlignment, TransitionDefinition, TransitionId,
-    transition_definition,
+pub use transition::{Transition, TransitionAlignment, TransitionId};
+pub use transition_catalog::{TRANSITION_DEFINITIONS, TransitionDefinition, transition_definition};
+pub use transition_params::{
+    TransitionParamDef, TransitionParamKind, TransitionParams, TransitionValue,
 };
 pub(crate) use typography::valid;
 pub use typography::{

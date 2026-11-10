@@ -1586,6 +1586,7 @@ fn transitions_disable_copy_and_admit_the_incoming_source_of_a_sub_range() {
             start: cut - tick(1, 5),
             duration: tick(1, 5),
             alignment: project::TransitionAlignment::End,
+            params: Default::default(),
         });
     let p = project::Project::new(data).unwrap();
     // Entirely inside the outgoing clip: only its own extent overlaps, yet the

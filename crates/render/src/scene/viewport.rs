@@ -368,11 +368,9 @@ impl Renderer<'_> {
                 .ok_or(Error::Invalid("transition time"))?
                 .0 as f64
                 / tr.duration.0 as f64;
-            let dip = project::transition_definition(&tr.kind)?.dip.is_some();
-            pair = [
-                (progress < 1.0 && (!dip || progress < 0.5)).then_some(a),
-                (progress > 0.0 && (!dip || progress > 0.5)).then_some(b),
-            ];
+            let (outgoing, incoming) =
+                super::transitions::exposed_sides(&tr.kind, &tr.params, progress)?;
+            pair = [outgoing.then_some(a), incoming.then_some(b)];
         }
         Ok(pair
             .into_iter()

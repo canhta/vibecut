@@ -560,24 +560,20 @@ impl<'a> Renderer<'a> {
                     let a = outgoing
                         .take()
                         .ok_or(Error::Invalid("transition outgoing frame"))?;
-                    let definition = project::transition_definition(&tr.kind)?;
                     let elapsed = at
                         .checked_sub(tr.start)
                         .ok_or(Error::Invalid("transition time"))?;
                     let progress = elapsed.0 as f64 / tr.duration.0 as f64;
-                    for (n, (dst, src)) in out.pixels.iter_mut().zip(&a.pixels).enumerate() {
-                        if n.is_multiple_of(out.width as usize) {
-                            check(hooks)?;
-                        }
-                        let (left, right, p) = match definition.dip {
-                            Some(dip) if progress < 0.5 => (*src, dip, (progress * 2.) as f32),
-                            Some(dip) => (dip, *dst, ((progress - 0.5) * 2.) as f32),
-                            None => (*src, *dst, progress as f32),
-                        };
-                        for ((d, l), r) in dst.iter_mut().zip(left).zip(right) {
-                            *d = l * (1. - p) + r * p;
-                        }
-                    }
+                    let canvas = self.project.data().canvas.width.max(1);
+                    out = super::transitions::apply(
+                        &tr.kind,
+                        &tr.params,
+                        &a,
+                        &out,
+                        progress,
+                        self.settings.width as f32 / canvas as f32,
+                        hooks,
+                    )?;
                 }
             }
         }

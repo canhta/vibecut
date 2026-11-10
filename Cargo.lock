@@ -4900,6 +4900,7 @@ dependencies = [
  "captions",
  "media",
  "project",
+ "rayon",
  "schemars",
  "serde",
  "serde_json",
