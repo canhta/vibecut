@@ -567,6 +567,8 @@ mod cleanup_tests {
     use std::env;
     use std::ffi::OsStr;
     use std::fs;
+    #[cfg(unix)]
+    use std::path::Path;
 
     #[test]
     fn cleanup_removes_keys_even_when_search_restore_fails_or_is_corrupt() {

@@ -197,7 +197,7 @@ pub(super) fn proc_meminfo_memory(path: impl AsRef<Path>) -> Option<Memory> {
         .and_then(|text| meminfo_memory(&text))
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(test)]
 pub(super) fn proc_meminfo_available(path: impl AsRef<Path>) -> bool {
     proc_meminfo_memory(path).is_some_and(memory_available)
 }
@@ -244,7 +244,7 @@ pub(super) fn parse_meminfo(text: &str) -> Option<Meminfo> {
 }
 
 /// Decide whether `MemAvailable` meets `MIN_FREE_PERCENT` of `MemTotal`.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(test)]
 pub(super) fn meminfo_memory_available(text: &str) -> bool {
     meminfo_memory(text).is_some_and(memory_available)
 }
