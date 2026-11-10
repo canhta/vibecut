@@ -449,6 +449,35 @@ fn localized_search_and_category_filter_keep_preview_tiles_available() {
     editor.preferences.locale = Locale::Vi;
     let mut h = build(editor);
     open(&mut h);
+    for shelf in [
+        "Basic",
+        "Overlay",
+        "Light",
+        "Blur",
+        "Wipes",
+        "Glitch & Distort",
+    ] {
+        click(&mut h, &format!("transitions.category.{shelf}"));
+        let actual: std::collections::BTreeSet<_> = h
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .filter_map(|widget| {
+                widget
+                    .id
+                    .strip_prefix("transitions.tile.")
+                    .map(str::to_owned)
+            })
+            .collect();
+        let expected = project::TRANSITION_DEFINITIONS
+            .iter()
+            .filter(|d| d.shelf == shelf)
+            .map(|d| d.kind.to_owned())
+            .collect();
+        assert_eq!(actual, expected, "shelf {shelf}");
+    }
     click(&mut h, "transitions.category.Basic");
     assert_eq!(widget(&h, "transitions.category.all").rect.height(), 24.0);
     assert_eq!(widget(&h, "transitions.category.Basic").rect.height(), 24.0);
@@ -492,4 +521,36 @@ fn localized_search_and_category_filter_keep_preview_tiles_available() {
             .iter()
             .any(|widget| widget.id == "transitions.preview.cross_dissolve.ready")
     );
+    let progress =
+        |h: &Harness<Editor>| {
+            h.get(By::new().predicate(|node| {
+                node.author_id() == Some("transitions.preview.cross_dissolve.ready")
+            }))
+            .value()
+            .unwrap()
+        };
+    let hovered = progress(&h);
+    // The harness advances 0.25 s per step: eight steps are exactly one
+    // two-second loop, so sample inside the loop rather than aliasing it.
+    h.run_steps(3);
+    assert_ne!(progress(&h), hovered, "hover advances the rendered preview");
+    h.hover_at(widget(&h, "assets.search").rect.center());
+    h.get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
+        .focus();
+    h.run_steps(2);
+    assert_eq!(progress(&h), "50%", "idle restores the cached midpoint");
+    h.get(By::new().predicate(|node| node.author_id() == Some("transitions.tile.cross_dissolve")))
+        .focus();
+    h.run_steps(1);
+    assert!(widget(&h, "transitions.tile.cross_dissolve").focused);
+    let focused = progress(&h);
+    h.run_steps(3);
+    assert_ne!(
+        progress(&h),
+        focused,
+        "keyboard focus advances without pointer hover"
+    );
+    h.input_mut().focused = false;
+    h.run_steps(2);
+    assert_eq!(progress(&h), "50%", "window focus loss stops animation");
 }

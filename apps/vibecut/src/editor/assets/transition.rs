@@ -73,24 +73,58 @@ pub(super) fn shelf_label(shelf: &str) -> Text {
     }
 }
 
-/// A tile's cached thumbnail, rendered once from the shared procedural frames.
+/// Idle tiles retain a 176 px raster; hover/focus plays a 48 px, 12 fps loop.
 pub(super) struct Preview {
-    pub(super) texture: Option<egui::TextureHandle>,
+    idle: Option<egui::TextureHandle>,
+    animated: Option<egui::TextureHandle>,
+    frame: Option<u32>,
+    started: Option<f64>,
+    pub(super) progress: f32,
     pub(super) failed: bool,
     pub(super) dark: bool,
 }
 impl Preview {
     pub(super) fn new(_kind: &str, dark: bool) -> crate::Result<Self> {
         Ok(Self {
-            texture: None,
+            idle: None,
+            animated: None,
+            frame: None,
+            started: None,
+            progress: 0.5,
             failed: false,
             dark,
         })
     }
-    pub(super) fn update(&mut self, ctx: &egui::Context, kind: &str, _active: bool) {
-        if self.texture.is_some() || self.failed {
+    pub(super) fn texture(&self) -> Option<&egui::TextureHandle> {
+        if self.frame.is_some() {
+            self.animated.as_ref()
+        } else {
+            self.idle.as_ref()
+        }
+    }
+    pub(super) fn update(&mut self, ctx: &egui::Context, kind: &str, active: bool) {
+        if self.failed {
             return;
         }
+        let (size, progress) = if active {
+            let now = ctx.input(|input| input.time);
+            let start = *self.started.get_or_insert(now);
+            let frame = (((now - start).max(0.) * 12.).floor() as u32) % 24;
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(1. / 12.));
+            if self.frame == Some(frame) {
+                return;
+            }
+            self.frame = Some(frame);
+            (48, frame as f32 / 23.)
+        } else {
+            self.started = None;
+            self.frame = None;
+            self.progress = 0.5;
+            if self.idle.is_some() {
+                return;
+            }
+            (176, 0.5)
+        };
         let budget = match ByteBudget::new(64 << 20) {
             Ok(budget) => budget,
             Err(error) => {
@@ -102,13 +136,38 @@ impl Preview {
         let hooks = ByteBudgetHooks::new(&budget, None);
         let cache = render::transition_thumbnail::ThumbnailCache::new(1);
         let result = cache
-            .thumbnail(kind, &TransitionParams::new(), (176, 176), 0.5, &hooks)
+            .thumbnail(
+                kind,
+                &TransitionParams::new(),
+                (size, size),
+                progress,
+                &hooks,
+            )
             .and_then(|image| image.rgba8(13, &hooks));
         match result {
             Ok(image) => {
-                let image = egui::ColorImage::from_rgba_unmultiplied([176, 176], &image.bytes);
-                self.texture =
-                    Some(ctx.load_texture(format!("transition.{kind}"), image, Default::default()));
+                let image = egui::ColorImage::from_rgba_unmultiplied(
+                    [size as usize, size as usize],
+                    &image.bytes,
+                );
+                let target = if active {
+                    &mut self.animated
+                } else {
+                    &mut self.idle
+                };
+                if let Some(texture) = target {
+                    texture.set(image, Default::default());
+                } else {
+                    *target = Some(ctx.load_texture(
+                        format!(
+                            "transition.{kind}.{}",
+                            if active { "animated" } else { "idle" }
+                        ),
+                        image,
+                        Default::default(),
+                    ));
+                }
+                self.progress = progress;
             }
             Err(error) => {
                 tracing::warn!(category = "transition_preview", %error, "preview failed");

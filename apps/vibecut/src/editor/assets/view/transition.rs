@@ -90,17 +90,15 @@ impl View<'_> {
                     .contains(&query)
             })
             .collect();
-        let heading = self
-            .state
-            .transition_family
-            .map_or(Text::Transitions, |shelf| transition::shelf_label(shelf));
-        ui.painter().text(
-            area.min + Vec2::new(0.0, 36.0),
-            Align2::LEFT_TOP,
-            self.tr(heading),
-            FontId::proportional(theme::type_size::BODY),
-            theme::text(self.cx.preferences.dark),
-        );
+        if let Some(shelf) = self.state.transition_family {
+            ui.painter().text(
+                area.min + Vec2::new(0.0, 36.0),
+                Align2::LEFT_TOP,
+                self.tr(transition::shelf_label(shelf)),
+                FontId::proportional(theme::type_size::BODY),
+                theme::text(self.cx.preferences.dark),
+            );
+        }
         let width = theme::size::EFFECT_CARD;
         let columns = ((area.width() + theme::space::GRID) / (width + theme::space::GRID))
             .floor()
@@ -199,12 +197,16 @@ impl View<'_> {
                 }
             }
         }
-        let active = response.contains_pointer() || response.has_focus();
+        let active = ui.is_rect_visible(rect)
+            && ui.input(|input| input.focused)
+            && (response.contains_pointer() || response.has_focus());
         let mut failed = true;
+        let mut progress = 0.5;
         if let Some(entry) = self.state.transition_previews.get_mut(kind) {
             entry.update(ui.ctx(), kind, active);
+            progress = entry.progress;
             failed = entry.failed;
-            if let Some(texture) = &entry.texture {
+            if let Some(texture) = entry.texture() {
                 egui::Image::new((texture.id(), preview.size()))
                     .corner_radius(theme::radius::UPLOAD)
                     .paint_at(ui, preview);
@@ -227,6 +229,10 @@ impl View<'_> {
             Id::unique(("transitions.preview", kind)),
             egui::Sense::hover(),
         );
+        status_response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, name));
+        ui.ctx().accesskit_node_builder(status_response.id, |node| {
+            node.set_value(format!("{:.0}%", progress * 100.));
+        });
         self.remember(
             format!("transitions.preview.{kind}.{status}"),
             &status_response,
