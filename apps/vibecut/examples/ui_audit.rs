@@ -713,6 +713,18 @@ const SCENES: &[Scene] = &[
         build: preview_axis_reference,
     },
     Scene {
+        name: "preview-axis-layers",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| preview_axis_ends(theme, scale, Tick(3 * SECOND)),
+    },
+    Scene {
+        name: "preview-axis-tail",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| preview_axis_ends(theme, scale, Tick(6 * SECOND)),
+    },
+    Scene {
         name: "tracks",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
@@ -2039,6 +2051,76 @@ fn hover_preview_axis(app: &mut AppHarness) -> Result<(), Failure> {
     app.run_steps(2);
     wait_for_presented(app)?;
     Ok(())
+}
+
+/// Layer-end and global-tail evidence at the web reference's logical size.
+fn preview_axis_ends(theme: Theme, scale: f32, at: Tick) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Preview axis")?;
+    let main = session.project().data().scene().timeline.main.id;
+    insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        range(0, 2)?,
+        None,
+        ItemParams::Overlay(OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    )?;
+    let overlay = track(&mut session, "Overlay", TrackKind::Video)?;
+    let blue = insert(
+        &mut session,
+        overlay,
+        Tick::ZERO,
+        range(0, 4)?,
+        None,
+        ItemParams::Overlay(OverlayParams {
+            color: Color([0, 0, 255, 255]),
+        }),
+    )?;
+    let playhead = Tick(SECOND);
+    session.apply(Command::SetViewState {
+        zoom: 1.0,
+        scroll: 0.0,
+        playhead,
+    })?;
+    let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
+    let mut settings = render::RenderSettings::from_project(session.project());
+    settings.placements.insert(
+        blue,
+        render::Placement {
+            destination: render::Rect {
+                x: 0.5,
+                y: 0.0,
+                width: 0.5,
+                height: 1.0,
+            },
+            ..Default::default()
+        },
+    );
+    playback.set_render_settings(settings)?;
+    playback.seek(playhead, false, session.project().clone())?;
+    let editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, WINDOW);
+    app.run_steps(3);
+    let ruler = widget_rect(&app, "timeline.ruler")?;
+    let zoom = app.state().inspect()?.zoom;
+    app.hover_at(egui::pos2(
+        ruler.left() + at.seconds() as f32 * zoom,
+        ruler.center().y,
+    ));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        app.run_steps(1);
+        if app.state().presented_frame() == Some(at) {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err("axis audit frame timeout".into());
+        }
+        std::thread::yield_now();
+    }
+    Ok(app)
 }
 
 /// Populated multi-track timeline (video, audio, text) at the reference size.

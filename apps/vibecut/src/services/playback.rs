@@ -552,7 +552,16 @@ impl Playback {
     /// shown and a superseded frame is dropped instead of queued.
     pub fn set_hover(&mut self, at: Option<Tick>) -> Result<()> {
         let mut request = self.request.lock().map_err(|_| Error::Poisoned)?;
-        let at = at.map(|at| at.clamp(Tick::ZERO, request.project.duration()));
+        let at = at
+            .map(|at| {
+                request
+                    .project
+                    .data()
+                    .canvas
+                    .fps
+                    .snap_nearest(at.max(Tick::ZERO))
+            })
+            .transpose()?;
         if request.hover == at {
             return Ok(());
         }

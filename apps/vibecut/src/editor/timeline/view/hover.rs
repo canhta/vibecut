@@ -9,7 +9,7 @@ use crate::editor::timeline::{
 
 impl State {
     /// Sample the pointer time over the ruler or lanes; clear it on leave or
-    /// when the axis is off. The request stays inside the timeline duration.
+    /// when the axis is off. Empty tail remains a pointer time, not a seek.
     pub(in crate::editor::timeline) fn track_hover(
         &mut self,
         cx: &Context<'_>,
@@ -20,10 +20,7 @@ impl State {
             ui.ctx()
                 .input(|input| input.pointer.hover_pos())
                 .filter(|pos| layout.ruler.contains(*pos) || layout.body.contains(*pos))
-                .map(|pos| {
-                    frame_snap(cx, self.tick_at(pos.x, layout.body.left()))
-                        .clamp(Tick::ZERO, cx.staged_project().duration())
-                })
+                .map(|pos| frame_snap(cx, self.tick_at(pos.x, layout.body.left())).max(Tick::ZERO))
         } else {
             None
         };

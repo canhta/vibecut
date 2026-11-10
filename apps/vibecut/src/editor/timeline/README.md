@@ -9,8 +9,9 @@ A lane is 20 px high, one per nonempty animation channel (audio always offers vo
 The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as
 `preview_axis`, default on) scrubs the player from the pointer. While the
 pointer is over the ruler or the lanes, `view/hover.rs` holds a frame-snapped
-pointer time, paints a vertical guide there and the player footer shows that
-time in place of the playhead. The frame hands the time to the playback
+nonnegative pointer time through empty tail beyond the project end, paints a
+vertical guide there and the player footer shows that time in place of the
+playhead. The frame hands the time to the playback
 service's transient hover render, which fences one generation per pointer time,
 so only the latest request is shown. Leaving the timeline or turning the axis
 off returns both the counter and the player to the playhead. The hover time is

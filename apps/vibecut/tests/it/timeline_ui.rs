@@ -722,13 +722,23 @@ fn preview_axis_hover_scrubs_the_counter_and_preview_without_moving_the_playhead
         project
     );
 
-    // Past the content the request clamps to the timeline end, like a seek.
-    harness.hover_at(egui::pos2(ruler.right() - 1.0, ruler.center().y));
-    harness.run_steps(2);
-    let end = harness.state().inspect().unwrap();
+    // Empty-tail pointer positions remain distinct presentation times.
     let duration = harness.state().session.project().duration();
-    assert_eq!(end.hover_time, Some(duration));
-    assert_eq!(end.preview_at, Some(duration));
+    let mut previous = duration;
+    for x in [ruler.right() - zoom, ruler.right() - 1.0] {
+        harness.hover_at(egui::pos2(x, ruler.center().y));
+        harness.run_steps(2);
+        let tail = harness.state().inspect().unwrap();
+        let at = tail.hover_time.unwrap();
+        assert!(
+            at > previous,
+            "the guide must keep following the pointer past the end"
+        );
+        assert_eq!(tail.preview_at, Some(at));
+        assert_eq!(tail.timecode, time::format_timecode(at, fps).unwrap());
+        assert_eq!(tail.position, clicked.position);
+        previous = at;
+    }
 
     // The toolbar toggle turns the axis off; the pointer no longer scrubs.
     let toggle = widget(&harness, "timeline.preview_axis");
@@ -767,6 +777,196 @@ fn preview_axis_hover_scrubs_the_counter_and_preview_without_moving_the_playhead
     let resumed = harness.state().inspect().unwrap();
     assert_eq!(resumed.hover_time, resumed.preview_at);
     assert!(resumed.hover_time.is_some());
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        project
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+#[test]
+fn preview_axis_tail_tracks_the_guide_counter_and_actual_layer_pixels() {
+    let mut data = Project::empty(ProjectId(301), "Layer ends".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    let mut session = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let main = session.project().data().scene().timeline.main.id;
+    insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(2 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    );
+    let overlay = track(&mut session, "Overlay", TrackKind::Video);
+    let blue = insert(
+        &mut session,
+        overlay,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(4 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([0, 0, 255, 255]),
+        }),
+    );
+    let playhead = Tick(SECOND);
+    session
+        .apply(Command::SetViewState {
+            zoom: 1.0,
+            scroll: 0.0,
+            playhead,
+        })
+        .unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut settings = render::RenderSettings::from_project(session.project());
+    settings.placements.insert(
+        blue,
+        render::Placement {
+            destination: render::Rect {
+                x: 0.5,
+                y: 0.0,
+                width: 0.5,
+                height: 1.0,
+            },
+            ..Default::default()
+        },
+    );
+    playback.set_render_settings(settings).unwrap();
+    playback
+        .seek(playhead, false, session.project().clone())
+        .unwrap();
+    let mut harness = harness(Editor::new(session, playback, Preferences::default()));
+    harness.run_steps(3);
+    let project = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let history = harness.state().session.history_len();
+    let ruler = widget(&harness, "timeline.ruler");
+    let body = widget(&harness, "timeline.marquee");
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let fps = harness.state().session.project().data().canvas.fps;
+    for (seconds, y, left, right) in [
+        (1, ruler.center().y, egui::Color32::RED, egui::Color32::BLUE),
+        (
+            2,
+            body.center().y,
+            egui::Color32::BLACK,
+            egui::Color32::BLUE,
+        ),
+        (
+            3,
+            body.center().y,
+            egui::Color32::BLACK,
+            egui::Color32::BLUE,
+        ),
+        (
+            4,
+            ruler.center().y,
+            egui::Color32::BLACK,
+            egui::Color32::BLACK,
+        ),
+        (
+            5,
+            ruler.center().y,
+            egui::Color32::BLACK,
+            egui::Color32::BLACK,
+        ),
+        (
+            6,
+            body.center().y,
+            egui::Color32::BLACK,
+            egui::Color32::BLACK,
+        ),
+    ] {
+        let at = Tick(seconds * SECOND);
+        let pointer = egui::pos2(ruler.left() + seconds as f32 * zoom, y);
+        harness.hover_at(pointer);
+        harness.run_steps(2);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while harness.state().presented_frame() != Some(at) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "actual hover frame did not arrive"
+            );
+            harness.run_steps(1);
+            std::thread::yield_now();
+        }
+        let inspect = harness.state().inspect().unwrap();
+        assert_eq!(inspect.hover_time, Some(at));
+        assert_eq!(inspect.timecode, time::format_timecode(at, fps).unwrap());
+        assert_eq!(inspect.position, playhead);
+        let x = pointer.x.round() + 0.5;
+        assert!(
+            painted_shapes(&harness).iter().any(|shape| {
+                matches!(shape, egui::Shape::LineSegment { points, stroke }
+                if points[0].x == x && points[1].x == x
+                && (points[0].y - ruler.top()).abs() < 1.0
+                && (points[1].y - body.bottom()).abs() < 1.0
+                && stroke.width == 1.0)
+            }),
+            "actual painted guide must follow the pointer at {seconds}s"
+        );
+        let image = &harness.state().playback.frame().unwrap().image;
+        assert_eq!(image.pixels[32 * 64 + 16], left);
+        assert_eq!(image.pixels[32 * 64 + 48], right);
+        if seconds > 4 {
+            assert!(
+                image
+                    .pixels
+                    .iter()
+                    .all(|pixel| *pixel == egui::Color32::BLACK),
+                "globally empty tail must contain no final-clip pixels"
+            );
+        }
+        assert!(!harness.state().playback.playing());
+    }
+    // Each exit path restores actual playhead pixels, independently of the
+    // counter metadata. Fullscreen is exercised offscreen, without a window.
+    for exit in ["leave", "off", "fullscreen"] {
+        if !harness.state().preferences.preview_axis {
+            harness
+                .state_mut()
+                .activate("timeline.preview_axis")
+                .unwrap();
+        }
+        harness.hover_at(egui::pos2(ruler.left() + 6.0 * zoom, body.center().y));
+        harness.run_steps(2);
+        match exit {
+            "leave" => {
+                let canvas = widget(&harness, "preview.canvas");
+                harness.hover_at(canvas.center());
+            }
+            "off" => harness
+                .state_mut()
+                .activate("timeline.preview_axis")
+                .unwrap(),
+            _ => harness.state_mut().activate("preview.fullscreen").unwrap(),
+        }
+        harness.run_steps(3);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while harness.state().presented_frame() != Some(playhead) {
+            assert!(std::time::Instant::now() < deadline);
+            harness.run_steps(1);
+            std::thread::yield_now();
+        }
+        let inspect = harness.state().inspect().unwrap();
+        assert_eq!(inspect.hover_time, None);
+        assert_eq!(
+            inspect.timecode,
+            time::format_timecode(playhead, fps).unwrap()
+        );
+        let image = &harness.state().playback.frame().unwrap().image;
+        assert_eq!(image.pixels[32 * 64 + 16], egui::Color32::RED);
+        assert_eq!(image.pixels[32 * 64 + 48], egui::Color32::BLUE);
+    }
     assert_eq!(
         serde_json::to_vec(harness.state().session.project().data()).unwrap(),
         project
