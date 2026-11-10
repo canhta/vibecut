@@ -594,17 +594,20 @@ impl Playback {
     pub fn frame(&self) -> Option<&Arc<Frame>> {
         self.shown.as_ref()
     }
-    pub fn poll(&mut self) -> Result<()> {
+    /// Advance presentation and device health using the caller's monotonic time.
+    /// Only callback progress refreshes health; this clock never drives transport.
+    pub fn poll(&mut self, now: std::time::Instant) -> Result<()> {
         self.poll_workers()?;
         if matches!(self.workers, Workers::Restarting) {
             return Ok(());
         }
         let submitted = self.port.submitted.load(Ordering::Acquire);
         if submitted != self.last_callback.0 {
-            self.last_callback = (submitted, std::time::Instant::now());
+            self.last_callback = (submitted, now);
         }
         if self.playing()
-            && (self.port.failed() || self.last_callback.1.elapsed() > Duration::from_secs(1))
+            && (self.port.failed()
+                || now.saturating_duration_since(self.last_callback.1) > Duration::from_secs(1))
         {
             let r = self.request.lock().map_err(|_| Error::Poisoned)?.clone();
             self.seek(self.position()?, false, r.project)?;
@@ -626,8 +629,12 @@ impl Playback {
                 }
             }
         }
-        if request.playing && request.hover.is_none() && at >= request.project.duration() {
-            self.seek(at, false, request.project)?;
+        let transport_at = request.at(self.port.audible.load(Ordering::Acquire))?;
+        if request.playing && transport_at >= request.project.duration() {
+            self.seek(transport_at, false, request.project)?;
+            // Automatic end stops transport; a pointer still over the timeline
+            // keeps its preview until leave, OFF or an explicit transport action.
+            self.set_hover(request.hover)?;
         }
         Ok(())
     }

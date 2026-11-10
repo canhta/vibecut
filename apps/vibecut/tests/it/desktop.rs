@@ -278,7 +278,7 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
     let port = editor.playback.audio_port();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
         if editor.playback.frame().is_some() {
             break;
         }
@@ -292,7 +292,7 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
     let mut audio = [0.0; 960];
     for _ in 0..201 {
         port.fill(&mut audio, 0);
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
     }
     assert!(editor.playback.position().unwrap() >= Tick(TICKS_PER_SECOND * 3));
     editor.playback.clear().unwrap();
@@ -302,7 +302,7 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
     loop {
         // Keep the simulated device callback active while transport is playing.
         port.fill(&mut audio, 0);
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
         if let Some(frame) = editor.playback.frame() {
             assert!(frame.generation > first_epoch);
             break;
@@ -331,7 +331,7 @@ fn frame_exceeding_budget_is_typed_and_shutdown_joins_workers() {
     let mut playback = Playback::new(&session, budget.clone(), Arc::new(Files)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         if playback.error().is_some() {
             break;
         }
@@ -374,7 +374,7 @@ fn engine_catches_preview_worker_panic_and_app_reports_failure() {
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if let Err(error) = playback.poll() {
+        if let Err(error) = playback.poll(std::time::Instant::now()) {
             assert!(matches!(error, vibecut::Error::Worker(_)));
             break;
         }
@@ -402,12 +402,12 @@ fn failed_device_pauses_without_wall_clock_substitution() {
     editor.playback.audio_port().fill(&mut [0.0; 960], 0);
     editor.playback.audio_port().fail();
     assert!(matches!(
-        editor.playback.poll(),
+        editor.playback.poll(std::time::Instant::now()),
         Err(vibecut::Error::PreviewUnavailable(_))
     ));
     assert!(!editor.playback.playing());
     let at = editor.playback.position().unwrap();
-    editor.playback.poll().unwrap();
+    editor.playback.poll(std::time::Instant::now()).unwrap();
     assert_eq!(editor.playback.position().unwrap(), at);
     assert!(editor.activate("transport.play").is_err());
 }
@@ -420,7 +420,7 @@ fn repeated_forward_backward_seeks_and_clears_retain_no_unbounded_frames() {
             .playback
             .seek(at, false, editor.session.project().clone())
             .unwrap();
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
         if n % 5 == 0 {
             editor.playback.clear().unwrap();
         }
@@ -466,7 +466,7 @@ fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() 
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while playback.frame().is_none() {
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -544,7 +544,7 @@ fn transparent_canvas_preview_matches_black_backed_render() {
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while playback.frame().is_none() {
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -584,7 +584,7 @@ fn retry_recovers_a_transient_worker_failure() {
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if playback.poll().is_err() {
+        if playback.poll(std::time::Instant::now()).is_err() {
             break;
         }
         assert!(Instant::now() < deadline);
@@ -592,7 +592,7 @@ fn retry_recovers_a_transient_worker_failure() {
     }
     playback.clear().unwrap();
     assert!(
-        playback.poll().is_ok(),
+        playback.poll(std::time::Instant::now()).is_ok(),
         "retry should replace the failed preview job"
     );
 }
@@ -727,7 +727,10 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
     port.fill(&mut [0.0; 960], 0);
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        let failed = matches!(editor.playback.poll(), Err(vibecut::Error::Worker(_)));
+        let failed = matches!(
+            editor.playback.poll(std::time::Instant::now()),
+            Err(vibecut::Error::Worker(_))
+        );
         if failed && factory.blocked.load(std::sync::atomic::Ordering::Acquire) {
             break;
         }
@@ -754,7 +757,7 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
         result.unwrap().unwrap();
     });
     for _ in 0..5 {
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
         editor.activate("preview.retry").unwrap();
         assert!(!editor.playback.playing());
         assert_eq!(editor.playback.position().unwrap(), at);
@@ -767,7 +770,7 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
     factory.release();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        editor.playback.poll().unwrap();
+        editor.playback.poll(std::time::Instant::now()).unwrap();
         if let Some(frame) = editor.playback.frame() {
             assert!(frame.generation > 1);
             assert!(frame.at <= at);
@@ -952,7 +955,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
     loop {
         let mut samples = [0.0; 64];
         port.fill(&mut samples, 0);
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         if samples.iter().any(|v| *v != 0.0) {
             assert!(gate.cancelled.load(Ordering::Acquire));
             assert!(
@@ -976,7 +979,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
     let deadline = Instant::now() + Duration::from_secs(10);
     while playback.budget().snapshot().unwrap().owners[1] != 0 {
         assert!(Instant::now() < deadline);
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         std::thread::sleep(Duration::from_millis(2));
     }
 }
@@ -1167,7 +1170,7 @@ fn next_preview_work(receive: &std::sync::mpsc::Receiver<PreviewWork>) -> Previe
 fn wait_preview(playback: &mut Playback, at: Tick) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         if let Some(frame) = playback.frame() {
             assert_eq!(frame.at, at, "a stale frame must never be shown");
             break;
@@ -1347,4 +1350,104 @@ fn preview_axis_stale_pixels_are_fenced_after_rapid_hover_and_seek() {
         "same-tick replacement must upload new pixels"
     );
     output.textures_delta.clear();
+}
+
+#[test]
+fn preview_axis_held_hover_does_not_keep_a_finished_transport_playing() {
+    let session = session();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    playback
+        .seek(Tick(9 * TICKS_PER_SECOND), true, session.project().clone())
+        .unwrap();
+    let hover = Tick(4 * TICKS_PER_SECOND);
+    playback.set_hover(Some(hover)).unwrap();
+    let port = playback.audio_port();
+    port.fill(&mut vec![0.0; 48_000 * 2], 0);
+    port.fill(&mut [0.0; 2], 0);
+    assert_eq!(playback.position().unwrap(), session.project().duration());
+    playback.poll(std::time::Instant::now()).unwrap();
+    assert!(
+        !playback.playing(),
+        "held hover must not suppress the normal end stop"
+    );
+    assert_eq!(playback.hover(), Some(hover));
+    assert_eq!(playback.display_position().unwrap(), hover);
+    wait_preview(&mut playback, hover);
+    assert!(
+        playback
+            .frame()
+            .unwrap()
+            .image
+            .pixels
+            .iter()
+            .all(|p| *p == egui::Color32::RED)
+    );
+    playback.set_hover(None).unwrap();
+    let end = session.project().duration();
+    assert_eq!(playback.display_position().unwrap(), end);
+    wait_preview(&mut playback, end);
+    assert!(
+        playback
+            .frame()
+            .unwrap()
+            .image
+            .pixels
+            .iter()
+            .all(|p| *p == egui::Color32::BLACK)
+    );
+}
+
+#[test]
+fn preview_axis_changing_hover_cannot_refresh_a_stalled_callback_clock() {
+    let session = session();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    playback
+        .seek(Tick::ZERO, true, session.project().clone())
+        .unwrap();
+    let port = playback.audio_port();
+    port.fill(&mut [0.0; 960], 0);
+    // A controlled monotonic timeline: callback progress establishes its health
+    // baseline here; pointer movement cannot assign a different clock to it.
+    let baseline = Instant::now() + Duration::from_secs(10);
+    playback.poll(baseline).unwrap();
+    let at = playback.position().unwrap();
+    for millis in [200, 500, 1000] {
+        playback
+            .set_hover(Some(Tick(millis * TICKS_PER_SECOND / 100)))
+            .unwrap();
+        playback
+            .poll(baseline + Duration::from_millis(millis as u64))
+            .unwrap();
+        assert!(
+            playback.playing(),
+            "a callback is healthy through one second"
+        );
+        assert_eq!(playback.position().unwrap(), at);
+    }
+    playback.set_hover(Some(Tick(TICKS_PER_SECOND))).unwrap();
+    assert!(matches!(
+        playback.poll(baseline + Duration::from_millis(1001)),
+        Err(vibecut::Error::PreviewUnavailable("audio clock stalled"))
+    ));
+    assert!(!playback.playing());
+    assert_eq!(playback.position().unwrap(), at);
+    port.fill(&mut [0.0; 960], 0);
+    playback.poll(baseline + Duration::from_secs(2)).unwrap();
+    assert_eq!(
+        playback.position().unwrap(),
+        at,
+        "no wall-clock substitution after stop"
+    );
 }

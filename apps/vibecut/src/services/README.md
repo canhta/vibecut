@@ -22,7 +22,10 @@ The device must be stereo f32 at the project's render-owned sample rate (default
 wall clock. Gaps and underruns play silence, keep the device timeline and are counted.
 Pausing and seeking invalidate old ring samples by generation. Shutdown cancels and
 joins the engine workers. An absent, failed or one-second-stalled device refuses or
-pauses playback as unavailable.
+pauses playback as unavailable. `poll` takes the caller's monotonic instant for
+health checks; only actual callback progress or an explicit transport reset
+refreshes that baseline. End detection uses the device transport position even
+while the pointer holds a different preview; the held preview survives the stop.
 
 Preview fits within 640x360 keeping aspect. At most four queued frames, one shown frame
 and the upload's retained frame exist at once. The native default is 768 MiB including

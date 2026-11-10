@@ -1015,7 +1015,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
         validate_assets(&mut editor);
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            editor.playback.poll().unwrap();
+            editor.playback.poll(std::time::Instant::now()).unwrap();
             if editor.playback.frame().is_some() {
                 break;
             }
@@ -1039,7 +1039,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
             );
             let deadline = Instant::now() + Duration::from_secs(5);
             loop {
-                editor.playback.poll().unwrap();
+                editor.playback.poll(std::time::Instant::now()).unwrap();
                 if let Some(frame) = editor.playback.frame() {
                     assert!(
                         frame.generation > old_epoch,

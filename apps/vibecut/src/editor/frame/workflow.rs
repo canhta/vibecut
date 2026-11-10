@@ -10,7 +10,7 @@ impl Editor {
         {
             self.persistence_error = Some(std::sync::Arc::new(e));
         }
-        if let Err(e) = self.playback.poll() {
+        if let Err(e) = self.playback.poll(std::time::Instant::now()) {
             self.desk().fail(e.to_string());
         }
         if let Some(previews) = &mut self.effect_previews

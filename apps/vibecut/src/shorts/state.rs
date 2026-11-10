@@ -589,7 +589,7 @@ impl State {
             }
         }
         if let Some(preview) = &mut self.preview
-            && let Err(e) = preview.playback.poll()
+            && let Err(e) = preview.playback.poll(std::time::Instant::now())
         {
             self.fail(e, Text::ShortsError);
         }

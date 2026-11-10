@@ -1220,7 +1220,7 @@ impl SourceProvider for SyntheticFrames {
 fn wait_for_frame(editor: &mut Editor) -> Result<(), Failure> {
     let deadline = Instant::now() + Duration::from_secs(10);
     while editor.playback.frame().is_none() {
-        editor.playback.poll()?;
+        editor.playback.poll(std::time::Instant::now())?;
         if Instant::now() >= deadline {
             return Err("preview frame timeout".into());
         }

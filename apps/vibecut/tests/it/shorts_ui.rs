@@ -174,7 +174,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while playback.frame().is_none() && playback.error().is_none() {
-            playback.poll().unwrap();
+            playback.poll(std::time::Instant::now()).unwrap();
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
@@ -209,7 +209,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     session.redo().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while playback.frame().is_none() {
-        playback.poll().unwrap();
+        playback.poll(std::time::Instant::now()).unwrap();
         assert!(playback.error().is_none());
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
