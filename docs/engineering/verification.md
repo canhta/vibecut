@@ -8,13 +8,13 @@ Commit only green, with the smallest check that covers the change. Compile throu
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
-| Rust, while iterating | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
-| Rust, handoff | `cargo test -p <crate>` for every edited crate, plus `cargo xtask checks`; touched media/render/export code runs its oracle tests in required mode. No workspace build per ticket |
+| Rust, when the maintainer asks for a build or debugging | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` for the crates involved |
+| Rust, handoff | `cargo xtask checks` only. No compile, test or Clippy run while implementing or before merge, unless the maintainer asks for one |
 | Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
-| Fix round, merge conflict | Edited crates' tests (plus the reviewer's reproductions) |
+| Fix round, merge conflict | `cargo xtask checks`; a build or test run only when the maintainer asked for the debugging |
 | Clean rebase | Reuse the receipt |
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
-| `main`, once per batch of merges | Hosted CI, dispatched by hand (`gh workflow run ci.yml --ref main`) and not waited for; a red run becomes a fix ticket |
+| `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
 
 `cargo xtask ci [--require-oracles]` runs `checks`, `clippy` and workspace tests. Required oracle mode fails on a missing or pre-6.0 `ffmpeg`/`ffprobe` and on any skipped oracle test; skips never count as acceptance.
 
