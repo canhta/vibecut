@@ -710,6 +710,15 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
 
 struct BlockingPreview;
 impl render::effects::EffectCompositor for BlockingPreview {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
     fn supports(&self, _: &str) -> bool {
         true
     }
@@ -728,6 +737,15 @@ impl render::effects::EffectCompositor for BlockingPreview {
 }
 struct FailingPreview;
 impl render::effects::EffectCompositor for FailingPreview {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
     fn supports(&self, _: &str) -> bool {
         true
     }

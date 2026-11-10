@@ -687,6 +687,15 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
     use time::{FrameRate, SourceRange, Tick};
     struct GaussianOnly(std::sync::atomic::AtomicUsize);
     impl EffectCompositor for GaussianOnly {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn render::ExecutionHooks,
+        ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> render::Result<()> {
+            Ok(())
+        }
         fn supports(&self, _: &str) -> bool {
             true
         }
@@ -767,6 +776,15 @@ fn per_run_supports_keeps_supported_runs_on_the_adapter() {
     /// Claims the gaussian entry only, so a Pixel run in the same item must go to CPU.
     struct GaussianOnly(Mutex<Vec<&'static str>>);
     impl EffectCompositor for GaussianOnly {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn render::ExecutionHooks,
+        ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> render::Result<()> {
+            Ok(())
+        }
         fn supports(&self, entry_point: &str) -> bool {
             entry_point == "gaussian"
         }
@@ -1097,6 +1115,15 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
     // renderer then runs the rest of the list on the CPU reference above.
     struct PixelOnly;
     impl EffectCompositor for PixelOnly {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn render::ExecutionHooks,
+        ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> render::Result<()> {
+            Ok(())
+        }
         fn supports(&self, entry_point: &str) -> bool {
             entry_point != "mirror"
         }
@@ -1335,4 +1362,107 @@ fn mirror_refuses_extreme_geometry_before_allocating_and_keeps_admitted_results_
             Err(Error::Invalid("effect input dimensions"))
         ));
     }
+}
+
+#[test]
+fn busy_frame_chooses_cpu_before_sources_and_output() {
+    struct Busy(Arc<AtomicU8>);
+    impl EffectCompositor for Busy {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn ExecutionHooks,
+        ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+            self.0.store(1, Ordering::SeqCst);
+            Err(Error::Unsupported("contended frame"))
+        }
+        fn release_idle(&self) -> Result<()> {
+            panic!("busy adapter reused")
+        }
+        fn supports(&self, _: &str) -> bool {
+            panic!("busy adapter consulted")
+        }
+        fn apply(
+            &self,
+            _: &Image,
+            _: &[EffectPass],
+            _: EffectInputs<'_>,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            panic!("busy adapter called")
+        }
+    }
+    struct Sources(Arc<AtomicU8>, Hooks);
+    impl SourceProvider for Sources {
+        fn begin_video(&mut self, _: &[project::ItemId]) {
+            assert_eq!(
+                self.0.load(Ordering::SeqCst),
+                1,
+                "scope decision precedes sources"
+            );
+            assert_eq!(
+                self.1.used.load(Ordering::SeqCst),
+                0,
+                "scope decision precedes output"
+            );
+            self.0.store(2, Ordering::SeqCst);
+        }
+        fn status(
+            &mut self,
+            _: &media::SourceAsset,
+            _: bool,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Option<UnavailableReason>> {
+            panic!("solid fixture")
+        }
+        fn video(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: time::Tick,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Option<Image>> {
+            panic!("solid fixture")
+        }
+        fn audio(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: i64,
+            _: usize,
+            _: u32,
+            _: &dyn ExecutionHooks,
+        ) -> Result<AudioBlock> {
+            panic!("solid fixture")
+        }
+    }
+    let mut data = crate::support::solid_project(1, 17, 9, [100, 50, 20, 255]).into_data();
+    data.scene_mut().timeline.overlays[0].items[0].effects.push(
+        project::effect_definition("color_grade")
+            .unwrap()
+            .instance("grade")
+            .with("brightness", project::EffectValue::Scalar(30.0))
+            .unwrap(),
+    );
+    let project = project::Project::new(data).unwrap();
+    let hooks = Hooks::default();
+    let reference = Renderer::new(&project, RenderSettings::from_project(&project))
+        .unwrap()
+        .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &hooks)
+        .unwrap();
+    let hooks = Hooks::default();
+    let state = Arc::new(AtomicU8::new(0));
+    let mut settings = RenderSettings::from_project(&project);
+    settings.effects = Some(Arc::new(Busy(state.clone())));
+    let actual = Renderer::new(&project, settings)
+        .unwrap()
+        .render_frame(
+            time::Tick::ZERO,
+            &mut Sources(state.clone(), hooks.clone()),
+            &hooks,
+        )
+        .unwrap();
+    assert_eq!(state.load(Ordering::SeqCst), 2);
+    assert_eq!(actual.pixels(), reference.pixels());
+    drop(actual);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
 }

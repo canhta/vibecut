@@ -99,6 +99,15 @@ impl EffectInputs<'_> {
     }
 }
 pub trait EffectCompositor: Send + Sync {
+    /// Acquire optional per-frame resources before decoding or output allocation.
+    /// Unsupported selects CPU for the entire frame; None retains this adapter.
+    /// Forward the exact borrowed hooks object to every scoped call.
+    fn frame<'a>(
+        &'a self,
+        hooks: &'a dyn ExecutionHooks,
+    ) -> Result<Option<Box<dyn EffectCompositor + 'a>>>;
+    /// Release completed idle capacity before CPU work; pending work stays charged.
+    fn release_idle(&self) -> Result<()>;
     /// Composite a masked/effected working item over its track backdrop.
     /// Unsupported must leave `below` unchanged so the renderer can use CPU.
     fn composite(
@@ -176,10 +185,14 @@ pub fn apply_effect(
         };
         image = if supported {
             match adapter.apply(&image, run, inputs(), hooks) {
-                Err(Error::Unsupported(_)) => cpu.apply(&image, run, inputs(), hooks)?,
+                Err(Error::Unsupported(_)) => {
+                    adapter.release_idle()?;
+                    cpu.apply(&image, run, inputs(), hooks)?
+                }
                 result => result?,
             }
         } else {
+            adapter.release_idle()?;
             cpu.apply(&image, run, inputs(), hooks)?
         };
         index = end;
@@ -546,6 +559,15 @@ fn clamp_pixel(pixel: [f32; 4]) -> [f32; 4] {
     out
 }
 impl EffectCompositor for CpuEffects {
+    fn frame<'a>(
+        &'a self,
+        _: &'a dyn crate::ExecutionHooks,
+    ) -> crate::Result<Option<Box<dyn crate::effects::EffectCompositor + 'a>>> {
+        Ok(None)
+    }
+    fn release_idle(&self) -> crate::Result<()> {
+        Ok(())
+    }
     fn supports(&self, _: &str) -> bool {
         true
     }
@@ -905,9 +927,21 @@ mod effect_run_tests {
     struct Split {
         mirror: bool,
         retry: bool,
+        releases: std::sync::atomic::AtomicUsize,
         calls: Mutex<Vec<&'static str>>,
     }
     impl EffectCompositor for Split {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn crate::ExecutionHooks,
+        ) -> crate::Result<Option<Box<dyn crate::effects::EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> crate::Result<()> {
+            self.releases
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
         fn supports(&self, entry: &str) -> bool {
             (entry == "mirror") == self.mirror
         }
@@ -969,6 +1003,7 @@ mod effect_run_tests {
             let adapter = Split {
                 mirror,
                 retry,
+                releases: Default::default(),
                 calls: Mutex::new(vec![]),
             };
             let first = apply_effect(
@@ -982,6 +1017,10 @@ mod effect_run_tests {
             assert_eq!(first.pixels(), once.pixels());
             let second = apply_effect(first, &passes, &source, &adapter, &Hooks).unwrap();
             assert_eq!(second.pixels(), twice.pixels());
+            assert_eq!(
+                adapter.releases.load(std::sync::atomic::Ordering::SeqCst),
+                if retry { 4 } else { 2 }
+            );
             let expected = if mirror { "mirror" } else { "grade" };
             assert_eq!(*adapter.calls.lock().unwrap(), [expected, expected]);
         }

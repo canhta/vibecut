@@ -11,13 +11,22 @@ All supplied input geometry is validated before allocation, including unused inp
 Unused read-only bindings follow the current ping-pong buffer; the writable output
 and any required auxiliary snapshot remain distinct. Blur does no colour or alpha conversion.
 
-Non-Sample calls allocate three image buffers and upload one image; Sample or blend
-calls allocate four and upload two. The transient reservation is four or five times
-`Image::bytes`, respectively, including one sequential packing vector, plus 1024 bytes
-per pass. Caller images and the validated result Image hold separate reservations.
+`frame` acquires one nonblocking adapter permit before any scene source/output work.
+Contention chooses CPU for that entire frame. Standalone calls use the same scoped
+implementation. Each scope fixes its first geometry and exact borrowed hooks object.
+No device or GPU dependency crosses the render interface.
 
-Compute buffers, upload, pass metadata and readback are charged to the engine hooks;
-native driver and pipeline allocations are not. Device limit, validation or readback
-failure returns `Unsupported` for CPU fallback. Submitted work keeps its byte lease until
-GPU completion, even if the bounded readback wait times out. No unsafe mapping or buffer
-casts.
+Mapped uploads make all staging explicit: work A/B, readback and upload-current cost
+4I; Sample/blend add a distinct auxiliary/upload pair for 6I. Non-Sample calls drop
+the auxiliary pair. Metadata has distinct slots per pass, charged at 1024 bytes/pass
+(up to 512), with at most 49 values each; actual fixed scope records are charged
+separately within 4096 bytes. Caller and result Images reserve independently. These
+bounds exclude native driver/pipeline memory and do not guarantee export admission.
+
+Completed scratch is reused only within its scope. CPU runs, masks, transforms,
+transitions and the next decode release idle capacity. Submitted completion owns
+buffers, leases and the permit through timeout/unwind; a pending submission cannot
+be recycled. Completion is serviced by native polling, with no detached poller. A
+30-second wait and total one-second mapping receipt ceiling return Unsupported;
+Budget, Cancelled and Invalid propagate without publishing a backdrop. A driver
+that never confirms completion retains bounded charged quarantine. No unsafe casts.
