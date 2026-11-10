@@ -510,6 +510,55 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
 }
 
 #[test]
+fn constructor_refuses_foreign_settings_identity_before_transport() {
+    let fake = Arc::new(FakeTransport::new(Vec::new()));
+    let canonical = config();
+    let transcriber = adapter(&fake, canonical.clone());
+    assert_eq!(transcriber.config(), &canonical);
+    assert_eq!(
+        transcriber.config().settings_fingerprint(),
+        canonical.settings_fingerprint()
+    );
+
+    let openai = other_config();
+    assert_ne!(
+        openai.settings_fingerprint(),
+        canonical.settings_fingerprint()
+    );
+    let cases = [
+        (
+            "unrelated nonempty fingerprint",
+            "foreign-transport-v1;model=scribe_v2",
+        ),
+        (
+            "the other provider's canonical fingerprint",
+            openai.settings_fingerprint().as_str(),
+        ),
+    ];
+    for (name, settings) in cases {
+        let forged = ProviderConfig::new(
+            canonical.id().clone(),
+            canonical.model().clone(),
+            settings.into(),
+            canonical.location().clone(),
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                ElevenLabsTranscriber::new(
+                    forged,
+                    ApiKey::new("test-key-not-real").unwrap(),
+                    fake.clone()
+                ),
+                Err(Error::Unsupported)
+            ),
+            "{name} was admitted"
+        );
+    }
+    assert_eq!(fake.calls(), 0);
+}
+
+#[test]
 fn provider_errors_are_typed_without_bodies_and_do_not_retry() {
     let fake = Arc::new(FakeTransport::new(vec![
         Reply::Response {

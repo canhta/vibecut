@@ -424,6 +424,55 @@ fn no_network_before_consent_and_changed_payload_or_provider_is_refused() {
 }
 
 #[test]
+fn constructor_refuses_foreign_settings_identity_before_transport() {
+    let fake = Arc::new(FakeTransport::new(Vec::new()));
+    let canonical = config();
+    let transcriber = adapter(&fake, canonical.clone());
+    assert_eq!(transcriber.config(), &canonical);
+    assert_eq!(
+        transcriber.config().settings_fingerprint(),
+        canonical.settings_fingerprint()
+    );
+
+    let elevenlabs = other_config();
+    assert_ne!(
+        elevenlabs.settings_fingerprint(),
+        canonical.settings_fingerprint()
+    );
+    let cases = [
+        (
+            "unrelated nonempty fingerprint",
+            "foreign-transport-v1;model=gpt-transcribe",
+        ),
+        (
+            "the other provider's canonical fingerprint",
+            elevenlabs.settings_fingerprint().as_str(),
+        ),
+    ];
+    for (name, settings) in cases {
+        let forged = ProviderConfig::new(
+            canonical.id().clone(),
+            canonical.model().clone(),
+            settings.into(),
+            canonical.location().clone(),
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                OpenAiTranscriber::new(
+                    forged,
+                    ApiKey::new("test-key-not-real").unwrap(),
+                    fake.clone()
+                ),
+                Err(Error::Unsupported)
+            ),
+            "{name} was admitted"
+        );
+    }
+    assert_eq!(fake.calls(), 0);
+}
+
+#[test]
 fn disclosure_states_duration_size_cost_and_transcription_specific_terms() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
     let provider = config();

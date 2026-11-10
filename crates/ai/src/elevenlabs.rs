@@ -53,7 +53,8 @@ impl ElevenLabsTranscriber {
         )
     }
 
-    /// Admits only `scribe_v2`, backend `elevenlabs` and the official HTTPS base URL.
+    /// Admits only `scribe_v2`, backend `elevenlabs`, this adapter's settings
+    /// fingerprint and the official HTTPS base URL.
     pub fn new(
         config: ProviderConfig,
         key: ApiKey,
@@ -62,7 +63,7 @@ impl ElevenLabsTranscriber {
         remote::admit(
             &config,
             &[MODEL],
-            None,
+            Some(SETTINGS_FINGERPRINT),
             BACKEND,
             BASE_URL,
             Some("ElevenLabs requires remote config"),

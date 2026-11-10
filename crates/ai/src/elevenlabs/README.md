@@ -2,7 +2,7 @@
 
 ## Scribe transcription
 
-`provider_config(model)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs` and the base URL `https://api.elevenlabs.io/v1`, so proxies, lookalike hosts and other version paths are refused. Composition resolves the provider key and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
+`provider_config(model)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs`, the adapter's exact settings fingerprint and the base URL `https://api.elevenlabs.io/v1`, so proxies, lookalike hosts, other version paths and forged or stale settings identities are refused. Composition resolves the provider key and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
 
 Uploads are multipart PCM16 WAV with `model_id=scribe_v2`, the exact `language_code` (`vi`, `en` or `zh`, no fallback) and `timestamps_granularity=word`. The provider allows 3 GB and 10 hours in standard mode; the shared 64 MiB PCM admission and engine chunking bound real invocations. Responses are capped at 1 MiB. Consent `max_bytes` bounds the encoded WAV including its 44-byte header.
 

@@ -63,8 +63,9 @@ impl OpenAiTranscriber {
         )
     }
 
-    /// Admits only the `gpt-transcribe` model, the `openai` backend and a remote
-    /// versioned HTTPS base URL. The key is resolved by composition, never here.
+    /// Admits only the `gpt-transcribe` model, the `openai` backend, this
+    /// adapter's settings fingerprint and a remote versioned HTTPS base URL. The
+    /// key is resolved by composition, never here.
     pub fn new(
         config: ProviderConfig,
         key: ApiKey,
@@ -73,7 +74,7 @@ impl OpenAiTranscriber {
         remote::admit(
             &config,
             &[MODEL],
-            None,
+            Some(SETTINGS_FINGERPRINT),
             BACKEND,
             BASE_URL,
             Some("OpenAI requires remote config"),
