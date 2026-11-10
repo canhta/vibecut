@@ -1116,6 +1116,159 @@ fn every_registered_kind_meets_the_endpoint_finite_deterministic_continuous_cont
                 );
             }
         }
+        // High-frequency premultiplied frames exercise boundaries that an opaque
+        // ramp and mean-only comparison cannot establish.
+        for alpha in [0., 0.25, 1.] {
+            let a = detailed_frame(64, 36, alpha, false);
+            let b = detailed_frame(64, 36, alpha, true);
+            for (p, source) in [(0.00001, &a), (0.99999, &b)] {
+                let image = transitions::apply(
+                    definition.kind,
+                    &TransitionParams::new(),
+                    &a,
+                    &b,
+                    p,
+                    1.,
+                    &h,
+                )
+                .unwrap();
+                assert!(
+                    max_abs(&image, source) < 0.002,
+                    "{} alpha={alpha} endpoint={p}",
+                    definition.kind
+                );
+                assert!(
+                    image
+                        .pixels()
+                        .iter()
+                        .all(|px| px[..3].iter().all(|v| *v <= px[3])
+                            && px.iter().all(|v| v.is_finite() && (0. ..=1.).contains(v)))
+                );
+            }
+        }
+    }
+    for kind in ["quake", "screen_off"] {
+        for (width, height) in [(1, 1), (64, 36)] {
+            for alpha in [0., 0.25, 1.] {
+                let a = detailed_frame(width, height, alpha, false);
+                let b = detailed_frame(width, height, alpha, true);
+                let params = if kind == "quake" {
+                    TransitionParams::from([
+                        ("shake".into(), TransitionValue::Float(400.)),
+                        ("motion_blur".into(), TransitionValue::Float(100.)),
+                    ])
+                } else {
+                    TransitionParams::new()
+                };
+                for end in [false, true] {
+                    let mut previous = f32::INFINITY;
+                    for distance in [0.001, 0.0001, 0.00001] {
+                        let p = if end { 1. - distance } else { distance };
+                        let image = transitions::apply(kind, &params, &a, &b, p, 1., &h).unwrap();
+                        let error = max_abs(&image, if end { &b } else { &a });
+                        assert!(
+                            error <= previous + 1e-6,
+                            "{kind} converges at {p}: {error} > {previous}"
+                        );
+                        previous = error;
+                    }
+                    assert!(
+                        previous < 0.0002,
+                        "{kind} alpha={alpha}: limiting error {previous}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn detailed_frame(width: u32, height: u32, alpha: f32, incoming: bool) -> Image {
+    let pixels = (0..width * height).map(|n| {
+        let on = ((n % width) + n / width).is_multiple_of(2) != incoming;
+        if on {
+            [alpha, 0., alpha * 0.25, alpha]
+        } else {
+            [0., alpha * 0.5, alpha, alpha]
+        }
+    });
+    Image::from_working_pixels(width, height, pixels, &Hooks::default()).unwrap()
+}
+fn max_abs(a: &Image, b: &Image) -> f32 {
+    a.pixels()
+        .iter()
+        .zip(b.pixels())
+        .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+        .fold(0., f32::max)
+}
+
+#[test]
+fn field_wipes_match_spatial_and_scaled_geometry() {
+    let h = Hooks::default();
+    let red = [1., 0., 0., 1.];
+    let blue = [0., 0., 1., 1.];
+    let run = |kind: &str, params: &TransitionParams, w, ht, p, scale| {
+        transitions::apply(
+            kind,
+            params,
+            &Image::new(w, ht, red, &h).unwrap(),
+            &Image::new(w, ht, blue, &h).unwrap(),
+            p,
+            scale,
+            &h,
+        )
+        .unwrap()
+    };
+    for (angle, incoming, outgoing) in [
+        (90., (10, 20), (100, 20)),
+        (0., (60, 70), (60, 10)),
+        (180., (60, 10), (60, 70)),
+        (270., (110, 20), (10, 20)),
+    ] {
+        let params = TransitionParams::from([("angle".into(), TransitionValue::Angle(angle))]);
+        let image = run("straight_wipe", &params, 120, 80, 0.25, 1.);
+        assert_eq!(
+            image.pixels()[incoming.1 * 120 + incoming.0],
+            blue,
+            "incoming from angle {angle}"
+        );
+        assert_eq!(image.pixels()[outgoing.1 * 120 + outgoing.0], red);
+    }
+    for kind in [
+        "circle_reveal",
+        "box_reveal",
+        "diamond_reveal",
+        "cross_reveal",
+    ] {
+        let image = run(kind, &TransitionParams::new(), 120, 80, 0.5, 1.);
+        assert_eq!(
+            image.pixels()[40 * 120 + 60],
+            blue,
+            "{kind} reveals its centre"
+        );
+        assert_eq!(
+            image.pixels()[0],
+            red,
+            "{kind} retains the corners at midpoint"
+        );
+    }
+    let params = TransitionParams::from([
+        ("feather".into(), TransitionValue::Float(24.)),
+        ("antialias".into(), TransitionValue::Choice(0)),
+    ]);
+    let large = run("straight_wipe", &params, 128, 72, 0.5, 1.);
+    let small = run("straight_wipe", &params, 64, 36, 0.5, 0.5);
+    for y in 0..36 {
+        for x in 0..64 {
+            for channel in 0..4 {
+                let expected = (large.pixels()[(y * 2) * 128 + x * 2][channel]
+                    + large.pixels()[(y * 2) * 128 + x * 2 + 1][channel])
+                    * 0.5;
+                assert!(
+                    (small.pixels()[y * 64 + x][channel] - expected).abs() < 0.005,
+                    "scaled feather at {x},{y}"
+                );
+            }
+        }
     }
 }
 
@@ -1126,50 +1279,109 @@ fn gaussian_transitions_preserve_axes_and_bound_scratch_work() {
         let param = if kind == "bloom" { "radius" } else { "blur" };
         for (width, height, scale) in [(1920, 1, 1.), (1, 8192, 1024.)] {
             let pixels: Vec<_> = (0..width * height)
-                .map(|n| if n < width * height / 2 { [0., 0., 0., 1.] } else { [1.; 4] })
+                .map(|n| {
+                    if n < width * height / 2 {
+                        [0., 0., 0., 1.]
+                    } else {
+                        [1.; 4]
+                    }
+                })
                 .collect();
             let a = Image::from_working_pixels(width, height, pixels.iter().copied(), &h).unwrap();
-            let transposed = Image::from_working_pixels(height, width, pixels.iter().copied(), &h).unwrap();
+            let transposed =
+                Image::from_working_pixels(height, width, pixels.iter().copied(), &h).unwrap();
             let params = TransitionParams::from([(param.into(), TransitionValue::Float(400.))]);
-            let run = |image: &Image| transitions::apply(kind, &params, image, image, 0.5, scale, &h).unwrap();
+            let run = |image: &Image| {
+                transitions::apply(kind, &params, image, image, 0.5, scale, &h).unwrap()
+            };
             let (result, rotated) = (run(&a), run(&transposed));
-            assert!(mean_abs(&result, &rotated) < 2e-5, "{kind}: transpose preserves blur strength");
+            assert!(
+                mean_abs(&result, &rotated) < 2e-5,
+                "{kind}: transpose preserves blur strength"
+            );
             assert!(result.pixels().iter().flatten().all(|v| v.is_finite()));
             if kind == "soft_focus_fade" && width == 1920 {
                 // Independent step-edge geometry: sigma is about 185 px, so
                 // a sample 100 px before the edge must receive substantial light.
                 assert!(result.pixels()[860][0] > 0.15);
                 assert!(result.pixels()[1060][0] < 0.85);
-                assert!(result.pixels().windows(2).all(|px| px[0][0] <= px[1][0] + 1e-5));
+                assert!(
+                    result
+                        .pixels()
+                        .windows(2)
+                        .all(|px| px[0][0] <= px[1][0] + 1e-5)
+                );
             }
         }
     }
     let (a, b) = (frame(8192, 1, true), frame(8192, 1, false));
     let bytes = Image::bytes(8192, 1).unwrap();
     // Destination + two blur images fit exactly; column scratch must be admitted too.
-    let budget = Hooks { limit: bytes * 3, ..Hooks::default() };
-    assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, 1., &budget), Err(Error::Budget { requested, .. }) if requested == bytes));
+    let budget = Hooks {
+        limit: bytes * 3,
+        ..Hooks::default()
+    };
+    assert!(
+        matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, 1., &budget), Err(Error::Budget { requested, .. }) if requested == bytes)
+    );
     assert_eq!(budget.peak.load(Ordering::SeqCst), bytes * 3);
     assert_eq!(budget.used.load(Ordering::SeqCst), 0);
 
-    struct ScratchCancel { inner: Hooks, reservations: AtomicUsize, checks: AtomicUsize, cancel_at: usize }
+    struct ScratchCancel {
+        inner: Hooks,
+        reservations: AtomicUsize,
+        checks: AtomicUsize,
+        cancel_at: usize,
+    }
     impl ExecutionHooks for ScratchCancel {
         fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>> {
             self.reservations.fetch_add(1, Ordering::SeqCst);
             self.inner.reserve(kind, bytes)
         }
         fn cancelled(&self) -> bool {
-            self.reservations.load(Ordering::SeqCst) >= 4 && self.checks.fetch_add(1, Ordering::SeqCst) >= self.cancel_at
+            self.reservations.load(Ordering::SeqCst) >= 4
+                && self.checks.fetch_add(1, Ordering::SeqCst) >= self.cancel_at
         }
     }
     for cancel_at in [0, 2, 12] {
-        let hooks = ScratchCancel { inner: Hooks::default(), reservations: AtomicUsize::new(0), checks: AtomicUsize::new(0), cancel_at };
-        assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, 1., &hooks), Err(Error::Cancelled)));
-        assert_eq!(hooks.reservations.load(Ordering::SeqCst), 4, "cancel inside admitted scratch initialization");
+        let hooks = ScratchCancel {
+            inner: Hooks::default(),
+            reservations: AtomicUsize::new(0),
+            checks: AtomicUsize::new(0),
+            cancel_at,
+        };
+        assert!(matches!(
+            transitions::apply(
+                "soft_focus_fade",
+                &TransitionParams::new(),
+                &a,
+                &b,
+                0.5,
+                1.,
+                &hooks
+            ),
+            Err(Error::Cancelled)
+        ));
+        assert_eq!(
+            hooks.reservations.load(Ordering::SeqCst),
+            4,
+            "cancel inside admitted scratch initialization"
+        );
         assert_eq!(hooks.inner.peak.load(Ordering::SeqCst), bytes * 4);
         assert_eq!(hooks.inner.used.load(Ordering::SeqCst), 0);
     }
-    assert!(matches!(transitions::apply("soft_focus_fade", &TransitionParams::new(), &a, &b, 0.5, f32::MAX, &h), Err(Error::Invalid(_))));
+    assert!(matches!(
+        transitions::apply(
+            "soft_focus_fade",
+            &TransitionParams::new(),
+            &a,
+            &b,
+            0.5,
+            f32::MAX,
+            &h
+        ),
+        Err(Error::Invalid(_))
+    ));
 }
 
 #[test]
@@ -1177,6 +1389,23 @@ fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
     let h = Hooks::default();
     let (a, b) = (frame(8, 8, true), frame(8, 8, false));
     let none = TransitionParams::new();
+    for definition in TRANSITION_DEFINITIONS
+        .iter()
+        .filter(|d| d.param("seed").is_some())
+    {
+        let bad = TransitionParams::from([("seed".into(), TransitionValue::Seed(u32::MAX))]);
+        for p in [0., 0.5, 1.] {
+            assert!(matches!(
+                transitions::apply(definition.kind, &bad, &a, &b, p, 1., &h),
+                Err(Error::Invalid(_))
+            ));
+            assert!(
+                render::transition_thumbnail::ThumbnailCache::new(1)
+                    .thumbnail(definition.kind, &bad, (8, 8), p as f32, &h)
+                    .is_err()
+            );
+        }
+    }
     let wrong_type = TransitionParams::from([("hold".to_owned(), TransitionValue::Bool(true))]);
     let unknown = TransitionParams::from([("nope".to_owned(), TransitionValue::Bool(true))]);
     let short = frame(8, 4, false);
@@ -1198,15 +1427,17 @@ fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
     // A stray override never changes a kind that does not read it.
     transitions::apply("cross_dissolve", &unknown, &a, &b, 0.5, 1., &h).unwrap();
     for kind in transitions::registered_kinds() {
-        let hooks = Cancel {
-            checks: AtomicUsize::new(0),
-            cancel_at: 0,
-            inner: Hooks::default(),
-        };
-        let (a, b) = (frame(64, 64, true), frame(64, 64, false));
-        let result = transitions::apply(kind, &none, &a, &b, 0.5, 1., &hooks);
-        assert!(matches!(result, Err(Error::Cancelled)), "{kind}");
-        assert_eq!(hooks.inner.used.load(Ordering::SeqCst), 0);
+        for cancel_at in [0, 1, 5] {
+            let hooks = Cancel {
+                checks: AtomicUsize::new(0),
+                cancel_at,
+                inner: Hooks::default(),
+            };
+            let (a, b) = (frame(64, 64, true), frame(64, 64, false));
+            let result = transitions::apply(kind, &none, &a, &b, 0.5, 1., &hooks);
+            assert!(matches!(result, Err(Error::Cancelled)), "{kind}");
+            assert_eq!(hooks.inner.used.load(Ordering::SeqCst), 0);
+        }
     }
     for (kind, p, sides) in [
         ("cross_dissolve", 0., (true, false)),
@@ -1480,17 +1711,39 @@ fn every_parameter_changes_the_picture() {
         })
     };
     for definition in TRANSITION_DEFINITIONS {
-        let base = render(definition.kind, &TransitionParams::new());
         for param in definition.params {
+            let mut baseline = TransitionParams::new();
+            if param.id == "border_color" {
+                baseline.insert("border_width".into(), TransitionValue::Float(12.));
+            }
+            let base = render(definition.kind, &baseline);
+            let mut choices = vec![base];
             let mut best = 0f32;
             for value in changed_values(param) {
-                let mut params = TransitionParams::from([(param.id.to_owned(), value)]);
-                if param.id == "border_color" {
-                    params.insert("border_width".into(), TransitionValue::Float(12.));
+                if value == param.kind.default_value() {
+                    continue;
                 }
+                let mut params = baseline.clone();
+                params.insert(param.id.to_owned(), value.clone());
                 let frames = render(definition.kind, &params);
-                for (frame, base) in frames.iter().zip(&base) {
-                    best = best.max(mean_abs(frame, base));
+                let difference = |other: &[Image; 3]| {
+                    frames
+                        .iter()
+                        .zip(other)
+                        .map(|(a, b)| mean_abs(a, b))
+                        .fold(0., f32::max)
+                };
+                best = best.max(difference(&choices[0]));
+                if matches!(value, TransitionValue::Choice(_)) {
+                    for other in &choices {
+                        assert!(
+                            difference(other) > 1e-5,
+                            "{} {} {value:?} duplicates another choice",
+                            definition.kind,
+                            param.id
+                        );
+                    }
+                    choices.push(frames);
                 }
             }
             assert!(

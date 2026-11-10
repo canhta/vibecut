@@ -12,3 +12,5 @@ Implementation reference: the structure reference's CPU transition kernels, adap
 | `grunge` | Scramble, Digital Glitch, Tape Damage, Flicker Cut, Quake, Glass Shards, Rough Edge, Kaleidoscope, Liquid Warp, Screen Off |
 
 Every kind is a pure function of the outgoing frame, incoming frame, progress strictly inside (0, 1), the pixel scale and the persisted parameters: progress 0 is exactly the outgoing frame, 1 exactly the incoming one, and the output is finite, deterministic and continuous towards both ends. Pixel-denominated parameters multiply by `scale`; points are frame fractions with the origin at the top left; angles are clockwise degrees.
+
+The dispatcher validates declared parameter overrides before endpoint copies or kernel work, including seeds in 0..=9999. Quake shrinks its temporal shutter at either end while retaining the middle shutter; Screen Off builds its matte with the collapse so transparent inputs converge to their original alpha. These endpoint adaptations take precedence over the source kernels' fixed shutter and opaque matte.

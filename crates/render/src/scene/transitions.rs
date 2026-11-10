@@ -29,11 +29,21 @@ impl<'a> Params<'a> {
             .iter()
             .find(|d| d.id == id)
             .ok_or(Error::Invalid("transition parameter"))?;
-        Ok(self
+        let value = self
             .set
             .get(id)
             .cloned()
-            .unwrap_or_else(|| def.kind.default_value()))
+            .unwrap_or_else(|| def.kind.default_value());
+        def.kind
+            .validate(&value)
+            .map_err(|_| Error::Invalid("transition parameter value"))?;
+        Ok(value)
+    }
+    fn validate(&self) -> Result<()> {
+        for def in self.defs {
+            self.value(def.id)?;
+        }
+        Ok(())
     }
     /// A float parameter in its own unit.
     pub fn num(&self, id: &str) -> Result<f32> {
@@ -457,6 +467,8 @@ pub fn apply(
     if (outgoing.width, outgoing.height) != (incoming.width, incoming.height) {
         return Err(Error::Invalid("transition frame size"));
     }
+    let params = Params::new(definition.params, params);
+    params.validate()?;
     let p = progress.clamp(0., 1.) as f32;
     if p <= 0. {
         return outgoing.copy(hooks);
@@ -472,7 +484,7 @@ pub fn apply(
         width,
         height,
         scale,
-        params: Params::new(definition.params, params),
+        params,
     };
     let mut out = Image::new(outgoing.width, outgoing.height, [0.; 4], hooks)?;
     (kind.run)(
@@ -494,7 +506,9 @@ pub fn exposed_sides(
     progress: f64,
 ) -> Result<(bool, bool)> {
     let definition = transition_definition(kind_id)?;
-    (kind(kind_id)?.sides)(&Params::new(definition.params, params), progress as f32)
+    let params = Params::new(definition.params, params);
+    params.validate()?;
+    (kind(kind_id)?.sides)(&params, progress as f32)
 }
 
 fn both_sides(_: &Params, p: f32) -> Result<(bool, bool)> {

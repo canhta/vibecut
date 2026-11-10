@@ -283,7 +283,12 @@ pub(super) fn shutter(t: &Tx, max: f32) -> Result<(f32, usize)> {
     Ok(if mb <= 0. {
         (0., 1)
     } else {
-        (max * mb, ((mb * 12.).ceil() as usize).clamp(2, 12))
+        // Keep the middle shutter, but shrink its support to the endpoint.
+        // A fixed shutter would retain distorted samples as progress tends to 0/1.
+        (
+            (max * mb).min(2. * t.progress.min(1. - t.progress)),
+            ((mb * 12.).ceil() as usize).clamp(2, 12),
+        )
     })
 }
 
@@ -406,8 +411,7 @@ fn boxes_for_gauss(sigma: f32) -> [usize; 3] {
     }
     let wu = wl + 2;
     let lower = wl as f64;
-    let mideal = (12. * sigma * sigma - 3. * lower * lower - 12. * lower - 9.)
-        / (-4. * lower - 4.);
+    let mideal = (12. * sigma * sigma - 3. * lower * lower - 12. * lower - 9.) / (-4. * lower - 4.);
     let m = mideal.round().clamp(0., 3.) as usize;
     std::array::from_fn(|i| ((if i < m { wl } else { wu }) - 1) / 2)
 }
@@ -438,14 +442,18 @@ fn blur_rows(
         }
         let mut acc = [0.; 4];
         for i in -(radius as isize)..=(radius as isize) {
-            if i.rem_euclid(256) == 0 { check(hooks)?; }
+            if i.rem_euclid(256) == 0 {
+                check(hooks)?;
+            }
             let sample = input.get(clamp(i)).copied().unwrap_or([0.; 4]);
             for (a, v) in acc.iter_mut().zip(sample) {
                 *a += v;
             }
         }
         for (x, out) in output.iter_mut().enumerate() {
-            if x.is_multiple_of(4096) { check(hooks)?; }
+            if x.is_multiple_of(4096) {
+                check(hooks)?;
+            }
             *out = working(scale4(acc, inverse));
             let leaving = input
                 .get(clamp(x as isize - radius as isize))
@@ -477,7 +485,9 @@ fn blur_columns(
         destination.pixels.copy_from_slice(&source.pixels);
         return Ok(());
     }
-    let bytes = (width as u64).checked_mul(16).ok_or(Error::Invalid("transition scratch size"))?;
+    let bytes = (width as u64)
+        .checked_mul(16)
+        .ok_or(Error::Invalid("transition scratch size"))?;
     let _lease = hooks.reserve(MemoryKind::Compositor, bytes)?;
     let mut acc = Vec::new();
     acc.try_reserve_exact(width)?;
@@ -487,14 +497,18 @@ fn blur_columns(
     }
     let clamp = |i: isize| i.clamp(0, height as isize - 1) as usize;
     for i in -(radius as isize)..=(radius as isize) {
-        if i.rem_euclid(8) == 0 { check(hooks)?; }
+        if i.rem_euclid(8) == 0 {
+            check(hooks)?;
+        }
         let y = clamp(i);
         let row = source
             .pixels
             .get(y * width..y * width + width)
             .ok_or(Error::Invalid("transition blur row"))?;
         for (x, (a, v)) in acc.iter_mut().zip(row).enumerate() {
-            if x.is_multiple_of(4096) { check(hooks)?; }
+            if x.is_multiple_of(4096) {
+                check(hooks)?;
+            }
             for (a, v) in a.iter_mut().zip(*v) {
                 *a += v;
             }
@@ -523,7 +537,9 @@ fn blur_columns(
             .zip(leaving.iter().zip(entering))
             .enumerate()
         {
-            if x.is_multiple_of(4096) { check(hooks)?; }
+            if x.is_multiple_of(4096) {
+                check(hooks)?;
+            }
             *out = working(scale4(*a, inverse));
             for (v, (l, e)) in a.iter_mut().zip(l.iter().zip(e)) {
                 *v = *v - l + e;

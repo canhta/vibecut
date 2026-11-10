@@ -59,8 +59,8 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 let fine = hash(cx, cy, seed.wrapping_add(frame as u32 * 7 + 1));
                 let (ox, oy) = if r > 0.55 {
                     (
-                        (hash(bx, by, seed + 99) - 0.5) * amp,
-                        (hash(bx, by, seed + 7) - 0.5) * amp * 0.3,
+                        (hash(bx, by, seed.wrapping_add(99)) - 0.5) * amp,
+                        (hash(bx, by, seed.wrapping_add(7)) - 0.5) * amp * 0.3,
                     )
                 } else {
                     (0., 0.)
@@ -93,8 +93,9 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                         let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
                         let e = bell(q);
                         let ox = (vnoise(q * 45., 0.5, seed) - 0.5) * 2. * shake * e;
-                        let oy = (vnoise(q * 45., 7.5, seed + 1) - 0.5) * 2. * shake * e;
-                        let r = (vnoise(q * 30., 3.5, seed + 2) - 0.5) * rotation * e;
+                        let oy =
+                            (vnoise(q * 45., 7.5, seed.wrapping_add(1)) - 0.5) * 2. * shake * e;
+                        let r = (vnoise(q * 30., 3.5, seed.wrapping_add(2)) - 0.5) * rotation * e;
                         let zoom = 1. + 0.08 * e;
                         let (sn, cs) = r.sin_cos();
                         let (ux, uy) = ((fx - w / 2.) / zoom, (fy - h / 2.) / zoom);
@@ -134,7 +135,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                     for i in -1..=1 {
                         let (cx, cy) = (gx + i, gy + j);
                         let px_ = (cx as f32 + hash(cx, cy, seed)) * cell;
-                        let py_ = (cy as f32 + hash(cx, cy, seed + 1)) * cell;
+                        let py_ = (cy as f32 + hash(cx, cy, seed.wrapping_add(1))) * cell;
                         let d = ((fx - px_).powi(2) + (fy - py_).powi(2)).sqrt();
                         if d < best {
                             second = best;
@@ -145,13 +146,13 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                         }
                     }
                 }
-                let tau = 0.3 + 0.4 * hash(id.0, id.1, seed + 2);
+                let tau = 0.3 + 0.4 * hash(id.0, id.1, seed.wrapping_add(2));
                 let kk = smoothstep(tau - 0.1, tau + 0.1, p);
-                let angle = hash(id.0, id.1, seed + 3) * TAU;
-                let offset = refraction * env * hash(id.0, id.1, seed + 4);
+                let angle = hash(id.0, id.1, seed.wrapping_add(3)) * TAU;
+                let offset = refraction * env * hash(id.0, id.1, seed.wrapping_add(4));
                 let c = ab(t, fx + angle.cos() * offset, fy + angle.sin() * offset, kk);
                 let edge = (-(second - best) / (1.5 * u.max(0.5))).exp() * env;
-                let facet = 1. + (hash(id.0, id.1, seed + 5) - 0.5) * 0.4 * env;
+                let facet = 1. + (hash(id.0, id.1, seed.wrapping_add(5)) - 0.5) * 0.4 * env;
                 add_light(
                     [c[0] * facet, c[1] * facet, c[2] * facet, c[3]],
                     [1.; 4],
@@ -169,7 +170,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 let band = (fy / band_h.max(1.)).floor() as i32;
                 let r = hash(band, frame as i32, seed);
                 let ox = if r > 0.6 {
-                    (hash(band, frame as i32, seed + 1) - 0.5) * amount * env * w * 0.25
+                    (hash(band, frame as i32, seed.wrapping_add(1)) - 0.5) * amount * env * w * 0.25
                 } else {
                     0.
                 };
@@ -187,8 +188,8 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                     (fx / (24. * u.max(0.2))).floor() as i32,
                     (fy / (12. * u.max(0.2))).floor() as i32,
                 );
-                if hash(bx, by, seed + frame * 3) > 1. - 0.04 * amount * env {
-                    let v = hash(bx, by, seed + 77);
+                if hash(bx, by, seed.wrapping_add(frame * 3)) > 1. - 0.04 * amount * env {
+                    let v = hash(bx, by, seed.wrapping_add(77));
                     return mix(c, [v, 1. - v, v * 0.5, 1.], 0.8);
                 }
                 c
@@ -207,7 +208,8 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                 style,
                 move |x, y| {
                     let noise = fbm(x / scale, y / scale, seed) * 0.8
-                        + vnoise(x / (scale * 0.15), y / (scale * 0.15), seed + 9) * 0.2;
+                        + vnoise(x / (scale * 0.15), y / (scale * 0.15), seed.wrapping_add(9))
+                            * 0.2;
                     noise * scale * 3.
                 },
                 out,
@@ -236,7 +238,10 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             out.paint(move |x, y| {
                 let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
                 let ox = (fbm(fx / scale + p * 2., fy / scale, seed) - 0.5) * 2. * amount * env;
-                let oy = (fbm(fx / scale, fy / scale - p * 2., seed + 5) - 0.5) * 2. * amount * env;
+                let oy = (fbm(fx / scale, fy / scale - p * 2., seed.wrapping_add(5)) - 0.5)
+                    * 2.
+                    * amount
+                    * env;
                 ab(t, fx + ox, fy + oy, k)
             })
         }
@@ -259,7 +264,10 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                         * (vnoise(fy * 0.05, p * 20., seed) - 0.5)
                         * 2.;
                 let c = split(t, fx - ox, fy, amount * env * 10. * u, k);
-                let grain = (hash(fx as i32, fy as i32, seed + frame) - 0.5) * 0.25 * amount * env;
+                let grain = (hash(fx as i32, fy as i32, seed.wrapping_add(frame)) - 0.5)
+                    * 0.25
+                    * amount
+                    * env;
                 let band_noise = in_band * env * amount * 0.5 * hash(fx as i32 / 3, row, frame);
                 let l = super::pixels::luma(c);
                 let desat = mix(c, [l, l, l, c[3]], 0.4 * amount * env);
@@ -288,7 +296,9 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
             out.paint(move |x, y| {
                 let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
                 let (rx, ry) = (fx - w / 2., fy - h / 2.);
-                let mut c = [0., 0., 0., 1.];
+                // The screen's matte builds with the collapse. An opaque matte
+                // at arbitrarily small q would jump from a transparent endpoint.
+                let mut c = [0., 0., 0., smoothstep(0., 0.2, q)];
                 if rx.abs() <= hx && ry.abs() <= hy && hx > 0. {
                     let lx = w / 2. + rx / sx.max(1e-3);
                     let ly = h / 2. + ry / sy.max(1e-3);
