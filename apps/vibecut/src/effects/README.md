@@ -15,8 +15,13 @@ Black & White, Channel Mixer and Two-Tone also read only the current run and
 preserve alpha. Black & White has no uniforms and computes linear Rec.709 luma.
 Channel Mixer takes three encoded-sRGB rows of `[r,g,b,constant]`, clamped before
 decoding. Two-Tone takes encoded black RGB, white RGB and amount; it maps encoded
-linear luma, mixes in encoded space and decodes once. Remaining pixel entries
-stay unsupported on this adapter and use the render CPU path.
+linear luma, mixes in encoded space and decodes once.
+Levels takes `[input black, input white, output black, output white, exponent]`;
+its encoded remap floors only the input span, retaining equal/reversed bounds.
+Strobe takes encoded RGB and original-picture fraction, decodes the colour once
+and mixes in linear light. Both read only current input and preserve alpha.
+Strobe time gating stays entirely in the existing effect evaluator, including
+idle no-pass phases. Remaining pixel entries stay on the render CPU path.
 All supplied input geometry is validated before allocation, including unused inputs.
 Unused read-only bindings follow the current ping-pong buffer; the writable output
 and any required auxiliary snapshot remain distinct. Blur does no colour or alpha conversion.

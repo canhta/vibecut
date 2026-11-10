@@ -48,6 +48,25 @@ fn linear_colour_rows() -> Vec<EffectPass> {
     }
     rows
 }
+fn levels_strobe_rows() -> Vec<EffectPass> {
+    let mut rows = vec![
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, 1.0]),
+        pixel("levels", &[0.1, 0.8, 0.05, 0.9, 0.7]),
+        pixel("levels", &[0.8, 0.2, 1.0, 0.0, 2.0]),
+        pixel("levels", &[0.4, 0.4, 0.2, 0.8, 1.0]),
+        pixel("levels", &[0.1, 0.9, 0.37, 0.37, 1.0]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, 1e-6]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, 12.0]),
+        pixel("levels", &[0.4, 0.40001, 0.0, 1.0, 2.0]),
+        pixel("strobe", &[1.0, 1.0, 1.0, 0.0]),
+        pixel("strobe", &[0.0, 0.0, 0.0, 0.35]),
+        pixel("strobe", &[1.0, 0.0, 0.0, 0.0]),
+    ];
+    for blend in [0.0, 0.35, 1.0] {
+        rows.push(pixel("strobe", &[0.1234567, 0.456789, 0.789123, blend]));
+    }
+    rows
+}
 // Independent f64 colour equations, not calls into the f32 CPU reference.
 fn expected_linear_colour(pass: &EffectPass, source: [f32; 4]) -> Option<[f64; 4]> {
     let values = pass.values();
@@ -92,6 +111,19 @@ fn expected_linear_colour(pass: &EffectPass, source: [f32; 4]) -> Option<[f64; 4
             let target = black + (f64::from(values[k + 3]) - black) * encode(luma);
             decode(e[k] + (target - e[k]) * f64::from(values[6]))
         }),
+        "levels" => e.map(|v| {
+            let span = (f64::from(values[1]) - f64::from(values[0])).max(1e-3);
+            let fraction = ((v - f64::from(values[0])) / span).clamp(0.0, 1.0);
+            decode(
+                f64::from(values[2])
+                    + fraction.powf(f64::from(values[4]))
+                        * (f64::from(values[3]) - f64::from(values[2])),
+            )
+        }),
+        "strobe" => [0, 1, 2].map(|k| {
+            let colour = decode(f64::from(values[k]));
+            colour + (c[k] - colour) * f64::from(values[3])
+        }),
         _ => return None,
     };
     Some([rgb[0] * a, rgb[1] * a, rgb[2] * a, a])
@@ -110,6 +142,7 @@ fn pixel_rows() -> Vec<EffectPass> {
         rows.push(pixel("invert", &[channel, 0.35]));
     }
     rows.extend(linear_colour_rows());
+    rows.extend(levels_strobe_rows());
     rows
 }
 fn max_error(a: &Image, b: &Image) -> f32 {
@@ -170,6 +203,8 @@ fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) 
                 "invert" => values[1] == 1.0,
                 "channel_mix" => values.as_ref() == MIX_IDENTITY,
                 "tint" => values[6] == 0.0,
+                "levels" => values.as_ref() == [0.0, 1.0, 0.0, 1.0, 1.0],
+                "strobe" => values[3] == 1.0,
                 _ => false,
             };
             if identity {
@@ -202,7 +237,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
     );
-    for entry in ["color_mix", "gamma_unknown", "levels", "posterize"] {
+    for entry in ["color_mix", "gamma_unknown", "posterize"] {
         assert!(!gpu.supports(entry), "unadmitted {entry}");
     }
     // The public image boundary rejects HDR/out-of-gamut working pixels; decoded
@@ -601,7 +636,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             backoff: std::time::Duration::from_millis(10),
             progress_interval: std::time::Duration::from_millis(10),
         },
-        budget,
+        budget.clone(),
         std::sync::Arc::new(SystemClock::default()),
     )
     .unwrap();
@@ -686,6 +721,148 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             result.bytes().len()
         );
     }
+    // The existing injected-compositor hook records successful REAL device runs;
+    // neither an Unsupported CPU retry nor a cached image can masquerade as one.
+    struct NativeStrobe {
+        gpu: std::sync::Arc<vibecut::effects::GpuEffects>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl EffectCompositor for NativeStrobe {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn ExecutionHooks,
+        ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> Result<()> {
+            self.gpu.release_idle()
+        }
+        fn supports(&self, entry: &str) -> bool {
+            self.gpu.supports(entry)
+        }
+        fn apply(
+            &self,
+            image: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            assert!(passes.iter().all(|pass| pass.entry_point() == "strobe"));
+            let output = self.gpu.apply(image, passes, inputs, hooks)?;
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(output)
+        }
+    }
+    let native = std::sync::Arc::new(NativeStrobe {
+        gpu: gpu.clone(),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    assert!(native.supports("strobe"));
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(native.clone(), budget);
+    let effect = project::effect_definition("strobe")
+        .unwrap()
+        .instance("native-flash");
+    let mut red = project::Animations::default();
+    red.set(
+        effect.param_path("color").unwrap(),
+        project::Param::new(project::ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap(),
+    )
+    .unwrap();
+    let frozen = source.pixels().to_vec();
+    let mut phases = Vec::new();
+    for (frame, animated, calls) in [
+        (0, false, 1),
+        (3, false, 1),
+        (15, false, 2),
+        (15, false, 2),
+        (0, true, 3),
+        (0, true, 3),
+    ] {
+        let local = time::FrameRate::FPS_30.tick_of(frame).unwrap();
+        let animations = if animated {
+            red.clone()
+        } else {
+            project::Animations::default()
+        };
+        let passes = evaluate_effect(&animations, &effect, local, 320, 180, true).unwrap();
+        assert_eq!(passes.is_empty(), frame == 3, "actual evaluator phase");
+        let expected = CpuEffects
+            .apply(
+                &source,
+                &passes,
+                EffectInputs {
+                    input: &source,
+                    coverage: None,
+                    below: &source,
+                },
+                &Hooks,
+            )
+            .unwrap()
+            .rgba8(13, &Hooks)
+            .unwrap();
+        let (job, _) = cache
+            .submit(
+                &mut runner,
+                source.clone(),
+                effect.clone(),
+                animations,
+                local,
+            )
+            .unwrap();
+        let start = std::time::Instant::now();
+        loop {
+            runner.tick().unwrap();
+            let state = runner.snapshot(job).unwrap();
+            if state.state == JobState::Completed {
+                break;
+            }
+            assert!(
+                !matches!(state.state, JobState::Failed | JobState::Cancelled),
+                "{:?}",
+                state.error
+            );
+            assert!(start.elapsed() < std::time::Duration::from_secs(20));
+            std::thread::yield_now();
+        }
+        let output = runner.take_output(job).unwrap();
+        let error = output
+            .bytes()
+            .iter()
+            .zip(&expected.bytes)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(error <= 1, "native timed thumbnail byte error {error}");
+        assert_eq!(
+            native.calls.load(std::sync::atomic::Ordering::SeqCst),
+            calls
+        );
+        if animated {
+            assert!(
+                output
+                    .bytes()
+                    .chunks_exact(4)
+                    .all(|p| p == [255, 0, 0, 255])
+            );
+        } else if frame != 3 {
+            assert!(
+                output.bytes().iter().all(|v| *v == 255),
+                "lit default is white"
+            );
+        } else {
+            assert_eq!(output.bytes(), source.rgba8(13, &Hooks).unwrap().bytes);
+        }
+        eprintln!(
+            "native-strobe frame={frame} animated={animated} gpu_calls={calls} byte_error={error}"
+        );
+        phases.push(output.bytes().to_vec());
+        assert_eq!(source.pixels(), frozen, "thumbnail source immutable");
+    }
+    assert_ne!(phases[0], phases[1], "lit versus idle");
+    assert_eq!(phases[0], phases[2], "period returns to lit");
+    assert_eq!(phases[2], phases[3], "complete time identity caches");
+    assert_ne!(phases[0], phases[4], "animation identity changes colour");
+    assert_eq!(phases[4], phases[5], "animated repeat caches");
 }
 
 #[test]
@@ -748,9 +925,8 @@ fn pixel_effects_native_1080p_measurement() {
         below: &input,
     };
     for pass in [
-        pixel("black_white", &[]),
-        pixel("channel_mix", &MIX_CROSS),
-        pixel("tint", &[0.1234567, 0.75, 0.05, 0.91, 0.234567, 0.66, 0.35]),
+        pixel("levels", &[0.1, 0.8, 0.05, 0.9, 0.7]),
+        pixel("strobe", &[0.1234567, 0.456789, 0.789123, 0.35]),
     ] {
         assert!(gpu.supports(pass.entry_point()));
         // Oracle remains outside timed/charged work; every timed result is verified.
@@ -908,6 +1084,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     for pass in [pixel("gamma", &[0.7]), pixel("invert", &[4.0, 0.35])]
         .into_iter()
         .chain(linear_colour_rows())
+        .chain(levels_strobe_rows())
     {
         let original = source.pixels().to_vec();
         let out = gpu
@@ -974,6 +1151,20 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         pixel("tint", &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, -0.0001]),
         pixel("tint", &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0001]),
         pixel("tint", &[f32::INFINITY; 7]),
+        pixel("levels", &[0.0; 4]),
+        pixel("levels", &[-0.0001, 1.0, 0.0, 1.0, 1.0]),
+        pixel("levels", &[0.0, 1.0001, 0.0, 1.0, 1.0]),
+        pixel("levels", &[0.0, 1.0, -0.0001, 1.0, 1.0]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0001, 1.0]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, 0.0]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, 12.0001]),
+        pixel("levels", &[0.0, 1.0, 0.0, 1.0, f32::NAN]),
+        pixel("strobe", &[0.0; 3]),
+        pixel("strobe", &[-0.0001, 0.0, 0.0, 0.0]),
+        pixel("strobe", &[0.0, 1.0001, 0.0, 0.0]),
+        pixel("strobe", &[0.0, 0.0, 0.0, -0.0001]),
+        pixel("strobe", &[0.0, 0.0, 0.0, 1.0001]),
+        pixel("strobe", &[f32::INFINITY; 4]),
     ] {
         assert!(matches!(
             gpu.apply(&source, &[pass], inputs(), &meter),
@@ -1202,6 +1393,16 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             project::effect_definition("posterize")
                 .unwrap()
                 .instance("cpu-only"),
+            project::effect_definition("levels")
+                .unwrap()
+                .instance("levels")
+                .with("in_black", project::EffectValue::Scalar(25.0))
+                .unwrap(),
+            project::effect_definition("strobe")
+                .unwrap()
+                .instance("flash")
+                .with("blend", project::EffectValue::Scalar(35.0))
+                .unwrap(),
         ],
         source_asset: None,
         start: time::Tick::ZERO,
@@ -1317,6 +1518,8 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             &[0.1234567, 0.75, 0.05, 0.91, 0.234567, 0.66, 0.35],
         ));
         plain.extend(chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap());
+        plain.push(pixel("levels", &[0.1, 0.8, 0.05, 0.9, 0.7]));
+        plain.push(pixel("strobe", &[0.1234567, 0.456789, 0.789123, 0.35]));
         plain.extend(blur_passes(5.0, 1920, 1080).unwrap());
         let mut mixed = plain.clone();
         mixed.insert(1, mirror(1.0, 0.0));
