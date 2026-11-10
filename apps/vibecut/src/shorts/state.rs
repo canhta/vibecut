@@ -1,10 +1,11 @@
 //! Retains review state for accepted shorts.
 use crate::{
-    Editor, Error, Result,
+    Error, Result,
     appearance::Look,
     crop, egui,
     i18n::{self, Locale, Text},
-    playback::{Files, Playback, Sources},
+    playback::{Files, Playback, Sources, Transport},
+    preview,
 };
 use engine::ClipSourceSegment;
 use engine::{
@@ -121,6 +122,14 @@ impl std::task::Wake for Repaint {
     }
 }
 
+/// The selected short as the window plays it back: the prepared snapshot, its
+/// transport and the uploaded frame.
+pub(super) struct Preview {
+    pub(super) session: Session,
+    pub(super) playback: Playback,
+    pub(super) frame: preview::FrameTexture,
+}
+
 pub struct State {
     pub preferences: Look,
     pub request: GenerationRequest,
@@ -134,7 +143,7 @@ pub struct State {
     pub(super) crop_focused: bool,
     pub(super) trim_drafts: Vec<(String, String)>,
     pub(super) draft_locale: Option<Locale>,
-    pub(super) preview: Option<Editor>,
+    pub(super) preview: Option<Preview>,
     pub(super) preview_dirty: bool,
     pub(super) preview_index: Option<usize>,
     pub(super) preview_sources: Arc<dyn Sources>,
@@ -152,7 +161,6 @@ pub struct State {
     pub(super) tool: Option<super::view::Tool>,
     pub(super) list_open: bool,
     pub(super) options_open: bool,
-    pub(super) frame: Option<super::view::FrameTexture>,
     /// False shows the grid of results; true the quick edit of the selected short.
     pub(super) editing: bool,
     pub(super) thumbs: Thumbs,
@@ -297,7 +305,6 @@ impl State {
             tool: Some(super::view::Tool::Captions),
             list_open: true,
             options_open: false,
-            frame: None,
             editing: false,
             thumbs: Thumbs::default(),
             configured: false,
@@ -356,11 +363,28 @@ impl State {
     pub fn error(&self) -> Option<&Error> {
         self.error.as_ref()
     }
-    pub fn preview(&self) -> Option<&Editor> {
-        self.preview.as_ref()
+    pub fn preview(&self) -> Option<&Playback> {
+        self.preview.as_ref().map(|preview| &preview.playback)
     }
-    pub fn preview_mut(&mut self) -> Option<&mut Editor> {
-        self.preview.as_mut()
+    pub fn preview_mut(&mut self) -> Option<&mut Playback> {
+        self.preview.as_mut().map(|preview| &mut preview.playback)
+    }
+    /// The prepared project the preview renders.
+    pub fn preview_session(&self) -> Option<&Session> {
+        self.preview.as_ref().map(|preview| &preview.session)
+    }
+    /// The tick of the last preview frame uploaded for presentation.
+    pub fn presented_frame(&self) -> Option<Tick> {
+        self.preview
+            .as_ref()
+            .and_then(|preview| preview.frame.presented())
+    }
+    /// Closing the window stops its transport; the project is untouched.
+    pub fn pause_preview(&mut self) {
+        if let Some(preview) = &mut self.preview {
+            let project = preview.session.project().clone();
+            let _ = preview.playback.transport(Transport::Pause, project);
+        }
     }
     pub fn history_len(&self) -> (usize, usize) {
         (self.undo.len(), self.redo.len())
@@ -561,8 +585,10 @@ impl State {
                 self.fail(e, Text::ShortsError);
             }
         }
-        if let Some(preview) = &mut self.preview {
-            preview.tick();
+        if let Some(preview) = &mut self.preview
+            && let Err(e) = preview.playback.poll()
+        {
+            self.fail(e, Text::ShortsError);
         }
     }
     pub(super) fn install(&mut self, source: ReviewSource) -> Result<()> {
@@ -829,23 +855,27 @@ impl State {
             .render
             .clone();
         let session = Session::new(project, 100)?;
-        if let Some(editor) = &mut self.preview {
+        if let Some(preview) = &mut self.preview {
             let at = if self.preview_index == Some(self.selected) {
-                editor
+                preview
                     .playback
                     .position()?
                     .min(session.project().duration())
             } else {
                 Tick::ZERO
             };
-            editor.playback.seek(at, false, session.project().clone())?;
-            editor.playback.set_render_settings(settings)?;
-            editor.session = crate::lifecycle::EditorSession::Memory(Box::new(session));
+            preview.playback.seek(at, false, session.project().clone())?;
+            preview.playback.set_render_settings(settings)?;
+            preview.session = session;
         } else {
             let mut playback =
                 Playback::new(&session, self.budget.clone(), self.preview_sources.clone())?;
             playback.set_render_settings(settings)?;
-            self.preview = Some(Editor::preview(session, playback, self.preferences));
+            self.preview = Some(Preview {
+                session,
+                playback,
+                frame: preview::FrameTexture::default(),
+            });
         }
         self.preview_index = Some(self.selected);
         Ok(())

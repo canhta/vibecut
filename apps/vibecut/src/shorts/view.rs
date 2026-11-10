@@ -14,13 +14,8 @@ mod tools;
 mod widgets;
 
 use super::{Action, Context, state::State};
-use crate::{
-    Editor, Error, egui,
-    i18n::Text,
-    kit::{self},
-};
+use crate::{Error, egui, i18n::Text, kit};
 use std::time::Duration;
-use time::Tick;
 
 pub(super) use widgets::{author, named};
 
@@ -32,12 +27,6 @@ pub(super) enum Tool {
     Layout,
 }
 
-/// The preview frame uploaded as a texture, keyed by the frame it shows.
-pub(super) struct FrameTexture {
-    pub(super) handle: egui::TextureHandle,
-    pub(super) key: (u64, Tick),
-}
-
 impl State {
     pub(super) fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.preferences.locale, key)
@@ -46,11 +35,11 @@ impl State {
 
 pub(super) fn show(state: &mut State, cx: &Context, ui: &mut egui::Ui) -> Vec<Action> {
     if !state.configured {
-        Editor::fonts(ui.ctx());
+        kit::install_fonts(ui.ctx());
         kit::install(ui.ctx());
         state.configured = true;
     }
-    Editor::theme(ui.ctx(), state.preferences.dark);
+    kit::install_theme(ui.ctx(), state.preferences.dark);
     let rect = ui.max_rect();
     ui.painter()
         .rect_filled(rect, 0.0, kit::window(state.preferences.dark));

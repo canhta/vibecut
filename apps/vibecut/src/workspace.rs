@@ -565,9 +565,7 @@ impl Workspace {
                 },
             );
             if close {
-                if let Some(p) = shorts.preview_mut() {
-                    let _ = p.activate("transport.pause");
-                }
+                shorts.pause_preview();
                 self.shorts_window = false;
             }
             if actions.contains(&crate::shorts::Action::OpenEditor) && !self.home.busy() {

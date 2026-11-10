@@ -52,7 +52,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let mut h = harness(ready());
     h.run_steps(3);
     open_first(&mut h);
-    let preview = h.state().preview().unwrap().session.project();
+    let preview = h.state().preview_session().unwrap().project();
     let items = &preview.data().scene().timeline.main.items;
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].source_range, range(10, 13));
@@ -87,9 +87,8 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     h.run_steps(2);
     assert!(
         h.state()
-            .preview()
+            .preview_session()
             .unwrap()
-            .session
             .project()
             .data()
             .scene()
@@ -101,9 +100,8 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     h.run_steps(2);
     assert!(
         h.state()
-            .preview()
+            .preview_session()
             .unwrap()
-            .session
             .project()
             .data()
             .scene()

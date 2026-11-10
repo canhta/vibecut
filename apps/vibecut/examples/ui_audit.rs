@@ -130,7 +130,7 @@ impl App {
             Self::Editor(editor) | Self::Player(editor) | Self::Assets(editor) => {
                 editor.presented_frame()
             }
-            Self::Shorts(shorts) => shorts.preview().and_then(|editor| editor.presented_frame()),
+            Self::Shorts(shorts) => shorts.presented_frame(),
             Self::Home { workspace, .. } => workspace
                 .focused_editor()
                 .and_then(|editor| editor.presented_frame()),
@@ -162,7 +162,7 @@ impl AuditApp {
                 Some(&editor.session)
             }
             App::Home { .. } => None,
-            App::Shorts(shorts) => shorts.preview().map(|editor| &*editor.session),
+            App::Shorts(shorts) => shorts.preview_session(),
         }
     }
 }
@@ -1176,11 +1176,7 @@ fn settle(app: &mut AppHarness) -> Result<(), Failure> {
                 editor.settle_previews(timeout)?;
             }
         }
-        App::Shorts(shorts) => {
-            if let Some(editor) = shorts.preview_mut() {
-                editor.settle_previews(timeout)?;
-            }
-        }
+        App::Shorts(_) => {}
     }
     app.run_steps(2);
     Ok(())
@@ -2633,13 +2629,10 @@ fn shorts_scene(
             if let Some(error) = shorts.error() {
                 return Err(std::io::Error::other(error.to_string()).into());
             }
-            if let Some(error) = shorts.preview().and_then(|p| p.playback.error()) {
+            if let Some(error) = shorts.preview().and_then(|p| p.error()) {
                 return Err(std::io::Error::other(error).into());
             }
-            if shorts
-                .preview()
-                .is_some_and(|p| p.playback.frame().is_some())
-            {
+            if shorts.preview().is_some_and(|p| p.frame().is_some()) {
                 if shorts
                     .reviews()
                     .first()

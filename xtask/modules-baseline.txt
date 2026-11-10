@@ -15,5 +15,3 @@ doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibil
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	31 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
-layer	apps/vibecut/src/shorts/state.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
-layer	apps/vibecut/src/shorts/view.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)

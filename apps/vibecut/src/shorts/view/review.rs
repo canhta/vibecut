@@ -8,6 +8,7 @@ use crate::{
     egui::{self, Align2, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2},
     i18n::Text,
     kit::{self, Icon},
+    playback::Transport,
     shorts::{Action, Context, Decision},
 };
 use time::{TICKS_PER_SECOND, Tick};
@@ -482,7 +483,7 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     let painter = ui.painter().clone();
     painter.rect_filled(video.union(bar), 0.0, kit::preview_backdrop());
 
-    let Some(editor) = &mut state.preview else {
+    let Some(short) = &mut state.preview else {
         egui::Spinner::new().paint_at(
             ui,
             Rect::from_center_size(video.center(), Vec2::splat(24.0)),
@@ -491,45 +492,26 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     };
     let mut seek = None;
     let mut failure = None;
-    let Ok(position) = editor.playback.position() else {
+    let Ok(position) = short.playback.position() else {
         return;
     };
-    let duration = editor.session.project().duration();
-    let playing = editor.playback.playing();
-    if let Some(frame) = editor.playback.frame() {
-        let key = (frame.epoch, frame.at);
-        match &mut state.frame {
-            Some(texture) if texture.key == key => {}
-            Some(texture) => {
-                texture
-                    .handle
-                    .set(frame.image.clone(), egui::TextureOptions::LINEAR);
-                texture.key = key;
-            }
-            None => {
-                state.frame = Some(super::FrameTexture {
-                    handle: ui.ctx().load_texture(
-                        "shorts.frame",
-                        frame.image.clone(),
-                        egui::TextureOptions::LINEAR,
-                    ),
-                    key,
-                });
-            }
-        }
-        if let Some(texture) = &state.frame {
-            let [w, h] = frame.image.size;
-            let scale = (video_w / w.max(1) as f32).min(video_h / h.max(1) as f32);
+    let duration = short.session.project().duration();
+    let playing = short.playback.playing();
+    if let Some(frame) = short.playback.frame() {
+        let [w, h] = frame.image.size;
+        if let Some(texture) = short.frame.update(ui.ctx(), "shorts.frame", frame) {
+            let scale = crate::preview::fit_scale(vec2(video_w, video_h), [w as u32, h as u32]);
             let shown =
                 Rect::from_center_size(video.center(), vec2(w as f32 * scale, h as f32 * scale));
             painter.with_clip_rect(video).image(
-                texture.handle.id(),
+                texture,
                 shown,
                 Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)),
                 kit::image_tint(),
             );
         }
     } else {
+        short.frame.clear();
         egui::Spinner::new().paint_at(
             ui,
             Rect::from_center_size(video.center(), Vec2::splat(24.0)),
@@ -541,10 +523,10 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
         pos2(video.left() + 23.0, bar.top() + 21.0),
         Vec2::splat(28.0),
     );
-    let (glyph, tip, id) = if playing {
-        (Icon::Pause, Text::Pause, "transport.pause")
+    let (glyph, tip) = if playing {
+        (Icon::Pause, Text::Pause)
     } else {
-        (Icon::Play, Text::Play, "transport.play")
+        (Icon::Play, Text::Play)
     };
     let tap = widgets::tap(
         ui,
@@ -555,10 +537,8 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     );
     kit::tinted(glyph, 16.0, kit::on_scrim())
         .paint_at(ui, Rect::from_center_size(play.center(), Vec2::splat(16.0)));
-    if tap.clicked()
-        && let Err(e) = editor.activate(id)
-    {
-        failure = Some(e);
+    if tap.clicked() {
+        seek = Some(Transport::Play);
     }
     let now = painter.text(
         pos2(video.left() + 45.0, bar.top() + 21.0),
@@ -600,11 +580,13 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
         && (scrub.clicked() || scrub.dragged())
     {
         let at = ((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0);
-        seek = Some(Tick((duration.0 as f64 * f64::from(at)) as i64));
+        seek = Some(Transport::Seek(Tick(
+            (duration.0 as f64 * f64::from(at)) as i64,
+        )));
     }
-    if let Some(at) = seek {
-        let project = editor.session.project().clone();
-        if let Err(e) = editor.playback.seek(at, playing, project) {
+    if let Some(request) = seek {
+        let project = short.session.project().clone();
+        if let Err(e) = short.playback.transport(request, project) {
             failure = Some(e);
         }
     }
@@ -631,29 +613,35 @@ fn handle(state: &mut State, ui: &mut egui::Ui) {
         state.undo();
     }
     let frame_keys = [
-        (egui::Key::ArrowLeft, "transport.frame_back"),
-        (egui::Key::ArrowRight, "transport.frame_forward"),
+        (egui::Key::ArrowLeft, Transport::FrameBack),
+        (egui::Key::ArrowRight, Transport::FrameForward),
     ];
     let keys = [
-        (egui::Key::Space, "transport.play"),
-        (egui::Key::K, "transport.pause"),
-        (egui::Key::J, "transport.back"),
-        (egui::Key::L, "transport.forward"),
-        (egui::Key::Home, "transport.start"),
-        (egui::Key::End, "transport.end"),
+        (egui::Key::Space, Transport::Play),
+        (egui::Key::K, Transport::Pause),
+        (egui::Key::J, Transport::BackSecond),
+        (egui::Key::L, Transport::ForwardSecond),
+        (egui::Key::Home, Transport::Start),
+        (egui::Key::End, Transport::End),
     ];
     let steps: Vec<_> = if state.crop_focused {
         keys.to_vec()
     } else {
         keys.into_iter().chain(frame_keys).collect()
     };
-    for (key, id) in steps {
+    let mut failure = None;
+    for (key, request) in steps {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key))
-            && let Some(preview) = &mut state.preview
-            && let Err(e) = preview.activate(id)
+            && let Some(short) = &mut state.preview
         {
-            state.fail(e, Text::ShortsError);
+            let project = short.session.project().clone();
+            if let Err(e) = short.playback.transport(request, project) {
+                failure = Some(e);
+            }
         }
+    }
+    if let Some(e) = failure {
+        state.fail(e, Text::ShortsError);
     }
 }
 

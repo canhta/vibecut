@@ -150,25 +150,24 @@ impl eframe::App for Native {
             }
         }
         // Shorts retains its own preview device, independently of project audio.
-        if let Some(shorts) = &mut self.workspace.shorts
-            && let Some(editor) = shorts.preview_mut()
-        {
-            let port = editor.playback.audio_port();
-            if self
-                .audio_port
-                .as_ref()
-                .is_none_or(|old| !Arc::ptr_eq(old, &port))
-            {
-                if let Some(effects) = &self.effects {
-                    let _ = editor.set_effects(effects.clone());
+        if let Some(shorts) = &mut self.workspace.shorts {
+            let rate = shorts
+                .preview_session()
+                .map(|session| session.project().data().settings.audio_sample_rate);
+            if let (Some(rate), Some(playback)) = (rate, shorts.preview_mut()) {
+                let port = playback.audio_port();
+                if self
+                    .audio_port
+                    .as_ref()
+                    .is_none_or(|old| !Arc::ptr_eq(old, &port))
+                {
+                    if let Some(effects) = &self.effects {
+                        let _ = playback.set_effects(effects.clone());
+                    }
+                    self._stream = audio(port.clone(), rate).ok();
+                    playback.set_device_available(self._stream.is_some());
+                    self.audio_port = Some(port);
                 }
-                self._stream = audio(
-                    port.clone(),
-                    editor.session.project().data().settings.audio_sample_rate,
-                )
-                .ok();
-                editor.playback.set_device_available(self._stream.is_some());
-                self.audio_port = Some(port);
             }
         }
         let Some(editor) = self.workspace.focused_editor() else {
