@@ -235,7 +235,6 @@ impl Editor {
             selection_scopes: SelectionScopes::default(),
             properties: properties::State::default(),
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
-            effect_textures: BTreeMap::new(),
             effect_drag: None,
             frame,
             player,

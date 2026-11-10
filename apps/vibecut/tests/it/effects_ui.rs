@@ -23,6 +23,19 @@ use vibecut::{
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
+#[derive(Default)]
+struct PreviewClock(std::sync::atomic::AtomicU64);
+impl PreviewClock {
+    fn set(&self, ms: u64) {
+        self.0.store(ms, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+impl engine::jobs::Clock for PreviewClock {
+    fn now(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
 /// Reads the real painter output, including tile names drawn without widgets.
 fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool {
     let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
@@ -403,8 +416,10 @@ fn fixture() -> Fixture {
     )
     .unwrap();
     playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.set_clock(Arc::new(PreviewClock::default()));
     Fixture {
-        editor: Editor::new(session, playback, Preferences::default()),
+        editor,
         video,
         image,
         graphic,
@@ -450,6 +465,294 @@ fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
         .widgets
         .iter()
         .any(|widget| widget.id == id)
+}
+
+fn tile_texture(h: &Harness<Editor>, kind: &str) -> egui::TextureId {
+    let center = widget_rect(h, &format!("effects.tile.{kind}")).center();
+    let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Mesh(mesh) if mesh.calc_bounds().contains(center) => {
+                return mesh.texture_id;
+            }
+            egui::Shape::Rect(rect) if rect.brush.is_some() && rect.rect.contains(center) => {
+                return rect.fill_texture_id();
+            }
+            _ => {}
+        }
+    }
+    panic!("missing real tile texture {kind}")
+}
+type Uploads =
+    Arc<std::sync::Mutex<std::collections::BTreeMap<egui::TextureId, Arc<egui::ColorImage>>>>;
+struct PreviewUploads {
+    inner: egui_kittest::LazyRenderer,
+    seen: Uploads,
+}
+impl egui_kittest::TestRenderer for PreviewUploads {
+    fn handle_delta(&mut self, delta: &mut egui::TexturesDelta) {
+        let mut seen = self.seen.lock().unwrap();
+        seen.clear();
+        for (id, changes) in &delta.set {
+            if let Some(change) = changes.last() {
+                let egui::ImageData::Color(image) = &change.image;
+                seen.insert(*id, image.clone());
+            }
+        }
+        self.inner.handle_delta(delta);
+    }
+    fn render(
+        &mut self,
+        ctx: &egui::Context,
+        output: &egui::FullOutput,
+    ) -> Result<image::RgbaImage, String> {
+        self.inner.render(ctx, output)
+    }
+}
+fn uploaded(seen: &Uploads, id: egui::TextureId) -> Option<Arc<egui::ColorImage>> {
+    seen.lock().unwrap().get(&id).cloned()
+}
+
+#[test]
+fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_project_edits() {
+    let f = fixture();
+    let clock = Arc::new(PreviewClock::default());
+    let mut editor = f.editor;
+    editor.set_clock(clock.clone());
+    let adapter = Arc::new(PreviewGate::new(true, None));
+    let uploads: Uploads = Default::default();
+    let mut h = crate::gpu::builder()
+        .renderer(PreviewUploads {
+            inner: Default::default(),
+            seen: uploads.clone(),
+        })
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    inject_previews(&mut h, adapter.clone());
+    h.run_steps(3);
+    click(&mut h, "assets.tab.effects");
+    let original = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    let playhead = h.state().inspect().unwrap().position;
+    let mut initial = None;
+    let mut texture = None;
+    for ms in [0, 100, 1900, 2000] {
+        clock.set(ms);
+        h.run_steps(1);
+        h.state_mut()
+            .settle_previews(std::time::Duration::from_secs(10))
+            .unwrap();
+        h.run_steps(1);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 12);
+        assert!(
+            h.state()
+                .inspect()
+                .unwrap()
+                .effect_previews
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Ready)
+        );
+        let id = tile_texture(&h, "strobe");
+        if let Some(before) = texture {
+            assert_eq!(id, before, "update existing texture handle");
+        }
+        texture = Some(id);
+        let image = uploaded(&uploads, id).expect("new phase uploaded");
+        if ms == 0 {
+            initial = Some(image.clone());
+        }
+        if ms == 100 || ms == 1900 {
+            assert_ne!(image, initial.clone().unwrap());
+        }
+        if ms == 2000 {
+            assert_eq!(
+                image,
+                initial.clone().unwrap(),
+                "loop wrap must present the newer sequence at local zero"
+            );
+        }
+        let calls = adapter.state.lock().unwrap().1;
+        h.run_steps(3);
+        assert!(
+            uploaded(&uploads, id).is_none(),
+            "stationary clock must not reload texture"
+        );
+        assert_eq!(
+            adapter.state.lock().unwrap().1,
+            calls,
+            "stationary time does not resubmit"
+        );
+    }
+    click(&mut h, "assets.tab.media");
+    let calls = adapter.state.lock().unwrap().1;
+    clock.set(12300);
+    h.run_steps(4);
+    assert_eq!(
+        adapter.state.lock().unwrap().1,
+        calls,
+        "hidden panel requests no work"
+    );
+    click(&mut h, "assets.tab.effects");
+    h.state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    h.run_steps(1);
+    assert_eq!(
+        uploaded(&uploads, texture.unwrap()).unwrap(),
+        initial.unwrap(),
+        "resume excludes 10.3 seconds hidden time"
+    );
+    adapter.state.lock().unwrap().0 = false;
+    clock.set(12400);
+    h.run_steps(2);
+    let (state, timeout) = adapter
+        .changed
+        .wait_timeout_while(
+            adapter.state.lock().unwrap(),
+            std::time::Duration::from_secs(10),
+            |s| s.2 == 0,
+        )
+        .unwrap();
+    assert!(!timeout.timed_out());
+    drop(state);
+    h.state_mut()
+        .set_effects(Arc::new(render::effects::CpuEffects))
+        .unwrap();
+    assert_eq!(
+        adapter.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "replacing source/cache owner cancels and joins the old generation"
+    );
+    h.run_steps(1);
+    h.state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    h.run_steps(1);
+    assert!(
+        h.state()
+            .inspect()
+            .unwrap()
+            .effect_previews
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+    assert_eq!(h.state().session.project(), &original);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(h.state().inspect().unwrap().position, playhead);
+}
+
+#[test]
+fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_bounded() {
+    use vibecut::effect_previews::EffectPreviews;
+    let budget = ByteBudget::new(16 << 20).unwrap();
+    let gate = Arc::new(PreviewGate::new(true, None));
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    previews.update(true, std::time::Duration::ZERO);
+    for d in project::effect_definitions()
+        .iter()
+        .filter(|d| d.shelf.in_library())
+    {
+        previews.ensure(d.id, &d.instance(d.id), &project::Animations::default());
+    }
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    let initial_calls = gate.state.lock().unwrap().1;
+    gate.state.lock().unwrap().0 = false;
+    previews.update(true, std::time::Duration::from_millis(100));
+    previews.tick().unwrap();
+    previews.tick().unwrap();
+    let (state, timeout) = gate
+        .changed
+        .wait_timeout_while(
+            gate.state.lock().unwrap(),
+            std::time::Duration::from_secs(10),
+            |s| s.2 == 0,
+        )
+        .unwrap();
+    assert!(!timeout.timed_out());
+    drop(state);
+    let mut peak = 0;
+    for ms in (101..=2200).step_by(33) {
+        previews.update(true, std::time::Duration::from_millis(ms));
+        previews.tick().unwrap();
+        peak = peak.max(budget.snapshot().unwrap().used);
+        assert!(
+            previews
+                .statuses()
+                .values()
+                .all(|s| *s == EffectPreviewStatus::Ready)
+        );
+    }
+    assert_eq!(
+        gate.state.lock().unwrap().1,
+        initial_calls + 1,
+        "one blocked worker; time does not cancel it"
+    );
+    assert_eq!(gate.cancelled.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(
+        previews
+            .settle(std::time::Duration::from_millis(20))
+            .is_err(),
+        "Ready refresh still belongs to settle target"
+    );
+    gate.release();
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert!(
+        previews
+            .statuses()
+            .values()
+            .all(|s| *s == EffectPreviewStatus::Ready)
+    );
+    let completed_calls = gate.state.lock().unwrap().1;
+    assert!(
+        completed_calls <= initial_calls + 24,
+        "coalesced latest frame, not one queued job per clock update"
+    );
+    eprintln!(
+        "live-pressure initial_calls={initial_calls} completed_calls={completed_calls} peak_used={peak} limit={}",
+        budget.snapshot().unwrap().limit
+    );
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+
+    // Changed animation input invalidates a running generation without an explicit Retry.
+    let gate = Arc::new(PreviewGate::new(false, None));
+    let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
+    let mut previews = EffectPreviews::new(cache, budget.clone()).unwrap();
+    let effect = project::effect_definition("blur").unwrap().instance("blur");
+    previews.ensure("blur", &effect, &project::Animations::default());
+    previews.tick().unwrap();
+    gate.wait_started();
+    let mut animation = project::Animations::default();
+    animation
+        .set(
+            effect.param_path("intensity").unwrap(),
+            project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
+        )
+        .unwrap();
+    previews.ensure("blur", &effect, &animation);
+    gate.release();
+    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert_eq!(gate.cancelled.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(previews.status("blur"), Some(EffectPreviewStatus::Ready));
+    let mut expected = EffectPreviews::cpu().unwrap();
+    expected.ensure(
+        "blur",
+        &effect
+            .clone()
+            .with("intensity", EffectValue::Scalar(0.0))
+            .unwrap(),
+        &project::Animations::default(),
+    );
+    expected.settle(std::time::Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        previews.image("blur").unwrap(),
+        expected.image("blur").unwrap(),
+        "changed animation cannot display the old blur"
+    );
+    drop(previews);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
@@ -1028,7 +1331,11 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
     for count in [5, definitions.len()] {
         let mut previews = EffectPreviews::cpu().unwrap();
         for definition in definitions.iter().take(count) {
-            previews.ensure(definition.id, &definition.instance(definition.id));
+            previews.ensure(
+                definition.id,
+                &definition.instance(definition.id),
+                &project::Animations::default(),
+            );
         }
         let statuses = previews.statuses();
         assert_eq!(statuses.len(), count);
@@ -1055,10 +1362,18 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
     // cancelled jobs still occupy the runner but none belongs to a current tile.
     let mut previews = EffectPreviews::cpu().unwrap();
     for definition in definitions.iter().take(4) {
-        previews.ensure(definition.id, &definition.instance(definition.id));
+        previews.ensure(
+            definition.id,
+            &definition.instance(definition.id),
+            &project::Animations::default(),
+        );
     }
     for definition in definitions.iter().take(4) {
-        previews.retry(definition.id, &definition.instance(definition.id));
+        previews.retry(
+            definition.id,
+            &definition.instance(definition.id),
+            &project::Animations::default(),
+        );
     }
     assert!(
         matches!(
@@ -1095,7 +1410,11 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             .iter()
             .filter(|d| d.shelf.in_library())
         {
-            previews.ensure(definition.id, &definition.instance(definition.id));
+            previews.ensure(
+                definition.id,
+                &definition.instance(definition.id),
+                &project::Animations::default(),
+            );
         }
         previews.tick().unwrap();
         gate.wait_started();
@@ -1117,12 +1436,12 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                 .with("intensity", EffectValue::Scalar(0.0))
                 .unwrap();
             // Retry one active and one deferred kind; ordinary ensure cannot duplicate either.
-            previews.retry("blur", &replacement);
+            previews.retry("blur", &replacement, &project::Animations::default());
             let extract = project::effect_definition("extract")
                 .unwrap()
                 .instance("extract");
-            previews.retry("extract", &extract);
-            previews.ensure("blur", &blur);
+            previews.retry("extract", &extract, &project::Animations::default());
+            previews.ensure("blur", &replacement, &project::Animations::default());
             gate.release();
             previews.settle(std::time::Duration::from_secs(10)).unwrap();
             assert_eq!(previews.statuses().len(), 12);
@@ -1133,7 +1452,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                     .all(|s| *s == EffectPreviewStatus::Ready)
             );
             let mut expected = EffectPreviews::cpu().unwrap();
-            expected.ensure("blur", &replacement);
+            expected.ensure("blur", &replacement, &project::Animations::default());
             expected.settle(std::time::Duration::from_secs(10)).unwrap();
             assert_eq!(
                 previews.image("blur").unwrap(),
@@ -1185,7 +1504,7 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
             if definition.id == "tint" {
                 effect.params.clear();
             } // Validation still refuses behind a full queue.
-            previews.ensure(definition.id, &effect);
+            previews.ensure(definition.id, &effect, &project::Animations::default());
         }
         assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
         previews.settle(std::time::Duration::from_secs(10)).unwrap();
@@ -1228,9 +1547,9 @@ fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
     let identity = project::effect_definition("channel_mix")
         .unwrap()
         .instance("channel_mix");
-    previews.ensure("channel_mix", &identity);
+    previews.ensure("channel_mix", &identity, &project::Animations::default());
     let blur = project::effect_definition("blur").unwrap().instance("blur");
-    previews.ensure("blur", &blur);
+    previews.ensure("blur", &blur, &project::Animations::default());
     previews.tick().unwrap();
     // Wait without ticking away the completed result. Once working images are
     // released, only source + runner result ceiling + packed cache image remain.

@@ -307,7 +307,6 @@ pub struct Editor {
     pub selection_scopes: SelectionScopes,
     pub(super) properties: super::properties::State,
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
-    pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
     pub(super) frame: super::frame::State,
     pub(super) player: super::panels::player::State,

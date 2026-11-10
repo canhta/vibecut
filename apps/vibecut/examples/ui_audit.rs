@@ -317,6 +317,18 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "effects-vi"),
     },
     Scene {
+        name: "assets-effects-phase3",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-phase3"),
+    },
+    Scene {
+        name: "assets-effects-phase3-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-phase3-vi"),
+    },
+    Scene {
         name: "assets-transitions",
         reference_dark: None,
         reference_light: None,
@@ -3081,6 +3093,12 @@ fn shorts_scene(
 }
 
 /// Uses the area slot at the measured editor size, independent of sibling work.
+struct EffectsClock(std::sync::atomic::AtomicU64);
+impl engine::jobs::Clock for EffectsClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.load(Ordering::SeqCst))
+    }
+}
 fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
     let locale = if state.ends_with("-vi") {
         Locale::Vi
@@ -3088,8 +3106,12 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
         Locale::En
     };
     let state = state.strip_suffix("-vi").unwrap_or(state);
+    let phase3 = state.ends_with("-phase3");
+    let state = state.strip_suffix("-phase3").unwrap_or(state);
     let mut sound_library = None;
     let mut editor = empty_editor(theme, locale)?;
+    let clock = Arc::new(EffectsClock(std::sync::atomic::AtomicU64::new(0)));
+    editor.set_clock(clock.clone());
     if matches!(state, "media" | "offline") {
         editor.set_import_probe(Arc::new(CompletedProbe))?;
         editor.set_thumbnailer(Arc::new(AssetsThumbnail))?;
@@ -3152,6 +3174,13 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
     let mut app = harness_sized(App::Assets(Box::new(editor)), scale, [1727.0, 1029.0]);
     app.state_mut()._sound_library = sound_library;
     app.run_steps(4);
+    if phase3 {
+        if let App::Assets(editor) = &mut app.state_mut().app {
+            editor.settle_previews(Duration::from_secs(10))?;
+        }
+        clock.0.store(100, Ordering::SeqCst);
+        app.run_steps(1);
+    }
     Ok(app)
 }
 

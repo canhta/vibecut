@@ -13,10 +13,14 @@ impl Editor {
         if let Err(e) = self.playback.poll(std::time::Instant::now()) {
             self.desk().fail(e.to_string());
         }
-        if let Some(previews) = &mut self.effect_previews
-            && let Err(e) = previews.tick()
-        {
-            self.desk().fail(e.to_string());
+        if let Some(previews) = &mut self.effect_previews {
+            previews.update(
+                self.preferences.assets_tab == crate::panels::AssetsTab::Effects,
+                self.clock.now(),
+            );
+            if let Err(e) = previews.tick() {
+                self.desk().fail(e.to_string());
+            }
         }
         self.tick_sounds();
         self.dialogs

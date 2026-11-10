@@ -50,9 +50,8 @@ impl Editor {
                         && let Some(params) = crate::editor::effect_preview_instance(definition)
                         && let Some(previews) = &mut self.effect_previews
                     {
-                        previews.retry(kind, &params);
+                        previews.retry(kind, &params, &project::Animations::default());
                     }
-                    self.effect_textures.remove(kind);
                 }
                 assets::Action::SoundsMode(mode) => self.sounds_set_mode(mode),
                 assets::Action::SoundsSearch { more } => self.sounds_search(more),

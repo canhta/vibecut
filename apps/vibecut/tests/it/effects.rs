@@ -413,6 +413,8 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                     .instance("blur")
                     .with("intensity", project::EffectValue::Scalar(100.0))
                     .unwrap(),
+                project::Animations::default(),
+                time::Tick::ZERO,
             )
             .unwrap();
         loop {
