@@ -1322,6 +1322,7 @@ fn import_is_atomic_bounded_and_export_uses_selected_bilingual_languages() {
 }
 
 struct TranslateWorkflow {
+    cancel_translation: bool,
     unknown_price: bool,
     calls: Arc<AtomicUsize>,
     /// Holds the provider call until the test opens the gate, so a job stays
@@ -1359,6 +1360,7 @@ impl Workflow for TranslateWorkflow {
         )?;
         let adapter = engine::transcript::SubtitleTranslator::from_parts(
             Arc::new(Translator {
+                cancel_translation: self.cancel_translation,
                 unknown_price: self.unknown_price,
                 config,
                 calls: self.calls.clone(),
@@ -1410,6 +1412,7 @@ impl Workflow for TranslateWorkflow {
     }
 }
 struct Translator {
+    cancel_translation: bool,
     unknown_price: bool,
     config: ai::ProviderConfig,
     calls: Arc<AtomicUsize>,
@@ -1457,6 +1460,9 @@ impl ai::Translator for Translator {
             }
         }
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.cancel_translation {
+            return Err(ai::Error::Cancelled);
+        }
         Ok(ai::Translation {
             source_language: window.source_language.clone(),
             target_language: window.target_language.clone(),
@@ -1480,6 +1486,7 @@ fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
         Subtitles::with_workflow(
             e.playback.budget().clone(),
             Arc::new(TranslateWorkflow {
+                cancel_translation: false,
                 calls,
                 gate: None,
                 unknown_price: false,
@@ -1506,6 +1513,7 @@ fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
         Subtitles::with_workflow(
             e.playback.budget().clone(),
             Arc::new(TranslateWorkflow {
+                cancel_translation: false,
                 unknown_price: false,
                 calls,
                 gate: Some(gate.clone()),
@@ -1619,9 +1627,24 @@ fn translation_all_pairs_and_scripts_uses_fresh_consent_and_protects_manual_text
 }
 #[test]
 fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
-    for action in ["deny", "change", "cancel", "stale"] {
+    for action in ["deny", "change", "cancel", "stale", "provider-failure"] {
         let calls = Arc::new(AtomicUsize::new(0));
-        let mut h = harness(translated_editor("vi", calls.clone()), 1.0);
+        let mut e = translated_editor("vi", calls.clone());
+        if action == "provider-failure" {
+            e.subtitles = Some(
+                Subtitles::with_workflow(
+                    e.playback.budget().clone(),
+                    Arc::new(TranslateWorkflow {
+                        cancel_translation: true,
+                        calls: calls.clone(),
+                        gate: None,
+                        unknown_price: false,
+                    }),
+                )
+                .unwrap(),
+            );
+        }
+        let mut h = harness(e, 1.0);
         h.run_steps(3);
         click(&mut h, "subtitles.cue.cue-0");
         let before = track(h.state());
@@ -1641,6 +1664,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
             "deny" => click(&mut h, "subtitles.consent.deny"),
             "change" => h.state_mut().preferences.subtitles.translation = "anthropic".into(),
             "cancel" => h.state_mut().subtitles.as_mut().unwrap().cancel(),
+            "provider-failure" => click(&mut h, "subtitles.consent.approve"),
             _ => {
                 h.state_mut()
                     .session
@@ -1654,7 +1678,22 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
         wait(&mut h, |e| !panel(e).busy);
         assert_eq!(track(h.state()), before);
         assert!(panel(h.state()).problem.is_some());
-        assert_eq!(calls.load(Ordering::SeqCst), usize::from(action == "stale"));
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            usize::from(matches!(action, "stale" | "provider-failure"))
+        );
+        if action == "provider-failure" {
+            let error = panel(h.state()).error.unwrap();
+            assert!(matches!(
+                (error.as_ref() as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<engine::transcript::Error>(),
+                Some(engine::transcript::Error::Ai(ai::Error::Cancelled))
+            ));
+            assert_eq!(error.to_string(), "AI execution failed");
+            assert_eq!(error.code(), engine::control::ErrorCode::Ai);
+            assert!(!error.job_policy().terminal_cancelled);
+            assert_eq!(panel(h.state()).job_state, None);
+        }
     }
 }
 #[test]
@@ -2345,6 +2384,7 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
             Subtitles::with_workflow(
                 e.playback.budget().clone(),
                 Arc::new(TranslateWorkflow {
+                    cancel_translation: false,
                     calls: calls.clone(),
                     gate: None,
                     unknown_price: true,

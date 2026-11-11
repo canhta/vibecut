@@ -20,7 +20,12 @@ return Runtime results directly. Only the existing acquisition execution bridges
 cancellation and the extraction cancellation sentinel to direct Runtime cancellation; a captured
 concrete failure wins over that sentinel. General AI/Media conversions remain ordinary foreign
 failures. Root Transcript composition delegates the actual owner's code/transience/job policy;
-native Model/Transfer/Failed remain opaque. Mixed Session building and translation keep their engine results. The blocking
+native Model/Transfer/Failed remain opaque. Cue-session construction and the translation
+reference helper return Kernel Edit results. Translation selection, preparation and execution
+return Transcript results, and TranslationRun submits that natural producer through the
+generic runner. Session stale causes compose through Kernel Edit; translation AI failures,
+including AI Cancelled, remain ordinary AI causes. Only a cancelled execution hook produces
+direct Runtime cancellation. The blocking
 `wait_for_job` returns Runtime results: failed jobs retain the original raw cause Arc in
 `Failed`, direct cancellation stays direct, and missing snapshots or completed output retain
 Kernel Session `StaleResult` through Runtime Edit composition.

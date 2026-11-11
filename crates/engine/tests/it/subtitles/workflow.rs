@@ -1354,7 +1354,9 @@ fn operation_cancellation_stops_a_running_translation_job() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::Error::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Transcript(engine::transcript::Error::Runtime(
+            engine::RuntimeError::Cancelled
+        ))
     ));
     assert!(!request.srt.unwrap().exists());
 }

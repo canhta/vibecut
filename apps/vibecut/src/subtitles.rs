@@ -625,9 +625,16 @@ impl Subtitles {
         self.error = Some(error.clone());
         let cause: &(dyn std::error::Error + 'static) = error.as_ref();
         let root = cause.downcast_ref::<engine::Error>();
-        let runtime = match root {
-            Some(engine::Error::Runtime(error)) => Some(error),
-            _ => cause.downcast_ref::<engine::RuntimeError>(),
+        let transcript = match root {
+            Some(engine::Error::Transcript(transcript)) => Some(transcript),
+            _ => cause.downcast_ref::<engine::transcript::Error>(),
+        };
+        let runtime = match transcript {
+            Some(engine::transcript::Error::Runtime(error)) => Some(error),
+            _ => match root {
+                Some(engine::Error::Runtime(error)) => Some(error),
+                _ => cause.downcast_ref::<engine::RuntimeError>(),
+            },
         };
         if let Some(engine::RuntimeError::Failed(inner)) = runtime {
             self.fail(inner.clone());
@@ -638,6 +645,11 @@ impl Subtitles {
             return;
         }
         if matches!(
+            transcript,
+            Some(engine::transcript::Error::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            )))
+        ) || matches!(
             runtime,
             Some(engine::RuntimeError::Edit(engine::EditError::Session(
                 engine::SessionError::StaleResult
@@ -651,10 +663,6 @@ impl Subtitles {
             self.problem = Some(Text::SubStale);
             return;
         }
-        let transcript = match root {
-            Some(engine::Error::Transcript(transcript)) => Some(transcript),
-            _ => cause.downcast_ref::<engine::transcript::Error>(),
-        };
         match transcript {
             Some(engine::transcript::Error::NoSpeech) => {
                 self.problem = Some(Text::SubNoSpeech);

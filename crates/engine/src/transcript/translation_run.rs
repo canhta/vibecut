@@ -1,6 +1,7 @@
 //! Applies selected translations through bounded attempts.
+use super::error::{Error as TranscriptError, Result as TranscriptResult};
 use crate::{
-    Error as EngineError, Session,
+    Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
 };
@@ -18,9 +19,11 @@ use std::{
 };
 
 /// Bounded provenance for the complete resolved provider, independent of model-ID length.
-pub(crate) fn translation_reference(config: &ai::ProviderConfig) -> crate::Result<NfcText> {
+pub(crate) fn translation_reference(
+    config: &ai::ProviderConfig,
+) -> crate::session::Result<NfcText> {
     let identity = serde_json::to_vec(&("caption-translation-v1", config))
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("translation reference")))?;
+        .map_err(|_| crate::session::EditError::Invalid("translation reference"))?;
     Ok(format!("translation:{}", blake3::hash(&identity)).into())
 }
 
@@ -34,15 +37,15 @@ pub fn window(
     glossary: Vec<ai::GlossaryTerm>,
     style: NfcText,
     force: bool,
-) -> crate::Result<TranslationWindow> {
+) -> TranscriptResult<TranslationWindow> {
     if selected.is_empty() || selected.len() > ai::MAX_SEGMENTS {
-        return Err(EngineError::Control(
+        return Err(TranscriptError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
     let ids: BTreeSet<_> = selected.iter().collect();
     if ids.len() != selected.len() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
             "duplicate translation selection",
         )));
     }
@@ -54,15 +57,17 @@ pub fn window(
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
-        .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+        .ok_or(TranscriptError::Edit(crate::session::EditError::NoItem(
+            item,
+        )))?;
     let ItemParams::Caption(params) = &item.content else {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
             "translation requires caption item",
         )));
     };
     let cues = &params.cues.cues;
     if ids.iter().any(|id| !cues.iter().any(|c| &c.id == *id)) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
             "missing selected cue",
         )));
     }
@@ -75,7 +80,7 @@ pub fn window(
             continue;
         }
         if source.as_ref().is_some_and(|s| s != &cue.source_lang) {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
                 "mixed translation source languages",
             )));
         }
@@ -83,7 +88,7 @@ pub fn window(
         let text = cue
             .texts
             .get(&cue.source_lang)
-            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            .ok_or(TranscriptError::Edit(crate::session::EditError::Invalid(
                 "missing source text",
             )))?
             .text
@@ -95,10 +100,10 @@ pub fn window(
         first.get_or_insert(index);
         last = index;
     }
-    let first = first.ok_or(EngineError::Edit(crate::EditError::Invalid(
+    let first = first.ok_or(TranscriptError::Edit(crate::session::EditError::Invalid(
         "no unprotected translation selection",
     )))?;
-    let source = source.ok_or(EngineError::Edit(crate::EditError::Invalid(
+    let source = source.ok_or(TranscriptError::Edit(crate::session::EditError::Invalid(
         "translation source",
     )))?;
     let context = |index: usize| {
@@ -150,10 +155,10 @@ impl TranslationRun {
         consent: Option<Consent>,
         max_attempts: u8,
         budget: Option<Money>,
-    ) -> crate::Result<Arc<Self>> {
+    ) -> TranscriptResult<Arc<Self>> {
         window.validate()?;
         if !(1..=10).contains(&max_attempts) {
-            return Err(EngineError::Control(
+            return Err(TranscriptError::from(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -166,9 +171,11 @@ impl TranslationRun {
             .iter()
             .flat_map(|t| &t.items)
             .find(|i| i.id == target.item)
-            .ok_or(EngineError::Edit(crate::EditError::NoItem(target.item)))?;
+            .ok_or(TranscriptError::Edit(crate::session::EditError::NoItem(
+                target.item,
+            )))?;
         let ItemParams::Caption(params) = &item.content else {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
                 "translation requires caption item",
             )));
         };
@@ -182,7 +189,9 @@ impl TranslationRun {
                         .is_some_and(|text| text.text == segment.text)
             })
         }) {
-            return Err(EngineError::Session(crate::SessionError::StaleResult));
+            return Err(TranscriptError::from(
+                crate::session::SessionError::StaleResult,
+            ));
         }
         let payload = window.consent_text()?;
         if scope.texts != [payload]
@@ -220,9 +229,9 @@ impl TranslationRun {
     }
     /// The shared runner calls this once per attempt. Refusal/auth/quota/cost never
     /// retry; Schema and transient transport errors use its bounded backoff policy.
-    pub fn run(&self, hooks: &dyn ExecutionHooks) -> crate::Result<Vec<u8>> {
+    pub fn run(&self, hooks: &dyn ExecutionHooks) -> TranscriptResult<Vec<u8>> {
         if hooks.cancelled() {
-            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(TranscriptError::Runtime(crate::RuntimeError::Cancelled));
         }
         self.attempts
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
@@ -239,7 +248,7 @@ impl TranslationRun {
             hooks,
         )?;
         serde_json::to_vec(&output).map_err(|_| {
-            EngineError::Edit(crate::EditError::Invalid(
+            TranscriptError::Edit(crate::session::EditError::Invalid(
                 "translation result serialization",
             ))
         })
@@ -248,7 +257,7 @@ impl TranslationRun {
         self: &Arc<Self>,
         runner: &mut JobRunner,
         session: &Session,
-    ) -> crate::Result<(JobId, CancelToken)> {
+    ) -> TranscriptResult<(JobId, CancelToken)> {
         session.validate_job_target(&self.target)?;
         let text = self.window.consent_text()?;
         let source = *blake3::hash(text.as_str().as_bytes()).as_bytes();

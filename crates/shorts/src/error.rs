@@ -51,3 +51,9 @@ impl From<engine::transcript::Error> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::EditError> for Error {
+    fn from(error: engine::EditError) -> Self {
+        Self::Engine(error.into())
+    }
+}
