@@ -4,7 +4,7 @@ use crate::jobs::{
     Clock, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
 };
 use crate::session::wire::{ErrorCode, Failure};
-use crate::{ByteBudget, Error as EngineError, JobTarget, Session};
+use crate::{ByteBudget, JobTarget, Session};
 use project::{Project, SaveReceipt, WriterLease};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,6 +24,10 @@ const JOURNAL_VERSION: u32 = 2;
 /// Recovery diagnostics retain typed causes without exposing project content.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(transparent)]
+    Edit(#[from] crate::session::EditError),
+    #[error(transparent)]
+    Runtime(#[from] crate::runtime::Error),
     #[error("recovery candidate is corrupt or incomplete")]
     Corrupt,
     #[error("persistence operation is already active")]
@@ -47,6 +51,8 @@ impl Failure for Error {
     fn code(&self) -> ErrorCode {
         use ErrorCode as C;
         match self {
+            Self::Edit(error) => error.code(),
+            Self::Runtime(error) => error.code(),
             Self::PersistenceFailed(cause) => cause.code(),
             Self::Limit => C::Limit,
             Self::Io(_) | Self::Project(project::Error::Io(_)) => C::Io,
@@ -60,6 +66,30 @@ impl Failure for Error {
             | Self::Unsupported(_)
             | Self::Project(_) => C::Refused,
         }
+    }
+    fn transient(&self) -> bool {
+        match self {
+            Self::Edit(error) => error.transient(),
+            Self::Runtime(error) => error.transient(),
+            _ => false,
+        }
+    }
+    fn job_policy(&self) -> crate::session::wire::JobFailurePolicy {
+        match self {
+            Self::Edit(error) => error.job_policy(),
+            Self::Runtime(error) => error.job_policy(),
+            _ => crate::session::wire::JobFailurePolicy::default(),
+        }
+    }
+}
+impl From<crate::session::wire::ControlError> for Error {
+    fn from(error: crate::session::wire::ControlError) -> Self {
+        Self::Edit(error.into())
+    }
+}
+impl From<crate::session::SessionError> for Error {
+    fn from(error: crate::session::SessionError) -> Self {
+        Self::Edit(error.into())
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;
@@ -134,8 +164,8 @@ struct Flight {
 // Admission refusals precede a persistence job and can be corrected by choosing
 // another destination. Worker/publication failures must remain sticky.
 enum PumpFailure {
-    Admission(EngineError),
-    Persistence(EngineError),
+    Admission(Error),
+    Persistence(Error),
 }
 /// One active Session, one journal, one in-flight persistence job and one latest
 /// pending snapshot. Drop joins workers but deliberately performs no implicit save.
@@ -161,7 +191,7 @@ pub struct Autosave {
     pending_save: Option<PathBuf>,
     failure: Option<Arc<dyn Failure + 'static>>,
     #[cfg(test)]
-    fault: Option<fn() -> crate::Result<()>>,
+    fault: Option<fn() -> Result<()>>,
 }
 impl Autosave {
     /// Never-saved or recovered work; save() requires an explicit save-as.
@@ -172,7 +202,7 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> crate::Result<Self> {
+    ) -> Result<Self> {
         Self::with_writer(root, session, None, budget, clock, schedule)
     }
 }
@@ -188,9 +218,15 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> crate::Result<Self> {
-        let writer = WriterLease::acquire(path)?;
-        let mut session = Session::new(writer.load()?.project, history_limit)?;
+    ) -> Result<Self> {
+        let writer = WriterLease::acquire(path).map_err(crate::session::EditError::from)?;
+        let mut session = Session::new(
+            writer
+                .load()
+                .map_err(crate::session::EditError::from)?
+                .project,
+            history_limit,
+        )?;
         let mut metadata = writer.metadata();
         if matches!(metadata.thumbnail, project::Thumbnail::Missing) {
             metadata.thumbnail = crate::store::project_cover::capture(
@@ -213,24 +249,22 @@ impl Autosave {
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
-    ) -> crate::Result<Self> {
+    ) -> Result<Self> {
         let saved_path = writer.as_ref().map(|w| w.path().to_owned());
         if schedule.debounce.is_zero()
             || schedule.max_dirty_age < schedule.debounce
             || schedule.max_dirty_age > Duration::from_secs(600)
         {
-            return Err(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ));
+            return Err(Error::from(crate::session::wire::ControlError::Limit));
         }
         if saved_path.as_ref().is_some_and(|p| !p.is_absolute()) {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::session::EditError::Invalid(
                 "save path must be absolute",
             )));
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
-            return Err(Error::Corrupt.into());
+            return Err(Error::Corrupt);
         }
         // Atomic mkdir avoids timestamp/pid reuse and never adopts an old directory.
         static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -477,15 +511,26 @@ mod tests {
             captions: None,
         };
         for (fault, code) in [
-            (disk_full as fn() -> crate::Result<()>, ErrorCode::Io),
+            (disk_full as fn() -> Result<()>, ErrorCode::Io),
             (unwind, ErrorCode::WorkerFailure),
             (cancelled, ErrorCode::Cancelled),
             (worker_stale, ErrorCode::StaleResult),
+            (network_transient, ErrorCode::Job),
         ] {
             let dir = tempfile::tempdir().unwrap();
             let mut a = open(dir.path());
             a.flush().unwrap();
             let before = fs::read(a.directory.join(JOURNAL)).unwrap();
+            let journal: Journal = serde_json::from_slice(&before).unwrap();
+            let confirmed_snapshot = project::autosave::list(&a.directory.join("project"))
+                .unwrap()
+                .into_iter()
+                .find(|path| {
+                    path.file_name().and_then(|name| name.to_str())
+                        == Some(journal.snapshot.as_str())
+                })
+                .unwrap();
+            let confirmed_bytes = fs::read(&confirmed_snapshot).unwrap();
             a.session_mut()
                 .apply(crate::Command::AddTrack {
                     placement: crate::TrackPlacement::Auto,
@@ -495,48 +540,65 @@ mod tests {
                 .unwrap();
             a.fault = Some(fault);
             let error = a.flush().unwrap_err();
-            fn cause<'a>(
-                e: &'a (dyn std::error::Error + 'static),
-            ) -> &'a (dyn std::error::Error + 'static) {
-                if let Some(EngineError::Recovery(error)) = e.downcast_ref::<EngineError>() {
-                    return cause(error);
-                }
-                if let Some(Error::PersistenceFailed(error)) = e.downcast_ref::<Error>() {
-                    return cause(error.as_ref());
-                }
-                e
-            }
-            let original = cause(&error);
+            let Error::PersistenceFailed(raw) = &error else {
+                panic!("missing persistence envelope")
+            };
+            let original = raw.as_ref() as &(dyn std::error::Error + 'static);
+            let exposed = <Error as std::error::Error>::source(&error)
+                .unwrap()
+                .downcast_ref::<Arc<dyn Failure>>()
+                .unwrap();
+            assert!(Arc::ptr_eq(raw, exposed));
             if let Some(error) = original.downcast_ref::<crate::RuntimeError>() {
-                assert!(matches!(
-                    error,
-                    crate::RuntimeError::WorkerPanicked | crate::RuntimeError::Cancelled
-                ));
+                assert!(matches!(error, crate::RuntimeError::WorkerPanicked));
             } else {
-                match original.downcast_ref::<EngineError>().unwrap() {
-                    EngineError::Io(error) => {
-                        assert_eq!(error.kind(), std::io::ErrorKind::StorageFull)
+                match original.downcast_ref::<Error>().unwrap() {
+                    Error::Io(io) => {
+                        assert_eq!(io.kind(), std::io::ErrorKind::StorageFull);
+                        assert_eq!(raw.to_string(), "job/cache IO failed");
+                        assert!(std::ptr::eq(
+                            io,
+                            raw.source()
+                                .unwrap()
+                                .downcast_ref::<std::io::Error>()
+                                .unwrap()
+                        ));
                     }
-                    EngineError::Runtime(crate::RuntimeError::WorkerPanicked) => {
-                        assert_eq!(code, ErrorCode::WorkerFailure)
-                    }
-                    EngineError::Runtime(crate::RuntimeError::Cancelled) => {
+                    Error::Runtime(crate::RuntimeError::Cancelled) => {
                         assert_eq!(code, ErrorCode::Cancelled)
                     }
-                    EngineError::Session(crate::SessionError::StaleResult) => {
-                        assert_eq!(code, ErrorCode::StaleResult)
+                    Error::Runtime(crate::RuntimeError::NetworkTransient) => {
+                        assert_eq!(code, ErrorCode::Job);
+                        assert!(raw.transient());
                     }
+                    Error::Edit(crate::session::EditError::Session(
+                        crate::session::SessionError::StaleResult,
+                    )) => assert_eq!(code, ErrorCode::StaleResult),
                     _ => panic!("lost the typed worker cause"),
                 }
             }
+            let snapshot = a
+                .runner
+                .snapshots()
+                .into_iter()
+                .find(|row| row.error.is_some())
+                .unwrap();
+            assert!(Arc::ptr_eq(raw, snapshot.error.as_ref().unwrap()));
+            assert_eq!(snapshot.attempts, 1);
+            assert!(!error.job_policy().terminal_cancelled);
+            assert_eq!(error.job_policy().retry_after_seconds, None);
             assert_eq!(error.code(), code);
             assert!(!error.transient());
             let shared = a.failure.as_ref().unwrap().clone();
-            let EngineError::Recovery(Error::PersistenceFailed(repeated)) = a.tick().unwrap_err()
-            else {
+            let Error::PersistenceFailed(repeated) = a.tick().unwrap_err() else {
                 panic!("worker failures, including nested stale results, must remain sticky");
             };
+            assert!(Arc::ptr_eq(raw, &shared));
             assert!(Arc::ptr_eq(&shared, &repeated));
+            let Error::PersistenceFailed(flushed) = a.flush().unwrap_err() else {
+                panic!("lost sticky cause")
+            };
+            assert!(Arc::ptr_eq(raw, &flushed));
             assert_eq!(a.budget.snapshot().unwrap().limited_used(), 0);
 
             // Feed the actual failed worker result through control admission,
@@ -557,7 +619,7 @@ mod tests {
             };
             let response = a
                 .session
-                .control_lifecycle_save(request.clone(), caller(), |_, _| Err(error))
+                .control_lifecycle_save(request.clone(), caller(), |_, _| Err(error.into()))
                 .unwrap();
             assert!(matches!(response.value, ResponseValue::Error(observed) if observed == code));
             let replay = a
@@ -584,21 +646,25 @@ mod tests {
                 .is_err()
             );
             assert_eq!(fs::read(a.directory.join(JOURNAL)).unwrap(), before);
+            assert_eq!(fs::read(&confirmed_snapshot).unwrap(), confirmed_bytes);
             drop(a);
             assert_eq!(discover(dir.path()).unwrap().candidates.len(), 1);
         }
     }
-    fn disk_full() -> crate::Result<()> {
+    fn disk_full() -> Result<()> {
         Err(std::io::Error::from(std::io::ErrorKind::StorageFull).into())
     }
-    fn unwind() -> crate::Result<()> {
+    fn unwind() -> Result<()> {
         panic!("injected persistence unwind")
     }
-    fn cancelled() -> crate::Result<()> {
-        Err(EngineError::Runtime(crate::RuntimeError::Cancelled))
+    fn cancelled() -> Result<()> {
+        Err(Error::Runtime(crate::RuntimeError::Cancelled))
     }
-    fn worker_stale() -> crate::Result<()> {
-        Err(EngineError::Session(crate::SessionError::StaleResult))
+    fn network_transient() -> Result<()> {
+        Err(Error::Runtime(crate::RuntimeError::NetworkTransient))
+    }
+    fn worker_stale() -> Result<()> {
+        Err(Error::from(crate::session::SessionError::StaleResult))
     }
     #[test]
     fn unsupported_lock_is_not_misclassified_as_a_dead_session() {

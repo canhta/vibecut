@@ -1,14 +1,14 @@
 //! Executes persistent session lifecycle operations.
-use super::{Autosave, Duration, EngineError, Error, PathBuf, Session};
+use super::{Autosave, Duration, Error, PathBuf, Result, Session};
 use crate::Lifecycle;
 impl Autosave {
     /// Reserve the destination, then queue journal/project publication off-thread.
     /// Native path resolution/lease acquisition can block this caller. The journal
     /// precedes the project write. Poll tick until saving() is false; leaving before
     /// acknowledgement is not a successful save boundary.
-    pub fn save_as(&mut self, path: PathBuf) -> crate::Result<()> {
+    pub fn save_as(&mut self, path: PathBuf) -> Result<()> {
         if !path.is_absolute() {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::session::EditError::Invalid(
                 "save path must be absolute",
             )));
         }
@@ -21,7 +21,7 @@ impl Autosave {
         };
         let parent = destination
             .parent()
-            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            .ok_or(Error::Edit(crate::session::EditError::Invalid(
                 "save destination",
             )))?
             .canonicalize()?;
@@ -31,18 +31,16 @@ impl Autosave {
             .ok_or(Error::Corrupt)?
             .canonicalize()?;
         if parent.starts_with(root) {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::session::EditError::Invalid(
                 "save destination is inside recovery storage",
             )));
         }
         self.tick()?;
         if self.saving() {
-            return Err(Error::Busy.into());
+            return Err(Error::Busy);
         }
         if self.session.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
-            ));
+            return Err(Error::from(crate::session::SessionError::TransactionActive));
         }
         self.pending_save = Some(path);
         self.tick()
@@ -52,7 +50,7 @@ impl Autosave {
 impl Autosave {
     /// Typed lifecycle dispatch: the declared route picks the persistence owner, and
     /// completion of a save is acknowledged by tick().
-    pub fn apply(&mut self, command: crate::Command) -> crate::Result<crate::Outcome> {
+    pub fn apply(&mut self, command: crate::Command) -> Result<crate::Outcome> {
         match command.lifecycle() {
             Some(Lifecycle::Thumbnail) => {
                 self.refresh_thumbnail()?;
@@ -74,11 +72,7 @@ impl Autosave {
     }
     /// Dispatch a registry command; the declared lifecycle route picks the persistence
     /// owner, and completion of a save is acknowledged by tick().
-    pub fn execute(
-        &mut self,
-        id: &str,
-        params: serde_json::Value,
-    ) -> crate::Result<crate::Outcome> {
+    pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
         match crate::lifecycle(id) {
             Some(Lifecycle::Thumbnail) => {
                 self.empty_params(&params)?;
@@ -100,20 +94,19 @@ impl Autosave {
             | None => Ok(self.session.execute(id, params)?),
         }
     }
-    fn empty_params(&self, params: &serde_json::Value) -> crate::Result<()> {
+    fn empty_params(
+        &self,
+        params: &serde_json::Value,
+    ) -> std::result::Result<(), crate::session::wire::ControlError> {
         if *params == serde_json::json!({}) {
             Ok(())
         } else {
-            Err(EngineError::Control(
-                crate::session::wire::ControlError::InvalidParams,
-            ))
+            Err(crate::session::wire::ControlError::InvalidParams)
         }
     }
-    fn refresh_thumbnail(&mut self) -> crate::Result<()> {
+    fn refresh_thumbnail(&mut self) -> Result<()> {
         if self.session.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
-            ));
+            return Err(Error::from(crate::session::SessionError::TransactionActive));
         }
         self.flush()?;
         let mut metadata = self.session.metadata().clone();
@@ -122,7 +115,9 @@ impl Autosave {
             &crate::ByteBudgetHooks::new(&self.budget, None),
         );
         if let Some(writer) = &self.writer {
-            writer.save_metadata(&metadata)?;
+            writer
+                .save_metadata(&metadata)
+                .map_err(crate::session::EditError::from)?;
         }
         Ok(self.session.restore_metadata(metadata)?)
     }
@@ -136,7 +131,7 @@ fn unchanged() -> crate::Outcome {
 }
 
 impl Autosave {
-    pub fn save(&mut self) -> crate::Result<()> {
+    pub fn save(&mut self) -> Result<()> {
         let path = self.saved_path.clone().ok_or(Error::SaveAsRequired)?;
         self.save_as(path)
     }
@@ -145,7 +140,7 @@ impl Autosave {
 impl Autosave {
     /// Acknowledge the old pending revision before replacing the active project.
     /// On failure this retains the current Session and refuses the switch.
-    pub fn switch(&mut self, session: Session) -> crate::Result<()> {
+    pub fn switch(&mut self, session: Session) -> Result<()> {
         self.flush()?;
         let root = self.directory.parent().ok_or(Error::Corrupt)?;
         let next = Self::new(
@@ -164,11 +159,9 @@ impl Autosave {
     /// Explicit blocking project-switch/exit barrier. IO remains on the job worker;
     /// the app should keep its progress presentation responsive while waiting.
     /// Failure refuses the boundary; Drop alone never claims to have flushed.
-    pub fn flush(&mut self) -> crate::Result<u64> {
+    pub fn flush(&mut self) -> Result<u64> {
         if self.session.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
-            ));
+            return Err(Error::from(crate::session::SessionError::TransactionActive));
         }
         self.tick()?;
         while self.flight.is_some() {

@@ -6,8 +6,8 @@ use super::{
 impl Candidate {
     /// Open as never-saved work. Its original path remains informational metadata;
     /// save() therefore requires an explicit save-as destination.
-    pub fn recover(&self, history_limit: usize) -> crate::Result<Session> {
-        Session::new(self.project.clone(), history_limit).map_err(crate::Error::from)
+    pub fn recover(&self, history_limit: usize) -> crate::session::Result<Session> {
+        Session::new(self.project.clone(), history_limit)
     }
     /// Removes only this journal and its canonical snapshots, preserving the source.
     /// Consumes the claimed candidate; unrelated files are never removed.

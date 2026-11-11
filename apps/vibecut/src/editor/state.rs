@@ -314,7 +314,7 @@ pub struct Editor {
     /// Cache-only clip visuals and the generation jobs they request.
     pub(super) media: super::timeline::Media,
     pub(super) error: Option<String>,
-    pub(crate) persistence_error: Option<std::sync::Arc<engine::Error>>,
+    pub(crate) persistence_error: Option<std::sync::Arc<engine::recovery::Error>>,
     pub(super) configured: bool,
     pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
     pub(super) imports: Option<ImportQueue>,

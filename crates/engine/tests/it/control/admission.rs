@@ -1017,6 +1017,22 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Refused,
             false
         ),
+        row!(E::Recovery(R::Runtime(B::NetworkTransient)), Job, true),
+        row!(E::Recovery(R::Runtime(B::Cancelled)), Cancelled, false),
+        row!(
+            E::Recovery(R::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            ))),
+            StaleResult,
+            false
+        ),
+        row!(
+            E::Recovery(R::Edit(engine::EditError::Control(
+                engine::control::ControlError::InvalidParams
+            ))),
+            InvalidParams,
+            false
+        ),
         row!(E::Recovery(R::Corrupt), Refused, false),
         row!(E::Recovery(R::Busy), Refused, false),
         row!(E::Recovery(R::SaveAsRequired), Refused, false),
