@@ -41,6 +41,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         sounds: None,
         media: None,
         chapters: None,
+        captions: None,
     }
 }
 pub(crate) fn runner() -> JobRunner {

@@ -3,6 +3,7 @@ use super::checkpoints::wait_for_job;
 use super::cues::{build_session, caption_item_id};
 use super::operation::{Cancellation, Progress, Stage};
 use super::translation::{TranslationRun, TranslationTarget, window};
+use super::translation_reference;
 use crate::jobs::JobRunner;
 use crate::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, TranslationProvider,
@@ -118,7 +119,7 @@ pub fn translate_selected(
 ) -> Result<(), EditError> {
     let item = selection.item;
     if selection.ids.is_empty()
-        || selection.ids.len() > 10_000
+        || selection.ids.len() > crate::session::wire::MAX_TRANSLATION_CUES
         || selection
             .ids
             .iter()
@@ -191,12 +192,7 @@ pub fn translate_selected(
                 item,
                 target_language: selection.target.clone(),
                 texts: translation.texts,
-                translation_ref: format!(
-                    "{}/{}",
-                    translator.config().id().as_str(),
-                    translator.config().model().as_str()
-                )
-                .into(),
+                translation_ref: translation_reference(translator.config())?,
                 force: selection.force,
             },
         )?;

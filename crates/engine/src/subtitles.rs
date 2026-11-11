@@ -44,3 +44,13 @@ pub use pipeline::run;
 
 mod ass_import;
 pub use ass_import::{AssImportReport, AssImportRequest, prepare_ass_import};
+
+mod access;
+mod generation;
+mod outputs;
+mod translation;
+pub use access::CaptionAccess;
+pub(crate) use generation::{generate, validate_source};
+pub(crate) use outputs::apply_command;
+pub use outputs::{decode_captions, decode_translations};
+pub(crate) use translation::translate;

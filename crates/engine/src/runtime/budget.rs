@@ -483,7 +483,6 @@ mod tests {
     fn real_transcription_checkpoint_tolerates_only_pressure_not_io_or_poison() {
         use crate::{
             cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
-            jobs::{JobRunner, RunnerConfig, SystemClock},
             providers::{AllowAll, Providers, TranscriptionProvider},
             transcript::{Cancellation, SilentProgress},
         };
@@ -574,29 +573,18 @@ mod tests {
                 None,
             )
             .unwrap();
-            let mut runner = JobRunner::new(
-                RunnerConfig {
-                    concurrency: [1, 1, 1],
-                    queue: 2,
-                    retained: 2,
-                    network_attempts: 3,
-                    backoff: std::time::Duration::from_millis(100),
-                    progress_interval: std::time::Duration::from_millis(10),
-                },
-                parent.clone(),
-                Arc::new(SystemClock::default()),
-            )
-            .unwrap();
+            let cancel = Cancellation::new();
             let result = crate::transcript::transcribe(
                 &asset,
                 duration,
                 &captions::LanguageTag::parse("en").unwrap(),
                 &providers,
-                &mut runner,
-                &mut cache,
+                None,
+                &std::sync::Mutex::new(&mut cache),
                 &AllowAll,
                 &SilentProgress,
-                &Cancellation::new(),
+                &cancel,
+                &cancel,
             );
             assert_eq!(
                 calls.load(Ordering::SeqCst),

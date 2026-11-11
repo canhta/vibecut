@@ -406,6 +406,11 @@ impl Subtitles {
                 class: engine::jobs::ResourceClass::Cpu,
                 input: key()?,
                 bytes: engine::jobs::JobBytes {
+                    compositor: if matches!(&work, Work::Generate { .. }) {
+                        engine::transcript::WORK_BYTES
+                    } else {
+                        0
+                    },
                     result: 32 * 1024 * 1024,
                     ..Default::default()
                 },

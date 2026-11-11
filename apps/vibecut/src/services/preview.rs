@@ -311,6 +311,7 @@ impl SnapshotDialog {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             runner,
         )?;

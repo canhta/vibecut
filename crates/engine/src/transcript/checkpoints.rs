@@ -1,37 +1,36 @@
 //! Reuses independently committed ASR windows.
 use super::operation::{Cancellation, Progress, Stage};
-use super::speech::{WORK_BYTES, sample_range};
+use super::speech::sample_range;
 use crate::EditError;
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
-use crate::jobs::{
-    CancelToken, JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSpec, JobState, ResourceClass,
-};
+use crate::jobs::{CancelToken, JobId, JobOutput, JobRunner, JobState};
 use crate::providers::{ConsentPrompt, Cost, Providers, approve_upload};
-use ai::{Request, SampleRange};
-use captions::LanguageTag;
-use captions::NfcText;
+use ai::{ExecutionHooks, Request, SampleRange};
+use captions::{LanguageTag, NfcText};
 use media::SpeechWindow;
-use std::{sync::Arc, time::Duration};
+use std::{borrow::BorrowMut, sync::Mutex, time::Duration};
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn transcribe_window(
+pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     providers: &Providers,
-    runner: &mut JobRunner,
-    cache: &mut ArtifactCache,
+    cache: &Mutex<C>,
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
-    cancel: &Cancellation,
+    hooks: &dyn ExecutionHooks,
     language: &LanguageTag,
     fingerprint: &NfcText,
     window: SpeechWindow,
     cost: &mut Cost,
     checkpoints: &mut usize,
 ) -> Result<ai::Recognition, EditError> {
-    cancel.checkpoint()?;
+    if hooks.cancelled() {
+        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+    }
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
-    let samples_pcm = Arc::new(window.samples);
     let scope = providers.transcription_scope(language, samples, fingerprint)?;
     let config = providers.transcriber().config();
+    // This is the original raw-window identity; job identity never replaces it.
     let key = CacheKey::new(KeyInputs {
         kind: ArtifactKind::AsrChunk,
         source: *blake3::hash(
@@ -47,10 +46,13 @@ pub(crate) fn transcribe_window(
         clip_range: [0; 32],
         translation: [0; 32],
     })?;
-    let cached = match cache.get(key) {
-        Ok(value) => value,
-        Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
-        Err(error) => return Err(error),
+    let cached = {
+        let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
+        match (*guard).borrow_mut().get(key) {
+            Ok(value) => value,
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
+            Err(error) => return Err(error),
+        }
     };
     let raw = match cached {
         Some(lease) => {
@@ -61,164 +63,75 @@ pub(crate) fn transcribe_window(
         None => {
             let estimate = providers.transcriber().estimate(&scope);
             cost.add(&estimate);
-            let consent_token = if providers.transcription().is_remote() {
+            let token = if config.is_remote() {
                 let request = providers.upload_request(scope.clone())?;
                 Some(approve_upload(consent, &request, &scope, &estimate)?)
             } else {
                 None
             };
-            let provider = providers.transcriber.clone();
-            let job_scope = scope.clone();
-            let job_samples = samples_pcm.clone();
-            let (id, token) = runner.submit(
-                JobSpec {
-                    kind: JobKind::Transcribe,
-                    class: ResourceClass::Network,
-                    input: key,
-                    bytes: JobBytes {
-                        compositor: WORK_BYTES,
-                        result: 16 * 1024 * 1024,
-                        ..Default::default()
-                    },
+            let recognition = ai::transcribe(
+                providers.transcriber(),
+                ai::AudioWindow {
+                    samples: &window.samples,
+                    range: samples,
+                    sample_rate: scope.sample_rate,
                 },
-                move |hooks| {
-                    let audio = ai::AudioWindow {
-                        samples: job_samples.as_slice(),
-                        range: job_scope.source_samples,
-                        sample_rate: job_scope.sample_rate,
-                    };
-                    let request = Request {
-                        scope: &job_scope,
-                        consent: consent_token.as_ref(),
-                    };
-                    let recognition =
-                        ai::transcribe(provider.as_ref(), audio, &request, None, hooks)?;
-                    serde_json::to_vec(&recognition)
-                        .map_err(|_| EditError::Invalid("recognition serialization"))
+                &Request {
+                    scope: &scope,
+                    consent: token.as_ref(),
                 },
-            )?;
-            let output = wait_for_job(runner, id, &token, progress, cancel)?;
-            let bytes = output.bytes().to_vec();
-            let recognition: ai::Recognition = serde_json::from_slice(&bytes)
-                .map_err(|_| EditError::Invalid("recognition response is malformed"))?;
-            match cache.put(key, &bytes) {
-                Ok(()) => {}
-                // A checkpoint that cannot be stored must not discard a valid recognition.
-                Err(EditError::Runtime(
-                    crate::RuntimeError::BudgetFull | crate::RuntimeError::ArtifactTooLarge,
-                )) => {}
-                Err(error) => return Err(error),
+                None,
+                hooks,
+            )
+            .map_err(provider_error)?;
+            let bytes = crate::session::wire::bounded_json(&recognition, 16 * 1024 * 1024)?;
+            // Completed recognition is durable before alignment or another cancellation check.
+            {
+                let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
+                match (*guard).borrow_mut().put(key, &bytes) {
+                    Ok(()) => {}
+                    Err(EditError::Runtime(
+                        crate::RuntimeError::BudgetFull | crate::RuntimeError::ArtifactTooLarge,
+                    )) => {}
+                    Err(error) => return Err(error),
+                }
             }
-            if cancel.cancelled() {
-                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
-            }
-            return align_recognition(
-                providers,
-                runner,
-                progress,
-                cancel,
-                language,
-                fingerprint,
-                &samples_pcm,
-                samples,
-                recognition,
-            );
+            recognition
         }
     };
-    align_recognition(
-        providers,
-        runner,
-        progress,
-        cancel,
-        language,
-        fingerprint,
-        &samples_pcm,
-        samples,
-        raw,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn align_recognition(
-    providers: &Providers,
-    runner: &mut JobRunner,
-    progress: &dyn Progress,
-    cancel: &Cancellation,
-    language: &LanguageTag,
-    fingerprint: &NfcText,
-    samples_pcm: &Arc<Vec<f32>>,
-    samples: SampleRange,
-    recognition: ai::Recognition,
-) -> Result<ai::Recognition, EditError> {
-    let Some(aligner) = providers.aligner_arc() else {
-        return Ok(recognition);
-    };
-    let unit = providers.language_profile(language)?.timing_unit;
-    if !recognition.needs_timing(unit) {
-        return Ok(recognition);
-    }
-    cancel.checkpoint()?;
-    progress.stage(Stage::Align);
-    let scope = providers.alignment_scope(language, samples, fingerprint)?;
-    let samples_pcm = samples_pcm.clone();
-    let aligner_job = aligner.clone();
-    let scope_job = scope.clone();
-    let (id, token) = runner.submit(
-        JobSpec {
-            kind: JobKind::Transcribe,
-            class: ResourceClass::Cpu,
-            input: CacheKey::new(KeyInputs {
-                kind: ArtifactKind::AsrChunk,
-                source: *blake3::hash(
-                    format!(
-                        "align:{}:{}:{}",
-                        fingerprint.as_str(),
-                        samples.start(),
-                        samples.end()
-                    )
-                    .as_bytes(),
-                )
-                .as_bytes(),
-                provider: aligner.config().id().as_str(),
-                model: aligner.config().model().as_str(),
-                version: aligner.config().settings_fingerprint().as_str(),
-                settings: format!("language={}", language.as_str()).as_bytes(),
-                transcript: [0; 32],
-                cues: [0; 32],
-                clip_range: [0; 32],
-                translation: [0; 32],
-            })?,
-            bytes: JobBytes {
-                compositor: WORK_BYTES,
-                result: 16 * 1024 * 1024,
-                ..Default::default()
-            },
-        },
-        move |hooks| {
-            let audio = ai::AudioWindow {
-                samples: samples_pcm.as_slice(),
-                range: scope_job.source_samples,
-                sample_rate: scope_job.sample_rate,
-            };
-            let aligned = ai::align(
-                recognition.clone(),
-                aligner_job.as_ref(),
-                audio,
-                &scope_job,
-                None,
-                unit,
-                hooks,
-            )?;
-            serde_json::to_vec(&aligned)
-                .map_err(|_| EditError::Invalid("aligned recognition serialization"))
-        },
-    )?;
-    let output = wait_for_job(runner, id, &token, progress, cancel)?;
-    if cancel.cancelled() {
+    if hooks.cancelled() {
         return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
     }
-    serde_json::from_slice(output.bytes())
-        .map_err(|_| EditError::Invalid("aligned recognition is malformed"))
+    let Some(aligner) = providers.aligner_arc() else {
+        return Ok(raw);
+    };
+    let unit = providers.language_profile(language)?.timing_unit;
+    if !raw.needs_timing(unit) {
+        return Ok(raw);
+    }
+    progress.stage(Stage::Align);
+    let scope = providers.alignment_scope(language, samples, fingerprint)?;
+    Ok(ai::align(
+        raw,
+        aligner.as_ref(),
+        ai::AudioWindow {
+            samples: &window.samples,
+            range: samples,
+            sample_rate: scope.sample_rate,
+        },
+        &scope,
+        None,
+        unit,
+        hooks,
+    )
+    .map_err(provider_error)?)
+}
+
+pub(super) fn provider_error(error: ai::Error) -> EditError {
+    match error {
+        ai::Error::Cancelled => EditError::Runtime(crate::RuntimeError::Cancelled),
+        error => error.into(),
+    }
 }
 
 /// Pump one submitted job to its terminal state, forwarding progress and cancellation.

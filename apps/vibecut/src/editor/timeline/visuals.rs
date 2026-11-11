@@ -359,6 +359,7 @@ impl Media {
                 sounds: None,
                 media: Some(access.as_ref()),
                 chapters: None,
+                captions: None,
             },
             runner,
         )?;

@@ -31,3 +31,8 @@ Engine limits govern frames, responses, preview count, size, quality and receipt
 ## Tests
 
 `cargo test -p mcp` runs the adapter contracts: grant decisions, catalog and pagination parity with the engine registry, hostile framing, flooded and slow clients, cancellation and deadline handling, desktop project routing, the consent gate, and the OS-owned Unix socket and Windows pipe permissions. The CLI's `tests/it/mcp.rs` covers the subcommand's stdio and attach composition end to end.
+
+The composition root may attach `CaptionAccess` with `Inbox::attach_captions`; caption jobs use
+the same registry grants, revisions, bounded output and consent owner as other control jobs.
+The [caption contract](../engine/src/subtitles/README.md#caption-workflow-commands) owns setup,
+checkpoint reuse and application.

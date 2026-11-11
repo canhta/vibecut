@@ -1,36 +1,35 @@
 # Subtitles
 
 Interface: `run`, `prepare_ass_import`, `SubtitleRequest`, `SubtitleOutcome`, `AssImportRequest`,
-`AssImportReport`; `LanguageTag` is re-exported. Selected providers come from
+`AssImportReport`, `CaptionAccess`, `decode_captions`, `decode_translations`; `LanguageTag` is re-exported. Selected providers come from
 [`providers`](../providers/README.md).
 
 ## Subtitle workflow
 
-`run` composes the end-to-end workflow used by the CLI and UI: speech-window extraction, explicit
+`run` composes the file-to-subtitle workflow: speech-window extraction, explicit
 transcription and translation provider choice, checkpointed ASR chunks, optional local
 alignment, cue segmentation, translation application and the SRT/burn export jobs. It never
 reimplements captions, render, provider consent or cost, or cache and checkpoint primitives;
 speech windows, ASR checkpoints and cue translation live in [transcript](../transcript/README.md).
 
-`provider_options()` is offline capability data (operation, model ids, languages, local or remote
-and native timing) for pickers. Provider selection accepts only a listed model and never falls
-back. `Providers::open` loads only the selected adapters: local models come from verified
-`ArtifactCache` bundles and keep their `ModelLease` alive for the adapter lifetime. Missing
-weights return `ModelMissing`, a missing runner `RunnerMissing` and missing credentials
-`CredentialMissing`. `Credentials::new` validates composition-root secrets and errors name the
-environment entry, never the value.
+Provider setup, credentials and capability refusals belong to
+[providers](../providers/README.md#failures).
 
 `run(request, providers, runner, cache, consent, progress, cancellation)` imports the input,
 extracts mono 16 kHz windows at speech-safe boundaries, reuses complete raw `AsrChunk` cache
 entries keyed by source content, exact sample range, language and provider/model/settings, and
-executes missing windows as Transcribe jobs. Text-only recognition then applies the selected
-local aligner as a separate CPU job; raw recognition is committed to the checkpoint cache
+executes missing windows synchronously through execution hooks. Text-only recognition applies
+the selected local aligner on that same thread; raw recognition is committed to the checkpoint cache
 before alignment, so an alignment failure preserves completed ASR work. The workflow assembles
 with `ai::assemble`, segments through captions, applies translation windows through
 `TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the job runner.
 Silent windows are skipped; no speech returns `NoSpeech`, mean word confidence below the fixed
 floor returns `LowConfidence`, and unknown duration or burn without video return typed refusals.
 No project file is written.
+
+The retained blocking composition admits speech work through the runner's shared budget
+before detection/extraction, using the [transcript memory ceilings](../transcript/README.md).
+Pressure refuses before provider work and releases partial reservations on every exit.
 
 `Cancellation` is the operation-wide cooperative signal; `run` checks it at every stage and
 window boundary and cancels the active submitted job. Cancellation after a completed ASR window
@@ -40,9 +39,50 @@ preserves the existing destination. The CLI has no signal-driven cancel, so proc
 has crash semantics.
 
 Remote uploads are prompted through `ConsentPrompt` before every request; `UploadRequest` carries
-provider and model, languages, audio seconds, payload bytes, cost ceiling and the adapter's
+provider and model, languages, audio seconds, payload bytes, cost estimate and the adapter's
 policy links. The workflow never uploads without prompt approval and never downloads weights;
 model download belongs to `models::ModelTransfers` under `DownloadConsent`.
+
+## Caption workflow commands
+
+`captions.generate {asset, range?, source_language?}` starts one `Transcribe` job over an existing
+project asset. The default range is the whole known duration. Omitted language is detected as the
+first job stage through the selected provider. Remote transcription without a local aligner uses
+the network class; all other transcription uses CPU. Speech extraction, checkpoint lookup,
+recognition, alignment, assembly and segmentation run on that worker without nested jobs.
+
+`CaptionAccess` lends resolved providers, a `ConsentPrompt` and the one shared checkpoint-cache
+handle. Composition roots open the models cache once; every window locks it only for get/put.
+Completed raw windows keep the existing source/sample/language/provider/model/settings identity,
+including after failure or cancellation. Uncached remote windows ask the prompt before upload.
+Generation and translation use the [shared approval boundary](../providers/README.md#adapters-scopes-and-consent),
+including its separate exact-model unknown-price acknowledgement. The lent providers resolve
+the selected model; control requests cannot replace that identity or grant consent.
+Absent access refuses `Permission`; optional resource failures retain their setup category while
+unrelated commands remain usable. The CLI control and headless MCP roots lend local speech
+resources with `DenyUploads`, with no implicit download or client consent parameter.
+
+The complete generated result contains source-timed cues and counts, language, asset/range,
+provider/model and cost. `captions.apply {job, start?}` inserts that retained result as one edit,
+placing the range at `start` (default zero). It requires the original Session and revision,
+retained completed transcription, unchanged source identity and a still-valid asset range.
+A second application under a fresh key is stale; replay of the original key stays idempotent.
+
+`captions.translate {item, cues?, target_language, force?}` snapshots up to 10,000 distinct cues
+(all cues when omitted), preserving manually edited target texts unless forced. Source context
+and provider request windows are built at submission, at most 64 selected cues per window. The
+single `Translate` job asks consent for each window and runs `TranslationRun::run` directly.
+Retry invocations share a three-attempt ceiling and accumulated cost. Completed output contains
+exact `retranslate` fields, provider/model and cost; applying it remains a separate ordinary edit.
+Before publishing success, the job validates one complete `retranslate` request through
+the existing parameter budget and wire frame parser, including dictionary keys and the
+request envelope with maximum-length correlation/idempotency keys. A result that cannot
+be applied atomically under those limits fails with `Limit` and publishes no output.
+Every workflow refuses inside a transaction and never mutates the live Session in the worker.
+
+Both result reservations and serialized outputs are capped at 8 MiB, generated cues at 10,000.
+Oversize, malformed, failed or cancelled work yields no partial result. Outer control and preview
+bounds remain owned by the [wire contract](../session/wire/README.md).
 
 ## ASS caption import
 

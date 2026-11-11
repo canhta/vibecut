@@ -17,6 +17,13 @@ use std::{
     },
 };
 
+/// Bounded provenance for the complete resolved provider, independent of model-ID length.
+pub(crate) fn translation_reference(config: &ai::ProviderConfig) -> crate::Result<NfcText> {
+    let identity = serde_json::to_vec(&("caption-translation-v1", config))
+        .map_err(|_| EditError::Invalid("translation reference"))?;
+    Ok(format!("translation:{}", blake3::hash(&identity)).into())
+}
+
 /// Select only the requested source cues, skipping manually edited target texts
 /// unless force is explicit. Before/after context has no output IDs.
 pub fn window(

@@ -90,6 +90,7 @@ impl EngineBackend {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             runner,
         )?;
