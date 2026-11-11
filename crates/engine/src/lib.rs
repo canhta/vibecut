@@ -97,8 +97,6 @@ pub enum EditError {
     Cancelled,
     #[error("job result is stale")]
     StaleResult,
-    #[error("loudness gains are missing or measured for different audio; measure again")]
-    LoudnessStale,
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -214,7 +212,6 @@ impl EditError {
             Self::Project(project::Error::Conflict) => C::Conflict,
             Self::Project(project::Error::Media(_)) => C::Media,
             Self::ControlIdentity
-            | Self::LoudnessStale
             | Self::NoTrack(_)
             | Self::NoAsset(_)
             | Self::AssetsInUse(_)

@@ -301,6 +301,61 @@ fn policy_refusal_and_nested_policy_are_safe_before_io() {
     assert_eq!(r.counts().0, 0);
 }
 #[test]
+fn stale_loudness_export_refuses_before_jobs_and_replays_without_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("export.mp4");
+    for measured in [
+        None,
+        Some(project::LoudnessGains {
+            key: [0; 32],
+            clip: vec![],
+            master_db: 0.0,
+        }),
+    ] {
+        let mut data = seed().project().as_ref().clone().into_data();
+        data.settings.loudness.master = Some(project::LoudnessTarget::DEFAULT);
+        data.settings.loudness.measured = measured;
+        let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
+        let mut r = runner();
+        let before = s.project().clone();
+        let revision = s.revision();
+        let history = s.history_len();
+        let mut cursor = s.snapshot_and_subscribe(&r).unwrap().cursor;
+        let req = request(
+            &s,
+            "export",
+            json!({
+                "settings": render::OutputOptions::default(), "path": output, "overwrite": false
+            }),
+            "loudness-stale",
+        );
+        for _ in 0..2 {
+            error(
+                s.control_request(req.clone(), caller(&Allow), &mut r)
+                    .unwrap(),
+                ErrorCode::Refused,
+            );
+        }
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), history);
+        assert!(r.snapshots().is_empty());
+        assert!(r.drain_events().is_empty());
+        assert!(matches!(
+            s.events(&mut cursor).unwrap().as_slice(),
+            [control::Event {
+                payload: Payload::CommandError {
+                    code: ErrorCode::Refused,
+                    ..
+                },
+                ..
+            }]
+        ));
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
 fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     let s = session();
     let req = request(
@@ -848,7 +903,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             true
         ),
         row!(E::StaleResult, StaleResult, false),
-        row!(E::LoudnessStale, Refused, false),
+        row!(E::Runtime(B::LoudnessStale), Refused, false),
         row!(
             E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
             Limit,
@@ -982,6 +1037,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
+        (E::Runtime(B::LoudnessStale), C::Refused),
         (E::Runtime(B::NetworkTransient), C::Job),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
@@ -1006,6 +1062,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
+        (E::Runtime(B::LoudnessStale), C::Refused),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Limit, C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
@@ -1028,7 +1085,12 @@ fn owner_failures_classify_publication_receipts_and_events() {
         C::Job,
         false,
     ));
-    for cause in [B::CacheBusy, B::ModelResponse, B::StorageFull] {
+    for cause in [
+        B::CacheBusy,
+        B::ModelResponse,
+        B::StorageFull,
+        B::LoudnessStale,
+    ] {
         cases.push((E::Runtime(B::Failed(Arc::new(cause))), C::Refused, false));
     }
     let message = E::Providers(P::ModelMissing("test-model")).to_string();

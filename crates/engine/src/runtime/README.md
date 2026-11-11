@@ -121,6 +121,11 @@ identity; a valid old artifact may stay cached without being applied.
 
 ## Render execution
 
+`admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or
+mismatched measured gains with code `Refused`, no source and no transience. Export
+submission composes this error before admitting any single- or multi-scene job;
+no target needs no measurement. The content key excludes the master fader.
+
 `submit_export` submits an immutable Project snapshot to the runner's export resource class.
 `JobContext` implements render's `ExecutionHooks`, leasing actual buffers from the shared
 `ByteBudget` under decoded, compositor and export owners rather than declaring a second
