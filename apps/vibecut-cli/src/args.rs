@@ -39,6 +39,12 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(
+                E::Runtime(engine::RuntimeError::ModelResponse),
+                "rejected",
+                5
+            ),
+            row!(E::Runtime(engine::RuntimeError::StorageFull), "rejected", 5),
             row!(E::Runtime(engine::RuntimeError::NetworkTransient), "job", 7),
             row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
             row!(E::SchemaMismatch, "rejected", 5),
@@ -178,6 +184,30 @@ mod exit_codes {
                 assert_eq!(error.value()["message"], message);
                 assert_eq!(error.code(), ("job", 7));
             }
+        }
+        let refusals: [(fn() -> engine::RuntimeError, &str); 2] = [
+            (
+                || engine::RuntimeError::ModelResponse,
+                "model transfer response does not match the requested representation",
+            ),
+            (
+                || engine::RuntimeError::StorageFull,
+                "model storage is full",
+            ),
+        ];
+        for (make, message) in refusals {
+            for depth in 0..=2 {
+                let mut cause: Arc<dyn engine::control::Failure> = Arc::new(make());
+                for _ in 0..depth {
+                    cause = Arc::new(E::Runtime(engine::RuntimeError::Failed(cause)));
+                }
+                let error = CliError::Job(cause);
+                assert_eq!(error.code(), ("rejected", 5));
+                assert_eq!(error.value()["message"], message);
+            }
+            let direct = CliError::Engine(make().into());
+            assert_eq!(direct.code(), ("rejected", 5));
+            assert_eq!(direct.value()["message"], message);
         }
         let model = E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Providers(
             P::ModelMissing("test-model"),

@@ -174,7 +174,7 @@ fn write_state(root: &Path, state: &NativeState) -> Result<u64, EditError> {
     let bytes = envelope(key, state)?;
     project::atomic_write(&root.join(STATE), &bytes).map_err(|e| match e {
         project::Error::Io(e) if e.kind() == std::io::ErrorKind::StorageFull => {
-            EditError::StorageFull
+            EditError::Runtime(crate::RuntimeError::StorageFull)
         }
         other => EditError::Project(other),
     })?;

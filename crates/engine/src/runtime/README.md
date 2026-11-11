@@ -31,7 +31,10 @@ runner's private reservation return this closed result. Upper cache, job and Ses
 compose it through transparent `EditError::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
 transport failures: static message `transient network failure`, `Job`, source-free
 and transient only as a direct runtime variant. All other runtime variants remain
-nontransient. `Failed` shares a typed erased cause and delegates its code,
+nontransient. `ModelResponse` owns unusable model-transfer representations and
+`StorageFull` owns model-storage refusal; both have static diagnostics, no source
+and code `Refused`. Transfer and cache consumers compose them upward without
+changing their refusal, checkpoint or publication policy. `Failed` shares a typed erased cause and delegates its code,
 without inheriting transience or adding a source-chain link. Only `BudgetFull` permits reclaim or queued waiting;
 `ArtifactTooLarge` is immediate refusal even though both publish the `budget` wire code.
 Task closures still return the current composed `EditError`. Snapshots retain the raw

@@ -526,10 +526,19 @@ fn foreign_bundle_is_reported_as_corrupt_without_download_or_adoption() {
     assert_eq!(inspection.problem, Some(ModelProblem::Failed));
     assert_eq!(http.count(), 1);
     let snapshot = inspection.job.unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_deref().unwrap();
+    assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+    assert!(!raw.transient());
+    assert!(raw.source().is_none());
+    assert!(inspection.installed.is_empty());
+    assert!(inspection.resume.is_empty());
     assert!(matches!(
         (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
             .downcast_ref::<engine::EditError>(),
-        Some(engine::EditError::ModelResponse)
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::ModelResponse
+        ))
     ));
 }
 
@@ -594,7 +603,25 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
     bench.click("models.download.fixture-disk");
     wait_terminal(&mut bench);
     let inspection = inspect(&bench);
-    assert_eq!(inspection.job.unwrap().state, JobState::Failed);
+    let snapshot = inspection.job.as_ref().unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_deref().unwrap();
+    assert!(matches!(
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>(),
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::StorageFull
+        ))
+    ));
+    assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+    assert!(!raw.transient());
+    assert!(raw.source().is_none());
+    assert!(inspection.installed.is_empty());
+    assert!(inspection.resume.is_empty());
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        1,
+        "only the cache lock exists"
+    );
     assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
     assert!(
         bench

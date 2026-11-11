@@ -175,7 +175,7 @@ impl ModelTransfers {
 }
 fn storage(error: io::Error) -> EditError {
     if error.kind() == io::ErrorKind::StorageFull {
-        EditError::StorageFull
+        EditError::Runtime(crate::RuntimeError::StorageFull)
     } else {
         EditError::Io(error)
     }
@@ -250,7 +250,7 @@ fn download(
     // Existing checkpoint bytes can be reused, or reclaimed before a full restart.
     let needed = cache.remaining_model(model)?;
     if io.available(cache.root_path()).map_err(storage)? < needed {
-        return Err(EditError::StorageFull);
+        return Err(EditError::Runtime(crate::RuntimeError::StorageFull));
     }
     let mut edit = cache.edit_model(model)?;
     for (index, expected) in model.files.iter().enumerate() {
@@ -306,7 +306,7 @@ fn download(
             if header(&reply, "content-encoding")?
                 .is_some_and(|v| !v.eq_ignore_ascii_case("identity"))
             {
-                return Err(EditError::ModelResponse);
+                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
             }
             let tag = header(&reply, "etag")?
                 .filter(|v| strong_etag(v))
@@ -316,7 +316,7 @@ fn download(
                     // A server ignoring Range/If-Range replaces the representation; never append.
                     offset = 0;
                     if header(&reply, "content-range")?.is_some() {
-                        return Err(EditError::ModelResponse);
+                        return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
                     }
                 }
                 206 if offset > 0
@@ -337,13 +337,13 @@ fn download(
                         return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                 }
-                _ => return Err(EditError::ModelResponse),
+                _ => return Err(EditError::Runtime(crate::RuntimeError::ModelResponse)),
             }
             let remaining = expected.size - offset;
             if let Some(length) = header(&reply, "content-length")?
                 && decimal(length) != Some(remaining)
             {
-                return Err(EditError::ModelResponse);
+                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
             }
             {
                 let p = edit

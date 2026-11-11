@@ -90,10 +90,6 @@ pub enum EditError {
 
     #[error("cache is in use")]
     CacheBusy,
-    #[error("model transfer response does not match the requested representation")]
-    ModelResponse,
-    #[error("model storage is full")]
-    StorageFull,
 
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
@@ -221,8 +217,6 @@ impl EditError {
             Self::Project(project::Error::Media(_)) => C::Media,
             Self::ControlIdentity
             | Self::CacheBusy
-            | Self::ModelResponse
-            | Self::StorageFull
             | Self::LoudnessStale
             | Self::NoTrack(_)
             | Self::NoAsset(_)

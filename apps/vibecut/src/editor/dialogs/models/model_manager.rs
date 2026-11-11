@@ -782,7 +782,7 @@ fn error_from(error: Error) -> EditError {
 }
 fn problem_for(error: &EditError) -> ModelProblem {
     match error {
-        EditError::StorageFull
+        EditError::Runtime(engine::RuntimeError::StorageFull)
         | EditError::Ai(
             ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
         ) => ModelProblem::StorageFull,

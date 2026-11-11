@@ -556,7 +556,7 @@ fn cancel_mid_stream_has_no_installed_marker_and_retains_a_safe_checkpoint() {
 }
 #[test]
 fn hostile_ranges_hash_sizes_and_oversized_or_truncated_streams_never_promote() {
-    for variant in 0..6 {
+    for variant in 0..9 {
         let dir = tempfile::tempdir().unwrap();
         let http = Arc::new(Http::default());
         let (data, mut model) = specimen(11);
@@ -578,14 +578,57 @@ fn hostile_ranges_hash_sizes_and_oversized_or_truncated_streams_never_promote() 
                     .headers
                     .push(("Content-Range".into(), "bytes 0-10/11".into()));
             }
-            _ => reply
+            5 => reply
                 .headers
                 .push(("Content-Encoding".into(), "gzip".into())),
+            6 => {
+                reply.status = 302;
+                reply.headers.push(("Location".into(), "x".repeat(8193)));
+            }
+            7 => reply.status = 302, // a redirect without Location
+            _ => {}
         }
-        http.push(reply);
-        let (_, store, mut runner, clock) = setup(dir.path(), http, Io::healthy(), 1);
+        if variant == 8 {
+            for _ in 0..6 {
+                let mut hop = Reply::ok(data.clone(), "\"one\"");
+                hop.status = 302;
+                hop.headers
+                    .push(("Location".into(), model.files[0].url.clone()));
+                http.push(hop);
+            }
+        } else {
+            http.push(reply);
+        }
+        let (_, store, mut runner, clock) = setup(dir.path(), http.clone(), Io::healthy(), 1);
         let (id, _) = submit(&store, &mut runner, &model);
-        assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Failed);
+        let snapshot = terminal(&mut runner, id, &clock);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        let raw = snapshot.error.as_deref().unwrap();
+        let typed = (raw as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()
+            .unwrap();
+        assert!(
+            matches!(
+                (variant, typed),
+                (0 | 3, EditError::Ai(ai::Error::ModelIntegrity))
+                    | (
+                        2,
+                        EditError::Runtime(engine::RuntimeError::NetworkTransient)
+                    )
+                    | (
+                        1 | 4..=8,
+                        EditError::Runtime(engine::RuntimeError::ModelResponse)
+                    )
+            ),
+            "variant {variant}: {typed:?}"
+        );
+        if matches!(variant, 1 | 4..=8) {
+            assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+            assert!(!raw.transient());
+            assert!(raw.source().is_none());
+        }
+        assert!(runner.take_output(id).is_none());
+        assert_eq!(http.count(), if variant == 8 { 6 } else { 1 });
         assert!(store.installed(&model, &NoHooks).unwrap().is_none());
     }
 }
@@ -610,8 +653,14 @@ fn disk_preflight_and_mid_write_storage_full_are_typed_and_resumable() {
                 .as_deref()
                 .and_then(|error| (error as &(dyn std::error::Error + 'static))
                     .downcast_ref::<EditError>()),
-            Some(EditError::StorageFull)
+            Some(EditError::Runtime(engine::RuntimeError::StorageFull))
         ));
+        assert_eq!((result.state, result.attempts), (JobState::Failed, 1));
+        let raw = result.error.as_deref().unwrap();
+        assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+        assert!(!raw.transient());
+        assert!(raw.source().is_none());
+        assert!(runner.take_output(id).is_none());
         assert!(store.installed(&model, &NoHooks).unwrap().is_none());
         if !mid_write {
             assert_eq!(http.count(), 0);
@@ -1046,7 +1095,24 @@ fn malformed_resume_headers_are_refused_without_poisoning_future_restart() {
         }
         http.push(reply);
         let (id, _) = submit(&store, &mut runner, &model);
-        assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Failed);
+        let snapshot = terminal(&mut runner, id, &clock);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        let raw = snapshot.error.as_deref().unwrap();
+        assert!(matches!(
+            (
+                variant,
+                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            ),
+            (
+                0..=4,
+                Some(EditError::Runtime(engine::RuntimeError::ModelResponse))
+            ) | (
+                5..=6,
+                Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+            )
+        ));
+        assert_eq!(raw.transient(), variant >= 5);
+        assert!(runner.take_output(id).is_none());
         assert!(store.installed(&model, &NoHooks).unwrap().is_none());
         http.push(Reply::ok(data.clone(), "\"one\""));
         let (id, _) = submit(&store, &mut runner, &model);

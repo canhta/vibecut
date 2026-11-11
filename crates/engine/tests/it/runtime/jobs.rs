@@ -1486,6 +1486,36 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (|| E::Runtime(B::ModelResponse), C::Refused, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::ModelResponse))),
+            C::Refused,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Runtime(B::ModelResponse),
+                ))))))
+            },
+            C::Refused,
+            false,
+        ),
+        (|| E::Runtime(B::StorageFull), C::Refused, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::StorageFull))),
+            C::Refused,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Runtime(B::StorageFull),
+                ))))))
+            },
+            C::Refused,
+            false,
+        ),
         (
             || E::Runtime(B::Failed(Arc::new(B::NetworkTransient))),
             C::Job,
@@ -1621,6 +1651,31 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         let state = s.snapshot_and_subscribe(&r).unwrap();
         assert_eq!(state.jobs[0].error, Some(code));
         assert!(s.events(&mut cursor).unwrap().iter().any(|event| matches!(&event.payload, Payload::JobChanged { snapshot } if snapshot.id == id && snapshot.error == Some(code))));
+        let raw = snapshot.error.as_ref().unwrap();
+        let typed = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<E>()
+            .unwrap();
+        let message = match typed {
+            E::Runtime(B::ModelResponse) => {
+                Some("model transfer response does not match the requested representation")
+            }
+            E::Runtime(B::StorageFull) => Some("model storage is full"),
+            _ => None,
+        };
+        if let Some(message) = message {
+            assert_eq!(raw.code(), C::Refused);
+            assert!(!raw.transient());
+            assert!(raw.source().is_none());
+            assert_eq!(raw.to_string(), message);
+            let listed = r.snapshots().into_iter().find(|row| row.id == id).unwrap();
+            let event = r
+                .drain_events()
+                .into_iter()
+                .find(|row| row.id == id)
+                .unwrap();
+            assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+            assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+        }
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }

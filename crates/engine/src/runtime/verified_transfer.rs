@@ -11,7 +11,7 @@ pub(crate) fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result
     if values.next().is_some()
         || value.is_some_and(|v| v.len() > 8192 || v.bytes().any(|b| b == b'\r' || b == b'\n'))
     {
-        return Err(EditError::ModelResponse);
+        return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
     }
     Ok(value)
 }
@@ -39,15 +39,16 @@ pub fn response(
         })?;
         if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
             if redirect == 5 {
-                return Err(EditError::ModelResponse);
+                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
             }
             url = ai::transport::download_redirect(
                 &url,
-                header(&reply, "location")?.ok_or(EditError::ModelResponse)?,
+                header(&reply, "location")?
+                    .ok_or(EditError::Runtime(crate::RuntimeError::ModelResponse))?,
             )?;
         } else {
             return Ok(reply);
         }
     }
-    Err(EditError::ModelResponse)
+    Err(EditError::Runtime(crate::RuntimeError::ModelResponse))
 }

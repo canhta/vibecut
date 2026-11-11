@@ -83,7 +83,10 @@ verified-complete marker permits a `ModelLease`, so partial checkpoints stay una
 loaders. Models and checkpoints are pinned against LRU and generic clear; only an explicit
 `remove` deletes them, and live leases refuse removal. Uncheckpointed tails are reclaimed before
 append or restart and credited during a free-disk preflight; a disk-full write still returns
-typed `StorageFull` when availability changes after the advisory check. Unknown directories and
+`EditError::Runtime(RuntimeError::StorageFull)` when availability changes after the
+advisory check. Malformed transfer representations compose `RuntimeError::ModelResponse`;
+both are source-free, nontransient `Refused` failures owned by [Runtime](../runtime/README.md).
+Other IO and foreign AI integrity/storage errors keep their existing types. Unknown directories and
 symlink targets are never adopted or overwritten.
 
 Transfers resume from the last durable checkpoint after a killed process, truncating its later
