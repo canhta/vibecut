@@ -168,12 +168,50 @@ impl State {
         else {
             return;
         };
-        if channel.keys().is_empty() {
-            return;
-        }
         let current = channel.extrapolation();
         let locale = cx.locale;
         response.context_menu(|ui| {
+            for (action, suffix, label, icon) in [
+                (
+                    "edit.copy",
+                    "copy",
+                    Text::ActionEditCopy,
+                    crate::kit::Icon::Copy,
+                ),
+                (
+                    "edit.paste",
+                    "paste",
+                    Text::ActionEditPaste,
+                    crate::kit::Icon::Copy,
+                ),
+            ] {
+                let enabled = !cx.disabled.contains(action)
+                    && cx.selection.len() == 1
+                    && cx.selection.contains(&item.id);
+                let response = ui.add_enabled(
+                    enabled,
+                    egui::Button::image_and_text(
+                        crate::kit::tinted(icon, 16.0, theme::text(cx.dark)),
+                        i18n::text(locale, label),
+                    ),
+                );
+                self.remember_icon(
+                    format!(
+                        "timeline.lane.{}.{}.{}.{}",
+                        item.id.0,
+                        lane.path.as_str().replace('.', "_"),
+                        component_id(lane.component),
+                        suffix
+                    ),
+                    Some(icon.name()),
+                    &response,
+                );
+                if response.clicked() {
+                    self.push(Action::Activate(action.to_owned()));
+                    ui.close();
+                }
+            }
+            ui.separator();
             ui.label(
                 egui::RichText::new(&lane.label)
                     .size(theme::type_size::BODY)

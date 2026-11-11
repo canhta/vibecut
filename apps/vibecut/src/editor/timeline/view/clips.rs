@@ -220,6 +220,14 @@ impl State {
     /// The clip context menu: split variants, duplicate, delete, hide/mute and
     /// source-audio extraction, each dispatching its registered action id.
     fn item_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, item: &ItemView) {
+        let paste = format!("timeline.item.{}.paste", item.id.0);
+        let enabled = !cx.disabled.contains("edit.paste")
+            && cx.selection.len() == 1
+            && cx.selection.contains(&item.id);
+        if self.menu_action(cx, ui, paste, Text::ActionEditPaste, Icon::Copy, enabled) {
+            self.push(Action::Activate("edit.paste".to_owned()));
+            ui.close();
+        }
         let editable = !item.locked;
         let at = cx.playhead;
         let splittable = editable && item.start < at && at < item.end;

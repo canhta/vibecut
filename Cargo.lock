@@ -6486,6 +6486,7 @@ name = "vibecut"
 version = "0.1.0"
 dependencies = [
  "ai",
+ "arboard",
  "captions",
  "cpal",
  "eframe",

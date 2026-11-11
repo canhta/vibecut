@@ -65,3 +65,7 @@ Language for the editor's privacy and execution boundaries.
 - **Saved caption preset**: A named project-owned `CueStyle` value with a stable `CaptionPresetId`. Apply copies it into cue styles; rename/delete never changes an applied copy. This ID differs from a cue table's `CueStyleId`.
 
 - **Graphic**: A saved generated rectangle or ellipse with fill/stroke appearance and ordinary item-relative animation; a Video-track item with no source asset. Other shape kinds remain outside the admitted scope.
+
+**Keyframe clipboard** — A bounded immutable snapshot of selected animation keys held
+by one Session, separate from project/history and system text. Transfer and lifetime:
+[Session](crates/engine/src/session/README.md#keyframe-clipboard).

@@ -64,3 +64,10 @@ OpenCode v2 `opencode.json`:
 ```
 
 Sources: [Claude Code](https://code.claude.com/docs/en/mcp), [Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [OpenCode v2](https://github.com/anomalyco/opencode/blob/dev/services/www/src/docs/content/mcp-servers.mdx) and its [config schema](https://opencode.ai/config.json), [MCP stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), [rmcp](https://docs.rs/rmcp/3.8.0/rmcp/), [local sockets](https://docs.rs/interprocess/2.4.7/interprocess/local_socket/), [Windows security capture](https://docs.rs/win-authorization-sys/0.1.0/win_authorization_sys/).
+
+The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
+`clipboard.paste_keyframes` run through `command_run` (and their generated all-tools
+names). Read returns the bounded payload in structuredContent. Attached UI and MCP
+share the selected Editor's Session store; other editors and headless processes start
+empty. No keyframe data is written to the system clipboard. Transfer and lifetime:
+[clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).

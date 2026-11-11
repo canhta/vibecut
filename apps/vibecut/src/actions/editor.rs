@@ -291,23 +291,21 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         EngineAction::InsertMedia,
         &[],
     ),
-    ActionSpec::pending(
+    ActionSpec::ui(
         "edit.copy",
         Text::ActionEditCopy,
         ActionCategory::Edit,
         "clipboard",
-        "p1-parity/20",
+        UiAction::CopyKeyframes,
         &["Ctrl+C"],
-        false,
     ),
-    ActionSpec::pending(
+    ActionSpec::ui(
         "edit.paste",
         Text::ActionEditPaste,
         ActionCategory::Edit,
         "clipboard",
-        "p1-parity/20",
+        UiAction::PasteKeyframes,
         &["Ctrl+V"],
-        true,
     ),
     ActionSpec::engine(
         "timeline.split",

@@ -112,3 +112,6 @@ owns the admitted kinds, parameter definitions and the invariant mathematics. `t
 ## Graphic appearance
 
 Generated rectangles and ellipses insert through `timeline.insert` and ordinary Video placement, without initializing source canvas/FPS. Graphic fill/stroke/width/alignment/radius patches update stored fallbacks only; they preserve any authoritative animation Param. Ellipses refuse radius. Ordinary parameter commands validate every graphic base and key through the project candidate before publication. Generic masks, effects, trim/split/move/duplicate and key-time scaling retain their normal history and refusal rules; media speed remains unsupported.
+
+Keyframe Paste uses this same candidate/validation/one-undo path. Transfer and refusal
+rules belong to the [clipboard contract](../README.md#keyframe-clipboard).

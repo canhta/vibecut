@@ -846,6 +846,141 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
 }
 
 #[test]
+fn clipboard_command_run_freezes_keys_replays_once_and_shares_only_one_session() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("clipboard.vibecut");
+    crate::cli::fixtures::overlay_project_color(
+        &path,
+        64,
+        64,
+        time::Tick(time::TICKS_PER_SECOND),
+        [255; 4],
+    );
+    crate::cli::fixtures::exec(
+        &path,
+        "keyframes.set_param",
+        json!({"item":0,"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":-3,"value":{"kind":"scalar","value":0.25},"segment":"bezier","tangent":"aligned","incoming":{"dt":-2,"dv":0.1},"outgoing":{"dt":4,"dv":0.2}}],"before":"linear","after":"hold"}}}),
+    );
+    let other = root.path().join("other.vibecut");
+    std::fs::copy(&path, &other).unwrap();
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let empty = client.call("clipboard.read", json!({}), None, None);
+    assert!(empty["value"]["value"]["payload"].is_null());
+    let params = json!({"keys":[{"item":0,"path":"opacity","time":-3}]});
+    let copy = client.call(
+        "clipboard.copy_keyframes",
+        params.clone(),
+        Some(&empty["rev_after"]),
+        Some("copy"),
+    );
+    assert_eq!(
+        copy["value"]["value"]["outcome"]["changed"], false,
+        "{copy}"
+    );
+    let read = client.call("clipboard.read", json!({}), None, None);
+    let payload = read["value"]["value"]["payload"].clone();
+    assert_eq!(payload["origin"], -3);
+    let removed = client.call(
+        "keyframes.remove",
+        json!({"item":0,"path":"opacity","component":null,"time":-3}),
+        Some(&copy["rev_after"]),
+        Some("remove"),
+    );
+    assert_eq!(
+        client.call(
+            "clipboard.copy_keyframes",
+            params,
+            Some(&empty["rev_after"]),
+            Some("copy")
+        ),
+        copy
+    );
+    let paste_params = json!({"item":0,"at":40,"source":{"kind":"stored"}});
+    let paste = client.call(
+        "clipboard.paste_keyframes",
+        paste_params.clone(),
+        Some(&removed["rev_after"]),
+        Some("paste"),
+    );
+    assert_eq!(
+        paste["value"]["value"]["outcome"]["changed"], true,
+        "{paste}"
+    );
+    assert_eq!(
+        client.call(
+            "clipboard.paste_keyframes",
+            paste_params.clone(),
+            Some(&removed["rev_after"]),
+            Some("paste")
+        ),
+        paste
+    );
+    assert_eq!(
+        client.call(
+            "clipboard.paste_keyframes",
+            paste_params,
+            Some(&empty["rev_after"]),
+            Some("stale")
+        )["value"]["value"],
+        "stale_revision"
+    );
+    let undo = client.call("undo", json!({}), Some(&paste["rev_after"]), Some("undo"));
+    let undone = client.call("inspect", json!({}), None, None);
+    let undone: project::ProjectData =
+        serde_json::from_value(undone["value"]["value"]["project"].clone()).unwrap();
+    assert!(
+        undone
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == project::ItemId(0))
+            .unwrap()
+            .animations
+            .get(&project::BuiltinPath::Opacity.into())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .is_empty()
+    );
+    let redo = client.call("redo", json!({}), Some(&undo["rev_after"]), Some("redo"));
+    assert_eq!(redo["value"]["value"]["outcome"]["changed"], true);
+    let inspected = client.call("inspect", json!({}), None, None);
+    let data: project::ProjectData =
+        serde_json::from_value(inspected["value"]["value"]["project"].clone()).unwrap();
+    let channel = data.scene().timeline.overlays[0].items[0]
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys().len(), 1);
+    assert_eq!(channel.keys()[0].time, time::Tick(40));
+    assert_eq!(channel.keys()[0].value, project::ParamValue::Scalar(0.25));
+    assert_eq!(
+        channel.keys()[0].outgoing,
+        Some(project::CurveHandle {
+            dt: time::Tick(4),
+            dv: 0.2
+        })
+    );
+    let mut other = Client::start(&["mcp".as_ref(), other.as_os_str(), "--no-save".as_ref()]);
+    let empty = other.call("clipboard.read", json!({}), None, None);
+    assert!(empty["value"]["value"]["payload"].is_null());
+    let explicit = other.call(
+        "clipboard.paste_keyframes",
+        json!({"item":0,"at":40,"source":{"kind":"payload","payload":payload}}),
+        Some(&empty["rev_after"]),
+        Some("explicit"),
+    );
+    assert_eq!(
+        explicit["value"]["value"]["outcome"]["changed"], true,
+        "{explicit}"
+    );
+}
+
+#[test]
 fn graphic_tools_publish_typed_shapes_keys_masks_effects_undo_and_persistence() {
     let root = tempfile::tempdir().unwrap();
     let path = fixture(root.path(), "graphics.vibecut");

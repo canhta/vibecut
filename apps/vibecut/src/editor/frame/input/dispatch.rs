@@ -46,6 +46,56 @@ impl Editor {
             && !self.dialogs.export.is_open()
             && !self.dialogs.models.is_open()
     }
+    pub(in crate::editor) fn clipboard_keys(&self) -> Vec<engine::KeyframeRef> {
+        self.selection_scopes
+            .keyframes
+            .iter()
+            .map(|k| engine::KeyframeRef {
+                item: k.item,
+                path: k.path.clone(),
+                component: k.component,
+                time: k.time,
+            })
+            .collect()
+    }
+    fn clipboard_available(&self, copy: bool) -> bool {
+        if !self.properties.input_ready(&self.session)
+            || self.session.transaction_active()
+            || self.player.transform.text_edit_open()
+            || self.player.timecode_edit.is_some()
+            || self.frame.rename.is_some()
+            || self.timeline.renaming_track()
+            || self.timeline.scenes.is_open()
+            || self.timeline.bookmark_popover().is_some()
+            || self.frame.recording_active
+            || self.frame.shortcuts_open
+            || self
+                .subtitles
+                .as_ref()
+                .is_some_and(|s| !s.edit_ready(&self.session))
+            || matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            || self.importing()
+            || self.lifecycle_action.is_some()
+            || self.overlay_open
+            || self.dialogs.export.is_open()
+            || self.dialogs.models.is_open()
+        {
+            return false;
+        }
+        use crate::selection::SelectionScope;
+        let scope = self.selection_scopes.active(&self.selection);
+        if copy {
+            scope == SelectionScope::Keyframes
+                && self.session.can_copy_keyframes(&self.clipboard_keys())
+        } else {
+            matches!(scope, SelectionScope::Items | SelectionScope::Keyframes)
+                && crate::editor::context::single(&self.selection).is_some_and(|item| {
+                    self.playback
+                        .position()
+                        .is_ok_and(|at| self.session.can_paste_keyframes(item, at))
+                })
+        }
+    }
 
     pub(in crate::editor) fn graphic_insertion_available(&self) -> bool {
         self.properties.input_ready(&self.session)
@@ -254,6 +304,14 @@ impl Editor {
                 action: UiAction::InsertGraphic(_),
                 ..
             } => self.graphic_insertion_available(),
+            ActionTarget::Ui {
+                action: UiAction::CopyKeyframes,
+                ..
+            } => self.clipboard_available(true),
+            ActionTarget::Ui {
+                action: UiAction::PasteKeyframes,
+                ..
+            } => self.clipboard_available(false),
             ActionTarget::Ui {
                 action: UiAction::ApplyTextAnimation(_),
                 ..

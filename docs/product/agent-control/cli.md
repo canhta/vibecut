@@ -208,3 +208,14 @@ Candidates carry `pieces` (the provider's play-order pieces with roles), `segmen
 Named caption values use the ordinary `exec`/control registry: `captions.save_preset {item,name}`, `captions.rename_preset {preset,name}`, `captions.delete_preset {preset}` and `captions.apply_style {item,style:{kind:"saved",preset}}`. Save returns a created caption preset ID (human output: `created caption preset N`); `inspect` exposes the project bank. Application copies a value, so later rename/delete leaves captions unchanged. Export consumes saved cue styles without another preset flag.
 
 Rectangle and ellipse items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
+
+## Keyframe clipboard
+
+A long-lived `control` session supports `clipboard.copy_keyframes`, `clipboard.read` and
+`clipboard.paste_keyframes`. Read returns `{kind:"clipboard", payload:...}`; a client may
+send that version-one payload explicitly with `source:{kind:"payload",payload:...}`.
+Use `source:{kind:"stored"}` within the same Session. Effectful calls use ordinary
+revision/idempotency admission; Copy advances revision without dirtying the project.
+One-shot `exec` can paste explicit serialized payloads but a second process inherits no
+store, and `exec` does not execute reads. Exact shape: [commands](commands.md).
+Transfer and lifetime: [clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).

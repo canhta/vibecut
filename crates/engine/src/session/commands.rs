@@ -1,4 +1,5 @@
 //! Declares the closed editing command catalog.
+use super::KeyframePasteSource;
 use super::command_facts::{Availability, Facts, GrantClass, Lifecycle};
 use super::transcript::{CueId, WordId};
 use super::wire::OutputSpan;
@@ -570,6 +571,9 @@ commands! {
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ChaptersExportSidecars, "chapters.export_sidecars", "Export chapter sidecars", FilePublish { dir: std::path::PathBuf, document: ai::chapters::ChapterDocument } => Words, serde_json::json!({"dir":"$output","document":{"schema_version":1,"language":"en","duration":254016000000_i64,"title":"Opening","description":"A conversation about the work.","chapters":[{"start":0,"segment_id":"4:cue-1","title":"Opening"}]}});
     ChaptersGenerate, "chapters.generate", "Generate chapters", JobControl { language: captions::LanguageTag, max_chapters: usize } => Words, serde_json::json!({"language":"en","max_chapters":10}), grant = Agent;
+    CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), available = NoTransaction, grant = Agent;
+    PasteKeyframes, "clipboard.paste_keyframes", "Paste keyframes", Edit { item: ItemId, at: Tick, source: KeyframePasteSource } => Timeline, serde_json::json!({"item":1,"at":12,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":0,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]}}}), available = UnlockedItem, grant = Agent;
+    ReadClipboard, "clipboard.read", "Read keyframe clipboard", Read {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Agent;
     CommitGesture, "commit_gesture", "Commit gesture", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]}), available = UnlockedItem;
     AddEffect, "effects.add", "Add effect", Edit { item: ItemId, effect: project::EffectInstance } => Timeline, serde_json::json!({"item":1,"effect":{"id":"blur2","kind":"blur","enabled":true,"params":{"intensity":{"kind":"scalar","value":15.0}}}}), available = VisualItem;
