@@ -22,8 +22,8 @@
 
 ### Agents Edit Video
 
-Claude Code, Codex or any MCP client opens projects, runs every editor command,
-checks preview frames and exports. The same commands run from the CLI.
+Claude Code, Codex or any MCP client opens projects, runs editor commands,
+inspects preview frames and exports. The same commands run from the CLI.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/agents.gif --></td>
@@ -33,7 +33,8 @@ checks preview frames and exports. The same commands run from the CLI.
 
 ### AI Captions
 
-Captions in Vietnamese, English and Chinese, translated to any pair, shown bilingual.
+Transcribe Vietnamese, English or Chinese, translate between any pair, and show
+bilingual subtitles.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/captions.gif --></td>
@@ -53,8 +54,8 @@ Long video in, vertical clips out.
 
 ### Multi-track Timeline
 
-Cut, split, trim, ripple, snap and group clips across video, audio, text and
-sticker tracks, with full undo.
+Cut, split, trim, ripple, snap and group clips across video, audio and text
+tracks, with undo.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/timeline.gif --></td>
@@ -62,10 +63,10 @@ sticker tracks, with full undo.
 <tr>
 <td width="50%" valign="middle">
 
-### Text, Stickers and Graphics
+### Text
 
-Styled titles with presets and animations, stickers, shapes and backgrounds, edited
-directly on the preview.
+Styled titles with font, size, color and background, edited directly on the
+preview.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/text.gif --></td>
@@ -75,8 +76,8 @@ directly on the preview.
 
 ### Effects, Transitions and Keyframes
 
-Animate any property, add transitions, blend modes, masks, chroma key and effect
-layers.
+Keyframe transform, opacity and effect parameters, with transitions, blend
+modes, masks and chroma key.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/effects.gif --></td>
@@ -86,8 +87,8 @@ layers.
 
 ### Speed and Color
 
-Constant speed, speed ramps, reverse and freeze frame; color adjustments, curves
-and LUTs.
+Constant speed and color adjustments such as brightness, contrast and
+saturation.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/color.gif --></td>
@@ -97,8 +98,7 @@ and LUTs.
 
 ### Audio
 
-Volume, fades, multi-track mix, voiceover recording, noise reduction and loudness
-normalization.
+Volume, fades, multi-track mix and loudness normalization.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/audio.gif --></td>
@@ -108,15 +108,15 @@ normalization.
 
 ### Export Anywhere
 
-MP4, WebM, GIF, image sequence or audio only, in 16:9, 9:16 or any canvas, with
-hardware-accelerated encoding.
+MP4, MOV or WebM, in landscape, portrait, square or custom canvases, with H.264
+hardware encoding where the platform supports it.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/export.gif --></td>
 </tr>
 </table>
 
-**Also in the box:** local or cloud AI of your choice · crash recovery · proxy editing · custom shortcuts
+**Also in the box:** local or cloud AI of your choice · crash recovery · custom shortcuts
 
 ## Install
 
