@@ -1,5 +1,4 @@
 //! Presents explicit upload consent scope.
-use engine::Error as EngineError;
 use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
 use serde_json::{Value, json};
 use std::io;
@@ -18,13 +17,13 @@ impl CliConsent {
     }
 }
 impl ConsentPrompt for CliConsent {
-    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), EngineError> {
+    fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
         if !self.accept_unknown_price {
             return Err(ai::Error::Cost.into());
         }
         self.approve(request)
     }
-    fn approve(&self, request: &UploadRequest) -> Result<(), EngineError> {
+    fn approve(&self, request: &UploadRequest) -> engine::providers::Result<()> {
         let operation = match request.operation {
             CatalogOperation::Transcribe => "transcribe",
             CatalogOperation::Translate => "translate",
@@ -81,6 +80,7 @@ pub(crate) fn cost_json(cost: &Cost) -> Value {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use engine::providers::Error as ProviderError;
     #[test]
     fn cli_model_selection_and_unknown_price_flag_are_independent_from_upload_approval() {
         let selected =
@@ -102,7 +102,7 @@ mod tests {
         };
         assert!(matches!(
             CliConsent::new(true, false).approve_unknown_price(&request),
-            Err(EngineError::Ai(ai::Error::Cost))
+            Err(ProviderError::Ai(ai::Error::Cost))
         ));
         assert!(
             CliConsent::new(false, true)

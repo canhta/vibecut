@@ -101,3 +101,8 @@ app dependency with defaults disabled and `wayland-data-control` enabled. Its of
 [API](https://docs.rs/arboard/3.7.0/arboard/struct.Clipboard.html) owns native read semantics;
 [Linux support](https://docs.rs/crate/arboard/3.7.0/source/README.md) includes X11 and
 Wayland data-control. The app contains no unsafe clipboard wrapper or framework fork.
+
+TaskEvents’ consent request and ConsentPrompt methods consume the provider result: queue
+poison/cancellation retain Runtime causes and refusal/disconnect retain provider consent refusal.
+Answer/event methods keep their genuine mixed app result. Unknown-price acknowledgement is
+still separate and bound to the exact provider configuration and operation.

@@ -38,3 +38,7 @@ than a preset identity. Locked items, active work/transactions and focused or ch
 disable the chooser and direct activation before any draft flush. Changing the item or project
 snapshot invalidates an open chooser. Applying a look is one undo step; export reads those saved
 values through the shared overlay. Named project styles save the complete uniform authoritative cue style and apply explicit copies; no live selected-ID, overrides or word highlighting is offered. Save requires an eligible source, while bank management works without a caption target. The snapshot-bound name editor confirms on Enter/blur and cancels on Escape or stale project, item, time, tab, lock or readiness. Editor-owned Properties/inline/save/import/modal admission is shared with direct actions; caption draft readiness remains here. Names and limits belong to the [project model](../../../../crates/project/src/model/README.md#saved-caption-values).
+
+Provider setup/refusal and direct Runtime cancellation are borrowed from the provider result
+or its explicit engine composition. Missing-model setup retains its existing download action;
+opaque provider failures stay failed, without source-chain or Failed-envelope searching.

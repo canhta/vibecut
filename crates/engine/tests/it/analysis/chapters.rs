@@ -220,7 +220,7 @@ struct Grant {
     allowed: Arc<AtomicBool>,
 }
 impl ConsentPrompt for Grant {
-    fn approve(&self, _: &UploadRequest) -> Result<(), engine::Error> {
+    fn approve(&self, _: &UploadRequest) -> engine::providers::Result<()> {
         if self.allowed.load(Ordering::SeqCst) {
             Ok(())
         } else {

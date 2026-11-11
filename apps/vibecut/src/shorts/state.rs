@@ -1055,9 +1055,32 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
 }
 
 pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
-    if let Some(runtime) =
-        (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::RuntimeError>()
-    {
+    let cause = error as &(dyn std::error::Error + 'static);
+    let root = cause.downcast_ref::<engine::Error>();
+    let provider = match root {
+        Some(engine::Error::Providers(provider)) => Some(provider),
+        _ => cause.downcast_ref::<engine::providers::Error>(),
+    };
+    if let Some(provider) = provider {
+        match provider {
+            engine::providers::Error::ModelMissing(_) | engine::providers::Error::RunnerMissing => {
+                return Text::ShortsModelMissing;
+            }
+            engine::providers::Error::CredentialMissing(_) => {
+                return Text::ShortsCredentialsMissing;
+            }
+            engine::providers::Error::ConsentRequired => return Text::ShortsConsentRequired,
+            _ => {}
+        }
+    }
+    let runtime = match provider {
+        Some(engine::providers::Error::Runtime(runtime)) => Some(runtime),
+        _ => match root {
+            Some(engine::Error::Runtime(runtime)) => Some(runtime),
+            _ => cause.downcast_ref::<engine::RuntimeError>(),
+        },
+    };
+    if let Some(runtime) = runtime {
         return match runtime {
             engine::RuntimeError::BudgetFull => Text::ShortsMemory,
             engine::RuntimeError::Io(error)
@@ -1068,26 +1091,13 @@ pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
             _ => Text::ShortsError,
         };
     }
-    let Some(error) = (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>()
-    else {
+    let Some(error) = root else {
         return Text::ShortsError;
     };
     match error {
-        engine::Error::Providers(
-            engine::providers::Error::ModelMissing(_) | engine::providers::Error::RunnerMissing,
-        ) => Text::ShortsModelMissing,
-        engine::Error::Providers(engine::providers::Error::CredentialMissing(_)) => {
-            Text::ShortsCredentialsMissing
-        }
-        engine::Error::Providers(engine::providers::Error::ConsentRequired) => {
-            Text::ShortsConsentRequired
-        }
-        engine::Error::Runtime(engine::RuntimeError::BudgetFull)
-        | engine::Error::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
+        engine::Error::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
         engine::Error::Render(render::Error::Unavailable(_)) => Text::ShortsSourceUnavailable,
-        engine::Error::Io(e) | engine::Error::Runtime(engine::RuntimeError::Io(e))
-            if e.kind() == std::io::ErrorKind::AlreadyExists =>
-        {
+        engine::Error::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             Text::ShortsOutputExists
         }
         engine::Error::Edit(engine::EditError::Project(project::Error::Io(e)))

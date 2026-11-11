@@ -39,3 +39,9 @@ impl From<engine::RuntimeError> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::providers::Error> for Error {
+    fn from(error: engine::providers::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

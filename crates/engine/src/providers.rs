@@ -15,7 +15,7 @@ pub use catalog::{
 };
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest, approve_upload};
-pub use error::Error;
+pub use error::{Error, Result};
 pub use text::{StoredConsent, TextAccess};
 mod model_transfers;
 pub mod models {

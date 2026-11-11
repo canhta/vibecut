@@ -1904,10 +1904,10 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
     }
     struct Prompt(Arc<AtomicBool>);
     impl ConsentPrompt for Prompt {
-        fn approve(&self, _: &UploadRequest) -> Result<(), engine::Error> {
+        fn approve(&self, _: &UploadRequest) -> engine::providers::Result<()> {
             Ok(())
         }
-        fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::Error> {
+        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
             assert_eq!(request.model, "fixture-control-model");
             assert!(matches!(request.cost, engine::providers::Cost::Unknown));
             if self.0.load(Ordering::SeqCst) {

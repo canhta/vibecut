@@ -233,6 +233,19 @@ mod exit_codes {
                 "job",
                 7
             ),
+            row!(
+                E::Providers(P::Runtime(engine::RuntimeError::NetworkTransient)),
+                "job",
+                7
+            ),
+            row!(E::Providers(P::Ai(ai::Error::ConsentRequired)), "ai", 4),
+            row!(
+                E::Providers(P::Runtime(engine::RuntimeError::Failed(Arc::new(
+                    engine::RuntimeError::Cancelled
+                )))),
+                "job",
+                7
+            ),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
             row!(
@@ -527,6 +540,12 @@ mod exit_codes {
                 "local model test-model is not installed; run `vibecut-cli model download test-model`"
             );
         }
+        let raw_provider = CliError::Job(Arc::new(P::ModelMissing("test-model")));
+        assert_eq!(raw_provider.code(), ("setup", 4));
+        assert_eq!(
+            raw_provider.value()["message"],
+            "local model test-model is not installed; run `vibecut-cli model download test-model`"
+        );
         let concrete = CliError::Job(Arc::new(engine::RuntimeError::Failed(Arc::new(
             E::Providers(P::ModelMissing("test-model")),
         ))));

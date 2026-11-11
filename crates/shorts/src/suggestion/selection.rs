@@ -169,11 +169,9 @@ pub fn check_suggestion_credentials(
 ) -> Result<(), Error> {
     match provider {
         SuggestionProvider::Heuristic => Ok(()),
-        SuggestionProvider::OpenAi { .. } => {
-            credentials.openai().map(|_| ()).map_err(Error::Engine)
-        }
+        SuggestionProvider::OpenAi { .. } => credentials.openai().map(|_| ()).map_err(Error::from),
         SuggestionProvider::Anthropic { .. } => {
-            credentials.anthropic().map(|_| ()).map_err(Error::Engine)
+            credentials.anthropic().map(|_| ()).map_err(Error::from)
         }
     }
 }
