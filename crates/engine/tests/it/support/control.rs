@@ -29,7 +29,9 @@ impl Policy for Allow {
 pub(crate) struct Deny;
 impl Policy for Deny {
     fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
-        Err(EditError::Permission)
+        Err(EditError::Control(
+            engine::control::ControlError::Permission,
+        ))
     }
 }
 pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
@@ -698,7 +700,9 @@ fn fake_fonts_import(
     accepted: bool,
 ) -> engine::Result<engine::jobs::JobId> {
     if !accepted {
-        return Err(engine::EditError::Permission);
+        return Err(engine::EditError::Control(
+            engine::control::ControlError::Permission,
+        ));
     }
     Ok(submit(runner))
 }

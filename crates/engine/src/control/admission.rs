@@ -110,17 +110,23 @@ impl Session {
         runner: &mut JobRunner,
     ) -> Result<(Response, Option<EditError>)> {
         if request.api_version != API_VERSION {
-            return Err(EditError::SchemaMismatch);
+            return Err(EditError::Control(
+                crate::control::ControlError::SchemaMismatch,
+            ));
         }
         if request.session_id != self.session_id() {
-            return Err(EditError::SessionGone);
+            return Err(EditError::Control(
+                crate::control::ControlError::SessionGone,
+            ));
         }
         let command = decode_command(&request.command, request.params.clone())?;
         let effectful = command.effect() != Effect::Read;
         if (effectful || request.registry_hash.is_some())
             && request.registry_hash.as_deref() != Some(registry_hash())
         {
-            return Err(EditError::SchemaMismatch);
+            return Err(EditError::Control(
+                crate::control::ControlError::SchemaMismatch,
+            ));
         }
         if caller.external
             && matches!(
@@ -133,7 +139,7 @@ impl Session {
                     | Command::TimelineDiscardPreview {}
             )
         {
-            return Err(EditError::Permission);
+            return Err(EditError::Control(crate::control::ControlError::Permission));
         }
         // A generic run and every nested child get the same trusted policy.
         let mut pending = vec![&command];
@@ -165,7 +171,9 @@ impl Session {
             }
             self.check_receipt_capacity()?;
             if request.base_rev.as_ref() != Some(&self.revision()) {
-                return Err(EditError::StaleRevision);
+                return Err(EditError::Control(
+                    crate::control::ControlError::StaleRevision,
+                ));
             }
             if self.transaction_active() && caller.external {
                 return Err(EditError::TransactionActive);
@@ -283,17 +291,23 @@ impl Session {
         publish: impl FnOnce(&project::Project, &project::Metadata) -> Result<()>,
     ) -> Result<Response> {
         if request.api_version != API_VERSION {
-            return Err(EditError::SchemaMismatch);
+            return Err(EditError::Control(
+                crate::control::ControlError::SchemaMismatch,
+            ));
         }
         if request.session_id != self.session_id() {
-            return Err(EditError::SessionGone);
+            return Err(EditError::Control(
+                crate::control::ControlError::SessionGone,
+            ));
         }
         let command = decode_command(&request.command, request.params.clone())?;
         if !matches!(command, Command::SaveProject {}) {
             return Err(EditError::InvalidParams);
         }
         if request.registry_hash.as_deref() != Some(registry_hash()) {
-            return Err(EditError::SchemaMismatch);
+            return Err(EditError::Control(
+                crate::control::ControlError::SchemaMismatch,
+            ));
         }
         caller.policy.authorize(&command, self.project())?;
         let fingerprint = control_fingerprint(request)?;
@@ -310,7 +324,9 @@ impl Session {
         }
         self.check_receipt_capacity()?;
         if request.base_rev.as_ref() != Some(&self.revision()) {
-            return Err(EditError::StaleRevision);
+            return Err(EditError::Control(
+                crate::control::ControlError::StaleRevision,
+            ));
         }
         if self.transaction_active() {
             return Err(EditError::TransactionActive);

@@ -17,11 +17,15 @@ pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Resu
     inbox.poll_projects(|target, inbox, value| {
         let id = target
             .or(workspace.focused_project())
-            .ok_or(engine::EditError::SessionGone)?;
+            .ok_or(engine::EditError::Control(
+                engine::control::ControlError::SessionGone,
+            ))?;
         let window = workspace
             .windows
             .get_mut(&id)
-            .ok_or(engine::EditError::SessionGone)?;
+            .ok_or(engine::EditError::Control(
+                engine::control::ControlError::SessionGone,
+            ))?;
         let editor = window
             .editor
             .as_deref_mut()
@@ -29,7 +33,9 @@ pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Resu
         editor
             .activate_with(None, |editor| {
                 Ok(inbox.execute_project(&mut editor.session, value, |_, _| {
-                    Err(engine::EditError::Permission)
+                    Err(engine::EditError::Control(
+                        engine::control::ControlError::Permission,
+                    ))
                 })?)
             })
             .map_err(|error| match error {

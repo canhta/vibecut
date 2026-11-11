@@ -351,7 +351,9 @@ fn custom_import_copies_valid_formats_and_deduplicates_without_source_dependency
         let mut runner = runner();
         assert!(matches!(
             store.submit_import(&mut runner, input.clone(), false),
-            Err(EditError::Permission)
+            Err(EditError::Control(
+                engine::control::ControlError::Permission
+            ))
         ));
         let (job, _) = store
             .submit_import(&mut runner, input.clone(), true)

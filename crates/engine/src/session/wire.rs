@@ -11,8 +11,8 @@ mod views;
 pub use contract::{contract_schema, reference_markdown, registry_hash};
 pub(crate) use decode::decode_command;
 pub use envelope::{
-    API_VERSION, ErrorCode, Event, Failure, JobFailurePolicy, Payload, Request, Response,
-    ResponseValue, Revision,
+    API_VERSION, ControlError, ErrorCode, Event, Failure, JobFailurePolicy, Payload, Request,
+    Response, ResponseValue, Revision,
 };
 pub use json::{bounded_json, parse_frame};
 pub(crate) use json::{budget, close_schema, validate_wire};

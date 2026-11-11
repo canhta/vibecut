@@ -34,7 +34,9 @@ impl Policy for ControlPolicy {
                 .published_path()
                 .is_some_and(|(_, overwrite)| overwrite)
         {
-            return Err(EditError::Permission);
+            return Err(EditError::Control(
+                engine::control::ControlError::Permission,
+            ));
         }
         Ok(())
     }

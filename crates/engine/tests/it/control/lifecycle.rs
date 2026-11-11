@@ -102,7 +102,7 @@ fn snapshot_barrier_slow_listener_and_preview_never_claim_committed_change() {
     }
     assert!(matches!(
         s.events(&mut slow.cursor),
-        Err(EditError::ResyncRequired)
+        Err(engine::control::ControlError::ResyncRequired)
     ));
     let mut fresh = s.snapshot_and_subscribe(&r).unwrap();
     s.begin_gesture().unwrap();

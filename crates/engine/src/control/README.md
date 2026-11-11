@@ -14,6 +14,12 @@ which `control` re-exports. `Session::control_json` parses a frame under those l
 and nested batch publications refuse before effects. Effectful calls require the exact digest and
 version; catalog reads need no digest.
 
+`ControlError` is the kernel wire owner's typed refusal, re-exported here.
+`Session::check_receipt_capacity`, `replay_receipt` and `events` return it directly;
+workflows with mixed failures compose it through the transparent root error.
+`Policy::authorize` retains its heterogeneous engine result so trusted policies can
+report their actual owner failures.
+
 Effectful requests require `base_rev`; a revision that is not current refuses with
 `StaleRevision` before any child of a batch runs (revision rules:
 [wire](../session/wire/README.md#wire-contract)).
