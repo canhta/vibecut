@@ -1,3 +1,4 @@
+//! Drives README capture staging, manifest verification, publication transfer.
 use super::Failure;
 use super::application::*;
 use engine::Command;

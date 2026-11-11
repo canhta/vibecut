@@ -1,3 +1,4 @@
+//! Builds Home project-library audit scenes.
 use super::super::Failure;
 use super::super::application::*;
 use egui_kittest::kittest::{By, Queryable};

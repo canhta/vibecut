@@ -1,3 +1,4 @@
+//! Builds timeline, playhead, track, scene, placement audit scenes.
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;

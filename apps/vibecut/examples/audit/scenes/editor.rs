@@ -1,3 +1,4 @@
+//! Builds editor, player, captions, model-manager, export, import-progress scenes.
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;

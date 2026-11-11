@@ -18,7 +18,7 @@ pub(crate) use readme::readme_media;
 #[cfg(test)]
 pub(crate) use readme::{finish_publication, publish_outputs, run_tool};
 #[cfg(test)]
-pub(crate) use scenes::properties::inspector_mixed_vi;
+pub(super) use scenes::inspector_mixed_vi;
 
 use fixture::settle;
 use report::{Row, copy_reference, index_html, opaque, reference_root};

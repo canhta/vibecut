@@ -1,3 +1,4 @@
+//! Supervises bounded external tools through capture files, deadlines, child teardown.
 use super::super::Failure;
 use super::source::TOOL_METADATA_TIMEOUT;
 use super::source::TOOL_STDERR_CAP;

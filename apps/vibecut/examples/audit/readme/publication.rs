@@ -1,3 +1,4 @@
+//! Owns README output ownership checks, backups, publication rollback.
 use super::super::Failure;
 use std::fs;
 use std::path::Path;

@@ -1,3 +1,4 @@
+//! Builds properties, inspector, import, text, close-prompt scenes.
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;

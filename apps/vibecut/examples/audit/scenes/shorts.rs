@@ -1,3 +1,4 @@
+//! Builds the Shorts-window audit scene, generation fixture.
 use super::super::Failure;
 use super::super::application::*;
 use crate::shorts_fixture;

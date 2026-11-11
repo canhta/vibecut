@@ -1,3 +1,4 @@
+//! Encodes, decodes, probes, measures README media outputs.
 use super::super::Failure;
 use super::process::run_tool;
 use super::publication::publish;

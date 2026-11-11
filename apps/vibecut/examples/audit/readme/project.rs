@@ -1,3 +1,4 @@
+//! Captures README editor frames, edits, snapshots through the real Editor path.
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;

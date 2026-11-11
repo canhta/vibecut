@@ -1,3 +1,4 @@
+//! Owns the scene registry, theme selection, scene-name dispatch.
 use super::Failure;
 use super::application::*;
 use std::collections::BTreeSet;
@@ -793,12 +794,14 @@ pub(super) fn select(
 mod assets;
 mod editor;
 mod home;
-pub(super) mod properties;
+mod properties;
 mod shorts;
 mod timeline;
 use assets::*;
 use editor::*;
 use home::*;
+#[cfg(test)]
+pub(crate) use properties::inspector_mixed_vi;
 use properties::*;
 use shorts::*;
 use timeline::*;

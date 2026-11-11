@@ -1,3 +1,4 @@
+//! Copies reference images, writes the audit gallery HTML.
 use std::fmt::Write as _;
 use std::path::Path;
 use std::path::PathBuf;

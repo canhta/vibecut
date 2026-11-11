@@ -1,3 +1,4 @@
+//! Builds the assets-window audit scene, thumbnail fixture.
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;

@@ -1,3 +1,4 @@
+//! Defines canonical README source provenance, hashes, tool constants.
 use super::super::Failure;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;

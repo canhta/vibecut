@@ -1,3 +1,4 @@
+//! Provides shared deterministic media fixtures, session builders, sources, probes.
 use super::Failure;
 use super::application::*;
 use engine::ByteBudget;

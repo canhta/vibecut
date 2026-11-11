@@ -1,3 +1,4 @@
+//! Owns audit harness construction, root app state, theme selection, scale constants.
 use egui_kittest::Harness;
 use engine::Session;
 use time::TICKS_PER_SECOND;
