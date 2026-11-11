@@ -107,8 +107,6 @@ pub enum EditError {
     StaleResult,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
-    #[error("corrupt cache entry skipped")]
-    CacheCorrupt,
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -201,7 +199,6 @@ impl EditError {
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::StaleResult => C::StaleResult,
-            Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),

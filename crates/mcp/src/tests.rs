@@ -644,6 +644,11 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     )
     .await;
     for (index, (inner, code)) in [
+        (engine::RuntimeError::CacheCorrupt.into(), "job"),
+        (
+            engine::RuntimeError::Failed(Arc::new(engine::RuntimeError::CacheCorrupt)).into(),
+            "job",
+        ),
         (engine::RuntimeError::QueueFull.into(), "queue_full"),
         (
             engine::RuntimeError::WorkerPanicked.into(),

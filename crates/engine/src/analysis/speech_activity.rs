@@ -164,7 +164,7 @@ impl SpeechActivityRequest {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EditError::CacheCorrupt) => None,
+            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(error) => return Err(error),
         };
         let request = self.clone();
@@ -204,10 +204,10 @@ impl SpeechActivityRequest {
 
     fn decode(&self, bytes: &[u8]) -> Result<SpeechActivityResult, EditError> {
         if bytes.len() > MAX_BYTES {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
-        let result: SpeechActivityResult =
-            serde_json::from_slice(bytes).map_err(|_| EditError::CacheCorrupt)?;
+        let result: SpeechActivityResult = serde_json::from_slice(bytes)
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if result.version != RECIPE
             || result.key != self.key.bytes()
             || result.source != self.asset.content_hash().0
@@ -216,7 +216,7 @@ impl SpeechActivityRequest {
             || result.spans.is_empty()
             || result.spans.len() > MAX_SPANS
         {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut start = self.range.start();
         let mut previous = None;
@@ -227,13 +227,13 @@ impl SpeechActivityRequest {
                 || !(0.0..=1.0).contains(&span.confidence)
                 || previous == Some(span.activity)
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             start = span.range.end();
             previous = Some(span.activity);
         }
         if start != self.range.end() {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         Ok(result)
     }

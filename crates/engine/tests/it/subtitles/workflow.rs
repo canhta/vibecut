@@ -469,6 +469,123 @@ fn remote_upload_is_refused_without_consent() {
 }
 
 #[test]
+fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
+    let Some(input) = fixture() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let providers = providers(calls.clone(), true, false);
+    let (mut runner, budget) = runner();
+    let root = dir.path().join("cache");
+    let (mut cache, _) = engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
+    let mut req = request(&input, "en", "en", dir.path(), false);
+    let first = subtitles::run(
+        &req,
+        &providers,
+        &mut runner,
+        &mut cache,
+        &AllowAll,
+        &SilentProgress,
+        &Cancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(first.transcription_cost, engine::providers::Cost::Free);
+    let old_output = req.srt.clone().unwrap();
+    let preserved = std::fs::read(&old_output).unwrap();
+    let path = std::fs::read_dir(&root)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.file_name().unwrap() != ".cache.lock")
+        .unwrap();
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[72] ^= 1;
+    std::fs::write(&path, bytes).unwrap();
+    req.srt = Some(dir.path().join("regenerated.srt"));
+    assert!(matches!(
+        subtitles::run(
+            &req,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &DenyUploads,
+            &SilentProgress,
+            &Cancellation::new()
+        ),
+        Err(engine::EditError::Providers(
+            engine::providers::Error::ConsentRequired
+        ))
+    ));
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert!(!req.srt.as_ref().unwrap().exists());
+    let regenerated = subtitles::run(
+        &req,
+        &providers,
+        &mut runner,
+        &mut cache,
+        &AllowAll,
+        &SilentProgress,
+        &Cancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(regenerated.checkpoints, 0);
+    assert_eq!(
+        regenerated.transcription_cost,
+        engine::providers::Cost::Free
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    drop(cache);
+    let second_output = req.srt.clone().unwrap();
+    let second_preserved = std::fs::read(&second_output).unwrap();
+    let mut envelope = std::fs::read(&path).unwrap();
+    envelope.truncate(72);
+    envelope[40..72].copy_from_slice(blake3::hash(b"not JSON").as_bytes());
+    envelope.extend_from_slice(b"not JSON");
+    std::fs::write(&path, &envelope).unwrap();
+    let (mut cache, diagnostics) =
+        engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
+    assert_eq!(diagnostics, 0);
+    req.srt = Some(dir.path().join("must-not-publish.srt"));
+    assert!(matches!(
+        subtitles::run(
+            &req,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &AllowAll,
+            &SilentProgress,
+            &Cancellation::new()
+        ),
+        Err(engine::EditError::Invalid(
+            "cached recognition is malformed"
+        ))
+    ));
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(std::fs::read(&path).unwrap(), envelope);
+    assert_eq!(std::fs::read(old_output).unwrap(), preserved);
+    assert_eq!(std::fs::read(second_output).unwrap(), second_preserved);
+    assert!(!req.srt.as_ref().unwrap().exists());
+    let cancel = Cancellation::new();
+    cancel.cancel();
+    assert!(matches!(
+        subtitles::run(
+            &req,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &AllowAll,
+            &SilentProgress,
+            &cancel
+        ),
+        Err(engine::EditError::Cancelled)
+    ));
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(cache.clear().unwrap(), 0);
+    drop(runner);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+
+#[test]
 fn provider_catalog_filters_operation_and_language() {
     let vi = lang("vi");
     let transcribe = engine::providers::provider_options_for(

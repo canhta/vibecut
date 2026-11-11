@@ -202,7 +202,7 @@ fn durable(edit: &mut NativeEdit, file: &File, index: usize, offset: u64) -> Res
         .state
         .parts
         .get(index)
-        .ok_or(EditError::CacheCorrupt)?
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
         .offset;
     if old == offset {
         return Ok(());
@@ -210,13 +210,13 @@ fn durable(edit: &mut NativeEdit, file: &File, index: usize, offset: u64) -> Res
     edit.state
         .parts
         .get_mut(index)
-        .ok_or(EditError::CacheCorrupt)?
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
         .offset = offset;
     if let Err(error) = edit.checkpoint() {
         edit.state
             .parts
             .get_mut(index)
-            .ok_or(EditError::CacheCorrupt)?
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .offset = old;
         return Err(error);
     }
@@ -227,7 +227,7 @@ fn reset(edit: &mut NativeEdit, file: &File, index: usize) -> Result<()> {
         .state
         .parts
         .get_mut(index)
-        .ok_or(EditError::CacheCorrupt)?;
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     part.offset = 0;
     part.etag = None;
     edit.checkpoint()?;
@@ -259,11 +259,11 @@ fn download(
             .state
             .parts
             .get(index)
-            .ok_or(EditError::CacheCorrupt)?
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .clone();
         let path = edit.directory.join(&expected.name);
         if fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_file()) {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut file = File::options()
             .read(true)
@@ -274,13 +274,13 @@ fn download(
             .map_err(storage)?;
         let mut offset = part.offset;
         if file.metadata()?.len() < offset {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if offset > 0 && offset < expected.size && part.etag.is_none() {
             edit.state
                 .parts
                 .get_mut(index)
-                .ok_or(EditError::CacheCorrupt)?
+                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
                 .offset = 0;
             edit.checkpoint()?;
             offset = 0;
@@ -294,7 +294,9 @@ fn download(
                 headers.push(("Range".into(), format!("bytes={offset}-")));
                 headers.push((
                     "If-Range".into(),
-                    part.etag.clone().ok_or(EditError::CacheCorrupt)?,
+                    part.etag
+                        .clone()
+                        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?,
                 ));
             }
             let mut reply = response(http, &expected.url, &headers, ctx)?;
@@ -326,7 +328,7 @@ fn download(
                             .state
                             .parts
                             .get_mut(index)
-                            .ok_or(EditError::CacheCorrupt)?;
+                            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                         p.offset = 0;
                         p.etag = None;
                         edit.checkpoint()?;
@@ -348,7 +350,7 @@ fn download(
                     .state
                     .parts
                     .get_mut(index)
-                    .ok_or(EditError::CacheCorrupt)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                 p.offset = offset;
                 p.etag = tag;
             }
@@ -413,7 +415,7 @@ fn download(
                     .state
                     .parts
                     .get(index)
-                    .ok_or(EditError::CacheCorrupt)?
+                    .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
                     .offset;
                 if offset - saved >= CHECKPOINT_BYTES || offset == expected.size {
                     durable(&mut edit, &file, index, offset)?;

@@ -842,7 +842,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Limit,
             false
         ),
-        row!(E::CacheCorrupt, Job, false),
+        row!(E::Runtime(engine::RuntimeError::CacheCorrupt), Job, false),
         row!(E::Render(render::Error::Cancelled), Render, false),
         row!(E::Media(media::MediaError::Cancelled), Media, false),
         row!(E::Ai(ai::Error::Auth), Ai, false),
@@ -967,6 +967,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Ai(ai::Error::Incomplete), Ai, false),
     ];
     for (inner, code) in [
+        (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
         (E::Runtime(B::WorkerPanicked), C::WorkerFailure),
         (E::Limit, C::Limit),
@@ -986,6 +987,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ));
     }
     for (cause, code) in [
+        (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Limit, C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
         (
@@ -1003,6 +1005,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         cases.push((E::Recovery(failure), code, false));
     }
     let message = E::Providers(P::ModelMissing("test-model")).to_string();
+    let cache = B::CacheCorrupt;
+    assert_eq!(cache.code(), C::Job);
+    assert!(!cache.transient());
+    assert!(std::error::Error::source(&cache).is_none());
+    cases.push((E::Runtime(B::Failed(Arc::new(cache))), C::Job, false));
     assert!(message.contains("test-model"));
     assert!(!message.contains("vibecut-cli"));
     for (failure, code, transient) in cases {

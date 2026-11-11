@@ -221,36 +221,47 @@ impl ThumbnailStripRequest {
 
     fn decode(&self, bytes: &[u8]) -> Result<Vec<(Tick, Thumbnail)>, EditError> {
         if bytes.len() > MAX_BYTES || bytes.get(..8) != Some(MAGIC) {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let count = read_u32(bytes, 8)?;
-        let count = usize::try_from(count).map_err(|_| EditError::CacheCorrupt)?;
+        let count = usize::try_from(count)
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if count > self.positions.len() {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut samples = Vec::with_capacity(count);
         let mut offset = 12_usize;
         for _ in 0..count {
             let at = Tick(read_i64(bytes, offset)?);
-            offset = offset.checked_add(8).ok_or(EditError::CacheCorrupt)?;
+            offset = offset
+                .checked_add(8)
+                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
             let length = read_u32(bytes, offset)?;
-            offset = offset.checked_add(4).ok_or(EditError::CacheCorrupt)?;
+            offset = offset
+                .checked_add(4)
+                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
             let end = offset
-                .checked_add(usize::try_from(length).map_err(|_| EditError::CacheCorrupt)?)
-                .ok_or(EditError::CacheCorrupt)?;
-            let payload = bytes.get(offset..end).ok_or(EditError::CacheCorrupt)?;
+                .checked_add(
+                    usize::try_from(length)
+                        .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?,
+                )
+                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+            let payload = bytes
+                .get(offset..end)
+                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
             offset = end;
-            let image = Thumbnail::decode(payload).map_err(|_| EditError::CacheCorrupt)?;
+            let image = Thumbnail::decode(payload)
+                .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
             if image.width > self.max_edge
                 || image.height > self.max_edge
                 || self.positions.binary_search(&at).is_err()
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             samples.push((at, image));
         }
         if offset != bytes.len() {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         Ok(samples)
     }
@@ -391,7 +402,9 @@ pub fn display(
                 }
                 ThumbnailLookup::Missing => return Ok(ThumbnailStripState::Pending),
                 ThumbnailLookup::Corrupt => {
-                    return Ok(ThumbnailStripState::Failed(EditError::CacheCorrupt));
+                    return Ok(ThumbnailStripState::Failed(EditError::Runtime(
+                        crate::RuntimeError::CacheCorrupt,
+                    )));
                 }
             },
         };
@@ -501,16 +514,24 @@ fn encode(samples: &[(Tick, Thumbnail)]) -> Result<Vec<u8>, EditError> {
 }
 
 fn read_u32(bytes: &[u8], at: usize) -> Result<u32, EditError> {
-    let end = at.checked_add(4).ok_or(EditError::CacheCorrupt)?;
-    let value = bytes.get(at..end).ok_or(EditError::CacheCorrupt)?;
+    let end = at
+        .checked_add(4)
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+    let value = bytes
+        .get(at..end)
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     let mut buffer = [0u8; 4];
     buffer.copy_from_slice(value);
     Ok(u32::from_le_bytes(buffer))
 }
 
 fn read_i64(bytes: &[u8], at: usize) -> Result<i64, EditError> {
-    let end = at.checked_add(8).ok_or(EditError::CacheCorrupt)?;
-    let value = bytes.get(at..end).ok_or(EditError::CacheCorrupt)?;
+    let end = at
+        .checked_add(8)
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+    let value = bytes
+        .get(at..end)
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     let mut buffer = [0u8; 8];
     buffer.copy_from_slice(value);
     Ok(i64::from_le_bytes(buffer))
@@ -699,25 +720,43 @@ mod tests {
         assert_eq!(decoded[0].0, positions[0]);
         assert_eq!(decoded[1].1, sample(1));
 
-        assert!(request.decode(b"short").is_err());
+        assert!(matches!(
+            request.decode(b"short"),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
         let mut wrong_magic = bytes.clone();
         if let Some(byte) = wrong_magic.get_mut(0) {
             *byte ^= 0xff;
         }
-        assert!(request.decode(&wrong_magic).is_err());
+        assert!(matches!(
+            request.decode(&wrong_magic),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
         let mut oversized = bytes.clone();
         if let Some(slot) = oversized.get_mut(8..12) {
             slot.copy_from_slice(&u32::MAX.to_le_bytes());
         }
-        assert!(request.decode(&oversized).is_err());
+        assert!(matches!(
+            request.decode(&oversized),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
         let mut truncated = bytes.clone();
         truncated.truncate(bytes.len() - 1);
-        assert!(request.decode(&truncated).is_err());
+        assert!(matches!(
+            request.decode(&truncated),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
         let mut trailing = bytes.clone();
         trailing.push(0);
-        assert!(request.decode(&trailing).is_err());
+        assert!(matches!(
+            request.decode(&trailing),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
         let unknown = vec![(Tick(1), sample(1))];
         let unknown = encode(&unknown).unwrap();
-        assert!(request.decode(&unknown).is_err());
+        assert!(matches!(
+            request.decode(&unknown),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+        ));
     }
 }

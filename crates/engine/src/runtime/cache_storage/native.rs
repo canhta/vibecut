@@ -38,14 +38,14 @@ impl NativeState {
             || self.parts.len() != self.model.files.len()
             || model_key(&self.model)? != key
         {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         for (part, file) in self.parts.iter().zip(&self.model.files) {
             if part.offset > file.size
                 || part.etag.as_ref().is_some_and(|tag| !strong_etag(tag))
                 || (self.complete && part.offset != file.size)
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
         }
         Ok(())
@@ -115,7 +115,10 @@ impl NativeEdit {
         self.report()
     }
     pub fn report_length(&mut self, index: usize, len: u64) -> Result<(), EditError> {
-        *self.lengths.get_mut(index).ok_or(EditError::CacheCorrupt)? = len;
+        *self
+            .lengths
+            .get_mut(index)
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))? = len;
         self.report()
     }
     fn report(&self) -> Result<(), EditError> {
@@ -131,7 +134,7 @@ impl NativeEdit {
             .lock()
             .map_err(|_| crate::RuntimeError::Poisoned)?
             .as_mut()
-            .ok_or(EditError::CacheCorrupt)?
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .resize_models(total)
             .map_err(EditError::from)
     }
@@ -153,7 +156,8 @@ fn usage(root: &Path, state: &NativeState) -> Result<(u64, Vec<u64>), EditError>
 }
 
 fn envelope(key: CacheKey, state: &NativeState) -> Result<Vec<u8>, EditError> {
-    let body = serde_json::to_vec(state).map_err(|_| EditError::CacheCorrupt)?;
+    let body = serde_json::to_vec(state)
+        .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     if body.len() as u64 > META_LIMIT - HEADER as u64 {
         return Err(EditError::Limit);
     }
@@ -178,26 +182,29 @@ fn write_state(root: &Path, state: &NativeState) -> Result<u64, EditError> {
 }
 fn read_state(root: &Path, key: CacheKey) -> Result<NativeState, EditError> {
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
-        return Err(EditError::CacheCorrupt);
+        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
     let path = root.join(STATE);
     let meta = fs::symlink_metadata(&path)?;
     if !meta.file_type().is_file() || meta.len() > META_LIMIT {
-        return Err(EditError::CacheCorrupt);
+        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
         .take(META_LIMIT + 1)
         .read_to_end(&mut bytes)?;
-    let body = bytes.get(HEADER..).ok_or(EditError::CacheCorrupt)?;
+    let body = bytes
+        .get(HEADER..)
+        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     if bytes.len() as u64 > META_LIMIT
         || bytes.get(..8) != Some(b"VCACHE01")
         || bytes.get(8..40) != Some(key.0.as_slice())
         || bytes.get(40..HEADER) != Some(blake3::hash(body).as_bytes().as_slice())
     {
-        return Err(EditError::CacheCorrupt);
+        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
-    let state: NativeState = serde_json::from_slice(body).map_err(|_| EditError::CacheCorrupt)?;
+    let state: NativeState = serde_json::from_slice(body)
+        .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     state.validate(key)?;
     Ok(state)
 }
@@ -261,12 +268,12 @@ impl ArtifactCache {
             return Ok(None);
         };
         if !entry.native {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let pin = entry.pin()?.ok_or(EditError::CacheBusy)?;
         let state = read_state(&entry.path, key)?;
         if state.model != *model {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if !state.complete {
             return Ok(None);
@@ -275,7 +282,7 @@ impl ArtifactCache {
             let path = entry.path.join(&file.name);
             let meta = fs::symlink_metadata(&path)?;
             if !meta.file_type().is_file() || meta.len() != file.size {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             ai::models::verify_file(&mut fs::File::open(path)?, file, hooks)?;
         }
@@ -290,7 +297,7 @@ impl ArtifactCache {
         let key = model_key(model)?;
         if let Some(entry) = self.entries.get(&key) {
             if !entry.native {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let state = read_state(&entry.path, key)?;
             state.model.files.iter().zip(&state.parts).try_fold(
@@ -298,12 +305,12 @@ impl ArtifactCache {
                 |sum, (file, part)| {
                     let length = match fs::symlink_metadata(entry.path.join(&file.name)) {
                         Ok(meta) if meta.file_type().is_file() => meta.len(),
-                        Ok(_) => return Err(EditError::CacheCorrupt),
+                        Ok(_) => return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
                         Err(e) => return Err(EditError::Io(e)),
                     };
                     if length < part.offset {
-                        return Err(EditError::CacheCorrupt);
+                        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
                     }
                     // A crash can leave bytes beyond the durable checkpoint. They
                     // are reclaimed before resumption, so credit their disk space.
@@ -325,7 +332,7 @@ impl ArtifactCache {
             let directory = self.path(key);
             // Never overwrite/adopt a foreign directory at this content address.
             if directory.try_exists()? {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             fs::create_dir(&directory)?;
             let state = NativeState {
@@ -347,7 +354,10 @@ impl ArtifactCache {
             }
             self.insert_native(key, fs::symlink_metadata(directory.join(STATE))?.len())?;
         }
-        let entry = self.entries.get(&key).ok_or(EditError::CacheCorrupt)?;
+        let entry = self
+            .entries
+            .get(&key)
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if !entry.native || entry.pins.load(Ordering::Acquire) != 0 {
             return Err(EditError::CacheBusy);
         }
@@ -372,7 +382,7 @@ impl ArtifactCache {
             return Ok(());
         };
         if !entry.native {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if !entry.evict_inner(true)? {
             return Err(EditError::CacheBusy);

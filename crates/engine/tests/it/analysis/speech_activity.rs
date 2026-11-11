@@ -318,14 +318,39 @@ fn warm_cache_reuses_the_spans_without_opening_the_source() {
 
     let mut corrupt: serde_json::Value =
         serde_json::from_slice(cache.get(request.cache_key()).unwrap().unwrap().bytes()).unwrap();
+    let envelope = _dir.path().join(request.cache_key().filename());
+    let mut bytes = std::fs::read(&envelope).unwrap();
+    bytes[72] ^= 1;
+    std::fs::write(envelope, bytes).unwrap();
+    let regenerated = request.submit(&mut runner, &mut cache).unwrap();
+    assert_eq!(wait(&mut runner, regenerated.id), JobState::Completed);
+    assert_eq!(
+        regenerated
+            .finish(&mut runner, &mut cache)
+            .unwrap()
+            .unwrap(),
+        first
+    );
     corrupt["spans"][0]["confidence"] = serde_json::json!(2.0);
     cache
         .put(request.cache_key(), &serde_json::to_vec(&corrupt).unwrap())
         .unwrap();
+    let counts = runner.counts();
+    let bad = cache
+        .get(request.cache_key())
+        .unwrap()
+        .unwrap()
+        .bytes()
+        .to_vec();
     assert!(matches!(
         request.submit(&mut runner, &mut cache),
-        Err(EditError::CacheCorrupt)
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
+    assert_eq!(runner.counts(), counts);
+    assert_eq!(
+        cache.get(request.cache_key()).unwrap().unwrap().bytes(),
+        bad
+    );
 }
 
 struct FrameGate {

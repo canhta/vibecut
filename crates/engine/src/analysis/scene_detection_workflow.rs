@@ -135,7 +135,7 @@ impl DetectionRequest {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EditError::CacheCorrupt) => None,
+            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(e) => return Err(e),
         };
         let request = self.clone();
@@ -171,19 +171,20 @@ impl DetectionRequest {
         })
     }
     fn decode(&self, bytes: &[u8]) -> Result<DetectionResult, EditError> {
-        let result = decode(bytes).map_err(|_| EditError::CacheCorrupt)?;
+        let result =
+            decode(bytes).map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if result.key != self.key.bytes()
             || result.source != self.asset.content_hash().0
             || result.range != self.range
         {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut previous = self.range.start();
         for c in &result.candidates {
             if c.at - previous < self.settings.min_scene
                 || self.range.end() - c.at < self.settings.min_scene
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             previous = c.at;
         }

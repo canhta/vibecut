@@ -21,7 +21,11 @@ their existing storage, budget and cleanup policy.
 ## Background jobs and byte policy
 
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
-failures; `RuntimeError` is the engine re-export. `QueueFull` owns pending admission refusal
+failures and unusable cached artifacts; `RuntimeError` is the engine re-export.
+`CacheCorrupt` is source-free, nontransient and classified as `Job`; its static
+message does not authorize fallback. Each artifact consumer owns whether corruption
+means recompute, a failed display or refusal; explicit `Failed` wrappers do not
+change that policy. `QueueFull` owns pending admission refusal
 and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Upper cache, job and Session operations
 compose it through transparent `EditError::Runtime`. IO keeps its owned source; runtime

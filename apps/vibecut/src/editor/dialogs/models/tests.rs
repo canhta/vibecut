@@ -461,6 +461,68 @@ fn checksum_failure_is_discarded_and_reported() {
 }
 
 #[test]
+fn foreign_bundle_is_reported_as_corrupt_without_download_or_adoption() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = model("fixture-corrupt", "MIT", &[7; 11]);
+    let http = Arc::new(Http::default());
+    let manager = manager(
+        dir.path(),
+        vec![fixture.clone()],
+        http.clone(),
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    let bundle = dir
+        .path()
+        .join(ArtifactCache::model_key(&fixture).unwrap().filename());
+    std::fs::create_dir(&bundle).unwrap();
+    let sentinel = bundle.join("unrelated");
+    std::fs::write(&sentinel, b"preserve").unwrap();
+    let mut bench = bench(open(manager, "fixture-corrupt"));
+    wait_check(&mut bench);
+    bench.click("models.download.fixture-corrupt");
+    wait_terminal(&mut bench);
+    let inspection = inspect(&bench);
+    assert_eq!(inspection.problem, Some(ModelProblem::Corrupt));
+    assert!(inspection.installed.is_empty());
+    assert!(inspection.resume.is_empty());
+    let snapshot = inspection.job.unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let cause = snapshot.error.as_deref().unwrap();
+    assert!(matches!(
+        (cause as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>(),
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::CacheCorrupt
+        ))
+    ));
+    assert!(
+        bench
+            .harness()
+            .query_by_label("Saved file is damaged. Remove it, then download again.")
+            .is_some()
+    );
+    assert_eq!(http.count(), 0);
+    assert_eq!(std::fs::read(sentinel).unwrap(), b"preserve");
+    assert!(!bundle.join(".bundle").exists());
+    std::fs::rename(&bundle, dir.path().join("preserved-foreign")).unwrap();
+    let mut reply = Reply::ok(Arc::from(vec![7; 11]), "\"one\"");
+    reply.status = 400;
+    http.push(reply);
+    bench.click("models.download.fixture-corrupt");
+    wait_terminal(&mut bench);
+    let inspection = inspect(&bench);
+    assert_eq!(inspection.problem, Some(ModelProblem::Failed));
+    assert_eq!(http.count(), 1);
+    let snapshot = inspection.job.unwrap();
+    assert!(matches!(
+        (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<engine::EditError>(),
+        Some(engine::EditError::ModelResponse)
+    ));
+}
+
+#[test]
 fn footer_rows_do_not_shift_the_model_action_controls() {
     // The footer draws the installed-check spinner, a problem row and the job
     // progress above its buttons. They appear asynchronously, so a press that

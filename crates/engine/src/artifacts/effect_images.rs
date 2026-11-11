@@ -121,7 +121,9 @@ impl EffectThumbnails {
                         .lock()
                         .map_err(|_| crate::RuntimeError::Poisoned)?;
                     if let Some(index) = entries.iter().position(|e| e.key == key) {
-                        let entry = entries.remove(index).ok_or(EditError::CacheCorrupt)?;
+                        let entry = entries
+                            .remove(index)
+                            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                         let result = entry.bytes.clone();
                         entries.push_back(entry);
                         return Ok(result);

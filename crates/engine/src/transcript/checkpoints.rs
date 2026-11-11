@@ -50,7 +50,7 @@ pub(crate) fn transcribe_window(
     })?;
     let cached = match cache.get(key) {
         Ok(value) => value,
-        Err(EditError::CacheCorrupt) => None,
+        Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
         Err(error) => return Err(error),
     };
     let raw = match cached {

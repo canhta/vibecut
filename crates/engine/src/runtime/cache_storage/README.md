@@ -30,7 +30,7 @@ accounting; directory scanning streams metadata, and excess entries evict withou
 payloads.
 
 Headers bind the canonical key; `get` checks admitted size, header and payload digest before
-returning a hit. Corruption or a missing file returns `CacheCorrupt`; corrupt-file removal waits
+returning a hit. Corruption or a missing file returns `RuntimeError::CacheCorrupt` through `EditError::Runtime`; corrupt-file removal waits
 for older reader pins to release, so a caller can record the typed diagnostic and recompute.
 Other IO errors retain their source. Reservation/pin/evict failures compose the runtime owner's
 error through `EditError::Runtime`; other cache filesystem failures retain their existing root IO.

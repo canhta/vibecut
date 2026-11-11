@@ -425,6 +425,85 @@ fn interrupted_transfer_resumes_after_cache_reopen_with_range_and_strong_etag() 
         data.as_ref()
     );
 }
+
+#[test]
+fn corrupt_bundles_refuse_without_refetch_and_return_cache_custody() {
+    for fault in 0..5 {
+        let dir = tempfile::tempdir().unwrap();
+        let http = Arc::new(Http::default());
+        let (data, model) = specimen(131072);
+        let (budget, store, mut runner, clock) = setup(dir.path(), http.clone(), Io::healthy(), 1);
+        let bundle = dir
+            .path()
+            .join(ArtifactCache::model_key(&model).unwrap().filename());
+        if fault == 0 {
+            fs::create_dir(&bundle).unwrap();
+        } else {
+            http.push(Reply::interrupted(data.clone()));
+            let (id, _) = submit(&store, &mut runner, &model);
+            assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Failed);
+        }
+        let sentinel = bundle.join("unrelated");
+        fs::write(&sentinel, b"preserve").unwrap();
+        let marker = bundle.join(".bundle");
+        match fault {
+            1 => fs::write(&marker, b"short").unwrap(),
+            2 => File::options()
+                .write(true)
+                .open(bundle.join("weights.bin"))
+                .unwrap()
+                .set_len(1)
+                .unwrap(),
+            3 => {
+                fs::remove_file(bundle.join("weights.bin")).unwrap();
+                fs::create_dir(bundle.join("weights.bin")).unwrap();
+            }
+            4 => {
+                let mut bytes = fs::read(&marker).unwrap();
+                *bytes.get_mut(8).unwrap() ^= 1;
+                fs::write(&marker, bytes).unwrap();
+            }
+            _ => {}
+        }
+        let before = fs::read(&marker).ok();
+        let calls = http.count();
+        let charged = budget.snapshot().unwrap().used;
+        let (id, _) = submit(&store, &mut runner, &model);
+        let snapshot = terminal(&mut runner, id, &clock);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        let cause = snapshot.error.as_deref().unwrap();
+        assert!(matches!(
+            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+            Some(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+        ));
+        assert!(runner.take_output(id).is_none());
+        assert_eq!(http.count(), calls);
+        assert_eq!(fs::read(&marker).ok(), before);
+        assert_eq!(fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(budget.snapshot().unwrap().used, charged);
+        if fault == 0 {
+            // Only this explicit fixture repair moves a foreign directory.
+            fs::rename(&bundle, dir.path().join("preserved-foreign")).unwrap();
+        } else {
+            store.remove(&model).unwrap();
+        }
+        http.push(Reply::ok(data, "\"one\""));
+        let (id, _) = submit(&store, &mut runner, &model);
+        assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Completed);
+        let lease = store.installed(&model, &NoHooks).unwrap().unwrap();
+        assert_eq!(
+            fs::metadata(lease.file("weights.bin").unwrap())
+                .unwrap()
+                .len(),
+            131072
+        );
+        drop(lease);
+        store.remove(&model).unwrap();
+        drop(store);
+        drop(runner);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
 #[test]
 fn runner_retries_and_changed_entity_never_appends_unrelated_bytes() {
     for full_restart in [false, true] {
