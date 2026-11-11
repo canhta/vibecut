@@ -840,7 +840,10 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
             "worker_failure",
         ),
         (EditError::Limit, "limit"),
-        (EditError::StaleResult, "stale_result"),
+        (
+            EditError::Session(engine::SessionError::StaleResult),
+            "stale_result",
+        ),
         (engine::RuntimeError::BudgetFull.into(), "budget"),
         (engine::RuntimeError::Poisoned.into(), "job"),
         (

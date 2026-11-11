@@ -664,7 +664,7 @@ impl Subtitles {
             Some(engine::EditError::Transcript(engine::transcript::Error::LowConfidence)) => {
                 Text::SubLowConfidence
             }
-            Some(engine::EditError::StaleResult) => Text::SubStale,
+            Some(engine::EditError::Session(engine::SessionError::StaleResult)) => Text::SubStale,
             Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled)) => {
                 Text::ShortsJobCancelled
             }

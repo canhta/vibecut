@@ -45,7 +45,7 @@ fn revision_and_job_target_share_ui_save_preview_undo_and_rollback_boundaries() 
                 name: "stale".into()
             }
         ),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     let edit = s.revision();
     s.undo().unwrap();

@@ -679,13 +679,11 @@ impl JobRunner {
             .find(|f| f.snapshot.id == id)
             .and_then(|f| f.output.as_ref())
             .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
-        if output
+        let target = output
             .target
             .as_ref()
-            .is_none_or(|target| !session.matches_target(target))
-        {
-            return Err(EditError::StaleResult);
-        }
+            .ok_or(crate::SessionError::StaleResult)?;
+        session.validate_job_target(target)?;
         Ok(())
     }
     pub fn take_output(&mut self, id: JobId) -> Option<JobOutput> {

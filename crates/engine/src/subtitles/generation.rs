@@ -95,7 +95,7 @@ pub(crate) fn generate(
 pub(crate) fn validate_source(asset: &media::SourceAsset) -> Result<()> {
     let current = media::SourceAsset::import(asset.id(), asset.path().to_owned())?;
     if current.content_hash() != asset.content_hash() || current.probe() != asset.probe() {
-        return Err(EditError::StaleResult);
+        return Err(EditError::Session(crate::SessionError::StaleResult));
     }
     Ok(())
 }
