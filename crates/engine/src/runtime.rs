@@ -4,6 +4,8 @@ use crate::session::wire::{ErrorCode, Failure};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("job cancelled")]
+    Cancelled,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
     #[error("cache is in use")]
@@ -38,6 +40,7 @@ pub enum Error {
 impl Failure for Error {
     fn code(&self) -> ErrorCode {
         match self {
+            Self::Cancelled => ErrorCode::Cancelled,
             Self::QueueFull => ErrorCode::QueueFull,
             Self::WorkerPanicked => ErrorCode::WorkerFailure,
             Self::BudgetFull | Self::ArtifactTooLarge => ErrorCode::Budget,

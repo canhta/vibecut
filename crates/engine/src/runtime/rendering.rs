@@ -101,7 +101,7 @@ impl render::ExecutionHooks for JobContext {
             fraction,
         )
         .map_err(|e| {
-            if matches!(e, EditError::Cancelled) {
+            if matches!(e, EditError::Runtime(crate::RuntimeError::Cancelled)) {
                 render::Error::Cancelled
             } else {
                 render::Error::Invalid("job progress")
@@ -286,7 +286,7 @@ pub fn submit_scene_exports_with_sources(
                         let mut buffer = vec![0; 64 << 10];
                         loop {
                             if context.cancelled() {
-                                return Err(EditError::Cancelled);
+                                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                             }
                             let count = input.read(&mut buffer)?;
                             if count == 0 {
@@ -366,7 +366,7 @@ pub fn submit_export_publication(
                 |writer| {
                     loop {
                         if context.cancelled() {
-                            return Err(EditError::Cancelled);
+                            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                         }
                         let count = source.read(&mut buffer)?;
                         if count == 0 {
@@ -513,7 +513,7 @@ impl crate::Session {
                         let output = subtitle_file(&project, track, format, &languages)?;
                         context.progress(JobStage::Finalize, 0.5)?;
                         if context.cancelled() {
-                            return Err(EditError::Cancelled);
+                            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                         }
                         let stage = project::atomic::StreamingStage::new(
                             &path,
@@ -524,7 +524,7 @@ impl crate::Session {
                             let mut writer = stage.writer()?;
                             for chunk in output.text.as_bytes().chunks(65536) {
                                 if context.cancelled() {
-                                    return Err(EditError::Cancelled);
+                                    return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                                 }
                                 writer.write_all(chunk)?;
                             }

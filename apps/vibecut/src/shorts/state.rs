@@ -487,7 +487,7 @@ impl State {
             move |ctx| {
                 ctx.check_cancelled()?;
                 if worker_cancel.cancelled() {
-                    return Err(engine::EditError::Cancelled);
+                    return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
                 }
                 match generator.run(
                     request.clone(),
@@ -496,14 +496,16 @@ impl State {
                     &worker_cancel,
                 ) {
                     Ok(source) => {
-                        send.send(Ok(source))
-                            .map_err(|_| engine::EditError::Cancelled)?;
+                        send.send(Ok(source)).map_err(|_| {
+                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(Error::Worker(error.clone())))
-                            .map_err(|_| engine::EditError::Cancelled)?;
+                        send.send(Err(Error::Worker(error.clone()))).map_err(|_| {
+                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
                             error,
                         )))

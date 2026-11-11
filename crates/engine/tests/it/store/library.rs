@@ -191,7 +191,7 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
                 calls.get() == 4
             }
         ),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     fs::write(&media, b"changed").unwrap();
     assert!(

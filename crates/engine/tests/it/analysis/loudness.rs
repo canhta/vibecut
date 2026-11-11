@@ -130,7 +130,7 @@ fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EditErro
         runner.tick().unwrap();
         let snapshot = runner.snapshot(job).unwrap();
         match snapshot.state {
-            JobState::Cancelled => return Err(EditError::Cancelled),
+            JobState::Cancelled => return Err(EditError::Runtime(engine::RuntimeError::Cancelled)),
             JobState::Failed => {
                 return Err(EditError::Runtime(engine::RuntimeError::Failed(
                     snapshot.error.unwrap(),
@@ -252,7 +252,7 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     runner.cancel_job(cancelled).unwrap();
     assert!(matches!(
         finish(&mut runner, cancelled),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }

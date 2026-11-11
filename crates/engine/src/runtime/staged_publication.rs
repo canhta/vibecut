@@ -33,7 +33,7 @@ impl Publication<'_> {
 
     pub(crate) fn admit(&self) -> Result<()> {
         if self.hooks.cancelled() {
-            return Err(EditError::Cancelled);
+            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
         }
         render::validate_output_path(self.project, self.path, self.hooks)?;
         project::atomic::admit_destination(self.path)?;

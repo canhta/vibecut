@@ -76,7 +76,7 @@ mod exit_codes {
                 "rejected",
                 5
             ),
-            row!(E::Cancelled, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::Cancelled), "job", 7),
             row!(E::Runtime(engine::RuntimeError::WorkerPanicked), "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
@@ -189,6 +189,21 @@ mod exit_codes {
                 let error = CliError::Job(Arc::new(cause));
                 assert_eq!(error.value()["message"], message);
                 assert_eq!(error.code(), ("job", 7));
+            }
+        }
+        for depth in 0..=2 {
+            for composed in [false, true] {
+                let mut cause: Arc<dyn engine::Failure> = if composed {
+                    Arc::new(E::Runtime(engine::RuntimeError::Cancelled))
+                } else {
+                    Arc::new(engine::RuntimeError::Cancelled)
+                };
+                for _ in 0..depth {
+                    cause = Arc::new(E::Runtime(engine::RuntimeError::Failed(cause)));
+                }
+                let error = CliError::Job(cause);
+                assert_eq!(error.code(), ("job", 7));
+                assert_eq!(error.value()["message"], "job cancelled");
             }
         }
         let refusals: [(fn() -> engine::RuntimeError, &str); 4] = [

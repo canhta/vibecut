@@ -634,7 +634,7 @@ fn short_and_audio_absent_evidence_stays_unknown_and_pre_cancel_never_runs() {
     assert_eq!(calls.load(Ordering::SeqCst), before);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
 }
 

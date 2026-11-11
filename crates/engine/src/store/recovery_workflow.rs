@@ -507,7 +507,9 @@ mod tests {
                 EditError::Runtime(crate::RuntimeError::WorkerPanicked) => {
                     assert_eq!(code, ErrorCode::WorkerFailure)
                 }
-                EditError::Cancelled => assert_eq!(code, ErrorCode::Cancelled),
+                EditError::Runtime(crate::RuntimeError::Cancelled) => {
+                    assert_eq!(code, ErrorCode::Cancelled)
+                }
                 EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
                 _ => panic!("lost the typed worker cause"),
             }
@@ -577,7 +579,7 @@ mod tests {
         panic!("injected persistence unwind")
     }
     fn cancelled() -> crate::Result<()> {
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(crate::RuntimeError::Cancelled))
     }
     fn worker_stale() -> crate::Result<()> {
         Err(EditError::StaleResult)

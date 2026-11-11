@@ -680,7 +680,9 @@ impl CacheMaintenance {
                 continue;
             }
             if !stopped && cancelled() {
-                report.cause.get_or_insert(EditError::Cancelled);
+                report
+                    .cause
+                    .get_or_insert(EditError::Runtime(crate::RuntimeError::Cancelled));
                 stopped = true;
             }
             let measurement = (|| -> Result<Option<u64>, EditError> {
