@@ -44,6 +44,35 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     }
     walk(&root.join("assets"))?;
     walk(&root.join("docs/brand"))?;
+    walk(&root.join("docs/assets/readme"))?;
     eprintln!("assets: ok");
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn readme_media_requires_populated_attribution_but_ignores_its_readme() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let media = root.join("docs/assets/readme");
+        fs::create_dir_all(&media).unwrap();
+        fs::write(media.join("README.md"), "provenance owner").unwrap();
+        fs::write(media.join("hero.jpg"), b"jpeg").unwrap();
+        let missing = check(root).unwrap_err();
+        assert!(missing.contains("attribution missing"), "{missing}");
+        fs::write(media.join("hero.jpg.attribution"), "asset: hero.jpg\n").unwrap();
+        let empty = check(root).unwrap_err();
+        assert!(empty.contains("empty/missing title"), "{empty}");
+        fs::write(
+            media.join("hero.jpg.attribution"),
+            "asset: hero.jpg\ntitle: Editor\nauthor: VibeCut contributors\nsource: capture\nlicense: GPL-3.0-only\nlicense-file: ../../../LICENSE\nadded: p0-core/22\nnotes: generated\n",
+        )
+        .unwrap();
+        check(root).unwrap();
+    }
 }
