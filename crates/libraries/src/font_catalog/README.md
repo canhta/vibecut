@@ -38,7 +38,9 @@ One import per store plus an OS file lock serializes publication across processe
 The job reserves 512 MiB for source, decoder and reconstruction scratch and checks
 cancellation before reads and the publication fence. The store admits 128 files,
 64 faces per family and 256 MiB of decoded bytes. Exact decoded SHA-256 duplicates
-succeed without another entry; different bytes for the same Unicode-lowercase family and ASCII-insensitive style or a bundled/system/catalog family refuse `Conflict`. Private staging
+succeed without another entry; reads enforce the same family/aggregate quotas before
+opening face data, including for externally changed metadata. Different bytes for the
+same Unicode-lowercase family and ASCII-insensitive style or a bundled/system/catalog family refuse `Conflict`. Private staging
 is removed on failure or cancellation; publication renames the complete directory
 without replacing an existing entry. Arbitrary ancestor replacement races remain
 subject to the filesystem owner's ordinary path limitations.

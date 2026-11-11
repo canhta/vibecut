@@ -167,6 +167,18 @@ fn records(root: &Path) -> Result<Vec<Imported>> {
         }
         out.push(record);
     }
+    let mut total = 0u64;
+    let mut families = BTreeMap::new();
+    for record in &out {
+        total = total.checked_add(record.size).ok_or(EditError::Limit)?;
+        let count = families
+            .entry(record.family.to_lowercase())
+            .or_insert(0usize);
+        *count += 1;
+        if total > MAX_STORED_BYTES || *count > MAX_FAMILY_FACES {
+            return Err(EditError::Limit);
+        }
+    }
     out.sort_by(|a, b| (&a.family, &a.style).cmp(&(&b.family, &b.style)));
     Ok(out)
 }

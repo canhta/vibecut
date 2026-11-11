@@ -598,6 +598,65 @@ fn custom_import_accented_family_conflicts_and_resolution_share_one_identity() {
 }
 
 #[test]
+fn custom_store_metadata_quotas_bound_reopen_before_face_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("seed.ttf");
+    fs::write(&input, FIXTURE).unwrap();
+    let seed = dir.path().join("seed");
+    let seed_store = store(&seed, vec![], vec![], offline());
+    let mut runner = runner();
+    let (job, _) = seed_store.submit_import(&mut runner, input, true).unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Completed);
+    let template: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            seed.join(format!("custom-{}", sha(FIXTURE)))
+                .join("import.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for (label, count, size, same_family, exceeds) in [
+        ("bytes-at", 8, text::MAX_FONT_BYTES as u64, false, false),
+        ("bytes-over", 9, text::MAX_FONT_BYTES as u64, false, true),
+        ("faces-at", 64, 1, true, false),
+        ("faces-over", 65, 1, true, true),
+    ] {
+        let root = dir.path().join(label);
+        for index in 0..count {
+            let hash = format!("{index:064x}");
+            let entry = root.join(format!("custom-{hash}"));
+            fs::create_dir_all(&entry).unwrap();
+            let mut metadata = template.clone();
+            metadata["sha256"] = hash.into();
+            metadata["size"] = size.into();
+            metadata["family"] = if same_family {
+                "Quota same".to_owned()
+            } else {
+                format!("Quota {index}")
+            }
+            .into();
+            fs::write(
+                entry.join("import.json"),
+                serde_json::to_vec(&metadata).unwrap(),
+            )
+            .unwrap();
+        }
+        // These generated records deliberately have no face files: quota admission
+        // must happen before opening any advertised data or allocating its length.
+        let result = store(&root, vec![], vec![], offline()).list(Some("Quota"));
+        if exceeds {
+            assert!(matches!(result, Err(EditError::Limit)), "{label}");
+        } else {
+            assert!(
+                result.unwrap().is_empty(),
+                "{label}: missing faces are not advertised"
+            );
+        }
+    }
+    runner.shutdown();
+}
+
+#[test]
 fn directory_scan_finds_nested_fonts_and_skips_junk() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("VibeCutFixtureSans-Regular.ttf"), FIXTURE).unwrap();
