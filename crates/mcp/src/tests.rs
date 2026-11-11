@@ -40,7 +40,9 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
     );
     assert!(matches!(
         grant.authorize(&export(root.path().join("other/out.mp4")), &project),
-        Err(EditError::Permission)
+        Err(EditError::Control(
+            engine::control::ControlError::Permission
+        ))
     ));
     // Every path-publishing command shares the grant; none may write outside it.
     let snapshot = |path| Command::Snapshot {
@@ -54,21 +56,82 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
     );
     assert!(matches!(
         grant.authorize(&snapshot(root.path().join("other/frame.png")), &project),
-        Err(EditError::Permission)
+        Err(EditError::Control(
+            engine::control::ControlError::Permission
+        ))
     ));
     assert!(matches!(
         Grants::default().authorize(&snapshot(output.join("frame.png")), &project),
-        Err(EditError::Permission)
+        Err(EditError::Control(
+            engine::control::ControlError::Permission
+        ))
     ));
+    let document: ai::chapters::ChapterDocument = serde_json::from_value(
+        engine::registry()
+            .iter()
+            .find(|entry| entry.id == "chapters.export_sidecars")
+            .unwrap()
+            .example
+            .params["document"]
+            .clone(),
+    )
+    .unwrap();
+    let sidecars = |dir| Command::ChaptersExportSidecars {
+        dir,
+        document: document.clone(),
+    };
+    assert!(grant.authorize(&sidecars(output.clone()), &project).is_ok());
+    let mut refusals = vec![
+        (
+            "file command targeting granted directory",
+            grant.authorize(&export(output.clone()), &project).is_err(),
+        ),
+        (
+            "sidecars targeting a file",
+            grant
+                .authorize(&sidecars(output.join("out.mp4")), &project)
+                .is_err(),
+        ),
+    ];
     #[cfg(unix)]
     {
         let alias = root.path().join("unselected-alias");
         std::os::unix::fs::symlink(&output, &alias).unwrap();
+        refusals.push((
+            "unselected directory alias",
+            grant.authorize(&sidecars(alias.clone()), &project).is_err(),
+        ));
+        refusals.push((
+            "file command targeting alias directory",
+            grant.authorize(&export(alias.clone()), &project).is_err(),
+        ));
+        // A symlink spelling explicitly selected by the human is a legitimate grant.
+        let selected = root.path().join("selected-alias");
+        std::os::unix::fs::symlink(&output, &selected).unwrap();
+        let selected_grant = Grants::output(&selected).unwrap();
+        for directory in [selected.clone(), std::fs::canonicalize(&output).unwrap()] {
+            assert!(
+                selected_grant
+                    .authorize(&sidecars(directory.clone()), &project)
+                    .is_ok()
+            );
+            assert!(
+                selected_grant
+                    .authorize(&export(directory.join("selected.mp4")), &project)
+                    .is_ok()
+            );
+        }
         assert!(matches!(
             grant.authorize(&export(alias.join("out.mp4")), &project),
-            Err(EditError::Permission)
+            Err(EditError::Control(
+                engine::control::ControlError::Permission
+            ))
         ));
     }
+    assert!(
+        refusals.iter().all(|(_, refused)| *refused),
+        "grant refusal cases: {refusals:?}"
+    );
 }
 
 async fn send(write: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>, value: Value) {
@@ -615,7 +678,12 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
                 assert!(result.is_ok(), "{id}: {result:?}");
             } else {
                 assert!(
-                    matches!(result, Err(EditError::Permission)),
+                    matches!(
+                        result,
+                        Err(EditError::Control(
+                            engine::control::ControlError::Permission
+                        ))
+                    ),
                     "{id}: {result:?}"
                 );
             }
@@ -669,9 +737,17 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
                 let session = match target.unwrap_or(project::ProjectId(1)) {
                     project::ProjectId(1) => &mut first,
                     project::ProjectId(2) => &mut second,
-                    _ => return Err(EditError::SessionGone),
+                    _ => {
+                        return Err(EditError::Control(
+                            engine::control::ControlError::SessionGone,
+                        ));
+                    }
                 };
-                inbox.execute_project(session, value, |_, _| Err(EditError::Permission))
+                inbox.execute_project(session, value, |_, _| {
+                    Err(EditError::Control(
+                        engine::control::ControlError::Permission,
+                    ))
+                })
             })
             .unwrap();
         let result = receive.await.unwrap();
@@ -776,7 +852,11 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
                 } else {
                     &mut second
                 };
-                inbox.execute_project(session, value, |_, _| Err(EditError::Permission))
+                inbox.execute_project(session, value, |_, _| {
+                    Err(EditError::Control(
+                        engine::control::ControlError::Permission,
+                    ))
+                })
             })
             .unwrap();
         let response = receive.await.unwrap().unwrap();

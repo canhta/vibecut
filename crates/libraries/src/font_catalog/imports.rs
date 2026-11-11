@@ -56,7 +56,9 @@ impl FontStore {
         accepted: bool,
     ) -> Result<(JobId, CancelToken)> {
         if !accepted {
-            return Err(EditError::Permission);
+            return Err(EditError::Control(
+                engine::control::ControlError::Permission,
+            ));
         }
         let guard = Active::acquire(&self.active, "custom").map_err(|error| match error {
             EditError::Font(FontError::DownloadActive) => EditError::Font(FontError::ImportActive),

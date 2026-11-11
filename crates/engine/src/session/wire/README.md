@@ -11,6 +11,11 @@ Every Session starts with an OS-random epoch. `revision()` is an opaque string; 
 
 Before publishing an admitted JSON/control edit, Session validates the candidate project's serialized integers and created IDs, including values produced by allocation or tick/keyframe arithmetic. Undo/redo validate their destination snapshot before moving history. An invalid candidate returns InvalidParams without consuming IDs, advancing revision or emitting a project change. Typed in-process editing keeps the owner types' full integer domain.
 
+`ControlError` owns the seven source-free protocol refusals: schema mismatch, foreign
+session, stale revision, permission, conflicting idempotency key, receipt capacity and
+resynchronization. `control` re-exports it; the root error composes it transparently.
+This Rust boundary does not change serialized error codes or the catalog.
+
 `Failure` states code and retry eligibility at the error's declaration owner.
 Its nonserialized `JobFailurePolicy` preserves direct terminal cancellation and direct
 AI retry-advisory seconds for the scheduler. Ordinary owners default to neither;

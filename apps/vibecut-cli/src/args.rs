@@ -53,13 +53,41 @@ mod exit_codes {
             ),
             row!(E::Runtime(engine::RuntimeError::NetworkTransient), "job", 7),
             row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
-            row!(E::SchemaMismatch, "rejected", 5),
-            row!(E::SessionGone, "rejected", 5),
-            row!(E::StaleRevision, "rejected", 5),
-            row!(E::Permission, "rejected", 5),
-            row!(E::IdempotencyConflict, "rejected", 5),
-            row!(E::ReceiptCapacity, "rejected", 5),
-            row!(E::ResyncRequired, "rejected", 5),
+            row!(
+                E::Control(engine::control::ControlError::SchemaMismatch),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::SessionGone),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::StaleRevision),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::Permission),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::IdempotencyConflict),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::ReceiptCapacity),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Control(engine::control::ControlError::ResyncRequired),
+                "rejected",
+                5
+            ),
             row!(
                 E::Runtime(engine::RuntimeError::JobNotRetained),
                 "rejected",

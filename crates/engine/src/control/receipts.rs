@@ -1,6 +1,6 @@
 //! Retains idempotent control outcomes.
 use crate::session::wire::{
-    MAX_RECEIPT_BYTES, MAX_RECEIPTS, RECEIPT_RESERVATION, Receipt, Request, Response,
+    ControlError, MAX_RECEIPT_BYTES, MAX_RECEIPTS, RECEIPT_RESERVATION, Receipt, Request, Response,
 };
 use crate::{EditError, Result, Session};
 use serde_json::json;
@@ -13,7 +13,7 @@ pub(super) fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
 }
 
 impl Session {
-    pub(super) fn check_receipt_capacity(&self) -> Result<()> {
+    pub(super) fn check_receipt_capacity(&self) -> std::result::Result<(), ControlError> {
         if self.ledger.receipts.len() >= MAX_RECEIPTS
             || self
                 .ledger
@@ -21,7 +21,7 @@ impl Session {
                 .saturating_add(RECEIPT_RESERVATION)
                 > MAX_RECEIPT_BYTES
         {
-            Err(EditError::ReceiptCapacity)
+            Err(ControlError::ReceiptCapacity)
         } else {
             Ok(())
         }
@@ -34,12 +34,12 @@ impl Session {
         key: &(String, String),
         fingerprint: blake3::Hash,
         request_id: &str,
-    ) -> Result<Option<Response>> {
+    ) -> std::result::Result<Option<Response>, ControlError> {
         let Some(receipt) = self.ledger.receipts.get(key) else {
             return Ok(None);
         };
         if receipt.fingerprint != fingerprint {
-            return Err(EditError::IdempotencyConflict);
+            return Err(ControlError::IdempotencyConflict);
         }
         let mut response = receipt.response.clone();
         response.request_id = request_id.to_owned();

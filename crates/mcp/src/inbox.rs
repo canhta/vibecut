@@ -219,7 +219,9 @@ impl Inbox {
             captions,
             ..
         } = self;
-        let runner = projects.get_mut(&id).ok_or(EditError::SessionGone)?;
+        let runner = projects.get_mut(&id).ok_or(EditError::Control(
+            engine::control::ControlError::SessionGone,
+        ))?;
         session.observe_jobs(runner);
         Self::execute_with(
             runner,

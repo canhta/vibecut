@@ -2,7 +2,7 @@
 use crate::Failure;
 use crate::jobs::{JobRunner, JobSnapshot};
 use crate::session::wire::{
-    ControlResult, Cursor, Event, JobView, Payload, Response, ResponseValue, Snapshot,
+    ControlError, ControlResult, Cursor, Event, JobView, Payload, Response, ResponseValue, Snapshot,
 };
 use crate::{EditError, Result, Session};
 
@@ -103,7 +103,7 @@ impl Session {
 }
 
 impl Session {
-    pub fn events(&self, cursor: &mut Cursor) -> Result<Vec<Event>> {
+    pub fn events(&self, cursor: &mut Cursor) -> std::result::Result<Vec<Event>, ControlError> {
         if cursor.session != self.session_id()
             || cursor.seq > self.ledger.sequence
             || self.ledger.events.front().is_some_and(|e| {
@@ -112,7 +112,7 @@ impl Session {
                     .is_ok_and(|seq| cursor.seq.saturating_add(1) < seq)
             })
         {
-            return Err(EditError::ResyncRequired);
+            return Err(ControlError::ResyncRequired);
         }
         let events = self
             .ledger

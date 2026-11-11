@@ -71,20 +71,8 @@ pub struct AssetUsage {
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
-    #[error("control schema version or catalog differs")]
-    SchemaMismatch,
-    #[error("session epoch differs")]
-    SessionGone,
-    #[error("project revision differs")]
-    StaleRevision,
-    #[error("control permission refused")]
-    Permission,
-    #[error("idempotency key conflicts")]
-    IdempotencyConflict,
-    #[error("session receipt capacity exhausted")]
-    ReceiptCapacity,
-    #[error("event cursor requires a new snapshot")]
-    ResyncRequired,
+    #[error(transparent)]
+    Control(#[from] control::ControlError),
 
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
@@ -167,13 +155,6 @@ impl EditError {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
-            Self::SchemaMismatch => C::SchemaMismatch,
-            Self::SessionGone => C::SessionGone,
-            Self::StaleRevision => C::StaleRevision,
-            Self::Permission => C::Permission,
-            Self::IdempotencyConflict => C::IdempotencyConflict,
-            Self::ReceiptCapacity => C::ReceiptCapacity,
-            Self::ResyncRequired => C::ResyncRequired,
             Self::UnknownCommand => C::UnknownCommand,
             Self::InvalidParams => C::InvalidParams,
             Self::Limit => C::Limit,
@@ -182,6 +163,7 @@ impl EditError {
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::Session(inner) => return (inner.code(), inner.transient()),
+            Self::Control(inner) => return (inner.code(), inner.transient()),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
@@ -231,6 +213,7 @@ impl Failure for EditError {
         match self {
             Self::Runtime(error) => error.job_policy(),
             Self::Session(error) => error.job_policy(),
+            Self::Control(error) => error.job_policy(),
             Self::Ai(ai::Error::RateLimit {
                 retry_after_seconds,
             }) => JobFailurePolicy {

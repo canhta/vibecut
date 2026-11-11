@@ -336,19 +336,29 @@ fn error_for(code: ErrorCode) -> EditError {
     match code {
         ErrorCode::EmptyProject => EditError::EmptyProject,
         ErrorCode::TransactionActive => EditError::TransactionActive,
-        ErrorCode::Permission => EditError::Permission,
+        ErrorCode::Permission => EditError::Control(engine::control::ControlError::Permission),
         ErrorCode::Limit | ErrorCode::Budget => EditError::Limit,
         ErrorCode::InvalidParams => EditError::InvalidParams,
         ErrorCode::UnknownCommand => EditError::UnknownCommand,
-        ErrorCode::SessionGone => EditError::SessionGone,
-        ErrorCode::StaleRevision | ErrorCode::StaleResult => EditError::StaleRevision,
-        ErrorCode::IdempotencyConflict => EditError::IdempotencyConflict,
-        ErrorCode::ReceiptCapacity => EditError::ReceiptCapacity,
-        ErrorCode::ResyncRequired => EditError::ResyncRequired,
+        ErrorCode::SessionGone => EditError::Control(engine::control::ControlError::SessionGone),
+        ErrorCode::StaleRevision | ErrorCode::StaleResult => {
+            EditError::Control(engine::control::ControlError::StaleRevision)
+        }
+        ErrorCode::IdempotencyConflict => {
+            EditError::Control(engine::control::ControlError::IdempotencyConflict)
+        }
+        ErrorCode::ReceiptCapacity => {
+            EditError::Control(engine::control::ControlError::ReceiptCapacity)
+        }
+        ErrorCode::ResyncRequired => {
+            EditError::Control(engine::control::ControlError::ResyncRequired)
+        }
         ErrorCode::JobNotRetained => EditError::Runtime(engine::RuntimeError::JobNotRetained),
         ErrorCode::Cancelled => EditError::Runtime(engine::RuntimeError::Cancelled),
         ErrorCode::QueueFull => EditError::Runtime(engine::RuntimeError::QueueFull),
-        ErrorCode::SchemaMismatch => EditError::SchemaMismatch,
+        ErrorCode::SchemaMismatch => {
+            EditError::Control(engine::control::ControlError::SchemaMismatch)
+        }
         ErrorCode::Refused
         | ErrorCode::Failed
         | ErrorCode::Unavailable

@@ -820,13 +820,41 @@ fn owner_failures_classify_publication_receipts_and_events() {
         };
     }
     let mut cases = vec![
-        row!(E::SchemaMismatch, SchemaMismatch, false),
-        row!(E::SessionGone, SessionGone, false),
-        row!(E::StaleRevision, StaleRevision, false),
-        row!(E::Permission, Permission, false),
-        row!(E::IdempotencyConflict, IdempotencyConflict, false),
-        row!(E::ReceiptCapacity, ReceiptCapacity, false),
-        row!(E::ResyncRequired, ResyncRequired, false),
+        row!(
+            E::Control(engine::control::ControlError::SchemaMismatch),
+            SchemaMismatch,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::SessionGone),
+            SessionGone,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::StaleRevision),
+            StaleRevision,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::Permission),
+            Permission,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::IdempotencyConflict),
+            IdempotencyConflict,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::ReceiptCapacity),
+            ReceiptCapacity,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::ResyncRequired),
+            ResyncRequired,
+            false
+        ),
         row!(
             E::Runtime(engine::RuntimeError::JobNotRetained),
             JobNotRetained,

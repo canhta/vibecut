@@ -22,7 +22,7 @@ pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
                 .collect()
         })
         .as_ref()
-        .map_err(|_| EditError::SchemaMismatch)?;
+        .map_err(|_| super::ControlError::SchemaMismatch)?;
     let validator = validators.get(id).ok_or(EditError::UnknownCommand)?;
     if !validator.is_valid(&params) {
         return Err(EditError::InvalidParams);

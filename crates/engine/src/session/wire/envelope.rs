@@ -65,6 +65,38 @@ pub enum ErrorCode {
     SoundCancelled,
     SoundIo,
 }
+/// Protocol refusals shared by admission, receipt replay and event cursors.
+#[derive(Debug, thiserror::Error)]
+pub enum ControlError {
+    #[error("control schema version or catalog differs")]
+    SchemaMismatch,
+    #[error("session epoch differs")]
+    SessionGone,
+    #[error("project revision differs")]
+    StaleRevision,
+    #[error("control permission refused")]
+    Permission,
+    #[error("idempotency key conflicts")]
+    IdempotencyConflict,
+    #[error("session receipt capacity exhausted")]
+    ReceiptCapacity,
+    #[error("event cursor requires a new snapshot")]
+    ResyncRequired,
+}
+impl Failure for ControlError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::SchemaMismatch => ErrorCode::SchemaMismatch,
+            Self::SessionGone => ErrorCode::SessionGone,
+            Self::StaleRevision => ErrorCode::StaleRevision,
+            Self::Permission => ErrorCode::Permission,
+            Self::IdempotencyConflict => ErrorCode::IdempotencyConflict,
+            Self::ReceiptCapacity => ErrorCode::ReceiptCapacity,
+            Self::ResyncRequired => ErrorCode::ResyncRequired,
+        }
+    }
+}
+
 /// Scheduling origin retained by a direct producer, never inherited by semantic wrappers.
 /// This policy is local execution metadata and is not serialized into wire envelopes.
 #[derive(Clone, Copy, Default)]
