@@ -21,3 +21,6 @@ sampling a clock. Drop cancels and joins. Queue4/retained4, one GPU worker,320×
 playback GPU adapter without a window; `cpu()` uses the reference CPU compositor for
 headless panels. Bounds, cadence, cancellation, cache keys and typed failure are the
 engine's [thumbnail contract](../../../../crates/engine/src/artifacts/README.md#effect-thumbnails).
+
+The generated 320x180 source is authored at that size (explicit gains1/1).
+Streak's visible demo uses length8/direction45; insertion keeps catalog identity.

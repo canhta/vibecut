@@ -3,7 +3,7 @@ use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError, Result};
 use project::{Animations, EffectInstance};
-use render::effects::{EffectCompositor, apply_effect};
+use render::effects::{EffectCompositor, EffectGeometry, apply_effect};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -56,6 +56,7 @@ impl EffectThumbnails {
     pub fn submit(
         &self,
         runner: &mut JobRunner,
+        geometry: EffectGeometry,
         source: Arc<render::Image>,
         effect: EffectInstance,
         animations: Animations,
@@ -63,6 +64,9 @@ impl EffectThumbnails {
     ) -> Result<(JobId, CancelToken)> {
         if local < time::Tick::ZERO {
             return Err(EditError::Invalid("thumbnail local time"));
+        }
+        if geometry.working_size() != [source.width(), source.height()] {
+            return Err(EditError::Invalid("thumbnail source geometry"));
         }
         effect.validate()?;
         if source.width().max(source.height()) > MAX_THUMBNAIL_EDGE {
@@ -77,6 +81,9 @@ impl EffectThumbnails {
             }
         }
         let mut identity = blake3::Hasher::new();
+        for gain in geometry.clip_pixel_scale() {
+            identity.update(&gain.to_bits().to_le_bytes());
+        }
         serde_json::to_writer(Identity(&mut identity), &(&effect, &animations, local))
             .map_err(|_| EditError::InvalidParams)?;
         let settings = identity.finalize();
@@ -85,7 +92,7 @@ impl EffectThumbnails {
             source: *hash.finalize().as_bytes(),
             provider: "local",
             model: "effect-thumbnail",
-            version: "2",
+            version: "3",
             settings: settings.as_bytes(),
             transcript: [0; 32],
             cues: [0; 32],
@@ -117,14 +124,8 @@ impl EffectThumbnails {
                         return Ok(result);
                     }
                 }
-                let passes = render::effects::evaluate_effect(
-                    &animations,
-                    &effect,
-                    local,
-                    source.width(),
-                    source.height(),
-                    true,
-                )?;
+                let passes =
+                    render::effects::evaluate_effect(&animations, &effect, local, geometry, true)?;
                 let owned = render::Image::from_working_pixels(
                     source.width(),
                     source.height(),

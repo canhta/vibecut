@@ -2,6 +2,7 @@
 use engine::jobs::*;
 use engine::{Command, Session};
 use project::*;
+use render::effects::EffectGeometry;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -457,7 +458,14 @@ fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache
                       local: Tick,
                       source: Arc<render::Image>| {
         let (id, _) = cache
-            .submit(&mut runner, source, effect, animations, local)
+            .submit(
+                &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
+                source,
+                effect,
+                animations,
+                local,
+            )
             .unwrap();
         let state = pump(&mut runner, id).state;
         let output = runner.take_output(id).map(|o| o.bytes().to_vec());
@@ -569,7 +577,14 @@ fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache
     assert_eq!(state, JobState::Failed);
     assert!(bytes.is_none(), "wrong animated kind never publishes");
     assert!(matches!(
-        cache.submit(&mut runner, source, effect, Animations::default(), Tick(-1)),
+        cache.submit(
+            &mut runner,
+            EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
+            source,
+            effect,
+            Animations::default(),
+            Tick(-1)
+        ),
         Err(engine::EditError::Invalid("thumbnail local time"))
     ));
     drop(cache);
@@ -594,8 +609,14 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         .instance("preview")
         .with("brightness", EffectValue::Scalar(15.0))
         .unwrap();
-    let passes =
-        evaluate_effect(&Animations::default(), &original, Tick::ZERO, 32, 18, true).unwrap();
+    let passes = evaluate_effect(
+        &Animations::default(),
+        &original,
+        Tick::ZERO,
+        EffectGeometry::new([32, 18], [1.0, 1.0]).unwrap(),
+        true,
+    )
+    .unwrap();
     let expected = CpuEffects
         .apply(
             &source,
@@ -625,6 +646,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             let (id, _) = cache
                 .submit(
                     &mut runner,
+                    EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                     source.clone(),
                     original.clone(),
                     Animations::default(),
@@ -641,6 +663,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         let (id, token) = cache
             .submit(
                 &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                 source.clone(),
                 original
                     .clone()
@@ -662,6 +685,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             let (id, _) = cache
                 .submit(
                     &mut runner,
+                    EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                     source.clone(),
                     effect,
                     Animations::default(),
@@ -678,6 +702,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         let (id, _) = cache
             .submit(
                 &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                 source.clone(),
                 original.clone(),
                 Animations::default(),
@@ -703,6 +728,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             cache
                 .submit(
                     &mut runner,
+                    EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                     source.clone(),
                     hostile,
                     Animations::default(),
@@ -715,6 +741,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
             cache
                 .submit(
                     &mut runner,
+                    EffectGeometry::new([large.width(), large.height()], [1.0, 1.0]).unwrap(),
                     large,
                     original.clone(),
                     Animations::default(),
@@ -795,6 +822,7 @@ fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
         let (id, token) = cache
             .submit(
                 &mut runner,
+                EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
                 source,
                 blur("preview", 15.0),
                 Animations::default(),
@@ -879,6 +907,7 @@ fn thumbnail_publication_seals_late_cancellation_and_retains_cache() {
     let (id, token) = cache
         .submit(
             &mut runner,
+            EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
             source.clone(),
             effect.clone(),
             Animations::default(),
@@ -904,6 +933,7 @@ fn thumbnail_publication_seals_late_cancellation_and_retains_cache() {
     let (id, _) = cache
         .submit(
             &mut runner,
+            EffectGeometry::new([source.width(), source.height()], [1.0, 1.0]).unwrap(),
             source,
             effect,
             Animations::default(),
@@ -1244,4 +1274,101 @@ fn chroma_key_intensity_and_shadow_keyframes_survive_trim() {
     assert_eq!(value(&s, &intensity, local(20)), 100.0);
     s.apply(Command::Redo {}).unwrap();
     assert_eq!(value(&s, &intensity, local(10)), 100.0);
+}
+
+#[test]
+fn streak_thumbnail_geometry_keys_independent_pixels_fallback_and_refusal() {
+    use engine::effect_thumbnails::EffectThumbnails;
+    let source = Arc::new(
+        render::Image::from_working_pixels(
+            5,
+            1,
+            (0..5).map(|x| [if x == 2 { 1.0 } else { 0.0 }, 0.0, 0.0, 1.0]),
+            &Hooks,
+        )
+        .unwrap(),
+    );
+    let effect = effect_definition("directional_blur")
+        .unwrap()
+        .instance("streak")
+        .with("direction", EffectValue::Scalar(90.0))
+        .unwrap()
+        .with("length", EffectValue::Scalar(1.0))
+        .unwrap();
+    for unsupported in [None, Some(false), Some(true)] {
+        let budget = engine::ByteBudget::new(16 << 20).unwrap();
+        let adapter = Arc::new(CountingEffects {
+            unsupported,
+            ..Default::default()
+        });
+        let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
+        let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+        assert!(matches!(
+            cache.submit(
+                &mut runner,
+                EffectGeometry::new([4, 1], [1.0, 1.0]).unwrap(),
+                source.clone(),
+                effect.clone(),
+                Animations::default(),
+                Tick::ZERO
+            ),
+            Err(engine::EditError::Invalid("thumbnail source geometry"))
+        ));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        for (gain, values, misses) in [
+            (1.0, [0.0, 0.5, 0.0, 0.5, 0.0], 1),
+            (0.5, [0.0, 0.25, 0.5, 0.25, 0.0], 2),
+            (1.0, [0.0, 0.5, 0.0, 0.5, 0.0], 2),
+        ] {
+            let (id, _) = cache
+                .submit(
+                    &mut runner,
+                    EffectGeometry::new([5, 1], [gain, 1.0]).unwrap(),
+                    source.clone(),
+                    effect.clone(),
+                    Animations::default(),
+                    Tick::ZERO,
+                )
+                .unwrap();
+            assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+            let output = runner.take_output(id).unwrap();
+            for (pixel, linear) in output.bytes().chunks_exact(4).zip(values) {
+                let encoded = if linear <= 0.0031308 {
+                    linear * 12.92
+                } else {
+                    1.055 * f64::powf(linear, 1.0 / 2.4) - 0.055
+                };
+                assert!(
+                    (f64::from(pixel[0]) - encoded * 255.0).abs() <= 1.0,
+                    "{pixel:?} {encoded}"
+                );
+                assert_eq!(&pixel[1..], &[0, 0, 255]);
+            }
+            assert_eq!(adapter.queries.load(Ordering::SeqCst), misses);
+            assert_eq!(
+                adapter.calls.load(Ordering::SeqCst),
+                if unsupported == Some(false) {
+                    0
+                } else {
+                    misses
+                }
+            );
+        }
+        let (id, cancel) = cache
+            .submit(
+                &mut runner,
+                EffectGeometry::new([5, 1], [0.25, 1.0]).unwrap(),
+                source.clone(),
+                effect.clone(),
+                Animations::default(),
+                Tick::ZERO,
+            )
+            .unwrap();
+        cancel.cancel();
+        assert_eq!(pump(&mut runner, id).state, JobState::Cancelled);
+        assert!(runner.take_output(id).is_none());
+        drop(cache);
+        drop(runner);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
 }

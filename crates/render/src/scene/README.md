@@ -124,3 +124,9 @@ Backdrop and outgoing images hold normal compositor byte leases. Cancellation du
 `transition_thumbnail::ThumbnailCache` renders a kind at a progress on two generated frames (a warm ramp under a checker, a cool ramp with a disc), up to 512 pixels an edge, and keeps the newest entries for tile thumbnails. Outgoing and incoming frames must share one size, progress and scale must be finite, and a non-positive scale is refused.
 
 Horizontal interpolation keeps two destination-width rows per active pixel task and reuses them when adjacent output rows share source neighbors. Vertical interpolation and source-over keep their floating-point order, and fully opaque samples replace the destination after the same clamp. Transfer packing uses exact float-bit transition buckets derived from the 16-bit transfer table, preserving its quantization.
+
+Spatial effects derive per-axis clip-pixel gains from draw geometry over the
+unreduced decoded raster (validated probe geometry only for missing previews).
+Crop/fit precede effects; generated content uses canvas author pixels. Item
+transform follows effects. The full-canvas stage cannot recover cropped pixels;
+transparent canvas borders remain. This is not source-before-placement parity.

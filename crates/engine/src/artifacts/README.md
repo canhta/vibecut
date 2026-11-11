@@ -99,7 +99,7 @@ refuses with Invalid. The shared evaluator receives those exact inputs with fine
 malformed animated values fail through its typed admission. The result is straight
 sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
 bounds the edge and `MAX_THUMBNAILS` the cache, charged to the runner's shared byte budget. The
-cache belongs to one adapter lifetime. Version2 keys bind source pixels/geometry, the full
+cache belongs to one adapter lifetime. Version3 keys bind source pixels/geometry, the full
 instance (including its animation-path ID), animation data and local time. Animation identity
 streams into a hash without an intermediate serialized buffer. Consumers own cadence;
 the cache has no clock, fallback version or persisted migration.
@@ -111,3 +111,7 @@ propagate without fallback. The owned source copy is reserved through the job ho
 Cancellation before the publication fence never caches an unfinished result; late
 cancellation cannot undo publication. Missing or oversized sources, invalid params,
 budget pressure, poisoned state and runner queue limits refuse.
+
+Effect thumbnails require explicit `EffectGeometry` matching source dimensions;
+mismatches refuse before hashing/jobs. Both positive finite gains key version3
+by f64 bits. Unknown author geometry has no default. Existing cache limits apply.

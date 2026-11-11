@@ -107,6 +107,11 @@ pub(in crate::editor) enum Action {
     },
     /// The preview returns to the project (picker closed or failed).
     SyncPreview,
+    SetAnimatedParam {
+        item: ItemId,
+        path: project::AnimationPath,
+        param: project::Param,
+    },
     ColorPreview {
         command: engine::Command,
     },

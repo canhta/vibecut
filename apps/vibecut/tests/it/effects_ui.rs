@@ -11,6 +11,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
 use project::{Color, EffectValue, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
+use render::effects::EffectGeometry;
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -57,6 +58,15 @@ fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool 
 fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
     use vibecut::i18n::Locale;
     let rows: &[(&str, &str, &str, &[(&str, &str, &str)])] = &[
+        (
+            "directional_blur",
+            "Streak Blur",
+            "Mờ theo hướng",
+            &[
+                ("direction", "Direction", "Hướng"),
+                ("length", "Length", "Độ dài"),
+            ],
+        ),
         ("black_white", "Black & white", "Đen trắng", &[]),
         (
             "channel_mix",
@@ -544,7 +554,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
             .settle_previews(std::time::Duration::from_secs(10))
             .unwrap();
         h.run_steps(1);
-        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 12);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 13);
         assert!(
             h.state()
                 .inspect()
@@ -1326,7 +1336,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
         .iter()
         .filter(|definition| definition.shelf.in_library())
         .collect();
-    assert_eq!(definitions.len(), 12);
+    assert_eq!(definitions.len(), 13);
     // Five is the smallest request set that exceeds the real four-entry queue.
     for count in [5, definitions.len()] {
         let mut previews = EffectPreviews::cpu().unwrap();
@@ -1428,7 +1438,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                 .values()
                 .filter(|s| **s == EffectPreviewStatus::Pending)
                 .count(),
-            12
+            13
         );
         if retry {
             let replacement = blur
@@ -1444,7 +1454,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             previews.ensure("blur", &replacement, &project::Animations::default());
             gate.release();
             previews.settle(std::time::Duration::from_secs(10)).unwrap();
-            assert_eq!(previews.statuses().len(), 12);
+            assert_eq!(previews.statuses().len(), 13);
             assert!(
                 previews
                     .statuses()
@@ -1752,7 +1762,7 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
         .settle_previews(std::time::Duration::from_secs(10))
         .unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert_eq!(statuses.len(), 12);
+    assert_eq!(statuses.len(), 13);
     assert!(
         statuses
             .values()
@@ -1774,6 +1784,10 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
         ));
     }
 
+    let bottom = widget_rect(&harness, "effects.tile.tint").top();
+    harness.get_by_label("Two-tone").scroll_to_me();
+    harness.run_steps(3);
+    assert!(widget_rect(&harness, "effects.tile.tint").top() < bottom);
     let blocking: Arc<dyn render::effects::EffectCompositor> = Arc::new(BlockingPreview);
     let failing: Arc<dyn render::effects::EffectCompositor> = Arc::new(FailingPreview);
     for (source, timeout, expected) in [
@@ -2886,9 +2900,14 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
     let hooks = engine::ByteBudgetHooks::new(&budget, None);
     let image = render::Image::new(1, 1, [0.125, 0.125, 0.125, 0.25], &hooks).unwrap();
     let effect = edited.effects.iter().find(|e| e.id == "rgb").unwrap();
-    let passes =
-        render::effects::evaluate_effect(&edited.animations, effect, Tick(SECOND), 1, 1, true)
-            .unwrap();
+    let passes = render::effects::evaluate_effect(
+        &edited.animations,
+        effect,
+        Tick(SECOND),
+        EffectGeometry::new([1, 1], [1.0, 1.0]).unwrap(),
+        true,
+    )
+    .unwrap();
     use render::effects::EffectCompositor;
     let out = render::effects::CpuEffects
         .apply(
@@ -3184,4 +3203,179 @@ fn effect_rgb_picker_cancels_stale_gestures_and_disables_keyed_edits_outside() {
             .unwrap(),
         Some(project::ParamValue::Color([0.0, 0.0, 0.0, 1.0]))
     );
+}
+
+#[test]
+fn streak_hard_entry_soft_drag_keys_units_and_cancel_use_real_commands() {
+    let f = fixture();
+    let video = f.video;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.add.directional_blur");
+    let field = "effects.directional_blur.param.length";
+    let direction = "effects.directional_blur.param.direction";
+    let value = |h: &Harness<Editor>| {
+        effects(h, video)[0]
+            .value("length")
+            .unwrap()
+            .scalar()
+            .unwrap()
+    };
+    assert_eq!(value(&h), 0.0);
+    assert_eq!(
+        effects(&h, video)[0].value("direction"),
+        Some(&EffectValue::Scalar(0.0))
+    );
+    let before = h.state().session.history_len();
+    type_value(&mut h, field, "125");
+    assert_eq!(value(&h), 125.0);
+    assert_eq!(h.state().session.history_len().0, before.0 + 1);
+    assert_eq!(h.get_by_label("Length").value().as_deref(), Some("125"));
+    assert!(paints_text(&h, "px", egui::Rect::EVERYTHING));
+    assert!(paints_text(&h, "\u{b0}", egui::Rect::EVERYTHING));
+    for bad in ["1000.1", "-1", "NaN", "inf"] {
+        let before = h.state().session.history_len();
+        type_value(&mut h, field, bad);
+        assert_eq!(value(&h), 125.0);
+        assert_eq!(h.state().session.history_len(), before);
+    }
+    type_value(&mut h, direction, "-360");
+    assert_eq!(
+        effects(&h, video)[0].value("direction"),
+        Some(&EffectValue::Scalar(-360.0))
+    );
+    type_value(&mut h, direction, "360");
+    assert_eq!(
+        effects(&h, video)[0].value("direction"),
+        Some(&EffectValue::Scalar(360.0))
+    );
+    click(&mut h, field);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("126.5".into()));
+    click(&mut h, direction);
+    assert_eq!(value(&h), 126.5, "blur commits without soft clipping");
+    click(&mut h, field);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("170".into()));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert_eq!(value(&h), 126.5);
+    let handle = format!("{field}.scrub");
+    let start = widget_rect(&h, &handle).center();
+    drag_to(&mut h, &handle, egui::vec2(20.0, 0.0));
+    assert_eq!(value(&h), 20.0);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    h.drop_at(start);
+    h.run_steps(2);
+    assert_eq!(value(&h), 126.5);
+    let before = h.state().session.history_len();
+    drag_to(&mut h, &handle, egui::vec2(20.0, 0.0));
+    h.drop_at(start + egui::vec2(20.0, 0.0));
+    h.run_steps(2);
+    assert_eq!(value(&h), 20.0);
+    assert_eq!(h.state().session.history_len().0, before.0 + 1);
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(value(&h), 126.5);
+    click(&mut h, &format!("{field}.keyframe"));
+    type_value(&mut h, field, "140");
+    assert_eq!(value(&h), 126.5, "keyed edit preserves static fallback");
+    let path = project::AnimationPath::new("effects.directional_blur.params.length").unwrap();
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(140.0))
+    );
+    click(&mut h, &format!("{field}.keyframe"));
+    type_value(&mut h, field, "141.25");
+    assert_eq!(value(&h), 126.5);
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(141.25))
+    );
+    assert_eq!(h.get_by_label("Length").value().as_deref(), Some("141.25"));
+    click(&mut h, &format!("{field}.keyframe"));
+    click(&mut h, field);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("190".into()));
+    h.run_steps(2);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    h.run_steps(3);
+    let animation = item(&h, video).animations;
+    assert_eq!(
+        animation.value_at(&path, Tick::ZERO).unwrap(),
+        Some(project::ParamValue::Scalar(141.25))
+    );
+    let keys = animation.get(&path).unwrap().channel(None).unwrap().keys();
+    assert_eq!(keys.len(), 1);
+    let node = h.get(By::new().predicate(|n| n.author_id() == Some(field)));
+    assert!(node.accesskit_node().is_disabled());
+}
+
+#[test]
+fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
+    for reason in ["selection", "panel", "effect", "lock"] {
+        let f = fixture();
+        let video = f.video;
+        let image = f.image;
+        let main = f.main;
+        let mut h = build(f.editor);
+        h.run_steps(3);
+        open_effect_tabs(&mut h, video);
+        click(&mut h, "effects.add.directional_blur");
+        let before = h.state().session.project().clone();
+        click(&mut h, "effects.directional_blur.param.length");
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.event(egui::Event::Text("125".into()));
+        match reason {
+            "selection" => select(&mut h, image),
+            "panel" => click(&mut h, "inspector.group.basic"),
+            "effect" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::RemoveEffect {
+                        item: video,
+                        effect: "directional_blur".into(),
+                    })
+                    .unwrap();
+            }
+            _ => {
+                h.state_mut()
+                    .session
+                    .apply(Command::SetTrackFlags {
+                        track: main,
+                        muted: false,
+                        hidden: false,
+                        locked: true,
+                    })
+                    .unwrap();
+            }
+        }
+        h.run_steps(3);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(2);
+        if reason != "effect" {
+            assert_eq!(
+                effects(&h, video)[0].value("length"),
+                Some(&EffectValue::Scalar(0.0)),
+                "{reason}"
+            );
+        } else {
+            assert!(effects(&h, video).is_empty());
+        }
+        if matches!(reason, "selection" | "panel") {
+            assert!(Arc::ptr_eq(h.state().session.project(), &before));
+        }
+    }
 }

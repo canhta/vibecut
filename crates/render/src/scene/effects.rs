@@ -817,12 +817,65 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 1] = [SampleOp {
-    entry_point: "mirror",
-    len: 4,
-    valid: mirror_uniforms,
-    apply: mirror,
-}];
+static SAMPLE_OPS: [SampleOp; 2] = [
+    SampleOp {
+        entry_point: "mirror",
+        len: 4,
+        valid: mirror_uniforms,
+        apply: mirror,
+    },
+    SampleOp {
+        entry_point: "streak_blur",
+        len: 3,
+        valid: |v, _, _| {
+            v.get(2)
+                .is_some_and(|n| (2.0..=64.0).contains(n) && n.fract() == 0.0)
+        },
+        apply: streak_sample,
+    },
+];
+/// Clamp coordinates while still floating point, before the sampler's integer lookup.
+fn streak_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[dx, dy, steps]) = values.first_chunk::<3>() else {
+        return inputs.texel_current(x, y);
+    };
+    let mut sum = [0.0; 4];
+    for s in 0..steps as u32 {
+        let t = s as f32 / (steps - 1.0) - 0.5;
+        let px = (x as f32 + dx * t).clamp(0.0, (inputs.current.width() - 1) as f32);
+        let py = (y as f32 + dy * t).clamp(0.0, (inputs.current.height() - 1) as f32);
+        let pixel = inputs.sample_current(px, py, image_ops::Edge::Clamp);
+        for (out, value) in sum.iter_mut().zip(pixel) {
+            *out += value / steps;
+        }
+    }
+    sum
+}
+fn streak_blur(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    if geometry.working_size() != [frame.width, frame.height] {
+        return Err(Error::Invalid("effect spatial geometry"));
+    }
+    let a = frame.scalar("direction")?.to_radians();
+    let length = frame.scalar("length")?;
+    let [gx, gy] = geometry.clip_pixel_scale();
+    let dx = 2.0 * length * a.sin() * gx;
+    let dy = -2.0 * length * a.cos() * gy;
+    let span = dx.hypot(dy);
+    if !span.is_finite() || !((dx as f32).is_finite() && (dy as f32).is_finite()) {
+        return Err(Error::Invalid("effect spatial extent"));
+    }
+    if span < 0.5 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![EffectPass::Sample {
+        entry_point: "streak_blur",
+        uniforms: vec![
+            Uniform::Float(dx as f32),
+            Uniform::Float(dy as f32),
+            Uniform::Float(span.ceil().clamp(2.0, 64.0) as f32),
+        ],
+    }])
+}
 fn sample_op(entry_point: &str) -> Option<&'static SampleOp> {
     SAMPLE_OPS.iter().find(|op| op.entry_point == entry_point)
 }
@@ -921,6 +974,7 @@ impl EffectCompositor for CpuEffects {
                     crate::image::row_chunks(&mut b.pixels, width, hooks, |start, rows| {
                         check(hooks)?;
                         for (row, pixels) in rows.chunks_mut(width).enumerate() {
+                            check(hooks)?;
                             let y = (start / width + row) as u32;
                             for (x, pixel) in pixels.iter_mut().enumerate() {
                                 *pixel = clamp_pixel((op.apply)(&inputs, x as u32, y, &values));
@@ -1186,7 +1240,34 @@ impl EffectFrame {
     }
 }
 
-pub type EffectEvaluator = fn(&EffectFrame) -> Result<Vec<EffectPass>>;
+/// Geometry of the canvas layer before the item's later transform.
+/// Gains are working pixels per full-resolution clip pixel on each axis.
+/// Invalid dimensions/area or nonpositive/nonfinite gains return Invalid.
+#[derive(Clone, Copy, Debug)]
+pub struct EffectGeometry {
+    working: [u32; 2],
+    clip_pixel_scale: [f64; 2],
+}
+impl EffectGeometry {
+    pub fn new(working: [u32; 2], clip_pixel_scale: [f64; 2]) -> Result<Self> {
+        Image::bytes(working[0], working[1])?;
+        if clip_pixel_scale.iter().any(|v| !v.is_finite() || *v <= 0.0) {
+            return Err(Error::Invalid("effect spatial geometry"));
+        }
+        Ok(Self {
+            working,
+            clip_pixel_scale,
+        })
+    }
+    pub fn working_size(&self) -> [u32; 2] {
+        self.working
+    }
+    pub fn clip_pixel_scale(&self) -> [f64; 2] {
+        self.clip_pixel_scale
+    }
+}
+
+pub type EffectEvaluator = fn(&EffectFrame, &EffectGeometry) -> Result<Vec<EffectPass>>;
 
 /// Remap the evolving content time (item-local ticks) in stack order. The frame's
 /// `local`/`seconds` and resolved parameters always use the real item-local clock.
@@ -1198,6 +1279,7 @@ pub type ContentTime = fn(&EffectFrame, Tick) -> Result<Tick>;
 pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
     Some(match kind {
         "blur" => blur,
+        "directional_blur" => streak_blur,
         "color_grade" => color_grade,
         "chroma_key" => chroma_key,
         "black_white" => black_white,
@@ -1237,10 +1319,10 @@ fn color_uniform([r, g, b, _]: [f64; 4]) -> Uniform {
     Uniform::Color([r as f32, g as f32, b as f32])
 }
 
-fn blur(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn blur(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     blur_passes(frame.scalar("intensity")?, frame.width, frame.height)
 }
-fn color_grade(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn color_grade(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     grade_passes(
         frame.scalar("brightness")?,
         frame.scalar("contrast")?,
@@ -1248,7 +1330,7 @@ fn color_grade(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         frame.scalar("hue")?,
     )
 }
-fn chroma_key(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn chroma_key(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     chroma_key_passes(
         frame.color("key_color")?,
         frame.scalar("intensity")?,
@@ -1264,7 +1346,7 @@ fn hold_time_content(frame: &EffectFrame, content: Tick) -> Result<Tick> {
 }
 /// The test kind's evaluator: an identity grade whose hue uniform carries the
 /// quality flag, so a test can see which frame the renderer built.
-fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn hold_time(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![EffectPass::Pixel {
         entry_point: "grade",
         uniforms: [1.0, 1.0, 1.0, if frame.fine { 0.0 } else { 1e-3 }]
@@ -1273,10 +1355,10 @@ fn hold_time(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
     }])
 }
 
-fn black_white(_: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn black_white(_: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel("black_white", Vec::new())])
 }
-fn channel_mix(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn channel_mix(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     const GAINS: [&str; 12] = [
         "rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc",
     ];
@@ -1293,7 +1375,7 @@ fn channel_mix(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         values.map(Uniform::Float).to_vec(),
     )])
 }
-fn color_pass(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn color_pass(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(
         "color_pass",
         vec![
@@ -1303,7 +1385,7 @@ fn color_pass(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn color_replace(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn color_replace(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(
         "color_replace",
         vec![
@@ -1314,7 +1396,7 @@ fn color_replace(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn extract(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn extract(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     let softness = frame.scalar("softness")?;
     Ok(vec![pixel(
         "extract",
@@ -1332,14 +1414,14 @@ fn extract(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn gamma_correction(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn gamma_correction(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     let gamma = (frame.scalar("gamma")? / 10.0) as f32;
     if (gamma - 1.0).abs() < 1e-6 {
         return Ok(Vec::new());
     }
     Ok(vec![pixel("gamma", vec![Uniform::Float(gamma)])])
 }
-fn invert(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn invert(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(
         "invert",
         vec![
@@ -1348,7 +1430,7 @@ fn invert(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn levels(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn levels(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     let in_black = frame.scalar("in_black")?;
     let in_white = frame.scalar("in_white")?;
     let out_black = frame.scalar("out_black")?;
@@ -1373,7 +1455,7 @@ fn levels(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn posterize(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn posterize(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(
         "posterize",
         vec![Uniform::Float(
@@ -1381,7 +1463,7 @@ fn posterize(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         )],
     )])
 }
-fn strobe(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn strobe(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     let period = frame.scalar("period")?.max(0.001);
     let duration = frame.scalar("duration")?;
     if frame.seconds.rem_euclid(period) >= duration {
@@ -1395,7 +1477,7 @@ fn strobe(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
         ],
     )])
 }
-fn tint(frame: &EffectFrame) -> Result<Vec<EffectPass>> {
+fn tint(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(
         "tint",
         vec![
@@ -1437,14 +1519,14 @@ pub fn evaluate_effect(
     animations: &Animations,
     effect: &EffectInstance,
     local: Tick,
-    width: u32,
-    height: u32,
+    geometry: EffectGeometry,
     fine: bool,
 ) -> Result<Vec<EffectPass>> {
     let evaluate = evaluator(&effect.kind).ok_or(Error::Unsupported("effect kind"))?;
+    let [width, height] = geometry.working_size();
     let mut frame = EffectFrame::new(animations, effect, local, width, height)?;
     frame.fine = fine;
-    evaluate(&frame)
+    evaluate(&frame, &geometry)
 }
 
 #[cfg(test)]

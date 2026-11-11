@@ -171,14 +171,36 @@ impl Panel<'_, '_> {
                                         parameter.id,
                                         at,
                                     ) {
-                                        self.effect_scrub_field(
-                                            ui,
+                                        let keyed = read::channel_has_keys(
+                                            self.cx.session.project(),
                                             item,
-                                            &effect.id,
-                                            definition.id,
-                                            parameter,
-                                            current,
+                                            &effect_param_path(&effect.id, parameter.id),
                                         );
+                                        let inside =
+                                            read::range_of(self.cx.session.project(), item)
+                                                .is_some_and(|(start, end)| {
+                                                    start <= self.cx.playhead
+                                                        && self.cx.playhead <= end
+                                                });
+                                        let enabled =
+                                            definition.id != "directional_blur" || !keyed || inside;
+                                        ui.add_enabled_ui(enabled, |ui| {
+                                            self.effect_scrub_field(
+                                                ui,
+                                                item,
+                                                &effect.id,
+                                                definition.id,
+                                                parameter,
+                                                if definition.id == "directional_blur" {
+                                                    let (lo, hi) = parameter
+                                                        .scalar_range()
+                                                        .unwrap_or((0.0, 0.0));
+                                                    current.clamp(lo, hi)
+                                                } else {
+                                                    current
+                                                },
+                                            )
+                                        });
                                     }
                                 }
                                 project::EffectParamKind::Choice { .. }
@@ -433,6 +455,26 @@ impl Panel<'_, '_> {
         current: f64,
     ) {
         let spec = effect_scrub_spec(parameter);
+        let spatial = kind == "directional_blur";
+        if spatial
+            && self
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::SetTab { .. } | Action::Activate(_)))
+        {
+            self.actions.extend(self.state.end_scrub(false));
+            self.state.drafts.clear();
+            self.state.focus = None;
+            self.state.spatial_edit = None;
+            return;
+        }
+        let unit = if !spatial {
+            ""
+        } else if parameter.id == "direction" {
+            "\u{b0}"
+        } else {
+            "px"
+        };
         ui.add_space(theme::space::MD);
         let label = crate::i18n::effect_label(kind, Some(parameter.id))
             .map_or(parameter.name, |key| self.tr(key));
@@ -460,6 +502,9 @@ impl Panel<'_, '_> {
             );
             if handle.drag_started() {
                 self.start_effect_scrub(item, effect, parameter.id, current);
+                if spatial {
+                    self.state.spatial_edit = Some((item, draft_key.clone(), self.cx.playhead));
+                }
             }
             if handle.dragged()
                 && let Some(mut scrub) = self.state.scrub.take()
@@ -487,16 +532,26 @@ impl Panel<'_, '_> {
             } else {
                 0.0
             };
-            let width = (ui.available_width() - reserve).max(60.0);
+            let width = if spatial {
+                54.0
+            } else {
+                (ui.available_width() - reserve).max(60.0)
+            };
             let mut next = self
                 .state
                 .drafts
                 .get(&draft_key)
                 .cloned()
-                .unwrap_or_else(|| spec.format(current));
+                .unwrap_or_else(|| {
+                    if spatial {
+                        current.to_string()
+                    } else {
+                        spec.format(current)
+                    }
+                });
             let response = ui
                 .add_sized(
-                    [width, 26.0],
+                    [width, if spatial { theme::size::FIELD } else { 26.0 }],
                     egui::TextEdit::singleline(&mut next)
                         .char_limit(32)
                         .background_color(self.control_fill())
@@ -507,8 +562,14 @@ impl Panel<'_, '_> {
                 )
                 .labelled_by(caption.id);
             self.remember(draft_key.clone(), &response);
+            if spatial {
+                ui.label(unit);
+            }
             if response.has_focus() {
                 self.state.focus = Some(draft_key.clone());
+                if spatial {
+                    self.state.spatial_edit = Some((item, draft_key.clone(), self.cx.playhead));
+                }
             }
             if response.changed() {
                 self.state.drafts.insert(draft_key.clone(), next);
@@ -533,7 +594,16 @@ impl Panel<'_, '_> {
                         self.fail(Error::Invalid("scrub value"));
                         return;
                     }
-                    let value = spec.quantize(parsed);
+                    let value = if spatial {
+                        let (lo, hi) = parameter.scalar_range().unwrap_or((0.0, 0.0));
+                        if !(lo..=hi).contains(&parsed) {
+                            self.fail(Error::Invalid("effect parameter value"));
+                            return;
+                        }
+                        parsed
+                    } else {
+                        spec.quantize(parsed)
+                    };
                     self.write_effect_param(item, effect, parameter, value);
                 }
             }
@@ -553,6 +623,32 @@ impl Panel<'_, '_> {
         value: f64,
     ) {
         let path = effect_param_path(effect, parameter.id);
+        let target = read::item(self.cx.session.project(), item);
+        if target.is_some_and(|i| {
+            i.effects
+                .iter()
+                .any(|e| e.id == effect && e.kind == "directional_blur")
+        }) && let Ok(animation_path) = project::AnimationPath::new(&path)
+            && let Some(project::Param::Value(channel)) =
+                target.and_then(|i| i.animations.get(&animation_path))
+            && channel.keys().is_empty()
+        {
+            let (before, after) = channel.extrapolation();
+            match project::Channel::new(
+                project::ParamValue::Scalar(value),
+                Vec::new(),
+                before,
+                after,
+            ) {
+                Ok(channel) => self.actions.push(Action::SetAnimatedParam {
+                    item,
+                    path: animation_path,
+                    param: project::Param::Value(channel),
+                }),
+                Err(error) => self.fail(error),
+            }
+            return;
+        }
         if let Some(time) = self.animated_effect_time(item, &path) {
             self.actions.push(Action::SetKeyframeAt {
                 item,
