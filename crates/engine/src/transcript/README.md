@@ -14,6 +14,14 @@ refuses the next stage; `media_flag` shares cancellation with media decoding. Pr
 credentials expose only the selected OpenAI or Anthropic key lookup, returning the typed
 missing-credential refusal before adapter construction.
 
+The blocking composition root reserves `WORK_BYTES` (64 MiB) and `RESULT_BYTES` (16 MiB)
+from the runner's shared `ByteBudget` before extraction/detection or provider work. Work
+leases cover recognition and alignment and release before subsequent jobs; result leases
+cover the retained transcript/cues through the composition. A workflow already admitted by
+its outer job declares its work and output ceiling there instead: registry generation uses
+its bounded job result, and desktop Generate keeps its existing larger result reservation.
+Neither the synchronous pipeline nor a cache mutex acquires a second workflow reservation.
+
 `Providers::detect_language` detects an imported asset's spoken language through the local
 whisper.cpp adapter; composition roots or the caption workflow job pass the detected tag explicitly to `transcribe`. A run with no speech returns `NoSpeech`. When every
 recognized word carries confidence and their mean is below the fixed floor, `transcribe` returns

@@ -17,8 +17,8 @@ pub use cues::build_session;
 pub(crate) use cues::caption_item_id;
 pub use error::Error;
 pub use operation::{Cancellation, Progress, SilentProgress, Stage, Transcription};
-pub use speech::transcribe;
-pub(crate) use speech::{WORK_BYTES, media_duration};
+pub(crate) use speech::media_duration;
+pub use speech::{RESULT_BYTES, WORK_BYTES, transcribe};
 pub mod translation {
     //! Applies selected translations through bounded attempts.
     pub use super::translation_run::{TranslationRun, TranslationTarget, window};

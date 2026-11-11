@@ -120,6 +120,20 @@ pub fn suggest(
         .duration
         .filter(|value| *value > Tick::ZERO)
         .ok_or(EditError::Unsupported("media duration is unknown"))?;
+    let work = runner
+        .memory_budget()
+        .reserve(
+            engine::ByteOwner::Compositor,
+            engine::transcript::WORK_BYTES,
+        )
+        .map_err(EditError::from)?;
+    let _result = runner
+        .memory_budget()
+        .reserve(
+            engine::ByteOwner::JobResults,
+            engine::transcript::RESULT_BYTES,
+        )
+        .map_err(EditError::from)?;
     let source_language = match &request.source_language {
         Some(language) => language.clone(),
         None => providers.detect_language_for(&request.input, cancel)?,
@@ -136,6 +150,7 @@ pub fn suggest(
         cancel,
         cancel,
     )?;
+    drop(work);
     let Transcription {
         transcript,
         cues,

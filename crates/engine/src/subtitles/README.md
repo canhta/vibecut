@@ -27,6 +27,10 @@ Silent windows are skipped; no speech returns `NoSpeech`, mean word confidence b
 floor returns `LowConfidence`, and unknown duration or burn without video return typed refusals.
 No project file is written.
 
+The retained blocking composition admits speech work through the runner's shared budget
+before detection/extraction, using the [transcript memory ceilings](../transcript/README.md).
+Pressure refuses before provider work and releases partial reservations on every exit.
+
 `Cancellation` is the operation-wide cooperative signal; `run` checks it at every stage and
 window boundary and cancels the active submitted job. Cancellation after a completed ASR window
 keeps the checkpoint. Export keeps render's publication fence: once publication is sealed a late
@@ -67,6 +71,10 @@ and provider request windows are built at submission, at most 64 selected cues p
 single `Translate` job asks consent for each window and runs `TranslationRun::run` directly.
 Retry invocations share a three-attempt ceiling and accumulated cost. Completed output contains
 exact `retranslate` fields, provider/model and cost; applying it remains a separate ordinary edit.
+Before publishing success, the job validates one complete `retranslate` request through
+the existing parameter budget and wire frame parser, including dictionary keys and the
+request envelope with maximum-length correlation/idempotency keys. A result that cannot
+be applied atomically under those limits fails with `Limit` and publishes no output.
 Every workflow refuses inside a transaction and never mutates the live Session in the worker.
 
 Both result reservations and serialized outputs are capped at 8 MiB, generated cues at 10,000.

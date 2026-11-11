@@ -82,10 +82,12 @@ fn config(provider: &str, model: &str, location: Location) -> ProviderConfig {
 /// deterministic sentence boundaries with no real model.
 struct FakeAsr {
     config: ProviderConfig,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl FakeAsr {
     fn new() -> Self {
         Self {
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             config: config(
                 "fake-asr",
                 "fake-asr-model",
@@ -127,6 +129,8 @@ impl Transcriber for FakeAsr {
         request: &Request<'_>,
         _: &dyn ExecutionHooks,
     ) -> Result<Vec<RecognitionSegment>, Error> {
+        self.calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let text = request.scope.source_language.as_str();
         Ok(vec![RecognitionSegment {
             id: "fake:0".into(),
@@ -321,6 +325,68 @@ fn heuristic_suggestion_snaps_inside_the_source() {
             assert!(segment.range.end() <= source_end);
             assert!(segment.range.start() >= Tick::ZERO);
         }
+    }
+}
+
+#[test]
+fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
+    let Some(input) = fixture() else { return };
+    for available in [64 << 20, (80 << 20) - 1] {
+        let root = tempfile::tempdir().unwrap();
+        let (mut runner, budget) = runner();
+        let (mut cache, _) =
+            engine::cache::ArtifactCache::open(root.path(), budget.clone(), 8).unwrap();
+        let held = budget
+            .reserve(engine::ByteOwner::Export, (2 << 30) - available)
+            .unwrap();
+        let asr = FakeAsr::new();
+        let calls = asr.calls.clone();
+        let providers = Providers::from_parts(
+            TranscriptionProvider::Whisper {
+                model: "fake-asr-model".into(),
+            },
+            Arc::new(asr),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let before = budget.snapshot().unwrap().used;
+        let result = clip_suggest::suggest(
+            &request(&input),
+            &Credentials::new(None, None, None),
+            &providers,
+            &mut runner,
+            &mut cache,
+            &DenyUploads,
+            &SilentProgress,
+            &Cancellation::new(),
+        );
+        assert!(matches!(
+            result,
+            Err(shorts::Error::Engine(engine::EditError::Runtime(
+                engine::RuntimeError::BudgetFull
+            )))
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(budget.snapshot().unwrap().used, before);
+        drop(held);
+        let result = clip_suggest::suggest(
+            &request(&input),
+            &Credentials::new(None, None, None),
+            &providers,
+            &mut runner,
+            &mut cache,
+            &DenyUploads,
+            &SilentProgress,
+            &Cancellation::new(),
+        )
+        .unwrap();
+        assert!(!result.clips.is_empty());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+        drop(runner);
+        drop(cache);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }
 

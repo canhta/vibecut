@@ -254,7 +254,11 @@ pub(crate) fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool
 }
 
 fn runner() -> (JobRunner, ByteBudget) {
-    let budget = ByteBudget::new(2 << 30).unwrap();
+    runner_with_limit(2 << 30)
+}
+
+fn runner_with_limit(limit: u64) -> (JobRunner, ByteBudget) {
+    let budget = ByteBudget::new(limit).unwrap();
     (
         JobRunner::new(
             RunnerConfig {
@@ -455,6 +459,132 @@ fn second_run_reuses_completed_asr_chunks() {
     .unwrap();
     assert_eq!(second.checkpoints, 1);
     assert_eq!(calls.load(Ordering::Relaxed), 1, "ASR was not re-executed");
+}
+
+#[test]
+fn blocking_generation_refuses_shared_budget_pressure_before_asr_and_releases_admission() {
+    let Some(input) = fixture() else { return };
+    for (limit, occupied, alignment) in [
+        ((64 << 20) - 1, 0, false),
+        ((80 << 20) - 1, 0, false),
+        (2 << 30, (2 << 30) - (64 << 20) + 1, false),
+        (2 << 30, (2 << 30) - (80 << 20) + 1, false),
+        (2 << 30, (2 << 30) - (80 << 20) + 1, true),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut runner, budget) = runner_with_limit(limit);
+        let held = budget.reserve(engine::ByteOwner::Export, occupied).unwrap();
+        let (mut cache, _) =
+            engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget.clone(), 16)
+                .unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let align_calls = Arc::new(AtomicUsize::new(0));
+        let providers = if alignment {
+            text_only_providers(
+                TranscriptionProvider::OpenAi {
+                    model: "fake-asr-model".into(),
+                },
+                calls.clone(),
+                Arc::new(ProbeAligner::new(align_calls.clone())),
+            )
+        } else {
+            providers(calls.clone(), true, false)
+        };
+        let req = request(&input, "en", "en", directory.path(), false);
+        let before = budget.snapshot().unwrap().used;
+        let result = subtitles::run(
+            &req,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &AllowAll,
+            &SilentProgress,
+            &Cancellation::new(),
+        );
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "pressure must refuse before upload"
+        );
+        assert!(matches!(
+            result,
+            Err(engine::EditError::Runtime(
+                engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge
+            ))
+        ));
+        assert!(!req.srt.as_ref().unwrap().exists());
+        assert_eq!(align_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            budget.snapshot().unwrap().used,
+            before,
+            "partial admission must roll back"
+        );
+        drop(held);
+        if limit < 80 << 20 {
+            continue;
+        }
+        let outcome = subtitles::run(
+            &req,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &AllowAll,
+            &SilentProgress,
+            &Cancellation::new(),
+        )
+        .unwrap();
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(outcome.checkpoints, 0);
+        assert_eq!(align_calls.load(Ordering::Relaxed), usize::from(alignment));
+        drop(runner);
+        drop(cache);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn registry_generation_uses_its_outer_admission_without_charging_blocking_work_twice() {
+    use crate::support::control::finish;
+    let Some(input) = fixture() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let (mut r, budget) = runner_with_limit(72 << 20);
+    let (cache, _) =
+        engine::cache::ArtifactCache::open(&dir.path().join("cache"), budget.clone(), 16).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let access = subtitles::CaptionAccess::new(
+        Arc::new(providers(calls.clone(), false, false)),
+        Arc::new(AllowAll),
+        Arc::new(std::sync::Mutex::new(cache)),
+    );
+    let mut s = registry_session(&input);
+    let before = s.project().clone();
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        serde_json::json!({"asset":1,"source_language":"en"}),
+        "generate",
+    );
+    finish(&mut r, job);
+    let snap = r.snapshot(job).unwrap();
+    assert_eq!(
+        snap.state,
+        engine::jobs::JobState::Completed,
+        "{:?}",
+        snap.error
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert_eq!(s.project(), &before);
+    assert!(
+        !subtitles::decode_captions(r.output_bytes(job).unwrap())
+            .unwrap()
+            .cues
+            .is_empty()
+    );
+    drop(r);
+    drop(access);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 #[test]
@@ -1858,7 +1988,7 @@ fn complete_retranslation_accepts_ten_thousand_cues_and_refuses_one_more_atomica
     }
 }
 
-struct LargeTranslator(FakeTranslator);
+struct LargeTranslator(FakeTranslator, usize);
 impl Translator for LargeTranslator {
     fn config(&self) -> &ProviderConfig {
         self.0.config()
@@ -1881,7 +2011,7 @@ impl Translator for LargeTranslator {
             texts: window
                 .segments
                 .iter()
-                .map(|s| (s.id.clone(), "x".repeat(1024).into()))
+                .map(|s| (s.id.clone(), "x".repeat(self.1).into()))
                 .collect(),
             number_warnings: Vec::new(),
         })
@@ -1905,7 +2035,7 @@ fn registry_oversized_translation_and_cancelled_provider_publish_no_result_or_li
         Some(TranslationProvider::OpenAi {
             model: "fake-translator-model".into(),
         }),
-        Some(Arc::new(LargeTranslator(FakeTranslator::new()))),
+        Some(Arc::new(LargeTranslator(FakeTranslator::new(), 1024))),
     )
     .unwrap();
     let access = caption_access(&dir.path().join("large"), p, Arc::new(AllowAll));
@@ -1967,6 +2097,80 @@ fn registry_oversized_translation_and_cancelled_provider_publish_no_result_or_li
     assert!(r.output_bytes(job).is_none());
     assert_eq!(s.project(), &before);
     assert_eq!(s.revision(), rev);
+}
+
+#[test]
+fn registry_translation_complete_result_round_trips_through_control_or_refuses_before_publication()
+{
+    use crate::support::control::{Allow, caller, finish, ok, request};
+    use serde_json::json;
+    // The middle row has less than 4 MiB of values, but keys/envelope push the request over.
+    for (count, length, accepted) in [(4096, 1016, true), (4096, 1017, false), (5000, 1024, false)]
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Providers::from_parts(
+            TranscriptionProvider::Whisper {
+                model: "fake-asr-model".into(),
+            },
+            Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
+            None,
+            Some(TranslationProvider::OpenAi {
+                model: "fake-translator-model".into(),
+            }),
+            Some(Arc::new(LargeTranslator(FakeTranslator::new(), length))),
+        )
+        .unwrap();
+        let access = caption_access(&dir.path().join("cache"), p, Arc::new(AllowAll));
+        let mut s = many_cues(count);
+        let before = s.project().clone();
+        let rev = s.revision();
+        let history = s.history_len();
+        let (mut r, _) = runner();
+        let job = caption_submit(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.translate",
+            json!({"item":4,"target_language":"vi"}),
+            "translate",
+        );
+        finish(&mut r, job);
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+        let snap = r.snapshot(job).unwrap();
+        if !accepted {
+            assert_eq!(snap.state, engine::jobs::JobState::Failed);
+            assert_eq!(
+                snap.error.unwrap().code(),
+                engine::control::ErrorCode::Limit
+            );
+            assert!(r.output_bytes(job).is_none());
+            continue;
+        }
+        assert_eq!(
+            snap.state,
+            engine::jobs::JobState::Completed,
+            "{:?}",
+            snap.error
+        );
+        let result = subtitles::decode_translations(r.output_bytes(job).unwrap()).unwrap();
+        assert_eq!(result.texts.len(), count as usize - 1);
+        let mut req = request(
+            &s,
+            "retranslate",
+            json!({"item":result.item,
+            "target_language":result.target_language,"texts":result.texts,
+            "translation_ref":result.translation_ref,"force":false}),
+            &"k".repeat(128),
+        );
+        req.request_id = "r".repeat(128);
+        let frame = engine::control::bounded_json(&req, engine::control::MAX_FRAME_BYTES).unwrap();
+        ok(s.control_json(&frame, caller(&Allow), &mut r).unwrap());
+        assert_eq!(s.history_len().0, history.0 + 1);
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before);
+    }
 }
 
 #[test]

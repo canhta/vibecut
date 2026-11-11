@@ -14,7 +14,13 @@ use std::{path::Path, time::Instant};
 use time::{FrameRate, Rounding, SourceRange, Tick};
 pub(crate) const MIN_CAPTION_SECONDS: i64 = 30;
 pub(crate) const MAX_CAPTION_SECONDS: i64 = 300;
-pub(crate) const WORK_BYTES: u64 = 64 * 1024 * 1024;
+/// Working-memory ceiling for synchronous speech extraction, ASR and alignment.
+/// Blocking composition roots reserve this from their process budget before execution;
+/// a workflow job declares it in its JobSpec instead.
+pub const WORK_BYTES: u64 = 64 * 1024 * 1024;
+/// Recognition/result ceiling retained alongside synchronous ASR working memory.
+/// A composition already holding a larger result lease must not charge it twice.
+pub const RESULT_BYTES: u64 = 16 * 1024 * 1024;
 /// Below this mean word confidence the run is reported as a likely wrong
 /// language instead of inserting cues a creator would have to delete.
 const MIN_MEAN_CONFIDENCE: f64 = 0.5;
@@ -23,6 +29,8 @@ const MIN_MEAN_CONFIDENCE: f64 = 0.5;
 /// media and resolved the source language. Range is in source ticks (None means full).
 /// The cache may be owned or borrowed behind its mutex; no lock spans provider IO.
 /// Progress and execution hooks observe the same operation cancellation flag.
+/// The composition root must already hold WORK_BYTES plus RESULT_BYTES in the
+/// shared ByteBudget (or its workflow job's equivalent work/result reservations).
 /// Invalid ranges/languages, provider failures, missing speech, low confidence and
 /// cancellation return typed errors without partial cues; completed raw checkpoints remain.
 #[allow(clippy::too_many_arguments)]

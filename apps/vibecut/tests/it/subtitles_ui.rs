@@ -1860,6 +1860,84 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
         })
         .unwrap()
 }
+
+#[test]
+fn generation_admits_work_with_its_existing_result_lease_before_entering_the_workflow() {
+    struct AdmissionProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+    impl Workflow for AdmissionProbe {
+        fn run(
+            &self,
+            _: Work,
+            budget: ByteBudget,
+            _: &TaskEvents,
+            _: &Cancellation,
+        ) -> engine::Result<Command> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            self.1.store(
+                budget.snapshot().unwrap().limited_used() as usize,
+                Ordering::Relaxed,
+            );
+            Err(engine::transcript::Error::NoSpeech.into())
+        }
+    }
+    for case in 0..3 {
+        let mut e = editor("en");
+        let source = source_clip(&mut e);
+        let budget = ByteBudget::new(match case {
+            0 => 96 << 20,
+            1 => (96 << 20) - 1,
+            _ => 128 << 20,
+        })
+        .unwrap();
+        let held = (case == 2).then(|| {
+            budget
+                .reserve(engine::ByteOwner::Export, (32 << 20) + 1)
+                .unwrap()
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::new(AtomicUsize::new(0));
+        let mut panel = Subtitles::with_workflow(
+            budget.clone(),
+            Arc::new(AdmissionProbe(calls.clone(), observed.clone())),
+        )
+        .unwrap();
+        let before = e.session.project().clone();
+        let history = e.session.history_len();
+        let result = panel.generate(&e.session, source, &e.preferences.subtitles);
+        if case == 1 {
+            assert!(result.is_err());
+            assert_eq!(calls.load(Ordering::Relaxed), 0);
+        } else {
+            result.unwrap();
+            if case == 2 {
+                panel.tick(&mut e.session).unwrap();
+                assert_eq!(
+                    calls.load(Ordering::Relaxed),
+                    0,
+                    "occupied shared budget queues before provider work"
+                );
+                panel.cancel();
+            }
+            let until = Instant::now() + Duration::from_secs(10);
+            while panel.busy() {
+                panel.tick(&mut e.session).unwrap();
+                assert!(Instant::now() < until);
+                std::thread::yield_now();
+            }
+            assert_eq!(calls.load(Ordering::Relaxed), usize::from(case == 0));
+            assert_eq!(
+                observed.load(Ordering::Relaxed),
+                if case == 0 { 96 << 20 } else { 0 },
+                "one work reservation plus the existing result lease, observed outside the caught worker"
+            );
+        }
+        assert_eq!(e.session.project(), &before);
+        assert_eq!(e.session.history_len(), history);
+        drop(panel);
+        drop(held);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
 #[test]
 fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_download() {
     for option in engine::providers::provider_options_for(

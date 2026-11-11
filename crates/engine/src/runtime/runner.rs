@@ -264,7 +264,9 @@ pub struct JobRunner {
     events: BTreeMap<JobId, JobSnapshot>,
 }
 impl JobRunner {
-    pub(crate) fn memory_budget(&self) -> &ByteBudget {
+    /// The same aggregate budget used to admit this runner's jobs. Blocking
+    /// composition stages reserve their work here before invoking an adapter.
+    pub fn memory_budget(&self) -> &ByteBudget {
         &self.budget
     }
 

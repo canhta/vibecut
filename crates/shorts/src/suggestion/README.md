@@ -8,4 +8,9 @@
 
 The outcome also keeps the source project, source cues, transcript, measured speech energy and resolved boundary settings, so desktop review can trim without re-running ASR or energy decoding.
 
+Before language detection or ASR, the blocking composition reserves the
+[transcript work/result ceilings](../../../engine/src/transcript/README.md) from the runner's
+same aggregate budget. Work releases after transcription, while the result lease covers the
+remaining composition; pressure returns a typed refusal before invoking the provider.
+
 `prepare_export` validates 1..=1000 distinct candidate indices, translates the source cue track for each requested non-source language through the subtitle translation path, and calls `ClipBatch::prepare`. `export` keeps up to the runner's export concurrency in flight (capped by terminal-result retention), refilling slots as shorts complete and pumping the runner when its queue is full. A failed admission or job cancels and drains admitted siblings before returning its typed error, and already published files remain. The CLI only selects candidates and prints paths.

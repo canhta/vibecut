@@ -5,6 +5,9 @@ use super::{
 };
 use crate::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::providers::{CatalogOperation, Cost, UploadRequest, estimate_money};
+use crate::session::wire::{
+    API_VERSION, MAX_FRAME_BYTES, MAX_KEY_BYTES, Request, parse_frame, registry_hash,
+};
 use crate::transcript::{
     TRANSLATE_ATTEMPTS,
     translation::{TranslationRun, TranslationTarget, window},
@@ -93,6 +96,8 @@ pub(crate) fn translate(
         .clone()
         .ok_or(EditError::Unsupported("missing translation mode"))?;
     let project = session.project().as_ref().clone();
+    let session_id = session.session_id().to_owned();
+    let revision = session.revision();
     let attempts = AtomicU8::new(0);
     let cost = Mutex::new(Cost::Free);
     let (id, _) = runner.submit_for_session(
@@ -183,6 +188,28 @@ pub(crate) fn translate(
                 provider: config.id().clone(),
                 model: config.model().clone(),
             };
+            // Successful output must fit one ordinary retranslate request, not
+            // just the job-result ceiling. Use the actual admission parser so
+            // keys, escaping and the complete envelope count against its limits.
+            let apply = Request {
+                api_version: API_VERSION,
+                registry_hash: Some(registry_hash().into()),
+                session_id: session_id.clone(),
+                request_id: "r".repeat(MAX_KEY_BYTES),
+                idempotency_key: Some("k".repeat(MAX_KEY_BYTES)),
+                base_rev: Some(revision.clone()),
+                command: "retranslate".into(),
+                params: serde_json::json!({
+                    "item": result.item,
+                    "target_language": result.target_language,
+                    "texts": result.texts,
+                    "translation_ref": result.translation_ref,
+                    "force": force,
+                }),
+            };
+            crate::session::budget(&apply.params)?;
+            let frame = crate::session::wire::bounded_json(&apply, MAX_FRAME_BYTES)?;
+            parse_frame(&frame).map_err(|_| EditError::Limit)?;
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
         },
     )?;
