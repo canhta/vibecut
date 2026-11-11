@@ -77,7 +77,7 @@ impl TaskEvents {
             .send(approved)
             .map_err(|_| crate::Error::Cancelled)
     }
-    fn request(&self, request: &UploadRequest) -> std::result::Result<(), engine::Error> {
+    fn request(&self, request: &UploadRequest) -> engine::providers::Result<()> {
         let (send, receive) = mpsc::sync_channel(1);
         let mut state = self
             .state
@@ -94,7 +94,9 @@ impl TaskEvents {
         drop(state);
         loop {
             if self.cancel.cancelled() {
-                return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
+                return Err(engine::providers::Error::Runtime(
+                    engine::RuntimeError::Cancelled,
+                ));
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),
@@ -108,10 +110,10 @@ impl TaskEvents {
 }
 
 impl ConsentPrompt for TaskEvents {
-    fn approve(&self, request: &UploadRequest) -> Result<(), engine::Error> {
+    fn approve(&self, request: &UploadRequest) -> engine::providers::Result<()> {
         self.request(request)
     }
-    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::Error> {
+    fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
         self.request(request)
     }
 }
@@ -182,6 +184,26 @@ mod tests {
             events.answer(true).unwrap();
             worker.join().unwrap().unwrap();
         }
+        for disconnected in [false, true] {
+            let denied = Arc::new(TaskEvents::new(Cancellation::new()));
+            let task = denied.clone();
+            let worker = std::thread::spawn(move || {
+                task.approve(&upload(
+                    "fixture-denied",
+                    CatalogOperation::GenerateChapters,
+                ))
+            });
+            pending(&denied);
+            if disconnected {
+                denied.state.lock().unwrap().upload.take();
+            } else {
+                denied.answer(false).unwrap();
+            }
+            assert!(matches!(
+                worker.join().unwrap(),
+                Err(engine::providers::Error::ConsentRequired)
+            ));
+        }
         let cancelled = Arc::new(TaskEvents::new(Cancellation::new()));
         let task = cancelled.clone();
         let worker = std::thread::spawn(move || {
@@ -192,7 +214,9 @@ mod tests {
         assert!(cancelled.answer(true).is_err());
         assert!(matches!(
             worker.join().unwrap(),
-            Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
+            Err(engine::providers::Error::Runtime(
+                engine::RuntimeError::Cancelled
+            ))
         ));
     }
 }

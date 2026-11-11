@@ -1,5 +1,5 @@
 //! Lists the provider and model catalog the user can select from.
-use crate::Error as EngineError;
+use super::error::{Error, Result};
 use captions::LanguageTag;
 use std::path::{Path, PathBuf};
 
@@ -240,28 +240,25 @@ pub fn provider_options_for(
         })
         .collect()
 }
-pub fn parse_language(value: &str) -> Result<LanguageTag, EngineError> {
+pub fn parse_language(value: &str) -> Result<LanguageTag> {
     Ok(LanguageTag::parse(value)?)
 }
-pub fn normalize_target_tag(target: &LanguageTag) -> Result<LanguageTag, EngineError> {
+pub fn normalize_target_tag(target: &LanguageTag) -> Result<LanguageTag> {
     normalize_target(target)
 }
-pub fn choose_transcription(
-    provider: &str,
-    model: Option<&str>,
-) -> Result<TranscriptionProvider, EngineError> {
+pub fn choose_transcription(provider: &str, model: Option<&str>) -> Result<TranscriptionProvider> {
     let option = provider_options()
         .into_iter()
         .find(|option| {
             option.operation == CatalogOperation::Transcribe
                 && (option.id == provider || (provider == "whisper" && option.id == "whisper.cpp"))
         })
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(Error::Edit(crate::EditError::Unsupported(
             "unknown transcription provider",
         )))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
     if option.local && !option.models.iter().any(|value| value == model) {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(Error::Edit(crate::EditError::Unsupported(
             "unsupported model for provider",
         )));
     }
@@ -281,24 +278,21 @@ pub fn choose_transcription(
         "elevenlabs" => Ok(TranscriptionProvider::ElevenLabs {
             model: model.into(),
         }),
-        _ => Err(EngineError::Edit(crate::EditError::Unsupported(
+        _ => Err(Error::Edit(crate::EditError::Unsupported(
             "unknown transcription provider",
         ))),
     }
 }
-pub fn choose_translation(
-    provider: &str,
-    model: Option<&str>,
-) -> Result<TranslationProvider, EngineError> {
+pub fn choose_translation(provider: &str, model: Option<&str>) -> Result<TranslationProvider> {
     let option = provider_options()
         .into_iter()
         .find(|option| option.operation == CatalogOperation::Translate && option.id == provider)
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(Error::Edit(crate::EditError::Unsupported(
             "unknown translation provider",
         )))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
     if option.local && !option.models.iter().any(|value| value == model) {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(Error::Edit(crate::EditError::Unsupported(
             "unsupported model for provider",
         )));
     }
@@ -312,31 +306,31 @@ pub fn choose_translation(
         "anthropic" => Ok(TranslationProvider::Anthropic {
             model: model.into(),
         }),
-        _ => Err(EngineError::Edit(crate::EditError::Unsupported(
+        _ => Err(Error::Edit(crate::EditError::Unsupported(
             "unknown translation provider",
         ))),
     }
 }
-pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<TextProvider, EngineError> {
+pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<TextProvider> {
     choose_text(CatalogOperation::GenerateChapters, provider, model)
 }
-pub fn choose_filler(provider: &str, model: Option<&str>) -> Result<TextProvider, EngineError> {
+pub fn choose_filler(provider: &str, model: Option<&str>) -> Result<TextProvider> {
     choose_text(CatalogOperation::ClassifyFillers, provider, model)
 }
 fn choose_text(
     operation: CatalogOperation,
     provider: &str,
     model: Option<&str>,
-) -> Result<TextProvider, EngineError> {
+) -> Result<TextProvider> {
     let option = provider_options()
         .into_iter()
         .find(|option| option.operation == operation && option.id == provider)
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(Error::Edit(crate::EditError::Unsupported(
             "unknown text provider",
         )))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
     if option.local && !option.models.iter().any(|value| value == model) {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(Error::Edit(crate::EditError::Unsupported(
             "unsupported model for provider",
         )));
     }
@@ -350,19 +344,19 @@ fn choose_text(
         "anthropic" => Ok(TextProvider::Anthropic {
             model: model.into(),
         }),
-        _ => Err(EngineError::Edit(crate::EditError::Unsupported(
+        _ => Err(Error::Edit(crate::EditError::Unsupported(
             "unknown text provider",
         ))),
     }
 }
 impl ModelInfo {
-    pub(crate) fn from_model(model: &ai::models::Model) -> Result<Self, EngineError> {
+    pub(crate) fn from_model(model: &ai::models::Model) -> Result<Self> {
         let total_bytes = model
             .files
             .iter()
             .try_fold(0u64, |sum, file| sum.checked_add(file.size))
-            .ok_or(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
+            .ok_or(Error::Edit(
+                crate::session::wire::ControlError::Limit.into(),
             ))?;
         Ok(Self {
             id: model.id.clone(),
@@ -388,24 +382,22 @@ impl ModelInfo {
         })
     }
 }
-pub fn model_infos() -> Result<Vec<ModelInfo>, EngineError> {
+pub fn model_infos() -> Result<Vec<ModelInfo>> {
     ai::models::catalog()?
         .iter()
         .map(ModelInfo::from_model)
         .collect()
 }
-pub fn model_info(id: &str) -> Result<ModelInfo, EngineError> {
+pub fn model_info(id: &str) -> Result<ModelInfo> {
     let model = catalog_model(id)?;
     ModelInfo::from_model(&model)
 }
 /// The catalog model with this id, as the model manager and the CLI download it.
-pub fn catalog_model(id: &str) -> Result<ai::models::Model, EngineError> {
+pub fn catalog_model(id: &str) -> Result<ai::models::Model> {
     ai::models::catalog()?
         .into_iter()
         .find(|model| model.id == id)
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
-            "unknown model",
-        )))
+        .ok_or(Error::Edit(crate::EditError::Unsupported("unknown model")))
 }
 /// Find the explicitly configured or bundled local ASR helper without launching
 /// it or downloading weights. Shared by desktop and CLI composition roots.
@@ -429,7 +421,7 @@ pub fn local_asr_runner() -> Option<PathBuf> {
         .join("vibecut-local-asr");
     path.is_file().then_some(path)
 }
-pub(crate) fn normalize_target(target: &LanguageTag) -> Result<LanguageTag, EngineError> {
+pub(crate) fn normalize_target(target: &LanguageTag) -> Result<LanguageTag> {
     if target.as_str() == "zh" {
         Ok(LanguageTag::parse("zh-Hans")?)
     } else {

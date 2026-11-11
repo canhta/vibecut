@@ -783,9 +783,7 @@ fn missing_remote_credentials_are_typed() {
     .unwrap();
     assert!(matches!(
         error,
-        engine::Error::Providers(engine::providers::Error::CredentialMissing(
-            "OPENAI_API_KEY"
-        ))
+        engine::providers::Error::CredentialMissing("OPENAI_API_KEY")
     ));
 }
 
@@ -1390,14 +1388,14 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
         seen: Mutex<Vec<CatalogOperation>>,
     }
     impl ConsentPrompt for Approve {
-        fn approve(&self, request: &UploadRequest) -> engine::Result<()> {
+        fn approve(&self, request: &UploadRequest) -> engine::providers::Result<()> {
             assert!(self.configs.contains(&request.config));
             assert_eq!(request.model, request.config.model().as_str());
             assert_eq!(request.model.len(), 256);
             assert_eq!(request.cost, Cost::Unknown);
             Ok(())
         }
-        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::Result<()> {
+        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
             self.approve(request)?;
             self.seen.lock().unwrap().push(request.operation);
             Ok(())
@@ -1410,7 +1408,9 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
         let cause = snapshot.error.as_ref().unwrap();
         assert!(matches!(
             (cause.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
-            Some(engine::Error::Ai(Error::Cost))
+            Some(engine::Error::Providers(engine::providers::Error::Ai(
+                Error::Cost
+            )))
         ));
     }
     let input = fixture().expect("synthetic media oracle must be available");

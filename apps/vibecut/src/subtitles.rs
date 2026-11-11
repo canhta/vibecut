@@ -646,23 +646,27 @@ impl Subtitles {
             self.problem = Some(Text::SubStale);
             return;
         }
+        let provider = match root {
+            Some(engine::Error::Providers(provider)) => Some(provider),
+            _ => cause.downcast_ref::<engine::providers::Error>(),
+        };
+        if let Some(provider) = provider {
+            use engine::providers::Error as P;
+            self.problem = Some(match provider {
+                P::ModelMissing(id) => {
+                    self.missing_model = Some((*id).into());
+                    Text::ShortsModelMissing
+                }
+                P::CredentialMissing(_) => Text::ShortsCredentialsMissing,
+                P::RunnerMissing => Text::SubRunnerMissing,
+                P::AutoLanguageUnsupported => Text::SubAutoUnsupported,
+                P::ConsentRequired => Text::ShortsConsentRequired,
+                P::Runtime(engine::RuntimeError::Cancelled) => Text::ShortsJobCancelled,
+                _ => Text::SubFailed,
+            });
+            return;
+        }
         self.problem = Some(match root {
-            Some(engine::Error::Providers(engine::providers::Error::ModelMissing(id))) => {
-                self.missing_model = Some((*id).into());
-                Text::ShortsModelMissing
-            }
-            Some(engine::Error::Providers(engine::providers::Error::CredentialMissing(_))) => {
-                Text::ShortsCredentialsMissing
-            }
-            Some(engine::Error::Providers(engine::providers::Error::RunnerMissing)) => {
-                Text::SubRunnerMissing
-            }
-            Some(engine::Error::Providers(engine::providers::Error::AutoLanguageUnsupported)) => {
-                Text::SubAutoUnsupported
-            }
-            Some(engine::Error::Providers(engine::providers::Error::ConsentRequired)) => {
-                Text::ShortsConsentRequired
-            }
             Some(engine::Error::Transcript(engine::transcript::Error::NoSpeech)) => {
                 Text::SubNoSpeech
             }

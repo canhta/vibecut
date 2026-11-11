@@ -355,13 +355,13 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         acknowledgements: Mutex<usize>,
     }
     impl ConsentPrompt for Approve {
-        fn approve(&self, request: &UploadRequest) -> engine::Result<()> {
+        fn approve(&self, request: &UploadRequest) -> engine::providers::Result<()> {
             assert_eq!(request.config, self.config);
             assert_eq!(request.model, self.config.model().as_str());
             assert_eq!(request.cost, Cost::Unknown);
             Ok(())
         }
-        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::Result<()> {
+        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
             self.approve(request)?;
             *self.acknowledgements.lock().unwrap() += 1;
             Ok(())
@@ -415,7 +415,12 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         .err()
         .unwrap();
         assert!(
-            matches!(error, shorts::Error::Engine(engine::Error::Ai(Error::Cost))),
+            matches!(
+                error,
+                shorts::Error::Engine(engine::Error::Providers(engine::providers::Error::Ai(
+                    Error::Cost
+                )))
+            ),
             "{error:?}"
         );
         assert_eq!(*transport.calls.lock().unwrap(), 0);

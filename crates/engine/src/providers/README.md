@@ -1,6 +1,6 @@
 # Providers
 
-Interface: `Providers`, `Credentials`, `Error`, `ConsentPrompt`, `TextAccess`, `TextProvider`,
+Interface: `Providers`, `Credentials`, `Error`, `Result`, `ConsentPrompt`, `TextAccess`, `TextProvider`,
 `provider_options`, `model_info`, `models`.
 
 ## Failures
@@ -11,6 +11,16 @@ remote upload without consent. Display states the fact only, never a command to 
 its `vibecut-cli model download <id>` hint and the desktop renders its own text from the variant.
 Callers that still return the engine aggregate wrap it as `engine::Error::Providers`; the wire maps consent
 to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-language to `Refused`.
+
+Selection, credentials, catalog/adapters, scopes, disclosures, consent and text access consume
+this owner’s Result. Mixed workflows compose through transparent `engine::Error::Providers`;
+model transfers retain their separate `models::Error`. Kernel Edit (including consumed
+caption/Control validation), Runtime resource failures and direct AI failures retain their
+original sources and safe messages. Runtime and direct AI delegate their existing transience
+and scheduling policy through the [Runtime execution projections](../runtime/README.md);
+native Model/Transfer/Failed remain opaque. Provider ConsentRequired stays Permission,
+distinct from AI ConsentRequired (Ai). ConsentPrompt methods return this same provider result;
+UI event/answer operations with mixed application causes retain their application result.
 
 ## Adapters, scopes and consent
 

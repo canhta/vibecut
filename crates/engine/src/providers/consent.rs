@@ -1,7 +1,6 @@
 //! Discloses each remote upload before it is approved.
 use super::catalog::CatalogOperation;
-use super::error::Error;
-use crate::Error as EngineError;
+use super::error::{Error, Result};
 use ai::{CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
 /// A provider disclosure shown before any remote byte leaves the machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,7 +34,7 @@ impl UploadRequest {
         disclosure: Option<UploadDisclosure>,
         estimate: &CostEstimate,
         scope: &Scope,
-    ) -> Result<Self, EngineError> {
+    ) -> Result<Self> {
         if let Some(disclosure) = disclosure {
             return Ok(Self {
                 config: config.clone(),
@@ -54,7 +53,7 @@ impl UploadRequest {
             });
         }
         if !config.is_remote() {
-            return Err(EngineError::Edit(crate::EditError::Unsupported(
+            return Err(Error::Edit(crate::EditError::Unsupported(
                 "local provider has no upload",
             )));
         }
@@ -82,10 +81,10 @@ impl UploadRequest {
 }
 /// The adapter refuses the remote request when this returns `Err(ConsentRequired)`.
 pub trait ConsentPrompt {
-    fn approve(&self, request: &UploadRequest) -> Result<(), EngineError>;
+    fn approve(&self, request: &UploadRequest) -> Result<()>;
     /// A separate affirmative decision for the exact displayed model's unknown price.
     /// Ordinary upload approval never implicitly authorizes unknown spending.
-    fn approve_unknown_price(&self, _request: &UploadRequest) -> Result<(), EngineError> {
+    fn approve_unknown_price(&self, _request: &UploadRequest) -> Result<()> {
         Err(ai::Error::Cost.into())
     }
 }
@@ -96,7 +95,7 @@ pub fn approve_upload(
     request: &UploadRequest,
     scope: &Scope,
     estimate: &CostEstimate,
-) -> Result<ai::Consent, EngineError> {
+) -> Result<ai::Consent> {
     let operation = match request.operation {
         CatalogOperation::Transcribe => ai::Operation::Transcribe,
         CatalogOperation::Translate => ai::Operation::Translate,
@@ -169,19 +168,19 @@ impl From<&CostEstimate> for Cost {
     }
 }
 impl ConsentPrompt for DenyUploads {
-    fn approve(&self, _: &UploadRequest) -> Result<(), EngineError> {
+    fn approve(&self, _: &UploadRequest) -> Result<()> {
         Err(Error::ConsentRequired.into())
     }
 }
 impl ConsentPrompt for AllowAll {
-    fn approve(&self, _: &UploadRequest) -> Result<(), EngineError> {
+    fn approve(&self, _: &UploadRequest) -> Result<()> {
         Ok(())
     }
 }
-pub(crate) fn estimate_money(estimate: &CostEstimate) -> Result<Money, EngineError> {
+pub(crate) fn estimate_money(estimate: &CostEstimate) -> Result<Money> {
     match estimate {
         CostEstimate::Free => Ok(Money::new("USD", 0)?),
         CostEstimate::UpperBound(money) => Ok(money.clone()),
-        CostEstimate::Unknown => Err(EngineError::Ai(ai::Error::Cost)),
+        CostEstimate::Unknown => Err(Error::Ai(ai::Error::Cost)),
     }
 }

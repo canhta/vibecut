@@ -9,8 +9,7 @@
 use super::adapters::{Credentials, open_chapter, open_filler};
 use super::catalog::{CatalogOperation, TextProvider};
 use super::consent::{ConsentPrompt, Cost, UploadRequest, approve_upload};
-use super::error::Error;
-use crate::Error as EngineError;
+use super::error::{Error, Result};
 use ai::chapters::{ChapterGenerator, ChapterInput};
 use ai::fillers::{FillerClassifier, FillerInput};
 use ai::{Consent, CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
@@ -51,7 +50,7 @@ impl StoredConsent {
     }
 }
 impl ConsentPrompt for StoredConsent {
-    fn approve(&self, request: &UploadRequest) -> Result<(), EngineError> {
+    fn approve(&self, request: &UploadRequest) -> Result<()> {
         let covered = |ceiling: &Money| match &request.cost {
             Cost::Free => true,
             Cost::UpperBound { currency, micros } => {
@@ -92,7 +91,7 @@ impl TextAccess {
         provider: TextProvider,
         credentials: &Credentials,
         consent: Box<dyn ConsentPrompt + Send + Sync>,
-    ) -> Result<Self, EngineError> {
+    ) -> Result<Self> {
         Ok(Self::new(
             open_chapter(&provider, credentials)?,
             open_filler(&provider, credentials)?,
@@ -111,10 +110,7 @@ impl TextAccess {
     }
 
     /// Bind the complete chapter input to a fresh consent token; no token, no adapter call.
-    pub(crate) fn prepare_chapter(
-        &self,
-        input: &ChapterInput,
-    ) -> Result<PreparedChapter, EngineError> {
+    pub(crate) fn prepare_chapter(&self, input: &ChapterInput) -> Result<PreparedChapter> {
         let scope = Scope::chapters(
             self.chapter_provider().clone(),
             input,
@@ -135,10 +131,7 @@ impl TextAccess {
     }
 
     /// Bind the complete filler transcript to a fresh consent token; no token, no adapter call.
-    pub(crate) fn prepare_fillers(
-        &self,
-        input: &FillerInput,
-    ) -> Result<PreparedFillers, EngineError> {
+    pub(crate) fn prepare_fillers(&self, input: &FillerInput) -> Result<PreparedFillers> {
         let scope = Scope::fillers(
             self.filler_provider().clone(),
             input,
@@ -164,7 +157,7 @@ impl TextAccess {
         scope: &Scope,
         disclosure: Option<UploadDisclosure>,
         estimate: &CostEstimate,
-    ) -> Result<Consent, EngineError> {
+    ) -> Result<Consent> {
         let request =
             UploadRequest::for_scope(operation, &scope.provider, disclosure, estimate, scope)?;
         approve_upload(self.consent.as_ref(), &request, scope, estimate)

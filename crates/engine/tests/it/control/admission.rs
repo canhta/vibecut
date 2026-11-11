@@ -822,6 +822,20 @@ fn owner_failures_classify_publication_receipts_and_events() {
         };
     }
     let mut cases = vec![
+        row!(E::Providers(P::Runtime(B::NetworkTransient)), Job, true),
+        row!(
+            E::Providers(P::Runtime(B::Failed(Arc::new(B::Cancelled)))),
+            Cancelled,
+            false
+        ),
+        row!(
+            E::Providers(P::Ai(ai::Error::RateLimit {
+                retry_after_seconds: Some(3)
+            })),
+            Ai,
+            true
+        ),
+        row!(E::Providers(P::Ai(ai::Error::ConsentRequired)), Ai, false),
         row!(
             E::Models(engine::models::Error::Runtime(B::NetworkTransient)),
             Job,

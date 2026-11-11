@@ -133,7 +133,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     token.cancel();
     assert_eq!(pump(&mut r, id).state, JobState::Cancelled);
     assert_eq!(budget.snapshot().unwrap().used, 0);
-    for mode in 0..5 {
+    for mode in 0..7 {
         let mut session = crate::support::control::session();
         let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
         let (id, _) = r
@@ -147,6 +147,10 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                     3 => EngineError::Runtime(B::Failed(Arc::new(EngineError::Runtime(
                         B::Failed(Arc::new(EngineError::Runtime(B::Cancelled))),
                     )))),
+                    5 => EngineError::Providers(engine::providers::Error::Runtime(B::Cancelled)),
+                    6 => EngineError::Providers(engine::providers::Error::Runtime(B::Failed(
+                        Arc::new(B::Cancelled),
+                    ))),
                     _ => engine::recovery::Error::PersistenceFailed(Arc::new(
                         EngineError::Runtime(B::Cancelled),
                     ))
@@ -158,7 +162,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert_eq!(
             (snapshot.state, snapshot.attempts),
             (
-                if mode == 0 {
+                if matches!(mode, 0 | 5) {
                     JobState::Cancelled
                 } else {
                     JobState::Failed
@@ -180,12 +184,20 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                     4,
                     EngineError::Recovery(engine::recovery::Error::PersistenceFailed(_))
                 )
+                | (
+                    5,
+                    EngineError::Providers(engine::providers::Error::Runtime(B::Cancelled))
+                )
+                | (
+                    6,
+                    EngineError::Providers(engine::providers::Error::Runtime(B::Failed(_)))
+                )
         ));
         assert_eq!(
             raw.to_string(),
             match mode {
-                0 => "job cancelled",
-                1 | 2 => "background job failed: job cancelled",
+                0 | 5 => "job cancelled",
+                1 | 2 | 6 => "background job failed: job cancelled",
                 3 => "background job failed: background job failed: job cancelled",
                 _ => "session persistence failed",
             }
@@ -2176,6 +2188,66 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
         let resync = session.snapshot_and_subscribe(&r).unwrap();
         assert_eq!(resync.jobs[0].error, Some(C::Refused));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+    for (key, code) in [(None, C::Setup), (Some("synthetic-key "), C::Ai)] {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let mut session = crate::support::control::session();
+        let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
+        let credentials = engine::providers::Credentials::new(key.map(str::to_owned), None, None);
+        let (id, _) = r
+            .submit(spec(ResourceClass::Network), move |_| {
+                credentials.openai().map(|_| Vec::new())
+            })
+            .unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        assert!(r.take_output(id).is_none());
+        let raw = snapshot.error.as_ref().unwrap();
+        let typed = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<engine::providers::Error>()
+            .unwrap();
+        match typed {
+            engine::providers::Error::CredentialMissing("OPENAI_API_KEY") => {
+                assert_eq!(
+                    raw.to_string(),
+                    "provider OPENAI_API_KEY requires its API key"
+                );
+                assert!(raw.source().is_none());
+            }
+            engine::providers::Error::Ai(source @ ai::Error::Invalid("API key")) => {
+                assert_eq!(raw.to_string(), "AI execution failed");
+                assert!(std::ptr::eq(
+                    source,
+                    raw.source().unwrap().downcast_ref::<ai::Error>().unwrap()
+                ));
+            }
+            _ => panic!("provider credential cause lost"),
+        }
+        assert_eq!(raw.code(), code);
+        assert!(!raw.transient());
+        assert!(!raw.job_policy().terminal_cancelled);
+        assert_eq!(raw.job_policy().retry_after_seconds, None);
+        assert!(Arc::ptr_eq(
+            raw,
+            r.snapshot(id).unwrap().error.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            raw,
+            r.drain_events()
+                .into_iter()
+                .find(|event| event.id == id)
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+        ));
+        assert_eq!(
+            session.snapshot_and_subscribe(&r).unwrap().jobs[0].error,
+            Some(code)
+        );
+        assert!(session.events(&mut cursor).unwrap().iter().any(|event| matches!(&event.payload, Payload::JobChanged { snapshot } if snapshot.id == id && snapshot.error == Some(code))));
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }

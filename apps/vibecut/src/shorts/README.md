@@ -44,3 +44,7 @@ transient; persisted crop channels and later editor crop edits belong to the cro
 controls.
 
 Geometry: [Long video to shorts window](../../../../docs/product/ui/shorts.md).
+
+Provider choice/credential/consent operations return their provider-owned result. The review
+borrows raw or engine-composed provider refusals for existing setup/consent labels and explicit
+Runtime resource categories; opaque failures are not searched for an inner category.

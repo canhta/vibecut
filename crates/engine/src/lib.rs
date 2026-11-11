@@ -117,7 +117,7 @@ impl Error {
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
-            Self::Providers(inner) => inner.code(),
+            Self::Providers(inner) => return (inner.code(), inner.transient()),
             Self::Transcript(inner) => inner.code(),
             Self::Render(inner) => inner.code(),
             Self::Media(error) => error.code(),
@@ -131,6 +131,7 @@ impl Error {
 impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
+            Self::Providers(error) => error.job_policy(),
             Self::Models(error) => error.job_policy(),
             Self::Lut(error) => error.job_policy(),
             Self::Library(error) => error.job_policy(),
