@@ -73,6 +73,7 @@ pub struct ProjectData {
     pub canvas: Canvas,
     pub original_canvas_size: Option<CanvasSize>,
     pub assets: Vec<SourceAsset>,
+    pub luts: Vec<crate::LutRecord>,
     pub scenes: Scenes,
     pub current_scene_id: SceneId,
     pub settings: Settings,
@@ -118,6 +119,7 @@ impl Project {
             canvas: Canvas::default(),
             original_canvas_size: None,
             assets: Vec::new(),
+            luts: Vec::new(),
             scenes: Scenes::default(),
             current_scene_id: SceneId(0),
             settings: Settings::default(),
@@ -249,6 +251,16 @@ fn validate(data: &ProjectData) -> Result<()> {
     {
         return Err(Error::TooLarge("project collections"));
     }
+    if data.luts.len() > 16 {
+        return Err(Error::TooLarge("project LUTs"));
+    }
+    let mut luts = BTreeSet::new();
+    for record in &data.luts {
+        record.validate()?;
+        if !luts.insert(record.id) {
+            return Err(Error::Invalid("duplicate LUT"));
+        }
+    }
     let mut assets = BTreeMap::new();
     for asset in &data.assets {
         if assets.insert(asset.id(), asset).is_some() {
@@ -333,6 +345,13 @@ fn validate(data: &ProjectData) -> Result<()> {
             let mut effect_ids = BTreeSet::new();
             for effect in &item.effects {
                 effect.validate()?;
+                for value in effect.params.values() {
+                    if let crate::EffectValue::Lut(Some(id)) = value {
+                        if !luts.contains(id) {
+                            return Err(Error::Invalid("unregistered LUT"));
+                        }
+                    }
+                }
                 if !effect_ids.insert(&effect.id) {
                     return Err(Error::Invalid("duplicate effect id"));
                 }

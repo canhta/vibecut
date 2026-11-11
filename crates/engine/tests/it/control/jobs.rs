@@ -20,6 +20,606 @@ use serde_json::{Value, json};
 use std::{sync::Mutex, time::Duration};
 use time::{FrameRate, SourceRange, Tick};
 
+fn lut_cube() -> &'static str {
+    "# original notice\nTITLE \"Imported look\"\nLUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n"
+}
+fn lut_result(
+    s: &mut Session,
+    r: &mut JobRunner,
+    media: &Mutex<MediaAccess>,
+    path: &std::path::Path,
+    expected: Option<project::LutId>,
+    key: &str,
+) -> project::LutRecord {
+    let id = submit_media(
+        s,
+        r,
+        media,
+        "color.import_lut",
+        json!({"path":path,"expected_hash":expected}),
+        key,
+    );
+    finish(r, id);
+    assert_eq!(r.snapshot(id).unwrap().attempts, 1);
+    let view = media_status(s, r, media, id, &format!("{key}-status"));
+    assert_eq!(view.state, JobState::Completed, "{view:?}");
+    match view.output.unwrap() {
+        JobOutput::Lut(record) => record,
+        other => panic!("{other:?}"),
+    }
+}
+#[test]
+fn lut_import_applies_one_undo_and_reopens_shared_pixels() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("user look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut r = runner();
+    let mut s = seed();
+    let before = s.project().clone();
+    let history = s.history_len();
+    let record = lut_result(&mut s, &mut r, &media, &source, None, "lut-import");
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(
+        std::fs::read(record.directory.join("original.cube")).unwrap(),
+        lut_cube().as_bytes()
+    );
+    assert!(
+        !std::fs::read(record.directory.join("canonical.cube"))
+            .unwrap()
+            .windows(6)
+            .any(|w| w == b"notice")
+    );
+    s.apply_lut(ItemId(1), record.clone(), 50.).unwrap();
+    assert_eq!(s.history_len().0, history.0 + 1);
+    let applied = s.project().clone();
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &applied);
+    let revision = s.revision();
+    assert!(!s.apply_lut(ItemId(1), record.clone(), 50.).unwrap().changed);
+    assert_eq!(s.revision(), revision);
+    let path = dir.path().join("project.vibecut");
+    project::WriterLease::acquire(&path)
+        .unwrap()
+        .save(s.project())
+        .unwrap();
+    let loaded = project::load(&path).unwrap().project;
+    assert_eq!(&loaded, s.project().as_ref());
+    std::fs::rename(&source, dir.path().join("moved.cube")).unwrap();
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let item = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == ItemId(1))
+        .unwrap();
+    let effect = item
+        .effects
+        .iter()
+        .find(|e| e.kind == "color_grade")
+        .unwrap();
+    let resources =
+        render::lut::LutResources::resolve(&loaded, std::iter::once(effect), &hooks).unwrap();
+    let passes = render::effects::evaluate_effect(
+        &item.animations,
+        effect,
+        Tick::ZERO,
+        render::effects::EffectGeometry::new([2, 2], [1., 1.]).unwrap(),
+        true,
+        &resources,
+    )
+    .unwrap();
+    let input = render::Image::new(2, 2, [0.1, 0.2, 0.3, 0.5], &hooks).unwrap();
+    let below = render::Image::new(2, 2, [0.; 4], &hooks).unwrap();
+    let output =
+        render::effects::apply_effect(input, &passes, &below, &render::effects::CpuEffects, &hooks)
+            .unwrap();
+    assert_eq!(output.pixels()[0][3], 0.5);
+    assert_ne!(&output.pixels()[0][..3], &[0.1, 0.2, 0.3]);
+    drop((resources, passes, below, output));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    // Strict preview and export enter the same real scene evaluator, with a
+    // device-free overlay so the assertion cannot accidentally use a codec oracle.
+    let mut data = loaded.into_data();
+    data.assets.clear();
+    for track in data.scene_mut().timeline.iter_mut() {
+        track.items.retain(|i| i.id == ItemId(1));
+    }
+    data.scene_mut()
+        .timeline
+        .overlays
+        .retain(|t| t.items.iter().any(|i| i.id == ItemId(1)));
+    data.scene_mut().timeline.audio.clear();
+    data.scene_mut().timeline.main.items.clear();
+    let item = data
+        .scene_mut()
+        .timeline
+        .overlays
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == ItemId(1))
+        .unwrap();
+    item.masks.clear();
+    item.effects.retain(|e| e.kind == "color_grade");
+    let project = Project::new(data).unwrap();
+    let mut settings = render::RenderSettings::from_project(&project);
+    settings.width = 2;
+    settings.height = 2;
+    let mut renderer = render::Renderer::new(&project, settings).unwrap();
+    let mut sources = render::FileSources::default();
+    let strict = renderer
+        .render_frame(Tick::ZERO, &mut sources, &hooks)
+        .unwrap();
+    let preview = renderer
+        .preview_frame(Tick::ZERO, &mut sources, &hooks)
+        .unwrap();
+    assert_eq!(strict.pixels(), preview.pixels());
+    drop((strict, preview, renderer));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    std::fs::remove_file(record.directory.join("canonical.cube")).unwrap();
+    let mut renderer =
+        render::Renderer::new(&project, render::RenderSettings::from_project(&project)).unwrap();
+    assert!(matches!(
+        renderer.render_frame(Tick::ZERO, &mut sources, &hooks),
+        Err(render::Error::LutUnavailable {
+            reason: render::lut::LutUnavailableReason::Missing,
+            ..
+        })
+    ));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+#[test]
+fn lut_deduplicates_preserves_first_provenance_and_repairs_matching_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut r = runner();
+    let mut s = seed();
+    let first = lut_result(&mut s, &mut r, &media, &source, None, "lut-first");
+    s.apply_lut(ItemId(1), first.clone(), 100.).unwrap();
+    std::fs::write(
+        &source,
+        lut_cube().replace("# original notice", "# different formatting"),
+    )
+    .unwrap();
+    let second = lut_result(&mut s, &mut r, &media, &source, None, "lut-dedup");
+    assert_eq!(first, second);
+    for (index, metadata) in [
+        json!({"name":"conflicting"}),
+        json!({"licence":"different"}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut params = metadata;
+        params["path"] = json!(source);
+        params["expected_hash"] = json!(first.id);
+        let job = submit_media(
+            &mut s,
+            &mut r,
+            &media,
+            "color.import_lut",
+            params,
+            &format!("lut-conflict-{index}"),
+        );
+        finish(&mut r, job);
+        assert_eq!(r.snapshot(job).unwrap().state, JobState::Failed);
+        assert!(r.output_bytes(job).is_none());
+        assert_eq!(
+            std::fs::read(first.directory.join("original.cube")).unwrap(),
+            lut_cube().as_bytes()
+        );
+    }
+    for cache in media.lock().unwrap().cache_maintenance().unwrap() {
+        let report = cache.run(engine::cache::CacheOperation::Clear, || false);
+        assert!(report.cause.is_none());
+    }
+    assert!(first.directory.join("canonical.cube").is_file());
+    std::fs::write(first.directory.join("canonical.cube"), b"broken").unwrap();
+    let before = s.project().clone();
+    let repaired = lut_result(
+        &mut s,
+        &mut r,
+        &media,
+        &source,
+        Some(first.id),
+        "lut-relink",
+    );
+    assert_eq!(repaired, first);
+    assert_eq!(s.project(), &before);
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let effect = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == ItemId(1))
+        .unwrap()
+        .effects
+        .iter()
+        .find(|e| e.kind == "color_grade")
+        .unwrap();
+    assert!(
+        render::lut::LutResources::resolve(s.project(), std::iter::once(effect), &hooks).is_ok()
+    );
+    for (index, missing) in ["canonical.cube", "original.cube"].into_iter().enumerate() {
+        std::fs::remove_file(first.directory.join(missing)).unwrap();
+        let repaired = lut_result(
+            &mut s,
+            &mut r,
+            &media,
+            &source,
+            Some(first.id),
+            &format!("lut-missing-{index}"),
+        );
+        assert_eq!(repaired, first);
+        assert!(first.directory.join(missing).is_file());
+        assert_eq!(s.project(), &before);
+    }
+    std::fs::write(&source, lut_cube().replace("0 0 1", "0 0 0")).unwrap();
+    let protected = std::fs::read(first.directory.join("canonical.cube")).unwrap();
+    let id = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source,"expected_hash":first.id}),
+        "lut-mismatch",
+    );
+    finish(&mut r, id);
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Failed);
+    assert!(r.output_bytes(id).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(
+        std::fs::read(first.directory.join("canonical.cube")).unwrap(),
+        protected
+    );
+}
+#[test]
+fn lut_invalid_cancelled_and_locked_workflows_preserve_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("hostile.cube");
+    std::fs::write(&source, b"LUT_3D_SIZE 999999999\n").unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut r = runner();
+    let mut s = seed();
+    let before = s.project().clone();
+    let id = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-bad",
+    );
+    finish(&mut r, id);
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Failed);
+    assert!(r.output_bytes(id).is_none());
+    assert_eq!(s.project(), &before);
+    std::fs::write(&source, lut_cube()).unwrap();
+    let id = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-cancel",
+    );
+    r.cancel_job(id).unwrap();
+    finish(&mut r, id);
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Cancelled);
+    assert_eq!(s.project(), &before);
+    let record = lut_result(&mut s, &mut r, &media, &source, None, "lut-after-cancel");
+    s.apply_lut(ItemId(1), record.clone(), 100.).unwrap();
+    let unchanged = s.project().clone();
+    let parent = record.directory.parent().unwrap();
+    let publication =
+        project::WriterLease::acquire(&parent.join(format!("{}.bundle", record.id.hex()))).unwrap();
+    std::fs::write(
+        record.directory.join("canonical.cube"),
+        b"protected damaged resource",
+    )
+    .unwrap();
+    let id = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source,"expected_hash":record.id}),
+        "lut-cancel-at-publication",
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    loop {
+        r.tick().unwrap();
+        r.drain_events();
+        let staged = std::fs::read_dir(parent).unwrap().any(|entry| {
+            let path = entry.unwrap().path();
+            path != record.directory && path.is_dir() && path.join("provenance.json").is_file()
+        });
+        if staged {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "import did not reach publication gate"
+        );
+        std::thread::yield_now();
+    }
+    r.cancel_job(id).unwrap();
+    finish(&mut r, id);
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Cancelled);
+    assert!(r.output_bytes(id).is_none());
+    assert_eq!(s.project(), &unchanged);
+    assert_eq!(
+        std::fs::read(record.directory.join("canonical.cube")).unwrap(),
+        b"protected damaged resource"
+    );
+    assert_eq!(
+        std::fs::read_dir(parent)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .count(),
+        1
+    );
+    drop(publication);
+    assert_eq!(
+        lut_result(
+            &mut s,
+            &mut r,
+            &media,
+            &source,
+            Some(record.id),
+            "lut-after-publication-cancel"
+        ),
+        record
+    );
+    let mut data = s.project().data().clone();
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .find(|t| t.items.iter().any(|i| i.id == ItemId(1)))
+        .unwrap()
+        .locked = true;
+    s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = s.project().clone();
+    assert!(s.apply_lut(ItemId(1), record, 100.).is_err());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+}
+
+#[test]
+fn lut_foreign_bundle_refuses_and_releases_the_store_for_later_use() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut r = runner();
+    let mut s = seed();
+    let record = lut_result(&mut s, &mut r, &media, &source, None, "lut-owned");
+    let sentinel = record.directory.join("foreign.txt");
+    std::fs::hard_link(&source, &sentinel).unwrap();
+    let project = s.project().clone();
+    let original = std::fs::read(&source).unwrap();
+    let id = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-foreign",
+    );
+    finish(&mut r, id);
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Failed);
+    assert!(r.output_bytes(id).is_none());
+    assert_eq!(std::fs::read(&source).unwrap(), original);
+    assert_eq!(std::fs::read(&sentinel).unwrap(), original);
+    assert_eq!(s.project(), &project);
+    std::fs::remove_file(sentinel).unwrap();
+    assert_eq!(
+        lut_result(&mut s, &mut r, &media, &source, None, "lut-after-refusal"),
+        record
+    );
+    assert!(
+        !std::fs::read_dir(record.directory.parent().unwrap())
+            .unwrap()
+            .any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lut-"))
+    );
+}
+
+#[test]
+fn lut_concurrent_same_content_has_one_complete_bundle_and_no_partial_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut s = seed();
+    let mut r = JobRunner::new(
+        engine::jobs::RunnerConfig {
+            concurrency: [2, 1, 1],
+            queue: 4,
+            retained: 4,
+            network_attempts: 1,
+            backoff: Duration::from_millis(1),
+            progress_interval: Duration::from_millis(10),
+        },
+        engine::ByteBudget::new(128 << 20).unwrap(),
+        std::sync::Arc::new(engine::jobs::SystemClock::default()),
+    )
+    .unwrap();
+    let a = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-race-a",
+    );
+    let b = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-race-b",
+    );
+    finish(&mut r, a);
+    finish(&mut r, b);
+    let first = media_status(&mut s, &mut r, &media, a, "lut-race-status-a");
+    let second = media_status(&mut s, &mut r, &media, b, "lut-race-status-b");
+    assert_eq!(first.state, JobState::Completed);
+    assert_eq!(second.state, JobState::Completed);
+    let (Some(JobOutput::Lut(first)), Some(JobOutput::Lut(second))) = (first.output, second.output)
+    else {
+        panic!("missing LUT race output");
+    };
+    assert_eq!(first, second);
+    assert_eq!(std::fs::read_dir(&first.directory).unwrap().count(), 3);
+    assert_eq!(
+        std::fs::read_dir(first.directory.parent().unwrap())
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .count(),
+        1
+    );
+    assert!(s.project().data().luts.is_empty());
+}
+
+#[test]
+fn lut_store_reopen_enforces_disk_quota_without_deleting_foreign_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let sentinel = dir.path().join("foreign.bin");
+    let file = std::fs::File::create(&sentinel).unwrap();
+    file.set_len((256 << 20) + 1).unwrap();
+    drop(file);
+    assert!(matches!(
+        engine::luts::LutStore::open(dir.path()),
+        Err(engine::EditError::Limit)
+    ));
+    assert_eq!(std::fs::metadata(&sentinel).unwrap().len(), (256 << 20) + 1);
+    std::fs::remove_file(&sentinel).unwrap();
+    let store = engine::luts::LutStore::open(dir.path()).unwrap();
+    drop(store);
+    let source = dir.path().join("look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let root = dir.path().join("luts");
+    for index in 0..4090 {
+        std::fs::write(root.join(format!("foreign-{index}")), b"").unwrap();
+    }
+    let mut s = seed();
+    let before = s.project().clone();
+    let mut r = runner();
+    let job = submit_media(
+        &mut s,
+        &mut r,
+        &media,
+        "color.import_lut",
+        json!({"path":source}),
+        "lut-entry-limit",
+    );
+    finish(&mut r, job);
+    assert_eq!(r.snapshot(job).unwrap().state, JobState::Failed);
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(std::fs::read_dir(root).unwrap().count(), 4091);
+}
+
+#[test]
+fn lut_managed_duplicate_history_and_trash_keep_verified_copied_resources() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("look.cube");
+    std::fs::write(&source, lut_cube()).unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut r = runner();
+    let mut s = seed();
+    let record = lut_result(&mut s, &mut r, &media, &source, None, "lut-managed");
+    let mut library = engine::library::ProjectLibrary::open(
+        &dir.path().join("projects"),
+        engine::ByteBudget::new(128 << 20).unwrap(),
+    )
+    .unwrap();
+    library
+        .execute(
+            project::ProjectId(1),
+            Command::CreateProject {
+                id: project::ProjectId(1),
+                name: "Managed".into(),
+            },
+        )
+        .unwrap();
+    let original = library.list().unwrap()[0].path.clone();
+    let mut lease = project::WriterLease::acquire(&original).unwrap();
+    let mut data = lease.load().unwrap().project.into_data();
+    data.luts.push(record.clone());
+    lease.save(&Project::new(data).unwrap()).unwrap();
+    drop(lease);
+    library
+        .execute(
+            project::ProjectId(1),
+            Command::DuplicateProject {
+                id: project::ProjectId(2),
+            },
+        )
+        .unwrap();
+    let copied_path = library
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.id == project::ProjectId(2))
+        .unwrap()
+        .path;
+    let copied = project::load(&copied_path).unwrap().project.data().luts[0].clone();
+    assert_ne!(copied.directory, record.directory);
+    assert_eq!(copied.id, record.id);
+    let canonical = std::fs::read(copied.directory.join("canonical.cube")).unwrap();
+    assert_eq!(
+        std::fs::read(copied.directory.join("original.cube")).unwrap(),
+        lut_cube().as_bytes()
+    );
+    library.undo().unwrap();
+    assert!(!copied_path.exists());
+    library.redo().unwrap();
+    assert_eq!(
+        std::fs::read(copied.directory.join("canonical.cube")).unwrap(),
+        canonical
+    );
+    std::fs::write(copied.directory.join("canonical.cube"), b"changed").unwrap();
+    let history = library.history_len();
+    assert!(library.undo().is_err());
+    assert_eq!(library.history_len(), history);
+    assert!(copied_path.exists());
+    std::fs::write(copied.directory.join("canonical.cube"), &canonical).unwrap();
+    library
+        .execute(project::ProjectId(2), Command::DeleteProject {})
+        .unwrap();
+    assert!(!copied_path.exists());
+    library
+        .execute(project::ProjectId(2), Command::RestoreProject {})
+        .unwrap();
+    assert_eq!(
+        std::fs::read(copied.directory.join("canonical.cube")).unwrap(),
+        canonical
+    );
+    assert_eq!(
+        std::fs::read(record.directory.join("canonical.cube")).unwrap(),
+        canonical
+    );
+}
+
 fn submit_media(
     s: &mut Session,
     r: &mut JobRunner,

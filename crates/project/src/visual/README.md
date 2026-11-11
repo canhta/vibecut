@@ -2,7 +2,13 @@
 
 Persisted visual item properties: transform, blend selection, masks, effects, video transitions, canvas bounds and text typography. Evaluation, coverage math and device work belong to render and the desktop app.
 
+## Imported LUT records
+
+`ProjectData.luts` retains at most 16 unique content identities with bounded NFC provenance and absolute losslessly serializable bundle directories. Model validation is structural and refuses every effect reference absent from this collection; filesystem identity belongs to the [copied-resource owner](../../../engine/src/store/README.md#imported-lut-bundles). `color_grade` has one optional static LUT reference and static strength in 0..100, default 100. A reference is a typed effect value, never a scalar or an animation channel. `EffectParamUpdate` admits a number or the closed required `{"lut":hash-or-null}` object.
+
+
 ## Transform
+
 
 `TransformField` owns units, defaults and finite clamps for the five transform channels: position X/Y in project-canvas pixels (−100,000..=100,000, default 0), independent X/Y scale ratios (0.01..=10, default 1) and clockwise rotation in degrees (−360..=360, default 0). The command adapter refuses out-of-bounds input; animated evaluation clamps overshooting curves to these bounds.
 

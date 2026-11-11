@@ -9,6 +9,142 @@ use std::fs;
 use time::{Tick, TimeRange};
 
 #[test]
+fn lut_cli_imports_applies_reopens_and_refuses_without_project_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("look.vibecut");
+    new_project(&path);
+    exec(
+        &path,
+        "project.set_canvas",
+        json!({"width":64,"height":64,"preset":null}),
+    );
+    let track = add_track(&path, "Overlay")["created"][0]["track"]
+        .as_u64()
+        .unwrap();
+    let inserted = exec(
+        &path,
+        "timeline.insert",
+        json!({"placement":{"mode":"track","track":track},"item":{"source_range":{"start":0,"end":254016000000_i64},"start":0,"animations":{},"content":{"kind":"overlay","params":{"color":[50,100,150,255]}}}}),
+    );
+    let item = inserted["placements"][0]["item"]
+        .as_u64()
+        .unwrap()
+        .to_string();
+    let source = dir.path().join("look.cube");
+    fs::write(
+        &source,
+        "LUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n",
+    )
+    .unwrap();
+    let command = || {
+        let mut command = std::process::Command::new(crate::cli::process::bin());
+        command.args([
+            os("color"),
+            os("lut"),
+            path.as_os_str(),
+            os("--import"),
+            source.as_os_str(),
+            os("--item"),
+            os(&item),
+            os("--strength"),
+            os("50"),
+            os("--json"),
+        ]);
+        #[cfg(windows)]
+        command.env("LOCALAPPDATA", dir.path());
+        #[cfg(target_os = "macos")]
+        command.env("HOME", dir.path());
+        #[cfg(not(any(windows, target_os = "macos")))]
+        command.env("XDG_CACHE_HOME", dir.path());
+        command
+    };
+    let output = command().output().unwrap();
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let loaded = project::load(&path).unwrap().project;
+    assert_eq!(loaded.data().luts.len(), 1);
+    let record = &loaded.data().luts[0];
+    assert!(record.directory.join("original.cube").is_file());
+    fs::remove_file(&source).unwrap();
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let effect = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id.0.to_string() == item)
+        .unwrap()
+        .effects
+        .iter()
+        .find(|e| e.kind == "color_grade")
+        .unwrap();
+    assert_eq!(
+        effect.value("lut_strength"),
+        Some(&project::EffectValue::Scalar(50.))
+    );
+    assert!(render::lut::LutResources::resolve(&loaded, std::iter::once(effect), &hooks).is_ok());
+    let before = fs::read(&path).unwrap();
+    let exported = dir.path().join("look.mp4");
+    let output = cli(&[
+        os("export"),
+        path.as_os_str(),
+        os("--out"),
+        exported.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    if tools() {
+        let decode = |v: f64| {
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        // This table permutes encoded (r,g,b) to (g,b,r); mix in linear light.
+        let expected = [50., 100., 150.]
+            .into_iter()
+            .zip([100., 150., 50.])
+            .map(|(dry, wet)| {
+                (255. * video_oetf((decode(dry / 255.) + decode(wet / 255.)) / 2.)).round() as i32
+            })
+            .collect::<Vec<_>>();
+        for frame in decoded_rgb(&exported, 64, 64, &[0, 15, 29]) {
+            let center = &frame[(32 * 64 + 32) * 3..(32 * 64 + 32) * 3 + 3];
+            for (&actual, &expected) in center.iter().zip(&expected) {
+                assert!(
+                    (i32::from(actual) - expected).abs() <= 12,
+                    "decoded LUT {actual} != {expected}"
+                );
+            }
+        }
+    }
+    fs::write(&source, b"LUT_3D_SIZE 10000000\n").unwrap();
+    let output = command().output().unwrap();
+    assert_eq!(
+        code(&output),
+        6,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    let error = error_json(&output);
+    assert!(!error.to_string().contains(source.to_str().unwrap()));
+}
+
+#[test]
 fn exec_moves_and_trims_timeline_groups() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("group.vibecut");
@@ -383,7 +519,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                 exec(
                     &project,
                     "effects.add",
-                    json!({"item":0,"effect":{"id":"color_grade","kind":"color_grade","enabled":true,"params":{"brightness":{"kind":"scalar","value":0.0},"contrast":{"kind":"scalar","value":0.0},"saturation":{"kind":"scalar","value":0.0},"hue":{"kind":"scalar","value":0.0}}}}),
+                    json!({"item":0,"effect":project::effect_definition("color_grade").unwrap().instance("color_grade")}),
                 );
                 for (key, value) in [("brightness", 50.0), ("saturation", -50.0)] {
                     exec(

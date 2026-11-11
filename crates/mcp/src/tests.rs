@@ -83,6 +83,127 @@ async fn response(read: &mut BufReader<tokio::io::ReadHalf<tokio::io::DuplexStre
     serde_json::from_str(&line).unwrap()
 }
 
+#[tokio::test]
+async fn lut_source_import_is_denied_on_real_mcp_wire_before_job_or_io() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("private.cube");
+    std::fs::write(&source, b"must not be parsed").unwrap();
+    let budget = ByteBudget::new(128 << 20).unwrap();
+    let (handler, mut inbox) = Inbox::new(Grants::default(), budget.clone()).unwrap();
+    let (server, client) = tokio::io::duplex(65536);
+    let (server_read, server_write) = tokio::io::split(server);
+    let task = tokio::spawn(async move {
+        handler
+            .serve(transport::Framed::new(server_read, server_write))
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let (read, mut write) = tokio::io::split(client);
+    let mut read = BufReader::new(read);
+    send(&mut write,json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"lut-policy","version":"1"}}})).await;
+    assert!(response(&mut read).await.get("result").is_some());
+    send(
+        &mut write,
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    )
+    .await;
+    let mut data = project::Project::empty(project::ProjectId(1), "LUT policy".into())
+        .unwrap()
+        .into_data();
+    let id: project::LutId = serde_json::from_value(json!("01".repeat(32))).unwrap();
+    data.luts.push(project::LutRecord {
+        id,
+        name: "Registered look".into(),
+        licence: None,
+        source_name: "look.cube".into(),
+        source_hash: serde_json::from_value(json!(vec![0u8; 32])).unwrap(),
+        directory: root.path().join("already-registered"),
+    });
+    data.scene_mut().timeline.main.items.push(project::Item {
+        id: project::ItemId(1),
+        source_asset: None,
+        source_range: time::SourceRange::new(time::Tick::ZERO, time::Tick(time::TICKS_PER_SECOND))
+            .unwrap(),
+        start: time::Tick::ZERO,
+        content: project::ItemParams::Overlay(project::OverlayParams {
+            color: project::Color([80, 120, 200, 255]),
+        }),
+        effects: vec![
+            project::effect_definition("color_grade")
+                .unwrap()
+                .instance("grade"),
+        ],
+        masks: vec![],
+        animations: Default::default(),
+        retime: Default::default(),
+        blend_mode: Default::default(),
+        hidden: false,
+    });
+    let mut session = Session::new(project::Project::new(data).unwrap(), 10).unwrap();
+    let revision = session.revision();
+    let before = session.project().clone();
+    send(&mut write,json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"command_run","arguments":{"command":"color.import_lut","params":{"path":source},"base_rev":revision,"idempotency_key":"lut-source","request_id":"lut-source"}}})).await;
+    while inbox.receive.is_empty() {
+        tokio::task::yield_now().await;
+    }
+    inbox
+        .poll_projects(|_, inbox, value| {
+            inbox.execute_project(&mut session, value, |_, _| {
+                panic!("import cannot save project")
+            })
+        })
+        .unwrap();
+    let denied = response(&mut read).await;
+    assert_eq!(
+        denied.pointer("/result/structuredContent/value/value"),
+        Some(&json!("permission")),
+        "{denied}"
+    );
+    assert_eq!(session.project(), &before);
+    assert_eq!(session.revision(), revision);
+    assert!(
+        inbox
+            .projects
+            .values()
+            .all(|runner| runner.snapshots().is_empty())
+    );
+    assert_eq!(std::fs::read(source).unwrap(), b"must not be parsed");
+    // Agent edits may name an existing resource without reading any path. An
+    // absent bundle here also proves selection itself does no filesystem work.
+    send(&mut write,json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"command_run","arguments":{"command":"effects.update_param","params":{"item":1,"effect":"grade","key":"lut","value":{"lut":id}},"base_rev":revision,"idempotency_key":"lut-select","request_id":"lut-select"}}})).await;
+    while inbox.receive.is_empty() {
+        tokio::task::yield_now().await;
+    }
+    let mut saved = false;
+    inbox
+        .poll_projects(|_, inbox, value| {
+            inbox.execute_project(&mut session, value, |_, _| {
+                saved = true;
+                Ok(())
+            })
+        })
+        .unwrap();
+    let selected = response(&mut read).await;
+    assert_eq!(
+        selected.pointer("/result/isError"),
+        Some(&json!(false)),
+        "{selected}"
+    );
+    assert!(!saved);
+    assert_eq!(session.history_len(), (1, 0));
+    assert_ne!(session.revision(), revision);
+    assert_eq!(
+        session.project().data().scene().timeline.main.items[0].effects[0].value("lut"),
+        Some(&project::EffectValue::Lut(Some(id)))
+    );
+    assert!(!root.path().join("already-registered").exists());
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+}
+
 #[tokio::test(start_paused = true)]
 async fn hung_calls_expire_and_cancelled_queued_mutations_never_execute() {
     let (handler, mut inbox) =
@@ -395,6 +516,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("effects.add", Effect::Edit, true, true),
         ("effects.remove", Effect::Edit, true, true),
         ("effects.update_param", Effect::Edit, true, true),
+        ("color.import_lut", Effect::JobControl, false, false),
+        ("color.register_lut", Effect::Edit, false, false),
         ("effects.reorder", Effect::Edit, true, true),
         ("effects.toggle", Effect::Edit, true, true),
         ("keyframes.set_param", Effect::Edit, true, true),

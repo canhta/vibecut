@@ -1,6 +1,7 @@
 //! Routes a native command to its owning adapter.
 mod ai;
 mod catalog;
+mod color;
 mod libraries;
 mod media;
 mod project;
@@ -32,6 +33,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             false,
             0,
         )),
+        "color" => color::run(context, rest),
         "probe" => media::probe(context, rest),
         "media" => media::generate(context, rest),
         "project" => project::project(context, rest),

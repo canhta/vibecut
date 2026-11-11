@@ -11,6 +11,8 @@ only the rules that span commands.
 
 ## Import policy
 
+`color.import_lut` is a Human source-path CPU job through the process media access object. It publishes a durable descriptor, never a Session edit. The caller checks its captured session/revision/item before `color.register_lut` plus grade/reference/strength edits in one Batch; `Session::apply_lut` composes that consumed batch for desktop and CLI. Registration validates structure, deduplicates exact descriptors and refuses conflicting first metadata. Render verifies bytes when resolving a reference. Invalid registration/application, stale revision, locked/missing item or an open transaction leaves the project/history unchanged; a complete unregistered bundle can remain within the store quota. Ordinary edits may select already registered references without granting arbitrary file access.
+
 `import.add_asset` and every inserted visual item raise project FPS to the greatest video-stream
 rate, compared as exact rationals, and never lower it. Audio and image sources, including
 animated images, do not change FPS. A raised rate that cannot produce exact positive canvas

@@ -85,6 +85,11 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     write_wav(&wav, 8_000);
     write_png(&png);
     write_video(&video);
+    std::fs::write(
+        root.path().join("look.cube"),
+        "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
+    )
+    .unwrap();
     let media = Mutex::new(media_access(root.path()));
     let chapters = fixture_chapters();
     let (cache, _) = engine::cache::ArtifactCache::open(
@@ -338,6 +343,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "captions.generate",
             "captions.translate",
             "chapters.generate",
+            "color.import_lut",
             "fillers.classify",
             "fonts.download",
             "fonts.import",
@@ -384,6 +390,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "captions.rename_preset",
                 "clipboard.copy_keyframes",
                 "clipboard.read",
+                "color.import_lut",
                 "timeline.set_ripple",
             ],
         ),
@@ -463,6 +470,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "begin_gesture",
             "cancel_gesture",
             "captions.import",
+            "color.import_lut",
+            "color.register_lut",
             "commit_gesture",
             "fonts.download",
             "fonts.import",

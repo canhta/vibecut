@@ -12,6 +12,7 @@ pub use export::{
 };
 pub use image::Image;
 use media::AssetId;
+pub use scene::effects::lut;
 pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Fit, Placement,
     RasterCacheStats, Rect, RenderSettings, Renderer,
@@ -123,6 +124,16 @@ pub enum Error {
     Unavailable(Vec<Unavailable>),
     #[error("audio mix peak {peak} exceeds full scale; reduce gain before export")]
     AudioOverload { peak: f32 },
+    #[error("invalid cube LUT at line {line}")]
+    InvalidLut {
+        line: u32,
+        reason: lut::LutInvalidReason,
+    },
+    #[error("required LUT unavailable")]
+    LutUnavailable {
+        id: project::LutId,
+        reason: lut::LutUnavailableReason,
+    },
     #[error("render IO failed")]
     Io(#[from] std::io::Error),
     #[error("render media failed")]

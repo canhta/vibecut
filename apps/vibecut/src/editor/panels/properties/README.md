@@ -1,5 +1,7 @@
 # Properties
 
+The Adjust area exposes imported LUT selection, Import, static Strength and a Locate action for the typed missing-resource state. This is an adopted new composition using the existing 39 px row, 22 px field and 12 px type kit, without a reference-parity claim. The workflow lends the shared process media access to one bounded runner and captures Session/revision/snapshot/item before the async picker. Selection, project/revision, lock, tab and transaction changes invalidate before polling or applying a result; cancellation/disposal uses the runner's existing join. File completion follows the real workspace picker seam; dismissing that picker releases the capture and enables Import without editing the project. Import/register/application is one undo step; selection and strength use ordinary edits, and strength remains static.
+
 Interface: `State`, `Action`, `Widget`, `show`, `apply`, `element_kind`, `ElementKind`,
 `PropertiesTab`, `SharedField`, `shared_fields`, `ColorTarget`, `font_picker`,
 `font_picker::State`.

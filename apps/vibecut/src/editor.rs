@@ -179,7 +179,20 @@ impl Editor {
         &mut self,
         media: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
     ) {
+        self.properties
+            .attach_luts(media.clone(), self.playback.budget().clone());
         self.media.set_access(media);
+    }
+
+    /// Complete the source picker through the captured properties workflow.
+    pub fn lut_picked_file(&mut self, path: Option<std::path::PathBuf>) -> Result<()> {
+        let mut state = std::mem::take(&mut self.properties);
+        let result = state.picked_lut(&mut self.desk(), path);
+        if result.is_err() {
+            state.abort_lut();
+        }
+        self.properties = state;
+        result
     }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {

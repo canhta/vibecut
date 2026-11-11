@@ -27,6 +27,7 @@ pub use runtime::{
 };
 mod store;
 pub use store::library;
+pub use store::luts;
 pub use store::recovery;
 pub mod subtitles;
 pub mod transcript;

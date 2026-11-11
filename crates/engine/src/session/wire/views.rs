@@ -148,6 +148,7 @@ pub struct JobId(pub u64);
 )]
 #[serde(rename_all = "snake_case")]
 pub enum JobKind {
+    ImportLut,
     Transcribe,
     Translate,
     SuggestClips,

@@ -4,6 +4,7 @@ mod canvas;
 mod commands;
 mod effects;
 mod fonts;
+pub(in crate::editor) mod lut;
 mod masks;
 mod number_edit;
 mod speed;
@@ -67,6 +68,8 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 }
                 Ok(())
             }
+            Action::ImportLut { item, expected } => state.request_lut(desk, item, expected),
+            Action::SelectLut { item, id } => state.select_lut(desk, item, id),
             Action::SetField { item, field, value } => {
                 commands::set_item_field(desk, item, &field, &value)
             }

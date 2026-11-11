@@ -187,7 +187,7 @@ fn set_key_color(
             item,
             effect: effect.to_owned(),
             key: "key_color".into(),
-            value: packed,
+            value: project::EffectParamUpdate::Scalar(packed),
         },
         false,
     )?;
@@ -284,7 +284,7 @@ pub(super) fn set_effect_param(
                 item,
                 effect: effect.to_owned(),
                 key: key.to_owned(),
-                value,
+                value: project::EffectParamUpdate::Scalar(value),
             },
             false,
         )?;

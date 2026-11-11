@@ -53,6 +53,12 @@ pub struct KeyInputs<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CacheKey([u8; 32]);
 impl CacheKey {
+    pub(crate) fn lut_request(fingerprint: blake3::Hash) -> Self {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"vibecut-lut-request-v1");
+        hash.update(fingerprint.as_bytes());
+        Self(*hash.finalize().as_bytes())
+    }
     pub fn new(inputs: KeyInputs<'_>) -> Result<Self, EditError> {
         if [inputs.provider, inputs.model, inputs.version]
             .iter()

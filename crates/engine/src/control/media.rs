@@ -1,4 +1,4 @@
-//! Lends the process artifact caches media generation and analysis jobs read and publish through.
+//! Lends process media caches and durable LUT sources to generation/import jobs.
 use crate::{
     EditError,
     artifacts::thumbnail_strip::{
@@ -18,10 +18,11 @@ use time::{SourceRange, Tick, TimeRange};
 /// Entries each cache may retain; the CLI and desktop composition roots agree.
 const MAX_CACHE_ENTRIES: usize = 128;
 
-/// One process's media caches and the generation jobs they have not published yet.
+/// One process's media stores and the generation jobs they have not published yet.
 /// The composition root builds it from the same caches its display queries read.
 pub struct MediaAccess {
     artifacts: ArtifactCache,
+    luts: crate::store::luts::LutStore,
     thumbnails: ThumbnailCache,
     waveforms: BTreeMap<JobId, WaveformJob>,
     strips: BTreeMap<JobId, ThumbnailStripJob>,
@@ -47,9 +48,14 @@ impl MediaAccess {
         Ok(snapshots)
     }
 
-    pub fn new(artifacts: ArtifactCache, thumbnails: ThumbnailCache) -> Self {
+    pub fn new(
+        artifacts: ArtifactCache,
+        thumbnails: ThumbnailCache,
+        luts: crate::store::luts::LutStore,
+    ) -> Self {
         Self {
             artifacts,
+            luts,
             thumbnails,
             waveforms: BTreeMap::new(),
             strips: BTreeMap::new(),
@@ -57,21 +63,26 @@ impl MediaAccess {
         }
     }
 
-    /// Open the process waveform and thumbnail caches under the shared cache
-    /// root. One owner holds them so generation and display read the same
+    /// Open process waveform/thumbnail caches and the separate durable LUT store
+    /// under the shared root. One owner holds them so generation and display read the same
     /// entries; a second open of the same root reports [`crate::RuntimeError::CacheBusy`]
     /// through `EditError::Runtime`.
     pub fn open(budget: crate::ByteBudget) -> Result<Self, EditError> {
         Self::open_in(&crate::cache::CacheRoot::discover()?.models(), budget)
     }
 
-    /// Open the two caches under an explicit root. The desktop keeps them with
+    /// Open the caches and durable LUT store under an explicit root. The desktop keeps them with
     /// its workspace, while the headless CLI uses the shared cache root.
     pub fn open_in(root: &std::path::Path, budget: crate::ByteBudget) -> Result<Self, EditError> {
         let artifacts =
             ArtifactCache::open(&root.join("waveform"), budget.clone(), MAX_CACHE_ENTRIES)?.0;
         let thumbnails = ThumbnailCache::open(&root.join("thumbnails"), budget, MAX_CACHE_ENTRIES)?;
-        Ok(Self::new(artifacts, thumbnails))
+        let luts = crate::store::luts::LutStore::open(&root.join("luts"))?;
+        Ok(Self::new(artifacts, thumbnails, luts))
+    }
+
+    pub(crate) fn lut_store(&self) -> crate::store::luts::LutStore {
+        self.luts.clone()
     }
 
     /// Cache-only waveform bars for one clip's visible range. Maps trim and

@@ -5,6 +5,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
 mod image_ops;
+pub mod lut;
 
 /// One shader uniform: what an effect hands a single-pass pixel op.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,6 +28,11 @@ impl Uniform {
 /// One device-independent pass. Shader names are pipeline data.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EffectPass {
+    /// CPU reference pass with immutable, admitted imported samples.
+    Lut3d {
+        table: std::sync::Arc<lut::Cube3d>,
+        strength: f32,
+    },
     /// One normalized, separable convolution.
     Convolve {
         entry_point: &'static str,
@@ -47,6 +53,7 @@ pub enum EffectPass {
 impl EffectPass {
     pub const fn entry_point(&self) -> &'static str {
         match self {
+            Self::Lut3d { .. } => "lut_3d",
             Self::Convolve { entry_point, .. }
             | Self::Pixel { entry_point, .. }
             | Self::Sample { entry_point, .. } => entry_point,
@@ -64,6 +71,7 @@ impl EffectPass {
     /// The flat floats a shader reads: convolution weights or flattened uniforms.
     pub fn values(&self) -> Cow<'_, [f32]> {
         match self {
+            Self::Lut3d { .. } => Cow::Borrowed(&[]),
             Self::Convolve { weights, .. } => Cow::Borrowed(weights),
             Self::Pixel { uniforms, .. } | Self::Sample { uniforms, .. } => {
                 let mut flat = Vec::with_capacity(uniforms.len() * 3);
@@ -1104,6 +1112,32 @@ impl EffectCompositor for CpuEffects {
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
         for pass in passes {
             let (horizontal, weights) = match pass {
+                EffectPass::Lut3d { table, strength } => {
+                    crate::image::row_chunks(
+                        &mut b.pixels,
+                        a.width as usize,
+                        hooks,
+                        |start, rows| {
+                            check(hooks)?;
+                            let source = a
+                                .pixels
+                                .get(start..start + rows.len())
+                                .ok_or(Error::Invalid("LUT pixels"))?;
+                            for (out_row, in_row) in rows
+                                .chunks_mut(a.width as usize)
+                                .zip(source.chunks(a.width as usize))
+                            {
+                                check(hooks)?;
+                                for (out, pixel) in out_row.iter_mut().zip(in_row) {
+                                    *out = table.pixel(*pixel, *strength);
+                                }
+                            }
+                            Ok(())
+                        },
+                    )?;
+                    std::mem::swap(&mut a, &mut b);
+                    continue;
+                }
                 EffectPass::Sample { entry_point, .. } => {
                     let op = sample_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
                     let values = pass.values();
@@ -1206,6 +1240,9 @@ impl EffectCompositor for CpuEffects {
 pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
     Image::bytes(width, height)?;
     let valid = match pass {
+        EffectPass::Lut3d { strength, .. } => {
+            strength.is_finite() && (0.0..=1.0).contains(strength)
+        }
         EffectPass::Pixel { entry_point, .. } => pixel_op(entry_point).is_some_and(|op| {
             let values = pass.values();
             values.len() == op.len && values.iter().all(|v| v.is_finite()) && (op.valid)(&values)
@@ -1243,6 +1280,7 @@ enum ResolvedValue {
     Bool(bool),
     Color([f64; 4]),
     Point([f64; 2]),
+    Lut(Option<project::LutId>),
 }
 impl From<EffectValue> for ResolvedValue {
     fn from(value: EffectValue) -> Self {
@@ -1252,6 +1290,7 @@ impl From<EffectValue> for ResolvedValue {
             EffectValue::Bool(v) => Self::Bool(v),
             EffectValue::Color(v) => Self::Color(v.0.map(|v| f64::from(v) / 255.0)),
             EffectValue::Point(v) => Self::Point(v),
+            EffectValue::Lut(v) => Self::Lut(v),
         }
     }
 }
@@ -1664,12 +1703,25 @@ pub fn evaluate_effect(
     local: Tick,
     geometry: EffectGeometry,
     fine: bool,
+    resources: &lut::LutResources,
 ) -> Result<Vec<EffectPass>> {
     let evaluate = evaluator(&effect.kind).ok_or(Error::Unsupported("effect kind"))?;
     let [width, height] = geometry.working_size();
     let mut frame = EffectFrame::new(animations, effect, local, width, height)?;
     frame.fine = fine;
-    evaluate(&frame, &geometry)
+    let mut passes = evaluate(&frame, &geometry)?;
+    if effect.kind == "color_grade" && frame.scalar("lut_strength")? != 0. {
+        if let Some(ResolvedValue::Lut(Some(id))) = frame.params.get("lut") {
+            let table = resources.get(*id)?;
+            if !table.is_identity() {
+                passes.push(EffectPass::Lut3d {
+                    table,
+                    strength: (frame.scalar("lut_strength")? / 100.) as f32,
+                });
+            }
+        }
+    }
+    Ok(passes)
 }
 
 #[cfg(test)]

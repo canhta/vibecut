@@ -52,6 +52,49 @@ impl Session {
                     payload: self.clipboard_payload(),
                 })
             }
+            Command::ImportLut {
+                path,
+                name,
+                licence,
+                expected_hash,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let expected = expected_hash
+                    .map(|id| {
+                        self.project()
+                            .data()
+                            .luts
+                            .iter()
+                            .find(|r| r.id == id)
+                            .cloned()
+                            .ok_or(EditError::Invalid("unregistered LUT relink"))
+                    })
+                    .transpose()?;
+                let store = caller
+                    .media
+                    .ok_or(EditError::Unsupported("LUT source store unavailable"))?
+                    .lock()
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
+                    .lut_store();
+                let project = self.project().data().id;
+                let job = crate::artifacts::lut::submit(
+                    runner,
+                    store,
+                    project,
+                    path,
+                    name,
+                    licence,
+                    expected,
+                    fingerprint,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
             Command::Inspect {} => {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);

@@ -48,7 +48,7 @@ pub(super) fn execute_update_effect_param(
     id: ItemId,
     effect: String,
     key: String,
-    value: f64,
+    value: project::EffectParamUpdate,
 ) -> Result<ProjectData> {
     let target = effect_item(&mut data, id)?;
     let effect = target
@@ -56,7 +56,7 @@ pub(super) fn execute_update_effect_param(
         .iter_mut()
         .find(|e| e.id == effect)
         .ok_or(EditError::Invalid("missing effect"))?;
-    effect.set_scalar(&key, value)?;
+    effect.set_param(&key, value)?;
 
     Ok(data)
 }
@@ -97,4 +97,56 @@ pub(super) fn execute_reorder_effects(
     target.effects = reordered;
 
     Ok(data)
+}
+
+/// Register and apply one completed import as one ordinary atomic batch.
+impl crate::Session {
+    pub fn apply_lut(
+        &mut self,
+        item: ItemId,
+        record: project::LutRecord,
+        strength: f64,
+    ) -> Result<crate::Outcome> {
+        let target = self
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item)
+            .ok_or(EditError::NoItem(item))?;
+        let current = target.effects.iter().find(|e| e.kind == "color_grade");
+        let mut commands = vec![crate::Command::RegisterLut {
+            record: record.clone(),
+        }];
+        let effect = if let Some(effect) = current {
+            effect.id.clone()
+        } else {
+            let id = (1..=256)
+                .map(|i| format!("color_grade{i}"))
+                .find(|id| !target.effects.iter().any(|e| &e.id == id))
+                .ok_or(EditError::Limit)?;
+            commands.push(crate::Command::AddEffect {
+                item,
+                effect: project::effect_definition("color_grade")?.instance(&id),
+            });
+            id
+        };
+        commands.push(crate::Command::UpdateEffectParam {
+            item,
+            effect: effect.clone(),
+            key: "lut".into(),
+            value: project::EffectParamUpdate::LutRef(project::LutReference {
+                lut: Some(record.id),
+            }),
+        });
+        commands.push(crate::Command::UpdateEffectParam {
+            item,
+            effect,
+            key: "lut_strength".into(),
+            value: project::EffectParamUpdate::Scalar(strength),
+        });
+        self.apply(crate::Command::Batch { commands })
+    }
 }

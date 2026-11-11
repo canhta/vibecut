@@ -38,6 +38,7 @@ pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
         ("color_grade", Some("contrast")) => Text::Contrast,
         ("color_grade", Some("saturation")) => Text::Saturation,
         ("color_grade", Some("hue")) => Text::Hue,
+        ("color_grade", Some("lut_strength")) => Text::LutStrength,
         ("channel_mix", Some("rr")) => Text::EffectRedFromRed,
         ("channel_mix", Some("rg")) => Text::EffectRedFromGreen,
         ("channel_mix", Some("rb")) => Text::EffectRedFromBlue,

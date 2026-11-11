@@ -2927,6 +2927,7 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         Tick(SECOND),
         EffectGeometry::new([1, 1], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     use render::effects::EffectCompositor;
@@ -3038,7 +3039,7 @@ fn effect_rgb_zero_key_base_survives_static_changes_and_last_key_removal() {
             item: video,
             effect: "rgb".into(),
             key: "color".into(),
-            value: 16711680.0,
+            value: project::EffectParamUpdate::Scalar(16711680.0),
         })
         .unwrap();
     let mut h = build(editor);
@@ -3372,6 +3373,7 @@ fn effect_picture(instance: &project::EffectInstance) -> Vec<[f32; 4]> {
         Tick::ZERO,
         EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     render::effects::apply_effect(

@@ -986,6 +986,7 @@ fn preview_quality_reaches_the_evaluator_and_stays_close_to_fine() {
             Tick::ZERO,
             render::effects::EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap(),
             fine,
+            &render::lut::LutResources::default(),
         )
         .unwrap()
     };
@@ -1568,6 +1569,7 @@ fn effect_output_at(
         at,
         render::effects::EffectGeometry::new([source.len() as u32, 1], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     for pass in &passes {
@@ -2042,6 +2044,7 @@ fn changed_value(param: &project::EffectParamDefinition) -> EffectValue {
             })
         }
         EffectParamKind::Point => EffectValue::Point([1.0, 1.0]),
+        EffectParamKind::Lut => EffectValue::Lut(None),
     }
 }
 
@@ -2054,6 +2057,7 @@ fn pixel_effects_that_are_identity_at_default_emit_no_pass() {
             time::Tick::ZERO,
             render::effects::EffectGeometry::new([13, 1], [1.0, 1.0]).unwrap(),
             true,
+            &render::lut::LutResources::default(),
         )
         .unwrap();
         assert!(passes.is_empty(), "{kind} emits an identity pass");
@@ -2163,6 +2167,7 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
                     project::EffectParamKind::Point => {
                         project::EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
                     }
+                    project::EffectParamKind::Lut => project::EffectValue::Lut(None),
                 };
                 params.push((param.id, value));
             }
@@ -2318,6 +2323,7 @@ fn colour_output(
         at,
         render::effects::EffectGeometry::new([1, 1], [1.0, 1.0]).unwrap(),
         fine,
+        &render::lut::LutResources::default(),
     )?;
     Ok(apply_effect(image, &passes, &below, &CpuEffects, &hooks)?.pixels()[0])
 }
@@ -2735,6 +2741,7 @@ fn streak_taps_match_independent_impulse_checker_alpha_constants_and_boundaries(
                         time::Tick::ZERO,
                         EffectGeometry::new(size, gains).unwrap(),
                         fine,
+                        &render::lut::LutResources::default(),
                     )
                     .unwrap();
                     let out = apply_effect(
@@ -2792,7 +2799,8 @@ fn streak_geometry_extent_raw_pass_budget_and_cancellation_refuse_without_leaks(
             &streak(1000.0, 90.0),
             time::Tick::ZERO,
             EffectGeometry::new([8, 4], [f64::MAX, 1.0]).unwrap(),
-            true
+            true,
+            &render::lut::LutResources::default(),
         ),
         Err(Error::Invalid("effect spatial extent"))
     ));
@@ -2831,6 +2839,7 @@ fn streak_geometry_extent_raw_pass_budget_and_cancellation_refuse_without_leaks(
         time::Tick::ZERO,
         EffectGeometry::new([8, 4], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     assert!(matches!(
@@ -3255,6 +3264,7 @@ fn measure_streak_1080p() {
             time::Tick::ZERO,
             EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
             true,
+            &render::lut::LutResources::default(),
         )
         .unwrap();
         let run = || {
@@ -3436,6 +3446,7 @@ fn spatial_output(
         time::Tick::ZERO,
         EffectGeometry::new(size, gains).unwrap(),
         fine,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     for pass in &passes {
@@ -3637,7 +3648,8 @@ fn edge_relief_raw_extent_budget_cancel_and_drop_refuse_without_leaks() {
             &colour_relief(0.0, 10.0, 100.0, 0.0),
             time::Tick::ZERO,
             EffectGeometry::new([8, 4], [f64::MAX, 1.0]).unwrap(),
-            true
+            true,
+            &render::lut::LutResources::default(),
         ),
         Err(Error::Invalid("effect spatial extent"))
     ));
@@ -3647,6 +3659,7 @@ fn edge_relief_raw_extent_budget_cancel_and_drop_refuse_without_leaks() {
         time::Tick::ZERO,
         EffectGeometry::new([8, 4], [0.75, 1.5]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     assert!(matches!(
@@ -3703,6 +3716,7 @@ fn measure_edge_relief_1080p() {
             time::Tick::ZERO,
             EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
             true,
+            &render::lut::LutResources::default(),
         )
         .unwrap();
         let run = || {
@@ -3781,6 +3795,7 @@ fn streak_cancels_inside_sample_rows_and_releases_partial_images() {
         time::Tick::ZERO,
         EffectGeometry::new([8, 8], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     assert!(matches!(

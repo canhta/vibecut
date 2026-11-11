@@ -12,6 +12,7 @@ impl Editor {
             crate::editor::context::single(&self.selection),
         );
         crate::editor::properties::apply(&mut self.desk(), actions);
+        self.drain_requests();
         // The eyedropper belongs to one selected clip's panel.
         if self.player.key_color_pick.as_ref().is_some_and(|pick| {
             crate::editor::context::single(&self.selection) != Some(pick.item)
@@ -254,6 +255,7 @@ impl Editor {
             ui.ctx().request_repaint();
         }
         crate::editor::properties::apply(&mut self.desk(), actions);
+        self.drain_requests();
     }
     /// Paint the export dialog and route its requests.
     fn show_export(&mut self, ui: &mut egui::Ui) {

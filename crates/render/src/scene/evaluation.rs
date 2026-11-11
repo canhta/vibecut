@@ -168,6 +168,11 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
+        let lut_resources = super::effects::lut::LutResources::resolve(
+            project,
+            active.iter().flat_map(|item| item.effects.iter()),
+            hooks,
+        )?;
         let video: Vec<_> = active
             .iter()
             .filter(|i| matches!(i.content, ItemParams::Video(_)))
@@ -311,6 +316,7 @@ impl<'a> Renderer<'a> {
                             local,
                             geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
                             !preview,
+                            &lut_resources,
                         )
                     })
                     .collect::<Result<Vec<_>>>()?;

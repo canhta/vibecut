@@ -91,7 +91,7 @@ fn registry_effect_edits_persist_and_undo_atomically() {
                 item: ItemId(2),
                 effect: "blur1".into(),
                 key: "intensity".into(),
-                value: bad,
+                value: project::EffectParamUpdate::Scalar(bad),
             })
             .is_err()
         );
@@ -108,7 +108,7 @@ fn registry_effect_edits_persist_and_undo_atomically() {
         item: ItemId(2),
         effect: "blur1".into(),
         key: "intensity".into(),
-        value: 35.0,
+        value: project::EffectParamUpdate::Scalar(35.0),
     })
     .unwrap();
     let path = AnimationPath::new("effects.blur1.params.intensity").unwrap();
@@ -195,7 +195,7 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
             item: ItemId(2),
             effect: "a".into(),
             key: "intensity".into(),
-            value: 42.0,
+            value: project::EffectParamUpdate::Scalar(42.0),
         },
     ] {
         let before = s.project().clone();
@@ -229,7 +229,7 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
             item: ItemId(2),
             effect: "a".into(),
             key: "unknown".into(),
-            value: 1.0,
+            value: project::EffectParamUpdate::Scalar(1.0),
         })
         .is_err()
     );
@@ -239,7 +239,7 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
             item: ItemId(2),
             effect: "a".into(),
             key: "intensity".into(),
-            value,
+            value: project::EffectParamUpdate::Scalar(value),
         })
         .unwrap();
     }
@@ -298,7 +298,7 @@ fn stack_gestures_round_trip_and_refuse_invalid_orders() {
                 item: ItemId(2),
                 effect: "a".into(),
                 key: "intensity".into(),
-                value: 5.0,
+                value: project::EffectParamUpdate::Scalar(5.0),
             },
         ),
     ] {
@@ -730,6 +730,7 @@ fn thumbnails_cache_by_content_evict_and_cancel_before_publication() {
         Tick::ZERO,
         EffectGeometry::new([32, 18], [1.0, 1.0]).unwrap(),
         true,
+        &render::lut::LutResources::default(),
     )
     .unwrap();
     let expected = CpuEffects
@@ -1139,7 +1140,7 @@ fn audio_refuses_even_an_empty_effect_reorder() {
                 item: ItemId(2),
                 effect: "a".into(),
                 key: "intensity".into(),
-                value: 5.0,
+                value: project::EffectParamUpdate::Scalar(5.0),
             },
         ),
     ] {
@@ -1173,7 +1174,7 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
                 item: ItemId(2),
                 effect: "color_grade".into(),
                 key: key.into(),
-                value: edge,
+                value: project::EffectParamUpdate::Scalar(edge),
             })
             .unwrap();
             s.apply(Command::Undo {}).unwrap();
@@ -1186,7 +1187,7 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
                     item: ItemId(2),
                     effect: "color_grade".into(),
                     key: key.into(),
-                    value: bad,
+                    value: project::EffectParamUpdate::Scalar(bad),
                 })
                 .is_err()
             );
@@ -1198,7 +1199,7 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
             item: ItemId(2),
             effect: "color_grade".into(),
             key: "intensity".into(),
-            value: 1.0,
+            value: project::EffectParamUpdate::Scalar(1.0),
         })
         .is_err()
     );
@@ -1209,7 +1210,7 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
             item: ItemId(2),
             effect: "color_grade".into(),
             key: "contrast".into(),
-            value: v,
+            value: project::EffectParamUpdate::Scalar(v),
         })
         .unwrap();
     }
@@ -1247,7 +1248,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
             item: ItemId(2),
             effect: "chroma_key".into(),
             key: key.into(),
-            value: edge,
+            value: project::EffectParamUpdate::Scalar(edge),
         })
         .unwrap();
         s.apply(Command::Undo {}).unwrap();
@@ -1265,7 +1266,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
                 item: ItemId(2),
                 effect: "chroma_key".into(),
                 key: key.into(),
-                value: bad,
+                value: project::EffectParamUpdate::Scalar(bad),
             })
             .is_err(),
             "{key} {bad}"
@@ -1277,7 +1278,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
         item: ItemId(2),
         effect: "chroma_key".into(),
         key: "key_color".into(),
-        value: 0x11_22_33 as f64,
+        value: project::EffectParamUpdate::Scalar(0x11_22_33 as f64),
     })
     .unwrap();
     assert_eq!(
@@ -1292,7 +1293,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
                 item: ItemId(2),
                 effect: "chroma_key".into(),
                 key: "key_color".into(),
-                value: bad,
+                value: project::EffectParamUpdate::Scalar(bad),
             })
             .is_err(),
             "{bad}"
@@ -1304,7 +1305,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
             item: ItemId(2),
             effect: "chroma_key".into(),
             key: "contrast".into(),
-            value: 1.0,
+            value: project::EffectParamUpdate::Scalar(1.0),
         })
         .is_err()
     );
@@ -1315,7 +1316,7 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
             item: ItemId(2),
             effect: "chroma_key".into(),
             key: "intensity".into(),
-            value: v,
+            value: project::EffectParamUpdate::Scalar(v),
         })
         .unwrap();
     }

@@ -255,6 +255,7 @@ fn prepare_clip(
         canvas: source.data().canvas.clone(),
         original_canvas_size: source.data().original_canvas_size,
         assets: vec![options.asset.clone()],
+        luts: source.data().luts.clone(),
         scenes: vec![project::Scene {
             id: project::SceneId(0),
             name: "Main scene".into(),

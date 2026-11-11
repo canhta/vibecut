@@ -792,6 +792,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             local,
             EffectGeometry::new([320, 180], [1.0, 1.0]).unwrap(),
             true,
+            &render::lut::LutResources::default(),
         )
         .unwrap();
         assert_eq!(passes.is_empty(), frame == 3, "actual evaluator phase");

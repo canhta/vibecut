@@ -1,5 +1,7 @@
 # Control
 
+`color.import_lut` borrows the process media access only long enough to clone the durable store, then submits a bounded CPU job without a lock across IO. Its descriptor is `JobOutput::Lut`; a later Human `color.register_lut` edit plus ordinary grade/reference/strength edits consumes it. Agents cannot import arbitrary source paths. Registered-reference edits retain Agent policy and ordinary revision/replay/transaction guards. The [copied-resource contract](../store/README.md#imported-lut-bundles) owns publication, quota and relink.
+
 Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
 `Session::control_typed`, `snapshot_and_subscribe`, `JobOutput`; `Caller.fonts` and
 `Caller.sounds` lend the process asset libraries and `Caller.chapters` lends the process

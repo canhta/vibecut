@@ -4,6 +4,62 @@ use time::{SourceRange, Tick};
 
 const OPTIONS: &[&str] = &["off", "low", "high"];
 
+#[test]
+fn lut_model_refuses_unregistered_references_and_keeps_current_wire_domains() {
+    let id = LutId::new(media::ContentHash::from_bytes(b"canonical"));
+    for value in [
+        serde_json::json!({}),
+        serde_json::json!({"lut":"abc"}),
+        serde_json::json!({"lut":id.hex().to_uppercase()}),
+        serde_json::json!({"lut":null,"extra":1}),
+        serde_json::json!("4"),
+    ] {
+        assert!(serde_json::from_value::<EffectParamUpdate>(value).is_err());
+    }
+    assert_eq!(
+        serde_json::from_str::<EffectParamUpdate>("4").unwrap(),
+        EffectParamUpdate::Scalar(4.)
+    );
+    assert_eq!(
+        serde_json::from_str::<EffectParamUpdate>("{\"lut\":null}").unwrap(),
+        EffectParamUpdate::LutRef(LutReference { lut: None })
+    );
+    let effect = effect_definition("color_grade")
+        .unwrap()
+        .instance("grade")
+        .with("lut", EffectValue::Lut(Some(id)))
+        .unwrap();
+    assert!(matches!(
+        project_with_effects(vec![effect.clone()]),
+        Err(Error::Invalid("unregistered LUT"))
+    ));
+    let mut data = project_with_effects(vec![]).unwrap().into_data();
+    let record = LutRecord {
+        id,
+        name: "Look".into(),
+        licence: Some("User licence".into()),
+        source_name: "look.cube".into(),
+        source_hash: media::ContentHash::from_bytes(b"raw"),
+        directory: std::env::temp_dir().join("immutable-lut"),
+    };
+    data.luts.push(record.clone());
+    data.scene_mut().timeline.overlays[0].items[0]
+        .effects
+        .push(effect);
+    let project = Project::new(data.clone()).unwrap();
+    assert_eq!(
+        project::decode(&project::encode(&project, false).unwrap())
+            .unwrap()
+            .project,
+        project
+    );
+    data.luts.push(record);
+    assert!(matches!(
+        Project::new(data),
+        Err(Error::Invalid("duplicate LUT"))
+    ));
+}
+
 /// A real project candidate carrying exactly these effects on one text item.
 fn project_with_effects(effects: Vec<EffectInstance>) -> project::Result<Project> {
     let mut data = Project::empty(ProjectId(1), "effects".into())?.into_data();

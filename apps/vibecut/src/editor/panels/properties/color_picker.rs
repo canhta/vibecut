@@ -220,7 +220,9 @@ impl ColorTarget {
                     item: *item,
                     effect: effect.clone(),
                     key: key.clone(),
-                    value: f64::from(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)),
+                    value: project::EffectParamUpdate::Scalar(f64::from(
+                        u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b),
+                    )),
                 });
             }
             let (path, mut param) = self.effect_animation(project)?;

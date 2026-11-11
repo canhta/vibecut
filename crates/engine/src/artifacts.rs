@@ -1,5 +1,6 @@
 //! Produces derived project artifacts.
 mod chapters;
+pub(crate) mod lut;
 pub mod chapter_sidecars {
     //! Publishes chapter and description sidecars.
     pub use super::chapters::{ChapterSidecars, sidecar_paths, write, write_to_directory};

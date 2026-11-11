@@ -51,6 +51,7 @@ pub enum EffectValue {
     Bool(bool),
     Color(Color),
     Point([f64; 2]),
+    Lut(Option<crate::LutId>),
 }
 impl EffectValue {
     pub const fn scalar(&self) -> Option<f64> {
@@ -105,6 +106,7 @@ pub enum EffectParamKind {
     Color,
     /// A frame fraction on each axis, `0..=POINT_MAX`.
     Point,
+    Lut,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EffectParamDefinition {
@@ -134,6 +136,7 @@ impl EffectParamDefinition {
             (EffectParamKind::Choice { options }, EffectValue::Choice(i)) => {
                 (*i as usize) < options.len()
             }
+            (EffectParamKind::Lut, EffectValue::Lut(_)) => true,
             (EffectParamKind::Bool, EffectValue::Bool(_))
             | (EffectParamKind::Color, EffectValue::Color(_)) => true,
             (EffectParamKind::Point, EffectValue::Point(p)) => p
@@ -264,11 +267,29 @@ impl EffectInstance {
                 _ => return Err(Error::Invalid("effect flag")),
             },
             EffectParamKind::Color => EffectValue::Color(packed_color(value)?),
-            EffectParamKind::Point => return Err(Error::Unsupported("effect parameter")),
+            EffectParamKind::Point | EffectParamKind::Lut => {
+                return Err(Error::Unsupported("effect parameter"));
+            }
         };
         param.check(&next)?;
         self.params.insert(id.to_owned(), next);
         Ok(())
+    }
+
+    /// Replace a scalar or an imported resource reference atomically.
+    pub fn set_param(&mut self, id: &str, value: crate::EffectParamUpdate) -> Result<()> {
+        match value {
+            crate::EffectParamUpdate::Scalar(value) => self.set_scalar(id, value),
+            crate::EffectParamUpdate::LutRef(value) => {
+                self.definition()?
+                    .param(id)
+                    .ok_or(Error::Unsupported("effect parameter"))?
+                    .check(&EffectValue::Lut(value.lut))?;
+                self.params
+                    .insert(id.to_owned(), EffectValue::Lut(value.lut));
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn validate_animations(&self, animations: &Animations) -> Result<()> {
