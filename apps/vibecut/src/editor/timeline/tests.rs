@@ -1479,3 +1479,171 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         Some(engine::EditError::Unsupported(_))
     ));
 }
+
+#[test]
+fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending_attempt() {
+    let fixture = testkit::oracle::generate(
+        &testkit::fixture::dir("398-gesture-recovery"),
+        "thumbnail recovery across gestures",
+        "clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=64x36:r=10:d=4",
+            "-c:v",
+            "ffv1",
+        ],
+    )
+    .expect("required FFmpeg fixture");
+    let asset = media::SourceAsset::import(AssetId(1), fixture).unwrap();
+    let source_bytes = std::fs::read(asset.path()).unwrap();
+    let key = engine::thumbnails::thumbnail_key(
+        asset.content_hash(),
+        Tick::ZERO,
+        media::THUMBNAIL_MAX_EDGE,
+    )
+    .unwrap();
+    for commit in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("thumbnails");
+        let budget = engine::ByteBudget::new(128 << 20).unwrap();
+        // A valid outer envelope with malformed thumbnail metadata persists
+        // across cache-only lookups, unlike a checksum-corrupt envelope.
+        let (mut writer, _) =
+            engine::cache::ArtifactCache::open(&root, budget.clone(), 128).unwrap();
+        writer
+            .put(key, b"persistent invalid thumbnail payload")
+            .unwrap();
+        let path = root.join(key.filename());
+        let corrupt = std::fs::read(&path).unwrap();
+        drop(writer);
+        let shared = Arc::new(Mutex::new(
+            engine::control::MediaAccess::open_in(directory.path(), budget.clone()).unwrap(),
+        ));
+        let rig = Rig::visual(TrackKind::Video);
+        let id = rig.first;
+        let mut data = rig.session.project().as_ref().clone().into_data();
+        data.assets = vec![asset.clone()];
+        let mut session = Session::new(Project::new(data).unwrap(), 50).unwrap();
+        let clip = |session: &Session| {
+            session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find(|item| item.id == id)
+                .unwrap()
+                .clone()
+        };
+        let mut media = Media::new(budget);
+        media.set_access(shared);
+        let ctx = egui::Context::default();
+        let pps = 69.333_333_333_333_33; // existing one-second thumbnail grid
+        let visible = |item: &project::Item| {
+            time::TimeRange::new(item.start, Tick(item.start.0 + SECOND)).unwrap()
+        };
+        session.begin_gesture().unwrap();
+        session
+            .apply(Command::TimelinePreview {
+                commands: vec![Command::TimelineMoveItems {
+                    items: vec![id],
+                    delta: Tick(SECOND),
+                    placement: None,
+                }],
+            })
+            .unwrap();
+        for _ in 0..3 {
+            let item = clip(&session);
+            assert!(
+                matches!(
+                    media.strip(&ctx, &asset, &item, visible(&item), pps),
+                    StripState::Pending
+                ),
+                "a deferred corruption must remain recoverable during the gesture"
+            );
+            let requests = media.take_requests();
+            assert_eq!(requests.len(), 1);
+            media
+                .generate(&mut session, requests.into_iter().next().unwrap())
+                .unwrap();
+            media.tick(&mut session).unwrap();
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                corrupt,
+                "no generation is admitted while dragging"
+            );
+            assert!(matches!(
+                media.cache_ui().cause.as_deref(),
+                Some(engine::EditError::Runtime(
+                    engine::RuntimeError::CacheCorrupt
+                ))
+            ));
+        }
+        if commit {
+            session.commit_gesture().unwrap();
+        } else {
+            session.cancel_gesture().unwrap();
+        }
+        let project = project::encode(session.project(), false).unwrap();
+        let history = session.history_len();
+        let item = clip(&session);
+        assert_eq!(item.start, if commit { Tick(SECOND) } else { Tick::ZERO });
+        assert!(matches!(
+            media.strip(&ctx, &asset, &item, visible(&item), pps),
+            StripState::Pending
+        ));
+        let requests = media.take_requests();
+        assert_eq!(
+            requests.len(),
+            1,
+            "gesture deferral must not spend the recovery attempt"
+        );
+        media
+            .generate(&mut session, requests.into_iter().next().unwrap())
+            .unwrap();
+        // Admission owns the key until publication, including a persistent
+        // corrupt payload that the job has not replaced yet.
+        assert!(matches!(
+            media.strip(&ctx, &asset, &item, visible(&item), pps),
+            StripState::Pending
+        ));
+        assert!(
+            media.take_requests().is_empty(),
+            "one genuine recovery job, never one per paint"
+        );
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            media.tick(&mut session).unwrap();
+            if matches!(
+                media.strip(&ctx, &asset, &item, visible(&item), pps),
+                StripState::Ready(_)
+            ) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "thumbnail recovery must complete"
+            );
+            assert!(media.take_requests().is_empty());
+            std::thread::yield_now();
+        }
+        assert_ne!(std::fs::read(&path).unwrap(), corrupt);
+        std::fs::write(&path, &corrupt).unwrap();
+        for _ in 0..3 {
+            assert!(matches!(
+                media.strip(&ctx, &asset, &item, visible(&item), pps),
+                StripState::Failed
+            ));
+            assert!(
+                media.take_requests().is_empty(),
+                "a consumed real attempt must remain sticky"
+            );
+        }
+        assert_eq!(project::encode(session.project(), false).unwrap(), project);
+        assert_eq!(session.history_len(), history);
+        assert_eq!(std::fs::read(asset.path()).unwrap(), source_bytes);
+    }
+}

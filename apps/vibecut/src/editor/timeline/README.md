@@ -98,7 +98,9 @@ or undo discards the edit. New scenes inherit canvas, frame rate and background 
 empty timeline.
 
 Typed cache corruption permits one regeneration per visual key (at most 256 remembered keys),
-then stays failed until human Retry/Clear. Pending work does not consume another attempt.
+then stays failed until human Retry/Clear. A queued corruption reserves bounded metadata;
+the attempt is spent only when generation admits a job. Gesture deferral and pending work
+do not consume another attempt.
 The first safe typed cause remains available to Settings. Media owns one panic-catching,
 cancellable joined maintenance thread; it snapshots the shared access under `try_lock`, then
 releases it before IO. Drop cancels and joins; active generation jobs continue unchanged.

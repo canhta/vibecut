@@ -72,7 +72,8 @@ pub(in crate::editor) struct Media {
     queued: RefCell<Vec<VisualRequest>>,
     textures: RefCell<StripTextures>,
     request_id: u64,
-    recovery: RefCell<BTreeSet<VisualKey>>,
+    /// False reserves bounded recovery metadata; true means a job was admitted.
+    recovery: RefCell<BTreeMap<VisualKey, bool>>,
     visual_cause: RefCell<Option<Arc<engine::EditError>>>,
     cache: CacheUi,
     cache_worker: Option<CacheWorker>,
@@ -91,7 +92,7 @@ impl Media {
             queued: RefCell::new(Vec::new()),
             textures: RefCell::new(BTreeMap::new()),
             request_id: 0,
-            recovery: RefCell::new(BTreeSet::new()),
+            recovery: RefCell::new(BTreeMap::new()),
             visual_cause: RefCell::new(None),
             cache: CacheUi::default(),
             cache_worker: None,
@@ -204,8 +205,14 @@ impl Media {
         if corrupt && self.pending.borrow().contains_key(&request.key()) {
             return true;
         }
-        let allowed = self.recovery.borrow().len() < 256;
-        if corrupt && allowed && self.recovery.borrow_mut().insert(request.key()) {
+        let admitted = self.recovery.borrow().get(&request.key()).copied();
+        let allowed =
+            admitted == Some(false) || (admitted.is_none() && self.recovery.borrow().len() < 256);
+        if corrupt && allowed {
+            self.recovery
+                .borrow_mut()
+                .entry(request.key())
+                .or_insert(false);
             self.enqueue(request);
             true
         } else {
@@ -286,6 +293,9 @@ impl Media {
             engine::control::ResponseValue::Result(
                 engine::control::ControlResult::JobAccepted { job, .. },
             ) => {
+                if let Some(admitted) = self.recovery.borrow_mut().get_mut(&key) {
+                    *admitted = true;
+                }
                 self.jobs.insert(job, request);
                 Ok(())
             }
