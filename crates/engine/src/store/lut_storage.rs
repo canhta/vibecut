@@ -1,4 +1,5 @@
 //! Publishes durable copied LUT bundles.
+use crate::runtime::{Error as RuntimeError, Result as RuntimeResult};
 use crate::{Error as EngineError, Result, jobs::JobContext};
 use project::{LutId, LutRecord, ProjectId};
 use serde::{Deserialize, Serialize};
@@ -24,11 +25,9 @@ struct Provenance {
     copied_source_hash: media::ContentHash,
 }
 impl Provenance {
-    fn record(self, directory: PathBuf) -> Result<LutRecord> {
+    fn record(self, directory: PathBuf) -> std::result::Result<LutRecord, crate::EditError> {
         if self.version != 1 {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "LUT bundle version",
-            )));
+            return Err(crate::EditError::Invalid("LUT bundle version"));
         }
         let record = LutRecord {
             id: self.id,
@@ -71,22 +70,18 @@ impl Drop for Pending {
         }
     }
 }
-fn plain(path: &Path) -> Result<fs::Metadata> {
+fn plain(path: &Path) -> RuntimeResult<fs::Metadata> {
     let meta = fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "LUT path is a symlink",
-        )));
+        return Err(RuntimeError::Invalid("LUT path is a symlink"));
     }
     Ok(meta)
 }
-fn parents(path: &Path) -> Result<()> {
+fn parents(path: &Path) -> RuntimeResult<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
-                    "LUT parent is a symlink",
-                )));
+                return Err(RuntimeError::Invalid("LUT parent is a symlink"));
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -393,11 +388,12 @@ impl LutStore {
             match verify_bundle(&existing, || context.cancelled()) {
                 Ok(()) => return Ok(existing),
                 Err(
-                    EngineError::Edit(crate::EditError::Invalid(_))
-                    | EngineError::Control(crate::session::wire::ControlError::Limit),
+                    RuntimeError::Invalid(_)
+                    | RuntimeError::Limit
+                    | RuntimeError::Edit(crate::EditError::Invalid(_)),
                 ) => {}
-                Err(EngineError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
+                Err(RuntimeError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
             }
             if !repairing {
                 return Err(EngineError::Edit(crate::EditError::Invalid(
@@ -443,7 +439,11 @@ impl LutStore {
         Ok(record)
     }
 }
-fn hash_file(path: &Path, limit: u64, cancelled: &dyn Fn() -> bool) -> Result<media::ContentHash> {
+fn hash_file(
+    path: &Path,
+    limit: u64,
+    cancelled: &dyn Fn() -> bool,
+) -> RuntimeResult<media::ContentHash> {
     let mut file = fs::File::open(path)?.take(limit + 1);
     let mut hash = blake3::Hasher::new();
     let mut buffer = [0u8; 65536];
@@ -458,20 +458,16 @@ fn hash_file(path: &Path, limit: u64, cancelled: &dyn Fn() -> bool) -> Result<me
         }
         count += n as u64;
         if count > limit {
-            return Err(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ));
+            return Err(RuntimeError::Limit);
         }
-        hash.update(buffer.get(..n).ok_or(EngineError::Control(
-            crate::session::wire::ControlError::Limit,
-        ))?);
+        hash.update(buffer.get(..n).ok_or(RuntimeError::Limit)?);
     }
     Ok(media::ContentHash(*hash.finalize().as_bytes()))
 }
-fn read_provenance(directory: &Path) -> Result<Provenance> {
+fn read_provenance(directory: &Path) -> RuntimeResult<Provenance> {
     parents(directory)?;
     if !plain(directory)?.is_dir() {
-        return Err(EngineError::Edit(crate::EditError::Invalid("LUT bundle")));
+        return Err(RuntimeError::Invalid("LUT bundle"));
     }
     for (index, entry) in fs::read_dir(directory)?.enumerate() {
         let entry = entry?;
@@ -479,41 +475,34 @@ fn read_provenance(directory: &Path) -> Result<Provenance> {
             || !FILES.iter().any(|name| entry.file_name() == *name)
             || !plain(&entry.path())?.is_file()
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "foreign LUT bundle entry",
-            )));
+            return Err(RuntimeError::Invalid("foreign LUT bundle entry"));
         }
     }
     let path = directory.join("provenance.json");
     let meta = plain(&path)?;
     if !meta.is_file() || meta.len() > 16384 {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "LUT provenance",
-        )));
+        return Err(RuntimeError::Invalid("LUT provenance"));
     }
     let mut file = fs::File::open(path)?.take(16385);
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
     if bytes.len() > 16384 {
-        return Err(EngineError::Control(
-            crate::session::wire::ControlError::Limit,
-        ));
+        return Err(RuntimeError::Limit);
     }
-    serde_json::from_slice(&bytes)
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("LUT provenance")))
+    serde_json::from_slice(&bytes).map_err(|_| RuntimeError::Invalid("LUT provenance"))
 }
-fn read_record(directory: &Path) -> Result<LutRecord> {
-    read_provenance(directory)?.record(directory.to_owned())
+fn read_record(directory: &Path) -> RuntimeResult<LutRecord> {
+    read_provenance(directory)?
+        .record(directory.to_owned())
+        .map_err(RuntimeError::from)
 }
 /// Verify exactly the immutable files a persisted record names, without parsing
 /// or changing project/history. Used by managed copy/history and import reuse.
-pub(crate) fn verify_bundle(record: &LutRecord, cancelled: impl Fn() -> bool) -> Result<()> {
+pub(crate) fn verify_bundle(record: &LutRecord, cancelled: impl Fn() -> bool) -> RuntimeResult<()> {
     let provenance = read_provenance(&record.directory)?;
     let actual_hash = provenance.copied_source_hash;
     if provenance.record(record.directory.clone())? != *record {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "LUT provenance differs",
-        )));
+        return Err(RuntimeError::Invalid("LUT provenance differs"));
     }
     for (name, limit, hash) in [
         (FILES[0], render::lut::MAX_CUBE_CANONICAL, record.id),
@@ -526,14 +515,10 @@ pub(crate) fn verify_bundle(record: &LutRecord, cancelled: impl Fn() -> bool) ->
         let path = record.directory.join(name);
         let meta = plain(&path)?;
         if !meta.is_file() || meta.len() > limit {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "LUT bundle file",
-            )));
+            return Err(RuntimeError::Invalid("LUT bundle file"));
         }
         if LutId::new(hash_file(&path, limit, &cancelled)?) != hash {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "LUT bundle changed",
-            )));
+            return Err(RuntimeError::Invalid("LUT bundle changed"));
         }
     }
     Ok(())
@@ -545,7 +530,7 @@ pub(crate) fn copy_bundle(
     destination: &Path,
     budget: &crate::ByteBudget,
     cancelled: &dyn Fn() -> bool,
-) -> Result<()> {
+) -> RuntimeResult<()> {
     let _lease = budget.reserve(crate::ByteOwner::PersistentCache, 256 << 10)?;
     verify_bundle(record, cancelled)?;
     parents(destination)?;
@@ -568,13 +553,9 @@ pub(crate) fn copy_bundle(
             }
             count += n as u64;
             if count > MAX_BUNDLE {
-                return Err(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
+                return Err(RuntimeError::Limit);
             }
-            output.write_all(buffer.get(..n).ok_or(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ))?)?;
+            output.write_all(buffer.get(..n).ok_or(RuntimeError::Limit)?)?;
         }
         output.sync_all()?;
     }

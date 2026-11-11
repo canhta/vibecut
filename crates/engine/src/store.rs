@@ -8,7 +8,7 @@ pub mod luts {
 }
 pub mod library {
     //! Owns managed project storage.
-    pub use super::projects::{ProjectEntry, ProjectLibrary, RETENTION_DAYS};
+    pub use super::projects::{Error, ProjectEntry, ProjectLibrary, RETENTION_DAYS, Result};
 }
 mod recovery_workflow;
 pub mod recovery {

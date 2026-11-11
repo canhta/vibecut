@@ -1033,6 +1033,18 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     )
     .await;
     for (index, (inner, code)) in [
+        (
+            EngineError::Library(engine::library::Error::Edit(engine::EditError::Project(
+                project::Error::Busy,
+            ))),
+            "busy",
+        ),
+        (
+            EngineError::Library(engine::library::Error::Runtime(
+                engine::RuntimeError::Cancelled,
+            )),
+            "cancelled",
+        ),
         (engine::RuntimeError::CacheCorrupt.into(), "job"),
         (
             engine::RuntimeError::Failed(Arc::new(engine::RuntimeError::CacheCorrupt)).into(),

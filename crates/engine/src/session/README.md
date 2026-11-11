@@ -24,7 +24,7 @@ active transaction/gesture, absent gesture/history and command unwind. Their dia
 and categories remain source-free, nontransient and ordinary job policy. Command unwind
 is distinct from Runtime worker panic. Higher workflows compose these causes through
 `EditError::Session` in pure editing. Catalog-local undo/redo composes its no-history
-refusal directly in the mixed `engine::Error::Session` boundary.
+refusal through `library::Error::Edit` at its managed-library boundary.
 
 The internal gesture start returns only `SessionError`, consumed by BeginGesture and
 TimelinePreview. Public begin/commit/cancel, undo/redo and guarded transactions still run

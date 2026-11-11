@@ -1,5 +1,10 @@
 //! Managed project catalog. External-file projects continue to use Autosave directly.
-use crate::{ByteBudget, Command, Error as EngineError, NfcText, Outcome, Result, Session};
+use crate::RuntimeError;
+use crate::session::{
+    EditError, SessionError,
+    wire::{ErrorCode, Failure, JobFailurePolicy},
+};
+use crate::{ByteBudget, Command, NfcText, Outcome, Session};
 use project::{Metadata, Project, ProjectId, Thumbnail, WriterLease};
 use std::{
     collections::VecDeque,
@@ -7,6 +12,52 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+
+/// Managed library failures preserve their lower producer and safe diagnostics.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Edit(#[from] EditError),
+    #[error(transparent)]
+    Runtime(#[from] RuntimeError),
+    #[error("job/cache IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("media operation failed")]
+    Media(#[from] media::MediaError),
+}
+pub type Result<T> = std::result::Result<T, Error>;
+impl Failure for Error {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Edit(error) => error.code(),
+            Self::Runtime(error) => error.code(),
+            Self::Io(_) => ErrorCode::Io,
+            Self::Media(_) => ErrorCode::Media,
+        }
+    }
+    fn transient(&self) -> bool {
+        match self {
+            Self::Runtime(error) => error.transient(),
+            _ => false,
+        }
+    }
+    fn job_policy(&self) -> JobFailurePolicy {
+        match self {
+            Self::Runtime(error) => error.job_policy(),
+            _ => JobFailurePolicy::default(),
+        }
+    }
+}
+impl From<project::Error> for Error {
+    fn from(error: project::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
+impl From<SessionError> for Error {
+    fn from(error: SessionError) -> Self {
+        Self::Edit(error.into())
+    }
+}
 
 const PROJECT: &str = "project.vibecut";
 const MAX_ENTRIES: usize = 1024;
@@ -83,7 +134,7 @@ impl ProjectLibrary {
     pub fn open(root: &Path, budget: ByteBudget) -> Result<Self> {
         private_directory(root, true)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
-            return Err(EngineError::Edit(crate::EditError::Invalid("library root")));
+            return Err(Error::Edit(crate::EditError::Invalid("library root")));
         }
         let root = root.canonicalize()?;
         let lease = WriterLease::acquire(&root.join("catalog.vibecut"))?;
@@ -110,11 +161,12 @@ impl ProjectLibrary {
         let Some(now_unix_ms) = now_ms() else {
             return;
         };
-        let Ok(retention) = RETENTION_DAYS
-            .checked_mul(DAY_MS)
-            .ok_or(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ))
+        let Ok(retention) =
+            RETENTION_DAYS
+                .checked_mul(DAY_MS)
+                .ok_or(Error::Edit(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                )))
         else {
             return;
         };
@@ -169,9 +221,8 @@ impl ProjectLibrary {
     /// Move one active project to Trash. A missing wall clock refuses before the
     /// project is touched rather than recording an authoritative epoch.
     fn move_to_trash(&mut self, target: ProjectId, now_unix_ms: Option<u64>) -> Result<()> {
-        let now_unix_ms = now_unix_ms.ok_or(EngineError::Edit(crate::EditError::Unsupported(
-            "system clock",
-        )))?;
+        let now_unix_ms =
+            now_unix_ms.ok_or(Error::Edit(crate::EditError::Unsupported("system clock")))?;
         let lease = self.lease(target)?;
         write_trash_record(
             &self.directory(target),
@@ -201,15 +252,11 @@ impl ProjectLibrary {
                 .file_type()
                 .is_file()
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "library entry",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("library entry")));
         }
         let lease = WriterLease::acquire(&directory.join(PROJECT))?;
         if lease.load()?.project.data().id != id {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "library identity",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("library identity")));
         }
         Ok(lease)
     }
@@ -221,9 +268,9 @@ impl ProjectLibrary {
         let mut retained_bytes = 0usize;
         for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
             if count >= MAX_ENTRIES * 4 {
-                return Err(EngineError::Control(
+                return Err(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ));
+                )));
             }
             let entry = entry?;
             let name = entry.file_name();
@@ -238,15 +285,16 @@ impl ProjectLibrary {
                 continue;
             }
             let (entry, bytes) = self.read_entry(&entry.path(), name, None)?;
-            retained_bytes = retained_bytes
-                .checked_add(bytes)
-                .ok_or(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ))?;
+            retained_bytes =
+                retained_bytes
+                    .checked_add(bytes)
+                    .ok_or(Error::Edit(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    )))?;
             if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
-                return Err(EngineError::Control(
+                return Err(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ));
+                )));
             }
             entries.push(entry);
         }
@@ -261,9 +309,9 @@ impl ProjectLibrary {
         let mut retained_bytes = 0usize;
         for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
             if count >= MAX_ENTRIES * 4 {
-                return Err(EngineError::Control(
+                return Err(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ));
+                )));
             }
             let entry = entry?;
             let name = entry.file_name();
@@ -282,15 +330,16 @@ impl ProjectLibrary {
             }
             let trashed_unix_ms = read_trash_record(&entry.path());
             let (entry, bytes) = self.read_entry(&entry.path(), name, trashed_unix_ms)?;
-            retained_bytes = retained_bytes
-                .checked_add(bytes)
-                .ok_or(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ))?;
+            retained_bytes =
+                retained_bytes
+                    .checked_add(bytes)
+                    .ok_or(Error::Edit(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    )))?;
             if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
-                return Err(EngineError::Control(
+                return Err(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ));
+                )));
             }
             entries.push(entry);
         }
@@ -304,24 +353,20 @@ impl ProjectLibrary {
         trashed_unix_ms: Option<u64>,
     ) -> Result<(ProjectEntry, usize)> {
         if !fs::symlink_metadata(directory)?.file_type().is_dir() {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "library entry",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("library entry")));
         }
         let id = ProjectId(u64::from_str_radix(name, 16).map_err(|_| {
-            EngineError::Control(crate::session::wire::ControlError::InvalidParams)
+            Error::Edit(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))
         })?);
         let path = directory.join(PROJECT);
         if !fs::symlink_metadata(&path)?.file_type().is_file() {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "library project",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("library project")));
         }
         let project = project::load(&path)?.project;
         if project.data().id != id {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "library identity",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("library identity")));
         }
         let metadata = project::read_metadata(&path);
         let thumbnail_bytes = match &metadata.thumbnail {
@@ -432,7 +477,7 @@ impl ProjectLibrary {
             Command::Undo {} => self.undo_cancellable(cancelled)?,
             Command::Redo {} => self.redo_cancellable(cancelled)?,
             _ => {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "command requires a project session",
                 )));
             }
@@ -441,16 +486,14 @@ impl ProjectLibrary {
     }
     fn check_name(&self, name: &NfcText, except: Option<ProjectId>) -> Result<()> {
         if name.as_str().trim().is_empty() {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "empty project name",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("empty project name")));
         }
         if self
             .list()?
             .iter()
             .any(|entry| Some(entry.id) != except && entry.name == *name)
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::EditError::Invalid(
                 "project name already exists",
             )));
         }
@@ -471,13 +514,13 @@ impl ProjectLibrary {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<[u8; 32]> {
         if self.list()?.len() >= MAX_ENTRIES {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         let destination = self.directory(id);
         if destination.try_exists()? {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::EditError::Invalid(
                 "project already exists",
             )));
         }
@@ -492,11 +535,11 @@ impl ProjectLibrary {
         for asset in &mut data.assets {
             checkpoint(cancelled)?;
             if !fs::metadata(asset.path())?.is_file() {
-                return Err(EngineError::Edit(crate::EditError::Invalid("media source")));
+                return Err(Error::Edit(crate::EditError::Invalid("media source")));
             }
             let mut file = fs::File::open(asset.path())?;
             if !file.metadata()?.is_file() {
-                return Err(EngineError::Edit(crate::EditError::Invalid("media source")));
+                return Err(Error::Edit(crate::EditError::Invalid("media source")));
             }
             let relative = PathBuf::from("media").join(format!("{:016x}", asset.id().0));
             let mut options = fs::OpenOptions::new();
@@ -515,23 +558,25 @@ impl ProjectLibrary {
                 if n == 0 {
                     break;
                 }
-                total = total.checked_add(n as u64).ok_or(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ))?;
-                if total > 1 << 40 {
-                    return Err(EngineError::Control(
+                total = total
+                    .checked_add(n as u64)
+                    .ok_or(Error::Edit(EditError::Control(
                         crate::session::wire::ControlError::Limit,
-                    ));
+                    )))?;
+                if total > 1 << 40 {
+                    return Err(Error::Edit(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    )));
                 }
-                let bytes = buffer.get(..n).ok_or(EngineError::Control(
+                let bytes = buffer.get(..n).ok_or(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ))?;
+                )))?;
                 output.write_all(bytes)?;
                 hasher.update(bytes);
             }
             output.sync_all()?;
             if *hasher.finalize().as_bytes() != asset.content_hash().0 {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "media content changed",
                 )));
             }
@@ -567,7 +612,7 @@ impl ProjectLibrary {
         // Source/destination remain on one filesystem. The catalog lease serializes
         // managed publishers, and a failed copy never creates a visible entry.
         if destination.try_exists()? {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::EditError::Invalid(
                 "project already exists",
             )));
         }
@@ -632,7 +677,7 @@ impl ProjectLibrary {
                             .file_type()
                             .is_file()
                     {
-                        return Err(EngineError::Edit(crate::EditError::Invalid(
+                        return Err(Error::Edit(crate::EditError::Invalid(
                             "library history entry",
                         )));
                     }
@@ -675,9 +720,9 @@ impl ProjectLibrary {
         self.undo_cancellable(&|| false)
     }
     fn undo_cancellable(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        let step = self.undo.back().ok_or(EngineError::Session(
+        let step = self.undo.back().ok_or(Error::Edit(EditError::Session(
             crate::session::SessionError::NoHistory,
-        ))?;
+        )))?;
         self.apply_history(step, false, cancelled)?;
         if let Some(step) = self.undo.pop_back() {
             self.redo.push(step);
@@ -688,9 +733,9 @@ impl ProjectLibrary {
         self.redo_cancellable(&|| false)
     }
     fn redo_cancellable(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        let step = self.redo.last().ok_or(EngineError::Session(
+        let step = self.redo.last().ok_or(Error::Edit(EditError::Session(
             crate::session::SessionError::NoHistory,
-        ))?;
+        )))?;
         self.apply_history(step, true, cancelled)?;
         if let Some(step) = self.redo.pop() {
             self.undo.push_back(step);
@@ -716,9 +761,10 @@ impl Drop for ProjectLibrary {
     }
 }
 pub(super) struct DirectoryGuard(pub(super) Option<PathBuf>);
-pub(super) fn staging_directory(parent: &Path, prefix: &str) -> Result<PathBuf> {
+pub(super) fn staging_directory(parent: &Path, prefix: &str) -> crate::runtime::Result<PathBuf> {
     let mut bytes = [0; 16];
-    crate::session::identity_entropy(&mut bytes)?;
+    crate::session::identity_entropy(&mut bytes)
+        .map_err(|error| RuntimeError::Edit(error.into()))?;
     let path = parent.join(format!(".{prefix}-{}", blake3::hash(&bytes).to_hex()));
     private_directory(&path, false)?;
     Ok(path)
@@ -733,7 +779,7 @@ impl Drop for DirectoryGuard {
 
 fn checkpoint(cancelled: &dyn Fn() -> bool) -> Result<()> {
     if cancelled() {
-        Err(EngineError::Runtime(crate::RuntimeError::Cancelled))
+        Err(Error::Runtime(crate::RuntimeError::Cancelled))
     } else {
         Ok(())
     }
@@ -756,7 +802,7 @@ fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
     let path = directory.join(TRASH_RECORD);
     match fs::symlink_metadata(&path) {
         Ok(metadata) if !metadata.file_type().is_file() => {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(Error::Edit(crate::EditError::Invalid(
                 "library trash record",
             )));
         }
@@ -765,11 +811,11 @@ fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
         Err(error) => return Err(error.into()),
     }
     let bytes = serde_json::to_vec(record)
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("library trash record")))?;
+        .map_err(|_| Error::Edit(crate::EditError::Invalid("library trash record")))?;
     if bytes.len() > 128 {
-        return Err(EngineError::Control(
+        return Err(Error::Edit(EditError::Control(
             crate::session::wire::ControlError::Limit,
-        ));
+        )));
     }
     project::atomic_write(&path, &bytes)?;
     Ok(())
@@ -833,9 +879,7 @@ mod tests {
             .expect("create");
         assert!(matches!(
             library.move_to_trash(ProjectId(1), None),
-            Err(EngineError::Edit(crate::EditError::Unsupported(
-                "system clock"
-            )))
+            Err(Error::Edit(crate::EditError::Unsupported("system clock")))
         ));
         assert_eq!(library.list().expect("list").len(), 1);
         assert!(library.list_trash().expect("trash").is_empty());

@@ -64,6 +64,8 @@ pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
+    Library(#[from] library::Error),
+    #[error(transparent)]
     Edit(#[from] EditError),
     #[error(transparent)]
     Control(#[from] control::ControlError),
@@ -101,6 +103,7 @@ impl Error {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
+            Self::Library(inner) => return (inner.code(), inner.transient()),
             Self::EmptyProject => C::EmptyProject,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::Session(inner) => return (inner.code(), inner.transient()),
@@ -132,6 +135,7 @@ impl Error {
 impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
+            Self::Library(error) => error.job_policy(),
             Self::Edit(error) => error.job_policy(),
             Self::Runtime(error) => error.job_policy(),
             Self::Session(error) => error.job_policy(),
