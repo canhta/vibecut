@@ -823,6 +823,32 @@ fn owner_failures_classify_publication_receipts_and_events() {
     }
     let mut cases = vec![
         row!(
+            E::Library(engine::library::Error::Edit(engine::EditError::Project(
+                project::Error::Busy
+            ))),
+            Busy,
+            false
+        ),
+        row!(
+            E::Library(engine::library::Error::Edit(engine::EditError::Session(
+                engine::SessionError::NoHistory
+            ))),
+            Refused,
+            false
+        ),
+        row!(
+            E::Library(engine::library::Error::Runtime(B::NetworkTransient)),
+            Job,
+            true
+        ),
+        row!(
+            E::Library(engine::library::Error::Runtime(B::Failed(Arc::new(
+                B::Cancelled
+            )))),
+            Cancelled,
+            false
+        ),
+        row!(
             E::Control(engine::control::ControlError::SchemaMismatch),
             SchemaMismatch,
             false

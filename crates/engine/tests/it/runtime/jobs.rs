@@ -610,7 +610,9 @@ fn retries_use_real_submission_and_deterministic_backoff_local_never_retries() {
     assert!(r.take_output(id).is_none());
     let (id, _) = r
         .submit(spec(ResourceClass::Network), |_| {
-            Err(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
+            Err(engine::library::Error::Runtime(
+                engine::RuntimeError::NetworkTransient,
+            ))
         })
         .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Backoff);
@@ -1971,6 +1973,29 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
                 })
             },
             C::RateLimit,
+            false,
+        ),
+        (
+            || {
+                E::Library(engine::library::Error::Runtime(B::Failed(Arc::new(
+                    B::Cancelled,
+                ))))
+            },
+            C::Cancelled,
+            false,
+        ),
+        (
+            || {
+                E::Library(engine::library::Error::Edit(engine::EditError::Project(
+                    project::Error::Busy,
+                )))
+            },
+            C::Busy,
+            false,
+        ),
+        (
+            || E::Library(engine::library::Error::Media(media::MediaError::Cancelled)),
+            C::Media,
             false,
         ),
         (|| E::Io(std::io::Error::other("io")), C::Io, false),

@@ -4,6 +4,11 @@ Interface: `library`, `recovery`, `luts`; project-cover capture is private.
 
 ## Imported LUT bundles
 
+Shared native copy/verify and staging operations return the runtime resource result, preserving
+IO/Invalid/Limit/budget/cancel and lower Kernel validation/entropy causes. Pure provenance
+record validation returns Kernel EditError. LutStore and import callbacks retain their mixed
+engine result; repair/reuse matches the actual direct helper error without peeling wrappers.
+
 `luts::LutStore` owns durable copied user resources under the process media root's `luts/<ProjectId>/<LutId>` directory. Ordinary artifact eviction never removes them. One store lease and per-content publication leases serialize publishers; quota admission uses no mutex across IO. Admission counts at most 4096 filesystem entries, 1024 bundles and 256 MiB of retained plus pending bytes. Staging conservatively reserves a complete 40 MiB-plus-metadata bundle, releases on every failure/cancel/unwind, and may retain a complete unregistered resource after a stale/evicted result. There is no destructive automatic garbage collector.
 
 Each synced directory contains canonical cube, original cube and bounded version-1 provenance. BLAKE3 of canonical bytes is the resource ID; original source hash/name/licence are separate first provenance. Matching semantic imports reuse it; explicit conflicting metadata refuses. A matching-ID relink may supply different raw formatting: copied-source hash records the actual replacement while first provenance remains intact. Damaged resources require an explicit matching relink, foreign entries and symlinks refuse, and no source/project/metadata file is overwritten. Native paths are lossless. Publication seals job cancellation only after validation; complete-directory rename is atomic, with the existing filesystem owner's limits on hostile replacement races and power loss.
@@ -11,6 +16,13 @@ Each synced directory contains canonical cube, original cube and bounded version
 Managed publication copies and verifies all three files into `media/luts/<hash>`, rewriting only the bundle path; duplicate/history/trash retains that directory. Save As retains immutable resource references, as media does, and does not promise a self-contained package. Moving the selected original is harmless; loss/change of the copied canonical file is a typed render failure, repaired only with matching canonical content.
 
 ## Managed project library
+
+`library::Error` / `library::Result` own the complete managed catalog family. Lower Kernel
+refusals compose transparently through Edit, runtime resource failures through Runtime, and
+direct IO/media keep their safe static wrapper diagnostics and original source. Classification
+delegates to the declaration owner; only direct Runtime composition forwards its transience
+and scheduling policy. Failed or foreign media cancellation remains opaque. Higher workflows
+compose through `engine::Error::Library` at their own mixed boundary.
 
 `library::ProjectLibrary::open(root, budget)` uses an explicit application-supplied native
 directory, independent of external-file open and save. It holds one exclusive catalog lease;

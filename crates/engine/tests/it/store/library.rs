@@ -1,5 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-use engine::{ByteBudget, Command, Error as EngineError, library::ProjectLibrary};
+use engine::{
+    ByteBudget, Command,
+    library::{Error as LibraryError, ProjectLibrary},
+};
 use project::{Project, ProjectId, Thumbnail, WriterLease};
 use std::{cell::Cell, fs};
 
@@ -40,7 +43,7 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     let unrelated_writer = WriterLease::acquire(&entries[0].path).unwrap();
     assert!(matches!(
         lib.undo(),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Busy
         )))
     ));
@@ -70,7 +73,7 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     let writer = WriterLease::acquire(&entries[1].path).unwrap();
     assert!(matches!(
         lib.execute(ProjectId(2), Command::DeleteProject {}),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Busy
         )))
     ));
@@ -84,7 +87,9 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     drop(unrelated_writer);
     assert!(matches!(
         lib.undo(),
-        Err(EngineError::Session(engine::SessionError::NoHistory))
+        Err(LibraryError::Edit(engine::EditError::Session(
+            engine::SessionError::NoHistory
+        )))
     ));
     drop(lib);
     let reopened = library(root.path());
@@ -130,7 +135,7 @@ fn directory_move_refusals_preserve_history_and_recoverable_bytes() {
     fs::create_dir(directory).unwrap();
     assert!(matches!(
         lib.redo(),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Conflict
         )))
     ));
@@ -200,18 +205,123 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
                 calls.get() == 4
             }
         ),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(LibraryError::Runtime(engine::RuntimeError::Cancelled))
     ));
+    // The real cancellation producer remains Library-owned in a natural callback;
+    // a genuinely composed callback keeps the engine wrapper instead.
+    use engine::{
+        Failure,
+        jobs::{JobBytes, JobKind, JobSpec, JobState, ResourceClass},
+    };
+    use std::sync::{Arc, Mutex};
+    let shared = Arc::new(Mutex::new(lib));
+    let mut runner = crate::support::control::runner();
+    let before_history = shared.lock().unwrap().history_len();
+    for composed in [false, true] {
+        let producer = shared.clone();
+        let task = move |_: &engine::jobs::JobContext| -> engine::library::Result<Vec<u8>> {
+            producer
+                .lock()
+                .map_err(|_| engine::RuntimeError::Poisoned)?
+                .execute_cancellable(
+                    ProjectId(1),
+                    Command::DuplicateProject { id: ProjectId(3) },
+                    &|| true,
+                )?;
+            Ok(Vec::new())
+        };
+        let spec = JobSpec {
+            kind: JobKind::Import,
+            class: ResourceClass::Cpu,
+            input: crate::support::control::key(),
+            bytes: JobBytes::default(),
+        };
+        let (id, _) = if composed {
+            runner.submit(spec, move |context| {
+                task(context).map_err(engine::Error::from)
+            })
+        } else {
+            runner.submit(spec, task)
+        }
+        .unwrap();
+        crate::support::control::finish(&mut runner, id);
+        let snapshot = runner.snapshot(id).unwrap();
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (JobState::Cancelled, 1)
+        );
+        let raw = snapshot.error.as_ref().unwrap();
+        let typed = raw.as_ref() as &(dyn std::error::Error + 'static);
+        if composed {
+            assert!(matches!(
+                typed.downcast_ref::<engine::Error>(),
+                Some(engine::Error::Library(LibraryError::Runtime(
+                    engine::RuntimeError::Cancelled
+                )))
+            ));
+        } else {
+            assert!(matches!(
+                typed.downcast_ref::<LibraryError>(),
+                Some(LibraryError::Runtime(engine::RuntimeError::Cancelled))
+            ));
+        }
+        assert_eq!(raw.code(), engine::control::ErrorCode::Cancelled);
+        assert!(!raw.transient());
+        assert!(raw.source().is_none());
+        assert_eq!(raw.to_string(), "job cancelled");
+        assert!(raw.job_policy().terminal_cancelled);
+        assert_eq!(raw.job_policy().retry_after_seconds, None);
+        assert!(Arc::ptr_eq(
+            raw,
+            runner
+                .snapshots()
+                .iter()
+                .find(|s| s.id == id)
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            raw,
+            runner
+                .drain_events()
+                .iter()
+                .find(|s| s.id == id)
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+        ));
+        assert!(runner.take_output(id).is_none());
+        assert_eq!(shared.lock().unwrap().history_len(), before_history);
+        assert_eq!(shared.lock().unwrap().list().unwrap().len(), 2);
+        assert!(!root.path().join("0000000000000003").exists());
+    }
+    let mut lib = shared.lock().unwrap();
     fs::write(&media, b"changed").unwrap();
     assert!(
         lib.execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(3) })
             .is_err()
     );
     fs::remove_file(&media).unwrap();
-    assert!(
-        lib.execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(3) })
-            .is_err()
-    );
+    let missing = lib
+        .execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(3) })
+        .unwrap_err();
+    assert_eq!(missing.code(), engine::control::ErrorCode::Io);
+    assert!(!missing.transient());
+    assert_eq!(missing.to_string(), "job/cache IO failed");
+    let LibraryError::Io(expected) = &missing else {
+        panic!("wrong missing-source cause")
+    };
+    assert_eq!(expected.kind(), std::io::ErrorKind::NotFound);
+    assert!(std::ptr::eq(
+        expected,
+        std::error::Error::source(&missing)
+            .unwrap()
+            .downcast_ref::<std::io::Error>()
+            .unwrap()
+    ));
     assert_eq!(lib.list().unwrap().len(), 2);
     assert!(!fs::read_dir(root.path()).unwrap().any(|e| {
         e.unwrap()
@@ -227,7 +337,7 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
     drop(lease);
     assert!(matches!(
         lib.undo(),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Conflict
         )))
     ));
@@ -499,7 +609,7 @@ fn restore_refuses_an_occupied_target_and_keeps_the_trashed_bytes() {
     create(&mut lib, 1);
     assert!(matches!(
         lib.execute(ProjectId(1), Command::RestoreProject {}),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Conflict
         )))
     ));
@@ -520,7 +630,7 @@ fn delete_refuses_a_busy_project_and_a_hostile_trash_destination() {
     let writer = WriterLease::acquire(&entry.path).unwrap();
     assert!(matches!(
         lib.execute(ProjectId(1), Command::DeleteProject {}),
-        Err(EngineError::Edit(engine::EditError::Project(
+        Err(LibraryError::Edit(engine::EditError::Project(
             project::Error::Busy
         )))
     ));

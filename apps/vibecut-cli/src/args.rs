@@ -127,6 +127,25 @@ mod exit_codes {
             row!(E::Media(media::MediaError::Cancelled), "media", 6),
             row!(E::Ai(ai::Error::Auth), "ai", 4),
             row!(
+                E::Library(engine::library::Error::Edit(engine::EditError::Project(
+                    project::Error::Busy
+                ))),
+                "busy",
+                3
+            ),
+            row!(
+                E::Library(engine::library::Error::Runtime(
+                    engine::RuntimeError::Cancelled
+                )),
+                "job",
+                7
+            ),
+            row!(
+                E::Library(engine::library::Error::Media(media::MediaError::Cancelled)),
+                "media",
+                6
+            ),
+            row!(
                 E::Runtime(engine::RuntimeError::Model(ai::Error::Cancelled)),
                 "ai",
                 4
@@ -446,6 +465,11 @@ mod exit_codes {
         let model = CliError::Job(Arc::new(engine::RuntimeError::Model(ai::Error::Cancelled)));
         assert_eq!(model.code(), ("ai", 4));
         assert_eq!(model.value()["message"], "AI execution failed");
+        let library = CliError::Job(Arc::new(engine::library::Error::Edit(
+            engine::EditError::Session(engine::SessionError::NoHistory),
+        )));
+        assert_eq!(library.code(), ("rejected", 5));
+        assert_eq!(library.value()["message"], "no history step available");
         let cache = CliError::Job(Arc::new(engine::RuntimeError::CacheCorrupt));
         assert_eq!(cache.code(), ("job", 7));
         assert_eq!(cache.value()["message"], "corrupt cache entry skipped");

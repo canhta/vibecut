@@ -142,7 +142,7 @@ pub(super) fn catalog_worker(
                     )?;
                     library.list()
                 })()
-                .map_err(|error: engine::Error| error.to_string());
+                .map_err(|error: engine::library::Error| error.to_string());
                 let _ = events.send(Event::Renamed(result));
             }
             Request::Duplicate { sources } => {

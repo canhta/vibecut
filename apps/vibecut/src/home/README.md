@@ -18,7 +18,9 @@ the retention the engine states.
 A project path supplied at startup acquires the writer lease before loading and stays
 pending until recovery discovery and the managed catalog are both idle. Opening a card
 and the new-project entry use the same lifecycle and autosave path as external files. A
-failed catalog refresh keeps the last listing and Retry restarts the worker. Engine
+failed catalog refresh keeps the last listing and Retry restarts the worker. Catalog-only
+operations retain the library-owned result; mixed composition converts through engine Error
+at its actual boundary, preserving safe messages and the original cause. Engine
 lifecycle hooks backfill and refresh thumbnails, including on close without saving.
 
 View, sort key and direction persist in [preferences](../preferences/README.md).
