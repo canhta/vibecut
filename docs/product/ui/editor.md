@@ -94,7 +94,14 @@ The text Font row opens a 320 px popover below the field, clamped inside the win
 
 ## Canvas settings
 
-With no element selected the inspector's Settings tab shows two sections using the property rows and 22 px fields. Project holds the ratio select (Original, 16:9, 4:3, 2:1, 9:16, 1:1, 3:4), custom width and height fields, the frame-rate select and a Reset to original action; Original and Reset stay disabled until the first visual clip arrives. Background holds the current colour row, the 242 solid swatches in a scrollable grid and the shared colour window for a custom value. Picking a preset or swatch commits one undo step; width, height and frame rate commit on Enter or blur. The frame-rate select lists 24, 25, 30, 60 and 120; a fractional project rate (23.976, 29.97) shows its exact label as an extra current row and stays stored as its exact rational until an integer is picked. An odd custom width or height commits the nearest even value on that axis (ties up), and the field shows the committed value. This layout is [new]; the settings panel is unmeasured.
+With no element selected the inspector's Settings tab shows three sections using the property rows and 22 px fields. Project holds the ratio select (Original, 16:9, 4:3, 2:1, 9:16, 1:1, 3:4), custom width and height fields, the frame-rate select and a Reset to original action; Original and Reset stay disabled until the first visual clip arrives. Background holds the current colour row, the 242 solid swatches in a scrollable grid and the shared colour window for a custom value. Picking a preset or swatch commits one undo step; width, height and frame rate commit on Enter or blur. The frame-rate select lists 24, 25, 30, 60 and 120; a fractional project rate (23.976, 29.97) shows its exact label as an extra current row and stays stored as its exact rational until an integer is picked. An odd custom width or height commits the nearest even value on that axis (ties up), and the field shows the committed value. This layout is [new]; the settings panel is unmeasured.
+
+Timeline previews follows Background in the scrollable Settings body, reusing section headers,
+property rows, 22 px fields and the trash glyph. Refresh/Clear become Cancel during work;
+failed operations offer Retry. Size is verified file bytes in the two shared process media
+stores; the scope tooltip names exclusions and concurrent regeneration. Snapshot age, retained,
+in-use, missing and failed counts accompany partial results; removed roots request restart.
+This composition is new and has no matching reference image for comparison metrics.
 
 ## Shortcuts
 

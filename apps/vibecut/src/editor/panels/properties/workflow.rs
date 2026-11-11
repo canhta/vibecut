@@ -30,6 +30,10 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
 fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
     for action in actions {
         let result = match action {
+            Action::Cache(action) => {
+                desk.request(crate::editor::context::Request::Cache(action));
+                Ok(())
+            }
             Action::ApplyTextAnimation {
                 item,
                 preset,

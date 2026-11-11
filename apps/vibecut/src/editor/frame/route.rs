@@ -20,6 +20,7 @@ impl Editor {
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
             visuals: &self.media,
+            cache: self.media.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
             key_color_pick: self.player.key_color_pick.clone(),
@@ -555,6 +556,7 @@ impl Editor {
         while !self.requests.is_empty() {
             for request in std::mem::take(&mut self.requests) {
                 match request {
+                    Request::Cache(action) => self.media.request_cache(action),
                     Request::Seek(at) => {
                         if let Err(error) = self.seek(at) {
                             self.desk().fail(error.to_string());

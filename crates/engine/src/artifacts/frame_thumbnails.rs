@@ -117,6 +117,11 @@ pub struct ThumbnailCache {
 }
 
 impl ThumbnailCache {
+    /// Registered disk artifacts only; does not count retained decoded images.
+    pub fn maintenance(&self) -> Result<crate::cache::CacheMaintenance> {
+        self.cache.maintenance()
+    }
+
     pub fn open(root: &Path, budget: ByteBudget, max_entries: usize) -> Result<Self> {
         let (cache, _diagnostics) = ArtifactCache::open(root, budget.clone(), max_entries)?;
         Ok(Self { cache, budget })

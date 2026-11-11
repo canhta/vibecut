@@ -58,7 +58,8 @@ pub mod cache {
     //! Retains content-addressed execution artifacts.
     pub use super::cache_location::CacheRoot;
     pub use super::cache_storage::{
-        ArtifactCache, ArtifactKind, ArtifactLease, CacheKey, KeyInputs, ModelLease,
+        ArtifactCache, ArtifactKind, ArtifactLease, CacheKey, CacheMaintenance,
+        CacheMaintenanceReport, CacheOperation, KeyInputs, ModelLease,
     };
     pub(crate) use super::cache_storage::{NativeEdit, StoredArtifact, strong_etag};
 }

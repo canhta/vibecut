@@ -12,6 +12,41 @@ use crate::{
 
 pub(crate) use visuals::VisualQuery;
 
+/// Human-only desktop cache intentions, outside editing/agent commands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CacheAction {
+    Refresh,
+    Clear,
+    Cancel,
+    Retry,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CachePhase {
+    Unavailable,
+    Idle,
+    Inspecting,
+    Clearing,
+    Cancelling,
+    Failed,
+}
+/// Neutral Settings projection; worker and cache custody stay in the media owner.
+#[derive(Clone)]
+pub(crate) struct CacheUi {
+    pub(crate) phase: CachePhase,
+    pub(crate) report: Option<std::sync::Arc<engine::cache::CacheMaintenanceReport>>,
+    pub(crate) cause: Option<std::sync::Arc<engine::EditError>>,
+    pub(crate) checked: Option<std::time::Instant>,
+}
+impl Default for CacheUi {
+    fn default() -> Self {
+        Self {
+            phase: CachePhase::Unavailable,
+            report: None,
+            cause: None,
+            checked: None,
+        }
+    }
+}
 /// Read-only composition inputs shared by editor areas.
 pub(crate) struct Context<'a> {
     pub(crate) playback: &'a Playback,
@@ -35,6 +70,7 @@ pub(crate) struct Context<'a> {
     pub(crate) preview: Option<&'a egui::TextureHandle>,
     /// Cache-only clip visual queries (thumbnail strip and waveform).
     pub(crate) visuals: &'a dyn VisualQuery,
+    pub(crate) cache: CacheUi,
     /// Registered action ids the editor currently refuses.
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,
     /// While an effect is being dragged: the clips that accept it.
@@ -151,6 +187,7 @@ impl Thumbnails<'_> {
 pub(crate) enum Request {
     /// Move the shared transport.
     Seek(time::Tick),
+    Cache(CacheAction),
     /// Open the model manager on a missing model.
     OpenModel(String),
 }

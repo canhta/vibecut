@@ -156,6 +156,19 @@ impl StoredArtifact {
         self.evict_inner(false)
     }
     fn evict_inner(&self, explicit: bool) -> RuntimeResult<bool> {
+        self.evict_with(explicit, || {
+            if self.native {
+                fs::remove_dir_all(&self.path)
+            } else {
+                fs::remove_file(&self.path)
+            }
+        })
+    }
+    fn evict_with(
+        &self,
+        explicit: bool,
+        unlink: impl FnOnce() -> std::io::Result<()>,
+    ) -> RuntimeResult<bool> {
         if self.native && !explicit {
             return Ok(false);
         }
@@ -166,12 +179,7 @@ impl StoredArtifact {
         {
             return Ok(false);
         }
-        let removed = if self.native {
-            fs::remove_dir_all(&self.path)
-        } else {
-            fs::remove_file(&self.path)
-        };
-        match removed {
+        match unlink() {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
@@ -207,7 +215,7 @@ pub struct ArtifactCache {
 }
 
 /// Shared by the writer and native model leases; the final logical owner unlocks.
-struct CacheLock(fs::File);
+struct CacheLock(fs::File, fs::Metadata);
 impl Drop for CacheLock {
     fn drop(&mut self) {
         // Closing alone can retain flock through a concurrently spawned child's
@@ -228,6 +236,29 @@ impl ArtifactLease {
     }
 }
 impl ArtifactCache {
+    fn check_root(&self) -> Result<(), EditError> {
+        check_root(&self.root, &self.root_lock)
+    }
+    /// Capture registered ordinary artifacts without IO or reader pins. The
+    /// desktop's two stores admit at most 256 entries in total. Larger snapshots
+    /// refuse rather than truncate a disk-size claim.
+    pub fn maintenance(&self) -> Result<CacheMaintenance, EditError> {
+        let entries: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.native && !entry.removed())
+            .take(257)
+            .map(|(key, entry)| (*key, entry.clone()))
+            .collect();
+        if entries.len() > 256 {
+            return Err(EditError::Limit);
+        }
+        Ok(CacheMaintenance {
+            root: self.root.clone(),
+            root_lock: self.root_lock.clone(),
+            entries,
+        })
+    }
     pub(crate) fn byte_budget(&self) -> ByteBudget {
         self.budget.clone()
     }
@@ -262,7 +293,7 @@ impl ArtifactCache {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let root_lock = Arc::new(CacheLock(options.open(lock_path)?));
+        let root_lock = Arc::new(CacheLock(options.open(lock_path)?, fs::metadata(&root)?));
         root_lock.0.try_lock().map_err(|e| match e {
             fs::TryLockError::WouldBlock => EditError::CacheBusy,
             fs::TryLockError::Error(e) => EditError::Io(e),
@@ -392,6 +423,7 @@ impl ArtifactCache {
     /// Commit only a complete artifact. Jobs call this only after successful finish;
     /// ASR may commit each complete chunk separately, keyed by its exact source range.
     pub fn put(&mut self, key: CacheKey, bytes: &[u8]) -> Result<(), EditError> {
+        self.check_root()?;
         let len = bytes
             .len()
             .checked_add(HEADER)
@@ -425,6 +457,7 @@ impl ArtifactCache {
     /// Corrupt/missing entries are never hits. Removal of corrupt files waits
     /// for any earlier reader pins; callers receive CacheCorrupt on each failed read.
     pub fn get(&mut self, key: CacheKey) -> Result<Option<ArtifactLease>, EditError> {
+        self.check_root()?;
         self.prune();
         let Some(entry) = self.entries.get(&key) else {
             return Ok(None);
@@ -494,7 +527,12 @@ impl ArtifactCache {
                 Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
             Err(EditError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-                self.entries.remove(&key);
+                // Retire disk accounting through the same eviction state; a
+                // reader lease must retain the missing entry until release.
+                match self.remove(key) {
+                    Ok(()) | Err(EditError::Runtime(RuntimeError::BudgetFull)) => {}
+                    Err(error) => return Err(error),
+                }
                 Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
             Err(e) => Err(e),
@@ -516,10 +554,279 @@ impl ArtifactCache {
     }
 }
 
+/// Human desktop maintenance; no path or project edit is accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheOperation {
+    Inspect,
+    Clear,
+}
+/// Snapshot observations in physical file bytes (including the 72-byte envelope).
+/// Counts describe captured entries only; concurrent generation may repopulate.
+#[derive(Default, Debug)]
+pub struct CacheMaintenanceReport {
+    pub disk_bytes: u64,
+    pub in_use_bytes: u64,
+    pub removed_bytes: u64,
+    pub entries: u64,
+    pub in_use: u64,
+    pub missing: u64,
+    pub failed: u64,
+    pub root_unavailable: bool,
+    pub cause: Option<EditError>,
+}
+impl CacheMaintenanceReport {
+    /// Combine the desktop's two disjoint snapshots without hiding partial work.
+    pub fn merge(&mut self, other: Self) {
+        for (a, b) in [
+            (&mut self.disk_bytes, other.disk_bytes),
+            (&mut self.in_use_bytes, other.in_use_bytes),
+            (&mut self.removed_bytes, other.removed_bytes),
+            (&mut self.entries, other.entries),
+            (&mut self.in_use, other.in_use),
+            (&mut self.missing, other.missing),
+            (&mut self.failed, other.failed),
+        ] {
+            if let Some(sum) = a.checked_add(b) {
+                *a = sum;
+            } else {
+                self.cause.get_or_insert(EditError::Limit);
+            }
+        }
+        self.root_unavailable |= other.root_unavailable;
+        if self.cause.is_none() {
+            self.cause = other.cause;
+        }
+    }
+    fn fail(&mut self, error: EditError) {
+        self.failed += 1; // snapshots are bounded to 256
+        self.cause.get_or_insert(error);
+    }
+}
+/// Retains registered entries and the directory's exclusive lock through IO.
+/// It is not a reader pin or a second cache/budget.
+pub struct CacheMaintenance {
+    root: PathBuf,
+    root_lock: Arc<CacheLock>,
+    entries: Vec<(CacheKey, Arc<StoredArtifact>)>,
+}
+fn corrupt() -> EditError {
+    RuntimeError::CacheCorrupt.into()
+}
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        a.dev() == b.dev() && a.ino() == b.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        // Best-effort settled replacement detection on platforms without std
+        // file identity. This is not protection against hostile ancestor races.
+        a.created()
+            .ok()
+            .zip(b.created().ok())
+            .is_some_and(|(a, b)| a == b)
+    }
+}
+fn check_root(root: &Path, lock: &CacheLock) -> Result<(), EditError> {
+    let valid = || -> std::io::Result<bool> {
+        let directory = fs::symlink_metadata(root)?;
+        let named_lock = fs::symlink_metadata(root.join(".cache.lock"))?;
+        Ok(directory.file_type().is_dir()
+            && same_file(&directory, &lock.1)
+            && named_lock.file_type().is_file()
+            && same_file(&named_lock, &lock.0.metadata()?))
+    };
+    match valid() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(corrupt()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(corrupt()),
+        Err(error) => Err(error.into()),
+    }
+}
+impl CacheMaintenance {
+    pub(crate) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+    /// Inspect headers/metadata only; clear uses the existing atomic pin/evict
+    /// state. Cancellation stops further unlinks, preserving prior removals and
+    /// a typed cause. No cache/budget lock is held during IO. Root checks detect
+    /// settled replacement, not concurrent hostile ancestor replacement.
+    pub fn run(
+        self,
+        operation: CacheOperation,
+        cancelled: impl Fn() -> bool,
+    ) -> CacheMaintenanceReport {
+        self.run_using(operation, cancelled, StoredArtifact::evict)
+    }
+    fn run_using(
+        self,
+        operation: CacheOperation,
+        cancelled: impl Fn() -> bool,
+        mut evict: impl FnMut(&StoredArtifact) -> RuntimeResult<bool>,
+    ) -> CacheMaintenanceReport {
+        let mut report = CacheMaintenanceReport::default();
+        let mut stopped = false;
+        for (key, entry) in &self.entries {
+            // Revalidate for every action, including snapshots that have gone
+            // stale while another editor was generating or reclaiming.
+            if let Err(error) = check_root(&self.root, &self.root_lock) {
+                report.root_unavailable =
+                    matches!(error, EditError::Runtime(RuntimeError::CacheCorrupt));
+                report.fail(error);
+                return report;
+            }
+            if entry.removed() {
+                continue;
+            }
+            if !stopped && cancelled() {
+                report.cause.get_or_insert(EditError::Cancelled);
+                stopped = true;
+            }
+            let measurement = (|| -> Result<Option<u64>, EditError> {
+                let meta = match fs::symlink_metadata(&entry.path) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    result => result?,
+                };
+                if !meta.file_type().is_file() || meta.len() != entry.len {
+                    return Err(corrupt());
+                }
+                let mut header = [0; HEADER];
+                let mut file = fs::File::open(&entry.path)?;
+                if let Err(error) = file.read_exact(&mut header) {
+                    return Err(if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                        corrupt()
+                    } else {
+                        error.into()
+                    });
+                }
+                if !same_file(&meta, &file.metadata()?)
+                    || header.get(..8) != Some(b"VCACHE01")
+                    || header.get(8..40) != Some(key.0.as_slice())
+                {
+                    return Err(corrupt());
+                }
+                Ok(Some(meta.len()))
+            })();
+            let len = match measurement {
+                Ok(Some(len)) => len,
+                Ok(None) => {
+                    report.missing += 1;
+                    report.cause.get_or_insert_with(corrupt);
+                    // Missing files have zero physical bytes. Pins keep their
+                    // disk charge until a later pass after release.
+                    if !stopped && let Err(error) = evict(entry) {
+                        report.fail(error.into());
+                    }
+                    if entry.pinned() && !entry.removed() {
+                        report.in_use += 1;
+                        report.in_use_bytes += entry.len;
+                    }
+                    continue;
+                }
+                Err(error) => {
+                    report.entries += 1;
+                    report.fail(error);
+                    continue;
+                }
+            };
+            if operation == CacheOperation::Clear && !stopped {
+                match evict(entry) {
+                    Ok(true) => {
+                        report.removed_bytes += len;
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(error) => report.fail(error.into()),
+                }
+            }
+            report.entries += 1;
+            report.disk_bytes += len;
+            if entry.pinned() && !entry.removed() {
+                report.in_use += 1;
+                report.in_use_bytes += len;
+            }
+        }
+        // Empty/deleted stores must not masquerade as a successful zero.
+        if let Err(error) = check_root(&self.root, &self.root_lock) {
+            report.root_unavailable =
+                matches!(error, EditError::Runtime(RuntimeError::CacheCorrupt));
+            report.fail(error);
+        }
+        report
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::{ArtifactCache, ByteBudget, EditError};
+
+    #[test]
+    fn cache_maintenance_partial_unlink_failure_retains_charge_and_retries() {
+        use super::{CacheOperation, RuntimeError};
+        let dir = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(8192).unwrap();
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+        for n in 1..=3 {
+            let key = super::CacheKey::new(super::KeyInputs {
+                kind: super::ArtifactKind::Waveform,
+                source: [n; 32],
+                provider: "test",
+                model: "test",
+                version: "1",
+                settings: &[],
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })
+            .unwrap();
+            cache.put(key, &[n; 28]).unwrap();
+        }
+        let model = ai::models::catalog().unwrap().remove(0);
+        let native = cache.edit_model(&model).unwrap();
+        let marker = native.directory.join(".bundle");
+        let model_bytes = std::fs::read(&marker).unwrap();
+        drop(native);
+        let native_charge = budget.snapshot().unwrap().used - 300;
+        let mut calls = 0;
+        let report = cache.maintenance().unwrap().run_using(
+            CacheOperation::Clear,
+            || false,
+            |entry| {
+                calls += 1;
+                if calls == 2 {
+                    entry.evict_with(false, || {
+                        Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+                    })
+                } else {
+                    entry.evict()
+                }
+            },
+        );
+        assert_eq!(
+            (
+                report.removed_bytes,
+                report.disk_bytes,
+                report.failed,
+                report.entries
+            ),
+            (200, 100, 1, 1)
+        );
+        assert!(
+            matches!(report.cause, Some(EditError::Runtime(RuntimeError::Io(ref error))) if error.kind() == std::io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(budget.snapshot().unwrap().used, native_charge + 100);
+        let retry = cache
+            .maintenance()
+            .unwrap()
+            .run(CacheOperation::Clear, || false);
+        assert_eq!((retry.removed_bytes, retry.disk_bytes), (100, 0));
+        assert!(retry.cause.is_none());
+        assert_eq!(budget.snapshot().unwrap().used, native_charge);
+        assert_eq!(std::fs::read(marker).unwrap(), model_bytes);
+    }
 
     #[test]
     fn cache_reopen_waits_for_last_owner_but_not_retained_descriptors() {

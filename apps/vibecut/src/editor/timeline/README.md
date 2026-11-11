@@ -77,8 +77,8 @@ Video and image clips paint the cached thumbnail strip across their visible sour
 audio clips, and the audio band inside a video clip, paint the cached waveform. The panel
 passes its zoom in pixels per second to the engine display query, which maps trim and
 retime and reads only the cache. Pending displays paint quiet placeholders and ask the
-frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; failed or
-unsupported bands show a warning marker instead of retrying, and bars past 0 dBFS get a
+frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; other failed or
+unsupported bands show a warning marker, and bars past 0 dBFS get a
 warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps
 drawing. The workspace owns the one process `MediaAccess` and lends it here and to the MCP
 inbox; `visuals.rs` owns this editor's in-flight jobs and uploaded strip textures, and the
@@ -96,3 +96,11 @@ sheet stays open. A row context menu opens inline rename for any scene including
 (`scene.rename`; Enter commits, Escape cancels); removal of the edited scene by a command
 or undo discards the edit. New scenes inherit canvas, frame rate and background with an
 empty timeline.
+
+Typed cache corruption permits one regeneration per visual key (at most 256 remembered keys),
+then stays failed until human Retry/Clear. A queued corruption reserves bounded metadata;
+the attempt is spent only when generation admits a job. Gesture deferral and pending work
+do not consume another attempt.
+The first safe typed cause remains available to Settings. Media owns one panic-catching,
+cancellable joined maintenance thread; it snapshots the shared access under `try_lock`, then
+releases it before IO. Drop cancels and joins; active generation jobs continue unchanged.

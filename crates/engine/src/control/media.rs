@@ -29,6 +29,24 @@ pub struct MediaAccess {
 }
 
 impl MediaAccess {
+    /// The process waveform/scene-analysis and timeline-thumbnail stores only,
+    /// at most 256 registered entries total. No source/model/library roots.
+    pub fn cache_maintenance(&self) -> Result<[crate::cache::CacheMaintenance; 2], EditError> {
+        let snapshots = [
+            self.artifacts.maintenance()?,
+            self.thumbnails.maintenance()?,
+        ];
+        if snapshots
+            .iter()
+            .map(crate::cache::CacheMaintenance::entry_count)
+            .sum::<usize>()
+            > 256
+        {
+            return Err(EditError::Limit);
+        }
+        Ok(snapshots)
+    }
+
     pub fn new(artifacts: ArtifactCache, thumbnails: ThumbnailCache) -> Self {
         Self {
             artifacts,

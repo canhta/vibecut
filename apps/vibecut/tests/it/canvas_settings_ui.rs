@@ -235,3 +235,214 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
         }
     );
 }
+
+#[test]
+fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects() {
+    use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+    use vibecut::workspace::Workspace;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("media");
+    let budget = ByteBudget::new(64 << 20).unwrap();
+    let key = CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Waveform,
+        source: [1; 32],
+        provider: "test",
+        model: "test",
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    for store in ["waveform", "thumbnails"] {
+        let (mut cache, _) = ArtifactCache::open(&root.join(store), budget.clone(), 128).unwrap();
+        cache.put(key, &[7; 28]).unwrap();
+    }
+    let source = dir.path().join("source-and-project-sentinel");
+    std::fs::write(&source, b"personal source").unwrap();
+    let mut workspace =
+        Workspace::new(dir.path().join("recovery"), Preferences::default(), None).unwrap();
+    let id = workspace.register_editor(Box::new(editor()));
+    let mut second = editor();
+    let mut data = second.session.project().as_ref().clone().into_data();
+    data.id = ProjectId(2);
+    second.session = vibecut::lifecycle::EditorSession::Memory(Box::new(
+        Session::new(Project::new(data).unwrap(), 10).unwrap(),
+    ));
+    let second_id = workspace.register_editor(Box::new(second));
+    let before = workspace.editor_mut(id).unwrap().session.project().clone();
+    let history = workspace.editor_mut(id).unwrap().session.history_len();
+    let position = workspace
+        .editor_mut(id)
+        .unwrap()
+        .playback
+        .position()
+        .unwrap();
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(
+            move |ui, app: &mut Workspace| app.window_ui(id, ui),
+            workspace,
+        );
+    harness.run_steps(3);
+    for name in ["inspector.section.canvas", "inspector.section.background"] {
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some(name)))
+            .click();
+        harness.run_steps(2);
+    }
+    let wait = |h: &mut Harness<Workspace>| {
+        h.run_steps(3);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while h
+            .query_all(
+                By::new().predicate(|node| node.author_id() == Some("inspector.cache.cancel")),
+            )
+            .next()
+            .is_some()
+        {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+            h.run_steps(2);
+        }
+    };
+    wait(&mut harness);
+    assert!(
+        harness
+            .get(
+                By::new().predicate(|n| n.author_id() == Some("inspector.cache.size")
+                    && n.value().as_deref() == Some("200 B"))
+            )
+            .rect()
+            .is_positive()
+    );
+    let capture = |h: &mut Harness<Workspace>, state: &str| {
+        for (locale, language) in [
+            (vibecut::i18n::Locale::En, "en"),
+            (vibecut::i18n::Locale::Vi, "vi"),
+        ] {
+            h.state_mut().preferences.locale = locale;
+            for scale in [1.0, 2.0] {
+                h.input_mut()
+                    .viewports
+                    .get_mut(&egui::ViewportId::ROOT)
+                    .unwrap()
+                    .native_pixels_per_point = Some(scale);
+                h.ctx.set_zoom_factor(1.0);
+                h.run_steps(3);
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                    "../../target/398-settings-{state}-{language}-{scale}x.png"
+                ));
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                let image = h.render().unwrap();
+                assert_eq!(
+                    image.dimensions(),
+                    ((1727.0 * scale) as u32, (1029.0 * scale) as u32)
+                );
+                assert_eq!(h.ctx.content_rect().size(), egui::vec2(1727.0, 1029.0));
+                image.save(path).unwrap();
+            }
+        }
+        h.input_mut()
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .native_pixels_per_point = Some(1.0);
+        h.ctx.set_zoom_factor(1.0);
+        h.state_mut().preferences.locale = vibecut::i18n::Locale::En;
+        h.run_steps(3);
+    };
+    capture(&mut harness, "populated");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.cache.clear")))
+        .click();
+    harness.run_steps(2);
+    wait(&mut harness);
+    assert!(
+        harness
+            .get(
+                By::new().predicate(|n| n.author_id() == Some("inspector.cache.size")
+                    && n.value().as_deref() == Some("0 B"))
+            )
+            .rect()
+            .is_positive()
+    );
+    capture(&mut harness, "cleared");
+    let access = harness.state().media().unwrap();
+    let reports = access.lock().unwrap().cache_maintenance().unwrap();
+    assert!(reports.into_iter().all(|snapshot| {
+        snapshot
+            .run(engine::cache::CacheOperation::Inspect, || false)
+            .disk_bytes
+            == 0
+    }));
+    // The second editor uses the same process stores and observes the removal.
+    harness.state_mut().editor_mut(second_id).unwrap().tick();
+    assert!(Arc::ptr_eq(
+        &before,
+        harness
+            .state_mut()
+            .editor_mut(id)
+            .unwrap()
+            .session
+            .project()
+    ));
+    assert_eq!(
+        harness
+            .state_mut()
+            .editor_mut(id)
+            .unwrap()
+            .session
+            .history_len(),
+        history
+    );
+    assert_eq!(
+        harness
+            .state_mut()
+            .editor_mut(id)
+            .unwrap()
+            .playback
+            .position()
+            .unwrap(),
+        position
+    );
+    assert_eq!(std::fs::read(source).unwrap(), b"personal source");
+    std::fs::remove_dir_all(root.join("thumbnails")).unwrap(); // external deletion, not maintenance
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.cache.refresh")))
+        .click();
+    harness.run_steps(2);
+    wait(&mut harness);
+    assert!(
+        harness
+            .get(
+                By::new().predicate(|n| n.author_id() == Some("inspector.cache.error")
+                    && n.value().as_deref()
+                        == Some("Preview storage was removed or replaced; restart VibeCut."))
+            )
+            .rect()
+            .is_positive()
+    );
+    capture(&mut harness, "root-removed");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.cache.retry")))
+        .click();
+    harness.run_steps(2);
+    wait(&mut harness);
+    assert!(!root.join("thumbnails").exists());
+    assert_eq!(
+        project::encode(
+            harness
+                .state_mut()
+                .editor_mut(id)
+                .unwrap()
+                .session
+                .project(),
+            false
+        )
+        .unwrap(),
+        project::encode(&before, false).unwrap()
+    );
+}

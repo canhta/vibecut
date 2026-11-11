@@ -15,6 +15,34 @@ use std::{
 use crate::editor::context::visuals::{
     StripState, StripTile, VisualKey, VisualQuery, VisualRequest, WaveBar, WaveState,
 };
+use crate::editor::context::{CacheAction, CachePhase, CacheUi};
+use engine::cache::{CacheMaintenanceReport, CacheOperation};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+struct CacheWorker {
+    cancel: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<CacheMaintenanceReport>,
+}
+impl CacheWorker {
+    fn spawn(
+        run: impl FnOnce(Arc<AtomicBool>) -> CacheMaintenanceReport + Send + 'static,
+    ) -> std::io::Result<Self> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        let handle = std::thread::Builder::new()
+            .name("timeline-cache".into())
+            .spawn(move || {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(flag))).unwrap_or_else(
+                    |_| CacheMaintenanceReport {
+                        cause: Some(engine::RuntimeError::WorkerPanicked.into()),
+                        failed: 1,
+                        ..Default::default()
+                    },
+                )
+            })?;
+        Ok(Self { cancel, handle })
+    }
+}
 /// Reserved texture slots for strip frames; the oldest frame is dropped first.
 const MAX_TEXTURES: usize = 512;
 /// Loopback policy for the editor's own registered commands.
@@ -44,6 +72,12 @@ pub(in crate::editor) struct Media {
     queued: RefCell<Vec<VisualRequest>>,
     textures: RefCell<StripTextures>,
     request_id: u64,
+    /// False reserves bounded recovery metadata; true means a job was admitted.
+    recovery: RefCell<BTreeMap<VisualKey, bool>>,
+    visual_cause: RefCell<Option<Arc<engine::EditError>>>,
+    cache: CacheUi,
+    cache_worker: Option<CacheWorker>,
+    cache_operation: CacheOperation,
 }
 
 impl Media {
@@ -58,6 +92,11 @@ impl Media {
             queued: RefCell::new(Vec::new()),
             textures: RefCell::new(BTreeMap::new()),
             request_id: 0,
+            recovery: RefCell::new(BTreeMap::new()),
+            visual_cause: RefCell::new(None),
+            cache: CacheUi::default(),
+            cache_worker: None,
+            cache_operation: CacheOperation::Inspect,
         }
     }
 
@@ -67,6 +106,119 @@ impl Media {
         access: Arc<Mutex<engine::control::MediaAccess>>,
     ) {
         self.access = Some(access);
+        self.cache.phase = CachePhase::Idle;
+    }
+
+    pub(in crate::editor) fn cache_ui(&self) -> CacheUi {
+        let mut ui = self.cache.clone();
+        if ui.cause.is_none() {
+            ui.cause = self.visual_cause.borrow().clone();
+        }
+        ui
+    }
+
+    pub(in crate::editor) fn request_cache(&mut self, action: CacheAction) {
+        if action == CacheAction::Cancel {
+            if let Some(worker) = &self.cache_worker {
+                worker.cancel.store(true, Ordering::Release);
+                self.cache.phase = CachePhase::Cancelling;
+            }
+            return;
+        }
+        if self.cache_worker.is_some() {
+            return;
+        }
+        if matches!(action, CacheAction::Clear | CacheAction::Retry) {
+            self.failed.borrow_mut().clear();
+            self.recovery.borrow_mut().clear();
+            self.visual_cause.borrow_mut().take();
+        }
+        self.cache_operation = match action {
+            CacheAction::Clear => CacheOperation::Clear,
+            CacheAction::Retry if self.cache.phase == CachePhase::Failed => self.cache_operation,
+            _ => CacheOperation::Inspect,
+        };
+        let snapshots = (|| {
+            let access = self
+                .access
+                .as_ref()
+                .ok_or(engine::EditError::Unsupported("media cache unavailable"))?;
+            let access = access.try_lock().map_err(|error| match error {
+                std::sync::TryLockError::WouldBlock => engine::EditError::CacheBusy,
+                std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
+            })?;
+            access.cache_maintenance()
+        })();
+        let snapshots = match snapshots {
+            Ok(snapshots) => snapshots,
+            Err(error) => {
+                self.fail_cache(error);
+                return;
+            }
+        };
+        let operation = self.cache_operation;
+        // Snapshot acquisition above has released MediaAccess before worker IO.
+        let spawned = CacheWorker::spawn(move |flag| {
+            let mut report = CacheMaintenanceReport::default();
+            for snapshot in snapshots {
+                report.merge(snapshot.run(operation, || flag.load(Ordering::Acquire)));
+            }
+            report
+        });
+        match spawned {
+            Ok(worker) => {
+                self.cache.cause = None;
+                self.cache_worker = Some(worker);
+                self.cache.phase = if operation == CacheOperation::Clear {
+                    CachePhase::Clearing
+                } else {
+                    CachePhase::Inspecting
+                };
+            }
+            Err(error) => self.fail_cache(error.into()),
+        }
+    }
+    fn fail_cache(&mut self, error: engine::EditError) {
+        // Keep the last measured size/age; a failed admission measured no zero.
+        self.cache.phase = CachePhase::Failed;
+        self.cache.cause = Some(Arc::new(error));
+    }
+    fn finish_cache(&mut self, report: CacheMaintenanceReport) {
+        self.cache.cause = None;
+        self.cache.phase = if report.cause.is_some() {
+            CachePhase::Failed
+        } else {
+            CachePhase::Idle
+        };
+        self.cache.report = Some(Arc::new(report));
+        self.cache.checked = Some(std::time::Instant::now());
+    }
+    /// Only an actual typed corruption permits one regeneration per visual key.
+    fn display_failed(&self, error: engine::EditError, request: VisualRequest) -> bool {
+        let corrupt = matches!(
+            error,
+            engine::EditError::Runtime(engine::RuntimeError::CacheCorrupt)
+        );
+        self.visual_cause
+            .borrow_mut()
+            .get_or_insert_with(|| Arc::new(error));
+        if corrupt && self.pending.borrow().contains_key(&request.key()) {
+            return true;
+        }
+        let admitted = self.recovery.borrow().get(&request.key()).copied();
+        let allowed =
+            admitted == Some(false) || (admitted.is_none() && self.recovery.borrow().len() < 256);
+        if corrupt && allowed {
+            self.recovery
+                .borrow_mut()
+                .entry(request.key())
+                .or_insert(false);
+            self.enqueue(request);
+            true
+        } else {
+            self.failed.borrow_mut().insert(request.key());
+            false
+        }
     }
 
     /// Run one display query with the shared caches; `None` while detached.
@@ -141,6 +293,9 @@ impl Media {
             engine::control::ResponseValue::Result(
                 engine::control::ControlResult::JobAccepted { job, .. },
             ) => {
+                if let Some(admitted) = self.recovery.borrow_mut().get_mut(&key) {
+                    *admitted = true;
+                }
                 self.jobs.insert(job, request);
                 Ok(())
             }
@@ -210,6 +365,21 @@ impl Media {
 
     /// Advance generation jobs and publish finished outputs through `job_status`.
     pub(in crate::editor) fn tick(&mut self, session: &mut engine::Session) -> crate::Result<()> {
+        if self
+            .cache_worker
+            .as_ref()
+            .is_some_and(|worker| worker.handle.is_finished())
+            && let Some(worker) = self.cache_worker.take()
+        {
+            let report = worker
+                .handle
+                .join()
+                .unwrap_or_else(|_| CacheMaintenanceReport {
+                    cause: Some(engine::RuntimeError::WorkerPanicked.into()),
+                    ..Default::default()
+                });
+            self.finish_cache(report);
+        }
         if let Some(runner) = &mut self.runner {
             runner.tick()?;
         }
@@ -306,16 +476,22 @@ impl VisualQuery for Media {
                 });
                 StripState::Pending
             }
-            Ok(engine::thumbnail_strip::ThumbnailStripState::Failed(_)) => {
-                self.failed.borrow_mut().insert(key);
-                StripState::Failed
+            Ok(engine::thumbnail_strip::ThumbnailStripState::Failed(error)) | Err(error) => {
+                if self.display_failed(
+                    error,
+                    VisualRequest::Thumbnails {
+                        item: item.id,
+                        visible,
+                        pixels_per_second,
+                    },
+                ) {
+                    StripState::Pending
+                } else {
+                    StripState::Failed
+                }
             }
             Ok(engine::thumbnail_strip::ThumbnailStripState::Unsupported) => {
                 StripState::Unsupported
-            }
-            Err(_) => {
-                self.failed.borrow_mut().insert(key);
-                StripState::Failed
             }
         }
     }
@@ -352,15 +528,14 @@ impl VisualQuery for Media {
                 self.enqueue(VisualRequest::Waveform { asset: asset.id() });
                 WaveState::Pending
             }
-            Ok(engine::waveform::WaveformState::Failed(_)) => {
-                self.failed.borrow_mut().insert(key);
-                WaveState::Failed
+            Ok(engine::waveform::WaveformState::Failed(error)) | Err(error) => {
+                if self.display_failed(error, VisualRequest::Waveform { asset: asset.id() }) {
+                    WaveState::Pending
+                } else {
+                    WaveState::Failed
+                }
             }
             Ok(engine::waveform::WaveformState::Unsupported) => WaveState::Unsupported,
-            Err(_) => {
-                self.failed.borrow_mut().insert(key);
-                WaveState::Failed
-            }
         }
     }
 
@@ -372,4 +547,77 @@ impl VisualQuery for Media {
 /// The warning ink for an over-full-scale waveform tip.
 pub(in crate::editor) fn clip_tip(dark: bool) -> egui::Color32 {
     theme::warning(dark)
+}
+
+impl Drop for Media {
+    fn drop(&mut self) {
+        if let Some(worker) = self.cache_worker.take() {
+            worker.cancel.store(true, Ordering::Release);
+            let _ = worker.handle.join();
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+#[allow(clippy::unwrap_used, clippy::panic)]
+fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+    let budget = engine::ByteBudget::new(8192).unwrap();
+    let mut media = Media::new(budget.clone());
+    let (ready, started) = mpsc::sync_channel(1);
+    let (release, gate) = mpsc::sync_channel(1);
+    media.cache_worker = Some(
+        CacheWorker::spawn(move |cancel| {
+            ready.send(()).unwrap();
+            gate.recv().unwrap();
+            assert!(cancel.load(Ordering::Acquire));
+            CacheMaintenanceReport {
+                removed_bytes: 100,
+                cause: Some(engine::EditError::Cancelled),
+                ..Default::default()
+            }
+        })
+        .unwrap(),
+    );
+    started.recv_timeout(Duration::from_secs(5)).unwrap();
+    media.request_cache(CacheAction::Cancel);
+    assert_eq!(media.cache_ui().phase, CachePhase::Cancelling);
+    release.send(()).unwrap();
+    let mut session = engine::Session::new(
+        project::Project::empty(project::ProjectId(1), "worker".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while media.cache_worker.is_some() {
+        media.tick(&mut session).unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    let report = media.cache_ui().report.unwrap();
+    assert_eq!(report.removed_bytes, 100);
+    assert!(matches!(report.cause, Some(engine::EditError::Cancelled)));
+    let worker = CacheWorker::spawn(|_| panic!("injected worker unwind")).unwrap();
+    let report = worker.handle.join().unwrap();
+    assert!(matches!(
+        report.cause,
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::WorkerPanicked
+        ))
+    ));
+    let (done, joined) = mpsc::sync_channel(1);
+    media.cache_worker = Some(
+        CacheWorker::spawn(move |cancel| {
+            while !cancel.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+            done.send(()).unwrap();
+            CacheMaintenanceReport::default()
+        })
+        .unwrap(),
+    );
+    drop(media);
+    joined.try_recv().unwrap();
 }

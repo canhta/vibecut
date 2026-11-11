@@ -122,3 +122,10 @@ stay authoritative; keyed edits affect real-local keys. Time, selection, lock,
 effect or panel changes cancel pending edits. A queued row removal cancels drafts
 and scrubs before removal, so a removed effect cannot be recreated. Other controls
 retain behavior.
+
+The unselected-project Settings view has a Timeline previews section. It inspects once on first
+reveal; Refresh updates the snapshot, Clear removes eligible entries, Cancel stops further
+removals and Retry repeats the failed operation and resets visual recovery. Disk bytes,
+retained/in-use/missing/failed counts and partial results remain visible; an unavailable root
+requests restart. This is shared process waveform/scene-analysis and timeline-thumbnail
+storage only, excluding import thumbnails, models, other libraries and source/project data.
