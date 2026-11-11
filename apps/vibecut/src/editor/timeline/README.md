@@ -104,3 +104,8 @@ do not consume another attempt.
 The first safe typed cause remains available to Settings. Media owns one panic-catching,
 cancellable joined maintenance thread; it snapshots the shared access under `try_lock`, then
 releases it before IO. Drop cancels and joins; active generation jobs continue unchanged.
+
+Lane menus activate shared Copy/Paste actions, with component-distinct
+`timeline.lane.<item>.<path>.<component>.copy|paste` IDs. The selected item's
+`timeline.item.<item>.paste` menu supports existing Params with no keys. Current frame
+eligibility supplies disabled states; opening another item's menu never retargets Paste.

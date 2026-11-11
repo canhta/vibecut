@@ -17,7 +17,9 @@ defaults with a `PreferenceIssue` warning; an unreadable document restores syste
 defaults without rewriting the bytes. Reads and writes share a 32 KiB budget (including all remote-model choices and recent IDs), unknown
 keys are refused, and the lane map, colour list, section map, window map (64 entries)
 and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo and
-never touch project JSON.
+never touch project JSON. Ripple mode and keyframe lane visibility persist outside
+undo history, so entering an editing mode or opening its lanes cannot shadow the
+project edit's next Undo.
 
 `AiPreferences` is the one persisted remote provider/feature model map. It stores
 bounded custom IDs and four recent IDs per pair, using AI's shipped table for defaults.

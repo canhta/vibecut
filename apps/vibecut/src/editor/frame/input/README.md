@@ -24,3 +24,15 @@ per-action and all-action reset remove the override and marker. Every change is 
 app-local `ui.keybindings.set` / `ui.keybindings.reset` command, so undo and redo restore
 the map without touching Project JSON. Import and export controls are visible but
 disabled.
+
+## Clipboard actions
+
+Copy requires a current single-item key selection. Paste requires a single selected
+item with compatible existing channels and an entry in its Session. The shared current
+eligibility check runs before draft flushing or selection/view writes, and before the
+timeline temporarily takes area state. Busy/save/transaction/inline edits, dirty or
+focused Properties/caption drafts, recording and blocking modals refuse. A menu popup
+alone does not block its action. Accepted Paste reads the current output playhead once,
+uses one typed command and clears nested scopes only on change; refusal/no-op preserves
+them. Engine [transfer semantics](../../../../../../crates/engine/src/session/README.md#keyframe-clipboard)
+remain authoritative for all transports.

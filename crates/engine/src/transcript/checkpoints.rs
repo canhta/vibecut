@@ -110,7 +110,7 @@ pub(crate) fn transcribe_window(
                 Err(error) => return Err(error),
             }
             if cancel.cancelled() {
-                return Err(EditError::Cancelled);
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
             }
             return align_recognition(
                 providers,
@@ -215,7 +215,7 @@ fn align_recognition(
     )?;
     let output = wait_for_job(runner, id, &token, progress, cancel)?;
     if cancel.cancelled() {
-        return Err(EditError::Cancelled);
+        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
     }
     serde_json::from_slice(output.bytes())
         .map_err(|_| EditError::Invalid("aligned recognition is malformed"))
@@ -251,7 +251,7 @@ pub fn wait_for_job(
                     None => EditError::Invalid("job failed without diagnostics"),
                 });
             }
-            JobState::Cancelled => return Err(EditError::Cancelled),
+            JobState::Cancelled => return Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             _ => {
                 if cancel.cancelled() {
                     token.cancel();

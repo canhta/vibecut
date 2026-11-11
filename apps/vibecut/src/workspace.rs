@@ -33,6 +33,8 @@ pub struct Workspace {
     pub projects: HomeState,
     pub shorts: Option<crate::shorts::State>,
     pub preferences: Preferences,
+    /// Injected native reader shared by Home and immediate child composition.
+    pub text_clipboard: crate::services::text_clipboard::TextClipboard,
     home: EditorWindow,
     focused: Option<project::ProjectId>,
     focus_requested: Option<project::ProjectId>,
@@ -101,6 +103,7 @@ impl Workspace {
             projects: HomeState::new(projects_root, budget),
             shorts: None,
             preferences,
+            text_clipboard: Default::default(),
             home,
             focused: None,
             focus_requested: None,
@@ -420,6 +423,20 @@ impl Workspace {
     /// Draw a specific project through the same path as its native viewport.
     /// Kittest callers select the project explicitly, preserving automation ids.
     pub fn window_ui(&mut self, id: project::ProjectId, ui: &mut egui::Ui) {
+        let owner = self
+            .windows
+            .get(&id)
+            .and_then(|w| w.editor.as_ref())
+            .map(|e| {
+                egui::Id::unique((
+                    e.session.session_id(),
+                    e.session.project().data().id,
+                    e.session.project().data().current_scene_id,
+                    &e.selection,
+                ))
+            })
+            .unwrap_or_else(|| egui::Id::unique(("loading", id)));
+        self.text_clipboard.bridge(ui.ctx(), owner);
         if let Some(window) = self.windows.get_mut(&id) {
             window.preferences = self.preferences.clone();
             if let Some(editor) = &mut window.editor {
@@ -465,6 +482,12 @@ impl Workspace {
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
         let ctx = ui.ctx().clone();
+        if self.home_open {
+            self.text_clipboard.bridge(
+                ui.ctx(),
+                egui::Id::unique(("home.text", self.projects.selection())),
+            );
+        }
         // Our own final `Close` returns here as `close_requested`; cancelling it
         // would leave a hidden process running after the last window closed.
         if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close() {
@@ -558,6 +581,15 @@ impl Workspace {
                     .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
                     shorts.apply_model_preferences(&self.preferences.ai_models);
+                    self.text_clipboard.bridge(
+                        ui.ctx(),
+                        egui::Id::unique((
+                            "shorts.text",
+                            shorts.source().map(|s| s.project.data().id),
+                            shorts.preview_session().map(|s| s.session_id()),
+                            shorts.selected(),
+                        )),
+                    );
                     actions = crate::shorts::show(shorts, &cx, ui);
                     close = ui.input(|i| i.viewport().close_requested());
                     if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
@@ -582,6 +614,21 @@ impl Workspace {
         if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
             remember_geometry(&mut self.preferences, "home".into(), geometry);
         }
+        let mut text_viewports: Vec<_> = self
+            .windows
+            .keys()
+            .filter_map(|id| self.viewport(*id))
+            .collect();
+        if self.home_open {
+            text_viewports.push(egui::ViewportId::ROOT);
+        }
+        if self.shorts_window {
+            text_viewports.push(egui::ViewportId::from_hash_of("shorts.window"));
+        }
+        if ctx.embed_viewports() && !text_viewports.is_empty() {
+            text_viewports = vec![egui::ViewportId::ROOT];
+        }
+        self.text_clipboard.retain_viewports(&ctx, &text_viewports);
         if self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -1121,7 +1168,8 @@ impl EditorWindow {
                     persistence.clone(),
                     preferences.clone(),
                 );
-                send.send(result).map_err(|_| EditError::Cancelled)?;
+                send.send(result)
+                    .map_err(|_| EditError::Runtime(engine::RuntimeError::Cancelled))?;
                 Ok(Vec::new())
             },
         );

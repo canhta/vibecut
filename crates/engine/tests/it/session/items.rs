@@ -1277,3 +1277,127 @@ fn crop_of(item: &Item) -> Option<project::Crop> {
     };
     p.crop
 }
+
+#[test]
+#[allow(clippy::indexing_slicing)]
+fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
+    use engine::{ItemParamPatch as P, Placement};
+    for graphic in [
+        project::GraphicParams::rectangle(),
+        project::GraphicParams::ellipse(),
+    ] {
+        let mut s =
+            Session::new(Project::empty(ProjectId(90), "Shapes".into()).unwrap(), 100).unwrap();
+        let canvas = s.project().data().canvas.clone();
+        let insert = |content| Command::InsertItem {
+            placement: Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: range(20, 120),
+                start: Tick(50),
+                content: ItemParams::Graphic(content),
+            },
+        };
+        let initial = s.project().clone();
+        let outcome = s.apply(insert(graphic.clone())).unwrap();
+        let id = outcome.placements[0].item;
+        assert_eq!(outcome.placements[0].track, TrackId(0));
+        assert_eq!(s.project().data().canvas, canvas);
+        assert_eq!(s.project().data().original_canvas_size, None);
+        let path = project::AnimationPath::new("params.strokeWidth").unwrap();
+        s.apply(Command::SetAnimatedParam {
+            item: id,
+            path: path.clone(),
+            param: project::Param::new(project::ParamValue::Scalar(12.)).unwrap(),
+        })
+        .unwrap();
+        s.apply(Command::SetItemField {
+            item: id,
+            patch: P::GraphicStrokeWidth(40.),
+        })
+        .unwrap();
+        let current = || get_project(&s.project(), id.0);
+        assert_eq!(
+            current().animations.value_at(&path, Tick(0)).unwrap(),
+            Some(project::ParamValue::Scalar(12.))
+        );
+        s.apply(Command::AddMask {
+            item: id,
+            mask: project::Mask::new("shape-mask", project::MaskShape::Ellipse),
+        })
+        .unwrap();
+        s.apply(Command::AddEffect {
+            item: id,
+            effect: project::effect_definition("blur")
+                .unwrap()
+                .instance("shape-effect"),
+        })
+        .unwrap();
+        let before = s.project().clone();
+        let history = s.history_len();
+        for patch in [
+            P::GraphicStrokeWidth(-1.),
+            P::GraphicStrokeWidth(f64::NAN),
+            P::GraphicCornerRadius(51.),
+        ] {
+            assert!(s.apply(Command::SetItemField { item: id, patch }).is_err());
+            assert!(Arc::ptr_eq(&before, s.project()));
+            assert_eq!(history, s.history_len());
+        }
+        if matches!(graphic, project::GraphicParams::Ellipse { .. }) {
+            assert!(
+                s.apply(Command::SetItemField {
+                    item: id,
+                    patch: P::GraphicCornerRadius(1.)
+                })
+                .is_err()
+            );
+        }
+        assert!(
+            s.apply(Command::SetSpeed {
+                items: vec![id],
+                speed: time::Speed::from_f64(2.).unwrap(),
+                maintain_pitch: true
+            })
+            .is_err()
+        );
+        assert!(
+            s.apply(Command::Batch {
+                commands: vec![
+                    Command::SetItemField {
+                        item: id,
+                        patch: P::GraphicFill(Color([1, 2, 3, 4]))
+                    },
+                    Command::SetItemField {
+                        item: id,
+                        patch: P::GraphicStrokeWidth(65.)
+                    }
+                ]
+            })
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(&before, s.project()));
+        s.apply(Command::SetTrackLocked {
+            track: TrackId(0),
+            locked: true,
+        })
+        .unwrap();
+        let locked = s.project().clone();
+        assert!(
+            s.apply(Command::SetItemField {
+                item: id,
+                patch: P::GraphicFill(Color([0; 4]))
+            })
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(&locked, s.project()));
+        while s.history_len().0 > 0 {
+            s.undo().unwrap();
+        }
+        assert_eq!(s.project(), &initial);
+        s.apply(insert(graphic)).unwrap();
+        assert_ne!(s.project().data().scene().timeline.main.items[0].id, id);
+    }
+}

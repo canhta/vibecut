@@ -18,6 +18,8 @@
 | `media.cancel_delete` — Keep media | Edit | — | — | media removal confirmation |
 | `media.confirm_delete` — Delete media | Edit | — | — | media removal confirmation workflow |
 | `media.reveal` — Show in folder | File | — | — | media library reveal |
+| `graphic.insert.rectangle` — Rectangle | Edit | — | — | graphic insertion workflow |
+| `graphic.insert.ellipse` — Ellipse | Edit | — | — | graphic insertion workflow |
 | `text.insert` — Add text | Edit | — | — | text insertion workflow |
 | `subtitles.cue` — Choose a caption | Edit | — | — | subtitle cue selection |
 | `subtitles.cancel` — Cancel caption job | Edit | — | — | subtitle editor workflow |
@@ -39,8 +41,8 @@
 | `subtitles.force` — Regenerate captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.dismiss` — Dismiss caption notice | Edit | — | — | subtitle editor workflow |
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
-| `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable) |
-| `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable) |
+| `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard |
+| `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard |
 | `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |

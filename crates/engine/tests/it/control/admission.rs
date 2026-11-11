@@ -301,6 +301,61 @@ fn policy_refusal_and_nested_policy_are_safe_before_io() {
     assert_eq!(r.counts().0, 0);
 }
 #[test]
+fn stale_loudness_export_refuses_before_jobs_and_replays_without_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("export.mp4");
+    for measured in [
+        None,
+        Some(project::LoudnessGains {
+            key: [0; 32],
+            clip: vec![],
+            master_db: 0.0,
+        }),
+    ] {
+        let mut data = seed().project().as_ref().clone().into_data();
+        data.settings.loudness.master = Some(project::LoudnessTarget::DEFAULT);
+        data.settings.loudness.measured = measured;
+        let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
+        let mut r = runner();
+        let before = s.project().clone();
+        let revision = s.revision();
+        let history = s.history_len();
+        let mut cursor = s.snapshot_and_subscribe(&r).unwrap().cursor;
+        let req = request(
+            &s,
+            "export",
+            json!({
+                "settings": render::OutputOptions::default(), "path": output, "overwrite": false
+            }),
+            "loudness-stale",
+        );
+        for _ in 0..2 {
+            error(
+                s.control_request(req.clone(), caller(&Allow), &mut r)
+                    .unwrap(),
+                ErrorCode::Refused,
+            );
+        }
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), history);
+        assert!(r.snapshots().is_empty());
+        assert!(r.drain_events().is_empty());
+        assert!(matches!(
+            s.events(&mut cursor).unwrap().as_slice(),
+            [control::Event {
+                payload: Payload::CommandError {
+                    code: ErrorCode::Refused,
+                    ..
+                },
+                ..
+            }]
+        ));
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
 fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     let s = session();
     let req = request(
@@ -828,7 +883,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(E::Runtime(B::BudgetFull), Budget, false),
         row!(E::Runtime(B::ArtifactTooLarge), Budget, false),
-        row!(E::Cancelled, Cancelled, false),
+        row!(
+            E::Runtime(engine::RuntimeError::Cancelled),
+            Cancelled,
+            false
+        ),
         row!(
             E::Runtime(engine::RuntimeError::WorkerPanicked),
             WorkerFailure,
@@ -848,7 +907,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             true
         ),
         row!(E::StaleResult, StaleResult, false),
-        row!(E::LoudnessStale, Refused, false),
+        row!(E::Runtime(B::LoudnessStale), Refused, false),
         row!(
             E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
             Limit,
@@ -982,6 +1041,8 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
+        (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::NetworkTransient), C::Job),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
@@ -1006,6 +1067,8 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
+        (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Limit, C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
@@ -1014,7 +1077,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             C::WorkerFailure,
         ),
         (E::Runtime(B::Poisoned), C::Job),
-        (E::Cancelled, C::Cancelled),
+        (E::Runtime(engine::RuntimeError::Cancelled), C::Cancelled),
         (E::StaleResult, C::StaleResult),
         (E::Runtime(engine::RuntimeError::NetworkTransient), C::Job),
     ] {
@@ -1028,9 +1091,19 @@ fn owner_failures_classify_publication_receipts_and_events() {
         C::Job,
         false,
     ));
-    for cause in [B::CacheBusy, B::ModelResponse, B::StorageFull] {
+    for cause in [
+        B::CacheBusy,
+        B::ModelResponse,
+        B::StorageFull,
+        B::LoudnessStale,
+    ] {
         cases.push((E::Runtime(B::Failed(Arc::new(cause))), C::Refused, false));
     }
+    cases.push((
+        E::Runtime(B::Failed(Arc::new(B::Cancelled))),
+        C::Cancelled,
+        false,
+    ));
     let message = E::Providers(P::ModelMissing("test-model")).to_string();
     let cache = B::CacheCorrupt;
     assert_eq!(cache.code(), C::Job);
@@ -1065,4 +1138,120 @@ fn owner_failures_classify_publication_receipts_and_events() {
             matches!(s.events(&mut cursor).unwrap().as_slice(), [control::Event { payload: Payload::CommandError { code: observed, .. }, .. }] if *observed == code)
         );
     }
+}
+
+#[test]
+fn clipboard_copy_receipts_preserve_newer_snapshot_and_stale_paste_is_atomic() {
+    let mut s = seed();
+    let mut r = runner();
+    let before = s.project().clone();
+    let history = s.history_len();
+    let rev = s.revision();
+    let first = request(
+        &s,
+        "clipboard.copy_keyframes",
+        json!({"keys":[{"item":1,"path":"opacity","time":0}]}),
+        "copy-first",
+    );
+    let stale = request(
+        &s,
+        "clipboard.paste_keyframes",
+        json!({"item":1,"at":2,"source":{"kind":"stored"}}),
+        "stale-paste",
+    );
+    let first_response = s
+        .control_request(first.clone(), caller(&Allow), &mut r)
+        .unwrap();
+    ok(first_response.clone());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+    assert_ne!(s.revision(), rev);
+    error(
+        s.control_request(stale, caller(&Allow), &mut r).unwrap(),
+        ErrorCode::StaleRevision,
+    );
+    s.execute("keyframes.add",json!({"item":1,"path":"opacity","component":null,"key":{"time":12,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"broken","incoming":null,"outgoing":{"dt":4,"dv":0.2}}})).unwrap();
+    ok(run(
+        &mut s,
+        &mut r,
+        "clipboard.copy_keyframes",
+        json!({"keys":[{"item":1,"path":"opacity","time":12}]}),
+        "copy-second",
+    ));
+    let rev = s.revision();
+    let replay = s.control_request(first, caller(&Allow), &mut r).unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(first_response).unwrap()
+    );
+    assert_eq!(s.revision(), rev);
+    let result = ok(run(&mut s, &mut r, "clipboard.read", json!({}), "read"));
+    let encoded = serde_json::to_value(result).unwrap();
+    assert_eq!(encoded["kind"], "clipboard");
+    assert_eq!(encoded["payload"]["origin"], 12);
+    assert_eq!(
+        encoded["payload"]["params"][0]["param"]["channels"]["keys"][0]["outgoing"],
+        json!({"dt":4,"dv":0.2})
+    );
+    let paste = request(
+        &s,
+        "clipboard.paste_keyframes",
+        json!({"item":1,"at":40,"source":{"kind":"stored"}}),
+        "paste",
+    );
+    let response = s
+        .control_request(paste.clone(), caller(&Allow), &mut r)
+        .unwrap();
+    ok(response.clone());
+    let pasted = s.project().clone();
+    let history = s.history_len();
+    ok(run(
+        &mut s,
+        &mut r,
+        "clipboard.copy_keyframes",
+        json!({"keys":[{"item":1,"path":"opacity","time":0}]}),
+        "copy-third",
+    ));
+    assert_eq!(
+        serde_json::to_value(s.control_request(paste, caller(&Allow), &mut r).unwrap()).unwrap(),
+        serde_json::to_value(response).unwrap()
+    );
+    assert_eq!(s.project(), &pasted);
+    assert_eq!(s.history_len(), history);
+    let keys = &s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == ItemId(1))
+        .unwrap()
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys();
+    assert!(keys.iter().any(|k| k.time == Tick(40)
+        && k.value == project::ParamValue::Scalar(0.25)
+        && k.tangent == project::TangentMode::Broken));
+    // Undo and redo keep the Session snapshot; successful identity change clears it.
+    s.undo().unwrap();
+    s.redo().unwrap();
+    s.apply(Command::CreateScene {
+        name: "Other".into(),
+    })
+    .unwrap();
+    let scene = s.project().data().scenes.iter().last().unwrap().id;
+    s.apply(Command::SwitchScene { scene }).unwrap();
+    let result = serde_json::to_value(ok(run(
+        &mut s,
+        &mut r,
+        "clipboard.read",
+        json!({}),
+        "cleared",
+    )))
+    .unwrap();
+    assert_eq!(result["payload"], Value::Null);
 }

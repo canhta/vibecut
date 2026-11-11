@@ -131,20 +131,19 @@ fn escape_cancels_the_drag_before_deselecting() {
 }
 
 #[test]
-fn pending_actions_are_typed_unavailable_and_never_mutate_the_project() {
-    let fixture = fixture();
-    let mut editor = fixture.editor;
+fn clipboard_actions_refuse_empty_scopes_without_mutating_project_or_history() {
+    let mut editor = fixture().editor;
     let project = editor.session.project().clone();
-    for (action, ticket) in [
-        ("edit.copy", "p1-parity/20"),
-        ("edit.paste", "p1-parity/20"),
-    ] {
-        assert!(matches!(
-            editor.activate(action),
-            Err(vibecut::Error::NotAvailable(owner)) if owner == ticket
-        ));
+    let revision = editor.session.revision();
+    let history = editor.session.history_len();
+    for action in ["edit.copy", "edit.paste"] {
+        assert!(
+            matches!(editor.activate(action),Err(vibecut::Error::ActionDisabled(id)) if id==action)
+        );
     }
     assert_eq!(editor.session.project(), &project);
+    assert_eq!(editor.session.revision(), revision);
+    assert_eq!(editor.session.history_len(), history);
 }
 
 #[test]

@@ -129,13 +129,22 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     token.cancel();
     assert_eq!(pump(&mut r, id).state, JobState::Cancelled);
     assert_eq!(budget.snapshot().unwrap().used, 0);
-    for wrapped in [false, true] {
+    for mode in 0..5 {
+        let mut session = crate::support::control::session();
+        let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
         let (id, _) = r
             .submit(spec(ResourceClass::Network), move |_| {
-                Err(if wrapped {
-                    EditError::Runtime(engine::RuntimeError::Failed(Arc::new(EditError::Cancelled)))
-                } else {
-                    EditError::Cancelled
+                Err(match mode {
+                    0 => EditError::Runtime(B::Cancelled),
+                    1 => EditError::Runtime(B::Failed(Arc::new(B::Cancelled))),
+                    2 => EditError::Runtime(B::Failed(Arc::new(EditError::Runtime(B::Cancelled)))),
+                    3 => EditError::Runtime(B::Failed(Arc::new(EditError::Runtime(B::Failed(
+                        Arc::new(EditError::Runtime(B::Cancelled)),
+                    ))))),
+                    _ => engine::recovery::Error::PersistenceFailed(Arc::new(EditError::Runtime(
+                        B::Cancelled,
+                    )))
+                    .into(),
                 })
             })
             .unwrap();
@@ -143,23 +152,62 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert_eq!(
             (snapshot.state, snapshot.attempts),
             (
-                if wrapped {
-                    JobState::Failed
-                } else {
+                if mode == 0 {
                     JobState::Cancelled
+                } else {
+                    JobState::Failed
                 },
-                1
+                1,
             )
         );
-        let cause = snapshot
-            .error
-            .as_deref()
-            .and_then(|error| {
-                (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
-            })
+        let raw = snapshot.error.as_ref().unwrap();
+        let cause = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()
             .unwrap();
         assert_eq!(cause.code(), engine::control::ErrorCode::Cancelled);
-        assert_eq!(matches!(cause, EditError::Runtime(B::Failed(_))), wrapped);
+        assert!(!cause.transient());
+        assert!(matches!(
+            (mode, cause),
+            (0, EditError::Runtime(B::Cancelled))
+                | (1..=3, EditError::Runtime(B::Failed(_)))
+                | (
+                    4,
+                    EditError::Recovery(engine::recovery::Error::PersistenceFailed(_))
+                )
+        ));
+        assert_eq!(
+            raw.to_string(),
+            match mode {
+                0 => "job cancelled",
+                1 | 2 => "background job failed: job cancelled",
+                3 => "background job failed: background job failed: job cancelled",
+                _ => "session persistence failed",
+            }
+        );
+        assert_eq!(raw.source().is_some(), mode == 4);
+        let listed = r.snapshots().into_iter().find(|row| row.id == id).unwrap();
+        let event = r
+            .drain_events()
+            .into_iter()
+            .find(|row| row.id == id)
+            .unwrap();
+        assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+        let resync = session.snapshot_and_subscribe(&r).unwrap();
+        assert!(resync.jobs.iter().any(|row| row.id == id
+            && row.error == Some(engine::control::ErrorCode::Cancelled)
+            && row.state == snapshot.state));
+        assert!(
+            session
+                .events(&mut cursor)
+                .unwrap()
+                .iter()
+                .any(|event| matches!(
+                    &event.payload, engine::control::Payload::JobChanged { snapshot: row }
+                    if row.id == id && row.error == Some(engine::control::ErrorCode::Cancelled)
+                        && row.state == snapshot.state
+                ))
+        );
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
@@ -229,7 +277,7 @@ fn worker_unwind_routes_keep_typed_failures_and_cancellation_order() {
                 mode,
                 (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
             ),
-            (2, Some(EditError::Cancelled))
+            (2, Some(EditError::Runtime(engine::RuntimeError::Cancelled)))
                 | (0 | 1 | 3, Some(EditError::Runtime(B::WorkerPanicked)))
         ));
         assert_eq!(
@@ -415,7 +463,7 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
             .unwrap();
         assert!(matches!(
             (mode, error),
-            (1, EditError::Cancelled)
+            (1, EditError::Runtime(engine::RuntimeError::Cancelled))
                 | (
                     0 | 2,
                     EditError::Runtime(engine::RuntimeError::NetworkTransient)
@@ -849,7 +897,8 @@ fn cache_failure_keeps_token_seal_order_and_raw_cause_custody() {
             .unwrap();
         assert!(matches!(
             (cancelled, typed),
-            (true, EditError::Cancelled) | (false, EditError::Runtime(B::CacheCorrupt))
+            (true, EditError::Runtime(engine::RuntimeError::Cancelled))
+                | (false, EditError::Runtime(B::CacheCorrupt))
         ));
         assert!(!cause.transient());
         assert!(std::error::Error::source(typed).is_none());
@@ -930,7 +979,7 @@ fn worker_progress_is_throttled_and_shutdown_joins_cancellable_work() {
             while !ctx.cancelled() {
                 std::thread::yield_now();
             }
-            Err(EditError::Cancelled)
+            Err(EditError::Runtime(engine::RuntimeError::Cancelled))
         })
         .unwrap();
     r.tick().unwrap();
@@ -1064,7 +1113,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
                     .0,
             );
             match mode {
-                0 => Err(EditError::Cancelled),
+                0 => Err(EditError::Runtime(engine::RuntimeError::Cancelled)),
                 1 => panic!("unwind after preview target capture"),
                 2 => {
                     let track = s.project().data().scene().timeline.overlays[0].id;
@@ -1521,6 +1570,21 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             C::Refused,
             false,
         ),
+        (|| E::Runtime(B::LoudnessStale), C::Refused, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::LoudnessStale))),
+            C::Refused,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Runtime(B::LoudnessStale),
+                ))))))
+            },
+            C::Refused,
+            false,
+        ),
         (|| E::Runtime(B::StorageFull), C::Refused, false),
         (
             || E::Runtime(B::Failed(Arc::new(B::StorageFull))),
@@ -1681,6 +1745,9 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
                 Some("model transfer response does not match the requested representation")
             }
             E::Runtime(B::StorageFull) => Some("model storage is full"),
+            E::Runtime(B::LoudnessStale) => {
+                Some("loudness gains are missing or measured for different audio; measure again")
+            }
             _ => None,
         };
         if let Some(message) = message {
@@ -1779,7 +1846,10 @@ fn cache_maintenance_cancel_keeps_prior_removals_and_independent_roots() {
         calls.set(calls.get() + 1);
         calls.get() > 1
     });
-    assert!(matches!(report.cause, Some(EditError::Cancelled)));
+    assert!(matches!(
+        report.cause,
+        Some(EditError::Runtime(engine::RuntimeError::Cancelled))
+    ));
     assert_eq!(
         (report.removed_bytes, report.disk_bytes, report.entries),
         (100, 200, 2)
@@ -1868,29 +1938,67 @@ fn cache_maintenance_preserves_unknown_and_hostile_substitutions() {
 #[test]
 fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
     use engine::cache::CacheOperation::Clear;
-    for fault in 0..3 {
+    for fault in 0..5 {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("cache");
         let moved = dir.path().join("retained");
         let budget = ByteBudget::new(8192).unwrap();
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 8).unwrap();
         cache.put(key(1), b"original").unwrap();
+        let original = std::fs::read(root.join(key(1).filename())).unwrap();
         // Windows refuses this directory rename while its lock file is held.
         // Keep that lock held outside it during the move, then restore its path.
         let held_lock = dir.path().join(".cache.lock");
         std::fs::rename(root.join(".cache.lock"), &held_lock).unwrap();
-        std::fs::rename(&root, &moved).unwrap();
+        if fault == 4 {
+            // Replace only the lock while the original directory stays put.
+            std::fs::create_dir(&moved).unwrap();
+        } else {
+            std::fs::rename(&root, &moved).unwrap();
+        }
         std::fs::rename(&held_lock, moved.join(".cache.lock")).unwrap();
-        if fault == 1 {
+        if matches!(fault, 1 | 3) {
             std::fs::create_dir(&root).unwrap();
+        }
+        if fault == 3 {
+            // Replace only the root, preserving the original held lock.
+            std::fs::rename(moved.join(".cache.lock"), root.join(".cache.lock")).unwrap();
+        }
+        if matches!(fault, 1 | 4) {
             std::fs::write(root.join(".cache.lock"), b"").unwrap();
+        }
+        if matches!(fault, 1 | 3 | 4) {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::{FileTimesExt, OpenOptionsExt};
+                // Distinct Windows objects can have equal creation times.
+                // Set the real replacement timestamps to reproduce that case.
+                for suffix in ["", ".cache.lock"] {
+                    if (fault == 3 && !suffix.is_empty()) || (fault == 4 && suffix.is_empty()) {
+                        continue;
+                    }
+                    let created = std::fs::metadata(moved.join(suffix))
+                        .unwrap()
+                        .created()
+                        .unwrap();
+                    let replacement = std::fs::File::options()
+                        .access_mode(0x100) // FILE_WRITE_ATTRIBUTES
+                        .custom_flags(0x02000000) // FILE_FLAG_BACKUP_SEMANTICS
+                        .open(root.join(suffix))
+                        .unwrap();
+                    replacement
+                        .set_times(std::fs::FileTimes::new().set_created(created))
+                        .unwrap();
+                    assert_eq!(replacement.metadata().unwrap().created().unwrap(), created);
+                }
+            }
         }
         if fault == 2 {
             #[cfg(unix)]
             std::os::unix::fs::symlink(&moved, &root).unwrap();
         }
         let report = cache.maintenance().unwrap().run(Clear, || false);
-        assert!(report.root_unavailable);
+        assert!(report.root_unavailable, "fault {fault}: {report:?}");
         assert!(matches!(
             report.cause,
             Some(EditError::Runtime(B::CacheCorrupt))
@@ -1903,12 +2011,17 @@ fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
             cache.get(key(1)),
             Err(EditError::Runtime(B::CacheCorrupt))
         ));
-        assert!(moved.join(key(1).filename()).is_file());
+        let retained = if fault == 4 { &root } else { &moved };
+        assert_eq!(
+            std::fs::read(retained.join(key(1).filename())).unwrap(),
+            original
+        );
+        assert!(!root.join(key(2).filename()).exists());
         if fault == 0 {
             assert!(!root.exists());
         }
         drop(cache);
-        if fault == 1 {
+        if matches!(fault, 1 | 3) {
             std::fs::remove_file(root.join(".cache.lock")).unwrap();
             std::fs::remove_dir(&root).unwrap();
         }

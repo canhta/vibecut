@@ -144,6 +144,62 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
             .is_err()
         );
     }
+    // Both absent and mismatched gains refuse before any worker/source/stage.
+    for measured in [
+        None,
+        Some(project::LoudnessGains {
+            key: [0; 32],
+            clip: vec![],
+            master_db: 0.0,
+        }),
+    ] {
+        let mut data = project.as_ref().clone().into_data();
+        data.settings.loudness.master = Some(project::LoudnessTarget::DEFAULT);
+        data.settings.loudness.measured = measured;
+        let stale = Arc::new(project::Project::new(data).unwrap());
+        assert!(matches!(
+            engine::submit_export_with_sources(
+                &mut runner,
+                key(102),
+                stale.clone(),
+                time::TimeRange::new(time::Tick::ZERO, time::Tick(time::TICKS_PER_SECOND)).unwrap(),
+                settings.clone(),
+                second.clone(),
+                || panic!("stale source opened"),
+            ),
+            Err(EditError::Runtime(engine::RuntimeError::LoudnessStale))
+        ));
+        assert!(runner.snapshots().is_empty());
+        assert!(runner.drain_events().is_empty());
+        assert_eq!(std::fs::read(&first).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+    // The active scene is measured, but that key cannot admit the later scene.
+    let mut data = project.as_ref().clone().into_data();
+    data.settings.loudness.master = Some(project::LoudnessTarget::DEFAULT);
+    data.settings.loudness.measured = Some(project::LoudnessGains {
+        key: engine::loudness::content_key(&data),
+        clip: vec![],
+        master_db: 0.0,
+    });
+    let measured = Arc::new(project::Project::new(data).unwrap());
+    engine::loudness::admit(&measured).unwrap();
+    assert!(matches!(
+        engine::submit_scene_exports_with_sources(
+            &mut runner,
+            key(103),
+            measured,
+            options,
+            settings.clone(),
+            vec![first.clone(), second.clone()],
+            || panic!("partial scene admitted"),
+        ),
+        Err(EditError::Runtime(engine::RuntimeError::LoudnessStale))
+    ));
+    assert!(runner.snapshots().is_empty());
+    assert!(runner.drain_events().is_empty());
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     let created = Arc::new(AtomicUsize::new(0));
     let calls = created.clone();
     let (job, _) = engine::submit_scene_exports_with_sources(

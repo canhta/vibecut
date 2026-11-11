@@ -130,3 +130,9 @@ unreduced decoded raster (validated probe geometry only for missing previews).
 Crop/fit precede effects; generated content uses canvas author pixels. Item
 transform follows effects. The full-canvas stage cannot recover cropped pixels;
 transparent canvas borders remain. This is not source-before-placement parity.
+
+## Generated graphic geometry
+
+Graphics use the shared bounded contour/distance coverage engine at native output size, without source reads or a raster cache. Default placement is a centered square with side min(512,canvas width,canvas height), scaled independently to the output axes; explicit placement wins. Only center alignment insets the author path by half stroke width. Rectangle radius is min(author axes)/2 times radius/50; ellipse radii are the author half-axes. Outside rings survive until canvas clipping. Fill precedes ring source-over on an isolated item layer, then the existing effects/masks/transform/once-opacity/blend stages. Keyed colors are already linear and are never gamma-converted again. Appearance uses real item-local time in preview and export; evaluated scalar overshoot clamps to admitted ranges.
+
+Rounded corners share the cubic mask flattening bound of0.05 output pixels; the standard cubic ellipse approximation adds at most0.00028 times the larger radius in the analytical comparisons. This does not promise post-transform vector sharpness: existing inverse sampling and pre-transform canvas clipping remain.

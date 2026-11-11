@@ -1,6 +1,6 @@
 # Services
 
-Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_task`, `remote_models`, `progress`.
+Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_task`, `remote_models`, `progress`, `text_clipboard`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -14,6 +14,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `color_picker` | [Target-free colour controls and native screen sampler](color_picker/README.md). Callers own project targets, publication and history. |
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
 | `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
+| `text_clipboard` | Read-only native text access with injected reader composition; viewport custody belongs to [input](../input/README.md). |
 | `progress` | `job_progress`: the stage line and progress bar every job surface draws from an engine snapshot. |
 
 ## Playback and limits
@@ -83,3 +84,20 @@ Unknown-price uploads have an explicit checkbox. `TaskEvents` remembers at most
 16 acknowledged exact provider/operation identities within that task, while every
 payload still requires upload approval; changed models or job kinds need a new
 acknowledgement. Cancellation never sends approval.
+
+## Focused text reads
+
+`TextClipboard` services each viewport's claimed input request in that viewport's callback,
+then posts an explicitly tagged completion and requests repaint. Composition retires
+custody for hidden/removed viewports even when they receive no final callback. It uses the same path for
+Home and immediate Editor/Shorts children, independent of eframe's root-only native action
+drain. The reader is injected at composition; production opens a scoped read-only
+`arboard::Clipboard` and calls `get_text`, treating unavailable/empty text as completion.
+There is no text history, extra clipboard store, image fallback, logging or keyframe JSON
+serialization. Egui retains Copy/Cut output and genuine unowned Paste events.
+
+Arboard 3.7.0 (MIT OR Apache-2.0) is the existing single transitive version, now a direct
+app dependency with defaults disabled and `wayland-data-control` enabled. Its official
+[API](https://docs.rs/arboard/3.7.0/arboard/struct.Clipboard.html) owns native read semantics;
+[Linux support](https://docs.rs/crate/arboard/3.7.0/source/README.md) includes X11 and
+Wayland data-control. The app contains no unsafe clipboard wrapper or framework fork.

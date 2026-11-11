@@ -485,7 +485,9 @@ fn export_preparation_covers_source_and_translated_captions() {
     );
     assert!(matches!(
         result,
-        Err(shorts::Error::Engine(engine::EditError::Cancelled))
+        Err(shorts::Error::Engine(engine::EditError::Runtime(
+            engine::RuntimeError::Cancelled
+        )))
     ));
     let (pending, active, _, _) = runner.counts();
     assert_eq!(

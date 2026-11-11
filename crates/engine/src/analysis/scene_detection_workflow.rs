@@ -287,7 +287,7 @@ impl DetectionJob {
     ) -> Result<Option<DetectionResult>, EditError> {
         let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
         match snapshot.state {
-            JobState::Cancelled => Err(EditError::Cancelled),
+            JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
                 snapshot.error.ok_or(EditError::StaleResult)?,
             ))),

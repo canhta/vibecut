@@ -32,3 +32,9 @@ through `EditError::Runtime`. The native adapter
 keeps an audio stream per project and shares the GPU adapter. Preferences persist bounded
 logical size, position and maximization by Home, Shorts and ProjectId (64 retained
 geometry entries, within the [preference store bound](../preferences/README.md)).
+
+Root Home, Editor `window_ui` and the immediate Shorts viewport call the shared
+[text reader service](../services/README.md#focused-text-reads) before text widgets.
+The composition retains one injectable reader; it claims and completes each viewport’s
+request directly, including immediate children whose framework action queue is unserviced. Editor ownership includes
+Session epoch and active scene so a late native result cannot follow a scene/window switch.

@@ -423,7 +423,10 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     let job = request.submit(&mut runner, &allowed).unwrap();
     job.cancel.cancel();
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
-    assert!(matches!(job.finish(&mut runner), Err(EditError::Cancelled)));
+    assert!(matches!(
+        job.finish(&mut runner),
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+    ));
     runner.shutdown();
 }
 

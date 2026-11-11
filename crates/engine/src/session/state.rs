@@ -57,6 +57,7 @@ pub struct JobTarget {
 }
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
+    clipboard: Option<Arc<super::KeyframeClipboard>>,
     metadata: project::Metadata,
     protected: Vec<std::path::PathBuf>,
     pub(crate) identity: Arc<super::wire::Revision>,
@@ -101,6 +102,7 @@ impl Session {
             blake3::hash(&entropy).to_hex().to_string(),
         ));
         Ok(Self {
+            clipboard: None,
             metadata: project::Metadata::default(),
             protected: Vec::new(),
             revision: Arc::new(super::wire::Revision(format!("{}:0", identity.0))),
@@ -132,6 +134,37 @@ impl Session {
             }
             _ => Err(EditError::Invalid("expected project.create")),
         }
+    }
+    /// Whether this Session holds a bounded keyframe snapshot for desktop actions.
+    pub fn clipboard_has_entry(&self) -> bool {
+        self.clipboard.is_some()
+    }
+    /// Current committed selection admission for the desktop Copy action; no state changes.
+    pub fn can_copy_keyframes(&self, keys: &[crate::KeyframeRef]) -> bool {
+        !self.transaction_active()
+            && !keys.is_empty()
+            && super::KeyframeClipboard::can_capture(self.project().data(), keys)
+    }
+    /// Current target/lock/value/time admission for desktop Paste; zero-key Params qualify.
+    pub fn can_paste_keyframes(&self, item: ItemId, at: Tick) -> bool {
+        if self.transaction_active() {
+            return false;
+        }
+        let Some(payload) = &self.clipboard else {
+            return false;
+        };
+        self.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|t| !t.locked)
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item)
+            .is_some_and(|i| payload.admit_paste(i, at).is_ok())
+    }
+    pub(crate) fn clipboard_payload(&self) -> Option<super::KeyframeClipboard> {
+        self.clipboard.as_deref().cloned()
     }
     pub fn metadata(&self) -> &project::Metadata {
         &self.metadata
@@ -211,6 +244,11 @@ impl Session {
     }
     /// Adopt an acknowledged Save As without adding or discarding history.
     pub(crate) fn adopt_saved_project(&mut self, project: Arc<Project>) {
+        if self.project().data().id != project.data().id
+            || self.project().data().current_scene_id != project.data().current_scene_id
+        {
+            self.clipboard = None;
+        }
         self.state.project = project;
         self.state.change = Some(self.state.project.clone());
     }
@@ -335,6 +373,8 @@ impl Session {
     fn squash(&mut self, before: State) -> Result<Outcome> {
         // Close the preview lifetime even for a net-zero group/gesture.
         self.generation.checked_add(1).ok_or(EditError::Limit)?;
+        let identity_changed = before.project.data().id != self.state.project.data().id
+            || before.project.data().current_scene_id != self.state.project.data().current_scene_id;
         let project = self.state.project.clone();
         let changed = *project != *before.project;
         self.state.rewind(before);
@@ -343,6 +383,9 @@ impl Session {
             self.publish(project, None);
         }
         self.invalidate_revision(changed)?;
+        if identity_changed {
+            self.clipboard = None;
+        }
         Ok(Outcome {
             changed,
             created: Vec::new(),
@@ -405,6 +448,8 @@ impl Session {
         };
         if result.is_err() {
             checkpoint.restore(self);
+        } else if !self.transaction_active() && checkpoint.identity_changed(self) {
+            self.clipboard = None;
         }
         result
     }
@@ -540,6 +585,7 @@ impl Session {
             &mut next_id,
             &mut sources,
             &mut copied_text_bytes,
+            self.clipboard.as_deref(),
         )?;
         let next = if ripple {
             edit::ripple(self.state.project.data(), next)?
@@ -696,11 +742,34 @@ mod tests {
                 Session::new(Project::empty(project::ProjectId(0), "".into()).unwrap(), 4).unwrap();
             session.apply(add_track()).unwrap();
             session.apply(view(2.0)).unwrap();
+            let payload = crate::KeyframeClipboard::new(
+                Tick::ZERO,
+                vec![(
+                    project::BuiltinPath::Opacity.into(),
+                    project::Param::Value(
+                        project::Channel::new(
+                            project::ParamValue::Scalar(0.7),
+                            vec![project::Keyframe::new(
+                                Tick::ZERO,
+                                project::ParamValue::Scalar(0.25),
+                            )],
+                            project::Extrapolation::Hold,
+                            project::Extrapolation::Hold,
+                        )
+                        .unwrap(),
+                    ),
+                )],
+            )
+            .unwrap();
+            session.clipboard = Some(Arc::new(payload));
+            let clipboard = session.clipboard.clone();
             let state = session.state.clone();
             let revision = session.revision.clone();
             let metadata = session.metadata.clone();
             let ledger = (session.ledger.sequence, session.ledger.events.len());
             let result: Result<()> = session.boundary(|s| {
+                // Transient snapshot custody must rewind with the revision.
+                s.clipboard = None;
                 // Project, history, IDs, selection and the deferred change.
                 s.commit(add_track(), None, false, false)?;
                 if matches!(exit, Exit::RevisionExhausted) {
@@ -745,6 +814,7 @@ mod tests {
                 Arc::ptr_eq(&state.project, &session.state.project),
                 "{exit:?}"
             );
+            assert_eq!(session.clipboard, clipboard, "{exit:?}");
             assert_eq!(session.history_len(), (state.undo.len(), 0), "{exit:?}");
             assert_eq!(session.state.next_id, state.next_id, "{exit:?}");
             assert_eq!(session.state.merge_key, state.merge_key, "{exit:?}");

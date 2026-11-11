@@ -36,6 +36,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                         AssetsTab::Media,
                         AssetsTab::Sounds,
                         AssetsTab::Text,
+                        AssetsTab::Stickers,
                         AssetsTab::Effects,
                         AssetsTab::Transitions,
                         AssetsTab::Captions,
@@ -48,7 +49,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                         });
                         let response = if compact {
                             ui.allocate_ui_with_layout(
-                                Vec2::new(rect.width() / 6.0, 42.0),
+                                Vec2::new(rect.width() / 7.0, 42.0),
                                 egui::Layout::centered_and_justified(egui::Direction::TopDown),
                                 |ui| {
                                     crate::kit::icon_button(
@@ -114,6 +115,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
         AssetsTab::Media => Text::Import,
         AssetsTab::Sounds => Text::Audio,
         AssetsTab::Text => Text::AssetsAddText,
+        AssetsTab::Stickers => Text::GraphicShapes,
         AssetsTab::Effects => Text::Effects,
         tab => tab.label(),
     };
@@ -194,6 +196,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
             AssetsTab::Sounds => view.sounds(ui),
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
+            AssetsTab::Stickers => view.shapes(ui),
             AssetsTab::Text => {
                 if nav.width() == 0.0
                     && view.icon(ui, "text.insert", Icon::TextT, Text::AssetsAddText, true)
@@ -217,6 +220,51 @@ struct View<'a> {
     actions: Vec<Action>,
 }
 impl View<'_> {
+    fn shapes(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            for (index, (id, label)) in [
+                ("graphic.insert.rectangle", Text::GraphicRectangle),
+                ("graphic.insert.ellipse", Text::GraphicEllipse),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                ui.vertical(|ui| {
+                    let (tile, response) =
+                        ui.allocate_exact_size(Vec2::new(88., 88.), egui::Sense::hover());
+                    let shape = tile.shrink(20.);
+                    if let Some(texture) =
+                        self.cx.graphic_previews.get(index).and_then(Option::as_ref)
+                    {
+                        ui.painter().image(
+                            texture.id(),
+                            shape,
+                            Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
+                            Color32::WHITE,
+                        );
+                    } else {
+                        ui.painter().text(
+                            shape.center(),
+                            Align2::CENTER_CENTER,
+                            self.tr(Text::AssetsUnavailable),
+                            theme::label_font(),
+                            theme::text(self.cx.preferences.dark),
+                        );
+                    }
+                    let _ = response;
+                    ui.label(
+                        egui::RichText::new(self.tr(label))
+                            .font(theme::label_font())
+                            .color(theme::text(self.cx.preferences.dark)),
+                    );
+                    if self.icon(ui, id, Icon::Plus, label, self.cx.graphic_insertion_ready) {
+                        self.actions.push(Action::Command(id.into()));
+                    }
+                });
+            }
+        });
+    }
+
     fn empty_media(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
         let drop = Rect::from_min_size(

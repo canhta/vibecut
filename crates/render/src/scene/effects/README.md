@@ -63,7 +63,11 @@ content remaps do not. Streak's displacement is
 It gathers `ceil(span)` Clamp taps, bounded to 2..64, in premultiplied RGBA,
 and is identity below a .5-pixel span. Span is the displacement's Euclidean
 length; equal gains give `2*length*gain` at every direction (length 2 and gain 1.5
-give span 6 and six taps, including 45 degrees). Fine/coarse use equal effort.
+give span 6 and six taps, including 45 degrees). Equal axis gains evaluate this
+direction-independent length directly, before the tap-count ceiling, so rounding
+the trigonometric components cannot add a tap. Unequal gains retain the
+displacement norm; spans genuinely above an integer still take the next tap.
+Fine/coarse use equal effort.
 Displacement uniforms, tap fractions, offsets and absolute texel-index coordinates
 use f32 at the sample-op boundary; coordinate rounding precedes bilinear lookup,
 including when a tap crosses a transparent placed-content edge. Working RGBA and

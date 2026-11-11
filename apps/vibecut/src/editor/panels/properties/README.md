@@ -129,3 +129,11 @@ removals and Retry repeats the failed operation and resets visual recovery. Disk
 retained/in-use/missing/failed counts and partial results remain visible; an unavailable root
 requests restart. This is shared process waveform/scene-analysis and timeline-thumbnail
 storage only, excluding import thumbnails, models, other libraries and source/project data.
+
+## Graphic appearance
+
+Graphic controls expose RGBA fill and stroke, width, held stroke alignment and rectangle-only corner radius under stable `inspector.graphic.*` identities. Colors key their four independent linear channels together in one command; existing component keys and handles survive. Numeric controls use ordinary scalar Params and key diamonds. Present zero-key bases remain authoritative. Keyed edits refuse outside the half-open item window. Drafts, scrubs and pickers bind to the selected item, snapshot, playhead, visible tab and lock state; stale contexts cancel before blur. Static engine patches change fallbacks without erasing curves.
+
+The area's `input_ready` predicate admits frame clipboard actions only with no focused
+field, dirty draft, scrub, picker, reorder or font dialog. Refused actions leave drafts
+in this owner untouched.

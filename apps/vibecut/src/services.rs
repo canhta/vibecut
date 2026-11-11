@@ -6,3 +6,4 @@ pub mod playback;
 pub mod preview;
 pub mod progress;
 pub(crate) mod remote_models;
+pub mod text_clipboard;

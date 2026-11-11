@@ -339,3 +339,124 @@ pub(super) fn blur(image: &mut Image, radius: u32, hooks: &dyn ExecutionHooks) -
     }
     Ok(())
 }
+
+/// Resolve appearance at the real item clock; keyed colors are already linear.
+pub(super) fn graphic_appearance(
+    item: &project::Item,
+    local: time::Tick,
+) -> Result<([f32; 4], [f32; 4], f64, project::StrokeAlign, f64)> {
+    let project::ItemParams::Graphic(params) = &item.content else {
+        return Err(Error::Invalid("graphic item"));
+    };
+    let (fill, stroke, width, align, radius) = params.appearance();
+    let value = |name: &str| -> Result<Option<project::ParamValue>> {
+        Ok(item.animations.value_at(
+            &project::AnimationPath::new(format!("params.{name}"))?,
+            local,
+        )?)
+    };
+    let color = |name, fallback: project::Color| -> Result<[f32; 4]> {
+        if let Some(project::ParamValue::Color(c)) = value(name)? {
+            let a = c[3] as f32;
+            Ok([c[0] as f32 * a, c[1] as f32 * a, c[2] as f32 * a, a])
+        } else {
+            Ok(crate::image::color(fallback.0))
+        }
+    };
+    let scalar = |name, fallback: f64, max| -> Result<f64> {
+        Ok(if let Some(project::ParamValue::Scalar(v)) = value(name)? {
+            v.clamp(0., max)
+        } else {
+            fallback
+        })
+    };
+    let align = match value("strokeAlign")? {
+        Some(project::ParamValue::Text(t)) => match t.as_str() {
+            "inside" => project::StrokeAlign::Inside,
+            "outside" => project::StrokeAlign::Outside,
+            _ => project::StrokeAlign::Center,
+        },
+        _ => align,
+    };
+    Ok((
+        color("fill", fill)?,
+        color("stroke", stroke)?,
+        scalar("strokeWidth", width, 64.)?,
+        align,
+        scalar("cornerRadius", radius, 50.)?,
+    ))
+}
+pub(super) fn draw_graphic(
+    target: &mut Image,
+    item: &project::Item,
+    local: time::Tick,
+    placement: Placement,
+    hooks: &dyn ExecutionHooks,
+) -> Result<()> {
+    use super::mask::{Geometry as MaskGeometry, prepare_builtin, prepare_rounded_rectangle};
+    let (fill, stroke, width, align, radius) = graphic_appearance(item, local)?;
+    let r = placement.destination;
+    let dw = r.width * f64::from(target.width);
+    let dh = r.height * f64::from(target.height);
+    let inset = if align == project::StrokeAlign::Center {
+        width / 2.
+    } else {
+        0.
+    };
+    let extent = (512. - 2. * inset).max(1.) / 512.;
+    let geometry = MaskGeometry {
+        center: [
+            ((r.x + r.width / 2.) * f64::from(target.width)) as f32,
+            ((r.y + r.height / 2.) * f64::from(target.height)) as f32,
+        ],
+        size: [(dw * extent) as f32, (dh * extent) as f32],
+        rotation: 0.,
+    };
+    let contour = if matches!(
+        item.content,
+        project::ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
+    ) {
+        prepare_rounded_rectangle(geometry, (radius / 50.) as f32, hooks)?
+    } else {
+        prepare_builtin("ellipse", geometry, hooks)?
+    };
+    let paint = |target: &mut Image, coverage: Image, color: [f32; 4]| -> Result<()> {
+        for (dst, src) in target
+            .pixels
+            .chunks_mut(target.width as usize)
+            .zip(coverage.pixels.chunks(target.width as usize))
+        {
+            check(hooks)?;
+            for (x, (dst, src)) in dst.iter_mut().zip(src).enumerate() {
+                if x % 256 == 0 {
+                    check(hooks)?;
+                }
+                over(dst, color, src[3] * placement.opacity);
+            }
+        }
+        Ok(())
+    };
+    if fill[3] > 0. {
+        paint(
+            target,
+            contour.mask.coverage(target.width, target.height, hooks)?,
+            fill,
+        )?;
+    }
+    if stroke[3] > 0. && width > 0. {
+        let w = (width * dw.min(dh) / 512.) as f32;
+        let (inside, outside) = match align {
+            project::StrokeAlign::Inside => (w, 0.),
+            project::StrokeAlign::Center => (w / 2., w / 2.),
+            project::StrokeAlign::Outside => (0., w),
+        };
+        paint(
+            target,
+            contour
+                .mask
+                .stroke(target.width, target.height, inside, outside, hooks)?,
+            stroke,
+        )?;
+    }
+    Ok(())
+}

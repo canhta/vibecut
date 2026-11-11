@@ -78,7 +78,7 @@ struct Layout {
 impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
-        if spec.field == "opacity"
+        if (spec.field == "opacity" || spec.field.starts_with("params."))
             && read::channel_has_keys(self.cx.session.project(), item, spec.field)
             && self.animated_time(item, spec.field).is_none()
         {
@@ -120,6 +120,7 @@ impl Panel<'_, '_> {
     /// the playhead sits inside the item; an edit must then upsert a key.
     fn animated_time(&self, item: ItemId, field: &str) -> Option<time::Tick> {
         let animatable = field == "audio_gain"
+            || field.starts_with("params.")
             || matches!(
                 project::BuiltinPath::parse(field),
                 Some(
@@ -136,12 +137,13 @@ impl Panel<'_, '_> {
         }
         let (start, end) = read::range_of(self.cx.session.project(), item)?;
         let at = self.cx.playhead;
-        (start <= at && (at < end || (field != "opacity" && at == end)))
+        (start <= at
+            && (at < end || (field != "opacity" && !field.starts_with("params.") && at == end)))
             .then(|| at.saturating_sub(start))
     }
 
     fn item_value(&self, item: ItemId, field: &str) -> Option<f64> {
-        if field == "opacity" {
+        if field == "opacity" || field.starts_with("params.") {
             let (start, _) = read::range_of(self.cx.session.project(), item)?;
             return read::item_value_at(
                 self.cx.session.project(),
@@ -308,7 +310,7 @@ impl Panel<'_, '_> {
 
     pub(super) fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {
         self.start_scrub_target(item, ScrubTarget::Item(spec.field), value);
-        if spec.field == "opacity" {
+        if spec.field == "opacity" || spec.field.starts_with("params.") {
             self.state.opacity_edit =
                 Some((self.cx.session.project().clone(), item, self.cx.playhead));
         }
@@ -415,7 +417,7 @@ impl Panel<'_, '_> {
         layout: Layout,
     ) {
         let Layout { prefix, width, gap } = layout;
-        let id = format!("inspector.{}", spec.field);
+        let id = format!("inspector.{}", spec.field.replace("params.", "graphic."));
         let mut next = self
             .state
             .drafts
@@ -426,7 +428,7 @@ impl Panel<'_, '_> {
         self.remember(id.clone(), &response);
         if response.has_focus() {
             self.state.focus = Some(spec.field.to_owned());
-            if spec.field == "opacity" {
+            if spec.field == "opacity" || spec.field.starts_with("params.") {
                 self.state.opacity_edit =
                     Some((self.cx.session.project().clone(), item, self.cx.playhead));
             }

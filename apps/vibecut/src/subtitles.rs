@@ -416,14 +416,16 @@ impl Subtitles {
                     worker.run(work.clone(), budget.clone(), &worker_events, &worker_cancel);
                 match result {
                     Ok(command) => {
-                        send.send(Ok(command))
-                            .map_err(|_| engine::EditError::Cancelled)?;
+                        send.send(Ok(command)).map_err(|_| {
+                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(error.clone()))
-                            .map_err(|_| engine::EditError::Cancelled)?;
+                        send.send(Err(error.clone())).map_err(|_| {
+                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
                             error,
                         )))
@@ -654,7 +656,9 @@ impl Subtitles {
                 Text::SubLowConfidence
             }
             Some(engine::EditError::StaleResult) => Text::SubStale,
-            Some(engine::EditError::Cancelled) => Text::ShortsJobCancelled,
+            Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled)) => {
+                Text::ShortsJobCancelled
+            }
             _ => Text::SubFailed,
         });
     }

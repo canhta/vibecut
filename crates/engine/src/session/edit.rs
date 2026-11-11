@@ -18,12 +18,26 @@ pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut stack = vec![(command, 0)];
     let mut count = 0;
+    let mut clipboard_bytes = 0usize;
     while let Some((command, depth)) = stack.pop() {
         count += 1;
         if count > super::wire::MAX_BATCH_COMMANDS || depth > super::wire::MAX_BATCH_DEPTH {
             return Err(EditError::Limit);
         }
         match command {
+            Command::PasteKeyframes { at, source, .. } => {
+                if *at < Tick::ZERO || at.0 > super::wire::MAX_SAFE_INTEGER {
+                    return Err(EditError::InvalidParams);
+                }
+                if let crate::KeyframePasteSource::Payload { payload } = source {
+                    clipboard_bytes = clipboard_bytes
+                        .checked_add(payload.compact_bytes()?)
+                        .ok_or(EditError::Limit)?;
+                    if clipboard_bytes > super::clipboard::MAX_CLIPBOARD_BYTES {
+                        return Err(EditError::Limit);
+                    }
+                }
+            }
             Command::TimelineEdit { .. } if depth != 0 => {
                 return Err(EditError::Invalid("nested ripple policy"));
             }
@@ -147,6 +161,7 @@ pub(crate) fn apply(
     next: &mut Option<u64>,
     sources: &mut TrimSources,
     copied_text_bytes: &mut usize,
+    clipboard: Option<&crate::KeyframeClipboard>,
 ) -> Result<project::Project> {
     let previous_cuts = (!data.scene().timeline.transitions.is_empty()
         && !matches!(
@@ -175,6 +190,19 @@ pub(crate) fn apply(
         }
         EditCommand::DeleteCaptionPreset { preset } => {
             data = text::delete_caption_preset(data, preset)?;
+        }
+        EditCommand::PasteKeyframes {
+            item: id,
+            at,
+            source,
+        } => {
+            let payload = match &source {
+                crate::KeyframePasteSource::Stored => clipboard,
+                crate::KeyframePasteSource::Payload { payload } => Some(payload),
+            };
+            if let Some(payload) = payload {
+                payload.paste(item(&mut data, id)?, at)?;
+            }
         }
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;
@@ -600,7 +628,16 @@ pub(crate) fn apply(
             for command in commands {
                 // Consume each candidate before applying the next child; validation must
                 // not clone an unvalidated allocation or publish a partial batch.
-                data = apply(data, command, created, next, sources, copied_text_bytes)?.into_data();
+                data = apply(
+                    data,
+                    command,
+                    created,
+                    next,
+                    sources,
+                    copied_text_bytes,
+                    clipboard,
+                )?
+                .into_data();
             }
         }
         EditCommand::TimelineEdit {

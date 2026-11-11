@@ -905,3 +905,100 @@ fn snapshot_io_class_preserves_control_exit_and_existing_parent_file() {
     let (code, stderr) = control.finish();
     assert_eq!(code, 7, "{stderr}");
 }
+
+#[test]
+fn control_clipboard_snapshot_roundtrip_replay_save_and_reopen_lifetime() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("clipboard.vibecut");
+    overlay_project_color(&file, 64, 64, Tick(time::TICKS_PER_SECOND), [255; 4]);
+    crate::cli::fixtures::exec(
+        &file,
+        "keyframes.set_param",
+        json!({"item":0,"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":-3,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"broken","incoming":null,"outgoing":{"dt":2,"dv":0.1}}],"before":"linear","after":"hold"}}}),
+    );
+    let original = fs::read(&file).unwrap();
+    let mut c = ControlSession::start(&file, &[]);
+    let inspection = c.send(control_request("inspect", "inspect", json!({}), None, None));
+    let copy_req = control_request(
+        "copy",
+        "clipboard.copy_keyframes",
+        json!({"keys":[{"item":0,"path":"opacity","time":-3}]}),
+        inspection["rev_after"].as_str(),
+        Some("copy"),
+    );
+    let copy = c.send(copy_req.clone());
+    assert_eq!(copy["exit_code"], 0);
+    assert_eq!(copy["value"]["value"]["outcome"]["changed"], false);
+    let read = c.send(control_request(
+        "read",
+        "clipboard.read",
+        json!({}),
+        None,
+        None,
+    ));
+    let payload = read["value"]["value"]["payload"].clone();
+    assert_eq!(payload["origin"], -3);
+    assert_eq!(c.finish().0, 0);
+    assert_eq!(fs::read(&file).unwrap(), original, "Copy alone never saves");
+    let mut c = ControlSession::start(&file, &[]);
+    let empty = c.send(control_request(
+        "read",
+        "clipboard.read",
+        json!({}),
+        None,
+        None,
+    ));
+    assert!(empty["value"]["value"]["payload"].is_null());
+    let paste_req = control_request(
+        "paste",
+        "clipboard.paste_keyframes",
+        json!({"item":0,"at":40,"source":{"kind":"payload","payload":payload}}),
+        empty["rev_after"].as_str(),
+        Some("paste"),
+    );
+    let paste = c.send(paste_req.clone());
+    assert_eq!(paste["exit_code"], 0);
+    let replay = c.send(paste_req);
+    assert_eq!(replay, paste);
+    let undo = c.send(control_request(
+        "undo",
+        "undo",
+        json!({}),
+        paste["rev_after"].as_str(),
+        Some("undo"),
+    ));
+    assert_eq!(undo["exit_code"], 0);
+    let redo = c.send(control_request(
+        "redo",
+        "redo",
+        json!({}),
+        undo["rev_after"].as_str(),
+        Some("redo"),
+    ));
+    assert_eq!(redo["exit_code"], 0);
+    assert_eq!(c.finish().0, 0);
+    let saved = project::load(&file).unwrap().project;
+    let item = &saved.data().scene().timeline.overlays[0].items[0];
+    let channel = item
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(
+        channel.keys().iter().map(|k| k.time.0).collect::<Vec<_>>(),
+        [-3, 40]
+    );
+    assert_eq!(
+        channel.keys()[1].outgoing,
+        Some(project::CurveHandle {
+            dt: Tick(2),
+            dv: 0.1
+        })
+    );
+    assert!(
+        !engine::Session::new(saved, 10)
+            .unwrap()
+            .clipboard_has_entry()
+    );
+}

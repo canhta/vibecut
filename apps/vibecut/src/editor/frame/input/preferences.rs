@@ -3,7 +3,7 @@
 use crate::editor::{Editor, PreferenceCommand, Result};
 
 impl Editor {
-    /// One entry for every user-visible preference edit. App history is
+    /// One entry per preference edit except editing mode/surface state. App history is
     /// separate from Project history and never changes Project JSON.
     pub fn set_preference(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
         let before = self.preferences.get(key)?;
@@ -11,7 +11,7 @@ impl Editor {
         let after = self.preferences.get(key)?;
         if before != after {
             // An editing mode must not shadow the project edit's next Undo.
-            if key != "ripple" {
+            if !matches!(key, "ripple" | "timeline_lanes") {
                 self.frame
                     .preference_history
                     .record(PreferenceCommand::new(key, before, after));

@@ -300,7 +300,7 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
     assert_eq!(wait(&mut runner, &cancelled), JobState::Cancelled);
     assert!(matches!(
         cancelled.finish(&mut runner, &mut cache),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(cache.get(request.cache_key()).unwrap().is_none());
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
@@ -481,7 +481,7 @@ fn cancellation_after_decoded_frame_leaves_no_cache_or_timeline_edit() {
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(cache.get(request.cache_key()).unwrap().is_none());
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);

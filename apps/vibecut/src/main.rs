@@ -412,6 +412,7 @@ fn run() -> Result<()> {
         rgba: icon.into_raw(),
     };
     let options = eframe::NativeOptions {
+        clipboard_shortcuts: false,
         renderer: eframe::Renderer::Wgpu,
         viewport: workspace
             .preferences

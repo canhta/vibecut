@@ -94,7 +94,7 @@ impl TaskEvents {
         drop(state);
         loop {
             if self.cancel.cancelled() {
-                return Err(engine::EditError::Cancelled);
+                return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),
@@ -192,7 +192,7 @@ mod tests {
         assert!(cancelled.answer(true).is_err());
         assert!(matches!(
             worker.join().unwrap(),
-            Err(engine::EditError::Cancelled)
+            Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
         ));
     }
 }

@@ -115,10 +115,9 @@ impl Editor {
             clipboard_entry: self.clipboard_has_entry(),
         }
     }
-    /// Clipboard payload and presence belong to p1-parity/20. Until that lands
-    /// no entry exists, so Ctrl+V falls through to the media paste owner.
+    /// Presence belongs to this editor's Session, shared with attached control.
     pub(in crate::editor) fn clipboard_has_entry(&self) -> bool {
-        false
+        self.session.clipboard_has_entry()
     }
     pub fn set_recording_active(&mut self, active: bool) {
         self.frame.recording_active = active;

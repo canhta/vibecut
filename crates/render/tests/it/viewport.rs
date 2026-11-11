@@ -408,3 +408,79 @@ fn item_geometry_uses_item_local_animation_time_and_empty_text_visibility() {
             .is_none()
     );
 }
+
+#[test]
+fn graphic_hit_testing_uses_centered_bounds_and_evaluated_fill_or_stroke_alpha() {
+    let mut data = solid_project(1, 800, 600, [0; 4]).into_data();
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    item.content = project::ItemParams::Graphic(project::GraphicParams::Ellipse {
+        fill: project::Color([0; 4]),
+        stroke: project::Color([255; 4]),
+        stroke_width: 20.,
+        stroke_align: project::StrokeAlign::Outside,
+    });
+    let mut alpha = project::Channel::new(
+        ParamValue::Scalar(0.),
+        vec![
+            project::Keyframe::new(Tick(0), ParamValue::Scalar(0.)),
+            project::Keyframe::new(Tick(10), ParamValue::Scalar(1.)),
+        ],
+        project::Extrapolation::Hold,
+        project::Extrapolation::Hold,
+    )
+    .unwrap();
+    alpha
+        .put(project::Keyframe::new(Tick(20), ParamValue::Scalar(0.)))
+        .unwrap();
+    let mut color = Param::new(ParamValue::Color([1., 0., 0., 0.])).unwrap();
+    *color.channel_mut(Some(project::ColorComponent::A)).unwrap() = alpha;
+    item.animations
+        .set(AnimationPath::new("params.fill").unwrap(), color)
+        .unwrap();
+    item.animations
+        .set(
+            AnimationPath::new("params.stroke").unwrap(),
+            Param::new(ParamValue::Color([0., 0., 1., 0.])).unwrap(),
+        )
+        .unwrap();
+    let p = Project::new(data).unwrap();
+    let mut renderer = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+    assert!(
+        renderer
+            .item_geometry(ItemId(0), Tick(0))
+            .unwrap()
+            .is_none()
+    );
+    let geometry = renderer
+        .item_geometry(ItemId(0), Tick(10))
+        .unwrap()
+        .unwrap();
+    let bounds = geometry.bounds();
+    near([bounds.x, bounds.y], [144., 44.]);
+    near([bounds.width, bounds.height], [512., 512.]);
+    assert!(
+        renderer
+            .item_geometry(ItemId(0), Tick(20))
+            .unwrap()
+            .is_none()
+    );
+    let viewport = Viewport::new(
+        Rect {
+            x: 0.,
+            y: 0.,
+            width: 800.,
+            height: 600.,
+        },
+        [800, 600],
+        1.,
+        [0.; 2],
+    )
+    .unwrap();
+    assert_eq!(
+        renderer.hit_test(&viewport, [145., 45.], Tick(10)).unwrap(),
+        Some(ItemId(0))
+    ); // Bounding-box selection includes empty ellipse corner.
+    let h = Hooks::default();
+    renderer.render_frame(Tick(10), &mut Empty, &h).unwrap();
+    assert_eq!(renderer.text_cache_stats().entries, 0);
+}

@@ -809,3 +809,53 @@ impl render::SourceProvider for Spatial {
         render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)
     }
 }
+
+#[test]
+fn workspace_shorts_raw_text_paste_reaches_the_real_trim_field() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app =
+        vibecut::workspace::Workspace::new(root.path().join("recovery"), Default::default(), None)
+            .unwrap();
+    app.open_shorts().unwrap();
+    app.request_close();
+    app.shorts = Some(ready());
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 1000.0))
+        .build_ui_state(|ui, a: &mut vibecut::workspace::Workspace| a.ui(ui), app);
+    h.run_steps(3);
+    h.get(by("shorts.candidate.0")).click();
+    h.run_steps(2);
+    h.get(by("shorts.tool.trim")).click();
+    h.run_steps(2);
+    h.get(by("shorts.segment.0.out")).click();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
+    h.state_mut().text_clipboard =
+        vibecut::services::text_clipboard::TextClipboard::new(|| Some("14.000".into()));
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::V,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        !h.output()
+            .viewport_output
+            .values()
+            .flat_map(|v| &v.commands)
+            .any(|c| matches!(c, egui::ViewportCommand::RequestPaste))
+    );
+    h.run_steps(2);
+    assert_eq!(
+        h.state().shorts.as_ref().unwrap().reviews()[0].segments[0].range,
+        range(10, 13)
+    );
+    h.get(by("shorts.segment.0.trim")).click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().shorts.as_ref().unwrap().reviews()[0].segments[0].range,
+        range(10, 14)
+    );
+}
