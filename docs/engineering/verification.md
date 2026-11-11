@@ -74,5 +74,7 @@ Label each claim observed, source-documented, inferred or unverified, with comma
 
 Reports stay local; hand over paths. Open with `## TL;DR` (at most 10 lines: outcome, SHA or blocker, decisions, follow-ups).
 
+Size the report to the decision and its risks. A fix receipt contains the correction and affected evidence with links to retained proof; an admission report contains only unresolved decisions and the proposed working boundary. Keep raw logs and inventories as linked artifacts. A passing review needs only its revision, scope, verdict and material limitations; actionable findings travel immediately under the [review process](../agents/orchestration.md#review-and-merge).
+
 - Done: compact ticket/branch/exact-SHA receipt, named behaviour and failure evidence mapped to admitted Must/Verify items, and remaining gates. Link retained exact-source receipts instead of restating or rerunning them; include dependency lookups only when relevant. Attach detailed raw, benchmark or native evidence when the change needs it; preserve failures, skips and platform limitations.
 - Review: ticket, SHA, findings with severity, `file:line`, reproduction and fix; verdict `approve` or `changes`. Correctness, security and data-loss findings block approval.
