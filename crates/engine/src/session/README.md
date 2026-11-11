@@ -11,6 +11,13 @@ recovery adoption and retained Runtime output validation consume the same guard,
 their own transaction/no-output/consent checks and ordering. Higher APIs compose the error
 through transparent `EditError::Session`; this is not a new wire tag.
 
+The Session owner fills identity entropy through one crate-visible operation returning
+`SessionError::ControlIdentity` on platform failure: `control identity unavailable`, Refused,
+nontransient and source-free. Session construction validates history before filling its
+32-byte epoch seed; library private staging uses the same operation for its 16-byte nonce.
+Both retain their BLAKE3 encoding. This operation neither allocates ProjectIds nor falls back
+when entropy is unavailable.
+
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps. `project()` exposes

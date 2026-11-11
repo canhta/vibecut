@@ -832,7 +832,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             JobNotRetained,
             false
         ),
-        row!(E::ControlIdentity, Refused, false),
+        row!(
+            E::Session(engine::SessionError::ControlIdentity),
+            Refused,
+            false
+        ),
         row!(E::Runtime(B::CacheBusy), Refused, false),
         row!(
             E::Runtime(engine::RuntimeError::ModelResponse),

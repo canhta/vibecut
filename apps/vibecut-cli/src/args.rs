@@ -65,7 +65,11 @@ mod exit_codes {
                 "rejected",
                 5
             ),
-            row!(E::ControlIdentity, "rejected", 5),
+            row!(
+                E::Session(engine::SessionError::ControlIdentity),
+                "rejected",
+                5
+            ),
             row!(E::Runtime(engine::RuntimeError::QueueFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::BudgetFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::ArtifactTooLarge), "job", 7),

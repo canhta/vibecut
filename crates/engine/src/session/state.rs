@@ -49,6 +49,11 @@ impl State {
         self.next_id = next_id;
     }
 }
+/// Fill an identity or private nonce without exposing the platform entropy failure.
+pub(crate) fn identity_entropy(bytes: &mut [u8]) -> std::result::Result<(), super::SessionError> {
+    getrandom::fill(bytes).map_err(|_| super::SessionError::ControlIdentity)
+}
+
 /// Opaque identity for exactly one Session revision, including save boundaries.
 #[derive(Clone)]
 pub struct JobTarget {
@@ -97,7 +102,7 @@ impl Session {
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
         let mut entropy = [0u8; 32];
-        getrandom::fill(&mut entropy).map_err(|_| EditError::ControlIdentity)?;
+        identity_entropy(&mut entropy)?;
         let identity = Arc::new(super::wire::Revision(
             blake3::hash(&entropy).to_hex().to_string(),
         ));
