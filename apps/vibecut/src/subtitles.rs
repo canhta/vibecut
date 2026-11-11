@@ -182,7 +182,21 @@ impl std::task::Wake for Repaint {
     }
 }
 /// Panel state survives tab and locale changes; only Options enter preferences.
+struct BankEdit {
+    confirm_pending: bool,
+    snapshot: Arc<project::Project>,
+    item: Option<ItemId>,
+    at: Tick,
+    preset: Option<project::CaptionPresetId>,
+    name: String,
+    save: bool,
+    focused: bool,
+}
+
+/// Panel state survives tab and locale changes; only Options enter preferences.
 pub struct Subtitles {
+    bank: Option<BankEdit>,
+    bank_frame: Option<u64>,
     workflow: Arc<dyn Workflow>,
     budget: ByteBudget,
     active: Option<Active>,
@@ -235,6 +249,8 @@ impl Subtitles {
             Arc::new(SystemClock::default()),
         )?;
         Ok(Self {
+            bank: None,
+            bank_frame: None,
             workflow,
             budget,
             runner,
@@ -307,8 +323,13 @@ impl Subtitles {
         }
     }
     pub(crate) fn editing(&self, ctx: &egui::Context) -> bool {
-        self.text_focus
-            .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))
+        (self.bank.is_some()
+            && self
+                .bank_frame
+                .is_some_and(|frame| frame + 1 >= ctx.cumulative_frame_nr()))
+            || self
+                .text_focus
+                .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))
     }
     pub(crate) fn modal_open(&self) -> bool {
         self.overwrite.is_some()

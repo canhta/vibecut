@@ -9,6 +9,7 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let before = editor.session.project().clone();
     let mut options = editor.preferences.subtitles.clone();
     let at = editor.playback.position().unwrap_or(Tick::ZERO);
+    let bank_ready = editor.caption_bank_ready();
     if let Some(subtitles) = &mut editor.subtitles {
         let widgets = subtitles.ui(
             ui,
@@ -18,6 +19,7 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
             at,
             editor.preferences.locale,
             editor.preferences.dark,
+            bank_ready,
         );
         for (id, response) in widgets {
             editor.remember(id, &response);

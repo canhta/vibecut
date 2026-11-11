@@ -8,6 +8,133 @@ use time::{FrameRate, SourceRange, Tick};
 fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<SaveReceipt> {
     WriterLease::acquire(path)?.save(project)
 }
+
+#[test]
+fn caption_bank_validates_every_entry_names_closed_fields_and_schema() {
+    let style: captions::CueStyle = serde_json::from_value(serde_json::json!({
+        "font_family":"Inter", "font_size_ratio":0.05, "primary_color":[255,255,255,180],
+        "outline_color":[0,0,0,255], "background_color":[0,0,0,0], "border_style":1,
+        "alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},
+        "margin_left_ratio":0.05,"margin_right_ratio":0.05,"margin_vertical_ratio":0.05,
+        "bold":true,"italic":false,"underline":false,"strikeout":false
+    }))
+    .unwrap();
+    let mut data = Project::empty(ProjectId(99), "Bank".into())
+        .unwrap()
+        .into_data();
+    data.caption_presets = (0..64)
+        .map(|id| SavedCaptionPreset {
+            id: CaptionPresetId(id),
+            name: format!("Look {id}").into(),
+            style: style.clone(),
+        })
+        .collect();
+    let project = Project::new(data.clone()).unwrap();
+    assert_eq!(
+        decode(&encode(&project, false).unwrap()).unwrap().project,
+        project
+    );
+    assert_eq!(
+        project.fork().unwrap().data().caption_presets,
+        data.caption_presets
+    );
+    assert_eq!(
+        project
+            .for_scene(project::SceneId(0))
+            .unwrap()
+            .data()
+            .caption_presets,
+        data.caption_presets
+    );
+    for case in ["65", "id", "name", "nfd", "style", "nan"] {
+        let mut invalid = data.clone();
+        match case {
+            "65" => invalid.caption_presets.push(SavedCaptionPreset {
+                id: CaptionPresetId(65),
+                name: "Extra".into(),
+                style: style.clone(),
+            }),
+            "id" => invalid.caption_presets[1].id = CaptionPresetId(0),
+            "name" => invalid.caption_presets[1].name = "Look 0".into(),
+            "nfd" => {
+                invalid.caption_presets[0].name = "Tiếng Việt".into();
+                invalid.caption_presets[1].name = "Tie\u{302}\u{301}ng Vie\u{323}\u{302}t".into();
+            }
+            "style" => invalid.caption_presets[0].style.font_family = " ".into(),
+            "nan" => invalid.caption_presets[0].style.font_size_ratio = f32::NAN,
+            _ => unreachable!(),
+        }
+        assert!(Project::new(invalid).is_err(), "{case}");
+    }
+    for (name, valid) in [
+        ("".into(), false),
+        (" ".into(), false),
+        (" leading".into(), false),
+        ("trailing\u{a0}".into(), false),
+        ("a\nb".into(), false),
+        ("a\0b".into(), false),
+        ("x".repeat(64), true),
+        ("x".repeat(65), false),
+        ("😀".repeat(64), true),
+        ("😀".repeat(65), false),
+        ("👨‍👩‍👧‍👦".repeat(10), true),
+        ("👨‍👩‍👧‍👦".repeat(11), false),
+    ] {
+        let mut candidate = data.clone();
+        candidate.caption_presets[0].name = name.into();
+        assert_eq!(Project::new(candidate).is_ok(), valid);
+    }
+    let mut case_sensitive = data.clone();
+    case_sensitive.caption_presets[0].name = "Look".into();
+    case_sensitive.caption_presets[1].name = "look".into();
+    Project::new(case_sensitive).unwrap(); // Equal style values under distinct names are valid.
+    let encoded =
+        serde_json::from_slice::<serde_json::Value>(&encode(&project, false).unwrap()).unwrap();
+    for case in [
+        "missing",
+        "unknown",
+        "entry-unknown",
+        "style-unknown",
+        "name-type",
+        "style-missing",
+    ] {
+        let mut value = encoded.clone();
+        match case {
+            "missing" => {
+                value["project"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("caption_presets");
+            }
+            "unknown" => value["project"]["extra"] = 0.into(),
+            "entry-unknown" => value["project"]["caption_presets"][0]["extra"] = 0.into(),
+            "style-unknown" => value["project"]["caption_presets"][0]["style"]["extra"] = 0.into(),
+            "name-type" => value["project"]["caption_presets"][0]["name"] = 5.into(),
+            "style-missing" => {
+                value["project"]["caption_presets"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("style");
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            decode(&serde_json::to_vec(&value).unwrap()).is_err(),
+            "{case}"
+        );
+    }
+    for (version, old) in [(22, true), (24, false)] {
+        let mut value = encoded.clone();
+        value["schema_version"] = version.into();
+        value["project"] = serde_json::Value::Null;
+        let error = decode(&serde_json::to_vec(&value).unwrap()).unwrap_err();
+        assert!(if old {
+            matches!(error, Error::TooOld { .. })
+        } else {
+            matches!(error, Error::TooNew { .. })
+        });
+    }
+}
 pub(crate) fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(Tick(start), Tick(end)).unwrap()
 }

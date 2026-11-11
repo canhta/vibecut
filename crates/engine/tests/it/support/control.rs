@@ -269,6 +269,49 @@ pub(crate) fn seed() -> Session {
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 /// Only this copied seed gets Text item 3 on the previously empty track 3.
+pub(crate) fn with_caption_presets(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let style = captions::CueStyle {
+        font_family: "Inter".into(),
+        font_size_ratio: 48.0 / 1080.0,
+        primary_color: [255; 4],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0; 4],
+        border_style: 1,
+        alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+        margin_left_ratio: 0.05,
+        margin_right_ratio: 0.05,
+        margin_vertical_ratio: 0.05,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    };
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if item.id == ItemId(4) {
+            let ItemParams::Caption(params) = &mut item.content else {
+                panic!("caption seed")
+            };
+            params.cues.styles = vec![style.clone()];
+            for cue in &mut params.cues.cues {
+                cue.style = Some(captions::CueStyleId(0));
+            }
+        }
+    }
+    data.caption_presets = vec![project::SavedCaptionPreset {
+        id: project::CaptionPresetId(100),
+        name: "Project look".into(),
+        style,
+    }];
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
+/// Only this copied seed gets Text item 3 on the previously empty track 3.
 pub(crate) fn with_text(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();
     let track = data

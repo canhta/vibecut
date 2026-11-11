@@ -87,6 +87,452 @@ fn panel(e: &Editor) -> subtitles_inspect::Inspection {
 use vibecut::subtitles as subtitles_inspect;
 
 #[test]
+fn caption_bank_name_refusals_and_cap_preserve_the_real_project() {
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    h.state_mut().activate("subtitles.style.box").unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SaveCaptionPreset {
+            item,
+            name: "Tiếng Việt".into(),
+        })
+        .unwrap();
+    h.run_steps(3);
+    for name in [" Leading", "Tie\u{302}\u{301}ng Vie\u{323}\u{302}t"] {
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        click(&mut h, "subtitles.style.save");
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+            .type_text(name);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!(h.state().session.project(), &before);
+        assert_eq!(h.state().session.history_len(), history);
+        assert!(
+            h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                .next()
+                .is_some()
+        );
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+    }
+    for n in 1..64 {
+        h.state_mut()
+            .session
+            .apply(Command::SaveCaptionPreset {
+                item,
+                name: format!("Look {n}").into(),
+            })
+            .unwrap();
+    }
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    assert_eq!(before.data().caption_presets.len(), 64);
+    assert!(!h.state().action_enabled("subtitles.style.save"));
+    assert!(h.state_mut().activate("subtitles.style.save").is_err());
+    assert!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.style.save")))
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(h.state().action_enabled("subtitles.style.manage"));
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn caption_bank_name_invalidation_precedes_enter_and_blur() {
+    struct HeldImport;
+    impl vibecut::import::ImportProbe for HeldImport {
+        fn import(
+            &self,
+            _: media::AssetId,
+            _: std::path::PathBuf,
+            cancelled: Arc<std::sync::atomic::AtomicBool>,
+        ) -> media::Result<media::ImportedSource> {
+            while !cancelled.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(media::MediaError::Cancelled)
+        }
+    }
+    for cause in [
+        "time",
+        "snapshot",
+        "undo",
+        "lock",
+        "deleted",
+        "scene",
+        "project",
+        "tab",
+        "gesture",
+        "export",
+        "models",
+        "saving",
+        "import",
+        "style",
+        "bank",
+        "bank-delete",
+    ] {
+        let mut e = editor("vi");
+        if cause == "import" {
+            e.playback = vibecut::services::playback::Playback::new(
+                &e.session,
+                ByteBudget::new(1 << 30).unwrap(),
+                Arc::new(vibecut::services::playback::Files),
+            )
+            .unwrap();
+            e.set_import_probe(Arc::new(HeldImport)).unwrap();
+        }
+        let mut h = harness(e, 1.0);
+        h.run_steps(3);
+        h.state_mut().activate("subtitles.style.box").unwrap();
+        h.run_steps(3);
+        let item = panel(h.state()).item.unwrap();
+        h.state_mut()
+            .session
+            .apply(Command::SaveCaptionPreset {
+                item,
+                name: "Existing".into(),
+            })
+            .unwrap();
+        h.run_steps(3);
+        click(&mut h, "subtitles.style.save");
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+            .type_text("Stale input");
+        h.run_steps(2);
+        let root = tempfile::tempdir().unwrap();
+        match cause {
+            "style" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::ApplyCaptionStyle {
+                        item,
+                        style: engine::CaptionStyleApply::Preset {
+                            preset: engine::CaptionPreset::Outline,
+                        },
+                    })
+                    .unwrap();
+            }
+            "bank" | "bank-delete" => {
+                let preset = h.state().session.project().data().caption_presets[0].id;
+                let cmd = if cause == "bank" {
+                    Command::RenameCaptionPreset {
+                        preset,
+                        name: "Changed".into(),
+                    }
+                } else {
+                    Command::DeleteCaptionPreset { preset }
+                };
+                h.state_mut().session.apply(cmd).unwrap();
+            }
+            "models" => h.state_mut().activate("models.open").unwrap(),
+            "saving" => {
+                let session = Session::new((**h.state().session.project()).clone(), 20).unwrap();
+                let mut saving = engine::recovery::Autosave::new(
+                    &root.path().join("recovery"),
+                    session,
+                    ByteBudget::new(64 << 20).unwrap(),
+                    Arc::new(engine::jobs::SystemClock::default()),
+                    Default::default(),
+                )
+                .unwrap();
+                saving.save_as(root.path().join("saved.vibecut")).unwrap();
+                h.state_mut().session =
+                    vibecut::lifecycle::EditorSession::Persistent(Box::new(saving));
+                assert!(h.state_mut().activate("subtitles.style.save").is_err());
+                h.state_mut().session.autosave().unwrap().flush().unwrap();
+                h.run_steps(3); // Acknowledge save-as's new project identity before the stale key.
+            }
+            "time" => h
+                .state_mut()
+                .dispatch(vibecut::AppCommand::Seek(Tick(TICKS_PER_SECOND)))
+                .unwrap(),
+            "snapshot" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::RenameProject {
+                        name: "Changed".into(),
+                    })
+                    .unwrap();
+            }
+            "undo" => {
+                h.state_mut().session.undo().unwrap();
+            }
+            "lock" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::SetTrackLocked {
+                        track: project::TrackId(1),
+                        locked: true,
+                    })
+                    .unwrap();
+            }
+            "deleted" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::Delete { items: vec![item] })
+                    .unwrap();
+            }
+            "scene" => {
+                let out = h
+                    .state_mut()
+                    .session
+                    .apply(Command::CreateScene {
+                        name: "Other".into(),
+                    })
+                    .unwrap();
+                let engine::CreatedId::Scene(scene) = out.created[0] else {
+                    panic!("scene")
+                };
+                h.state_mut()
+                    .session
+                    .apply(Command::SwitchScene { scene })
+                    .unwrap();
+            }
+            "project" => {
+                *h.state_mut().session = Session::new(
+                    project::Project::empty(project::ProjectId(99), "Other".into()).unwrap(),
+                    20,
+                )
+                .unwrap();
+            }
+            "tab" => {
+                h.state_mut().preferences.assets_tab = AssetsTab::Media;
+                h.run_steps(3);
+                h.state_mut().preferences.assets_tab = AssetsTab::Captions;
+            }
+            "gesture" => h.state_mut().session.begin_gesture().unwrap(),
+            "export" => h.state_mut().activate("file.export").unwrap(),
+            "import" => {
+                h.state_mut()
+                    .start_import(vec![std::env::temp_dir().join("393-missing.mp4")])
+                    .unwrap();
+                assert!(h.state().importing());
+            }
+            _ => unreachable!(),
+        }
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert!(
+            h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                .next()
+                .is_none(),
+            "{cause}"
+        );
+        assert_eq!(h.state().session.project(), &before, "{cause}");
+        assert_eq!(h.state().session.history_len(), history, "{cause}");
+        if cause == "gesture" {
+            h.state_mut().session.cancel_gesture().unwrap();
+        }
+    }
+}
+
+#[test]
+fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
+    for control in [
+        "focus",
+        "unfocused-draft",
+        "font",
+        "color",
+        "scrub",
+        "reorder",
+        "inline",
+    ] {
+        let mut e = editor("vi");
+        let caption = e
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|item| matches!(item.content, ItemParams::Caption(_)))
+            .unwrap()
+            .id;
+        e.session
+            .apply(Command::ApplyCaptionStyle {
+                item: caption,
+                style: engine::CaptionStyleApply::Preset {
+                    preset: engine::CaptionPreset::Box,
+                },
+            })
+            .unwrap();
+        e.session
+            .apply(Command::SaveCaptionPreset {
+                item: caption,
+                name: "Existing".into(),
+            })
+            .unwrap();
+        let out = e
+            .session
+            .apply(Command::InsertItem {
+                placement: engine::Placement::Auto,
+                item: engine::NewItem {
+                    start: Tick::ZERO,
+                    source_range: time::SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND))
+                        .unwrap(),
+                    source_asset: None,
+                    content: ItemParams::Text(project::TextParams::new("Title")),
+                    retime: Default::default(),
+                    animations: Default::default(),
+                },
+            })
+            .unwrap();
+        let text = out
+            .created
+            .iter()
+            .find_map(|id| {
+                if let engine::CreatedId::Item(id) = id {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        e.selection = [text].into();
+        if control == "reorder" {
+            for id in ["blur1", "blur2"] {
+                e.session
+                    .apply(Command::AddEffect {
+                        item: text,
+                        effect: project::effect_definition("blur").unwrap().instance(id),
+                    })
+                    .unwrap();
+            }
+            e.preferences
+                .properties_tabs
+                .insert("text".into(), "effects".into());
+        }
+        let mut h = crate::gpu::builder()
+            .with_size(egui::vec2(1440.0, 1000.0))
+            .with_step_dt(0.05)
+            .build_ui_state(|ui, e: &mut Editor| e.ui(ui), e);
+        h.run_steps(3);
+        if control != "inline" {
+            click(&mut h, "subtitles.style.save");
+            h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                .type_text("Must not save");
+            h.run_steps(2);
+        }
+        match control {
+            "inline" => {
+                let widgets = h.state().inspect().unwrap().widgets;
+                let left = widgets
+                    .iter()
+                    .find(|w| w.id == "preview.transform.left")
+                    .unwrap()
+                    .rect
+                    .center();
+                let right = widgets
+                    .iter()
+                    .find(|w| w.id == "preview.transform.right")
+                    .unwrap()
+                    .rect
+                    .center();
+                let at = left.lerp(right, 0.5);
+                for _ in 0..2 {
+                    h.event(egui::Event::PointerMoved(at));
+                    for pressed in [true, false] {
+                        h.event(egui::Event::PointerButton {
+                            pos: at,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        });
+                    }
+                }
+                h.run_steps(3);
+                assert!(
+                    h.query_all(
+                        By::new().predicate(|n| n.author_id() == Some("preview.text.edit"))
+                    )
+                    .next()
+                    .is_some()
+                );
+                assert!(!h.state().session.gesture_active());
+            }
+            "focus" | "unfocused-draft" => {
+                h.get(By::new().predicate(|n| n.author_id() == Some("inspector.text_size")))
+                    .focus();
+                h.run_steps(2);
+                h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+                h.event(egui::Event::Text("83".into()));
+                h.run_steps(2);
+                if control == "unfocused-draft" {
+                    h.state_mut().activate("inspector.details").unwrap();
+                    h.run_steps(3);
+                }
+            }
+            "font" => {
+                click(&mut h, "inspector.text_font");
+                assert!(h.state().inspect().unwrap().font_picker.open);
+            }
+            "color" => click(&mut h, "inspector.text_color.picker"),
+            "scrub" | "reorder" => {
+                let id = if control == "scrub" {
+                    "inspector.text_size.scrub"
+                } else {
+                    "effects.row.blur2.handle"
+                };
+                let at = h
+                    .state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .find(|w| w.id == id)
+                    .unwrap()
+                    .rect
+                    .center();
+                h.event(egui::Event::PointerMoved(at));
+                h.run_steps(1);
+                h.event(egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                });
+                h.run_steps(1);
+                h.event(egui::Event::PointerMoved(at + egui::vec2(20.0, 10.0)));
+                h.run_steps(2);
+            }
+            _ => unreachable!(),
+        }
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        assert_eq!(
+            before.data().caption_presets.len(),
+            1,
+            "{control}: stale blur must not save"
+        );
+        assert!(
+            h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                .next()
+                .is_none(),
+            "{control}"
+        );
+        for id in ["subtitles.style.save", "subtitles.style.manage"] {
+            assert!(!h.state().action_enabled(id), "{control}");
+            assert!(h.state_mut().activate(id).is_err(), "{control}");
+            assert_eq!(h.state().session.project(), &before, "{control}");
+            assert_eq!(h.state().session.history_len(), history, "{control}");
+            assert!(
+                h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+                    .accesskit_node()
+                    .is_disabled(),
+                "{control}"
+            );
+        }
+    }
+}
+
+#[test]
 fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
     let dir = tempfile::tempdir().unwrap();
     for locale in [Locale::En, Locale::Vi] {
@@ -158,6 +604,191 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
                     image.save(root.join("p1-59-caption-style.png")).unwrap();
                 }
             }
+            let frame = h.state().playback.frame().unwrap().image.pixels.clone();
+            for (name, blur) in [("Tiếng Việt", false), ("Same values", true)] {
+                let before = h.state().session.project().clone();
+                let history = h.state().session.history_len().0;
+                click(&mut h, "subtitles.style.save");
+                h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                    .type_text(name);
+                h.run_steps(2);
+                if blur {
+                    h.get(By::new().predicate(|n| n.author_id() == Some("preview.canvas")))
+                        .click();
+                } else {
+                    h.key_press(egui::Key::Enter);
+                }
+                h.run_steps(3);
+                assert_eq!(h.state().session.history_len().0, history + 1);
+                assert_eq!(
+                    h.state().session.project().data().scenes,
+                    before.data().scenes
+                );
+                assert_eq!(
+                    h.state()
+                        .session
+                        .project()
+                        .data()
+                        .caption_presets
+                        .last()
+                        .unwrap()
+                        .name
+                        .as_str(),
+                    name
+                );
+                wait(&mut h, |e| {
+                    e.playback.frame().is_some_and(|f| {
+                        f.generation == e.playback.generation()
+                            && f.at == Tick(2 * TICKS_PER_SECOND)
+                    })
+                });
+                assert_eq!(h.state().playback.frame().unwrap().image.pixels, frame);
+            }
+            let bank = h.state().session.project().data().caption_presets.clone();
+            assert_eq!(bank.len(), 2);
+            assert_eq!(bank[0].style, bank[1].style);
+            click(&mut h, "subtitles.style.manage");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+                .type_text("Renamed look");
+            h.run_steps(2);
+            h.render()
+                .unwrap()
+                .save(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                        "../../target/p1-59-caption-bank-{locale:?}-{scale}x.png"
+                    )),
+                )
+                .unwrap();
+            click(&mut h, "subtitles.bank.confirm");
+            assert_eq!(
+                h.state().session.project().data().caption_presets[0]
+                    .name
+                    .as_str(),
+                "Renamed look"
+            );
+            wait(&mut h, |e| {
+                e.playback.frame().is_some_and(|f| {
+                    f.generation == e.playback.generation() && f.at == Tick(2 * TICKS_PER_SECOND)
+                })
+            });
+            assert_eq!(h.state().playback.frame().unwrap().image.pixels, frame);
+            let before = h.state().session.project().clone();
+            let history = h.state().session.history_len();
+            click(&mut h, "subtitles.style.save");
+            h.key_press(egui::Key::Escape);
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &before);
+            assert_eq!(h.state().session.history_len(), history);
+            // Named rows apply copies without changing the existing value summary into a selected ID.
+            h.state_mut().activate("subtitles.style.outline").unwrap();
+            h.run_steps(3);
+            let outlined = h.state().session.project().clone();
+            click(&mut h, "subtitles.style");
+            click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
+            assert_eq!(track(h.state()).styles, vec![bank[1].style.clone()]);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &outlined);
+            let first = panel(h.state()).item.unwrap();
+            let out = h
+                .state_mut()
+                .session
+                .apply(Command::DuplicateItems { items: vec![first] })
+                .unwrap();
+            let second = out
+                .created
+                .iter()
+                .find_map(|id| {
+                    if let engine::CreatedId::Item(id) = id {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            h.run_steps(3);
+            click(&mut h, "subtitles.item");
+            click(&mut h, &format!("subtitles.item.{}", second.0));
+            let before = h.state().session.project().clone();
+            click(&mut h, "subtitles.style");
+            click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
+            let changed = h
+                .state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .find(|i| i.id == second)
+                .unwrap();
+            let ItemParams::Caption(params) = &changed.content else {
+                panic!("caption")
+            };
+            assert_eq!(params.cues.styles, vec![bank[1].style.clone()]);
+            let original = before
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .find(|i| i.id == first)
+                .unwrap();
+            let current = h
+                .state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .find(|i| i.id == first)
+                .unwrap();
+            assert_eq!(current, original);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &before);
+            let file = dir.path().join("bank.vibecut");
+            project::WriterLease::acquire(&file)
+                .unwrap()
+                .save(h.state().session.project())
+                .unwrap();
+            let reopened = project::load(&file).unwrap().project;
+            assert_eq!(
+                reopened.data().caption_presets,
+                h.state().session.project().data().caption_presets
+            );
+            *h.state_mut().session = Session::new(reopened, 30).unwrap();
+            h.run_steps(3);
+            let items = h
+                .state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+                .map(|i| i.id)
+                .collect();
+            h.state_mut()
+                .session
+                .apply(Command::Delete { items })
+                .unwrap();
+            h.run_steps(3);
+            assert!(h.state().action_enabled("subtitles.style.manage"));
+            click(&mut h, "subtitles.style.manage");
+            click(&mut h, "subtitles.bank.delete");
+            assert_eq!(h.state().session.project().data().caption_presets.len(), 1);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project().data().caption_presets.len(), 2);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
             click(&mut h, "subtitles.style");
             h.render()
                 .unwrap()
@@ -416,8 +1047,37 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     let _release = OpenOnDrop(gate);
     h.run_steps(3);
     click(&mut h, "subtitles.cue.cue-0");
+    h.state_mut().activate("subtitles.style.box").unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SaveCaptionPreset {
+            item,
+            name: "Held job".into(),
+        })
+        .unwrap();
+    h.run_steps(3);
+    click(&mut h, "subtitles.style.save");
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+        .type_text("Stale job name");
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
     with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
     wait(&mut h, |e| panel(e).busy);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+            .next()
+            .is_none()
+    );
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    for id in ["subtitles.style.save", "subtitles.style.manage"] {
+        assert!(h.state_mut().activate(id).is_err());
+    }
     assert!(h.state_mut().activate("subtitles.style.box").is_err());
     h.state_mut().subtitles.as_mut().unwrap().cancel();
 }

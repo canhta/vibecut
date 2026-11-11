@@ -89,6 +89,120 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             ]);
             assert_eq!(code(&applied), 0, "{:?}", applied);
         }
+        let named = format!("{preset} saved");
+        let args = serde_json::json!({"item":item.id,"name":named}).to_string();
+        let saved_preset = cli(&[
+            os("exec"),
+            project.as_os_str(),
+            os("captions.save_preset"),
+            os(&args),
+        ]);
+        assert_eq!(code(&saved_preset), 0, "{:?}", saved_preset);
+        let bank = project::load(&project)
+            .unwrap()
+            .project
+            .data()
+            .caption_presets
+            .clone();
+        let id = bank.last().unwrap().id;
+        assert!(
+            String::from_utf8(saved_preset.stdout)
+                .unwrap()
+                .contains(&format!("created caption preset {}", id.0))
+        );
+        for (command, args) in [
+            (
+                "captions.rename_preset",
+                serde_json::json!({"preset":id,"name":format!("{preset} renamed")}),
+            ),
+            (
+                "captions.apply_style",
+                serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":if preset=="box" {"outline"}else{"box"}}}),
+            ),
+            (
+                "captions.apply_style",
+                serde_json::json!({"item":item.id,"style":{"kind":"saved","preset":id}}),
+            ),
+        ] {
+            let args = args.to_string();
+            let out = cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os(command),
+                os(&args),
+                os("--json"),
+            ]);
+            assert_eq!(code(&out), 0, "{:?}", out);
+        }
+        let bytes = fs::read(&project).unwrap();
+        let mut control = super::control::ControlSession::start(&project, &[os("--no-save")]);
+        let initial = control
+            .send(serde_json::json!({"request_id":"bank-inspect","command":"inspect","params":{}}));
+        let request = serde_json::json!({"request_id":"bank-save","command":"captions.save_preset","params":{"item":item.id,"name":"Control copy"},"base_rev":initial["rev_after"],"idempotency_key":"bank-save"});
+        let accepted = control.send(request.clone());
+        assert_eq!(accepted["exit_code"], 0, "{accepted}");
+        assert_eq!(control.send(request.clone()), accepted);
+        let mut stale = request;
+        stale["idempotency_key"] = serde_json::json!("bank-stale");
+        assert_eq!(control.send(stale)["exit_code"], 3);
+        let undone=control.send(serde_json::json!({"request_id":"bank-undo","command":"undo","params":{},"base_rev":accepted["rev_after"],"idempotency_key":"bank-undo"}));
+        assert_eq!(undone["exit_code"], 0, "{undone}");
+        let before = control
+            .send(serde_json::json!({"request_id":"before-frame","command":"inspect","params":{}}));
+        let refused = control.send(serde_json::json!({"payload":"x".repeat(16<<20)}));
+        assert_eq!(refused["error"]["code"], "limit");
+        let after = control
+            .send(serde_json::json!({"request_id":"after-frame","command":"inspect","params":{}}));
+        assert_eq!(
+            before["value"], after["value"],
+            "oversize drain preserves project and bank"
+        );
+        if preset == "box" && crate::media_fixture::tools() {
+            let protected = dir.path().join("protected.mp4");
+            fs::write(&protected, b"existing destination").unwrap();
+            let settings = render::OutputOptions::default();
+            let refused=control.send(serde_json::json!({"request_id":"protected","command":"export","params":{"settings":settings,"path":protected,"overwrite":false},"base_rev":after["rev_after"],"idempotency_key":"protected"}));
+            assert_eq!(
+                refused["exit_code"], 0,
+                "export accepts a job before publication admission"
+            );
+            let refused_job = refused["value"]["value"]["job"].clone();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            for n in 0.. {
+                let status=control.send(serde_json::json!({"request_id":format!("refusal-status-{n}"),"command":"job_status","params":{"job":refused_job}}));
+                let state = status["value"]["value"]["snapshot"]["state"]
+                    .as_str()
+                    .unwrap();
+                if state == "failed" {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "{status}");
+            }
+            assert_eq!(fs::read(&protected).unwrap(), b"existing destination");
+            cancel_bank_export(
+                project::load(&project).unwrap().project,
+                dir.path().join("cancel.mp4"),
+            );
+            assert_eq!(fs::read(&project).unwrap(), bytes);
+        }
+        assert_eq!(control.finish().0, 0);
+        assert_eq!(fs::read(&project).unwrap(), bytes);
+        let copied = project::load(&project).unwrap().project;
+        let args = serde_json::json!({"preset":id}).to_string();
+        assert_eq!(
+            code(&cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os("captions.delete_preset"),
+                os(&args),
+                os("--json")
+            ])),
+            0
+        );
+        assert_eq!(
+            project::load(&project).unwrap().project.data().scenes,
+            copied.data().scenes
+        );
         let saved = project::load(&project).unwrap().project;
         let found = saved
             .data()
@@ -135,8 +249,163 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 frames[1].iter().any(|value| *value > 100),
                 "captions survive encoding"
             );
+            let mut settings = render::RenderSettings::from_project(&saved);
+            settings.width = 360;
+            settings.height = 640;
+            let budget = engine::ByteBudget::new(128 << 20).unwrap();
+            let hooks = engine::ByteBudgetHooks::new(&budget, None);
+            let expected = render::Renderer::new(&saved, settings)
+                .unwrap()
+                .render_frame(
+                    time::FrameRate::FPS_30.tick_of(1).unwrap(),
+                    &mut render::FileSources::default(),
+                    &hooks,
+                )
+                .unwrap()
+                .video_rgba8(1, &hooks)
+                .unwrap();
+            let mse = frames[1]
+                .iter()
+                .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                .sum::<f64>()
+                / frames[1].len() as f64;
+            assert!(mse < 150.0, "caption-bank CLI encoded MSE {mse}");
         }
     }
+}
+
+fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf) {
+    use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
+    use engine::control::{Caller, ControlResult, Policy};
+    use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::{Duration, Instant};
+
+    struct CancelOnly;
+    impl Policy for CancelOnly {
+        fn authorize(&self, command: &engine::Command, _: &project::Project) -> engine::Result<()> {
+            if matches!(command, engine::Command::JobCancel { .. }) {
+                Ok(())
+            } else {
+                Err(engine::EditError::Permission)
+            }
+        }
+    }
+
+    let saved = project.data().caption_presets.last().unwrap();
+    assert_eq!(saved.name.as_str(), "box renamed");
+    assert_eq!(saved.style.border_style, 3);
+    let cues = project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| match &item.content {
+            project::ItemParams::Caption(params) => Some(&params.cues),
+            _ => None,
+        })
+        .unwrap();
+    assert!(!cues.cues.is_empty());
+    assert!(
+        cues.cues
+            .iter()
+            .all(|cue| cues.style_of(cue) == Some(&saved.style))
+    );
+    let mut session = engine::Session::new(project, 100).unwrap();
+    let snapshot = session.project().clone();
+    let revision = session.revision();
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1; 3],
+            queue: 2,
+            retained: 2,
+            network_attempts: 1,
+            backoff: Duration::from_millis(100),
+            progress_interval: Duration::from_millis(10),
+        },
+        engine::ByteBudget::new(128 << 20).unwrap(),
+        Arc::new(SystemClock::default()),
+    )
+    .unwrap();
+    let key = CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Preview,
+        source: [0; 32],
+        provider: "render",
+        model: "caption-bank",
+        version: "1",
+        settings: b"{}",
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    let (entered, waiting) = mpsc::sync_channel(1);
+    let (release, held) = mpsc::sync_channel(1);
+    let held = Mutex::new(Some(held));
+    // The real export worker stops at its existing source-factory seam before
+    // render can publish. This gate orders cancellation independently of speed.
+    let (job, _) = engine::submit_export_with_sources(
+        &mut runner,
+        key,
+        snapshot.clone(),
+        time::TimeRange::new(Tick::ZERO, snapshot.duration()).unwrap(),
+        render::ExportSettings::from_project(&snapshot),
+        destination.clone(),
+        move || {
+            let held = held.lock().unwrap().take().unwrap();
+            entered.send(()).unwrap();
+            held.recv_timeout(Duration::from_secs(30)).unwrap();
+            Box::new(render::FileSources::default())
+        },
+    )
+    .unwrap();
+    runner.tick().unwrap();
+    waiting.recv_timeout(Duration::from_secs(30)).unwrap();
+    assert_eq!(runner.snapshot(job).unwrap().state, JobState::Running);
+    assert!(!destination.exists());
+    let request = engine::control::build_request(
+        &session,
+        serde_json::json!({"request_id":"cancel-bank-export","command":"job_cancel","params":{"job":job},"base_rev":revision,"idempotency_key":"cancel-bank-export"}),
+    )
+    .unwrap();
+    let cancelled = session.control_typed(
+        request,
+        Caller {
+            principal: "vibecut-cli",
+            external: true,
+            policy: &CancelOnly,
+            fonts: None,
+            sounds: None,
+            media: None,
+            chapters: None,
+        },
+        &mut runner,
+    );
+    release.send(()).unwrap();
+    assert!(matches!(cancelled.unwrap(), ControlResult::CancelRequested { job: id } if id == job));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let state = loop {
+        runner.tick().unwrap();
+        let state = runner.snapshot(job).unwrap().state;
+        if matches!(
+            state,
+            JobState::Completed | JobState::Failed | JobState::Cancelled
+        ) {
+            break state;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    assert_eq!(state, JobState::Cancelled);
+    assert!(runner.take_output(job).is_none());
+    assert!(!destination.exists());
+    assert!(Arc::ptr_eq(session.project(), &snapshot));
+    assert_eq!(session.revision(), revision);
+    assert_eq!(session.history_len(), (0, 0));
+    runner.shutdown();
 }
 
 #[test]

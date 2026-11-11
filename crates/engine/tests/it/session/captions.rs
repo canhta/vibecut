@@ -32,11 +32,500 @@ fn apply_style(style: engine::CaptionStyleApply) -> Command {
         style,
     }
 }
+
+#[test]
+fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
+    use project::{CaptionPresetId, SavedCaptionPreset};
+    let mut data = style_source_project().into_data();
+    data.caption_presets = vec![SavedCaptionPreset {
+        id: CaptionPresetId(100),
+        name: "Box".into(),
+        style: preset_style(true),
+    }];
+    let mut other = data.scenes.main().clone();
+    other.id = project::SceneId(50);
+    other.is_main = false;
+    let mut next = 60;
+    for track in other.timeline.iter_mut() {
+        track.id = TrackId(next);
+        next += 1;
+        track.locked = true;
+        for item in &mut track.items {
+            item.id = ItemId(next);
+            next += 1;
+        }
+    }
+    let mut scenes: Vec<_> = data.scenes.iter().cloned().collect();
+    scenes.push(other);
+    data.scenes = scenes.try_into().unwrap();
+    let mut s = Session::new(Project::new(data).unwrap(), 30).unwrap();
+    let original = s.project().clone();
+    s.execute(
+        "captions.apply_style",
+        json!({"item":1,"style":{"kind":"saved","preset":100}}),
+    )
+    .unwrap();
+    let mut expected = original.data().clone();
+    let ItemParams::Caption(params) =
+        &mut expected.scene_mut().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption")
+    };
+    params.cues.styles = vec![preset_style(true)];
+    for cue in &mut params.cues.cues {
+        cue.style = Some(captions::CueStyleId(0));
+    }
+    assert_eq!(s.project().data(), &expected);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+    s.redo().unwrap();
+    let styled = s.project().clone();
+    let out = s
+        .execute(
+            "captions.save_preset",
+            json!({"item":1,"name":"Tie\u{302}\u{301}ng Vie\u{323}\u{302}t"}),
+        )
+        .unwrap();
+    assert_eq!(
+        out.created,
+        vec![CreatedId::CaptionPreset(CaptionPresetId(101))]
+    );
+    expected.caption_presets.push(SavedCaptionPreset {
+        id: CaptionPresetId(101),
+        name: "Tiếng Việt".into(),
+        style: preset_style(true),
+    });
+    assert_eq!(s.project().data(), &expected, "save changes only bank");
+    let before_duplicate = s.project().clone();
+    let history = s.history_len();
+    let revision = s.revision();
+    assert!(matches!(
+        s.execute(
+            "captions.save_preset",
+            json!({"item":1,"name":"Tie\u{302}\u{301}ng Vie\u{323}\u{302}t"})
+        ),
+        Err(engine::EditError::Invalid(_))
+    ));
+    assert_eq!(s.project(), &before_duplicate);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.revision(), revision);
+    s.apply(Command::SaveCaptionPreset {
+        item: ItemId(1),
+        name: "Same values".into(),
+    })
+    .unwrap();
+    let saved = s.project().clone();
+    s.execute(
+        "captions.rename_preset",
+        json!({"preset":101,"name":"Renamed"}),
+    )
+    .unwrap();
+    s.undo().unwrap();
+    s.take_change();
+    let revision = s.revision();
+    let history = s.history_len();
+    assert!(
+        !s.execute(
+            "captions.rename_preset",
+            json!({"preset":101,"name":"Tiếng Việt"})
+        )
+        .unwrap()
+        .changed
+    );
+    assert!(
+        !s.execute(
+            "captions.apply_style",
+            json!({"item":1,"style":{"kind":"saved","preset":101}})
+        )
+        .unwrap()
+        .changed
+    );
+    assert!(Arc::ptr_eq(&saved, s.project()));
+    assert_eq!(s.revision(), revision);
+    assert_eq!(s.history_len(), history);
+    assert!(s.take_change().is_none());
+    s.execute("captions.delete_preset", json!({"preset":100}))
+        .unwrap();
+    assert_eq!(s.project().data().scene(), styled.data().scene());
+    assert_eq!(
+        s.project()
+            .data()
+            .caption_presets
+            .iter()
+            .map(|p| p.id.0)
+            .collect::<Vec<_>>(),
+        [101, 102]
+    );
+    let bytes = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        &project::decode(&bytes).unwrap().project,
+        s.project().as_ref()
+    );
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("bank.vibecut");
+    project::WriterLease::acquire(&path)
+        .unwrap()
+        .save(s.project())
+        .unwrap();
+    assert_eq!(&project::load(&path).unwrap().project, s.project().as_ref());
+    for group in [false, true] {
+        let before = s.project().clone();
+        let command = Command::SaveCaptionPreset {
+            item: ItemId(1),
+            name: "Cancelled".into(),
+        };
+        let id = if group {
+            let mut id = None;
+            assert!(
+                s.transaction(|s| {
+                    id = Some(s.apply(command)?.created[0]);
+                    Err::<(), _>(engine::EditError::Invalid("rollback"))
+                })
+                .is_err()
+            );
+            id.unwrap()
+        } else {
+            s.begin_gesture().unwrap();
+            let id = s.apply(command).unwrap().created[0];
+            s.cancel_gesture().unwrap();
+            id
+        };
+        assert_eq!(s.project(), &before);
+        let next = s
+            .apply(Command::SaveCaptionPreset {
+                item: ItemId(1),
+                name: "After cancel".into(),
+            })
+            .unwrap()
+            .created[0];
+        let (CreatedId::CaptionPreset(id), CreatedId::CaptionPreset(next)) = (id, next) else {
+            panic!("preset IDs")
+        };
+        assert!(next > id, "accepted then cancelled identities stay retired");
+        s.undo().unwrap();
+    }
+    // Manage is project metadata, even with no caption target and every track locked.
+    s.apply(Command::Delete {
+        items: vec![ItemId(1), ItemId(2)],
+    })
+    .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
+    s.execute(
+        "captions.rename_preset",
+        json!({"preset":101,"name":"Without target"}),
+    )
+    .unwrap();
+    s.execute("captions.delete_preset", json!({"preset":101}))
+        .unwrap();
+}
+
+#[test]
+fn caption_bank_refusals_roll_back_history_sources_and_global_allocator() {
+    use engine::EditError;
+    use project::{CaptionPresetId, SavedCaptionPreset};
+    for case in [
+        "mixed",
+        "unstyled",
+        "empty",
+        "missing",
+        "kind",
+        "locked",
+        "scene",
+        "name",
+        "duplicate",
+        "cap",
+        "exhausted",
+        "batch",
+    ] {
+        let mut data = style_source_project().into_data();
+        if case != "mixed" {
+            let ItemParams::Caption(p) =
+                &mut data.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                panic!("caption")
+            };
+            for cue in &mut p.cues.cues {
+                cue.style = Some(captions::CueStyleId(0));
+            }
+            if case == "unstyled" {
+                p.cues.cues[0].style = None;
+            }
+            if case == "empty" {
+                p.cues.cues.clear();
+            }
+        }
+        if case == "kind" {
+            let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+            item.content = ItemParams::Text(project::TextParams::new("Title"));
+            item.source_asset = None;
+        }
+        if case == "locked" {
+            data.scene_mut().timeline.overlays[0].locked = true;
+        }
+        let max = if case == "exhausted" { u64::MAX } else { 100 };
+        data.caption_presets.push(SavedCaptionPreset {
+            id: CaptionPresetId(max),
+            name: "Taken".into(),
+            style: preset_style(false),
+        });
+        if case == "cap" {
+            for id in 101..164 {
+                data.caption_presets.push(SavedCaptionPreset {
+                    id: CaptionPresetId(id),
+                    name: format!("Look {id}").into(),
+                    style: preset_style(true),
+                });
+            }
+        }
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        if case == "scene" {
+            let created = s
+                .apply(Command::CreateScene {
+                    name: "Other".into(),
+                })
+                .unwrap();
+            let CreatedId::Scene(scene) = created.created[0] else {
+                panic!("scene")
+            };
+            s.apply(Command::SwitchScene { scene }).unwrap();
+        }
+        s.take_change();
+        let before = s.project().clone();
+        let revision = s.revision();
+        let history = s.history_len();
+        let save = Command::SaveCaptionPreset {
+            item: ItemId(if case == "missing" { 999 } else { 1 }),
+            name: (match case {
+                "name" => " Bad",
+                "duplicate" => "Taken",
+                _ => "New",
+            })
+            .into(),
+        };
+        let command = if case == "batch" {
+            Command::Batch {
+                commands: vec![
+                    save,
+                    Command::Delete {
+                        items: vec![ItemId(999)],
+                    },
+                ],
+            }
+        } else {
+            save
+        };
+        let error = s.apply(command).unwrap_err();
+        assert!(
+            match case {
+                "locked" => matches!(error, EditError::Locked(TrackId(1))),
+                "scene" => matches!(error, EditError::SceneBoundary),
+                "missing" | "batch" => matches!(error, EditError::NoItem(ItemId(999))),
+                "cap" => matches!(error, EditError::Limit),
+                "exhausted" => matches!(error, EditError::IdExhausted),
+                _ => matches!(error, EditError::Invalid(_)),
+            },
+            "{case}: {error}"
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), history);
+        assert!(s.take_change().is_none());
+        if case == "batch" {
+            assert_eq!(
+                s.apply(Command::SaveCaptionPreset {
+                    item: ItemId(1),
+                    name: "After".into()
+                })
+                .unwrap()
+                .created,
+                vec![CreatedId::CaptionPreset(CaptionPresetId(101))]
+            );
+        }
+        for (id, params) in [
+            ("captions.save_preset", json!({"item":1})),
+            (
+                "captions.save_preset",
+                json!({"item":1,"name":"A","extra":0}),
+            ),
+            ("captions.rename_preset", json!({"preset":100})),
+            ("captions.delete_preset", json!({"preset":100,"extra":0})),
+            (
+                "captions.delete_preset",
+                json!({"preset":9007199254740992_u64}),
+            ),
+            (
+                "captions.apply_style",
+                json!({"item":1,"style":{"kind":"saved","preset":100,"extra":0}}),
+            ),
+        ] {
+            assert!(s.execute(id, params).is_err());
+        }
+    }
+}
 fn saved_cues(s: &Session) -> &captions::CueTrack {
     let ItemParams::Caption(params) = &get(s, 1).content else {
         panic!("caption")
     };
     &params.cues
+}
+
+#[test]
+fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
+    use project::{CaptionPresetId, SavedCaptionPreset};
+    let mut data = style_source_project().into_data();
+    data.caption_presets.push(SavedCaptionPreset {
+        id: CaptionPresetId(100),
+        name: "Box".into(),
+        style: preset_style(true),
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let original = s.project().clone();
+    s.begin_gesture().unwrap();
+    s.apply(caption_trim(false, 1050)).unwrap(); // Only the first of two different source styles is visible.
+    assert!(
+        s.apply(Command::SaveCaptionPreset {
+            item: ItemId(1),
+            name: "Hidden mixed".into()
+        })
+        .is_err()
+    );
+    s.apply(apply_style(engine::CaptionStyleApply::Saved {
+        preset: CaptionPresetId(100),
+    }))
+    .unwrap();
+    s.apply(caption_trim(false, 1100)).unwrap();
+    assert_eq!(saved_cues(&s).styles, vec![preset_style(true)]);
+    assert!(
+        saved_cues(&s)
+            .cues
+            .iter()
+            .all(|cue| cue.style == Some(captions::CueStyleId(0)))
+    );
+    let ItemParams::Caption(old) = &original.data().scene().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption")
+    };
+    for (new, old) in saved_cues(&s).cues.iter().zip(&old.cues.cues) {
+        assert_eq!(new.texts, old.texts);
+        assert_eq!(new.word_ranges, old.word_ranges);
+        assert_eq!(new.range, old.range);
+        assert_eq!(new.id, old.id);
+    }
+    s.apply(Command::SaveCaptionPreset {
+        item: ItemId(1),
+        name: "Complete".into(),
+    })
+    .unwrap();
+    s.commit_gesture().unwrap();
+    assert_eq!(s.history_len(), (1, 0));
+    let complete = s.project().clone();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &complete);
+    let split = s
+        .apply(Command::SplitAt {
+            item: ItemId(1),
+            at: Tick(1050),
+        })
+        .unwrap();
+    let CreatedId::Item(right) = split.created[0] else {
+        panic!("split")
+    };
+    let ItemParams::Caption(params) = &get(&s, right.0).content else {
+        panic!("caption")
+    };
+    assert_eq!(params.cues.styles, vec![preset_style(true)]);
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
+    for command in [
+        apply_style(engine::CaptionStyleApply::Saved {
+            preset: CaptionPresetId(999),
+        }),
+        apply_style(engine::CaptionStyleApply::Saved {
+            preset: CaptionPresetId(100),
+        }),
+        Command::SaveCaptionPreset {
+            item: ItemId(1),
+            name: "Complete".into(),
+        },
+    ] {
+        assert!(matches!(
+            s.apply(command),
+            Err(engine::EditError::Locked(TrackId(1)))
+        ));
+    }
+    let items = s.project().data().scene().clone();
+    s.apply(Command::RenameCaptionPreset {
+        preset: CaptionPresetId(100),
+        name: "Rename only".into(),
+    })
+    .unwrap();
+    s.apply(Command::DeleteCaptionPreset {
+        preset: CaptionPresetId(100),
+    })
+    .unwrap();
+    assert_eq!(s.project().data().scene(), &items);
+}
+
+#[test]
+fn caption_bank_mixed_ass_import_refuses_save_and_undo_restores_exact_styles() {
+    let mut s = session();
+    let mut command = ass_import();
+    let Command::ImportCaptions { styles, cues, .. } = &mut command else {
+        panic!("import")
+    };
+    let mut alternate = ass_style();
+    alternate.primary_color = [10, 90, 220, 190];
+    styles.push(alternate);
+    cues[1].style = captions::CueStyleId(1);
+    let out = s.apply(command).unwrap();
+    let item = out
+        .created
+        .iter()
+        .find_map(|id| {
+            if let CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let mixed = s.project().clone();
+    assert!(matches!(
+        s.apply(Command::SaveCaptionPreset {
+            item,
+            name: "Mixed".into()
+        }),
+        Err(engine::EditError::Invalid(_))
+    ));
+    assert_eq!(s.project(), &mixed);
+    s.apply(Command::ApplyCaptionStyle {
+        item,
+        style: engine::CaptionStyleApply::Custom {
+            style: preset_style(true),
+        },
+    })
+    .unwrap();
+    s.apply(Command::SaveCaptionPreset {
+        item,
+        name: "Uniform".into(),
+    })
+    .unwrap();
+    assert_eq!(
+        s.project().data().caption_presets[0].style,
+        preset_style(true)
+    );
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &mixed);
 }
 
 fn style_source_project() -> Project {

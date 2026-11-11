@@ -122,3 +122,5 @@ ownership. Destination admission refusals before a persistence job starts (inclu
 unsupported names and lease IO errors) return their typed error without poisoning the active
 autosave owner; choosing a different destination can succeed. Once a job is admitted,
 publication and worker failures follow the sticky error policy.
+
+Named caption preset IDs share the existing allocator and loaded maximum with scene, track, item, transition and bookmark IDs. Successful then cancelled previews/groups retire these IDs; failed atomic batches consume none. Bank metadata participates in ordinary snapshots, undo/redo and recovery; cue-table style IDs remain local to each cue track.

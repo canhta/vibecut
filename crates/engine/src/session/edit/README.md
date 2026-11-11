@@ -106,3 +106,5 @@ ordered side pieces while keeping the span; explicit trim, move and delete detac
 longer form a contiguous chain reaching the cut. Failed edits publish neither item nor
 transition changes. Transitions are video-only; [project](../../../../project/src/visual/README.md#video-transitions)
 owns the admitted kinds, parameter definitions and the invariant mathematics. `transition.set_param` replaces one parameter in a single undo step and refuses an unknown id, a value of another type or an out-of-range value without publishing.
+
+`captions.save_preset` saves one uniform complete saved style from the authoritative source cues, including hidden trim sources; empty, unstyled or mixed sources refuse. Save does not style any item. `captions.rename_preset` and `captions.delete_preset` edit project metadata, including with no caption target or all tracks locked. Same-name rename is an exact no-op; duplicate names refuse. `captions.apply_style` also accepts `{"kind":"saved","preset":100}`: resolve the candidate bank and copy through the same whole-item path. Target locks precede equality or missing-preset refusal. Rename/delete never touches applied copies in any scene.

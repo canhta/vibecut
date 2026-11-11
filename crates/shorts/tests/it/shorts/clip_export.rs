@@ -185,8 +185,30 @@ fn batch(asset: u64, shorts: Vec<ClipShort>, cues: CueTrack, directory: &Path) -
 #[test]
 fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let dir = tempfile::tempdir().unwrap();
-    let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
-    let cues = CueTrack {
+    let mut data = project(asset(1, dir.path().join("missing-source.mp4"), 30)).into_data();
+    let style = captions::CueStyle {
+        font_family: "Inter".into(),
+        font_size_ratio: 0.05,
+        primary_color: [255; 4],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0; 4],
+        border_style: 1,
+        alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+        margin_left_ratio: 0.05,
+        margin_right_ratio: 0.05,
+        margin_vertical_ratio: 0.05,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    };
+    data.caption_presets.push(project::SavedCaptionPreset {
+        id: project::CaptionPresetId(100),
+        name: "Project look".into(),
+        style: style.clone(),
+    });
+    let source = Project::new(data).unwrap();
+    let mut cues = CueTrack {
         styles: Vec::new(),
         cues: vec![
             cue(
@@ -198,6 +220,10 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
             cue("b", 20, 26, &[("vi", "Kết thúc"), ("zh-Hant", "結束")]),
         ],
     };
+    cues.styles = vec![style.clone()];
+    for cue in &mut cues.cues {
+        cue.style = Some(captions::CueStyleId(0));
+    }
     let request = ClipBatchRequest {
         languages: vec![lang("vi"), lang("zh-Hant")],
         subtitle_formats: vec![Format::Srt, Format::WebVtt],
@@ -214,6 +240,10 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let batch = ClipBatch::prepare(&source, request).unwrap();
     assert_eq!(batch.duration(0), Some(seconds(10)));
     let prepared = batch.project(0).unwrap();
+    assert_eq!(
+        prepared.data().caption_presets,
+        source.data().caption_presets
+    );
     let video = prepared
         .data()
         .scene()
@@ -258,6 +288,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
             panic!("not a caption item");
         };
         for cue in &params.cues.cues {
+            assert_eq!(params.cues.style_of(cue), Some(&style));
             assert!(cue.range.start() >= item.source_range.start());
             assert!(cue.range.end() <= item.source_range.end());
         }
