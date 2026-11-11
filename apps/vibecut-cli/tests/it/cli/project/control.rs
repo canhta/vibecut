@@ -10,14 +10,14 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use time::Tick;
 
-struct ControlSession {
+pub(super) struct ControlSession {
     child: std::process::Child,
     stdin: std::process::ChildStdin,
     stdout: std::io::BufReader<std::process::ChildStdout>,
     stderr: std::process::ChildStderr,
 }
 impl ControlSession {
-    fn start(project: &Path, extra: &[&OsStr]) -> Self {
+    pub(super) fn start(project: &Path, extra: &[&OsStr]) -> Self {
         let mut child = Command::new(bin())
             .arg("control")
             .arg(project)
@@ -37,7 +37,7 @@ impl ControlSession {
             stderr,
         }
     }
-    fn send(&mut self, request: Value) -> Value {
+    pub(super) fn send(&mut self, request: Value) -> Value {
         self.send_raw(&request.to_string())
     }
     fn send_raw(&mut self, line: &str) -> Value {
@@ -49,7 +49,7 @@ impl ControlSession {
         assert!(!line.is_empty(), "control session closed before a response");
         serde_json::from_str(&line).unwrap()
     }
-    fn finish(mut self) -> (i32, String) {
+    pub(super) fn finish(mut self) -> (i32, String) {
         drop(self.stdin);
         let status = self.child.wait().unwrap();
         let mut stderr = String::new();

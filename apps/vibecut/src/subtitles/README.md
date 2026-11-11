@@ -27,3 +27,10 @@ engine command, one undo step.
 
 Import accepts SRT and VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue
 per line with no timings, serialized by captions.
+
+The Style chooser applies Outline or Box to the current caption item, independently of cue
+selection, through `captions.apply_style`. Custom and Mixed describe saved cue values rather
+than a preset identity. Locked items, active work/transactions and focused or changed text drafts
+disable the chooser and direct activation before any draft flush. Changing the item or project
+snapshot invalidates an open chooser. Applying a look is one undo step; export reads those saved
+values through the shared overlay. No project preset bank or word highlighting is offered.

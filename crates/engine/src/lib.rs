@@ -5,10 +5,11 @@ pub(crate) use session::transitions;
 use session::wire::ErrorCode;
 pub use session::wire::Failure;
 pub use session::{
-    Availability, ChapterSidecars, Command, CommandKind, CommandSpec, CreatedId, CueId,
-    DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement,
-    KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement, TranscriptCue,
-    TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
+    Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
+    CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
+    ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
+    TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId,
+    declaration_order_error, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
@@ -110,8 +111,6 @@ pub enum EditError {
     StaleResult,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
-    #[error("background job failed: {0}")]
-    JobFailure(std::sync::Arc<EditError>),
     #[error("corrupt cache entry skipped")]
     CacheCorrupt,
     #[error("render execution failed")]
@@ -210,7 +209,6 @@ impl EditError {
             Self::WorkerPanicked => C::WorkerFailure,
             Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
-            Self::JobFailure(inner) => inner.code(),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),

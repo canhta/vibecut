@@ -85,6 +85,343 @@ fn panel(e: &Editor) -> subtitles_inspect::Inspection {
     e.inspect().unwrap().subtitles.unwrap()
 }
 use vibecut::subtitles as subtitles_inspect;
+
+#[test]
+fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
+    let dir = tempfile::tempdir().unwrap();
+    for locale in [Locale::En, Locale::Vi] {
+        for scale in [1.0, 2.0] {
+            let mut e = editor("vi");
+            e.preferences.locale = locale;
+            e.session
+                .apply(Command::SetBackground {
+                    color: project::Color([25, 50, 90, 255]),
+                })
+                .unwrap();
+            e.session
+                .apply(Command::SetCanvas {
+                    width: 360,
+                    height: 640,
+                    preset: None,
+                })
+                .unwrap();
+            let mut h = harness(e, scale);
+            h.run_steps(3);
+            click(&mut h, "subtitles.cue.cue-0");
+            // A cue subset must not narrow a style operation.
+            for (id, border) in [("outline", 1), ("box", 3)] {
+                let before = h.state().session.project().clone();
+                let history = h.state().session.history_len().0;
+                click(&mut h, "subtitles.style");
+                click(&mut h, &format!("subtitles.style.{id}"));
+                let cues = track(h.state());
+                assert_eq!(cues.styles.len(), 1);
+                assert_eq!(cues.styles[0].border_style, border);
+                assert_eq!(cues.styles[0].font_family.as_str(), "Inter");
+                assert!(cues.styles[0].bold);
+                assert!(
+                    cues.cues
+                        .iter()
+                        .all(|cue| cue.style == Some(captions::CueStyleId(0)))
+                );
+                assert_eq!(h.state().session.history_len().0, history + 1);
+                let styled = h.state().session.project().clone();
+                h.state_mut().activate("edit.undo").unwrap();
+                h.run_steps(3);
+                assert_eq!(h.state().session.project(), &before);
+                h.state_mut().activate("edit.redo").unwrap();
+                h.run_steps(3);
+                assert_eq!(h.state().session.project(), &styled);
+                let file = dir.path().join("styled.vibecut");
+                project::WriterLease::acquire(&file)
+                    .unwrap()
+                    .save(&styled)
+                    .unwrap();
+                assert_eq!(&project::load(&file).unwrap().project, styled.as_ref());
+                h.state_mut()
+                    .playback
+                    .seek(Tick(2 * TICKS_PER_SECOND), false, styled)
+                    .unwrap();
+                wait(&mut h, |e| {
+                    e.playback.frame().is_some_and(|frame| {
+                        frame.generation == e.playback.generation()
+                            && frame.at == Tick(2 * TICKS_PER_SECOND)
+                    })
+                });
+                let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+                std::fs::create_dir_all(&root).unwrap();
+                let image = h.render().unwrap();
+                image
+                    .save(root.join(format!("p1-59-caption-{locale:?}-{scale}x-{id}.png")))
+                    .unwrap();
+                if locale == Locale::En && scale == 1.0 && id == "box" {
+                    image.save(root.join("p1-59-caption-style.png")).unwrap();
+                }
+            }
+            click(&mut h, "subtitles.style");
+            h.render()
+                .unwrap()
+                .save(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                        "../../target/p1-59-caption-{locale:?}-{scale}x-chooser.png"
+                    )),
+                )
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    let field = "subtitles.text.cue-0.vi";
+    h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+        .focus();
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    assert!(!h.state().action_enabled("subtitles.style.box"));
+    assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+        .type_text(" pending");
+    h.run_steps(2);
+    assert!(h.state_mut().activate("subtitles.style.outline").is_err());
+    assert_eq!(
+        h.state().session.project(),
+        &before,
+        "preflight precedes draft flush"
+    );
+    h.ctx
+        .memory_mut(|memory| memory.surrender_focus(memory.focused().unwrap()));
+    h.run_steps(3);
+    h.state_mut().activate("subtitles.select_all").unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track: project::TrackId(1),
+            locked: true,
+        })
+        .unwrap();
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track: project::TrackId(1),
+            locked: false,
+        })
+        .unwrap();
+    h.state_mut().session.begin_gesture().unwrap();
+    assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    h.state_mut().session.cancel_gesture().unwrap();
+    // Snapshot identity closes an open chooser after style/animation or target changes.
+    h.run_steps(3);
+    click(&mut h, "subtitles.style");
+    h.state_mut()
+        .session
+        .apply(Command::SetItemField {
+            item,
+            patch: engine::ItemParamPatch::Opacity(0.5),
+        })
+        .unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
+            .count(),
+        0
+    );
+    let animation = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap()
+        .animations
+        .clone();
+    h.state_mut().activate("subtitles.style.box").unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item)
+            .unwrap()
+            .animations,
+        animation
+    );
+    assert_eq!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
+            .value()
+            .as_deref(),
+        Some("Box")
+    );
+    let mut content = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap()
+        .content
+        .clone();
+    let ItemParams::Caption(p) = &mut content else {
+        panic!("caption")
+    };
+    p.cues.styles[0].primary_color = [20, 240, 60, 255];
+    click(&mut h, "subtitles.style");
+    h.state_mut()
+        .session
+        .apply(Command::SetItemParam {
+            item,
+            content: content.clone(),
+        })
+        .unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
+            .value()
+            .as_deref(),
+        Some("Custom")
+    );
+    let ItemParams::Caption(p) = &mut content else {
+        panic!("caption")
+    };
+    p.cues.cues[0].style = None;
+    h.state_mut()
+        .session
+        .apply(Command::SetItemParam { item, content })
+        .unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
+            .value()
+            .as_deref(),
+        Some("Mixed")
+    );
+    let duplicated = h
+        .state_mut()
+        .session
+        .apply(Command::DuplicateItems { items: vec![item] })
+        .unwrap();
+    let second = duplicated
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(item) = id {
+                Some(*item)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    h.run_steps(3);
+    click(&mut h, "subtitles.style");
+    with_panel(h.state_mut(), |p, s, _| p.select_item(s, second).unwrap());
+    h.run_steps(3);
+    assert_eq!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
+            .count(),
+        0
+    );
+    click(&mut h, "subtitles.style");
+    click(&mut h, "subtitles.style.outline");
+    let original = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap();
+    let ItemParams::Caption(p) = &original.content else {
+        panic!("caption")
+    };
+    assert_eq!(p.cues.cues[0].style, None, "the other item remains mixed");
+    click(&mut h, "subtitles.style");
+    h.state_mut()
+        .session
+        .apply(Command::SetItemParam {
+            item: second,
+            content: ItemParams::Caption(project::CaptionParams {
+                cues: CueTrack::default(),
+            }),
+        })
+        .unwrap();
+    h.run_steps(3);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
+            .next()
+            .is_none()
+    );
+    let created = h
+        .state_mut()
+        .session
+        .apply(Command::CreateScene {
+            name: "Empty".into(),
+        })
+        .unwrap();
+    let engine::CreatedId::Scene(scene) = created.created[0] else {
+        panic!("scene")
+    };
+    h.state_mut()
+        .session
+        .apply(Command::SwitchScene { scene })
+        .unwrap();
+    h.run_steps(3);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
+            .next()
+            .is_none()
+    );
+    assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.style");
+    *h.state_mut().session = Session::new(
+        project::Project::empty(project::ProjectId(99), "Other".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    h.run_steps(3);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
+            .next()
+            .is_none()
+    );
+    assert!(!h.state().action_enabled("subtitles.style.box"));
+    let gate: Gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    let mut h = harness(held_editor("vi", Arc::new(AtomicUsize::new(0)), &gate), 1.0);
+    let _release = OpenOnDrop(gate);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
+    wait(&mut h, |e| panel(e).busy);
+    assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    h.state_mut().subtitles.as_mut().unwrap().cancel();
+}
+
 fn with_panel<T>(e: &mut Editor, f: impl FnOnce(&mut Subtitles, &mut Session, &Options) -> T) -> T {
     f(
         e.subtitles.as_mut().unwrap(),

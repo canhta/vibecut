@@ -79,6 +79,132 @@ fn settings(p: &project::Project) -> RenderSettings {
     settings
 }
 
+fn preset_scene(texts: &[(&str, &str)], boxed: bool) -> project::Project {
+    with_cue_style(
+        scene(texts),
+        vec![captions::CueStyle {
+            font_family: "Inter".into(),
+            font_size_ratio: 48.0 / 1080.0,
+            primary_color: [255; 4],
+            outline_color: [0, 0, 0, 255],
+            background_color: if boxed { [0, 0, 0, 255] } else { [0; 4] },
+            border_style: if boxed { 3 } else { 1 },
+            alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+            margin_left_ratio: 0.05,
+            margin_right_ratio: 0.05,
+            margin_vertical_ratio: 0.05,
+            bold: true,
+            italic: false,
+            underline: false,
+            strikeout: false,
+        }],
+        Some(captions::CueStyleId(0)),
+    )
+}
+
+#[test]
+fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
+    let texts = [
+        ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
+        ("en", "Bilingual captions"),
+    ];
+    let h = Hooks::default();
+    for boxed in [false, true] {
+        let p = preset_scene(&texts, boxed);
+        for (width, height) in [(360, 640), (1080, 1920)] {
+            let mut settings = RenderSettings::from_project(&p);
+            settings.width = width;
+            settings.height = height;
+            settings.caption_languages = texts
+                .iter()
+                .map(|(tag, _)| captions::LanguageTag::parse(tag).unwrap())
+                .collect();
+            let mut r = Renderer::new(&p, settings.clone()).unwrap();
+            let frame = r.preview_frame(tick(1, 2), &mut Empty, &h).unwrap();
+            assert_eq!(
+                frame.pixels(),
+                r.render_frame(tick(1, 2), &mut Empty, &h).unwrap().pixels()
+            );
+            let gap = r.render_frame(Tick::ZERO, &mut Empty, &h).unwrap();
+            assert_eq!(
+                gap.pixels(),
+                r.render_frame(tick(3, 2), &mut Empty, &h).unwrap().pixels()
+            );
+            let (x0, y0, x1, y1, count) = ink(&frame, &gap);
+            assert!(count > 100 && x0 >= width as usize / 20 && x1 < width as usize * 19 / 20);
+            assert!(y0 > height as usize * 4 / 5 && y1 < height as usize * 19 / 20);
+            let nfd = preset_scene(
+                &[
+                    (
+                        "vi",
+                        "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t: A\u{0306}\u{0301} a\u{0306}\u{0300} o\u{031b}\u{0303} u\u{031b}\u{0323} đ",
+                    ),
+                    texts[1],
+                ],
+                boxed,
+            );
+            assert_eq!(
+                frame.pixels(),
+                Renderer::new(&nfd, settings.clone())
+                    .unwrap()
+                    .render_frame(tick(1, 2), &mut Empty, &h)
+                    .unwrap()
+                    .pixels()
+            );
+            let bytes = frame.rgba8(1, &h).unwrap();
+            eprintln!(
+                "saved preset boxed={boxed} {width}x{height} hash={:#x}",
+                hash(&bytes.bytes)
+            );
+            if width == 360 {
+                png(
+                    &bytes.bytes,
+                    if boxed {
+                        "preset-box"
+                    } else {
+                        "preset-outline"
+                    },
+                );
+            }
+            settings.caption_style.max_lines = 1;
+            assert!(matches!(
+                Renderer::new(&p, settings)
+                    .unwrap()
+                    .render_frame(tick(1, 2), &mut Empty, &h),
+                Err(render::Error::Unsupported(_))
+            ));
+            let long = preset_scene(
+                &[
+                    (
+                        "vi",
+                        "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+                    ),
+                    (
+                        "en",
+                        "today we learn how to create readable bilingual captions for a portrait video",
+                    ),
+                ],
+                boxed,
+            );
+            let mut fit = RenderSettings::from_project(&long);
+            fit.width = width;
+            fit.height = height;
+            fit.caption_languages = vec![
+                captions::LanguageTag::parse("vi").unwrap(),
+                captions::LanguageTag::parse("en").unwrap(),
+            ];
+            let fitted = Renderer::new(&long, fit)
+                .unwrap()
+                .render_frame(tick(1, 2), &mut Empty, &h)
+                .unwrap();
+            assert!(
+                ink(&fitted, &gap).4 > 100,
+                "both mandatory language lines fit without truncation"
+            );
+        }
+    }
+}
+
 #[test]
 fn viewport_caption_visibility_follows_half_open_cue_range() {
     let project = scene(&[("en", "Hello")]);
@@ -253,6 +379,20 @@ fn styled_captions_survive_final_encoded_decode() {
     }
     let cases: &[(&str, &[(&str, &str)])] = &[
         (
+            "caption-outline-burn",
+            &[
+                ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
+                ("en", "Bilingual captions"),
+            ],
+        ),
+        (
+            "caption-box-burn",
+            &[
+                ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
+                ("en", "Bilingual captions"),
+            ],
+        ),
+        (
             "caption-burn",
             &[
                 ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
@@ -274,7 +414,11 @@ fn styled_captions_survive_final_encoded_decode() {
         ),
     ];
     for (name, texts) in cases {
-        let p = scene(texts);
+        let p = if name.contains("outline") || name.contains("box") {
+            preset_scene(texts, name.contains("box"))
+        } else {
+            scene(texts)
+        };
         let h = Hooks::default();
         let mut s = ExportSettings::from_project(&p);
         s.render = settings(&p);
@@ -742,7 +886,7 @@ fn ink(image: &Image, background: &Image) -> (usize, usize, usize, usize, usize)
     let mut count = 0;
     for (n, (a, b)) in image.pixels().iter().zip(background.pixels()).enumerate() {
         if a != b {
-            let (x, y) = (n % 360, n / 360);
+            let (x, y) = (n % image.width() as usize, n / image.width() as usize);
             bounds = (
                 bounds.0.min(x),
                 bounds.1.min(y),

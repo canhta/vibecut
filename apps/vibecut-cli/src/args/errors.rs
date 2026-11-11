@@ -24,7 +24,7 @@ pub enum CliError {
     #[error(transparent)]
     Sounds(#[from] engine::SoundError),
     #[error("{0}")]
-    Job(Arc<EditError>),
+    Job(Arc<dyn Failure + 'static>),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
@@ -74,7 +74,7 @@ impl CliError {
     fn message(&self) -> String {
         match self {
             Self::Engine(error) => edit_message(error),
-            Self::Job(error) => edit_message(error),
+            Self::Job(error) => edit_message(error.as_ref()),
             Self::Shorts(shorts::Error::Engine(error)) => edit_message(error),
             _ => self.to_string(),
         }
@@ -98,8 +98,10 @@ impl CliError {
     fn unavailable(&self) -> Option<&[render::Unavailable]> {
         match self {
             Self::Render(render::Error::Unavailable(list)) => Some(list),
-            Self::Job(error) => match error.as_ref() {
-                EditError::Render(render::Error::Unavailable(list)) => Some(list),
+            Self::Job(error) => match (error.as_ref() as &(dyn std::error::Error + 'static))
+                .downcast_ref::<EditError>()
+            {
+                Some(EditError::Render(render::Error::Unavailable(list))) => Some(list),
                 _ => None,
             },
             _ => None,
@@ -107,12 +109,18 @@ impl CliError {
     }
 }
 
-fn edit_message(error: &EditError) -> String {
-    match error {
-        EditError::Providers(providers::Error::ModelMissing(id)) => {
-            format!("local model {id} is not installed; run `vibecut-cli model download {id}`")
-        }
-        EditError::JobFailure(error) => edit_message(error),
+fn edit_message(error: &(dyn Failure + 'static)) -> String {
+    let cause: &(dyn std::error::Error + 'static) = error;
+    let root = cause.downcast_ref::<EditError>();
+    if let Some(EditError::Providers(providers::Error::ModelMissing(id))) = root {
+        return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
+    }
+    let runtime = match root {
+        Some(EditError::Runtime(error)) => Some(error),
+        _ => cause.downcast_ref::<engine::RuntimeError>(),
+    };
+    match runtime {
+        Some(engine::RuntimeError::Failed(inner)) => edit_message(inner.as_ref()),
         _ => error.to_string(),
     }
 }

@@ -591,7 +591,7 @@ fn deleted_source_fails_and_keeps_no_frames() {
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::JobFailure(_))
+        Err(EditError::Runtime(engine::RuntimeError::Failed(_)))
     ));
     assert_eq!(entries(dir.path()), 0);
     let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);

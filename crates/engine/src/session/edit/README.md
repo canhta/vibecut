@@ -75,6 +75,17 @@ and its shifts publish as one undo step ([`close_vacated_tails`](clips.rs),
 Errors are typed `EditError` categories with safe IDs and static diagnostics; commands perform
 no IO and no retries.
 
+## Caption styles
+
+`captions.apply_style` replaces every authoritative cue's style in one active-scene caption item,
+including cues temporarily hidden by a trim. The command accepts a built-in caption preset or
+a complete `CueStyle`; it saves values in the existing cue-style table, without a preset identity.
+It preserves text, timing, provenance and animation. Explicit apply replaces imported per-cue
+differences; undo restores them. Locks refuse even an equal request, and an empty item refuses.
+If all referenced styles already equal the requested style, the exact table and history stay
+unchanged. A real change leaves one shared style entry. Input types and looks live in
+[`commands.rs`](../commands.rs); text serialization and rendering retain their existing owners.
+
 ## Video transitions
 
 Clip edits revalidate the affected timeline before publishing: transitions follow moved cuts,

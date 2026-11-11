@@ -8,6 +8,61 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick, TimeRange};
 
+/// Built-in looks, applied as values rather than a persisted preset identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptionPreset {
+    Outline,
+    Box,
+}
+impl CaptionPreset {
+    /// Whether the complete saved style equals this look, including unused colours.
+    pub fn matches(self, style: &captions::CueStyle) -> bool {
+        *style == self.style()
+    }
+    fn style(self) -> captions::CueStyle {
+        captions::CueStyle {
+            font_family: "Inter".into(),
+            font_size_ratio: 48.0 / 1080.0,
+            primary_color: [255; 4],
+            outline_color: [0, 0, 0, 255],
+            background_color: if self == Self::Box {
+                [0, 0, 0, 255]
+            } else {
+                [0; 4]
+            },
+            border_style: if self == Self::Box { 3 } else { 1 },
+            alignment: captions::CueAlignment {
+                numpad: 2,
+                horizontal: captions::HorizontalAlignment::Center,
+                vertical: captions::VerticalAlignment::Bottom,
+            },
+            margin_left_ratio: 0.05,
+            margin_right_ratio: 0.05,
+            margin_vertical_ratio: 0.05,
+            bold: true,
+            italic: false,
+            underline: false,
+            strikeout: false,
+        }
+    }
+}
+/// One whole-item replacement using a built-in look or a complete saved cue style.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CaptionStyleApply {
+    Preset { preset: CaptionPreset },
+    Custom { style: captions::CueStyle },
+}
+impl CaptionStyleApply {
+    pub(super) fn into_style(self) -> captions::CueStyle {
+        match self {
+            Self::Preset { preset } => preset.style(),
+            Self::Custom { style } => style,
+        }
+    }
+}
+
 /// Output edge moved by a group trim; every member receives the same tick delta.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -463,6 +518,7 @@ commands! {
     UpdateBookmark, "bookmark.update", "Update bookmark", Edit { bookmark: BookmarkId, #[serde(default)] note: Option<NfcText>, #[serde(default)] color: Option<Color>, #[serde(default)] duration: Option<Tick> } => Timeline, serde_json::json!({"bookmark":1,"note":"Marked","color":[0,157,255,255],"duration":0});
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false}), available = CaptionItem;
     CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
+    ApplyCaptionStyle, "captions.apply_style", "Apply caption style", Edit { item: ItemId, style: CaptionStyleApply } => Timeline, serde_json::json!({"item":4,"style":{"kind":"preset","preset":"outline"}}), available = CaptionItem, grant = Agent;
     ImportCaptions, "captions.import", "Import ASS captions", Edit { asset: SourceAsset, language: captions::LanguageTag, start: Tick, #[serde(default)] track: Option<TrackId>, #[serde(default)] name: Option<NfcText>, styles: Vec<captions::CueStyle>, cues: Vec<captions::AssCue> } => Timeline, serde_json::json!({"asset":{"ephemeral":true,"id":99,"path":"$output/captions.ass","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"ass","duration":254016000000_i64,"streams":[]}},"language":"en","start":0,"track":null,"name":"Captions","styles":[{"font_family":"Arial","font_size_ratio":0.0555,"primary_color":[255,255,255,255],"outline_color":[0,0,0,255],"background_color":[0,0,0,0],"border_style":1,"alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},"margin_left_ratio":0.0,"margin_right_ratio":0.0,"margin_vertical_ratio":0.0,"bold":true,"italic":false,"underline":false,"strikeout":false}],"cues":[{"range":{"start":0,"end":254016000000_i64},"text":"Hello","style":0}]}), grant = Human;
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ChaptersExportSidecars, "chapters.export_sidecars", "Export chapter sidecars", FilePublish { dir: std::path::PathBuf, document: ai::chapters::ChapterDocument } => Words, serde_json::json!({"dir":"$output","document":{"schema_version":1,"language":"en","duration":254016000000_i64,"title":"Opening","description":"A conversation about the work.","chapters":[{"start":0,"segment_id":"4:cue-1","title":"Opening"}]}});

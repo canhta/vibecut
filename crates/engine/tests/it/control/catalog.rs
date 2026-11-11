@@ -325,6 +325,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             Availability::CaptionItem,
             &[
                 "burn_subtitles",
+                "captions.apply_style",
                 "export_subtitles",
                 "fillers.classify",
                 "timeline.filler_candidates",

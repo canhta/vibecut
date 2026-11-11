@@ -714,7 +714,10 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
         &Cancellation::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, engine::EditError::JobFailure(_)));
+    assert!(matches!(
+        error,
+        engine::EditError::Runtime(engine::RuntimeError::Failed(_))
+    ));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     let outcome = subtitles::run(
         &request,

@@ -245,7 +245,6 @@ impl Subtitles {
         }
         self.project = Some(project);
         let previous_options = options.clone();
-        self.text_focus = None;
         let mut controls = Controls {
             locale,
             widgets: Vec::new(),
@@ -472,6 +471,7 @@ impl Subtitles {
                 }
                 ui.separator();
                 if self.item.is_none() {
+                    self.text_focus = None;
                     ui.label(controls.tr(Text::SubEmpty));
                     return;
                 }
@@ -518,6 +518,8 @@ impl Subtitles {
                         self.ui_result(result);
                     }
                 }
+                self.style_ui(ui, session, options, at, &mut controls);
+                self.text_focus = None;
                 ui.add_enabled_ui(!busy, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         if controls.icon_button(
@@ -681,6 +683,83 @@ impl Subtitles {
             });
         c.remember("subtitles.glossary", &r.header_response);
     }
+    fn style_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        options: &mut Options,
+        at: Tick,
+        c: &mut Controls,
+    ) {
+        let Some((item, params)) = self.caption(session) else {
+            return;
+        };
+        if params.cues.cues.is_empty() {
+            return;
+        }
+        let item = item.id;
+        let first = params
+            .cues
+            .cues
+            .first()
+            .and_then(|cue| params.cues.style_of(cue));
+        let label = if params
+            .cues
+            .cues
+            .iter()
+            .any(|cue| params.cues.style_of(cue) != first)
+        {
+            Text::SubStyleMixed
+        } else if first.is_some_and(|style| engine::CaptionPreset::Outline.matches(style)) {
+            Text::SubStyleOutline
+        } else if first.is_some_and(|style| engine::CaptionPreset::Box.matches(style)) {
+            Text::SubStyleBox
+        } else {
+            Text::SubStyleCustom
+        };
+        let snapshot = session.project().clone();
+        let enabled = self.style_available(session);
+        let mut chosen = None;
+        ui.add_enabled_ui(enabled, |ui| {
+            ui.horizontal(|ui| {
+                let caption = ui
+                    .label(egui::RichText::new(c.tr(Text::SubStyle)).size(theme::type_size::BODY));
+                ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                let response = egui::ComboBox::from_id_salt((
+                    "subtitles.style",
+                    snapshot.data().id,
+                    snapshot.data().current_scene_id,
+                    item,
+                    Arc::as_ptr(&snapshot),
+                ))
+                .selected_text(c.tr(label))
+                .show_ui(ui, |ui| {
+                    for (id, text) in [
+                        ("subtitles.style.outline", Text::SubStyleOutline),
+                        ("subtitles.style.box", Text::SubStyleBox),
+                    ] {
+                        let response = ui.selectable_label(label == text, c.tr(text));
+                        c.remember(id, &response);
+                        if response.clicked() {
+                            chosen = Some(id);
+                            ui.close();
+                        }
+                    }
+                })
+                .response
+                .labelled_by(caption.id);
+                c.remember("subtitles.style", &response);
+            });
+        });
+        if let Some(id) = chosen
+            && self.item == Some(item)
+            && Arc::ptr_eq(&snapshot, session.project())
+        {
+            let result = self.activate(session, options, None, at, id);
+            self.ui_result(result);
+        }
+    }
+
     fn cues_ui(
         &mut self,
         ui: &mut egui::Ui,

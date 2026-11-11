@@ -71,7 +71,7 @@ pub struct JobSnapshot {
     pub progress: f32,
     pub state: JobState,
     pub attempts: u8,
-    pub error: Option<Arc<EditError>>,
+    pub error: Option<Arc<dyn Failure + 'static>>,
 }
 /// Reservations bound actual adapter allocations, not just worker counts. The
 /// adapter must include both overlapping batches and all temporary storage here.

@@ -172,7 +172,7 @@ pub struct Inspection {
     pub import_cancelled: bool,
     pub import_failures: Vec<String>,
     pub import_notice: Option<String>,
-    pub import_error: Option<Arc<engine::EditError>>,
+    pub import_error: Option<Arc<dyn engine::Failure + 'static>>,
     pub import_toast: Option<String>,
     pub media_selection: Vec<AssetId>,
     pub assets: Vec<AssetInspection>,
@@ -324,7 +324,7 @@ pub struct Editor {
     pub(super) import_cancelled: bool,
     pub(super) import_failures: Vec<ImportFailure>,
     pub(super) import_notice: Option<String>,
-    pub(super) import_error: Option<Arc<engine::EditError>>,
+    pub(super) import_error: Option<Arc<dyn engine::Failure + 'static>>,
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,

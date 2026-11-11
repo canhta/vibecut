@@ -957,7 +957,12 @@ fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
         let result = pump(&mut runner, id);
         if let Some(expected) = expected {
             assert_eq!(result.state, JobState::Failed);
-            let Some(engine::EditError::Render(error)) = result.error.as_deref() else {
+            let Some(engine::EditError::Render(error)) =
+                result.error.as_deref().and_then(|error| {
+                    (error as &(dyn std::error::Error + 'static))
+                        .downcast_ref::<engine::EditError>()
+                })
+            else {
                 panic!("typed adapter error was lost");
             };
             assert_eq!(std::mem::discriminant(error), expected);

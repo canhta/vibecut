@@ -919,7 +919,10 @@ fn save_refuses_every_source_alias_without_replacing_media() {
         let error = state.job.unwrap().error;
         assert!(
             matches!(
-                error.as_deref(),
+                error
+                    .as_deref()
+                    .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                        .downcast_ref::<engine::EditError>()),
                 Some(engine::EditError::Render(render::Error::Invalid(
                     "output aliases a source"
                         | "output aliases a source by hard link"

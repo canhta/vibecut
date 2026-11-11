@@ -158,7 +158,7 @@ pub struct Inspection {
     pub item: Option<ItemId>,
     pub cue_count: usize,
     pub problem: Option<Text>,
-    pub error: Option<Arc<engine::EditError>>,
+    pub error: Option<Arc<dyn engine::Failure + 'static>>,
     pub completed: Option<usize>,
     pub consent: Option<UploadRequest>,
 }
@@ -200,7 +200,7 @@ pub struct Subtitles {
     pub glossary: Vec<ai::GlossaryTerm>,
     force: bool,
     problem: Option<Text>,
-    error: Option<Arc<engine::EditError>>,
+    error: Option<Arc<dyn engine::Failure + 'static>>,
     missing_model: Option<String>,
     completed: Option<usize>,
     pub(crate) notice: Option<usize>,
@@ -396,7 +396,9 @@ impl Subtitles {
                         let error = Arc::new(error);
                         send.send(Err(error.clone()))
                             .map_err(|_| engine::EditError::Cancelled)?;
-                        Err(engine::EditError::JobFailure(error))
+                        Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
+                            error,
+                        )))
                     }
                 }
             },
@@ -588,35 +590,43 @@ impl Subtitles {
         self.refresh(session);
         Ok(changed)
     }
-    fn fail(&mut self, error: Arc<engine::EditError>) {
+    fn fail(&mut self, error: Arc<dyn engine::Failure + 'static>) {
         self.error = Some(error.clone());
-        self.problem = Some(match error.as_ref() {
-            engine::EditError::JobFailure(error) => {
-                self.fail(error.clone());
-                return;
-            }
-            engine::EditError::Providers(engine::providers::Error::ModelMissing(id)) => {
+        let cause: &(dyn std::error::Error + 'static) = error.as_ref();
+        let root = cause.downcast_ref::<engine::EditError>();
+        let runtime = match root {
+            Some(engine::EditError::Runtime(error)) => Some(error),
+            _ => cause.downcast_ref::<engine::RuntimeError>(),
+        };
+        if let Some(engine::RuntimeError::Failed(inner)) = runtime {
+            self.fail(inner.clone());
+            return;
+        }
+        self.problem = Some(match root {
+            Some(engine::EditError::Providers(engine::providers::Error::ModelMissing(id))) => {
                 self.missing_model = Some((*id).into());
                 Text::ShortsModelMissing
             }
-            engine::EditError::Providers(engine::providers::Error::CredentialMissing(_)) => {
+            Some(engine::EditError::Providers(engine::providers::Error::CredentialMissing(_))) => {
                 Text::ShortsCredentialsMissing
             }
-            engine::EditError::Providers(engine::providers::Error::RunnerMissing) => {
+            Some(engine::EditError::Providers(engine::providers::Error::RunnerMissing)) => {
                 Text::SubRunnerMissing
             }
-            engine::EditError::Providers(engine::providers::Error::AutoLanguageUnsupported) => {
-                Text::SubAutoUnsupported
-            }
-            engine::EditError::Providers(engine::providers::Error::ConsentRequired) => {
+            Some(engine::EditError::Providers(
+                engine::providers::Error::AutoLanguageUnsupported,
+            )) => Text::SubAutoUnsupported,
+            Some(engine::EditError::Providers(engine::providers::Error::ConsentRequired)) => {
                 Text::ShortsConsentRequired
             }
-            engine::EditError::Transcript(engine::transcript::Error::NoSpeech) => Text::SubNoSpeech,
-            engine::EditError::Transcript(engine::transcript::Error::LowConfidence) => {
+            Some(engine::EditError::Transcript(engine::transcript::Error::NoSpeech)) => {
+                Text::SubNoSpeech
+            }
+            Some(engine::EditError::Transcript(engine::transcript::Error::LowConfidence)) => {
                 Text::SubLowConfidence
             }
-            engine::EditError::StaleResult => Text::SubStale,
-            engine::EditError::Cancelled => Text::ShortsJobCancelled,
+            Some(engine::EditError::StaleResult) => Text::SubStale,
+            Some(engine::EditError::Cancelled) => Text::ShortsJobCancelled,
             _ => Text::SubFailed,
         });
     }

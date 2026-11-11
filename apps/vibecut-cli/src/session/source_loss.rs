@@ -93,10 +93,22 @@ fn export_refuses_when_a_source_disappears_mid_job() {
     );
     let error = result.err().expect("source loss must refuse publication");
     assert_eq!(error.exit_code(), 4);
+    let diagnostic = error.value();
+    assert_eq!(diagnostic["code"], "unavailable");
+    assert!(
+        diagnostic["unavailable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["asset"] == 1
+                && entry["item"] == 0
+                && entry["reason"] == "missing"
+                && entry["source_start"].as_i64().unwrap() < entry["source_end"].as_i64().unwrap())
+    );
     assert!(matches!(
         error,
-        CliError::Job(error) if matches!(error.as_ref(),
-            EditError::Render(render::Error::Unavailable(entries))
+        CliError::Job(error) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+            Some(EditError::Render(render::Error::Unavailable(entries)))
             if entries.iter().any(|entry| entry.asset == media::AssetId(1)
                 && entry.item == project::ItemId(0)
                 && entry.reason == render::UnavailableReason::Missing))

@@ -131,7 +131,11 @@ fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EditErro
         let snapshot = runner.snapshot(job).unwrap();
         match snapshot.state {
             JobState::Cancelled => return Err(EditError::Cancelled),
-            JobState::Failed => return Err(EditError::JobFailure(snapshot.error.unwrap())),
+            JobState::Failed => {
+                return Err(EditError::Runtime(engine::RuntimeError::Failed(
+                    snapshot.error.unwrap(),
+                )));
+            }
             JobState::Completed => return decode(runner.output_bytes(job).unwrap()),
             _ => {}
         }
@@ -240,7 +244,7 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     let failing = submit(&mut runner, &session, (0.1, &reads, true)).unwrap();
     assert!(matches!(
         finish(&mut runner, failing),
-        Err(EditError::JobFailure(error)) if matches!(*error, EditError::Render(render::Error::Invalid(_)))
+        Err(EditError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Render(render::Error::Invalid(_))))
     ));
 
     let cancelled = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();

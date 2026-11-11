@@ -107,14 +107,18 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         .submit(spec(ResourceClass::Cpu), |_| panic!("worker failure"))
         .unwrap();
     assert!(matches!(
-        pump(&mut r, id).error.as_deref(),
+        pump(&mut r, id).error.as_deref().and_then(|error| (error
+            as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()),
         Some(EditError::WorkerPanicked)
     ));
     let (id, _) = r
         .submit(spec(ResourceClass::Cpu), |_| Ok(vec![0; 11]))
         .unwrap();
     assert!(matches!(
-        pump(&mut r, id).error.as_deref(),
+        pump(&mut r, id).error.as_deref().and_then(|error| (error
+            as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()),
         Some(EditError::Runtime(B::ArtifactTooLarge))
     ));
     let (id, token) = r
@@ -129,7 +133,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         let (id, _) = r
             .submit(spec(ResourceClass::Network), move |_| {
                 Err(if wrapped {
-                    EditError::JobFailure(Arc::new(EditError::Cancelled))
+                    EditError::Runtime(engine::RuntimeError::Failed(Arc::new(EditError::Cancelled)))
                 } else {
                     EditError::Cancelled
                 })
@@ -147,10 +151,184 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                 1
             )
         );
-        let cause = snapshot.error.as_deref().unwrap();
+        let cause = snapshot
+            .error
+            .as_deref()
+            .and_then(|error| {
+                (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            })
+            .unwrap();
         assert_eq!(cause.code(), engine::control::ErrorCode::Cancelled);
-        assert_eq!(matches!(cause, EditError::JobFailure(_)), wrapped);
+        assert_eq!(matches!(cause, EditError::Runtime(B::Failed(_))), wrapped);
         assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn submitted_raw_and_wrapped_causes_share_lifetime_past_retention_and_runner_drop() {
+    #[derive(Debug)]
+    struct DiskCause(Arc<AtomicUsize>);
+    impl std::fmt::Display for DiskCause {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("owned disk cause")
+        }
+    }
+    impl std::error::Error for DiskCause {}
+    impl Drop for DiskCause {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for depth in 0..=2 {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let drops = Arc::new(AtomicUsize::new(0));
+        let capture_drops = Arc::new(AtomicUsize::new(0));
+        let capture = DiskCause(capture_drops.clone());
+        let owned = drops.clone();
+        let (id, _) = r
+            .submit(spec(ResourceClass::Network), move |_| {
+                let _capture = &capture;
+                let mut error = EditError::Io(std::io::Error::other(DiskCause(owned.clone())));
+                for _ in 0..depth {
+                    error = EditError::Runtime(B::Failed(Arc::new(error)));
+                }
+                Err(error)
+            })
+            .unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert_eq!(capture_drops.load(Ordering::SeqCst), 1);
+        let raw = snapshot.error.unwrap();
+        assert_eq!(raw.code(), engine::control::ErrorCode::Io);
+        assert!(!raw.transient());
+        assert_eq!(
+            raw.to_string(),
+            "background job failed: ".repeat(depth) + "job/cache IO failed"
+        );
+        let error: &(dyn std::error::Error + 'static) = raw.as_ref();
+        assert_eq!(error.source().is_some(), depth == 0);
+        let mut cause = raw.as_ref();
+        for _ in 0..depth {
+            let Some(EditError::Runtime(B::Failed(inner))) =
+                (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            else {
+                panic!("semantic wrapper or typed cause was lost");
+            };
+            cause = inner.as_ref();
+        }
+        let Some(EditError::Io(io)) =
+            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+        else {
+            panic!("original IO was normalized or discarded");
+        };
+        assert_eq!(io.kind(), std::io::ErrorKind::Other);
+        let payload = io.get_ref().unwrap().downcast_ref::<DiskCause>().unwrap();
+        assert!(Arc::ptr_eq(&payload.0, &drops));
+        let listed = r
+            .snapshots()
+            .into_iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .unwrap();
+        let event = r
+            .drain_events()
+            .into_iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .unwrap();
+        assert!(Arc::ptr_eq(&raw, &listed));
+        assert!(Arc::ptr_eq(&raw, &event));
+        let weak = Arc::downgrade(&raw);
+        for _ in 0..3 {
+            let (next, _) = r.submit(spec(ResourceClass::Cpu), |_| Ok(vec![])).unwrap();
+            assert_eq!(pump(&mut r, next).state, JobState::Completed);
+            drop(r.take_output(next).unwrap());
+        }
+        assert!(
+            r.snapshot(id).is_none(),
+            "original terminal entry must be evicted"
+        );
+        drop(r);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        drop(raw);
+        drop(listed);
+        assert!(weak.upgrade().is_some());
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        drop(event);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation() {
+    for mode in 0..3 {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let (started, start) = mpsc::sync_channel(1);
+        let (release, gate) = mpsc::sync_channel(1);
+        let gate = std::sync::Mutex::new(gate);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let attempts = calls.clone();
+        let (id, token) = r
+            .submit(spec(ResourceClass::Network), move |context| {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                if mode == 2 {
+                    context.begin_publication()?;
+                }
+                started.send(()).unwrap();
+                gate.lock().unwrap().recv().unwrap();
+                if mode == 1 {
+                    context.begin_publication()?;
+                }
+                Err(EditError::NetworkTransient)
+            })
+            .unwrap();
+        r.tick().unwrap();
+        start.recv_timeout(Duration::from_secs(10)).unwrap();
+        if mode == 0 {
+            for _ in 0..config().queue {
+                // The active network worker keeps fillers queued until its join,
+                // so an earlier tick cannot free the retry's pending slot.
+                r.submit(spec(ResourceClass::Network), |_| Ok(vec![]))
+                    .unwrap();
+            }
+            assert_eq!(r.counts().0, config().queue);
+        } else {
+            token.cancel();
+            assert_eq!(token.cancelled(), mode == 1);
+        }
+        release.send(()).unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (
+                if mode == 1 {
+                    JobState::Cancelled
+                } else {
+                    JobState::Failed
+                },
+                1
+            )
+        );
+        let error = (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()
+            .unwrap();
+        assert!(matches!(
+            (mode, error),
+            (1, EditError::Cancelled) | (0 | 2, EditError::NetworkTransient)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(r.counts().0 <= config().queue);
+        assert!(r.take_output(id).is_none());
+        drop(r);
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }
@@ -235,7 +413,12 @@ fn ai_transient_failures_retry_with_retry_after_but_auth_fails_once() {
             .unwrap();
         assert_eq!(pump(&mut r, id).attempts, 1);
         assert!(matches!(
-            r.snapshot(id).unwrap().error.as_deref(),
+            r.snapshot(id)
+                .unwrap()
+                .error
+                .as_deref()
+                .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<EditError>()),
             Some(EditError::Ai(ai::Error::Auth))
         ));
 
@@ -882,7 +1065,7 @@ fn reclaim_io_failure_preserves_charge_and_can_retry_after_repair() {
     let failed = pump(&mut r, id);
     assert_eq!((failed.state, failed.attempts), (JobState::Failed, 0));
     assert!(
-        matches!(failed.error.as_deref(), Some(EditError::Runtime(B::Io(error))) if error.kind() == kind)
+        matches!(failed.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()), Some(EditError::Runtime(B::Io(error))) if error.kind() == kind)
     );
     assert!(r.take_output(id).is_none());
     let state = session.snapshot_and_subscribe(&r).unwrap();
@@ -1041,28 +1224,49 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
         (
-            || E::JobFailure(Arc::new(E::JobFailure(Arc::new(E::Limit)))),
+            || {
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
+                    engine::RuntimeError::Failed(Arc::new(E::Limit)),
+                ))))
+            },
             C::Limit,
             false,
         ),
         (
-            || E::JobFailure(Arc::new(E::StaleResult)),
+            || E::Runtime(engine::RuntimeError::Failed(Arc::new(E::StaleResult))),
             C::StaleResult,
             false,
         ),
         (
-            || E::JobFailure(Arc::new(E::Io(std::io::Error::other("disk")))),
+            || {
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Io(
+                    std::io::Error::other("disk"),
+                ))))
+            },
             C::Io,
             false,
         ),
         (
-            || E::JobFailure(Arc::new(E::Render(render::Error::Unavailable(Vec::new())))),
+            || {
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Render(
+                    render::Error::Unavailable(Vec::new()),
+                ))))
+            },
             C::Unavailable,
             false,
         ),
         (
-            || E::JobFailure(Arc::new(E::NetworkTransient)),
+            || E::Runtime(engine::RuntimeError::Failed(Arc::new(E::NetworkTransient))),
             C::Job,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Ai(ai::Error::RateLimit {
+                    retry_after_seconds: Some(3_600),
+                }))))
+            },
+            C::Ai,
             false,
         ),
         (

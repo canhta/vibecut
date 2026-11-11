@@ -11,7 +11,7 @@ Every Session starts with an OS-random epoch. `revision()` is an opaque string; 
 Before publishing an admitted JSON/control edit, Session validates the candidate project's serialized integers and created IDs, including values produced by allocation or tick/keyframe arithmetic. Undo/redo validate their destination snapshot before moving history. An invalid candidate returns InvalidParams without consuming IDs, advancing revision or emitting a project change. Typed in-process editing keeps the owner types' full integer domain.
 
 `Failure` states code and retry eligibility at the error's declaration owner. Engine enums
-classify exhaustively; engine wrapping variants classify foreign errors. `JobFailure` delegates
+classify exhaustively; engine wrapping variants classify foreign errors. Runtime `Failed` delegates
 its code recursively, as does recovery's erased persistence cause. Delegating a code does not
 make a wrapper transient: only direct network and selected AI failures qualify, subject to
 runtime's existing retry/publication gates. Refined failure classes change envelopes and the

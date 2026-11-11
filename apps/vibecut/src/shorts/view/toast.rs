@@ -111,7 +111,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
                             }
                         });
                         if let Some(error) = &snapshot.error {
-                            ui.label(state.tr(failure_text(error)));
+                            ui.label(state.tr(failure_text(error.as_ref())));
                         }
                         if !terminal(snapshot.state) {
                             crate::services::progress::job_progress(

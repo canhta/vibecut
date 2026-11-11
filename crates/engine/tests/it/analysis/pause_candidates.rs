@@ -314,7 +314,7 @@ fn candidate_job_cancels_and_reports_typed_failures() {
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EditError::JobFailure(inner)) if matches!(inner.as_ref(), EditError::Media(_))
+        Err(EditError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Media(_)))
     ));
     runner.shutdown();
 }

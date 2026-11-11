@@ -167,6 +167,9 @@ pub(crate) fn apply(
         }
     };
     match command {
+        EditCommand::ApplyCaptionStyle { item, style } => {
+            data = text::execute_apply_caption_style(data, item, style, sources)?;
+        }
         EditCommand::AddTransition {
             track,
             from,

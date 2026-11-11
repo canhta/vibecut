@@ -143,7 +143,9 @@ pub fn export(
                     }
                     JobState::Failed => {
                         return Err(match snapshot.error {
-                            Some(error) => EditError::JobFailure(error).into(),
+                            Some(error) => {
+                                EditError::Runtime(engine::RuntimeError::Failed(error)).into()
+                            }
                             None => {
                                 EditError::Invalid("clip job failed without diagnostics").into()
                             }

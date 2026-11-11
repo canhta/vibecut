@@ -72,7 +72,7 @@ pub enum Error {
     #[error("caption data failed")]
     Captions(#[from] captions::Error),
     #[error("preview worker failed")]
-    Worker(#[source] std::sync::Arc<engine::EditError>),
+    Worker(#[source] std::sync::Arc<dyn engine::Failure + 'static>),
     #[error("project operation failed")]
     Project(#[from] project::Error),
     #[error("render operation failed")]

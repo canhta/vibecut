@@ -18,6 +18,8 @@
 | `text.insert` — Add text | Edit | — | — | text insertion workflow |
 | `subtitles.cue` — Choose a caption | Edit | — | — | subtitle cue selection |
 | `subtitles.cancel` — Cancel caption job | Edit | — | — | subtitle editor workflow |
+| `subtitles.style.outline` — Use outlined captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.style.box` — Use boxed captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.consent.approve` — Allow caption upload | Edit | — | — | subtitle editor workflow |
 | `subtitles.consent.deny` — Keep captions on this computer | Edit | — | — | subtitle editor workflow |
 | `subtitles.generate` — Create captions | Edit | — | — | subtitle editor workflow |
