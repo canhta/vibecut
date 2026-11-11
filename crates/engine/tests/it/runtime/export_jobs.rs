@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::*;
-use engine::{ByteBudget, Error as EngineError};
+use engine::{ByteBudget, RuntimeError};
 use std::{
     sync::{
         Arc,
@@ -167,7 +167,7 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
                 second.clone(),
                 || panic!("stale source opened"),
             ),
-            Err(EngineError::Runtime(engine::RuntimeError::LoudnessStale))
+            Err(RuntimeError::LoudnessStale)
         ));
         assert!(runner.snapshots().is_empty());
         assert!(runner.drain_events().is_empty());
@@ -194,7 +194,7 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
             vec![first.clone(), second.clone()],
             || panic!("partial scene admitted"),
         ),
-        Err(EngineError::Runtime(engine::RuntimeError::LoudnessStale))
+        Err(RuntimeError::LoudnessStale)
     ));
     assert!(runner.snapshots().is_empty());
     assert!(runner.drain_events().is_empty());
@@ -475,10 +475,11 @@ fn oversized_export_fails_with_requested_bytes_before_frame_allocation() {
     .unwrap();
     let s = complete(&mut runner, id);
     assert!(matches!(
-        s.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
-        ),
-        Some(EngineError::Render(render::Error::Budget {
+        s.error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                .downcast_ref::<RuntimeError>()),
+        Some(RuntimeError::Render(render::Error::Budget {
             requested: 4362076160,
             ..
         }))
@@ -711,10 +712,12 @@ fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly()
         .unwrap();
     let result = complete(&mut r, id);
     assert!(matches!(
-        result.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
-        ),
-        Some(EngineError::Render(render::Error::Invalid(
+        result
+            .error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                .downcast_ref::<RuntimeError>()),
+        Some(RuntimeError::Render(render::Error::Invalid(
             "output aliases a source"
         )))
     ));
@@ -787,7 +790,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         .unwrap();
     let result = complete(&mut r, id);
     assert!(
-        matches!(result.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()), Some(EngineError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
+        matches!(result.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<RuntimeError>()), Some(RuntimeError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -936,11 +939,13 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     let result = complete(&mut runner, id);
     assert_eq!(result.state, JobState::Failed);
     assert!(matches!(
-        result.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
-        ),
-        Some(EngineError::Runtime(engine::RuntimeError::Edit(
-            engine::EditError::Project(project::Error::Io(_))
+        result
+            .error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                .downcast_ref::<RuntimeError>()),
+        Some(RuntimeError::Edit(engine::EditError::Project(
+            project::Error::Io(_)
         )))
     ));
     let raw = result.error.as_ref().unwrap();
@@ -948,6 +953,21 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     assert!(!raw.transient());
     assert!(!raw.job_policy().terminal_cancelled);
     assert_eq!(raw.to_string(), "project candidate rejected");
+    assert_eq!(raw.job_policy().retry_after_seconds, None);
+    let Some(RuntimeError::Edit(engine::EditError::Project(project::Error::Io(io)))) =
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<RuntimeError>()
+    else {
+        panic!("publication IO cause lost")
+    };
+    assert!(std::ptr::eq(
+        io,
+        raw.source()
+            .unwrap()
+            .source()
+            .unwrap()
+            .downcast_ref::<std::io::Error>()
+            .unwrap()
+    ));
     assert!(Arc::ptr_eq(
         raw,
         runner

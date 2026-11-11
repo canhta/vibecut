@@ -91,6 +91,11 @@ impl From<project::Error> for Error {
         Self::Edit(error.into())
     }
 }
+impl From<captions::Error> for Error {
+    fn from(error: captions::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
 pub type Result<T> = std::result::Result<T, Error>;
 
 mod budget;
