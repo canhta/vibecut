@@ -4,6 +4,8 @@ use crate::session::wire::{ErrorCode, Failure};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("transient network failure")]
+    NetworkTransient,
     #[error("corrupt cache entry skipped")]
     CacheCorrupt,
     #[error("job queue is full")]
@@ -31,12 +33,15 @@ impl Failure for Error {
             Self::QueueFull => ErrorCode::QueueFull,
             Self::WorkerPanicked => ErrorCode::WorkerFailure,
             Self::BudgetFull | Self::ArtifactTooLarge => ErrorCode::Budget,
-            Self::CacheCorrupt | Self::Poisoned => ErrorCode::Job,
+            Self::NetworkTransient | Self::CacheCorrupt | Self::Poisoned => ErrorCode::Job,
             Self::Io(_) => ErrorCode::Io,
             Self::Limit => ErrorCode::Limit,
             Self::Invalid(_) => ErrorCode::Refused,
             Self::Failed(cause) => cause.code(),
         }
+    }
+    fn transient(&self) -> bool {
+        matches!(self, Self::NetworkTransient)
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;

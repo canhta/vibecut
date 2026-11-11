@@ -417,6 +417,17 @@ fn interrupted_download_resumes_with_range_and_strong_etag() {
     wait_terminal(&mut bench);
     let inspection = inspect(&bench);
     assert_eq!(inspection.problem, Some(ModelProblem::Network));
+    let snapshot = inspection.job.as_ref().unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_deref().unwrap();
+    assert!(raw.transient());
+    assert!(matches!(
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>(),
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::NetworkTransient
+        ))
+    ));
+    assert!(inspection.installed.is_empty());
     assert!(
         inspection.resume.contains(&"fixture-resume".into()),
         "an interrupted transfer offers Resume"

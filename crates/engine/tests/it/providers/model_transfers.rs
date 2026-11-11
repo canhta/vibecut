@@ -1151,10 +1151,23 @@ fn a_sealed_publication_is_never_retried_even_for_a_transient_result() {
                 input: ArtifactCache::model_key(&model).unwrap(),
                 bytes: JobBytes::default(),
             },
-            |ctx| ctx.commit_publication(|| Err(EditError::NetworkTransient)),
+            |ctx| {
+                ctx.commit_publication(|| {
+                    Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                })
+            },
         )
         .unwrap();
     let result = terminal(&mut runner, id, &clock);
     assert_eq!(result.state, JobState::Failed);
     assert_eq!(result.attempts, 1);
+    let raw = result.error.as_deref().unwrap();
+    assert!(raw.transient());
+    assert_eq!(raw.code(), engine::control::ErrorCode::Job);
+    assert!(raw.source().is_none());
+    assert!(matches!(
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+        Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+    ));
+    assert!(runner.take_output(id).is_none());
 }

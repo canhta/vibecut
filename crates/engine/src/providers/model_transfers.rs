@@ -301,7 +301,7 @@ fn download(
             }
             let mut reply = response(http, &expected.url, &headers, ctx)?;
             if matches!(reply.status, 408 | 429 | 500..=599) {
-                return Err(EditError::NetworkTransient);
+                return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
             }
             if header(&reply, "content-encoding")?
                 .is_some_and(|v| !v.eq_ignore_ascii_case("identity"))
@@ -334,7 +334,7 @@ fn download(
                         edit.checkpoint()?;
                         file.set_len(0).map_err(storage)?;
                         edit.report_length(index, 0)?;
-                        return Err(EditError::NetworkTransient);
+                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                 }
                 _ => return Err(EditError::ModelResponse),
@@ -379,13 +379,13 @@ fn download(
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(_) => {
                         durable(&mut edit, &file, index, offset)?;
-                        return Err(EditError::NetworkTransient);
+                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                 };
                 if read == 0 {
                     durable(&mut edit, &file, index, offset)?;
                     if offset != expected.size {
-                        return Err(EditError::NetworkTransient);
+                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                     break;
                 }

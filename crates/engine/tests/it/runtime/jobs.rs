@@ -380,7 +380,7 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
                 if mode == 1 {
                     context.begin_publication()?;
                 }
-                Err(EditError::NetworkTransient)
+                Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
             })
             .unwrap();
         r.tick().unwrap();
@@ -415,7 +415,11 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
             .unwrap();
         assert!(matches!(
             (mode, error),
-            (1, EditError::Cancelled) | (0 | 2, EditError::NetworkTransient)
+            (1, EditError::Cancelled)
+                | (
+                    0 | 2,
+                    EditError::Runtime(engine::RuntimeError::NetworkTransient)
+                )
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(r.counts().0 <= config().queue);
@@ -433,7 +437,7 @@ fn retries_use_real_submission_and_deterministic_backoff_local_never_retries() {
     let (id, _) = r
         .submit(spec(ResourceClass::Network), move |_| {
             if attempts.fetch_add(1, Ordering::SeqCst) < 2 {
-                Err(EditError::NetworkTransient)
+                Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
             } else {
                 Ok(vec![9])
             }
@@ -453,13 +457,30 @@ fn retries_use_real_submission_and_deterministic_backoff_local_never_retries() {
     assert_eq!(r.take_output(id).unwrap().bytes(), [9]);
     let (id, _) = r
         .submit(spec(ResourceClass::Cpu), |_| {
-            Err(EditError::NetworkTransient)
+            Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
         })
         .unwrap();
-    assert_eq!(pump(&mut r, id).attempts, 1);
+    let snapshot = pump(&mut r, id);
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_ref().unwrap();
+    assert!(raw.transient());
+    assert_eq!(raw.code(), engine::control::ErrorCode::Job);
+    assert_eq!(raw.to_string(), "transient network failure");
+    assert!(raw.source().is_none());
+    assert!(matches!(
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+        Some(EditError::Runtime(B::NetworkTransient))
+    ));
+    let event = r
+        .drain_events()
+        .into_iter()
+        .find(|event| event.id == id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    assert!(r.take_output(id).is_none());
     let (id, _) = r
         .submit(spec(ResourceClass::Network), |_| {
-            Err(EditError::NetworkTransient)
+            Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
         })
         .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Backoff);
@@ -1465,6 +1486,20 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (
+            || E::Runtime(B::Failed(Arc::new(B::NetworkTransient))),
+            C::Job,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    B::NetworkTransient,
+                ))))))
+            },
+            C::Job,
+            false,
+        ),
         (|| E::Runtime(B::CacheCorrupt), C::Job, false),
         (
             || {
@@ -1533,7 +1568,11 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             false,
         ),
         (
-            || E::Runtime(engine::RuntimeError::Failed(Arc::new(E::NetworkTransient))),
+            || {
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
+                    engine::RuntimeError::NetworkTransient,
+                ))))
+            },
             C::Job,
             false,
         ),
@@ -1557,7 +1596,11 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         ),
         (|| E::Io(std::io::Error::other("io")), C::Io, false),
         (|| E::Ai(ai::Error::Incomplete), C::Ai, false),
-        (|| E::NetworkTransient, C::Job, true),
+        (
+            || E::Runtime(engine::RuntimeError::NetworkTransient),
+            C::Job,
+            true,
+        ),
     ];
     for &(make, code, seal) in cases {
         let budget = ByteBudget::new(1000).unwrap();

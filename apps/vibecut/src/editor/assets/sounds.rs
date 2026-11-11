@@ -89,7 +89,7 @@ impl SoundsProblem {
     pub fn from_edit(error: &EditError) -> Self {
         match error {
             EditError::Sounds(error) => Self::from_error(error),
-            EditError::NetworkTransient => Self::Network,
+            EditError::Runtime(engine::RuntimeError::NetworkTransient) => Self::Network,
             EditError::CacheBusy => Self::CacheBusy,
             _ => Self::CacheFailed,
         }

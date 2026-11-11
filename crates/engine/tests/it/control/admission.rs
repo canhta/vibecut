@@ -834,7 +834,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Refused,
             false
         ),
-        row!(E::NetworkTransient, Job, true),
+        row!(
+            E::Runtime(engine::RuntimeError::NetworkTransient),
+            Job,
+            true
+        ),
         row!(E::StaleResult, StaleResult, false),
         row!(E::LoudnessStale, Refused, false),
         row!(
@@ -967,6 +971,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Ai(ai::Error::Incomplete), Ai, false),
     ];
     for (inner, code) in [
+        (E::Runtime(B::NetworkTransient), C::Job),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
         (E::Runtime(B::WorkerPanicked), C::WorkerFailure),
@@ -997,13 +1002,18 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::Poisoned), C::Job),
         (E::Cancelled, C::Cancelled),
         (E::StaleResult, C::StaleResult),
-        (E::NetworkTransient, C::Job),
+        (E::Runtime(engine::RuntimeError::NetworkTransient), C::Job),
     ] {
         let failure = R::PersistenceFailed(Arc::new(cause));
         assert_eq!(failure.code(), code);
         assert!(!failure.transient());
         cases.push((E::Recovery(failure), code, false));
     }
+    cases.push((
+        E::Runtime(B::Failed(Arc::new(B::NetworkTransient))),
+        C::Job,
+        false,
+    ));
     let message = E::Providers(P::ModelMissing("test-model")).to_string();
     let cache = B::CacheCorrupt;
     assert_eq!(cache.code(), C::Job);

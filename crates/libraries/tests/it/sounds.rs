@@ -974,6 +974,61 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
             .exists()
     );
 
+    // Exhaust a real transport failure, then re-admit using the same download owner.
+    struct Interrupted(AtomicUsize);
+    impl DownloadTransport for Interrupted {
+        fn get(
+            &self,
+            url: &str,
+            headers: &[(String, String)],
+        ) -> Result<HttpStreamResponse, ai::Error> {
+            if self.0.fetch_add(1, Ordering::SeqCst) < 2 {
+                return Err(ai::Error::Network);
+            }
+            TrackedDownload {
+                bytes: wav(),
+                status: 200,
+                headers: Vec::new(),
+            }
+            .get(url, headers)
+        }
+    }
+    let failing = Arc::new(Interrupted(AtomicUsize::new(0)));
+    let downloads = SoundDownloads::new(library.clone(), failing.clone());
+    let source = "https://cdn.example/retry.mp3";
+    let (id, _) = downloads.submit(&mut runner, source).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        runner.tick().unwrap();
+        if runner.snapshot(id).unwrap().state == JobState::Failed {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    let snapshot = runner.snapshot(id).unwrap();
+    assert_eq!(snapshot.attempts, 2);
+    let raw = snapshot.error.as_deref().unwrap();
+    assert!(raw.transient());
+    assert!(matches!(
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+        Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+    ));
+    assert!(runner.take_output(id).is_none());
+    assert!(library.cached(source).unwrap().is_none());
+    assert_eq!(failing.0.load(Ordering::SeqCst), 2);
+    let (id, _) = downloads.submit(&mut runner, source).unwrap();
+    loop {
+        runner.tick().unwrap();
+        if runner.snapshot(id).unwrap().state == JobState::Completed {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(failing.0.load(Ordering::SeqCst), 3);
+    assert!(library.cached(source).unwrap().is_some());
+
     // Cancel decided at the publication fence: ahead of it nothing is published; once the
     // fence sealed, the late cancel is a no-op and the verified file is renamed into place.
     for (before_fence, url) in [

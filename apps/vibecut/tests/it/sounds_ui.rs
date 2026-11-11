@@ -755,6 +755,86 @@ fn no_audio_device_is_a_typed_preview_state() {
 }
 
 #[test]
+fn failed_cache_download_offers_network_retry_without_editing_the_project() {
+    struct Recovering(AtomicUsize);
+    impl DownloadTransport for Recovering {
+        fn get(
+            &self,
+            url: &str,
+            headers: &[(String, String)],
+        ) -> Result<HttpStreamResponse, ai::Error> {
+            Download {
+                gate: None,
+                status: if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                    503
+                } else {
+                    200
+                },
+            }
+            .get(url, headers)
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let library = library(root.path());
+    let sound = result(6, "Creative Commons 0");
+    library.save(&sound).unwrap();
+    let http = Arc::new(Recovering(AtomicUsize::new(0)));
+    let mut editor = editor(
+        library.clone(),
+        None,
+        http.clone(),
+        Sink::available(),
+        root.path().join("media"),
+    );
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "sounds.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("sounds.search")))
+        .type_text("sound");
+    harness.key_press(egui::Key::Enter);
+    wait(&mut harness, "local result", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| sounds.results.len() == 1)
+    });
+    let before = project_bytes(harness.state());
+    click(&mut harness, "sounds.add.6");
+    wait(&mut harness, "network failure", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| sounds.cache_problem == Some(SoundsProblem::Network))
+    });
+    assert_eq!(http.0.load(Ordering::SeqCst), 1);
+    assert!(library.cached(&sound.audio_url).unwrap().is_none());
+    assert_eq!(project_bytes(harness.state()), before);
+    assert_eq!(harness.state().session.history_len(), (0, 0));
+    assert!(has_widget(&harness, "sounds.add.6"));
+    click(&mut harness, "sounds.add.6");
+    wait(&mut harness, "retry added sound", |editor| {
+        editor.session.history_len() == (1, 0)
+    });
+    assert_eq!(http.0.load(Ordering::SeqCst), 2);
+    assert!(library.cached(&sound.audio_url).unwrap().is_some());
+    assert_ne!(project_bytes(harness.state()), before);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .sounds
+            .unwrap()
+            .cache_problem
+            .is_none()
+    );
+}
+
+#[test]
 fn add_waits_for_the_cache_job_and_cancel_leaves_the_project_untouched() {
     let root = tempfile::tempdir().unwrap();
     let library = library(root.path());
