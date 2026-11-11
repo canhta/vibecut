@@ -435,7 +435,7 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
                 force: false
             }
         ),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
 }
 
@@ -459,7 +459,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     stale.segments.first_mut().unwrap().text = "old source".into();
     assert!(matches!(
         try_run(&s, stale, 0, 1, 1_000_000),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     let (run, transport) = run(&s, selected(&s, false), 0, 1, 1_000_000);
     s.apply(Command::AddTrack {
@@ -470,7 +470,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     .unwrap();
     assert!(matches!(
         run.submit(&mut runner(), &s),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     assert_eq!(transport.calls.load(Ordering::Relaxed), 0);
 }

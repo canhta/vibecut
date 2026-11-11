@@ -407,7 +407,7 @@ impl Session {
                     return Err(EditError::Invalid("job is not a transcription"));
                 }
                 if snapshot.state != JobState::Completed {
-                    return Err(EditError::StaleResult);
+                    return Err(EditError::Session(crate::SessionError::StaleResult));
                 }
                 runner.validate_output_target(job, self)?;
                 let result = crate::subtitles::decode_captions(
@@ -428,7 +428,7 @@ impl Session {
                         .duration
                         .is_none_or(|d| result.range.end() > d)
                 {
-                    return Err(EditError::StaleResult);
+                    return Err(EditError::Session(crate::SessionError::StaleResult));
                 }
                 crate::subtitles::validate_source(asset)?;
                 let insert =

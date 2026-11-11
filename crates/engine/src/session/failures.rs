@@ -2,6 +2,20 @@
 
 use super::wire::{ErrorCode, Failure};
 
+/// Refusals owned by Session identity and revision custody.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("job result is stale")]
+    StaleResult,
+}
+impl Failure for SessionError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::StaleResult => ErrorCode::StaleResult,
+        }
+    }
+}
+
 /// Font catalog failures that are not a load state.
 #[derive(Debug, thiserror::Error)]
 pub enum FontError {

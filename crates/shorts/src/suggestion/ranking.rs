@@ -244,7 +244,10 @@ pub fn suggest(
     let suggested: ai::clips::ClipSuggestions = serde_json::from_slice(output.bytes())
         .map_err(|_| EditError::Invalid("clip result serialization"))?;
     // Account for every attempted invocation, including transient failures.
-    let attempts = runner.snapshot(id).ok_or(EditError::StaleResult)?.attempts;
+    let attempts = runner
+        .snapshot(id)
+        .ok_or(EditError::Session(engine::SessionError::StaleResult))?
+        .attempts;
     let estimate = spent.clone();
     for _ in 1..attempts {
         spent.add(&match &estimate {

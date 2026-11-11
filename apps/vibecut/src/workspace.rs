@@ -1662,7 +1662,7 @@ fn run(
                     }
                     autosave.flush()?;
                     if autosave.saving() || autosave.is_dirty() {
-                        return Err(EditError::StaleResult.into());
+                        return Err(EditError::Session(engine::SessionError::StaleResult).into());
                     }
                 }
                 if leave || close {

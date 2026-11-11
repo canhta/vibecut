@@ -134,13 +134,17 @@ pub fn export(
             }
             let mut index = 0;
             while index < active.len() {
-                let slot = *active.get(index).ok_or(EditError::StaleResult)?;
-                let snapshot = batch.snapshot(runner, slot).ok_or(EditError::StaleResult)?;
+                let slot = *active
+                    .get(index)
+                    .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
+                let snapshot = batch
+                    .snapshot(runner, slot)
+                    .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
                 match snapshot.state {
                     JobState::Completed => {
                         let _ = runner
                             .take_output(snapshot.id)
-                            .ok_or(EditError::StaleResult)?;
+                            .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
                         active.swap_remove(index);
                     }
                     JobState::Failed => {

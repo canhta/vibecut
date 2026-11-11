@@ -114,7 +114,9 @@ impl Autosave {
         match self.pump() {
             Ok(()) => Ok(()),
             Err(PumpFailure::Admission(error)) => Err(error),
-            Err(PumpFailure::Persistence(EditError::StaleResult)) => Err(EditError::StaleResult),
+            Err(PumpFailure::Persistence(EditError::Session(crate::SessionError::StaleResult))) => {
+                Err(EditError::Session(crate::SessionError::StaleResult))
+            }
             Err(PumpFailure::Persistence(error)) => {
                 let error: Arc<dyn crate::Failure> = Arc::new(error);
                 self.failure = Some(error.clone());
@@ -171,12 +173,12 @@ impl Autosave {
                         if receipt.path() != work.writer.path()
                             || receipt.project_id() != f.snapshot.data().id
                         {
-                            return Err(EditError::StaleResult.into());
+                            return Err(EditError::Session(crate::SessionError::StaleResult).into());
                         }
                         // An in-place save advances the held baseline even if the
                         // edited revision is now stale. Save-as retains its source
                         // lease until this revision can adopt the new destination.
-                        let current = self.session.matches_target(&f.target)
+                        let current = self.session.validate_job_target(&f.target).is_ok()
                             && !self.session.transaction_active();
                         if save.in_place || current {
                             self.writer = Some(work.writer);
@@ -203,7 +205,7 @@ impl Autosave {
                             // aliases); only a fresh save may reestablish cleanliness.
                             self.saved = None;
                             self.saved_receipt = None;
-                            return Err(EditError::StaleResult.into());
+                            return Err(EditError::Session(crate::SessionError::StaleResult).into());
                         }
                     }
                 }

@@ -228,7 +228,7 @@ fn stale_save_completion_cannot_acknowledge_new_edits() {
     a.save_as(dir.path().join("saved.vibecut")).unwrap();
     edit(&mut a); // Deterministic: completion cannot be acknowledged before tick.
     until(|| match a.tick() {
-        Err(EditError::StaleResult) => true,
+        Err(EditError::Session(engine::SessionError::StaleResult)) => true,
         Ok(()) => false,
         Err(e) => panic!("unexpected {e}"),
     });
@@ -450,7 +450,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
             a.session_mut().undo().unwrap();
         }
         until(|| match a.tick() {
-            Err(EditError::StaleResult) => true,
+            Err(EditError::Session(engine::SessionError::StaleResult)) => true,
             Ok(()) => false,
             Err(e) => panic!("unexpected {e}"),
         });
@@ -672,7 +672,7 @@ fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
     busy(&destination);
     edit(&mut a);
     until(|| match a.tick() {
-        Err(EditError::StaleResult) => true,
+        Err(EditError::Session(engine::SessionError::StaleResult)) => true,
         Err(error) => panic!("unexpected {error}"),
         Ok(()) => false,
     });

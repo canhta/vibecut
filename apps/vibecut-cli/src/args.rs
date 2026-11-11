@@ -83,7 +83,7 @@ mod exit_codes {
             row!(E::Runtime(engine::RuntimeError::Cancelled), "job", 7),
             row!(E::Runtime(engine::RuntimeError::WorkerPanicked), "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
-            row!(E::StaleResult, "job", 7),
+            row!(E::Session(engine::SessionError::StaleResult), "job", 7),
             row!(
                 E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
                 "usage",
@@ -210,6 +210,18 @@ mod exit_codes {
                 assert_eq!(error.value()["message"], "job cancelled");
             }
         }
+        for depth in 0..=2 {
+            let mut cause: Arc<dyn engine::Failure> = Arc::new(engine::SessionError::StaleResult);
+            for _ in 0..depth {
+                cause = Arc::new(E::Runtime(engine::RuntimeError::Failed(cause)));
+            }
+            let error = CliError::Job(cause);
+            assert_eq!(error.code(), ("job", 7));
+            assert_eq!(error.value()["message"], "job result is stale");
+        }
+        let stale = CliError::Engine(E::Session(engine::SessionError::StaleResult));
+        assert_eq!(stale.code(), ("job", 7));
+        assert_eq!(stale.value()["message"], "job result is stale");
         let refusals: [(fn() -> engine::RuntimeError, &str); 6] = [
             (|| engine::RuntimeError::CacheBusy, "cache is in use"),
             (
