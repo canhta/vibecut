@@ -78,6 +78,13 @@ struct Layout {
 impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
+        if spec.field == "opacity"
+            && read::channel_has_keys(self.cx.session.project(), item, spec.field)
+            && self.animated_time(item, spec.field).is_none()
+        {
+            self.fail(Error::Invalid("opacity playhead outside item"));
+            return;
+        }
         let scale_x =
             project::BuiltinPath::parse(spec.field) == Some(project::BuiltinPath::TransformScaleX);
         if let Some(time) = self.animated_time(item, spec.field) {
@@ -129,10 +136,20 @@ impl Panel<'_, '_> {
         }
         let (start, end) = read::range_of(self.cx.session.project(), item)?;
         let at = self.cx.playhead;
-        (start <= at && at <= end).then(|| at.saturating_sub(start))
+        (start <= at && (at < end || (field != "opacity" && at == end)))
+            .then(|| at.saturating_sub(start))
     }
 
     fn item_value(&self, item: ItemId, field: &str) -> Option<f64> {
+        if field == "opacity" {
+            let (start, _) = read::range_of(self.cx.session.project(), item)?;
+            return read::item_value_at(
+                self.cx.session.project(),
+                item,
+                field,
+                self.cx.playhead.saturating_sub(start),
+            );
+        }
         read::item_value(self.cx.session.project(), item, field)
     }
 
@@ -291,6 +308,10 @@ impl Panel<'_, '_> {
 
     pub(super) fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {
         self.start_scrub_target(item, ScrubTarget::Item(spec.field), value);
+        if spec.field == "opacity" {
+            self.state.opacity_edit =
+                Some((self.cx.session.project().clone(), item, self.cx.playhead));
+        }
     }
 
     pub(super) fn start_effect_scrub(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
@@ -405,6 +426,10 @@ impl Panel<'_, '_> {
         self.remember(id.clone(), &response);
         if response.has_focus() {
             self.state.focus = Some(spec.field.to_owned());
+            if spec.field == "opacity" {
+                self.state.opacity_edit =
+                    Some((self.cx.session.project().clone(), item, self.cx.playhead));
+            }
         }
         if response.changed() {
             self.state.drafts.insert(spec.field.to_owned(), next);

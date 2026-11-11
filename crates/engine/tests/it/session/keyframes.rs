@@ -90,6 +90,357 @@ fn near(a: f64, b: f64) {
     assert!((a - b).abs() < 1e-8, "{a} != {b}");
 }
 
+fn title(base: Option<ParamValue>, length: i64) -> Session {
+    let seed = crate::support::control::with_text(&crate::support::control::seed());
+    let mut data = seed.project().data().clone();
+    data.canvas.fps = FrameRate::FPS_29_97;
+    let target = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == ItemId(3))
+        .unwrap();
+    target.start = frame(100);
+    target.source_range =
+        SourceRange::new(frame(50), frame(50).checked_add(Tick(length)).unwrap()).unwrap();
+    if let Some(base) = base {
+        target
+            .animations
+            .set(path(), Param::new(base).unwrap())
+            .unwrap();
+    }
+    Session::new(Project::new(data).unwrap(), 100).unwrap()
+}
+
+#[test]
+fn text_animation_expands_literal_keys_preserves_base_and_exact_noop_redo() {
+    for (length, d, exit) in [
+        (254_016_000_000, 76_204_800_000, 177_811_200_000),
+        (16_951_334_400, 8_475_667_200, 8_475_667_200),
+        (16_951_334_401, 8_475_667_200, 8_475_667_201),
+    ] {
+        for base in [None, Some(0.0), Some(0.6)] {
+            let b = base.unwrap_or(1.0);
+            for (mode, expected) in [
+                (engine::TextAnimationPreset::FadeIn, vec![(0, 0.0), (d, b)]),
+                (
+                    engine::TextAnimationPreset::FadeOut,
+                    vec![(exit, b), (length, 0.0)],
+                ),
+                (
+                    engine::TextAnimationPreset::FadeInOut,
+                    if d == exit {
+                        vec![(0, 0.0), (d, b), (length, 0.0)]
+                    } else {
+                        vec![(0, 0.0), (d, b), (exit, b), (length, 0.0)]
+                    },
+                ),
+            ] {
+                let mut s = title(base.map(ParamValue::Scalar), length);
+                let before = s.project().clone();
+                let content = item(&s, ItemId(3)).content.clone();
+                let command = || Command::ApplyTextAnimation {
+                    item: ItemId(3),
+                    preset: mode,
+                };
+                assert!(s.apply(command()).unwrap().changed);
+                let channel = item(&s, ItemId(3))
+                    .animations
+                    .get(&path())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap();
+                assert_eq!(channel.base(), &ParamValue::Scalar(b));
+                assert_eq!(
+                    channel.extrapolation(),
+                    (Extrapolation::Hold, Extrapolation::Hold)
+                );
+                assert_eq!(
+                    channel.keys(),
+                    expected
+                        .iter()
+                        .map(|(t, v)| Keyframe::new(Tick(*t), ParamValue::Scalar(*v)))
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(item(&s, ItemId(3)).content, content);
+                assert_eq!(item(&s, ItemId(3)).start, frame(100));
+                assert_eq!(item(&s, ItemId(3)).source_range.start(), frame(50));
+                near(
+                    value(&item(&s, ItemId(3)).animations, Tick(d / 2)),
+                    if mode == engine::TextAnimationPreset::FadeOut {
+                        b
+                    } else {
+                        b / 2.0
+                    },
+                );
+                let saved = encode(s.project(), true).unwrap();
+                assert_eq!(decode(&saved).unwrap().project, **s.project());
+                s.undo().unwrap();
+                assert_eq!(s.project(), &before);
+                s.redo().unwrap();
+                s.apply(Command::RenameProject {
+                    name: "Later".into(),
+                })
+                .unwrap();
+                s.undo().unwrap();
+                s.take_change();
+                let snapshot = s.project().clone();
+                let rev = s.revision();
+                let history = s.history_len();
+                assert!(!s.apply(command()).unwrap().changed);
+                assert!(std::sync::Arc::ptr_eq(&snapshot, s.project()));
+                assert_eq!((s.revision(), s.history_len()), (rev, history));
+                assert!(s.take_change().is_none());
+                let keys: Vec<_> = expected
+                    .iter()
+                    .map(|(t, _)| engine::KeyframeRef {
+                        item: ItemId(3),
+                        path: path(),
+                        component: None,
+                        time: Tick(*t),
+                    })
+                    .collect();
+                s.apply(Command::DeleteKeyframes { keys }).unwrap();
+                near(value(&item(&s, ItemId(3)).animations, Tick(d)), b);
+            }
+        }
+    }
+}
+#[test]
+fn text_animation_refusals_and_transactions_preserve_all_state() {
+    use engine::TextAnimationPreset::FadeInOut;
+    let apply = || Command::ApplyTextAnimation {
+        item: ItemId(3),
+        preset: FadeInOut,
+    };
+    for (base, length) in [
+        (Some(ParamValue::Scalar(-0.1)), 254_016_000_000),
+        (Some(ParamValue::Scalar(1.1)), 254_016_000_000),
+        (None, 16_951_334_399),
+    ] {
+        let mut s = title(base, length);
+        let before = s.project().clone();
+        assert!(matches!(
+            s.apply(apply()),
+            Err(engine::EditError::Invalid(_))
+        ));
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), (0, 0));
+    }
+    let mut s = title(None, 254_016_000_000);
+    for params in [
+        json!({"item":3,"preset":"loop"}),
+        json!({"item":3,"preset":"fade_in","extra":0}),
+        json!({"item":9007199254740992_u64,"preset":"fade_in"}),
+        json!({"item":3}),
+    ] {
+        assert!(s.execute("text.apply_animation", params).is_err());
+    }
+    for id in [ItemId(999), ItemId(1), ItemId(4)] {
+        assert!(
+            s.apply(Command::ApplyTextAnimation {
+                item: id,
+                preset: FadeInOut
+            })
+            .is_err()
+        );
+    }
+    for keys in [
+        vec![(-1, 0.5)],
+        vec![(254_016_000_001, 0.5)],
+        vec![(0, 0.0), (76_204_800_000, 0.9)],
+    ] {
+        let param = Param::Value(
+            Channel::new(
+                ParamValue::Scalar(1.0),
+                keys.into_iter()
+                    .map(|(t, v)| Keyframe::new(Tick(t), ParamValue::Scalar(v)))
+                    .collect(),
+                Extrapolation::Hold,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        );
+        s.apply(Command::SetAnimatedParam {
+            item: ItemId(3),
+            path: path(),
+            param,
+        })
+        .unwrap();
+        let before = s.project().clone();
+        let history = s.history_len();
+        let revision = s.revision();
+        assert!(s.apply(apply()).is_err());
+        assert_eq!(s.project(), &before);
+        assert_eq!((s.history_len(), s.revision()), (history, revision));
+    }
+    let mut s = title(None, 254_016_000_000);
+    for (command, params) in [
+        (
+            "keyframes.set_extrapolation",
+            json!({"item":3,"path":"opacity","component":null,"before":"linear","after":"hold"}),
+        ),
+        (
+            "keyframes.set_handle",
+            json!({"item":3,"path":"opacity","component":null,"time":0,"side":"out","handle":{"dt":1,"dv":0.1},"tangent":"broken"}),
+        ),
+    ] {
+        s.apply(apply()).unwrap();
+        s.execute(command, params).unwrap();
+        let before = s.project().clone();
+        assert!(s.apply(apply()).is_err());
+        assert_eq!(s.project(), &before);
+        s.undo().unwrap();
+        s.undo().unwrap();
+    }
+    let mut s = title(None, 254_016_000_000);
+    s.set_selection([ItemId(3)].into_iter().collect()).unwrap();
+    let before = s.project().clone();
+    assert!(
+        s.apply(Command::Batch {
+            commands: vec![
+                apply(),
+                Command::Delete {
+                    items: vec![ItemId(999)]
+                }
+            ]
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.selection(), &[ItemId(3)].into_iter().collect());
+    s.begin_gesture().unwrap();
+    s.apply(apply()).unwrap();
+    s.cancel_gesture().unwrap();
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+    assert!(s.take_change().is_none());
+    s.begin_gesture().unwrap();
+    s.apply(apply()).unwrap();
+    s.commit_gesture().unwrap();
+    assert_eq!(s.history_len(), (1, 0));
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(3),
+        locked: true,
+    })
+    .unwrap();
+    assert!(matches!(
+        s.apply(apply()),
+        Err(engine::EditError::Locked(TrackId(3)))
+    ));
+    let scene = s
+        .apply(Command::CreateScene {
+            name: "Other".into(),
+        })
+        .unwrap()
+        .created[0];
+    let engine::CreatedId::Scene(scene) = scene else {
+        panic!("scene")
+    };
+    s.apply(Command::SwitchScene { scene }).unwrap();
+    assert!(matches!(
+        s.apply(apply()),
+        Err(engine::EditError::NoItem(ItemId(3)))
+    ));
+}
+
+#[test]
+fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
+    let mut s = title(Some(ParamValue::Scalar(0.6)), 254_016_000_000);
+    s.execute(
+        "text.apply_animation",
+        json!({"item":3,"preset":"fade_in_out"}),
+    )
+    .unwrap();
+    let original = item(&s, ItemId(3)).clone();
+    s.apply(Command::TrimStart {
+        item: ItemId(3),
+        at: frame(102),
+    })
+    .unwrap();
+    near(
+        value(&item(&s, ItemId(3)).animations, Tick::ZERO),
+        0.6 * 16_951_334_400.0 / 76_204_800_000.0,
+    );
+    s.apply(Command::TrimEnd {
+        item: ItemId(3),
+        at: frame(125),
+    })
+    .unwrap();
+    assert_eq!(
+        item(&s, ItemId(3))
+            .animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[3]
+            .time,
+        Tick(237_064_665_600)
+    );
+    let outcome = s
+        .apply(Command::SplitAt {
+            item: ItemId(3),
+            at: frame(110),
+        })
+        .unwrap();
+    let right = outcome
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let curve = item(&s, right).animations.clone();
+    s.apply(Command::MoveItem {
+        item: right,
+        track: TrackId(3),
+        start: frame(200),
+    })
+    .unwrap();
+    assert_eq!(item(&s, right).animations, curve);
+    near(
+        value(&curve, Tick::ZERO),
+        0.6 * 84_756_672_000.0 / 76_204_800_000.0_f64.max(84_756_672_000.0),
+    );
+    s.apply(Command::ScaleKeyframeTime {
+        item: right,
+        numerator: 2,
+        denominator: 1,
+    })
+    .unwrap();
+    for t in [0, 1, 38_102_400_000, 100_000_000_000] {
+        near(
+            value(&item(&s, right).animations, Tick(t * 2)),
+            value(&curve, Tick(t)),
+        );
+    }
+    for (numerator, denominator) in [(i64::MAX, 1), (1, 254_016_000_000)] {
+        let before = s.project().clone();
+        assert!(
+            s.apply(Command::ScaleKeyframeTime {
+                item: right,
+                numerator,
+                denominator
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &before);
+    }
+    for params in [json!({"items":[right.0],"speed":2.0,"maintain_pitch":true})] {
+        assert!(s.execute("timeline.set_speed", params).is_err());
+    }
+    while s.history_len().0 > 1 {
+        s.undo().unwrap();
+    }
+    assert_eq!(item(&s, ItemId(3)), &original);
+}
+
 #[test]
 fn transform_and_graph_edits_share_the_timeline_preview_transaction() {
     let mut s = session();

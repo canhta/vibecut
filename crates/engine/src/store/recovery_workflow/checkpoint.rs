@@ -133,19 +133,22 @@ impl Autosave {
             let state = self
                 .runner
                 .snapshot(f.id)
-                .ok_or(EditError::WorkerPanicked)?;
+                .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
             match state.state {
                 JobState::Failed | JobState::Cancelled => {
-                    let cause = state
-                        .error
-                        .unwrap_or_else(|| Arc::new(EditError::WorkerPanicked));
+                    let cause = state.error.unwrap_or_else(|| {
+                        Arc::new(EditError::Runtime(crate::RuntimeError::WorkerPanicked))
+                    });
                     return Err(EditError::from(Error::PersistenceFailed(cause)).into());
                 }
                 JobState::Completed => {
-                    let f = self.flight.take().ok_or(EditError::WorkerPanicked)?;
+                    let f = self
+                        .flight
+                        .take()
+                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.runner
                         .take_output(f.id)
-                        .ok_or(EditError::WorkerPanicked)?;
+                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.journaled = if f.clear { 0 } else { f.revision };
                     if self.revision == f.revision {
                         self.first_dirty = None;
@@ -156,9 +159,15 @@ impl Autosave {
                             .lock()
                             .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
                             .take()
-                            .ok_or(EditError::WorkerPanicked)?;
-                        let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
-                        let metadata = work.metadata.take().ok_or(EditError::WorkerPanicked)?;
+                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                        let receipt = work
+                            .receipt
+                            .take()
+                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                        let metadata = work
+                            .metadata
+                            .take()
+                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                         if receipt.path() != work.writer.path()
                             || receipt.project_id() != f.snapshot.data().id
                         {
@@ -351,7 +360,7 @@ impl Autosave {
                         .lock()
                         .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
                         .take()
-                        .ok_or(EditError::WorkerPanicked)?;
+                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.writer = if save.in_place {
                         Some(work.writer)
                     } else {

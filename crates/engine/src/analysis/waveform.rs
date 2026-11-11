@@ -82,7 +82,7 @@ impl WaveformRequest {
                 .decode(lease.bytes())
                 .ok()
                 .map(|_| lease.bytes().to_vec()),
-            Ok(None) | Err(EditError::CacheCorrupt) => None,
+            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(error) => return Err(error),
         };
         let request = self.clone();
@@ -125,12 +125,14 @@ impl WaveformRequest {
 
     fn decode(&self, bytes: &[u8]) -> Result<PeakSummary, EditError> {
         if bytes.len() > MAX_BYTES {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
-        let summary = PeakSummary::decode(bytes).map_err(|_| EditError::CacheCorrupt)?;
-        let audio = audio_info(&self.asset).map_err(|_| EditError::CacheCorrupt)?;
+        let summary = PeakSummary::decode(bytes)
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        let audio = audio_info(&self.asset)
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if summary.sample_rate() != audio.sample_rate || summary.channels() != audio.channels {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         Ok(summary)
     }
@@ -235,8 +237,10 @@ pub fn display(
     let lease = match cache.get(request.key) {
         Ok(Some(lease)) => lease,
         Ok(None) => return Ok(WaveformState::Pending),
-        Err(EditError::CacheCorrupt) => {
-            return Ok(WaveformState::Failed(EditError::CacheCorrupt));
+        Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+            return Ok(WaveformState::Failed(EditError::Runtime(
+                crate::RuntimeError::CacheCorrupt,
+            )));
         }
         Err(error) => return Err(error),
     };

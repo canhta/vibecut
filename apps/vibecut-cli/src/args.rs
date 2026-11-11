@@ -39,6 +39,7 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
             row!(E::SchemaMismatch, "rejected", 5),
             row!(E::SessionGone, "rejected", 5),
             row!(E::StaleRevision, "rejected", 5),
@@ -48,7 +49,7 @@ mod exit_codes {
             row!(E::ResyncRequired, "rejected", 5),
             row!(E::JobNotRetained, "rejected", 5),
             row!(E::ControlIdentity, "rejected", 5),
-            row!(E::QueueFull, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::QueueFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::BudgetFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::ArtifactTooLarge), "job", 7),
             row!(
@@ -63,7 +64,7 @@ mod exit_codes {
                 5
             ),
             row!(E::Cancelled, "job", 7),
-            row!(E::WorkerPanicked, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::WorkerPanicked), "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
             row!(
@@ -148,6 +149,31 @@ mod exit_codes {
             ))));
             assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
         }
+        let messages: [(fn() -> E, &str); 3] = [
+            (
+                || E::Runtime(engine::RuntimeError::CacheCorrupt),
+                "corrupt cache entry skipped",
+            ),
+            (
+                || E::Runtime(engine::RuntimeError::QueueFull),
+                "job queue is full",
+            ),
+            (
+                || E::Runtime(engine::RuntimeError::WorkerPanicked),
+                "job worker unwound",
+            ),
+        ];
+        for (make, message) in messages {
+            for depth in 0..=2 {
+                let mut cause = make();
+                for _ in 0..depth {
+                    cause = E::Runtime(engine::RuntimeError::Failed(Arc::new(cause)));
+                }
+                let error = CliError::Job(Arc::new(cause));
+                assert_eq!(error.value()["message"], message);
+                assert_eq!(error.code(), ("job", 7));
+            }
+        }
         let model = E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Providers(
             P::ModelMissing("test-model"),
         ))));
@@ -170,6 +196,9 @@ mod exit_codes {
         let concrete = CliError::Job(Arc::new(engine::RuntimeError::Failed(Arc::new(
             E::Providers(P::ModelMissing("test-model")),
         ))));
+        let cache = CliError::Job(Arc::new(engine::RuntimeError::CacheCorrupt));
+        assert_eq!(cache.code(), ("job", 7));
+        assert_eq!(cache.value()["message"], "corrupt cache entry skipped");
         assert_eq!(
             concrete.value()["message"],
             "local model test-model is not installed; run `vibecut-cli model download test-model`"

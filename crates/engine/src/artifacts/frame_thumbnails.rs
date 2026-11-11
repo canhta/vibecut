@@ -171,7 +171,9 @@ impl ThumbnailCache {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
-            Err(EditError::CacheCorrupt) => return Ok(ThumbnailLookup::Corrupt),
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+                return Ok(ThumbnailLookup::Corrupt);
+            }
             Err(error) => return Err(error),
         };
         let Some(lease) = lease else {

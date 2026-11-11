@@ -21,7 +21,12 @@ their existing storage, budget and cleanup policy.
 ## Background jobs and byte policy
 
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
-failures; `RuntimeError` is the engine re-export. `ByteBudget`, artifact pin/evict and the
+failures and unusable cached artifacts; `RuntimeError` is the engine re-export.
+`CacheCorrupt` is source-free, nontransient and classified as `Job`; its static
+message does not authorize fallback. Each artifact consumer owns whether corruption
+means recompute, a failed display or refusal; explicit `Failed` wrappers do not
+change that policy. `QueueFull` owns pending admission refusal
+and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Upper cache, job and Session operations
 compose it through transparent `EditError::Runtime`. IO keeps its owned source; runtime
 variants are nontransient. `Failed` shares a typed erased cause and delegates its code,
@@ -63,7 +68,7 @@ caller-owned and must be bounded. The preferences owner supplies the aggregate l
 
 `RunnerConfig` admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000 pending jobs,
 1..=10,000 terminal results and 1..=10 network attempts. Admission checks the sum of declared
-work and maximum result bytes against the aggregate, and a full queue returns `QueueFull`.
+work and maximum result bytes against the aggregate, and a full queue returns `RuntimeError::QueueFull` through the composed engine result.
 Resource- or byte-blocked tasks stay queued while other classes run. Result memory is reserved
 before execution and the returned `Vec` capacity must fit that reservation; terminal results keep
 their reservation until taken, dropped or evicted oldest-first, and consumers must handle an

@@ -258,7 +258,7 @@ impl EffectPreviews {
                     });
                     entry.desired = None;
                 }
-                Err(engine::EditError::QueueFull) => {
+                Err(engine::EditError::Runtime(engine::RuntimeError::QueueFull)) => {
                     self.deferred.push_front(kind);
                     break;
                 }

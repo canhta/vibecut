@@ -542,7 +542,7 @@ fn corrupt_cache_is_failed_and_regenerates() {
     let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
     assert!(matches!(
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
-        WaveformState::Failed(EditError::CacheCorrupt)
+        WaveformState::Failed(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(

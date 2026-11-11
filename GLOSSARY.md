@@ -50,6 +50,7 @@ Language for the editor's privacy and execution boundaries.
 - **Effect**: One entry in an item's ordered effect stack, with a kind, typed parameters and an enabled flag; the effect owner declares it, `project` stores and validates it, and rendering executes it.
 - **Param**: An animated parameter override for one animation path, holding an explicit base value and its keyframes even when no keys remain.
 - **Keyframe**: One timed value inside a Param, with an interpolation segment and optional in/out handles.
+- **Text animation preset**: A built-in recipe expanded once into ordinary editable item-relative Params and Keyframes, with no runtime preset identity.
 - **Mask**: An item-relative shape that limits where the item draws, with feather, expansion, stroke and an ordered add/subtract list.
 - **Revision**: An opaque Session-local token that advances on every accepted mutation and that effectful control requests must supply as `base_rev`.
 - **Receipt**: The stored terminal outcome of an effectful control request, keyed by principal, Session and idempotency key, replayed instead of re-executing a retry.

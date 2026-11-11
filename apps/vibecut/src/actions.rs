@@ -114,6 +114,7 @@ pub enum UiAction {
     ConfirmDeleteMedia,
     RevealMedia,
     InsertText,
+    ApplyTextAnimation(engine::TextAnimationPreset),
     Subtitles,
     SubtitleCue,
     Import,

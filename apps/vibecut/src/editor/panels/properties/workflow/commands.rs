@@ -2,12 +2,35 @@
 use super::super::read;
 use crate::editor::{Desk, Error, ItemId, ItemParamPatch, Result};
 
+pub(in crate::editor) fn apply_text_animation(
+    state: &mut super::State,
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    preset: engine::TextAnimationPreset,
+    snapshot: std::sync::Arc<project::Project>,
+) -> Result<()> {
+    if !desk.editor().text_animation_available(state)
+        || state.animation_target(desk.view().session, desk.view().selection) != Some(item)
+        || !std::sync::Arc::ptr_eq(&snapshot, desk.view().session.project())
+    {
+        return Err(Error::Invalid("text animation target changed"));
+    }
+    desk.end_merge();
+    desk.apply_result(engine::Command::ApplyTextAnimation { item, preset }, false)?;
+    Ok(())
+}
+
 /// The inspector and automation use the same registered atomic field edit.
 pub(in crate::editor) fn set_shared_field(
     desk: &mut Desk<'_>,
     field: &str,
     value: &str,
 ) -> Result<()> {
+    if field == "opacity"
+        && let Some(item) = crate::editor::context::single(desk.view().selection)
+    {
+        return set_item_field(desk, item, field, value);
+    }
     let patch = item_patch(field, value)?;
     let items = desk.view().selection.iter().copied().collect();
     desk.apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
@@ -84,6 +107,21 @@ pub(in crate::editor) fn set_item_field(
     field: &str,
     value: &str,
 ) -> Result<()> {
+    if field == "opacity" && read::channel_has_keys(desk.view().session.project(), item, field) {
+        let (start, end) = read::range_of(desk.view().session.project(), item)
+            .ok_or(Error::Invalid("opacity target"))?;
+        let at = desk.view().playhead;
+        if at < start || at >= end {
+            return Err(Error::Invalid("opacity playhead outside item"));
+        }
+        let value = value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            .ok_or(Error::Invalid("opacity"))?;
+        return set_keyframe_at(desk, item, field, at.saturating_sub(start), value);
+    }
     if field == "speed" {
         let speed = value
             .trim()

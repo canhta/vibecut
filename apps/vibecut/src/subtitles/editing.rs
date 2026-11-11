@@ -10,13 +10,7 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 impl Subtitles {
     /// Style actions never implicitly commit a focused or changed caption draft.
     pub(crate) fn style_available(&self, session: &Session) -> bool {
-        !self.busy()
-            && !session.transaction_active()
-            && self.text_focus.is_none()
-            && !self.drafts.iter().any(|((cue, language), draft)| {
-                super::draft_text(session.project(), self.item, cue, language)
-                    .map_or(!draft.is_empty(), |original| original != draft)
-            })
+        self.edit_ready(session)
             && self.caption(session).is_some_and(|(item, params)| {
                 !params.cues.cues.is_empty()
                     && session
@@ -28,6 +22,17 @@ impl Subtitles {
                         .any(|track| {
                             !track.locked && track.items.iter().any(|value| value.id == item.id)
                         })
+            })
+    }
+
+    /// Unrelated edits must refuse before activation flushes a caption draft.
+    pub(crate) fn edit_ready(&self, session: &Session) -> bool {
+        !self.busy()
+            && !session.transaction_active()
+            && self.text_focus.is_none()
+            && !self.drafts.iter().any(|((cue, language), draft)| {
+                super::draft_text(session.project(), self.item, cue, language)
+                    .map_or(!draft.is_empty(), |original| original != draft)
             })
     }
 

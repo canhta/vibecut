@@ -116,7 +116,9 @@ pub fn export(
                         next += 1;
                     }
                     // Pump the caller's other work before retrying admission.
-                    Err(Error::Engine(EditError::QueueFull)) => break,
+                    Err(Error::Engine(EditError::Runtime(engine::RuntimeError::QueueFull))) => {
+                        break;
+                    }
                     Err(error) => return Err(error),
                 }
             }

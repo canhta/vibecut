@@ -2388,13 +2388,15 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
         .click();
     harness.run_steps(3);
     let panel = harness.state().panels()["inspector"];
+    let scroll =
+        (panel.bottom() - widget(&harness, "inspector.text_position_y").bottom() - 8.0).min(0.0);
     harness
         .input_mut()
         .events
         .push(egui::Event::PointerMoved(panel.center()));
     harness.input_mut().events.push(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -2000.0),
+        delta: egui::vec2(0.0, scroll),
         phase: egui::TouchPhase::Move,
         source: egui::MouseWheelSource::Unknown,
         modifiers: egui::Modifiers::NONE,
@@ -3646,6 +3648,41 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
     assert_eq!(keys_of(&harness, "transform.positionX"), 0);
     assert_eq!(keys_of(&harness, "transform.positionY"), 0);
     assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+}
+
+#[test]
+fn text_fade_keys_open_in_the_ordinary_lane_and_delete_with_undo() {
+    let mut e = fixture().editor;
+    e.activate("text.insert").unwrap();
+    let id = *e.selection.first().unwrap();
+    e.activate("text.animation.fade_in_out").unwrap();
+    let mut h = harness(e);
+    h.run_steps(3);
+    let lanes = widget(&h, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut h, lanes.center());
+    let key = widget(
+        &h,
+        &format!("timeline.keyframe.{}.opacity.none.76204800000", id.0),
+    );
+    click_at(&mut h, key.center());
+    let before = h.state().session.project().clone();
+    h.state_mut().activate("timeline.delete").unwrap();
+    h.run_steps(2);
+    let opacity = project::BuiltinPath::Opacity.into();
+    assert_eq!(
+        item(h.state(), id)
+            .animations
+            .get(&opacity)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .len(),
+        3
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]

@@ -308,6 +308,43 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
     let first = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, &first), JobState::Completed);
     let result = first.finish(&mut runner, &mut cache).unwrap().unwrap();
+    let valid = cache
+        .get(request.cache_key())
+        .unwrap()
+        .unwrap()
+        .bytes()
+        .to_vec();
+    let mut stale: serde_json::Value = serde_json::from_slice(&valid).unwrap();
+    stale["source"] = serde_json::json!(vec![99; 32]);
+    for bad in [b"not JSON".to_vec(), serde_json::to_vec(&stale).unwrap()] {
+        cache.put(request.cache_key(), &bad).unwrap();
+        let counts = runner.counts();
+        assert!(matches!(
+            request.submit(&mut runner, &mut cache),
+            Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+        ));
+        assert_eq!(runner.counts(), counts);
+        assert_eq!(
+            cache.get(request.cache_key()).unwrap().unwrap().bytes(),
+            bad
+        );
+        assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
+        assert_eq!(s.history_len(), (0, 0));
+    }
+    cache.put(request.cache_key(), &valid).unwrap();
+    let envelope = _dir.path().join(request.cache_key().filename());
+    let mut bytes = std::fs::read(&envelope).unwrap();
+    bytes[72] ^= 1;
+    std::fs::write(envelope, bytes).unwrap();
+    let regenerated = request.submit(&mut runner, &mut cache).unwrap();
+    assert_eq!(wait(&mut runner, &regenerated), JobState::Completed);
+    assert_eq!(
+        regenerated
+            .finish(&mut runner, &mut cache)
+            .unwrap()
+            .unwrap(),
+        result
+    );
     let hidden = path.with_extension("hidden");
     std::fs::rename(&path, &hidden).unwrap();
     let second = request.submit(&mut runner, &mut cache).unwrap();

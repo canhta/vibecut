@@ -1192,7 +1192,9 @@ impl EditorWindow {
             Err(snapshot
                 .error
                 .map(Error::Worker)
-                .unwrap_or(Error::Engine(EditError::WorkerPanicked)))
+                .unwrap_or(Error::Engine(EditError::Runtime(
+                    engine::RuntimeError::WorkerPanicked,
+                ))))
         });
         // A Save As whose publication already completed is a successful Save As
         // even when the cancel arrives afterwards: the engine has rekeyed the
@@ -1757,44 +1759,160 @@ mod tests {
     }
     #[test]
     fn unwind_returns_the_active_editor_before_reporting_worker_failure() {
-        let session = Session::new(
-            project::Project::empty(project::ProjectId(1), "retained".into()).unwrap(),
-            10,
-        )
-        .unwrap();
-        let playback = Playback::new(
-            &session,
-            ByteBudget::new(64 << 20).unwrap(),
-            Arc::new(Files),
-        )
-        .unwrap();
-        let slot = Arc::new(Mutex::new(Some(Box::new(Editor::new(
-            session,
-            playback,
-            Preferences::default(),
-        )))));
-        let worker_slot = slot.clone();
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let editor = worker_slot.lock().unwrap().take();
-            let _active = WorkingEditor {
-                slot: worker_slot,
-                editor,
-            };
-            panic!("injected while the worker owns the editor");
-        }));
-        assert!(outcome.is_err());
-        assert_eq!(
-            slot.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .session
-                .project()
-                .data()
-                .name
-                .as_str(),
-            "retained"
-        );
+        for mode in 0..3 {
+            let root = tempfile::tempdir().unwrap();
+            let budget = ByteBudget::new(128 << 20).unwrap();
+            let runner = JobRunner::new(
+                RunnerConfig {
+                    concurrency: [1; 3],
+                    queue: 2,
+                    retained: 2,
+                    network_attempts: 1,
+                    backoff: Duration::from_millis(1),
+                    progress_interval: Duration::from_millis(10),
+                },
+                budget.clone(),
+                Arc::new(SystemClock::default()),
+            )
+            .unwrap();
+            let runner = std::rc::Rc::new(std::cell::RefCell::new(runner));
+            let mut window = EditorWindow::new(
+                root.path().to_owned(),
+                Preferences::default(),
+                budget.clone(),
+                budget.clone(),
+                runner,
+                None,
+                None,
+            );
+            if mode == 2 {
+                window
+                    .submit(
+                        Work::Persist {
+                            editor: Arc::new(Mutex::new(None)),
+                            path: None,
+                            leave: false,
+                            close: false,
+                            journal_only: false,
+                        },
+                        Text::Discovering,
+                    )
+                    .unwrap();
+            } else {
+                let session = Session::new(
+                    project::Project::empty(project::ProjectId(1), "retained".into()).unwrap(),
+                    10,
+                )
+                .unwrap();
+                let playback = Playback::new(
+                    &session,
+                    ByteBudget::new(64 << 20).unwrap(),
+                    Arc::new(Files),
+                )
+                .unwrap();
+                let slot = Arc::new(Mutex::new(Some(Box::new(Editor::new(
+                    session,
+                    playback,
+                    Preferences::default(),
+                )))));
+                let worker_slot = slot.clone();
+                let (send, receive) = mpsc::channel::<Result<Completed>>();
+                drop(send);
+                let key = CacheKey::new(KeyInputs {
+                    kind: ArtifactKind::Preview,
+                    source: [0; 32],
+                    provider: "fixture",
+                    model: "window",
+                    version: "1",
+                    settings: &[],
+                    transcript: [0; 32],
+                    cues: [0; 32],
+                    clip_range: [0; 32],
+                    translation: [0; 32],
+                })
+                .unwrap();
+                let (id, cancel) = window
+                    .runner
+                    .borrow_mut()
+                    .submit(
+                        JobSpec {
+                            kind: JobKind::Persist,
+                            class: ResourceClass::Cpu,
+                            input: key,
+                            bytes: JobBytes {
+                                compositor: 64,
+                                result: 16,
+                                ..Default::default()
+                            },
+                        },
+                        move |_| {
+                            let editor = worker_slot.lock().unwrap().take();
+                            let _active = WorkingEditor {
+                                slot: worker_slot.clone(),
+                                editor,
+                            };
+                            if mode == 0 {
+                                panic!("injected while the worker owns the editor");
+                            }
+                            Ok(Vec::new())
+                        },
+                    )
+                    .unwrap();
+                window.pending = Some(Pending {
+                    id,
+                    receive,
+                    text: Text::Discovering,
+                    cancel,
+                    editor: Some(slot),
+                });
+            }
+            let id = window.pending.as_ref().unwrap().id;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while window.pending.is_some() {
+                window.poll_pending();
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            let snapshot = window.runner.borrow().snapshot(id).unwrap();
+            match window.error.as_ref().unwrap() {
+                Error::Worker(cause) if mode == 0 => {
+                    assert!(Arc::ptr_eq(cause, snapshot.error.as_ref().unwrap()));
+                    assert!(matches!(
+                        (cause.as_ref() as &(dyn std::error::Error + 'static))
+                            .downcast_ref::<EditError>(),
+                        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+                    ));
+                    assert_eq!(snapshot.state, JobState::Failed);
+                }
+                Error::Engine(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+                    if mode == 1 =>
+                {
+                    assert_eq!(snapshot.state, JobState::Completed);
+                    assert!(snapshot.error.is_none());
+                }
+                Error::Invalid("missing editor") if mode == 2 => {
+                    assert_eq!(snapshot.state, JobState::Completed);
+                    assert!(window.editor.is_none());
+                }
+                error => panic!("lost the original completion diagnostic: {error:?}"),
+            }
+            if mode != 2 {
+                assert_eq!(
+                    window
+                        .editor
+                        .as_ref()
+                        .unwrap()
+                        .session
+                        .project()
+                        .data()
+                        .name
+                        .as_str(),
+                    "retained"
+                );
+            }
+            assert!(window.runner.borrow_mut().take_output(id).is_none());
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
     }
     #[derive(Default)]
     struct ManualClock(std::sync::atomic::AtomicU64);

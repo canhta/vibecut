@@ -213,7 +213,7 @@ impl AnalysisRequest {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EditError::CacheCorrupt) => None,
+            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(e) => return Err(e),
         };
         let request = self.clone();
@@ -254,17 +254,17 @@ impl AnalysisRequest {
     }
     fn decode(&self, bytes: &[u8]) -> Result<AnalysisResult, EditError> {
         if bytes.len() > MAX_BYTES {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
-        let result: AnalysisResult =
-            serde_json::from_slice(bytes).map_err(|_| EditError::CacheCorrupt)?;
+        let result: AnalysisResult = serde_json::from_slice(bytes)
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if result.version != VERSION
             || result.key != self.key.bytes()
             || result.models != self.models
             || result.shots.is_empty()
             || result.shots.len() > MAX_SHOTS
         {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut start = self.range.start();
         let mut bins = 0;
@@ -276,7 +276,7 @@ impl AnalysisRequest {
                 || shot.people_count > shot.tracks.len()
                 || shot.seconds.is_empty()
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let mut identities = std::collections::BTreeSet::new();
             let mut ids = std::collections::BTreeSet::new();
@@ -289,7 +289,7 @@ impl AnalysisRequest {
                                 .any(|t| t.id == anchor.track && t.identity.is_none())
                         });
                     if !valid || !identities.insert((anchor.shot, anchor.track)) {
-                        return Err(EditError::CacheCorrupt);
+                        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
                     }
                 }
                 if !ids.insert(t.id)
@@ -298,7 +298,7 @@ impl AnalysisRequest {
                     || t.bounds.get(2).is_none_or(|v| *v <= 0.)
                     || t.bounds.get(3).is_none_or(|v| *v <= 0.)
                 {
-                    return Err(EditError::CacheCorrupt);
+                    return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
                 }
             }
             let valid = |state: SpeakerState| match state {
@@ -311,13 +311,13 @@ impl AnalysisRequest {
                 _ => true,
             };
             if !valid(shot.speaker) {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             if let SpeakerState::Visible { local, .. } = shot.speaker {
                 hint = Some(local);
             }
             if shot.continuity_hint != hint {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let mut second_start = start;
             for second in &shot.seconds {
@@ -327,18 +327,18 @@ impl AnalysisRequest {
                     || second.people_count > shot.tracks.len()
                     || !valid(second.speaker)
                 {
-                    return Err(EditError::CacheCorrupt);
+                    return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
                 }
                 second_start = second.range.end();
                 bins += 1;
             }
             if second_start != shot.range.end() || bins > MAX_SECONDS + MAX_SHOTS {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             start = shot.range.end();
         }
         if start != self.range.end() {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         Ok(result)
     }

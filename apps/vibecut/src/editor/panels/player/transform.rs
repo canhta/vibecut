@@ -45,6 +45,11 @@ impl State {
         self.text.take().map(|edit| edit.changed())
     }
 
+    /// Whether an inline session owns input, even before its buffer changes.
+    pub(in crate::editor) fn text_edit_open(&self) -> bool {
+        self.text.is_some()
+    }
+
     /// Caret and selection geometry of the open inline text session.
     pub(in crate::editor) fn text_caret(
         &self,

@@ -7,6 +7,10 @@ Every workflow here measures source media, never mutates a project, and returns 
 `EditError`. A request binds its source content and settings into a cache key; `submit` queues
 one local or network job; `finish` validates and caches complete output, so cancellation before
 runner promotion leaves no cache entry and cache pressure preserves the runner output for a retry.
+Artifact corruption uses [RuntimeError::CacheCorrupt](../runtime/README.md).
+Envelope corruption permits regeneration; scene, speech and shot workflows refuse
+a valid envelope whose payload fails request validation. Waveforms also regenerate
+invalid payloads, while cache-only display reports Failed without starting work.
 Job progress, cancellation and byte admission belong to the [job runner](../runtime/README.md#background-jobs-and-byte-policy).
 
 ## Loudness normalization

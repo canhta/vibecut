@@ -110,7 +110,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         pump(&mut r, id).error.as_deref().and_then(|error| (error
             as &(dyn std::error::Error + 'static))
             .downcast_ref::<EditError>()),
-        Some(EditError::WorkerPanicked)
+        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
     ));
     let (id, _) = r
         .submit(spec(ResourceClass::Cpu), |_| Ok(vec![0; 11]))
@@ -162,6 +162,98 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert_eq!(matches!(cause, EditError::Runtime(B::Failed(_))), wrapped);
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn worker_unwind_routes_keep_typed_failures_and_cancellation_order() {
+    struct Capture(Arc<AtomicUsize>);
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct PanicOnDrop(Arc<AtomicUsize>);
+    impl Drop for PanicOnDrop {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            panic!("payload drop escaped the inner catch");
+        }
+    }
+    for mode in 0..4 {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let captures = Arc::new(AtomicUsize::new(0));
+        let payloads = Arc::new(AtomicUsize::new(0));
+        let capture = Capture(captures.clone());
+        let payload = payloads.clone();
+        let (started, start) = mpsc::sync_channel(1);
+        let (release, gate) = mpsc::sync_channel(1);
+        let gate = std::sync::Mutex::new(gate);
+        let (id, token) = r
+            .submit(spec(ResourceClass::Network), move |ctx| {
+                let _capture = &capture;
+                if mode == 3 {
+                    ctx.begin_publication()?;
+                }
+                started.send(()).unwrap();
+                gate.lock().unwrap().recv().unwrap();
+                if mode == 1 {
+                    std::panic::panic_any(PanicOnDrop(payload.clone()));
+                }
+                panic!("ordinary task panic");
+            })
+            .unwrap();
+        r.tick().unwrap();
+        start.recv_timeout(Duration::from_secs(10)).unwrap();
+        if mode >= 2 {
+            token.cancel();
+            assert_eq!(token.cancelled(), mode == 2);
+        }
+        release.send(()).unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (
+                if mode == 2 {
+                    JobState::Cancelled
+                } else {
+                    JobState::Failed
+                },
+                1
+            )
+        );
+        let cause = snapshot.error.as_deref().unwrap();
+        assert!(matches!(
+            (
+                mode,
+                (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            ),
+            (2, Some(EditError::Cancelled))
+                | (0 | 1 | 3, Some(EditError::Runtime(B::WorkerPanicked)))
+        ));
+        assert_eq!(
+            cause.code(),
+            if mode == 2 {
+                engine::control::ErrorCode::Cancelled
+            } else {
+                engine::control::ErrorCode::WorkerFailure
+            }
+        );
+        assert!(!cause.transient());
+        assert_eq!(
+            cause.to_string(),
+            if mode == 2 {
+                "job cancelled"
+            } else {
+                "job worker unwound"
+            }
+        );
+        assert!(cause.source().is_none());
+        assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert_eq!(captures.load(Ordering::SeqCst), 1);
+        assert_eq!(payloads.load(Ordering::SeqCst), usize::from(mode == 1));
     }
 }
 
@@ -462,10 +554,22 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let (network, _) = r
         .submit(spec(ResourceClass::Network), |_| Ok(vec![]))
         .unwrap();
+    let ran = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(());
+    let released = Arc::downgrade(&captured);
+    let calls = ran.clone();
+    let before = (r.counts(), budget.snapshot().unwrap().used);
     assert!(matches!(
-        r.submit(spec(ResourceClass::Cpu), |_| Ok(vec![])),
-        Err(EditError::QueueFull)
+        r.submit(spec(ResourceClass::Cpu), move |_| {
+            let _capture = &captured;
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![])
+        }),
+        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
     ));
+    assert_eq!((r.counts(), budget.snapshot().unwrap().used), before);
+    assert!(released.upgrade().is_none());
+    assert_eq!(ran.load(Ordering::SeqCst), 0);
     r.tick().unwrap();
     assert_eq!(r.snapshot(cpu2).unwrap().state, JobState::Queued);
     assert_eq!(budget.snapshot().unwrap().used, 220);
@@ -479,6 +583,7 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let (id, _) = r
         .submit(spec(ResourceClass::GpuEncoder), |_| Ok(vec![]))
         .unwrap();
+    assert_eq!(id, JobId(network.0 + 1), "refusal consumed an ID");
     r.tick().unwrap();
     assert_eq!(r.snapshot(id).unwrap().state, JobState::Queued);
     drop(held);
@@ -587,7 +692,10 @@ fn persistent_chunks_resume_and_corruption_is_a_typed_miss() {
     let mut corrupt = std::fs::read(&path).unwrap();
     corrupt[72] ^= 1;
     std::fs::write(path, corrupt).unwrap();
-    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert!(matches!(
+        cache.get(key(1)),
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+    ));
     assert!(cache.get(key(1)).unwrap().is_none());
     assert_eq!(
         cache.get(key(2)).unwrap().unwrap().bytes(),
@@ -614,6 +722,131 @@ fn byte_eviction_pins_clear_in_use_oversize_and_accounting() {
     drop(pinned);
     assert_eq!(cache.clear().unwrap(), 0);
     assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+
+#[test]
+fn hostile_cache_reads_preserve_unrelated_files_and_release_charges() {
+    for fault in 0..5 {
+        let dir = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(4096).unwrap();
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+        let sentinel = dir.path().join("unrelated");
+        std::fs::write(&sentinel, b"preserve").unwrap();
+        cache.put(key(1), b"complete").unwrap();
+        let path = dir.path().join(key(1).filename());
+        let mut bytes = std::fs::read(&path).unwrap();
+        match fault {
+            0 => bytes.truncate(73),
+            1 => bytes[0] ^= 1,
+            2 => bytes[8] ^= 1,
+            3 => bytes.push(0),
+            _ => std::fs::remove_file(&path).unwrap(),
+        }
+        if fault != 4 {
+            std::fs::write(&path, bytes).unwrap();
+        }
+        assert!(matches!(
+            cache.get(key(1)),
+            Err(EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert!(cache.get(key(1)).unwrap().is_none());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let lock = dir.path().join(".cache.lock");
+    std::fs::create_dir(&lock).unwrap();
+    assert!(matches!(
+        ArtifactCache::open(dir.path(), ByteBudget::new(4096).unwrap(), 10),
+        Err(EditError::Runtime(B::CacheCorrupt))
+    ));
+    assert!(lock.is_dir());
+    let file = dir.path().join("not-a-directory");
+    std::fs::write(&file, b"preserve").unwrap();
+    assert!(matches!(
+        ArtifactCache::open(&file, ByteBudget::new(4096).unwrap(), 10),
+        Err(EditError::Io(_))
+    ));
+    assert_eq!(std::fs::read(file).unwrap(), b"preserve");
+    std::fs::remove_dir(lock).unwrap();
+    let foreign = dir.path().join(key(1).filename());
+    std::fs::create_dir(&foreign).unwrap();
+    std::fs::write(foreign.join(".bundle"), b"truncated").unwrap();
+    let (mut cache, diagnostics) =
+        ArtifactCache::open(dir.path(), ByteBudget::new(4096).unwrap(), 10).unwrap();
+    assert_eq!(diagnostics, 2); // foreign bundle and unrelated regular file
+    assert_eq!(cache.clear().unwrap(), 0);
+    assert_eq!(
+        std::fs::read(foreign.join(".bundle")).unwrap(),
+        b"truncated"
+    );
+}
+
+#[test]
+fn cache_failure_keeps_token_seal_order_and_raw_cause_custody() {
+    for (class, cancel, seal) in [
+        (ResourceClass::Cpu, false, false),
+        (ResourceClass::Network, false, false),
+        (ResourceClass::Network, true, false),
+        (ResourceClass::Network, true, true),
+    ] {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let (arrived, ready) = mpsc::sync_channel(0);
+        let (resume, wait) = mpsc::sync_channel(0);
+        let wait = std::sync::Mutex::new(wait);
+        let (id, token) = r
+            .submit(spec(class), move |context| {
+                if seal {
+                    context.begin_publication()?;
+                }
+                arrived.send(()).unwrap();
+                wait.lock().unwrap().recv().unwrap();
+                Err(B::CacheCorrupt.into())
+            })
+            .unwrap();
+        r.tick().unwrap();
+        ready.recv_timeout(Duration::from_secs(10)).unwrap();
+        if cancel {
+            token.cancel();
+        }
+        resume.send(()).unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(snapshot.attempts, 1);
+        let cancelled = cancel && !seal;
+        assert_eq!(
+            snapshot.state,
+            if cancelled {
+                JobState::Cancelled
+            } else {
+                JobState::Failed
+            }
+        );
+        let cause = snapshot.error.as_ref().unwrap();
+        let typed = (cause.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()
+            .unwrap();
+        assert!(matches!(
+            (cancelled, typed),
+            (true, EditError::Cancelled) | (false, EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert!(!cause.transient());
+        assert!(std::error::Error::source(typed).is_none());
+        let weak = Arc::downgrade(cause);
+        assert!(r.take_output(id).is_none());
+        for _ in 0..3 {
+            let (other, _) = r
+                .submit(spec(ResourceClass::Cpu), |_| Ok(Vec::new()))
+                .unwrap();
+            pump(&mut r, other);
+        }
+        assert!(r.snapshot(id).is_none());
+        drop(r);
+        assert!(weak.upgrade().is_some());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        drop(snapshot);
+        assert!(weak.upgrade().is_none());
+    }
 }
 #[test]
 fn public_job_resumes_finalized_asr_chunks_after_worker_crash() {
@@ -704,7 +937,10 @@ fn cache_reopen_skips_bad_headers_and_changed_sizes_are_corruption() {
     let path = dir.path().join(key(1).filename());
     let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
     file.set_len(1000).unwrap();
-    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert!(matches!(
+        cache.get(key(1)),
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+    ));
     let path = dir.path().join(key(2).filename());
     std::fs::write(path, [0; 80]).unwrap();
     drop(cache);
@@ -1099,11 +1335,17 @@ fn corrupt_read_preserves_existing_pin_and_removes_entry_after_release() {
     let mut bytes = std::fs::read(&path).unwrap();
     bytes[72] ^= 1;
     std::fs::write(&path, bytes).unwrap();
-    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert!(matches!(
+        cache.get(key(1)),
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+    ));
     assert_eq!(original.bytes(), [1; 28]);
     assert_eq!(cache.clear().unwrap(), 1);
     drop(original);
-    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert!(matches!(
+        cache.get(key(1)),
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+    ));
     assert!(cache.get(key(1)).unwrap().is_none());
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
@@ -1223,6 +1465,41 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (|| E::Runtime(B::CacheCorrupt), C::Job, false),
+        (
+            || {
+                let cause = E::Runtime(B::Failed(Arc::new(B::CacheCorrupt)));
+                E::Runtime(B::Failed(Arc::new(cause)))
+            },
+            C::Job,
+            false,
+        ),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::CacheCorrupt))),
+            C::Job,
+            false,
+        ),
+        (
+            || E::Runtime(B::Failed(Arc::new(E::Runtime(B::CacheCorrupt)))),
+            C::Job,
+            false,
+        ),
+        (|| E::Runtime(B::QueueFull), C::QueueFull, false),
+        (|| E::Runtime(B::WorkerPanicked), C::WorkerFailure, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(E::Runtime(B::QueueFull)))),
+            C::QueueFull,
+            false,
+        ),
+        (
+            || {
+                let inner = E::Runtime(B::WorkerPanicked);
+                let wrapped = E::Runtime(B::Failed(Arc::new(inner)));
+                E::Runtime(B::Failed(Arc::new(wrapped)))
+            },
+            C::WorkerFailure,
+            false,
+        ),
         (
             || {
                 E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
@@ -1297,6 +1574,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             .unwrap();
         let snapshot = pump(&mut r, id);
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        assert!(r.take_output(id).is_none());
         let state = s.snapshot_and_subscribe(&r).unwrap();
         assert_eq!(state.jobs[0].error, Some(code));
         assert!(s.events(&mut cursor).unwrap().iter().any(|event| matches!(&event.payload, Payload::JobChanged { snapshot } if snapshot.id == id && snapshot.error == Some(code))));

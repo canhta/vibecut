@@ -8,8 +8,8 @@ pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
     ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
-    TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId,
-    declaration_order_error, lifecycle, registry,
+    TextAnimationPreset, TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge,
+    WordId, declaration_order_error, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
@@ -97,22 +97,16 @@ pub enum EditError {
 
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
-    #[error("job queue is full")]
-    QueueFull,
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
     #[error("job cancelled")]
     Cancelled,
-    #[error("job worker unwound")]
-    WorkerPanicked,
     #[error("transient network failure")]
     NetworkTransient,
     #[error("job result is stale")]
     StaleResult,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
-    #[error("corrupt cache entry skipped")]
-    CacheCorrupt,
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -200,14 +194,11 @@ impl EditError {
             Self::InvalidParams => C::InvalidParams,
             Self::Limit => C::Limit,
             Self::Cancelled => C::Cancelled,
-            Self::QueueFull => C::QueueFull,
             Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::StaleResult => C::StaleResult,
-            Self::WorkerPanicked => C::WorkerFailure,
-            Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),

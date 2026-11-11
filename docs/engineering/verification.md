@@ -8,6 +8,7 @@ Commit only green, with the smallest check that covers the change. Compile throu
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
+| `JsonSchema` metadata, including Rust doc comments on derived input types | `cargo xtask catalog`, then the existing `control::catalog::checked_in_registry_digest_and_command_reference_match_the_registry` test |
 | Rust, while iterating | Focused named behaviour tests in the affected crate; use a narrow compile check only when needed to diagnose compilation |
 | Rust, handoff | Once on final source, `cargo test -p <crate>` for each behaviour-edited crate, plus `cargo xtask checks`. Enumerated mechanical contract callers get the narrow compile check needed for atomic correctness; coordinator owns the final public-signature gate. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
 | Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |

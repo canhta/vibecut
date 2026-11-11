@@ -219,7 +219,7 @@ impl ModelManager {
                     }
                     CheckOutcome { installed, errors }
                 }))
-                .map_err(|_| EditError::WorkerPanicked);
+                .map_err(|_| EditError::Runtime(engine::RuntimeError::WorkerPanicked));
                 let _ = tx.send(outcome);
             })
             .map_err(Error::Io)?;
@@ -795,7 +795,7 @@ fn problem_for(error: &EditError) -> ModelProblem {
         )
         | EditError::NetworkTransient => ModelProblem::Network,
         EditError::CacheBusy => ModelProblem::Busy,
-        EditError::CacheCorrupt => ModelProblem::Corrupt,
+        EditError::Runtime(engine::RuntimeError::CacheCorrupt) => ModelProblem::Corrupt,
         EditError::Cancelled => ModelProblem::Cancelled,
         EditError::Io(error) | EditError::Runtime(engine::RuntimeError::Io(error))
             if error.kind() == std::io::ErrorKind::StorageFull =>

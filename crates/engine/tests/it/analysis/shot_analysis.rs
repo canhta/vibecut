@@ -297,6 +297,23 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
         result
     );
     assert_eq!(calls.load(Ordering::SeqCst), before);
+    let envelope = _dir.path().join(request.cache_key().filename());
+    let mut corrupt = std::fs::read(&envelope).unwrap();
+    corrupt[72] ^= 1;
+    std::fs::write(envelope, corrupt).unwrap();
+    let regenerated = request
+        .submit(&mut runner, &mut cache, Detector::normal(calls.clone()))
+        .unwrap();
+    assert_eq!(wait(&mut runner, regenerated.id), JobState::Completed);
+    assert_eq!(
+        regenerated
+            .finish(&mut runner, &mut cache)
+            .unwrap()
+            .unwrap(),
+        result
+    );
+    assert!(calls.load(Ordering::SeqCst) > before);
+    let before = calls.load(Ordering::SeqCst);
     let changed = AnalysisRequest::new(
         asset,
         range(0, 5),
@@ -313,10 +330,17 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
         .bytes()
         .to_vec();
     cache.put(changed.cache_key(), &bytes).unwrap();
+    let counts = runner.counts();
     assert!(matches!(
-        changed.submit(&mut runner, &mut cache, Detector::normal(calls)),
-        Err(EditError::CacheCorrupt)
+        changed.submit(&mut runner, &mut cache, Detector::normal(calls.clone())),
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
+    assert_eq!(calls.load(Ordering::SeqCst), before);
+    assert_eq!(runner.counts(), counts);
+    assert_eq!(
+        cache.get(changed.cache_key()).unwrap().unwrap().bytes(),
+        bytes
+    );
 }
 #[test]
 fn cancelled_failed_panicking_and_invalid_detectors_publish_nothing() {
@@ -787,7 +811,7 @@ fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
         .unwrap();
     assert!(matches!(
         request.submit(&mut runner, &mut cache, Detector::normal(calls)),
-        Err(EditError::CacheCorrupt)
+        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
 }
 

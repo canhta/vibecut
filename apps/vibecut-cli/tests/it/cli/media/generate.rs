@@ -162,3 +162,55 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
         String::from_utf8_lossy(&reversed.stderr)
     );
 }
+
+#[test]
+fn unsafe_cache_lock_reports_exact_process_diagnostics_without_publication() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let media = dir.path().join("private-source.mp4");
+    generate_av(&media, 1);
+    let project = dir.path().join("private-project.vibecut");
+    media_project(&project, &media, None);
+    // Match CacheRoot's platform-selected base under the child's isolated env.
+    let base = if cfg!(target_os = "macos") {
+        dir.path().join("Library/Caches")
+    } else {
+        dir.path().to_path_buf()
+    };
+    let root = base.join("VibeCut/models/waveform");
+    let lock = root.join(".cache.lock");
+    std::fs::create_dir_all(&lock).unwrap();
+    let source_bytes = std::fs::read(&media).unwrap();
+    let project_bytes = std::fs::read(&project).unwrap();
+    for json in [false, true] {
+        let mut args = vec![
+            os("media"),
+            os("waveform"),
+            project.as_os_str(),
+            os("--asset"),
+            os("1"),
+        ];
+        if json {
+            args.push(os("--json"));
+        }
+        let output = run(dir.path(), &args);
+        assert_eq!(code(&output), 7);
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        if json {
+            let value: serde_json::Value = serde_json::from_str(&stderr).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({"status":"error","error":{"code":"job","exit_code":7,"message":"corrupt cache entry skipped"}})
+            );
+        } else {
+            assert_eq!(stderr.trim_end(), "error: corrupt cache entry skipped");
+        }
+        assert_eq!(std::fs::read(&media).unwrap(), source_bytes);
+        assert_eq!(std::fs::read(&project).unwrap(), project_bytes);
+        assert!(lock.is_dir());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+    }
+}

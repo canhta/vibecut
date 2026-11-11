@@ -87,7 +87,14 @@ impl Panel<'_, '_> {
         let cells = kit::segmented(&mut value_ui, &ids, &labels, selected);
         let mut clicked = None;
         for (index, (cell_id, response)) in ids.iter().zip(&cells).enumerate() {
-            self.remember(cell_id.clone(), response);
+            let response = if id == "text.animation" {
+                response
+                    .clone()
+                    .on_hover_text(self.tr(Text::TextAnimationTip))
+            } else {
+                response.clone()
+            };
+            self.remember(cell_id.clone(), &response);
             if response.clicked() && index != selected {
                 clicked = Some(index);
             }
@@ -101,6 +108,40 @@ impl Panel<'_, '_> {
         else {
             return;
         };
+        use engine::TextAnimationPreset::{FadeIn, FadeInOut, FadeOut};
+        let presets = [FadeIn, FadeOut, FadeInOut];
+        let project = self.cx.session.project();
+        let selected = read::item(project, item)
+            .and_then(|target| {
+                presets
+                    .iter()
+                    .position(|preset| preset.matches(target, project.data().canvas.fps))
+            })
+            .unwrap_or(usize::MAX);
+        let enabled = !self.cx.disabled.contains("text.animation.fade_in");
+        let choice = ui
+            .add_enabled_ui(enabled, |ui| {
+                self.choice_row(
+                    ui,
+                    "text.animation",
+                    Text::TextAnimation,
+                    &[
+                        ("fade_in", Text::TextAnimationIn),
+                        ("fade_out", Text::TextAnimationOut),
+                        ("fade_in_out", Text::TextAnimationBoth),
+                    ],
+                    selected,
+                )
+            })
+            .inner;
+        if let Some(preset) = choice.and_then(|i| presets.get(i)).copied() {
+            self.actions
+                .push(crate::editor::properties::Action::ApplyTextAnimation {
+                    item,
+                    preset,
+                    snapshot: self.cx.session.project().clone(),
+                });
+        }
         use project::{TextAlign, TextDecoration};
         let bold = params.weight >= 600;
         if let Some(choice) = self.choice_row(

@@ -622,6 +622,16 @@ catalog! {
     WeightBold { key: "weight_bold", en: "Bold", vi: "Đậm" },
     WeightNormal { key: "weight_normal", en: "Normal", vi: "Thường" },
 
+    // Text animation.
+    ActionTextAnimationBoth { key: "action_text_animation_both", en: "Fade text in and out", vi: "Hiện và ẩn chữ dần" },
+    ActionTextAnimationIn { key: "action_text_animation_in", en: "Fade text in", vi: "Hiện chữ dần" },
+    ActionTextAnimationOut { key: "action_text_animation_out", en: "Fade text out", vi: "Ẩn chữ dần" },
+    TextAnimation { key: "text_animation", en: "Animation", vi: "Chuyển động" },
+    TextAnimationBoth { key: "text_animation_both", en: "Both", vi: "Cả hai" },
+    TextAnimationIn { key: "text_animation_in", en: "Fade in", vi: "Hiện dần" },
+    TextAnimationOut { key: "text_animation_out", en: "Fade out", vi: "Ẩn dần" },
+    TextAnimationTip { key: "text_animation_tip", en: "Create editable opacity keys; undo or remove keys before changing the fade.", vi: "Tạo khung hình khóa độ mờ; hoàn tác hoặc xóa khóa trước khi đổi kiểu mờ." },
+
     // Canvas settings.
     CanvasHeight { key: "canvas_height", en: "Height", vi: "Chiều cao" },
     CanvasWidth { key: "canvas_width", en: "Width", vi: "Chiều rộng" },

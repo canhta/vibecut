@@ -75,6 +75,18 @@ and its shifts publish as one undo step ([`close_vacated_tails`](clips.rs),
 Errors are typed `EditError` categories with safe IDs and static diagnostics; commands perform
 no IO and no retries.
 
+## Text animation
+
+`text.apply_animation` expands a built-in fade once into ordinary item-relative opacity
+keys on one unlocked active-scene Text item. It retains the scalar base B (default 1,
+finite 0..1, including zero). A title must last at least two canvas frames. Each edge
+lasts min(300 ms, floor(duration/2)) in integer ticks; linear keys have no handles and
+Hold extrapolation. Both coalesces only equal-time middle keys. An existing keyed Param
+is accepted only when the complete requested Param is already identical; otherwise
+undo or remove keys before applying another look. Locks refuse even an exact repeat.
+Trim, split, move and key-time scaling retain ordinary key semantics, without edge
+binding or a saved preset identity. Text media-speed editing remains unsupported.
+
 ## Caption styles
 
 `captions.apply_style` replaces every authoritative cue's style in one active-scene caption item,

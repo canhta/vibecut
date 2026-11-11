@@ -738,7 +738,7 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
             &mut cache
         )
         .unwrap(),
-        ThumbnailStripState::Failed(EditError::CacheCorrupt)
+        ThumbnailStripState::Failed(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, job.id), JobState::Completed);

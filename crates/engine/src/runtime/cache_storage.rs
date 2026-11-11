@@ -248,12 +248,12 @@ impl ArtifactCache {
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let root = fs::canonicalize(root)?;
         let lock_path = root.join(".cache.lock");
         if fs::symlink_metadata(&lock_path).is_ok_and(|m| !m.file_type().is_file()) {
-            return Err(EditError::CacheCorrupt);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut options = fs::File::options();
         options.read(true).write(true).create(true).truncate(false);
@@ -441,7 +441,7 @@ impl ArtifactCache {
         let result = (|| {
             let meta = fs::symlink_metadata(&path)?;
             if !meta.is_file() || meta.file_type().is_symlink() || meta.len() != expected_len {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let _charge = self.budget.reserve(ByteOwner::CacheReads, meta.len())?;
             let len = usize::try_from(meta.len())
@@ -450,13 +450,13 @@ impl ArtifactCache {
             let mut file = fs::File::open(&path)?;
             if let Err(e) = file.read_exact(&mut bytes) {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    return Err(EditError::CacheCorrupt);
+                    return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
                 }
                 return Err(e.into());
             }
             let mut extra = [0u8; 1];
             if file.read(&mut extra)? != 0 {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             if bytes.len() as u64 != meta.len()
                 || bytes.get(..8) != Some(b"VCACHE01")
@@ -468,7 +468,7 @@ impl ArtifactCache {
                         .as_ref()
                         .map(|h| h.as_bytes().as_slice())
             {
-                return Err(EditError::CacheCorrupt);
+                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             // Keep the envelope allocation: no second payload copy.
             Ok(ArtifactLease {
@@ -484,18 +484,18 @@ impl ArtifactCache {
                 }
                 Ok(Some(lease))
             }
-            Err(EditError::CacheCorrupt) => {
+            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
                 // Existing reader pins retain their immutable bytes. Reclaim the
                 // corrupt file after their release; preserve the corruption diagnostic.
                 match self.remove(key) {
                     Ok(()) | Err(EditError::Runtime(RuntimeError::BudgetFull)) => {}
                     Err(e) => return Err(e),
                 }
-                Err(EditError::CacheCorrupt)
+                Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
             Err(EditError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
                 self.entries.remove(&key);
-                Err(EditError::CacheCorrupt)
+                Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
             Err(e) => Err(e),
         }

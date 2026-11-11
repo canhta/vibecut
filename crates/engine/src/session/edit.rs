@@ -167,6 +167,9 @@ pub(crate) fn apply(
         }
     };
     match command {
+        EditCommand::ApplyTextAnimation { item, preset } => {
+            data = keyframes::execute_apply_text_animation(data, item, preset)?;
+        }
         EditCommand::ApplyCaptionStyle { item, style } => {
             data = text::execute_apply_caption_style(data, item, style, sources)?;
         }

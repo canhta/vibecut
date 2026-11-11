@@ -252,6 +252,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("sounds.unsave", Effect::Read, false, false),
         ("captions.import", Effect::Edit, false, false),
         ("captions.apply_style", Effect::Edit, true, true),
+        ("text.apply_animation", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
         ("timeline.filler_candidates", Effect::Read, true, true),
@@ -643,6 +644,16 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     )
     .await;
     for (index, (inner, code)) in [
+        (engine::RuntimeError::CacheCorrupt.into(), "job"),
+        (
+            engine::RuntimeError::Failed(Arc::new(engine::RuntimeError::CacheCorrupt)).into(),
+            "job",
+        ),
+        (engine::RuntimeError::QueueFull.into(), "queue_full"),
+        (
+            engine::RuntimeError::WorkerPanicked.into(),
+            "worker_failure",
+        ),
         (EditError::Limit, "limit"),
         (EditError::StaleResult, "stale_result"),
         (engine::RuntimeError::BudgetFull.into(), "budget"),

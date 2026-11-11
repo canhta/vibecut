@@ -1,5 +1,84 @@
 //! Applies keyframes commands to a candidate project.
 use super::{ItemId, ProjectData, Result, Tick, item};
+
+impl crate::TextAnimationPreset {
+    /// Exact saved-Param match; custom curves and invalid/short items have no selected choice.
+    pub fn matches(self, target: &project::Item, fps: time::FrameRate) -> bool {
+        self.opacity(target, fps).is_ok_and(|expected| {
+            target.animations.get(&project::BuiltinPath::Opacity.into()) == Some(&expected)
+        })
+    }
+
+    fn opacity(self, target: &project::Item, fps: time::FrameRate) -> Result<project::Param> {
+        use project::{Channel, Extrapolation::Hold, Keyframe, Param, ParamValue::Scalar};
+        if !matches!(target.content, project::ItemParams::Text(_)) {
+            return Err(crate::EditError::Invalid("text animation requires text"));
+        }
+        let length = target.duration()?;
+        let minimum = fps
+            .tick_of(1)?
+            .checked_add(fps.tick_of(1)?)
+            .ok_or(crate::EditError::Invalid("time overflow"))?;
+        if length < minimum {
+            return Err(crate::EditError::Invalid(
+                "text animation requires two frames",
+            ));
+        }
+        let base = match target.animations.get(&project::BuiltinPath::Opacity.into()) {
+            None => 1.0,
+            Some(Param::Value(channel)) => match channel.base() {
+                Scalar(base) => *base,
+                _ => return Err(crate::EditError::Invalid("text opacity base")),
+            },
+            _ => return Err(crate::EditError::Invalid("text opacity base")),
+        };
+        if !base.is_finite() || !(0.0..=1.0).contains(&base) {
+            return Err(crate::EditError::Invalid("text opacity base"));
+        }
+        let d = Tick(76_204_800_000.min(length.0 / 2));
+        let exit = length
+            .checked_sub(d)
+            .ok_or(crate::EditError::Invalid("time overflow"))?;
+        let pairs = match self {
+            Self::FadeIn => vec![(Tick::ZERO, 0.0), (d, base)],
+            Self::FadeOut => vec![(exit, base), (length, 0.0)],
+            Self::FadeInOut if d == exit => vec![(Tick::ZERO, 0.0), (d, base), (length, 0.0)],
+            Self::FadeInOut => vec![(Tick::ZERO, 0.0), (d, base), (exit, base), (length, 0.0)],
+        };
+        Ok(Param::Value(Channel::new(
+            Scalar(base),
+            pairs
+                .into_iter()
+                .map(|(time, value)| Keyframe::new(time, Scalar(value)))
+                .collect(),
+            Hold,
+            Hold,
+        )?))
+    }
+}
+
+pub(super) fn execute_apply_text_animation(
+    mut data: ProjectData,
+    id: ItemId,
+    preset: crate::TextAnimationPreset,
+) -> Result<ProjectData> {
+    let fps = data.canvas.fps;
+    let target = item(&mut data, id)?; // Locks also refuse exact repeats.
+    let expected = preset.opacity(target, fps)?;
+    let path = project::BuiltinPath::Opacity.into();
+    if let Some(existing) = target.animations.get(&path) {
+        if existing == &expected {
+            return Ok(data);
+        }
+        if existing.channel(None)?.keys().len() != 0 {
+            return Err(crate::EditError::Invalid(
+                "remove opacity keys before changing animation",
+            ));
+        }
+    }
+    target.animations.set(path, expected)?;
+    Ok(data)
+}
 pub(super) fn execute_set_animated_param(
     mut data: ProjectData,
     id: ItemId,

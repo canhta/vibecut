@@ -862,12 +862,24 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
     use std::time::Duration;
     let root = tempfile::tempdir().unwrap();
     let library = Arc::new(SoundLibrary::open(root.path()).unwrap());
-    let good = TrackedDownload {
-        bytes: wav(),
-        status: 200,
-        headers: vec![("content-length".into(), wav().len().to_string())],
-    };
-    let downloads = SoundDownloads::new(library.clone(), Arc::new(good));
+    struct CountedDownload(AtomicUsize);
+    impl DownloadTransport for CountedDownload {
+        fn get(
+            &self,
+            url: &str,
+            headers: &[(String, String)],
+        ) -> Result<HttpStreamResponse, ai::Error> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            TrackedDownload {
+                bytes: wav(),
+                status: 200,
+                headers: vec![("content-length".into(), wav().len().to_string())],
+            }
+            .get(url, headers)
+        }
+    }
+    let http = Arc::new(CountedDownload(AtomicUsize::new(0)));
+    let downloads = SoundDownloads::new(library.clone(), http.clone());
     let config = RunnerConfig {
         concurrency: [1, 1, 1],
         queue: 2,
@@ -882,6 +894,50 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
         Arc::new(SystemClock::default()),
     )
     .unwrap();
+    let key = engine::cache::CacheKey::new(engine::cache::KeyInputs {
+        kind: engine::cache::ArtifactKind::SoundAudio,
+        source: [0; 32],
+        provider: "fixture",
+        model: "queue",
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    let mut fillers = Vec::new();
+    for _ in 0..2 {
+        let (_, token) = runner
+            .submit(
+                engine::jobs::JobSpec {
+                    kind: engine::jobs::JobKind::SoundDownload,
+                    class: engine::jobs::ResourceClass::Network,
+                    input: key,
+                    bytes: engine::jobs::JobBytes::default(),
+                },
+                |_| panic!("cancelled filler ran"),
+            )
+            .unwrap();
+        fillers.push(token);
+    }
+    assert!(matches!(
+        downloads.submit(&mut runner, "https://cdn.example/job.mp3"),
+        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+    ));
+    assert_eq!(http.0.load(Ordering::SeqCst), 0);
+    assert!(
+        library
+            .cached("https://cdn.example/job.mp3")
+            .unwrap()
+            .is_none()
+    );
+    for token in fillers {
+        token.cancel();
+    }
+    runner.tick().unwrap();
+    assert_eq!(runner.counts().0, 0);
     let (id, _) = downloads
         .submit(&mut runner, "https://cdn.example/job.mp3")
         .unwrap();
