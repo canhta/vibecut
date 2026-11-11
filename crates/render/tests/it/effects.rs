@@ -2712,6 +2712,14 @@ fn streak_taps_match_independent_impulse_checker_alpha_constants_and_boundaries(
                 (0.2499, 0.0, [1.0, 1.0], 0),
                 (0.25, 0.0, [1.0, 1.0], 2),
                 (1.0, 90.0, [1.0, 1.0], 2),
+                // Equal gains have span 2*length*gain at every angle. Keep
+                // genuine spans on either side of six distinct from six itself.
+                (2.0, 30.0, [1.5, 1.5], 6),
+                (2.0, 45.0, [1.5, 1.5], 6),
+                (2.0, 60.0, [1.5, 1.5], 6),
+                (2.0 - f64::EPSILON, 45.0, [1.5, 1.5], 6),
+                (2.0 + 2.0 * f64::EPSILON, 45.0, [1.5, 1.5], 7),
+                (2.0, 45.0, [0.75, 0.75], 3),
                 (2.0, 45.0, [0.75, 1.5], 5),
                 (3.0, -360.0, [0.5, 0.5], 3),
                 (3.0, 360.0, [0.25, 0.25], 2),

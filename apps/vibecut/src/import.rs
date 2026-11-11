@@ -801,7 +801,7 @@ fn finish(
     error: Option<Arc<dyn engine::Failure + 'static>>,
 ) -> std::result::Result<Vec<u8>, engine::EditError> {
     if send.send(ImportEvent::Done { cancelled, error }).is_err() {
-        return Err(engine::EditError::Cancelled);
+        return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
     }
     Ok(Vec::new())
 }

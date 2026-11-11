@@ -1167,7 +1167,8 @@ impl EditorWindow {
                     persistence.clone(),
                     preferences.clone(),
                 );
-                send.send(result).map_err(|_| EditError::Cancelled)?;
+                send.send(result)
+                    .map_err(|_| EditError::Runtime(engine::RuntimeError::Cancelled))?;
                 Ok(Vec::new())
             },
         );

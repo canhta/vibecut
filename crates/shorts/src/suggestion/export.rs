@@ -153,7 +153,9 @@ pub fn export(
                             }
                         });
                     }
-                    JobState::Cancelled => return Err(EditError::Cancelled.into()),
+                    JobState::Cancelled => {
+                        return Err(EditError::Runtime(engine::RuntimeError::Cancelled).into());
+                    }
                     _ => index += 1,
                 }
             }

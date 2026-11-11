@@ -106,7 +106,9 @@ pub fn transcribe(
     }
     match extraction {
         Ok(()) => {}
-        Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+        Err(media::MediaError::Cancelled) => {
+            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+        }
         Err(error) => return Err(error.into()),
     }
     cancel.checkpoint()?;
@@ -218,7 +220,9 @@ impl Providers {
         }
         match result {
             Ok(()) => {}
-            Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+            Err(media::MediaError::Cancelled) => {
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            }
             Err(error) => return Err(error.into()),
         }
         cancel.checkpoint()?;

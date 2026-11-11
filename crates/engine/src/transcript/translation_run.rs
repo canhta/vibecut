@@ -192,7 +192,7 @@ impl TranslationRun {
     /// retry; Schema and transient transport errors use its bounded backoff policy.
     pub fn run(&self, hooks: &dyn ExecutionHooks) -> crate::Result<Vec<u8>> {
         if hooks.cancelled() {
-            return Err(EditError::Cancelled);
+            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
         }
         self.attempts
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {

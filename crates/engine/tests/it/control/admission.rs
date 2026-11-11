@@ -883,7 +883,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(E::Runtime(B::BudgetFull), Budget, false),
         row!(E::Runtime(B::ArtifactTooLarge), Budget, false),
-        row!(E::Cancelled, Cancelled, false),
+        row!(
+            E::Runtime(engine::RuntimeError::Cancelled),
+            Cancelled,
+            false
+        ),
         row!(
             E::Runtime(engine::RuntimeError::WorkerPanicked),
             WorkerFailure,
@@ -1038,6 +1042,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::NetworkTransient), C::Job),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
@@ -1063,6 +1068,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Limit, C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
@@ -1071,7 +1077,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             C::WorkerFailure,
         ),
         (E::Runtime(B::Poisoned), C::Job),
-        (E::Cancelled, C::Cancelled),
+        (E::Runtime(engine::RuntimeError::Cancelled), C::Cancelled),
         (E::StaleResult, C::StaleResult),
         (E::Runtime(engine::RuntimeError::NetworkTransient), C::Job),
     ] {
@@ -1093,6 +1099,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
     ] {
         cases.push((E::Runtime(B::Failed(Arc::new(cause))), C::Refused, false));
     }
+    cases.push((
+        E::Runtime(B::Failed(Arc::new(B::Cancelled))),
+        C::Cancelled,
+        false,
+    ));
     let message = E::Providers(P::ModelMissing("test-model")).to_string();
     let cache = B::CacheCorrupt;
     assert_eq!(cache.code(), C::Job);

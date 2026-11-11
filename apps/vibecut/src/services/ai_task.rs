@@ -53,7 +53,7 @@ impl ConsentPrompt for TaskEvents {
         });
         loop {
             if self.cancel.cancelled() {
-                return Err(engine::EditError::Cancelled);
+                return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),

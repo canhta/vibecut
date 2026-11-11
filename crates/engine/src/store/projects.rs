@@ -643,7 +643,7 @@ impl Drop for DirectoryGuard {
 
 fn checkpoint(cancelled: &dyn Fn() -> bool) -> Result<()> {
     if cancelled() {
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(crate::RuntimeError::Cancelled))
     } else {
         Ok(())
     }
