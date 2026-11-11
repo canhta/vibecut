@@ -4,7 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::openai::{MAX_UPLOAD_BYTES, MODEL, OpenAiTranscriber};
+use ai::openai::{MAX_UPLOAD_BYTES, OpenAiTranscriber};
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 use ai::{
     AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
@@ -85,11 +85,11 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn config() -> ProviderConfig {
-    OpenAiTranscriber::provider_config(MODEL).unwrap()
+    OpenAiTranscriber::provider_config("gpt-transcribe").unwrap()
 }
 
 fn other_config() -> ProviderConfig {
-    ai::elevenlabs::ElevenLabsTranscriber::provider_config(ai::elevenlabs::MODEL).unwrap()
+    ai::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap()
 }
 
 fn scope(provider: ProviderConfig) -> Scope {

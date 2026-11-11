@@ -137,7 +137,7 @@ fn try_run(
     max_attempts: u8,
     budget: u64,
 ) -> Result<(Arc<TranslationRun>, Arc<Transport>), EditError> {
-    let config = OpenAiTranslator::provider_config(TRANSLATION_MODEL).unwrap();
+    let config = OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope =
         Scope::translation(config.clone(), TRANSLATION_MODE.into(), &w, "test".into()).unwrap();
     let c = Consent::grant(scope.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
@@ -159,7 +159,7 @@ fn try_run(
             scope,
             Some(c),
             max_attempts,
-            Money::new("USD", budget).unwrap(),
+            Some(Money::new("USD", budget).unwrap()),
         )?,
         transport,
     ))
@@ -297,6 +297,111 @@ fn engine_repairs_schema_with_same_provider_then_applies_one_revision_bound_comm
     assert_eq!(s.history_len(), (1, 0));
     s.undo().unwrap();
     assert_eq!(cues(&s)[2].texts[&lang("en")].text.as_str(), "user edit");
+}
+#[test]
+fn maximum_model_ids_submit_translation_with_exact_consent_and_distinct_cache_keys() {
+    struct SelectedTransport {
+        model: String,
+        inner: Transport,
+    }
+    impl HttpTransport for SelectedTransport {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+            let wire: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(wire["model"], self.model);
+            self.inner.send(request)
+        }
+    }
+    let mut keys = Vec::new();
+    let mut previous_acknowledgement = None;
+    for suffix in ['a', 'b'] {
+        let model = format!("{}{suffix}", "x".repeat(255));
+        let mut s = session();
+        let window = selected(&s, false);
+        let config = OpenAiTranslator::provider_config(&model).unwrap();
+        let scope = Scope::translation(
+            config.clone(),
+            TRANSLATION_MODE.into(),
+            &window,
+            "fixture".into(),
+        )
+        .unwrap();
+        let transport = Arc::new(SelectedTransport {
+            model,
+            inner: Transport {
+                calls: AtomicUsize::new(0),
+                fail_count: 0,
+            },
+        });
+        let provider = Arc::new(
+            OpenAiTranslator::new(
+                config.clone(),
+                ApiKey::new("fixture").unwrap(),
+                transport.clone(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(provider.estimate(&scope), CostEstimate::Unknown);
+        let target = || TranslationTarget {
+            session: &s,
+            item: ItemId(0),
+        };
+        let ordinary =
+            Consent::grant(scope.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
+        assert!(matches!(
+            TranslationRun::new(
+                target(),
+                provider.clone(),
+                window.clone(),
+                scope.clone(),
+                Some(ordinary),
+                1,
+                None,
+            ),
+            Err(EditError::Ai(Error::Cost))
+        ));
+        assert_eq!(transport.inner.calls.load(Ordering::Relaxed), 0);
+        if let Some(previous) = &previous_acknowledgement {
+            assert!(matches!(
+                Consent::grant_unknown_price(scope.clone(), previous),
+                Err(Error::ConsentRequired)
+            ));
+        }
+        let acknowledgement = UnknownPriceAcknowledgement::grant(config, Operation::Translate);
+        let token = Consent::grant_unknown_price(scope.clone(), &acknowledgement).unwrap();
+        previous_acknowledgement = Some(acknowledgement);
+        let run =
+            TranslationRun::new(target(), provider, window, scope, Some(token), 1, None).unwrap();
+        let mut runner = runner();
+        let (id, _) = run.submit(&mut runner, &s).unwrap();
+        keys.push(runner.snapshot(id).unwrap().input);
+        let done = pump(&mut runner, id);
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.error);
+        assert_eq!(transport.inner.calls.load(Ordering::Relaxed), 1);
+        let output = runner.take_output(id).unwrap();
+        let translated: Translation = serde_json::from_slice(output.bytes()).unwrap();
+        output
+            .apply(
+                &mut s,
+                Command::Retranslate {
+                    item: ItemId(0),
+                    target_language: translated.target_language,
+                    texts: translated.texts,
+                    translation_ref: "fixture".into(),
+                    force: false,
+                },
+            )
+            .unwrap();
+        assert!(
+            cues(&s)[2].texts[&lang("en")]
+                .text
+                .as_str()
+                .starts_with("translated")
+        );
+    }
+    assert_ne!(
+        keys[0], keys[1],
+        "the complete model ID must isolate translation jobs"
+    );
 }
 #[test]
 fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session() {

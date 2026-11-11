@@ -13,7 +13,7 @@ use crate::metrics::{Evaluation, Metrics, evaluate};
 use crate::transcript;
 use crate::{Error, Result};
 use ai::clips::{
-    ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester, OPENAI_LUNA_MODEL,
+    ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester,
     OpenAiClipSuggester,
 };
 use ai::transport::UreqTransport;
@@ -28,14 +28,14 @@ use std::time::Instant;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {
     Heuristic,
-    Gpt6Luna,
+    OpenAi,
 }
 
 impl Provider {
     pub fn parse(value: &str) -> Result<Self> {
         match value {
             "heuristic" => Ok(Self::Heuristic),
-            "gpt-6-luna" => Ok(Self::Gpt6Luna),
+            "openai" => Ok(Self::OpenAi),
             other => Err(Error::Options(format!("unknown provider: {other}"))),
         }
     }
@@ -43,7 +43,7 @@ impl Provider {
     pub fn label(self) -> &'static str {
         match self {
             Self::Heuristic => "heuristic",
-            Self::Gpt6Luna => "gpt-6-luna",
+            Self::OpenAi => "openai",
         }
     }
 }
@@ -53,6 +53,9 @@ pub struct Options {
     pub set: String,
     pub labels: Option<PathBuf>,
     pub provider: Provider,
+    pub model: String,
+    pub asr_model: String,
+    pub accept_unknown_price: bool,
     pub live: bool,
     pub max_cost_micros: u64,
     pub k: usize,
@@ -170,8 +173,8 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         current: Metrics::default(),
         baseline: Metrics::default(),
         main_baseline: None,
-        current_cost_micros: 0,
-        baseline_cost_micros: 0,
+        current_cost_micros: Some(0),
+        baseline_cost_micros: Some(0),
         wall_ms: 0,
     };
     let mut notes = Vec::new();
@@ -200,6 +203,8 @@ pub fn run(options: &Options) -> Result<RunOutput> {
                 source: &source,
                 language: &language,
                 transcribe: options.transcribe,
+                model: &options.asr_model,
+                accept_unknown_price: options.accept_unknown_price,
             },
             &mut budget,
         )?;
@@ -230,10 +235,13 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         };
         let estimate = estimate_provider(provider.as_ref(), &input, &source_sha)?;
         eprintln!(
-            "{}: provider {} estimated cost USD {:.6}; remaining USD {:.6} of cap USD {:.6}",
+            "{}: provider {} estimated cost {}; remaining USD {:.6} of cap USD {:.6}",
             stem,
             provider_label,
-            micros(estimate),
+            estimate.map_or_else(
+                || "unknown".to_owned(),
+                |micros| format!("USD {:.6}", micros as f64 / 1_000_000.0)
+            ),
             micros(budget.remaining()),
             micros(budget.limit())
         );
@@ -250,6 +258,7 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             source_sha: &source_sha,
             source: &source,
             energy: options.energy,
+            accept_unknown_price: options.accept_unknown_price,
         };
         let current = run_provider(&context, &mut video_notes, estimate, &mut budget)?;
         let current_wall = millis(current_started.elapsed());
@@ -260,15 +269,17 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             profile,
             settings: &settings,
             k: options.k,
-            cost_micros: estimate.saturating_add(cached.cost_micros),
+            cost_micros: estimate
+                .zip(cached.cost_micros)
+                .map(|(a, b)| a.saturating_add(b)),
             wall_ms: current_wall,
             snap_failures: current.snap_failures,
         })?;
 
         let (baseline_metrics, baseline_cost) = if options.provider == Provider::Heuristic {
             let mut metrics = current_metrics.clone();
-            metrics.cost_micros = 0;
-            (metrics, 0)
+            metrics.cost_micros = Some(0);
+            (metrics, Some(0))
         } else {
             let heuristic = HeuristicClipSuggester::new()?;
             let baseline_started = Instant::now();
@@ -276,7 +287,8 @@ pub fn run(options: &Options) -> Result<RunOutput> {
                 provider: &heuristic,
                 ..context
             };
-            let baseline_run = run_provider(&baseline_context, &mut video_notes, 0, &mut budget)?;
+            let baseline_run =
+                run_provider(&baseline_context, &mut video_notes, Some(0), &mut budget)?;
             let baseline_wall = millis(baseline_started.elapsed());
             let metrics = evaluate(&Evaluation {
                 labels: &label.clips,
@@ -285,11 +297,11 @@ pub fn run(options: &Options) -> Result<RunOutput> {
                 profile,
                 settings: &settings,
                 k: options.k,
-                cost_micros: 0,
+                cost_micros: Some(0),
                 wall_ms: baseline_wall,
                 snap_failures: baseline_run.snap_failures,
             })?;
-            (metrics, 0)
+            (metrics, Some(0))
         };
 
         if options.write_baseline.is_some() {
@@ -302,9 +314,12 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         aggregate.baseline.merge(&baseline_metrics);
         aggregate.current_cost_micros = aggregate
             .current_cost_micros
-            .saturating_add(current_metrics.cost_micros);
-        aggregate.baseline_cost_micros =
-            aggregate.baseline_cost_micros.saturating_add(baseline_cost);
+            .zip(current_metrics.cost_micros)
+            .map(|(a, b)| a.saturating_add(b));
+        aggregate.baseline_cost_micros = aggregate
+            .baseline_cost_micros
+            .zip(baseline_cost)
+            .map(|(a, b)| a.saturating_add(b));
         aggregate.wall_ms = aggregate.wall_ms.saturating_add(millis(started.elapsed()));
 
         videos.push(VideoReport {
@@ -376,9 +391,10 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         "cost is the provider's per-invocation upper-bound estimate, not measured billing".into(),
     );
     let report = Report {
-        schema: 1,
+        schema: 2,
         set: options.set.clone(),
         provider: provider_label,
+        model: provider.config().model().as_str().into(),
         live: options.live,
         k: options.k,
         revision: revision.clone(),
@@ -401,14 +417,14 @@ pub fn run(options: &Options) -> Result<RunOutput> {
 fn make_provider(options: &Options) -> Result<(Box<dyn ClipSuggester>, String)> {
     match options.provider {
         Provider::Heuristic => Ok((Box::new(HeuristicClipSuggester::new()?), "heuristic".into())),
-        Provider::Gpt6Luna => {
+        Provider::OpenAi => {
             if !options.live {
                 return Err(Error::LiveRequired);
             }
             let key = Credentials::from_env().openai()?;
-            let config = OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL)?;
+            let config = OpenAiClipSuggester::provider_config(&options.model)?;
             let provider = OpenAiClipSuggester::new(config, key, Arc::new(UreqTransport::new()))?;
-            Ok((Box::new(provider), "gpt-6-luna".into()))
+            Ok((Box::new(provider), "openai".into()))
         }
     }
 }
@@ -495,7 +511,7 @@ mod tests {
 
     struct FakeProvider {
         config: ProviderConfig,
-        estimate: u64,
+        estimate: Option<u64>,
     }
 
     impl ClipSuggester for FakeProvider {
@@ -520,7 +536,9 @@ mod tests {
             }
         }
         fn estimate(&self, _: &Scope) -> CostEstimate {
-            CostEstimate::UpperBound(Money::new("USD", self.estimate).unwrap())
+            self.estimate.map_or(CostEstimate::Unknown, |estimate| {
+                CostEstimate::UpperBound(Money::new("USD", estimate).unwrap())
+            })
         }
         fn source(&self) -> ClipSource {
             ClipSource::Llm
@@ -536,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn second_video_is_refused_by_the_cumulative_run_budget() {
+    fn cumulative_budget_and_explicit_unknown_price_authorization() {
         use captions::{Fingerprint, NfcText, Segment, Word};
         let transcript = Transcript {
             source_lang: LanguageTag::parse("en").unwrap(),
@@ -585,10 +603,10 @@ mod tests {
                 },
             )
             .unwrap(),
-            estimate: 344_064,
+            estimate: Some(344_064),
         };
         let estimate = estimate_provider(&provider, &input, "sha").unwrap();
-        assert_eq!(estimate, 344_064);
+        assert_eq!(estimate, Some(344_064));
         let context = RunContext {
             provider: &provider,
             input: &input,
@@ -598,6 +616,7 @@ mod tests {
             source_sha: "sha",
             source: Path::new("unused"),
             energy: false,
+            accept_unknown_price: false,
         };
         let mut budget = Budget::new(350_000);
         let mut notes = Vec::new();
@@ -609,5 +628,25 @@ mod tests {
                 cap: 350_000
             })
         ));
+        let unknown = FakeProvider {
+            config: provider.config.clone(),
+            estimate: None,
+        };
+        let context = RunContext {
+            provider: &unknown,
+            ..context
+        };
+        let mut budget = Budget::new(0);
+        assert_eq!(estimate_provider(&unknown, &input, "sha").unwrap(), None);
+        assert!(matches!(
+            run_provider(&context, &mut notes, None, &mut budget),
+            Err(Error::UnknownCost)
+        ));
+        let approved = RunContext {
+            accept_unknown_price: true,
+            ..context
+        };
+        run_provider(&approved, &mut notes, None, &mut budget).unwrap();
+        assert_eq!(budget.reserved(), 0);
     }
 }

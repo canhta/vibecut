@@ -81,6 +81,49 @@ impl UploadRequest {
 /// The adapter refuses the remote request when this returns `Err(ConsentRequired)`.
 pub trait ConsentPrompt {
     fn approve(&self, request: &UploadRequest) -> Result<(), EditError>;
+    /// A separate affirmative decision for the exact displayed model's unknown price.
+    /// Ordinary upload approval never implicitly authorizes unknown spending.
+    fn approve_unknown_price(&self, _request: &UploadRequest) -> Result<(), EditError> {
+        Err(ai::Error::Cost.into())
+    }
+}
+/// Show the exact disclosure and grant a payload-bound token only after the
+/// appropriate human decision. Unknown pricing never fabricates a money ceiling.
+pub fn approve_upload(
+    prompt: &dyn ConsentPrompt,
+    request: &UploadRequest,
+    scope: &Scope,
+    estimate: &CostEstimate,
+) -> Result<ai::Consent, EditError> {
+    let operation = match request.operation {
+        CatalogOperation::Transcribe => ai::Operation::Transcribe,
+        CatalogOperation::Translate => ai::Operation::Translate,
+        CatalogOperation::SuggestClips => ai::Operation::SuggestClips,
+        CatalogOperation::GenerateChapters => ai::Operation::GenerateChapters,
+        CatalogOperation::ClassifyFillers => ai::Operation::ClassifyFillers,
+    };
+    if request.config != scope.provider
+        || operation != scope.operation
+        || request.model != scope.provider.model().as_str()
+        || request.cost != Cost::from(estimate)
+    {
+        return Err(ai::Error::ConsentRequired.into());
+    }
+    if matches!(estimate, CostEstimate::Unknown) {
+        prompt.approve_unknown_price(request)?;
+        let acknowledgement =
+            ai::UnknownPriceAcknowledgement::grant(scope.provider.clone(), scope.operation);
+        Ok(ai::Consent::grant_unknown_price(
+            scope.clone(),
+            &acknowledgement,
+        )?)
+    } else {
+        prompt.approve(request)?;
+        Ok(ai::Consent::grant(
+            scope.clone(),
+            estimate_money(estimate)?,
+        )?)
+    }
 }
 /// A prompt that refuses every remote request. Test fixtures and non-interactive
 /// callers must opt in explicitly with [`AllowAll`].

@@ -19,7 +19,7 @@ Adapters cap response-parser allocation before building transport records; engin
 | `gipformer/` | [Local Gipformer](src/gipformer/README.md) |
 | `models.rs` | [Model catalog and language-neutral weights](src/models/README.md) |
 | `openai/` | [OpenAI adapters](src/openai/README.md) |
-| `remote.rs` | [Shared remote-adapter core](src/remote.rs) |
+| `remote.rs` | [Shared remote provider admission](src/remote/README.md) |
 | `speech.rs` | [Speech synthesis](src/speech/README.md) |
 | `structured.rs` | [source](src/structured.rs) |
 | `translation.rs` | [Contextual text translation](src/translation/README.md) |

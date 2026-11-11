@@ -50,9 +50,9 @@ fn input(include_markers: bool) -> FillerInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::fillers::AnthropicFillerClassifier::provider_config(ai::anthropic::MODEL).unwrap()
+        ai::fillers::AnthropicFillerClassifier::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::fillers::OpenAiFillerClassifier::provider_config(OPENAI_MODEL).unwrap()
+        ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
     }
 }
 fn scope(w: &FillerInput, p: &dyn FillerClassifier) -> Scope {

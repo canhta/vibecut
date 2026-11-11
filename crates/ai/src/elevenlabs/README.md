@@ -2,9 +2,9 @@
 
 ## Scribe transcription
 
-`provider_config(model)` builds the one admitted configuration; `new` admits only `scribe_v2`, backend `elevenlabs`, the adapter's exact settings fingerprint and the base URL `https://api.elevenlabs.io/v1`, so proxies, lookalike hosts, other version paths and forged or stale settings identities are refused. Composition resolves the provider key and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
+`provider_config(model)` builds the one admitted configuration; `new` admits any bounded remote model ID, backend `elevenlabs`, the adapter's exact settings fingerprint and the base URL `https://api.elevenlabs.io/v1`, so proxies, lookalike hosts, other version paths and forged or stale settings identities are refused. Composition resolves the provider key and injects it as `transport::ApiKey`; it is sent as `xi-api-key` and never serialized or logged.
 
-Uploads are multipart PCM16 WAV with `model_id=scribe_v2`, the exact `language_code` (`vi`, `en` or `zh`, no fallback) and `timestamps_granularity=word`. The provider allows 3 GB and 10 hours in standard mode; the shared 64 MiB PCM admission and engine chunking bound real invocations. Responses are capped at 1 MiB. Consent `max_bytes` bounds the encoded WAV including its 44-byte header.
+Uploads are multipart PCM16 WAV with the selected `model_id`, the exact `language_code` (`vi`, `en` or `zh`, no fallback) and `timestamps_granularity=word`. The provider allows 3 GB and 10 hours in standard mode; the shared 64 MiB PCM admission and engine chunking bound real invocations. Responses are capped at 1 MiB. Consent `max_bytes` bounds the encoded WAV including its 44-byte header.
 
 Scribe returns word, spacing and audio-event tokens in seconds. The adapter folds spacing into the preceding token, keeps audio events as separate timed tokens, and converts each absolute boundary once to source samples with nearest-sample rounding. It emits one timed segment per invocation with stable window-derived IDs. Word tokens become `raw_tokens` and flow through captions' shared span code; zero-width punctuation stays untimed. No cue segmentation, interpolation or fallback.
 
@@ -14,7 +14,7 @@ Typed failures: auth, payment/quota, rate limit, payload, server, network. The a
 
 ## ElevenLabs speech synthesis
 
-`elevenlabs::speech::ElevenLabsSpeech` is the ElevenLabs adapter for the speech contract. It admits only backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and two models chosen in `ProviderConfig::model`: `eleven_multilingual_v2` (EN/ZH) and `eleven_flash_v2_5` (VI/EN/ZH). Unsupported language/model pairs return `UnsupportedLanguage` before transport; the adapter never switches model, voice or provider, and the VI gate is client-side. `config`, `capabilities` and `estimate` do no IO.
+`elevenlabs::speech::ElevenLabsSpeech` is the ElevenLabs adapter for the speech contract. It admits only backend `elevenlabs`, the base URL `https://api.elevenlabs.io/v1` and any bounded ID in `ProviderConfig::model`. Known profiles are `eleven_multilingual_v2` (EN/ZH) and `eleven_flash_v2_5` (VI/EN/ZH). Known unsupported language/model pairs return `UnsupportedLanguage` before transport; the adapter never switches model, voice or provider, and the VI gate is client-side. `config`, `capabilities` and `estimate` do no IO.
 
 Requests are `POST /v1/text-to-speech/{voice_id}?output_format=pcm_24000` with the exact NFC text, `model_id`, `apply_text_normalization=auto` and optional `voice_settings.speed` in 0.7–1.2. `language_code` is sent only for Flash v2.5. The response is headerless little-endian PCM16 at 24 kHz, decoded to finite mono f32 and validated by the shared seam. Only a complete HTTP 200 body is accepted (other 2xx are rejected as partial), and a declared `Content-Length` must equal the received bytes, since raw PCM has no container length. Voices are an explicit premade/stock allowlist supplied by composition; cloned and professional-clone voices are never listed, selected or guessed.
 
@@ -29,3 +29,5 @@ The settings fingerprint binds output format, normalization, optional speed and 
 Live voice quality is unverified.
 
 Sources checked 2026-11-05: [text-to-speech](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [models](https://elevenlabs.io/docs/overview/models), [zero retention](https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode), [pricing](https://elevenlabs.io/pricing/api).
+
+Custom speech IDs use the conservative 10,000-character split bound with unknown pricing; unsupported capabilities are reported by the provider without fallback. Model defaults and explicit unknown-price consent belong to the [provider contract](../contracts/README.md#remote-model-settings).

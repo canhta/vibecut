@@ -336,3 +336,15 @@ pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     }
     Ok(app)
 }
+
+pub(super) fn ai_preferences(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+) -> Result<AppHarness, Failure> {
+    let mut editor = empty_editor(theme, locale)?;
+    editor.activate("preferences.open")?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    app.run_steps(6);
+    Ok(app)
+}

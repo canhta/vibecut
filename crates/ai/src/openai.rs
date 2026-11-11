@@ -5,7 +5,7 @@ mod translation;
 use crate::contracts::checkpoint;
 use crate::remote::{self, UploadDisclosure};
 use crate::{
-    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Money, Operation,
+    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation,
     ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Stage, Support, Transcriber,
 };
 use captions::{LanguageTag, NfcText};
@@ -21,7 +21,6 @@ use crate::transport::{
 };
 
 /// The only production model admitted here. Deprecated transcription models are refused.
-pub const MODEL: &str = "gpt-transcribe";
 /// Provider backend name expected in the tagged remote configuration.
 pub(crate) const BACKEND: &str = "openai";
 /// Current documented file limit for `/v1/audio/transcriptions` (25 MB decimal).
@@ -31,7 +30,6 @@ pub(crate) const BASE_URL: &str = "https://api.openai.com/v1";
 /// The only admitted transcription endpoint.
 pub const ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 /// Published list price, integer micro-USD per audio second ($0.0045/min).
-const PRICE_MICROS_PER_SECOND: u64 = 75;
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-text";
 /// File mode is the only mode this adapter advertises.
@@ -39,8 +37,7 @@ pub const MODE: &str = "file";
 /// Product ASR languages. Extend this data table only with documented API support.
 pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 /// Settings identity for composition-owned cache keys.
-const SETTINGS_FINGERPRINT: &str =
-    "openai-transport-v1;model=gpt-transcribe;format=json;wav=pcm16;languages=vi,en,zh";
+const SETTINGS_FINGERPRINT: &str = "openai-transport-v1;format=json;wav=pcm16;languages=vi,en,zh";
 
 /// Consent-gated OpenAI file transcription over an injected blocking transport.
 pub struct OpenAiTranscriber {
@@ -53,7 +50,6 @@ impl OpenAiTranscriber {
     /// The one admitted configuration for this model id.
     pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
         remote::provider_config(
-            &[MODEL],
             model,
             SETTINGS_FINGERPRINT,
             BACKEND,
@@ -63,7 +59,7 @@ impl OpenAiTranscriber {
         )
     }
 
-    /// Admits only the `gpt-transcribe` model, the `openai` backend, this
+    /// Admits a bounded selected model with the `openai` backend, this
     /// adapter's settings fingerprint and a remote versioned HTTPS base URL. The
     /// key is resolved by composition, never here.
     pub fn new(
@@ -73,7 +69,6 @@ impl OpenAiTranscriber {
     ) -> Result<Self, Error> {
         remote::admit(
             &config,
-            &[MODEL],
             Some(SETTINGS_FINGERPRINT),
             BACKEND,
             BASE_URL,
@@ -128,17 +123,9 @@ impl Transcriber for OpenAiTranscriber {
     }
 
     fn estimate(&self, scope: &Scope) -> CostEstimate {
-        let Some(seconds) = remote::rounded_up_seconds(scope).and_then(|s| u64::try_from(s).ok())
-        else {
-            return CostEstimate::Unknown;
-        };
-        let Some(micros) = seconds.checked_mul(PRICE_MICROS_PER_SECOND) else {
-            return CostEstimate::Unknown;
-        };
-        match Money::new("USD", micros) {
-            Ok(money) => CostEstimate::UpperBound(money),
-            Err(_) => CostEstimate::Unknown,
-        }
+        remote::rounded_up_seconds(scope).map_or(CostEstimate::Unknown, |seconds| {
+            crate::defaults::audio_estimate(&self.config, seconds)
+        })
     }
 
     fn disclosure(&self, scope: &Scope) -> Result<Option<UploadDisclosure>, Error> {
@@ -174,6 +161,7 @@ impl Transcriber for OpenAiTranscriber {
         let outbound = build_request(scope, &self.key, audio)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let response = self.transport.send(outbound)?;
+        remote::check_model_response(&response, &self.config)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let segments = parse_transcription(&response, audio.range)?;
         checkpoint(hooks, Stage::Transcribe)?;
@@ -191,7 +179,7 @@ fn build_request(
         return Err(Error::Payload);
     }
     let mut form = Multipart::new(&audio)?;
-    form.field("model", MODEL);
+    form.field("model", scope.provider.model().as_str());
     form.field("response_format", "json");
     form.field("languages[]", scope.source_language.as_str());
     form.file("audio.wav", "audio/wav", &audio);

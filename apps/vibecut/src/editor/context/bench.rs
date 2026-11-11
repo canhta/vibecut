@@ -287,6 +287,21 @@ mod tests {
             let (mut editor, item) = audio_editor();
             if full_preferences {
                 let preferences = &mut editor.preferences;
+                let ceiling = crate::preferences::MAX_PREFERENCES_BYTES as usize;
+                for row in ai::defaults::DEFAULTS
+                    .iter()
+                    .filter(|row| row.shipped_default)
+                {
+                    for index in 0..crate::services::remote_models::MAX_RECENT_MODELS {
+                        let model =
+                            format!("{index}{}", "x".repeat(ai::defaults::MAX_MODEL_BYTES - 1));
+                        preferences
+                            .ai_models
+                            .select(row.provider, row.feature, &model)
+                            .unwrap();
+                    }
+                }
+                preferences.resolve_models();
                 for index in 0..64 {
                     preferences.windows.insert(
                         format!("{index:064}"),
@@ -301,7 +316,7 @@ mod tests {
                     let mut next = preferences.clone();
                     next.sections.insert(format!("section.{index:032}"), false);
                     next.sections.insert("x".into(), false);
-                    if serde_json::to_vec(&next).unwrap().len() > 16384 {
+                    if serde_json::to_vec(&next).unwrap().len() > ceiling {
                         break;
                     }
                     next.sections.remove("x");
@@ -311,11 +326,11 @@ mod tests {
                 for length in 1..=64 {
                     *preferences = base.clone();
                     preferences.sections.insert("x".repeat(length), false);
-                    if serde_json::to_vec(&preferences).unwrap().len() == 16384 {
+                    if serde_json::to_vec(&preferences).unwrap().len() == ceiling {
                         break;
                     }
                 }
-                assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), 16384);
+                assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), ceiling);
                 preferences.validate().unwrap();
             }
             if locked {

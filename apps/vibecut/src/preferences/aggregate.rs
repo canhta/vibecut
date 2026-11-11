@@ -15,8 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 7;
-pub const MAX_PREFERENCES_BYTES: u64 = 16384;
+pub const PREFERENCES_VERSION: u32 = 8;
+/// Room for every provider/feature choice and its bounded recent IDs.
+pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
 pub const MAX_TIMELINE_LANES: usize = 4096;
 
@@ -36,6 +37,7 @@ pub const DEFAULT_PANELS: [f32; 3] = [582.0 / 1696.0, 486.0 / 1696.0, 447.0 / 97
 
 /// Every user-visible preference key in the one versioned document.
 pub const PREFERENCE_KEYS: &[&str] = &[
+    "ai_models",
     "locale",
     "dark",
     "snapping",
@@ -100,6 +102,7 @@ pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
+    pub ai_models: super::AiPreferences,
     pub version: u32,
     pub windows: BTreeMap<String, WindowGeometry>,
     pub export: crate::export::ExportOptions,
@@ -147,6 +150,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            ai_models: super::AiPreferences::default(),
             version: PREFERENCES_VERSION,
             windows: BTreeMap::new(),
             export: crate::export::ExportOptions::default(),
@@ -190,6 +194,7 @@ impl Preferences {
         }
     }
     pub fn validate(&self) -> Result<()> {
+        self.ai_models.validate()?;
         if self.version != PREFERENCES_VERSION {
             return Err(Error::Unsupported("preferences version"));
         }
@@ -293,6 +298,7 @@ impl Preferences {
     /// Typed `ui.prefs.set` payload access used by the app history.
     pub fn get(&self, key: &str) -> Result<serde_json::Value> {
         match key {
+            "ai_models" => Ok(serde_json::to_value(&self.ai_models)?),
             "locale" => Ok(serde_json::to_value(self.locale)?),
             "dark" => Ok(serde_json::Value::Bool(self.dark)),
             "snapping" => Ok(serde_json::Value::Bool(self.snapping)),
@@ -320,12 +326,14 @@ impl Preferences {
     pub fn set(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
         let mut next = self.clone();
         next.set_value(key, value)?;
+        next.resolve_models();
         next.validate()?;
         *self = next;
         Ok(())
     }
     fn set_value(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
         match key {
+            "ai_models" => self.ai_models = serde_json::from_value(value)?,
             "locale" => self.locale = serde_json::from_value(value)?,
             "dark" => self.dark = serde_json::from_value(value)?,
             "snapping" => self.snapping = serde_json::from_value(value)?,
@@ -352,5 +360,23 @@ impl Preferences {
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
+    }
+    /// Refresh transient workflow snapshots from the one persisted model setting.
+    pub fn resolve_models(&mut self) {
+        if matches!(
+            self.subtitles.transcription.as_str(),
+            "whisper.cpp" | "whisper" | "gipformer"
+        ) {
+            self.subtitles.transcription_model = self.subtitles.local_transcription_model.clone();
+        } else {
+            self.subtitles.transcription_model = self
+                .ai_models
+                .model(&self.subtitles.transcription, ai::Operation::Transcribe)
+                .into();
+        }
+        self.subtitles.translation_model = self
+            .ai_models
+            .model(&self.subtitles.translation, ai::Operation::Translate)
+            .into();
     }
 }

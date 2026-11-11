@@ -45,7 +45,7 @@ fn lang(s: &str) -> LanguageTag {
     LanguageTag::parse(s).unwrap()
 }
 fn config() -> ProviderConfig {
-    OpenAiTranslator::provider_config(TRANSLATION_MODEL).unwrap()
+    OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap()
 }
 fn window(source: &str, target: &str) -> TranslationWindow {
     TranslationWindow {

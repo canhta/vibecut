@@ -3,7 +3,7 @@
 use crate::remote::{self, UploadDisclosure};
 use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 use crate::{
-    Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Money, Operation, ProviderConfig,
+    Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,
 };
 use captions::{LanguageTag, NfcText};
@@ -13,7 +13,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-pub const MODEL: &str = "claude-sonnet-5-5";
 pub(crate) const BACKEND: &str = "anthropic";
 pub(crate) const BASE_URL: &str = "https://api.anthropic.com/v1";
 pub const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
@@ -27,7 +26,6 @@ pub const MAX_WIRE: usize = 64 * 1024;
 const MAX_OUTPUT: u64 = 8192;
 // Sonnet 5.5 list price: $2 input / $10 output per 1M tokens. Conservative byte
 // ceiling plus framing allowance; no chars/4 token estimate is treated as truth.
-const UPPER_MICROS: u64 = 131_072 * 2 + MAX_OUTPUT * 10;
 pub const POLICY_URL: &str =
     "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention";
 const PRICING_URL: &str = "https://platform.claude.com/docs/en/about-claude/pricing";
@@ -83,7 +81,6 @@ impl AnthropicTranslator {
     /// The one admitted configuration for this model id.
     pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
         remote::provider_config(
-            &[MODEL],
             model,
             TRANSLATION_SETTINGS,
             BACKEND,
@@ -98,14 +95,7 @@ impl AnthropicTranslator {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     ) -> Result<Self, Error> {
-        remote::admit(
-            &config,
-            &[MODEL],
-            Some(TRANSLATION_SETTINGS),
-            BACKEND,
-            BASE_URL,
-            None,
-        )?;
+        remote::admit(&config, Some(TRANSLATION_SETTINGS), BACKEND, BASE_URL, None)?;
         Ok(Self {
             config,
             messages: MessagesClient::new(key, transport),
@@ -149,7 +139,7 @@ impl Translator for AnthropicTranslator {
         }
     }
     fn estimate(&self, _: &Scope) -> CostEstimate {
-        Money::new("USD", UPPER_MICROS).map_or(CostEstimate::Unknown, CostEstimate::UpperBound)
+        crate::defaults::text_estimate(&self.config, Operation::Translate, 131_072, MAX_OUTPUT)
     }
     fn disclosure(&self, scope: &Scope) -> Result<Option<UploadDisclosure>, Error> {
         let capabilities = self.capabilities(scope);
@@ -181,7 +171,7 @@ impl Translator for AnthropicTranslator {
         crate::translation::prepare(self, window, request)?;
         let schema = json!({"type":"object","properties":{"translations":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"text":{"type":"string"}},"required":["id","text"],"additionalProperties":false}}},"required":["translations"],"additionalProperties":false});
         let body = serde_json::to_vec(&json!({
-            "model": MODEL,
+            "model": self.config.model().as_str(),
             "max_tokens": MAX_OUTPUT,
             "stream": false,
             "thinking": {"type": "between_tools"},
@@ -195,6 +185,7 @@ impl Translator for AnthropicTranslator {
         }
         crate::contracts::checkpoint(hooks, Stage::Translate)?;
         let response = self.messages.send(body)?;
+        remote::check_model_response(&response, &self.config)?;
         crate::contracts::checkpoint(hooks, Stage::Translate)?;
         let text = message_text(&response)?;
         let parsed: Output = serde_json::from_str(&text).map_err(|_| Error::Schema)?;

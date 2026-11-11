@@ -219,6 +219,7 @@ fn providers(translation: bool) -> Providers {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new()),
         None,
         translation.then(|| TranslationProvider::OpenAi {
@@ -327,6 +328,119 @@ fn heuristic_suggestion_snaps_inside_the_source() {
         }
     }
 }
+#[test]
+fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_checkpoints() {
+    use ai::elevenlabs::ElevenLabsTranscriber;
+    use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+    use engine::providers::{ConsentPrompt, Cost, UploadRequest};
+    struct Transport {
+        model: String,
+        calls: Mutex<usize>,
+    }
+    impl HttpTransport for Transport {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+            assert_eq!(request.url, ai::elevenlabs::ENDPOINT);
+            assert!(
+                request
+                    .body
+                    .windows(self.model.len())
+                    .any(|s| s == self.model.as_bytes())
+            );
+            *self.calls.lock().unwrap() += 1;
+            Ok(HttpResponse { status: 200, headers: vec![], body: br#"{"language_code":"eng","text":"Hello world.","words":[{"text":"Hello","start":0.1,"end":0.5,"type":"word","logprob":0},{"text":" ","start":0.5,"end":0.5,"type":"spacing"},{"text":"world.","start":0.5,"end":1.5,"type":"word","logprob":0}]}"#.to_vec() })
+        }
+    }
+    struct Approve {
+        config: ProviderConfig,
+        acknowledgements: Mutex<usize>,
+    }
+    impl ConsentPrompt for Approve {
+        fn approve(&self, request: &UploadRequest) -> engine::Result<()> {
+            assert_eq!(request.config, self.config);
+            assert_eq!(request.model, self.config.model().as_str());
+            assert_eq!(request.cost, Cost::Unknown);
+            Ok(())
+        }
+        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::Result<()> {
+            self.approve(request)?;
+            *self.acknowledgements.lock().unwrap() += 1;
+            Ok(())
+        }
+    }
+    let input = fixture().expect("synthetic media oracle must be available");
+    let root = tempfile::tempdir().unwrap();
+    let (mut runner, budget) = runner();
+    let (mut cache, _) = engine::cache::ArtifactCache::open(root.path(), budget, 8).unwrap();
+    for suffix in ['a', 'b'] {
+        let model = format!("{}{suffix}", "x".repeat(255));
+        let config = ElevenLabsTranscriber::provider_config(&model).unwrap();
+        let transport = Arc::new(Transport {
+            model: model.clone(),
+            calls: Mutex::new(0),
+        });
+        let provider = Arc::new(
+            ElevenLabsTranscriber::new(
+                config.clone(),
+                ApiKey::new("fixture").unwrap(),
+                transport.clone(),
+            )
+            .unwrap(),
+        );
+        let providers = Providers::from_parts(
+            TranscriptionProvider::ElevenLabs { model },
+            ai::elevenlabs::MODE.into(),
+            provider,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let approve = Approve {
+            config,
+            acknowledgements: Mutex::new(0),
+        };
+        let request = request(&input);
+        let credentials = Credentials::new(None, None, None);
+        let cancel = Cancellation::new();
+        let error = clip_suggest::suggest(
+            &request,
+            &credentials,
+            &providers,
+            &mut runner,
+            &mut cache,
+            &AllowAll,
+            &SilentProgress,
+            &cancel,
+        )
+        .err()
+        .unwrap();
+        assert!(
+            matches!(
+                error,
+                shorts::Error::Engine(engine::EditError::Ai(Error::Cost))
+            ),
+            "{error:?}"
+        );
+        assert_eq!(*transport.calls.lock().unwrap(), 0);
+        for checkpoints in [0, 1] {
+            let outcome = clip_suggest::suggest(
+                &request,
+                &credentials,
+                &providers,
+                &mut runner,
+                &mut cache,
+                &approve,
+                &SilentProgress,
+                &cancel,
+            )
+            .unwrap();
+            assert_eq!(outcome.checkpoints, checkpoints);
+            assert!(!outcome.clips.is_empty());
+            assert_eq!(*transport.calls.lock().unwrap(), 1);
+            assert_eq!(*approve.acknowledgements.lock().unwrap(), 1);
+        }
+    }
+}
 
 #[test]
 fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
@@ -345,6 +459,7 @@ fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
             TranscriptionProvider::Whisper {
                 model: "fake-asr-model".into(),
             },
+            "transcribe".into(),
             Arc::new(asr),
             None,
             None,
@@ -622,7 +737,14 @@ fn provider_choice_never_falls_back() {
                 model: "gpt-6.1-sol".into(),
             }),
         ),
-        ("openai", Some("other"), None),
+        (
+            "openai",
+            Some("fixture-custom"),
+            Some(SuggestionProvider::OpenAi {
+                model: "fixture-custom".into(),
+            }),
+        ),
+        ("openai", Some(""), None),
         ("unknown", None, None),
     ];
     for (provider, model, expected) in cases {

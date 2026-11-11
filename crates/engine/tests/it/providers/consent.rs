@@ -95,27 +95,27 @@ fn every_provider_shows_its_own_disclosure_fields() {
     let transport = || -> Arc<dyn HttpTransport> { Arc::new(NoTransport) };
 
     let openai = ai::openai::OpenAiTranscriber::new(
-        ai::openai::OpenAiTranscriber::provider_config(ai::openai::MODEL).unwrap(),
+        ai::openai::OpenAiTranscriber::provider_config("gpt-transcribe").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
     let openai_scope = audio_scope(openai.config().clone(), ai::openai::MODE);
     let elevenlabs = ai::elevenlabs::ElevenLabsTranscriber::new(
-        ai::elevenlabs::ElevenLabsTranscriber::provider_config(ai::elevenlabs::MODEL).unwrap(),
+        ai::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
     let elevenlabs_scope = audio_scope(elevenlabs.config().clone(), ai::elevenlabs::MODE);
     let openai_translator = ai::openai::OpenAiTranslator::new(
-        ai::openai::OpenAiTranslator::provider_config(ai::openai::TRANSLATION_MODEL).unwrap(),
+        ai::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
     let anthropic_translator = ai::anthropic::AnthropicTranslator::new(
-        ai::anthropic::AnthropicTranslator::provider_config(ai::anthropic::MODEL).unwrap(),
+        ai::anthropic::AnthropicTranslator::provider_config("claude-sonnet-5-5").unwrap(),
         key(),
         transport(),
     )
@@ -139,7 +139,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "openai transcription",
                 operation: CatalogOperation::Transcribe,
                 provider: "OpenAI",
-                model: ai::openai::MODEL.into(),
+                model: "gpt-transcribe".into(),
                 languages: "vi",
                 audio_seconds: 2.0,
                 upload_bytes: 64_044,
@@ -162,7 +162,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "elevenlabs transcription",
                 operation: CatalogOperation::Transcribe,
                 provider: "ElevenLabs",
-                model: ai::elevenlabs::MODEL.into(),
+                model: "scribe_v2".into(),
                 languages: "vi",
                 audio_seconds: 2.0,
                 upload_bytes: 64_044,
@@ -186,7 +186,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "openai translation",
                 operation: CatalogOperation::Translate,
                 provider: "OpenAI",
-                model: ai::openai::TRANSLATION_MODEL.into(),
+                model: "gpt-6.1-sol".into(),
                 languages: "vi -> en",
                 audio_seconds: 0.0,
                 upload_bytes: payload_bytes,
@@ -203,7 +203,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "anthropic translation",
                 operation: CatalogOperation::Translate,
                 provider: "Anthropic",
-                model: ai::anthropic::MODEL.into(),
+                model: "claude-sonnet-5-5".into(),
                 languages: "vi -> en",
                 audio_seconds: 0.0,
                 upload_bytes: payload_bytes,
@@ -232,7 +232,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "composed remote transcription",
                 operation: CatalogOperation::Transcribe,
                 provider: "openai",
-                model: ai::openai::MODEL.into(),
+                model: "gpt-transcribe".into(),
                 languages: "vi",
                 audio_seconds: 2.0,
                 upload_bytes: 64_044,
@@ -253,7 +253,7 @@ fn every_provider_shows_its_own_disclosure_fields() {
                 name: "composed remote translation",
                 operation: CatalogOperation::Translate,
                 provider: "openai",
-                model: ai::openai::TRANSLATION_MODEL.into(),
+                model: "gpt-6.1-sol".into(),
                 languages: "vi -> en",
                 audio_seconds: 0.0,
                 upload_bytes: openai_translation.max_bytes,
@@ -315,8 +315,7 @@ fn a_local_provider_has_no_upload_to_consent_to() {
 
 #[test]
 fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
-    let config =
-        ai::chapters::OpenAiChapterGenerator::provider_config(ai::chapters::OPENAI_MODEL).unwrap();
+    let config = ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
     let consent = StoredConsent::grant([(config.clone(), ai::Money::new("USD", 10).unwrap())]);
     for (field, value) in [
         ("settings_fingerprint", "different-settings"),
@@ -382,4 +381,75 @@ fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
             assert!(matches!(result, Err(EditError::Ai(ai::Error::Cost))));
         }
     }
+}
+#[test]
+fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_disclosure() {
+    struct Explicit;
+    impl ConsentPrompt for Explicit {
+        fn approve(&self, _: &UploadRequest) -> Result<(), EditError> {
+            Err(ai::Error::ConsentRequired.into())
+        }
+        fn approve_unknown_price(&self, _: &UploadRequest) -> Result<(), EditError> {
+            Ok(())
+        }
+    }
+    let config = ai::openai::OpenAiTranscriber::provider_config("fixture-custom-asr").unwrap();
+    let adapter = ai::openai::OpenAiTranscriber::new(
+        config.clone(),
+        ApiKey::new("synthetic").unwrap(),
+        Arc::new(NoTransport),
+    )
+    .unwrap();
+    let scope = audio_scope(config.clone(), ai::openai::MODE);
+    let estimate = adapter.estimate(&scope);
+    assert_eq!(estimate, ai::CostEstimate::Unknown);
+    let request = UploadRequest::for_scope(
+        CatalogOperation::Transcribe,
+        &config,
+        adapter.disclosure(&scope).unwrap(),
+        &estimate,
+        &scope,
+    )
+    .unwrap();
+    assert!(matches!(
+        engine::providers::approve_upload(
+            &engine::providers::AllowAll,
+            &request,
+            &scope,
+            &estimate
+        ),
+        Err(EditError::Ai(ai::Error::Cost))
+    ));
+    let consent =
+        engine::providers::approve_upload(&Explicit, &request, &scope, &estimate).unwrap();
+    ai::authorize(&scope, &estimate, Some(&consent)).unwrap();
+    let mut changed = request.clone();
+    changed.model = "fixture-other".into();
+    assert!(matches!(
+        engine::providers::approve_upload(&Explicit, &changed, &scope, &estimate),
+        Err(EditError::Ai(ai::Error::ConsentRequired))
+    ));
+    changed = request.clone();
+    changed.operation = CatalogOperation::Translate;
+    assert!(engine::providers::approve_upload(&Explicit, &changed, &scope, &estimate).is_err());
+    changed = request;
+    changed.cost = Cost::Free;
+    assert!(engine::providers::approve_upload(&Explicit, &changed, &scope, &estimate).is_err());
+    let key = |config: &ProviderConfig| {
+        engine::cache::CacheKey::new(engine::cache::KeyInputs {
+            kind: engine::cache::ArtifactKind::AsrChunk,
+            source: [1; 32],
+            provider: config.id().as_str(),
+            model: config.model().as_str(),
+            version: config.settings_fingerprint().as_str(),
+            settings: &[],
+            transcript: [0; 32],
+            cues: [0; 32],
+            clip_range: [0; 32],
+            translation: [0; 32],
+        })
+        .unwrap()
+    };
+    let other = ai::openai::OpenAiTranscriber::provider_config("fixture-other-asr").unwrap();
+    assert_ne!(key(&config), key(&other));
 }

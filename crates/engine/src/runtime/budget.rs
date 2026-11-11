@@ -566,6 +566,7 @@ mod tests {
                 TranscriptionProvider::Whisper {
                     model: "fixture".into(),
                 },
+                "transcribe".into(),
                 Arc::new(provider),
                 None,
                 None,

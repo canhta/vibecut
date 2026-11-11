@@ -39,20 +39,26 @@ fn chapters_missing_credential_refuses_before_media_or_network_work() {
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("chapters.vibecut");
     new_project(&project);
-    let output = Command::new(bin())
-        .env_remove("OPENAI_API_KEY")
-        .args([
-            os("chapters"),
-            project.as_os_str(),
-            os("--language"),
-            os("en"),
-            os("--yes-upload"),
-            os("--json"),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(code(&output), 4);
-    assert_eq!(error_json(&output)["error"]["code"], "setup");
+    for (model, expected_exit, expected_kind) in [("fixture-cli-custom", 4, "setup"), ("", 4, "ai")]
+    {
+        let output = Command::new(bin())
+            .env_remove("OPENAI_API_KEY")
+            .args([
+                os("chapters"),
+                project.as_os_str(),
+                os("--language"),
+                os("en"),
+                os("--model"),
+                os(model),
+                os("--accept-unknown-price"),
+                os("--yes-upload"),
+                os("--json"),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(code(&output), expected_exit);
+        assert_eq!(error_json(&output)["error"]["code"], expected_kind);
+    }
 }
 
 #[test]

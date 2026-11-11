@@ -151,7 +151,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "OpenAI",
             operation: CatalogOperation::Transcribe,
             local: false,
-            models: vec![ai::openai::MODEL.into()],
+            models: vec![ai::defaults::model("openai", ai::Operation::Transcribe).into()],
             languages: tags(&ai::openai::LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
@@ -161,7 +161,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "ElevenLabs Scribe",
             operation: CatalogOperation::Transcribe,
             local: false,
-            models: vec![ai::elevenlabs::MODEL.into()],
+            models: vec![ai::defaults::model("elevenlabs", ai::Operation::Transcribe).into()],
             languages: tags(&ai::elevenlabs::LANGUAGES),
             target_languages: Vec::new(),
             native_timing: true,
@@ -171,7 +171,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "OpenAI (translation)",
             operation: CatalogOperation::Translate,
             local: false,
-            models: vec![ai::openai::TRANSLATION_MODEL.into()],
+            models: vec![ai::defaults::model("openai", ai::Operation::Translate).into()],
             languages: tags(&ai::openai::TRANSLATION_LANGUAGES),
             target_languages: tags(&ai::openai::TRANSLATION_TARGET_LANGUAGES),
             native_timing: false,
@@ -181,7 +181,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "Anthropic (translation)",
             operation: CatalogOperation::Translate,
             local: false,
-            models: vec![ai::anthropic::MODEL.into()],
+            models: vec![ai::defaults::model("anthropic", ai::Operation::Translate).into()],
             languages: tags(&ai::anthropic::TRANSLATION_LANGUAGES),
             target_languages: tags(&ai::anthropic::TRANSLATION_TARGET_LANGUAGES),
             native_timing: false,
@@ -191,7 +191,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "OpenAI (chapters)",
             operation: CatalogOperation::GenerateChapters,
             local: false,
-            models: vec![ai::chapters::OPENAI_MODEL.into()],
+            models: vec![ai::defaults::model("openai", ai::Operation::GenerateChapters).into()],
             languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
@@ -201,7 +201,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "Anthropic (chapters)",
             operation: CatalogOperation::GenerateChapters,
             local: false,
-            models: vec![ai::anthropic::MODEL.into()],
+            models: vec![ai::defaults::model("anthropic", ai::Operation::Translate).into()],
             languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
@@ -211,7 +211,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "OpenAI (fillers)",
             operation: CatalogOperation::ClassifyFillers,
             local: false,
-            models: vec![ai::fillers::OPENAI_MODEL.into()],
+            models: vec![ai::defaults::model("openai", ai::Operation::ClassifyFillers).into()],
             languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
@@ -221,7 +221,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "Anthropic (fillers)",
             operation: CatalogOperation::ClassifyFillers,
             local: false,
-            models: vec![ai::anthropic::MODEL.into()],
+            models: vec![ai::defaults::model("anthropic", ai::Operation::Translate).into()],
             languages: tags(&TEXT_LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
@@ -258,8 +258,11 @@ pub fn choose_transcription(
         })
         .ok_or(EditError::Unsupported("unknown transcription provider"))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
-    if !option.models.iter().any(|value| value == model) {
+    if option.local && !option.models.iter().any(|value| value == model) {
         return Err(EditError::Unsupported("unsupported model for provider"));
+    }
+    if !option.local {
+        ai::defaults::validate_model(model)?;
     }
     match option.id {
         "whisper.cpp" => Ok(TranscriptionProvider::Whisper {
@@ -286,8 +289,11 @@ pub fn choose_translation(
         .find(|option| option.operation == CatalogOperation::Translate && option.id == provider)
         .ok_or(EditError::Unsupported("unknown translation provider"))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
-    if !option.models.iter().any(|value| value == model) {
+    if option.local && !option.models.iter().any(|value| value == model) {
         return Err(EditError::Unsupported("unsupported model for provider"));
+    }
+    if !option.local {
+        ai::defaults::validate_model(model)?;
     }
     match option.id {
         "openai" => Ok(TranslationProvider::OpenAi {
@@ -315,8 +321,11 @@ fn choose_text(
         .find(|option| option.operation == operation && option.id == provider)
         .ok_or(EditError::Unsupported("unknown text provider"))?;
     let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
-    if !option.models.iter().any(|value| value == model) {
+    if option.local && !option.models.iter().any(|value| value == model) {
         return Err(EditError::Unsupported("unsupported model for provider"));
+    }
+    if !option.local {
+        ai::defaults::validate_model(model)?;
     }
     match option.id {
         "openai" => Ok(TextProvider::OpenAi {

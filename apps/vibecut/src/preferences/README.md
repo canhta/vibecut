@@ -14,9 +14,16 @@ fit, zoom, preview axis and snapshot directory, projects view and sort (`home`),
 
 The document is validated on load and before save. A damaged layout falls back to
 defaults with a `PreferenceIssue` warning; an unreadable document restores system
-defaults without rewriting the bytes. Reads and writes share a 16 KiB budget, unknown
+defaults without rewriting the bytes. Reads and writes share a 32 KiB budget (including all remote-model choices and recent IDs), unknown
 keys are refused, and the lane map, colour list, section map, window map (64 entries)
 and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo and
 never touch project JSON. Ripple mode and keyframe lane visibility persist outside
 undo history, so entering an editing mode or opening its lanes cannot shadow the
 project edit's next Undo.
+
+`AiPreferences` is the one persisted remote provider/feature model map. It stores
+bounded custom IDs and four recent IDs per pair, using AI's shipped table for defaults.
+The Captions and Shorts provider pickers resolve their transient request snapshots
+from this map. Downloaded local weight choices remain in their local owner. Keys,
+fetched lists and price acknowledgements are never serialized. Preferences schema 8
+rejects earlier documents through the existing version refusal; there is no migration.

@@ -243,6 +243,7 @@ pub(crate) fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool
     };
     Providers::from_parts(
         transcription,
+        "transcribe".into(),
         Arc::new(asr),
         None,
         translation.then(|| TranslationProvider::OpenAi {
@@ -757,7 +758,10 @@ fn provider_catalog_filters_operation_and_language() {
         engine::providers::choose_transcription("gipformer", None),
         Ok(TranscriptionProvider::Gipformer { .. })
     ));
-    assert!(engine::providers::choose_transcription("openai", Some("not-a-model")).is_err());
+    assert!(
+        matches!(engine::providers::choose_transcription("openai",Some("fixture-custom")),Ok(TranscriptionProvider::OpenAi {model}) if model=="fixture-custom")
+    );
+    assert!(engine::providers::choose_transcription("openai", Some("")).is_err());
 }
 
 #[test]
@@ -898,6 +902,7 @@ fn text_only_providers(
     }
     Providers::from_parts(
         transcription,
+        "transcribe".into(),
         Arc::new(TextOnlyAsr(asr)),
         Some(aligner),
         None,
@@ -1059,6 +1064,7 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         transcriber,
         None,
         None,
@@ -1194,6 +1200,7 @@ fn operation_cancellation_stops_a_running_translation_job() {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new(calls)),
         None,
         Some(TranslationProvider::OpenAi {
@@ -1335,6 +1342,297 @@ fn caption_submit(
     };
     job
 }
+#[test]
+fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_translation() {
+    use crate::support::control::{Allow, caller, finish, ok};
+    use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+    use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
+    use serde_json::{Value, json};
+    use std::sync::Mutex;
+    struct Transport {
+        model: String,
+        calls: Mutex<Vec<Operation>>,
+    }
+    impl HttpTransport for Transport {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+            let body = if request.url == ai::elevenlabs::ENDPOINT {
+                assert!(
+                    request
+                        .body
+                        .windows(self.model.len())
+                        .any(|s| s == self.model.as_bytes())
+                );
+                self.calls.lock().unwrap().push(Operation::Transcribe);
+                json!({"text":"Hello world.","words":[
+                    {"text":"Hello ","start":0.1,"end":0.5,"type":"word"},
+                    {"text":"world.","start":0.5,"end":1.5,"type":"word"}
+                ]})
+            } else {
+                assert_eq!(request.url, ai::openai::TRANSLATION_ENDPOINT);
+                let wire: Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(wire["model"], self.model);
+                self.calls.lock().unwrap().push(Operation::Translate);
+                let window: TranslationWindow =
+                    serde_json::from_str(wire["input"].as_str().unwrap()).unwrap();
+                let translated = json!({"translations":window.segments.iter().map(|s|
+                    json!({"id":s.id,"text":"Xin chào"})).collect::<Vec<_>>()});
+                json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":translated.to_string()}]}]})
+            };
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&body).unwrap(),
+            })
+        }
+    }
+    struct Approve {
+        configs: Vec<ProviderConfig>,
+        seen: Mutex<Vec<CatalogOperation>>,
+    }
+    impl ConsentPrompt for Approve {
+        fn approve(&self, request: &UploadRequest) -> engine::Result<()> {
+            assert!(self.configs.contains(&request.config));
+            assert_eq!(request.model, request.config.model().as_str());
+            assert_eq!(request.model.len(), 256);
+            assert_eq!(request.cost, Cost::Unknown);
+            Ok(())
+        }
+        fn approve_unknown_price(&self, request: &UploadRequest) -> engine::Result<()> {
+            self.approve(request)?;
+            self.seen.lock().unwrap().push(request.operation);
+            Ok(())
+        }
+    }
+    fn cost_refusal(runner: &mut JobRunner, id: engine::jobs::JobId) {
+        finish(runner, id);
+        let snapshot = runner.snapshot(id).unwrap();
+        assert_eq!(snapshot.state, engine::jobs::JobState::Failed);
+        let cause = snapshot.error.as_ref().unwrap();
+        assert!(matches!(
+            (cause.as_ref() as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::EditError>(),
+            Some(engine::EditError::Ai(Error::Cost))
+        ));
+    }
+    let input = fixture().expect("synthetic media oracle must be available");
+    let root = tempfile::tempdir().unwrap();
+    let (mut runner, budget) = runner();
+    let (cache, _) = engine::cache::ArtifactCache::open(root.path(), budget, 16).unwrap();
+    let cache = Arc::new(Mutex::new(cache));
+    let mut references = Vec::new();
+    for suffix in ['a', 'b'] {
+        let model = format!("{}{suffix}", "x".repeat(255));
+        let asr_config = ai::elevenlabs::ElevenLabsTranscriber::provider_config(&model).unwrap();
+        let translation_config = ai::openai::OpenAiTranslator::provider_config(&model).unwrap();
+        let transport = Arc::new(Transport {
+            model: model.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let asr = Arc::new(
+            ai::elevenlabs::ElevenLabsTranscriber::new(
+                asr_config.clone(),
+                ApiKey::new("fixture").unwrap(),
+                transport.clone(),
+            )
+            .unwrap(),
+        );
+        let translator = Arc::new(
+            ai::openai::OpenAiTranslator::new(
+                translation_config.clone(),
+                ApiKey::new("fixture").unwrap(),
+                transport.clone(),
+            )
+            .unwrap(),
+        );
+        let providers = Arc::new(
+            Providers::from_parts(
+                TranscriptionProvider::ElevenLabs {
+                    model: model.clone(),
+                },
+                ai::elevenlabs::MODE.into(),
+                asr,
+                None,
+                Some(TranslationProvider::OpenAi {
+                    model: model.clone(),
+                }),
+                Some(translator.clone()),
+            )
+            .unwrap(),
+        );
+        let approve = Arc::new(Approve {
+            configs: vec![asr_config, translation_config],
+            seen: Mutex::new(Vec::new()),
+        });
+        let access =
+            subtitles::CaptionAccess::new(providers.clone(), approve.clone(), cache.clone());
+        let ordinary = subtitles::CaptionAccess::new(providers, Arc::new(AllowAll), cache.clone());
+        let mut session = registry_session(&input);
+        let params = json!({"asset":1,"source_language":"en"});
+        let denied = caption_submit(
+            &mut session,
+            &mut runner,
+            &ordinary,
+            "captions.generate",
+            params.clone(),
+            "deny-price",
+        );
+        cost_refusal(&mut runner, denied);
+        assert!(transport.calls.lock().unwrap().is_empty());
+        let generated = caption_submit(
+            &mut session,
+            &mut runner,
+            &access,
+            "captions.generate",
+            params.clone(),
+            "generate",
+        );
+        finish(&mut runner, generated);
+        let result = subtitles::decode_captions(runner.output_bytes(generated).unwrap()).unwrap();
+        assert_eq!(result.model.as_str(), model);
+        assert_eq!(
+            result.checkpoints, 0,
+            "a different maximum model cannot reuse the checkpoint"
+        );
+        let cached = caption_submit(
+            &mut session,
+            &mut runner,
+            &ordinary,
+            "captions.generate",
+            params,
+            "cached",
+        );
+        finish(&mut runner, cached);
+        assert_eq!(
+            subtitles::decode_captions(runner.output_bytes(cached).unwrap())
+                .unwrap()
+                .checkpoints,
+            1
+        );
+        assert_eq!(*transport.calls.lock().unwrap(), [Operation::Transcribe]);
+        ok(caption_command(
+            &mut session,
+            &mut runner,
+            &access,
+            "captions.apply",
+            json!({"job":generated}),
+            "apply",
+        ));
+        let item = session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| matches!(i.content, project::ItemParams::Caption(_)))
+            .unwrap()
+            .id;
+        let params = json!({"item":item,"target_language":"vi"});
+        let denied = caption_submit(
+            &mut session,
+            &mut runner,
+            &ordinary,
+            "captions.translate",
+            params.clone(),
+            "deny-translation-price",
+        );
+        cost_refusal(&mut runner, denied);
+        assert_eq!(*transport.calls.lock().unwrap(), [Operation::Transcribe]);
+        let translated = caption_submit(
+            &mut session,
+            &mut runner,
+            &access,
+            "captions.translate",
+            params,
+            "translate",
+        );
+        finish(&mut runner, translated);
+        let snapshot = runner.snapshot(translated).unwrap();
+        assert_eq!(
+            snapshot.state,
+            engine::jobs::JobState::Completed,
+            "{:?}",
+            snapshot.error
+        );
+        let result =
+            subtitles::decode_translations(runner.output_bytes(translated).unwrap()).unwrap();
+        assert_eq!(result.model.as_str(), model);
+        assert_eq!(result.translation_ref.as_str().len(), 76);
+        references.push(result.translation_ref.clone());
+        let ids = result.texts.keys().cloned().collect();
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [Operation::Transcribe, Operation::Translate]
+        );
+        assert_eq!(
+            *approve.seen.lock().unwrap(),
+            [CatalogOperation::Transcribe, CatalogOperation::Translate]
+        );
+        let request = crate::support::control::request(
+            &session,
+            "retranslate",
+            json!({"item":result.item,"target_language":result.target_language,
+                "texts":result.texts,"translation_ref":result.translation_ref,"force":false}),
+            "apply-translation",
+        );
+        let request = serde_json::from_value(
+            engine::control::parse_frame(&serde_json::to_vec(&request).unwrap()).unwrap(),
+        )
+        .unwrap();
+        ok(session
+            .control_request(request, caller(&Allow), &mut runner)
+            .unwrap());
+        let adapter = engine::transcript::SubtitleTranslator::from_parts(
+            translator,
+            ai::openai::TRANSLATION_MODE.into(),
+        );
+        engine::transcript::translate_selected(
+            &mut session,
+            &adapter,
+            &mut runner,
+            approve.as_ref(),
+            &SilentProgress,
+            &engine::transcript::Cancellation::new(),
+            &engine::transcript::TranslationSelection {
+                item,
+                ids,
+                target: lang("vi"),
+                glossary: vec![],
+                force: false,
+            },
+            &mut Cost::Free,
+        )
+        .unwrap();
+        let caption = session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item)
+            .unwrap();
+        let project::ItemParams::Caption(caption) = &caption.content else {
+            panic!("caption");
+        };
+        assert_eq!(
+            caption.cues.cues[0].texts[&lang("vi")]
+                .translation_ref
+                .as_ref(),
+            references.last()
+        );
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                Operation::Transcribe,
+                Operation::Translate,
+                Operation::Translate
+            ]
+        );
+    }
+    assert_ne!(references[0], references[1]);
+}
+
 #[test]
 fn registry_generation_applies_range_at_start_as_one_edit_and_refuses_foreign_stale_and_reused_results()
  {
@@ -1739,6 +2037,7 @@ fn registry_failed_and_cancelled_windows_preserve_checkpoints_without_partial_re
             TranscriptionProvider::OpenAi {
                 model: "fake-asr-model".into(),
             },
+            "transcribe".into(),
             asr,
             Some(Arc::new(ProbeAligner::new(Arc::new(AtomicUsize::new(0))))),
             None,
@@ -1899,10 +2198,7 @@ fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_appli
     let result = subtitles::decode_translations(r.output_bytes(job).unwrap()).unwrap();
     assert_eq!(result.texts.len(), 129);
     assert!(!result.texts.contains_key(&captions::NfcText::from("cue-0")));
-    assert_eq!(
-        result.translation_ref.as_str(),
-        "fake-translator/fake-translator-model"
-    );
+    assert!(result.translation_ref.as_str().starts_with("translation:"));
     ok(caption_command(
         &mut s,
         &mut r,
@@ -2042,6 +2338,7 @@ fn registry_oversized_translation_and_cancelled_provider_publish_no_result_or_li
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
         None,
         Some(TranslationProvider::OpenAi {
@@ -2074,6 +2371,7 @@ fn registry_oversized_translation_and_cancelled_provider_publish_no_result_or_li
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
         None,
         Some(TranslationProvider::OpenAi {
@@ -2124,6 +2422,7 @@ fn registry_translation_complete_result_round_trips_through_control_or_refuses_b
             TranscriptionProvider::Whisper {
                 model: "fake-asr-model".into(),
             },
+            "transcribe".into(),
             Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
             None,
             Some(TranslationProvider::OpenAi {
@@ -2306,6 +2605,7 @@ fn omitted_language_detection_reports_job_stages_and_uses_the_job_cancellation_t
             TranscriptionProvider::Whisper {
                 model: "fake-asr-model".into(),
             },
+            "transcribe".into(),
             Arc::new(LanguageGate {
                 inner: FakeAsr::new(calls.clone()),
                 entered,
@@ -2415,6 +2715,7 @@ fn registry_translation_retries_share_the_operation_attempt_ceiling() {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
         None,
         Some(TranslationProvider::OpenAi {

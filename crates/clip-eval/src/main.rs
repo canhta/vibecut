@@ -30,6 +30,9 @@ fn run() -> Result<(), String> {
     let mut labels = None;
     let mut provider = Provider::Heuristic;
     let mut live = false;
+    let mut model = ai::defaults::model("openai", ai::Operation::SuggestClips).to_owned();
+    let mut asr_model = ai::defaults::model("elevenlabs", ai::Operation::Transcribe).to_owned();
+    let mut accept_unknown_price = false;
     let mut max_cost_micros = 1_000_000u64;
     let mut k = 5usize;
     let mut energy = true;
@@ -54,6 +57,17 @@ fn run() -> Result<(), String> {
                 provider = Provider::parse(args.get(index).ok_or("--provider needs a value")?)
                     .map_err(|error| error.to_string())?;
             }
+            "--model" | "--asr-model" => {
+                index += 1;
+                let selected = args.get(index).ok_or("model option needs an ID")?;
+                ai::defaults::validate_model(selected).map_err(|error| error.to_string())?;
+                if arg == "--model" {
+                    model = selected.clone();
+                } else {
+                    asr_model = selected.clone();
+                }
+            }
+            "--accept-unknown-price" => accept_unknown_price = true,
             "--live" => live = true,
             "--max-cost-usd" => {
                 index += 1;
@@ -124,6 +138,9 @@ fn run() -> Result<(), String> {
         set,
         labels,
         provider,
+        model,
+        asr_model,
+        accept_unknown_price,
         live,
         max_cost_micros,
         k,
@@ -152,4 +169,4 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-const USAGE: &str = "usage: cargo xtask clip-eval <set> [--labels DIR] [--provider heuristic|gpt-6-luna] [--live] [--transcribe] [--baseline PATH] [--write-baseline PATH] [--baseline-revision SHA] [--no-baseline] [--max-cost-usd N] [--k N] [--out DIR] [--no-energy]";
+const USAGE: &str = "usage: cargo xtask clip-eval <set> [--labels DIR] [--provider heuristic|openai] [--model ID] [--asr-model ID] [--accept-unknown-price] [--live] [--transcribe] [--baseline PATH] [--write-baseline PATH] [--baseline-revision SHA] [--no-baseline] [--max-cost-usd N] [--k N] [--out DIR] [--no-energy]";

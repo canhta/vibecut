@@ -1,0 +1,235 @@
+//! Edits the single persisted provider/feature model map; refresh is explicitly requested.
+use crate::{
+    editor::{Context, Desk, egui},
+    i18n::Text,
+    services::remote_models::{AiPreferences, Catalogs},
+};
+use ai::Operation;
+use std::{sync::Arc, time::Duration};
+
+#[derive(Default)]
+pub(in crate::editor) struct State {
+    pub(in crate::editor) open: bool,
+    catalogs: Catalogs,
+    draft: Option<Draft>,
+    transport: Option<Arc<dyn ai::transport::HttpTransport>>,
+}
+struct Draft {
+    provider: String,
+    feature: Operation,
+    original: String,
+    value: String,
+}
+pub(in crate::editor) enum Action {
+    Models(AiPreferences),
+    Remember(String, egui::Response),
+}
+fn feature_text(feature: Operation) -> Text {
+    match feature {
+        Operation::Transcribe => Text::ShortsTranscriber,
+        Operation::Translate => Text::SubTranslate,
+        Operation::SuggestClips => Text::ShortsSuggester,
+        Operation::GenerateChapters => Text::ModelRemoteChapters,
+        Operation::ClassifyFillers => Text::ModelRemoteFillers,
+        Operation::Synthesize => Text::ModelRemoteSpeech,
+        Operation::Align => Text::ShortsTranscriber,
+    }
+}
+pub(super) fn show(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+    credentials: &engine::providers::Credentials,
+) -> Vec<Action> {
+    state.catalogs.sync(credentials);
+    let mut actions = Vec::new();
+    if !state.open {
+        return actions;
+    }
+    let tr = |text: Text| text.text(cx.locale);
+    let mut models = cx.preferences.ai_models.clone();
+    if state
+        .draft
+        .as_ref()
+        .is_some_and(|draft| models.model(&draft.provider, draft.feature) != draft.original)
+    {
+        state.draft = None;
+    }
+    let modal = egui::Modal::new(egui::Id::unique("preferences.ai")).show(ctx, |ui| {
+        ui.set_width(640.0);
+        ui.spacing_mut().interact_size.y = crate::kit::size::FIELD;
+        ui.heading(tr(Text::Settings));
+        ui.label(tr(Text::ModelRemoteModels));
+        egui::ScrollArea::vertical()
+            .max_height(500.0)
+            .show(ui, |ui| {
+                for provider in ["openai", "anthropic", "elevenlabs"] {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.strong(match provider {
+                            "openai" => "OpenAI",
+                            "anthropic" => "Anthropic",
+                            _ => "ElevenLabs",
+                        });
+                        let Some(catalog) = state.catalogs.get_mut(provider) else {
+                            return;
+                        };
+                        let response = ui.add_enabled(
+                            catalog.has_key() && !catalog.loading(),
+                            egui::Button::new(tr(Text::ModelRemoteRefresh)),
+                        );
+                        actions.push(Action::Remember(
+                            format!("preferences.ai.{provider}.refresh"),
+                            response.clone(),
+                        ));
+                        if response.clicked() {
+                            let transport = state.transport.clone().map(Ok).unwrap_or_else(|| {
+                                ai::transport::UreqTransport::with_timeout(Duration::from_secs(15))
+                                    .map(|transport| {
+                                        Arc::new(transport) as Arc<dyn ai::transport::HttpTransport>
+                                    })
+                            });
+                            match transport {
+                                Ok(transport) => {
+                                    if catalog.request(transport).is_err() {
+                                        catalog.error = Some(ai::Error::Inference);
+                                    }
+                                }
+                                Err(error) => catalog.error = Some(error),
+                            }
+                        }
+                    });
+                    let Some(catalog) = state.catalogs.get(provider) else {
+                        continue;
+                    };
+                    let status = if !catalog.has_key() {
+                        Some(Text::ModelRemoteNoKey)
+                    } else if catalog.loading() {
+                        ctx.request_repaint_after(Duration::from_millis(30));
+                        Some(Text::ModelRemoteLoading)
+                    } else if catalog.error.is_some() {
+                        Some(Text::ModelRemoteListFailed)
+                    } else if catalog.fetched && catalog.models.is_empty() {
+                        Some(Text::ModelRemoteEmpty)
+                    } else {
+                        None
+                    };
+                    if let Some(status) = status {
+                        ui.label(tr(status));
+                    }
+                    for row in ai::defaults::DEFAULTS
+                        .iter()
+                        .filter(|row| row.shipped_default && row.provider == provider)
+                    {
+                        let id =
+                            format!("preferences.ai.{provider}.{:?}", row.feature).to_lowercase();
+                        ui.horizontal(|ui| {
+                            let label = ui.add_sized(
+                                egui::vec2(180.0, crate::kit::size::FIELD),
+                                egui::Label::new(tr(feature_text(row.feature))),
+                            );
+                            let current = models.model(provider, row.feature).to_owned();
+                            let choices = models.options(provider, row.feature, &catalog.models);
+                            let combo = egui::ComboBox::from_id_salt(&id)
+                                .selected_text(&current)
+                                .width(280.0)
+                                .show_ui(ui, |ui| {
+                                    for (index, model) in choices.iter().enumerate() {
+                                        let label = if index == 0 {
+                                            format!("{model} ({})", tr(Text::ModelSuggested))
+                                        } else {
+                                            model.clone()
+                                        };
+                                        let response =
+                                            ui.selectable_label(model == &current, label);
+                                        actions.push(Action::Remember(
+                                            format!("{id}.option.{index}"),
+                                            response.clone(),
+                                        ));
+                                        if response.clicked() {
+                                            let _ = models.select(provider, row.feature, model);
+                                            state.draft = None;
+                                            ui.close();
+                                        }
+                                    }
+                                    let response = ui.button(tr(Text::ModelRemoteCustom));
+                                    actions.push(Action::Remember(
+                                        format!("{id}.custom"),
+                                        response.clone(),
+                                    ));
+                                    if response.clicked() {
+                                        state.draft = Some(Draft {
+                                            provider: provider.into(),
+                                            feature: row.feature,
+                                            original: current.clone(),
+                                            value: String::new(),
+                                        });
+                                        ui.close();
+                                    }
+                                });
+                            actions.push(Action::Remember(
+                                format!("{id}.model"),
+                                combo.response.labelled_by(label.id),
+                            ));
+                        });
+                        if let Some(draft) = state.draft.as_mut().filter(|draft| {
+                            draft.provider == provider && draft.feature == row.feature
+                        }) {
+                            ui.horizontal(|ui| {
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(&mut draft.value)
+                                        .char_limit(ai::defaults::MAX_MODEL_BYTES)
+                                        .hint_text(tr(Text::ModelRemoteCustom)),
+                                );
+                                actions.push(Action::Remember(format!("{id}.input"), response));
+                                let valid = ai::defaults::validate_model(&draft.value).is_ok();
+                                let response =
+                                    ui.add_enabled(valid, egui::Button::new(tr(Text::CropApply)));
+                                actions.push(Action::Remember(
+                                    format!("{id}.apply"),
+                                    response.clone(),
+                                ));
+                                if response.clicked() {
+                                    let _ = models.select(provider, row.feature, &draft.value);
+                                    draft.original = draft.value.clone();
+                                }
+                                if !valid {
+                                    ui.label(tr(Text::ModelRemoteInvalid));
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+        let response = ui.button(tr(Text::ModelClose));
+        actions.push(Action::Remember(
+            "preferences.ai.close".into(),
+            response.clone(),
+        ));
+        if response.clicked() {
+            state.open = false;
+            state.draft = None;
+        }
+    });
+    if modal.should_close() {
+        state.open = false;
+        state.draft = None;
+    }
+    if models != cx.preferences.ai_models {
+        actions.push(Action::Models(models));
+    }
+    actions
+}
+pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
+    match action {
+        Action::Models(models) => {
+            if let Ok(value) = serde_json::to_value(models) {
+                desk.set_preference("ai_models", value);
+            }
+        }
+        Action::Remember(id, response) => desk.editor().remember(id, &response),
+    }
+}
+
+#[cfg(test)]
+mod tests;

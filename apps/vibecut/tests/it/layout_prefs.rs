@@ -341,6 +341,14 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
         panels: [0.25, 0.25, 0.50],
         ..Default::default()
     };
+    let ceiling = vibecut::preferences::MAX_PREFERENCES_BYTES as usize;
+    for choice in &mut preferences.ai_models.choices {
+        choice.recent = (0..4)
+            .map(|index| format!("{index}{}", "x".repeat(ai::defaults::MAX_MODEL_BYTES - 1)))
+            .collect();
+        choice.model = choice.recent[0].clone();
+    }
+    preferences.resolve_models();
     for index in 0..64 {
         preferences.windows.insert(
             format!("{index:064}"),
@@ -355,7 +363,7 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
         let mut next = preferences.clone();
         next.sections.insert(format!("section.{index:032}"), false);
         next.sections.insert("x".to_owned(), false);
-        if serde_json::to_vec(&next).unwrap().len() > 16384 {
+        if serde_json::to_vec(&next).unwrap().len() > ceiling {
             break;
         }
         next.sections.remove("x");
@@ -365,11 +373,11 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     for length in 1..=64 {
         preferences = base.clone();
         preferences.sections.insert("x".repeat(length), false);
-        if serde_json::to_vec(&preferences).unwrap().len() == 16384 {
+        if serde_json::to_vec(&preferences).unwrap().len() == ceiling {
             break;
         }
     }
-    assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), 16384);
+    assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), ceiling);
     preferences.validate().unwrap();
     let mut harness = build(editor(preferences.clone()));
     harness.run_steps(3);
