@@ -114,6 +114,8 @@ pub enum UiAction {
     ConfirmDeleteMedia,
     RevealMedia,
     InsertText,
+    CopyKeyframes,
+    PasteKeyframes,
     ApplyTextAnimation(engine::TextAnimationPreset),
     Subtitles,
     SubtitleCue,
@@ -280,26 +282,7 @@ impl ActionSpec {
             category,
             target: ActionTarget::Ui { owner, action },
             defaults,
-            requires_clipboard: false,
-        }
-    }
-
-    const fn pending(
-        id: &'static str,
-        label: Text,
-        category: ActionCategory,
-        owner: &'static str,
-        ticket: &'static str,
-        defaults: &'static [&'static str],
-        requires_clipboard: bool,
-    ) -> Self {
-        Self {
-            id,
-            label,
-            category,
-            target: ActionTarget::Pending { owner, ticket },
-            defaults,
-            requires_clipboard,
+            requires_clipboard: matches!(action, UiAction::PasteKeyframes),
         }
     }
 
@@ -944,9 +927,9 @@ mod tests {
                     ..Default::default()
                 }
             ),
-            Dispatch::Unavailable {
+            Dispatch::Action {
                 action: "edit.paste",
-                owner: "clipboard",
+                chord: Chord::parse("Ctrl+V").unwrap(),
             }
         );
         assert!(input.events.is_empty());

@@ -21,7 +21,9 @@ impl Editor {
             return Err(Error::NotAvailable(ticket));
         }
         // A disabled style action must not flush an unrelated caption draft.
-        if (id.starts_with("subtitles.style.") || id.starts_with("text.animation."))
+        if (id.starts_with("subtitles.style.")
+            || id.starts_with("text.animation.")
+            || matches!(id, "edit.copy" | "edit.paste"))
             && !self.action_enabled(id)
         {
             return Err(Error::ActionDisabled(spec.id));
@@ -99,6 +101,23 @@ impl Editor {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
             ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
             ActionTarget::Ui { action, .. } => match action {
+                UiAction::CopyKeyframes => {
+                    let keys = self.clipboard_keys();
+                    self.session
+                        .apply(engine::Command::CopyKeyframes { keys })?;
+                }
+                UiAction::PasteKeyframes => {
+                    let item = crate::editor::context::single(&self.selection)
+                        .ok_or(Error::Invalid("clipboard target"))?;
+                    let outcome = self.session.apply(engine::Command::PasteKeyframes {
+                        item,
+                        at,
+                        source: engine::KeyframePasteSource::Stored,
+                    })?;
+                    if outcome.changed {
+                        self.selection_scopes = SelectionScopes::default();
+                    }
+                }
                 UiAction::MediaView => {
                     let view = match self.preferences.media_view {
                         MediaView::Grid => MediaView::List,

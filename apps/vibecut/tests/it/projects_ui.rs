@@ -1004,3 +1004,62 @@ fn ready_thumbnail(color: [u8; 3]) -> Thumbnail {
         rgba,
     }
 }
+
+#[test]
+fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
+    let f = Fixture::new(&[
+        ("Tiếng Việt", Thumbnail::Missing),
+        ("English", Thumbnail::Missing),
+    ]);
+    let mut h = f.build(Preferences::default());
+    h.get(by("projects.search")).click();
+    h.run_steps(2);
+    h.event(egui::Event::Paste("Tiếng Việt".into()));
+    h.run_steps(2);
+    assert_eq!(
+        h.state()
+            .projects
+            .displayed_ids(h.state().preferences.projects),
+        [ProjectId(1)]
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::C,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        h.output()
+            .platform_output
+            .commands
+            .iter()
+            .any(|c| matches!(c,egui::OutputCommand::CopyText(t) if t=="Tiếng Việt"))
+    );
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::V,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        h.output()
+            .viewport_output
+            .values()
+            .flat_map(|v| &v.commands)
+            .any(|c| matches!(c, egui::ViewportCommand::RequestPaste))
+    );
+    h.event(egui::Event::Paste("English".into()));
+    h.run_steps(2);
+    assert_eq!(
+        h.state()
+            .projects
+            .displayed_ids(h.state().preferences.projects),
+        [ProjectId(2)]
+    );
+}

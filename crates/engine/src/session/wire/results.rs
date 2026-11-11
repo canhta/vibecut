@@ -9,6 +9,9 @@ use serde::Serialize;
 #[derive(Clone, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ControlResult {
+    Clipboard {
+        payload: Option<crate::KeyframeClipboard>,
+    },
     Edit {
         outcome: Outcome,
     },
@@ -71,6 +74,7 @@ pub struct ProviderView {
 impl std::fmt::Debug for ControlResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let kind = match self {
+            Self::Clipboard { .. } => "clipboard",
             Self::Edit { .. } => "edit",
             Self::Inspection { .. } => "inspection",
             Self::Catalog { .. } => "catalog",

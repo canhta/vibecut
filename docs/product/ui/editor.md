@@ -123,3 +123,9 @@ and input lifetime belong to [Properties](../../../apps/vibecut/src/editor/panel
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
 
 The Captions Style chooser lists Saved in project as explicit copy actions, retaining Outline/Box/Custom/Mixed as value summaries. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.
+
+The keyframe-lane Copy/Paste menu and selected-item Paste row adopt the current menu
+pattern, localized labels, existing icons and 20 px lanes as a new composition. Copy
+uses selected keys; Paste can target an existing zero-key Param. Scope/draft admission:
+[frame input](../../../apps/vibecut/src/editor/frame/input/README.md#clipboard-actions).
+No comparable captured menu reference exists; product/native parity remains unverified.

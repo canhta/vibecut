@@ -1326,3 +1326,825 @@ fn text_background_channels_survive_trim_retime_and_the_file() {
     s.undo().unwrap();
     assert_eq!(s.project(), &original);
 }
+
+#[test]
+fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
+    use engine::{KeyframePasteSource::Stored, KeyframeRef};
+    let mut data = session().project().data().clone();
+    data.assets.push(
+        testkit::source::asset(99, std::env::temp_dir().join("vibecut-399-never-open.mp4"))
+            .duration(frame(1000))
+            .stream(
+                testkit::source::video()
+                    .duration(frame(1000))
+                    .size(64, 64)
+                    .build(),
+            )
+            .build(),
+    );
+    let video = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == ItemId(2))
+        .unwrap();
+    video.source_asset = Some(media::AssetId(99));
+    video.content = ItemParams::Video(VideoParams {
+        source_audio_enabled: false,
+        volume: 0.0,
+        muted: false,
+        crop: None,
+        fades: Default::default(),
+    });
+    video.retime.speed = time::Speed::from_thousandths(2000).unwrap();
+    let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    let q = frame(1).0;
+    let mut first = Keyframe::new(Tick(-3 * q), ParamValue::Scalar(0.0));
+    first.segment = Segment::Bezier;
+    first.tangent = TangentMode::Broken;
+    first.outgoing = Some(CurveHandle {
+        dt: Tick(4 * q),
+        dv: 0.0,
+    });
+    let mut last = Keyframe::new(Tick(9 * q), ParamValue::Scalar(1.0));
+    last.tangent = TangentMode::Aligned;
+    last.incoming = Some(CurveHandle {
+        dt: Tick(-4 * q),
+        dv: 0.0,
+    });
+    last.outgoing = Some(CurveHandle {
+        dt: Tick(2 * q),
+        dv: -0.1,
+    });
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::Value(
+            Channel::new(
+                ParamValue::Scalar(0.7),
+                vec![first.clone(), last.clone()],
+                Extrapolation::Linear,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        ),
+    })
+    .unwrap();
+    let revision = s.revision();
+    let history = s.history_len();
+    let project = s.project().clone();
+    let refs = [-3, 9]
+        .map(|n| KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick(n * q),
+        })
+        .to_vec();
+    assert!(
+        !s.apply(Command::CopyKeyframes { keys: refs.clone() })
+            .unwrap()
+            .changed
+    );
+    assert_ne!(s.revision(), revision);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.project(), &project);
+    let copied_rev = s.revision();
+    s.apply(Command::CopyKeyframes { keys: refs }).unwrap();
+    s.apply(Command::CopyKeyframes { keys: vec![] }).unwrap();
+    assert_eq!(s.revision(), copied_rev);
+    // Source range begins at 50 frames and item starts at 100. Only output start
+    // participates: paste at scene 98 yields -2 and +10 local frame ticks.
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::new(ParamValue::Scalar(0.2)).unwrap(),
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let history = s.history_len();
+    assert!(
+        s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at: Tick(98 * q),
+            source: Stored
+        })
+        .unwrap()
+        .changed
+    );
+    assert_eq!(s.history_len().0, history.0 + 1);
+    let pasted = s.project().clone();
+    let channel = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    first.time = Tick(-2 * q);
+    last.time = Tick(10 * q);
+    assert_eq!(channel.keys(), [first, last]);
+    assert_eq!(channel.base(), &ParamValue::Scalar(0.7));
+    assert_eq!(
+        channel.extrapolation(),
+        (Extrapolation::Linear, Extrapolation::Hold)
+    );
+    for (t, v) in [(-2, 0.0), (1, 0.15625), (4, 0.5), (7, 0.84375), (10, 1.0)] {
+        near(value(&item(&s, ItemId(2)).animations, Tick(t * q)), v);
+    }
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &pasted);
+    let rev = s.revision();
+    assert!(
+        !s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at: Tick(98 * q),
+            source: Stored
+        })
+        .unwrap()
+        .changed
+    );
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len().0, history.0 + 1);
+}
+
+#[test]
+fn clipboard_color_participation_held_values_and_equal_time_full_replacement() {
+    use engine::{KeyframeClipboard, KeyframePasteSource::Payload};
+    let mut s = session();
+    let color_path: AnimationPath = BuiltinPath::Color.into();
+    let mut target = Param::new(ParamValue::Color([0.6, 0.7, 0.8, 0.9])).unwrap();
+    for component in [
+        ColorComponent::R,
+        ColorComponent::G,
+        ColorComponent::B,
+        ColorComponent::A,
+    ] {
+        let c = target.channel_mut(Some(component)).unwrap();
+        let mut k = Keyframe::new(Tick(4), c.base().clone());
+        k.outgoing = Some(CurveHandle {
+            dt: Tick(1),
+            dv: 0.03,
+        });
+        c.put(k).unwrap();
+    }
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: color_path.clone(),
+        param: target.clone(),
+    })
+    .unwrap();
+    let mut source = Param::new(ParamValue::Color([0.2, 0.3, 0.4, 0.5])).unwrap();
+    source
+        .channel_mut(Some(ColorComponent::R))
+        .unwrap()
+        .put(Keyframe::new(Tick(-3), ParamValue::Scalar(0.8)))
+        .unwrap();
+    source
+        .channel_mut(Some(ColorComponent::A))
+        .unwrap()
+        .put(Keyframe::new(Tick(1), ParamValue::Scalar(0.25)))
+        .unwrap();
+    let payload = KeyframeClipboard::new(Tick(-3), vec![(color_path.clone(), source)]).unwrap();
+    s.apply(Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: Payload { payload },
+    })
+    .unwrap();
+    let param = item(&s, ItemId(2)).animations.get(&color_path).unwrap();
+    for component in [ColorComponent::G, ColorComponent::B] {
+        assert_eq!(
+            param.channel(Some(component)).unwrap(),
+            target.channel(Some(component)).unwrap()
+        );
+    }
+    let r = param.channel(Some(ColorComponent::R)).unwrap();
+    assert_eq!(r.base(), &ParamValue::Scalar(0.2));
+    assert_eq!(r.keys().len(), 2);
+    let a = param.channel(Some(ColorComponent::A)).unwrap();
+    assert_eq!(a.base(), &ParamValue::Scalar(0.5));
+    assert_eq!(a.keys(), [Keyframe::new(Tick(4), ParamValue::Scalar(0.25))]);
+    for base in [
+        ParamValue::Bool(false),
+        ParamValue::Text("Tiếng Việt".into()),
+    ] {
+        let p = AnimationPath::new("params.held").unwrap();
+        s.apply(Command::SetAnimatedParam {
+            item: ItemId(2),
+            path: p.clone(),
+            param: Param::new(base.clone()).unwrap(),
+        })
+        .unwrap();
+        let next = match base {
+            ParamValue::Bool(_) => ParamValue::Bool(true),
+            _ => ParamValue::Text("Đã dán".into()),
+        };
+        let mut k = Keyframe::new(Tick(2), next.clone());
+        k.segment = Segment::Step;
+        let payload = KeyframeClipboard::new(
+            Tick(2),
+            vec![(
+                p.clone(),
+                Param::Value(
+                    Channel::new(
+                        base.clone(),
+                        vec![k],
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                ),
+            )],
+        )
+        .unwrap();
+        s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at: frame(100),
+            source: Payload { payload },
+        })
+        .unwrap();
+        let param = item(&s, ItemId(2)).animations.get(&p).unwrap();
+        assert_eq!(param.value_at(Tick(-1)).unwrap(), base);
+        for t in [0, 1, 12] {
+            assert_eq!(param.value_at(Tick(t)).unwrap(), next);
+        }
+        s.apply(Command::RemoveKeyframe {
+            item: ItemId(2),
+            path: p.clone(),
+            component: None,
+            time: Tick::ZERO,
+        })
+        .unwrap();
+        assert_eq!(
+            item(&s, ItemId(2))
+                .animations
+                .get(&p)
+                .unwrap()
+                .value_at(Tick(1))
+                .unwrap(),
+            base
+        );
+    }
+}
+
+#[test]
+fn clipboard_refusal_is_atomic_across_paths_locks_batches_and_stale_refs() {
+    use engine::{KeyframeClipboard, KeyframePasteSource, KeyframeRef};
+    let mut s = session();
+    let k = KeyframeRef {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        time: frame(0),
+    };
+    s.apply(Command::CopyKeyframes {
+        keys: vec![k.clone()],
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    for keys in [
+        vec![k.clone(), k.clone()],
+        vec![KeyframeRef {
+            time: frame(3),
+            ..k.clone()
+        }],
+        vec![KeyframeRef {
+            component: Some(ColorComponent::A),
+            ..k.clone()
+        }],
+        vec![
+            k.clone(),
+            KeyframeRef {
+                item: ItemId(99),
+                ..k.clone()
+            },
+        ],
+        vec![k.clone(); 4097],
+    ] {
+        assert!(s.apply(Command::CopyKeyframes { keys }).is_err());
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+    }
+    let param = Param::Value(
+        Channel::new(
+            ParamValue::Scalar(0.7),
+            vec![Keyframe::new(Tick(0), ParamValue::Scalar(0.4))],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap(),
+    );
+    let payload = KeyframeClipboard::new(
+        Tick(0),
+        vec![
+            (path(), param.clone()),
+            (AnimationPath::new("params.absent").unwrap(), param),
+        ],
+    )
+    .unwrap();
+    let paste = Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: KeyframePasteSource::Payload { payload },
+    };
+    assert!(s.apply(paste.clone()).is_err());
+    assert!(
+        s.apply(Command::Batch {
+            commands: vec![
+                Command::RenameProject {
+                    name: "staged".into()
+                },
+                paste
+            ]
+        })
+        .is_err()
+    );
+    for nonedit in [
+        Command::CopyKeyframes { keys: vec![k] },
+        Command::ReadClipboard {},
+    ] {
+        assert!(
+            s.apply(Command::Batch {
+                commands: vec![
+                    Command::RenameProject {
+                        name: "staged".into()
+                    },
+                    nonedit
+                ]
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+    }
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(2),
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    let locked_rev = s.revision();
+    assert!(
+        s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at: frame(100),
+            source: KeyframePasteSource::Stored
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &locked);
+    assert_eq!(s.revision(), locked_rev);
+    s.apply(Command::CopyKeyframes {
+        keys: vec![KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(0),
+        }],
+    })
+    .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(2),
+        locked: false,
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let history = s.history_len().0;
+    let paste = |at| Command::PasteKeyframes {
+        item: ItemId(2),
+        at,
+        source: KeyframePasteSource::Stored,
+    };
+    s.apply(Command::Batch {
+        commands: vec![paste(frame(101)), paste(frame(102))],
+    })
+    .unwrap();
+    assert_eq!(s.history_len().0, history + 1);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    let revision = s.revision();
+    let history = s.history_len();
+    assert!(
+        s.apply(Command::Batch {
+            commands: vec![
+                paste(frame(103)),
+                Command::SetTrackLocked {
+                    track: TrackId(2),
+                    locked: true
+                },
+                paste(frame(104))
+            ]
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), revision);
+    assert_eq!(s.history_len(), history);
+    let mut fresh = Session::new((**s.project()).clone(), 100).unwrap();
+    assert!(
+        !fresh
+            .apply(Command::PasteKeyframes {
+                item: ItemId(999),
+                at: Tick(1),
+                source: KeyframePasteSource::Stored
+            })
+            .unwrap()
+            .changed
+    );
+}
+
+#[test]
+fn clipboard_closed_payload_rejects_hostile_time_version_shape_and_color() {
+    let mut s = session();
+    let example = registry()
+        .iter()
+        .find(|r| r.id == "clipboard.paste_keyframes")
+        .unwrap()
+        .example
+        .params
+        .clone();
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    for (pointer, value) in [
+        ("/source/payload/version", json!(2)),
+        ("/source/payload/origin", json!(1)),
+        ("/source/payload/origin", json!(-9_007_199_254_740_992i64)),
+        ("/source/payload/extra", json!(true)),
+        ("/source/payload/params", json!([])),
+        (
+            "/source/payload/params/0/param/channels/keys/0/outgoing",
+            json!({"dt":-1,"dv":0}),
+        ),
+        (
+            "/source/payload/params/0/param/channels/value/value",
+            json!(1e13),
+        ),
+    ] {
+        let mut p = example.clone();
+        if pointer.ends_with("/extra") {
+            p["source"]["payload"]["extra"] = value;
+        } else {
+            *p.pointer_mut(pointer).unwrap() = value;
+        }
+        assert!(
+            s.execute("clipboard.paste_keyframes", p).is_err(),
+            "{pointer}"
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+    }
+    use engine::KeyframeClipboard;
+    let invalid = Param::Color(Box::new(std::array::from_fn(|_| {
+        Channel::new(
+            ParamValue::Scalar(1.1),
+            vec![Keyframe::new(Tick(0), ParamValue::Scalar(0.5))],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap()
+    })));
+    assert!(KeyframeClipboard::new(Tick(0), vec![(BuiltinPath::Color.into(), invalid)]).is_err());
+    let mut k = Keyframe::new(Tick(9_007_199_254_740_991), ParamValue::Scalar(0.5));
+    k.outgoing = Some(CurveHandle {
+        dt: Tick(1),
+        dv: 0.0,
+    });
+    let p = Param::Value(
+        Channel::new(
+            ParamValue::Scalar(0.5),
+            vec![Keyframe::new(Tick(-1), ParamValue::Scalar(0.0)), k],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap(),
+    );
+    assert!(KeyframeClipboard::new(Tick(-1), vec![(path(), p)]).is_err());
+}
+
+#[test]
+fn clipboard_key_path_byte_and_batch_limits_preserve_the_previous_snapshot() {
+    use engine::{KeyframeClipboard, KeyframePasteSource, KeyframeRef};
+    let mut s = session();
+    s.apply(Command::CopyKeyframes {
+        keys: vec![KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick::ZERO,
+        }],
+    })
+    .unwrap();
+    let keys = (0..4096)
+        .map(|n| Keyframe::new(Tick(n), ParamValue::Scalar(0.5)))
+        .collect();
+    let param = Param::Value(
+        Channel::new(
+            ParamValue::Scalar(0.7),
+            keys,
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap(),
+    );
+    let payload = KeyframeClipboard::new(Tick(0), vec![(path(), param)]).unwrap();
+    s.apply(Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: KeyframePasteSource::Payload { payload },
+    })
+    .unwrap_err(); // 4096 plus noncolliding old key exceeds the channel budget.
+    let param = Param::Value(
+        Channel::new(
+            ParamValue::Scalar(0.7),
+            vec![Keyframe::new(Tick(0), ParamValue::Scalar(0.5))],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap(),
+    );
+    let two = vec![
+        (
+            path(),
+            Param::Value(
+                Channel::new(
+                    ParamValue::Scalar(0.7),
+                    (0..4096)
+                        .map(|n| Keyframe::new(Tick(n), ParamValue::Scalar(0.5)))
+                        .collect(),
+                    Extrapolation::Hold,
+                    Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        ),
+        (AnimationPath::new("params.more").unwrap(), param.clone()),
+    ];
+    assert!(matches!(
+        KeyframeClipboard::new(Tick(0), two),
+        Err(engine::EditError::Limit)
+    ));
+    let paths: Vec<_> = (0..64)
+        .map(|n| {
+            (
+                AnimationPath::new(format!("params.p{n:02}")).unwrap(),
+                param.clone(),
+            )
+        })
+        .collect();
+    assert!(KeyframeClipboard::new(Tick(0), paths.clone()).is_ok());
+    let mut too_many = paths;
+    too_many.push((AnimationPath::new("params.p64").unwrap(), param));
+    assert!(matches!(
+        KeyframeClipboard::new(Tick(0), too_many),
+        Err(engine::EditError::Limit)
+    ));
+    let p = AnimationPath::new("params.text").unwrap();
+    let text = |bytes| {
+        let mut key = Keyframe::new(Tick(0), ParamValue::Text("a".repeat(bytes).into()));
+        key.segment = Segment::Step;
+        Param::Value(
+            Channel::new(
+                ParamValue::Text("".into()),
+                vec![key],
+                Extrapolation::Hold,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        )
+    };
+    assert!(matches!(
+        KeyframeClipboard::new(Tick(0), vec![(p.clone(), text(1 << 20))]),
+        Err(engine::EditError::Limit)
+    ));
+    let mut boundary = json!({"version":1,"origin":0,"params":[{"path":"params.text","param":{"kind":"value","channels":{"value":{"kind":"text","value":""},"keys":[{"time":0,"value":{"kind":"text","value":""},"segment":"step","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]});
+    let overhead = serde_json::to_vec(&boundary).unwrap().len();
+    boundary["params"][0]["param"]["channels"]["keys"][0]["value"]["value"] =
+        json!("a".repeat((1 << 20) - overhead));
+    assert_eq!(serde_json::to_vec(&boundary).unwrap().len(), 1 << 20);
+    let admitted: KeyframeClipboard = serde_json::from_value(boundary.clone()).unwrap();
+    assert_eq!(serde_json::to_vec(&admitted).unwrap().len(), 1 << 20);
+    let mut extra = boundary["params"][0]["param"]["channels"]["keys"][0]["value"]["value"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    extra.push('a');
+    boundary["params"][0]["param"]["channels"]["keys"][0]["value"]["value"] = json!(extra);
+    assert_eq!(serde_json::to_vec(&boundary).unwrap().len(), (1 << 20) + 1);
+    assert!(serde_json::from_value::<KeyframeClipboard>(boundary).is_err());
+    let payload = KeyframeClipboard::new(Tick(0), vec![(p, text(400_000))]).unwrap();
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    let commands = (0..3)
+        .map(|_| Command::PasteKeyframes {
+            item: ItemId(2),
+            at: Tick(1),
+            source: KeyframePasteSource::Payload {
+                payload: payload.clone(),
+            },
+        })
+        .collect();
+    assert!(matches!(
+        s.apply(Command::Batch { commands }),
+        Err(engine::EditError::Limit)
+    ));
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    // The refused replacement did not lose the earlier captured scalar snapshot.
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::new(ParamValue::Scalar(0.3)).unwrap(),
+    })
+    .unwrap();
+    s.apply(Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: KeyframePasteSource::Stored,
+    })
+    .unwrap();
+    assert_eq!(
+        item(&s, ItemId(2))
+            .animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[0]
+            .value,
+        ParamValue::Scalar(0.0)
+    );
+}
+
+#[test]
+fn clipboard_preserves_every_curve_label_and_flat_endpoint_excursions() {
+    use engine::{KeyframePasteSource::Stored, KeyframeRef};
+    for segment in [Segment::Step, Segment::Linear, Segment::Bezier] {
+        for tangent in [
+            TangentMode::Auto,
+            TangentMode::Aligned,
+            TangentMode::Broken,
+            TangentMode::Flat,
+        ] {
+            for handles in [false, true] {
+                let mut s = session();
+                let mut a = Keyframe::new(Tick(0), ParamValue::Scalar(0.0));
+                a.segment = segment;
+                a.tangent = tangent;
+                let mut b = Keyframe::new(Tick(12), ParamValue::Scalar(0.0));
+                b.tangent = tangent;
+                if handles {
+                    a.outgoing = Some(CurveHandle {
+                        dt: Tick(4),
+                        dv: 1.0,
+                    });
+                    b.incoming = Some(CurveHandle {
+                        dt: Tick(-4),
+                        dv: 1.0,
+                    });
+                }
+                let source = Param::Value(
+                    Channel::new(
+                        ParamValue::Scalar(0.7),
+                        vec![a.clone(), b.clone()],
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                );
+                s.apply(Command::SetAnimatedParam {
+                    item: ItemId(2),
+                    path: path(),
+                    param: source,
+                })
+                .unwrap();
+                s.apply(Command::CopyKeyframes {
+                    keys: [0, 12]
+                        .map(|t| KeyframeRef {
+                            item: ItemId(2),
+                            path: path(),
+                            component: None,
+                            time: Tick(t),
+                        })
+                        .to_vec(),
+                })
+                .unwrap();
+                s.apply(Command::SetAnimatedParam {
+                    item: ItemId(2),
+                    path: path(),
+                    param: Param::new(ParamValue::Scalar(0.2)).unwrap(),
+                })
+                .unwrap();
+                s.apply(Command::PasteKeyframes {
+                    item: ItemId(2),
+                    at: frame(100).checked_add(Tick(20)).unwrap(),
+                    source: Stored,
+                })
+                .unwrap();
+                a.time = Tick(20);
+                b.time = Tick(32);
+                let c = item(&s, ItemId(2))
+                    .animations
+                    .get(&path())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap();
+                assert_eq!(c.keys(), [a, b]);
+                for (t, v) in [(20, 0.0), (23, 0.5625), (26, 0.75), (29, 0.5625), (32, 0.0)] {
+                    let expected = if segment == Segment::Bezier && handles {
+                        v
+                    } else {
+                        0.0
+                    };
+                    let ParamValue::Scalar(actual) = c.value_at(Tick(t)) else {
+                        panic!("scalar")
+                    };
+                    near(actual, expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn clipboard_final_project_budget_counts_replacement_instead_of_old_plus_new_keys() {
+    use engine::{KeyframeClipboard, KeyframePasteSource::Payload};
+    let mut data = session().project().data().clone();
+    let target = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == ItemId(2))
+        .unwrap();
+    target.animations = Animations::default();
+    for n in 0..25 {
+        let path = AnimationPath::new(format!("params.p{n:02}")).unwrap();
+        let keys = (0..4000)
+            .map(|k| Keyframe::new(Tick(k), ParamValue::Scalar(0.0)))
+            .collect();
+        target
+            .animations
+            .set(
+                path,
+                Param::Value(
+                    Channel::new(
+                        ParamValue::Scalar(0.0),
+                        keys,
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let param = Param::Value(
+        Channel::new(
+            ParamValue::Scalar(0.7),
+            vec![Keyframe::new(Tick(0), ParamValue::Scalar(0.5))],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap(),
+    );
+    let payload = KeyframeClipboard::new(
+        Tick(0),
+        vec![(AnimationPath::new("params.p00").unwrap(), param)],
+    )
+    .unwrap();
+    s.apply(Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: Payload {
+            payload: payload.clone(),
+        },
+    })
+    .unwrap();
+    assert_eq!(item(&s, ItemId(2)).animations.key_count(), 100_000);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    assert!(
+        s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at: frame(100).checked_add(Tick(5000)).unwrap(),
+            source: Payload { payload }
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+}

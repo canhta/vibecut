@@ -1,4 +1,5 @@
 //! Headless project commands with bounded execution resources.
+#![recursion_limit = "256"]
 pub mod control;
 mod session;
 pub(crate) use session::transitions;
@@ -7,9 +8,9 @@ pub use session::wire::Failure;
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
-    ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
-    TextAnimationPreset, TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge,
-    WordId, declaration_order_error, lifecycle, registry,
+    ItemParamPatch, ItemPlacement, KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle,
+    Move, NewItem, Outcome, Placement, TextAnimationPreset, TrackPlacement, TranscriptCue,
+    TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;

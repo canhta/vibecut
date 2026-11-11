@@ -30,3 +30,7 @@ cache entries and a second open of that root refuses as `CacheBusy`. The native 
 keeps an audio stream per project and shares the GPU adapter. Preferences persist bounded
 logical size, position and maximization by Home, Shorts and ProjectId (64 retained
 geometry entries, within the 16 KiB store bound).
+
+Root Home, Editor `window_ui` and the immediate Shorts viewport call the foundation
+[text clipboard bridge](../input/README.md) before text widgets. Editor ownership includes
+Session epoch and active scene so a late native result cannot follow a scene/window switch.

@@ -1062,3 +1062,114 @@ fn save_as_admission_refusals_allow_another_destination_without_releasing_source
         }
     }
 }
+
+#[test]
+fn clipboard_survives_refused_and_pending_save_as_and_clears_only_on_adoption() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.vibecut");
+    seed(&source);
+    let mut a = open(
+        &dir.path().join("journals"),
+        1,
+        Some(source),
+        Arc::new(TestClock::default()),
+    );
+    let mut animations = project::Animations::default();
+    let mut param = project::Param::new(project::ParamValue::Scalar(0.7)).unwrap();
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put(project::Keyframe::new(
+            time::Tick(0),
+            project::ParamValue::Scalar(0.25),
+        ))
+        .unwrap();
+    animations
+        .set(project::BuiltinPath::Opacity.into(), param)
+        .unwrap();
+    let outcome = a
+        .session_mut()
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                animations,
+                source_asset: None,
+                source_range: time::SourceRange::new(
+                    time::Tick::ZERO,
+                    time::Tick(time::TICKS_PER_SECOND),
+                )
+                .unwrap(),
+                start: time::Tick::ZERO,
+                retime: Default::default(),
+                content: project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([255; 4]),
+                }),
+            },
+        })
+        .unwrap();
+    let id = outcome
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    a.session_mut()
+        .apply(Command::CopyKeyframes {
+            keys: vec![engine::KeyframeRef {
+                item: id,
+                path: project::BuiltinPath::Opacity.into(),
+                component: None,
+                time: time::Tick::ZERO,
+            }],
+        })
+        .unwrap();
+    assert!(a.save_as(dir.path().join("reserved.meta.json")).is_err());
+    assert!(
+        a.session_mut()
+            .apply(Command::PasteKeyframes {
+                item: id,
+                at: time::Tick(12),
+                source: engine::KeyframePasteSource::Stored
+            })
+            .unwrap()
+            .changed
+    );
+    let old = a.session().project().data().id;
+    a.save_as(dir.path().join("destination.vibecut")).unwrap();
+    assert_eq!(a.session().project().data().id, old);
+    assert!(a.session().clipboard_has_entry());
+    saved(&mut a);
+    assert_ne!(a.session().project().data().id, old);
+    assert!(
+        !a.session_mut()
+            .apply(Command::PasteKeyframes {
+                item: id,
+                at: time::Tick(24),
+                source: engine::KeyframePasteSource::Stored
+            })
+            .unwrap()
+            .changed
+    );
+    let keys = a
+        .session()
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == id)
+        .unwrap()
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys();
+    assert_eq!(keys.iter().map(|k| k.time.0).collect::<Vec<_>>(), [0, 12]);
+}

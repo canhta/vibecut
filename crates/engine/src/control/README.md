@@ -127,3 +127,8 @@ duplicate unchanged terminal events. Dropping a cursor never cancels work.
 
 Refusal responses, receipts, events and job views consume the error owner's `Failure::code`.
 They keep only the safe category; typed in-process causes and static messages remain intact.
+
+The Agent-granted `clipboard.copy_keyframes` and `clipboard.paste_keyframes` use ordinary
+revision/receipt admission. `clipboard.read` returns the same Session's nullable bounded
+snapshot without a receipt. Replay leaves a newer store intact; snapshot events omit it.
+Transfer/custody rules: [clipboard](../session/README.md#keyframe-clipboard).

@@ -96,3 +96,8 @@ sheet stays open. A row context menu opens inline rename for any scene including
 (`scene.rename`; Enter commits, Escape cancels); removal of the edited scene by a command
 or undo discards the edit. New scenes inherit canvas, frame rate and background with an
 empty timeline.
+
+Lane menus activate shared Copy/Paste actions, with component-distinct
+`timeline.lane.<item>.<path>.<component>.copy|paste` IDs. The selected item's
+`timeline.item.<item>.paste` menu supports existing Params with no keys. Current frame
+eligibility supplies disabled states; opening another item's menu never retargets Paste.

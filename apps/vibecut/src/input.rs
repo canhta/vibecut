@@ -8,6 +8,7 @@ mod keybindings;
 mod keymap;
 
 pub use chord::{Chord, ChordError, Mods, Platform};
+pub use dispatch::text_clipboard;
 pub use dispatch::{BlockedReason, Dispatch, DispatchContext};
 #[cfg(test)]
 pub(crate) use keybindings::valid_action_id;

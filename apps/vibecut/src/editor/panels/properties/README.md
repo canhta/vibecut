@@ -122,3 +122,7 @@ stay authoritative; keyed edits affect real-local keys. Time, selection, lock,
 effect or panel changes cancel pending edits. A queued row removal cancels drafts
 and scrubs before removal, so a removed effect cannot be recreated. Other controls
 retain behavior.
+
+The area's `input_ready` predicate admits frame clipboard actions only with no focused
+field, dirty draft, scrub, picker, reorder or font dialog. Refused actions leave drafts
+in this owner untouched.

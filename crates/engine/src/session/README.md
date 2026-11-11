@@ -124,3 +124,35 @@ autosave owner; choosing a different destination can succeed. Once a job is admi
 publication and worker failures follow the sticky error policy.
 
 Named caption preset IDs share the existing allocator and loaded maximum with scene, track, item, transition and bookmark IDs. Successful then cancelled previews/groups retire these IDs; failed atomic batches consume none. Bank metadata participates in ordinary snapshots, undo/redo and recovery; cue-table style IDs remain local to each cue track.
+
+## Keyframe clipboard
+
+`clipboard.rs` owns `KeyframeClipboard` and `KeyframePasteSource`, consumed by
+`clipboard.copy_keyframes`, `clipboard.read` and `clipboard.paste_keyframes`.
+The version-one closed snapshot contains a minimum original item-local output tick
+and strictly ordered path/Param pairs containing only selected keys. It admits one
+source item, 64 paths, 4096 refs/keys and 1 MiB compact UTF-8 JSON. Every time,
+handle delta, derived offset and pasted time fits ±(2^53−1); invalid values,
+versions, duplicates, missing keys and unordered entries refuse atomically.
+Empty Copy preserves the store. Source locks permit Copy.
+
+Paste accepts one active-scene item with matching existing Params, including channels
+with zero keys. It adopts each participating channel's base and extrapolation,
+retains all curve metadata, and merges translated keys with full replacement at equal
+times. Nonparticipating RGBA components and unrelated paths remain exact. The local
+anchor is scene output `at` minus destination start, plus each original time minus
+snapshot origin: there is no media mapping, snapping or clamping. Destination locks,
+missing channels, incompatible types, overflow and final project budgets refuse all
+paths. Stored-empty Paste is a no-op without target lookup. Changed Paste is one undo
+step and does not move the playhead; equal content preserves redo.
+
+The Session holds one immutable Arc snapshot outside project/history/persistence.
+Changed Copy advances the control revision and ends merging, with `Outcome.changed`
+false and no project event or dirty save. Identical Copy is a no-op. Receipt replay
+never reinstalls an older snapshot. Checkpoints restore clipboard custody on refusal;
+Copy/read refuse transactions and batches, while Paste supports atomic batches/groups.
+Undo/redo and same-scene edits preserve the store. Successful effective project/scene
+identity changes, including acknowledged Save As, clear it at committed completion;
+failed or staged changes preserve it. New sessions and other windows start empty.
+Read returns the bounded payload only in its response, never subscription events.
+The clipboard has no system-text/image or media-file IO capability.

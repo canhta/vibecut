@@ -420,6 +420,20 @@ impl Workspace {
     /// Draw a specific project through the same path as its native viewport.
     /// Kittest callers select the project explicitly, preserving automation ids.
     pub fn window_ui(&mut self, id: project::ProjectId, ui: &mut egui::Ui) {
+        let owner = self
+            .windows
+            .get(&id)
+            .and_then(|w| w.editor.as_ref())
+            .map(|e| {
+                egui::Id::unique((
+                    e.session.session_id(),
+                    e.session.project().data().id,
+                    e.session.project().data().current_scene_id,
+                    &e.selection,
+                ))
+            })
+            .unwrap_or_else(|| egui::Id::unique(("loading", id)));
+        crate::input::text_clipboard(ui.ctx(), owner);
         if let Some(window) = self.windows.get_mut(&id) {
             window.preferences = self.preferences.clone();
             if let Some(editor) = &mut window.editor {
@@ -465,6 +479,12 @@ impl Workspace {
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
         let ctx = ui.ctx().clone();
+        if self.home_open {
+            crate::input::text_clipboard(
+                ui.ctx(),
+                egui::Id::unique(("home.text", self.projects.selection())),
+            );
+        }
         // Our own final `Close` returns here as `close_requested`; cancelling it
         // would leave a hidden process running after the last window closed.
         if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close() {
@@ -557,6 +577,15 @@ impl Workspace {
                     .builder()
                     .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
+                    crate::input::text_clipboard(
+                        ui.ctx(),
+                        egui::Id::unique((
+                            "shorts.text",
+                            shorts.source().map(|s| s.project.data().id),
+                            shorts.preview_session().map(|s| s.session_id()),
+                            shorts.selected(),
+                        )),
+                    );
                     actions = crate::shorts::show(shorts, &cx, ui);
                     close = ui.input(|i| i.viewport().close_requested());
                     if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {

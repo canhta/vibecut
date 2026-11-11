@@ -63,3 +63,7 @@ Language for the editor's privacy and execution boundaries.
 - **Automation id**: A stable identifier on an interactive widget that survives locale and layout changes, through which agents and tests address input.
 
 - **Saved caption preset**: A named project-owned `CueStyle` value with a stable `CaptionPresetId`. Apply copies it into cue styles; rename/delete never changes an applied copy. This ID differs from a cue table's `CueStyleId`.
+
+**Keyframe clipboard** — A bounded immutable snapshot of selected animation keys held
+by one Session, separate from project/history and system text. Transfer and lifetime:
+[Session](crates/engine/src/session/README.md#keyframe-clipboard).
