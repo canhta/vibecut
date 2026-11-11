@@ -17,3 +17,6 @@ message presentation; optional setup preserves its retained source.
 Artifact causes retain their direct Render/Runtime/Lut unavailable details and existing
 explicit Runtime Failed message presentation. Empty snapshots keep the existing rejected
 category through the artifact owner.
+
+Analysis causes retain their explicit raw or engine-composed provider setup hint, render
+unavailable details and existing Runtime Failed message presentation.

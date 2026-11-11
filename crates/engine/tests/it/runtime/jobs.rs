@@ -133,7 +133,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     token.cancel();
     assert_eq!(pump(&mut r, id).state, JobState::Cancelled);
     assert_eq!(budget.snapshot().unwrap().used, 0);
-    for mode in 0..13 {
+    for mode in 0..15 {
         let mut session = crate::support::control::session();
         let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
         let (id, token) = r
@@ -159,6 +159,10 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                     10 => EngineError::Subtitles(engine::subtitles::Error::Runtime(B::Failed(
                         Arc::new(B::Cancelled),
                     ))),
+                    13 => EngineError::Analysis(engine::AnalysisError::Runtime(B::Cancelled)),
+                    14 => EngineError::Analysis(engine::AnalysisError::Runtime(B::Failed(
+                        Arc::new(B::Cancelled),
+                    ))),
                     11 => EngineError::Artifacts(engine::ArtifactError::Runtime(B::Cancelled)),
                     12 => EngineError::Artifacts(engine::ArtifactError::Runtime(B::Failed(
                         Arc::new(B::Cancelled),
@@ -174,7 +178,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert_eq!(
             (snapshot.state, snapshot.attempts),
             (
-                if matches!(mode, 0 | 5 | 7 | 9 | 11) {
+                if matches!(mode, 0 | 5 | 7 | 9 | 11 | 13) {
                     JobState::Cancelled
                 } else {
                     JobState::Failed
@@ -228,12 +232,20 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                     12,
                     EngineError::Artifacts(engine::ArtifactError::Runtime(B::Failed(_)))
                 )
+                | (
+                    13,
+                    EngineError::Analysis(engine::AnalysisError::Runtime(B::Cancelled))
+                )
+                | (
+                    14,
+                    EngineError::Analysis(engine::AnalysisError::Runtime(B::Failed(_)))
+                )
         ));
         assert_eq!(
             raw.to_string(),
             match mode {
-                0 | 5 | 7 | 9 | 11 => "job cancelled",
-                1 | 2 | 6 | 8 | 10 | 12 => "background job failed: job cancelled",
+                0 | 5 | 7 | 9 | 11 | 13 => "job cancelled",
+                1 | 2 | 6 | 8 | 10 | 12 | 14 => "background job failed: job cancelled",
                 3 => "background job failed: background job failed: job cancelled",
                 _ => "session persistence failed",
             }
@@ -272,9 +284,9 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         .err()
         .unwrap();
         match waited {
-            B::Cancelled => assert!(matches!(mode, 0 | 5 | 7 | 9 | 11)),
+            B::Cancelled => assert!(matches!(mode, 0 | 5 | 7 | 9 | 11 | 13)),
             B::Failed(retained) => {
-                assert!(!matches!(mode, 0 | 5 | 7 | 9 | 11));
+                assert!(!matches!(mode, 0 | 5 | 7 | 9 | 11 | 13));
                 assert!(Arc::ptr_eq(raw, &retained));
             }
             other => panic!("unexpected waiter failure: {other}"),

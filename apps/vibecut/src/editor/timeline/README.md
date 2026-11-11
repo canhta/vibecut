@@ -112,4 +112,4 @@ eligibility supplies disabled states; opening another item's menu never retarget
 
 Thumbnail display failures retain Artifact causes inside the mixed engine boundary. The
 existing corrupt-cache recovery recognizes that explicit shape; waveform causes keep their
-own result contract.
+Runtime display failure; mixed query refusals compose the Analysis owner.

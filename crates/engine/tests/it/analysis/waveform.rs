@@ -5,7 +5,7 @@
     reason = "synthetic fixtures and explicit assertions"
 )]
 use engine::{
-    ByteBudget, Error as EngineError,
+    AnalysisError, ByteBudget,
     cache::ArtifactCache,
     jobs::{Clock, JobRunner, JobState, RunnerConfig, SystemClock},
     waveform::{MAX_COLUMNS, WaveformRequest, WaveformState, display},
@@ -282,7 +282,7 @@ fn trim_and_retime_map_to_bucket_positions() {
     let before = display(&asset, &moved, window(8, 9), 1, &mut cache);
     assert!(matches!(
         before,
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(AnalysisError::Edit(engine::EditError::Invalid(
             "waveform display outside clip"
         )))
     ));
@@ -309,7 +309,7 @@ fn cold_pending_ready_over_and_unsupported_states() {
     for columns in [0, MAX_COLUMNS + 1] {
         assert!(matches!(
             display(&asset, &clip, window(0, 3), columns, &mut cache),
-            Err(EngineError::Edit(engine::EditError::Invalid(
+            Err(AnalysisError::Edit(engine::EditError::Invalid(
                 "waveform display columns"
             )))
         ));
@@ -337,7 +337,7 @@ fn cold_pending_ready_over_and_unsupported_states() {
     let video = video_only(&dir);
     assert!(matches!(
         WaveformRequest::new(video.clone()),
-        Err(EngineError::Edit(engine::EditError::Unsupported(_)))
+        Err(AnalysisError::Edit(engine::EditError::Unsupported(_)))
     ));
     let clip = item(&video, range(0, 1), Tick::ZERO, 1.0);
     assert!(matches!(
@@ -389,7 +389,7 @@ fn cache_key_binds_content_rate_channel_layout_and_recipe() {
         .build();
     assert!(matches!(
         WaveformRequest::new(video),
-        Err(EngineError::Edit(engine::EditError::Unsupported(_)))
+        Err(AnalysisError::Edit(engine::EditError::Unsupported(_)))
     ));
 }
 
@@ -514,7 +514,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(runner.output_bytes(job.id).is_none());
     assert_eq!(cache.len(), 1, "cancel leaves the previous entry intact");
@@ -546,7 +546,7 @@ fn corrupt_cache_is_failed_and_regenerates() {
     let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
     assert!(matches!(
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
-        WaveformState::Failed(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        WaveformState::Failed(engine::RuntimeError::CacheCorrupt)
     ));
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(
@@ -602,20 +602,20 @@ fn outside_asset_and_hostile_columns_are_typed_refusals() {
     let visible = window(0, 3);
     assert!(matches!(
         display(&asset, &mismatched, visible, 8, &mut cache),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(AnalysisError::Edit(engine::EditError::Invalid(
             "waveform display asset"
         )))
     ));
     let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
     assert!(matches!(
         display(&asset, &clip, window(0, 1), MAX_COLUMNS + 1, &mut cache),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(AnalysisError::Edit(engine::EditError::Invalid(
             "waveform display columns"
         )))
     ));
     assert!(matches!(
         display(&asset, &clip, window(4, 5), 8, &mut cache),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(AnalysisError::Edit(engine::EditError::Invalid(
             "waveform display outside clip"
         )))
     ));

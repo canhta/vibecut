@@ -138,7 +138,7 @@ fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EngineEr
                     snapshot.error.unwrap(),
                 )));
             }
-            JobState::Completed => return decode(runner.output_bytes(job).unwrap()),
+            JobState::Completed => return Ok(decode(runner.output_bytes(job).unwrap())?),
             _ => {}
         }
         assert!(Instant::now() < deadline);
@@ -153,13 +153,17 @@ fn submit(
 ) -> Result<JobId, EngineError> {
     let (level, reads, fail) = tone;
     let reads = reads.clone();
-    submit_loudness(runner, session.project().clone(), move || {
-        Box::new(Tone {
-            level,
-            reads: reads.clone(),
-            fail,
-        })
-    })
+    Ok(submit_loudness(
+        runner,
+        session.project().clone(),
+        move || {
+            Box::new(Tone {
+                level,
+                reads: reads.clone(),
+                fail,
+            })
+        },
+    )?)
 }
 
 #[test]
@@ -247,7 +251,7 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     let failing = submit(&mut runner, &session, (0.1, &reads, true)).unwrap();
     assert!(matches!(
         finish(&mut runner, failing),
-        Err(EngineError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Render(render::Error::Invalid(_))))
+        Err(EngineError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::AnalysisError>(), Some(engine::AnalysisError::Render(render::Error::Invalid(_))))
     ));
 
     let cancelled = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();

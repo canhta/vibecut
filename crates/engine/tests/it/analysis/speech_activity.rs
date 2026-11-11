@@ -5,7 +5,7 @@
     reason = "synthetic fixtures and explicit assertions"
 )]
 use engine::{
-    ByteBudget, Error as EngineError,
+    AnalysisError, ByteBudget,
     cache::ArtifactCache,
     jobs::{Clock, JobRunner, JobState, RunnerConfig, SystemClock},
     speech_activity::{
@@ -344,7 +344,7 @@ fn warm_cache_reuses_the_spans_without_opening_the_source() {
         .to_vec();
     assert!(matches!(
         request.submit(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(AnalysisError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     assert_eq!(runner.counts(), counts);
     assert_eq!(
@@ -398,7 +398,7 @@ fn cancelling_after_a_decoded_window_publishes_nothing() {
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(runner.output_bytes(job.id).is_none());
     assert!(cache.is_empty());
@@ -420,7 +420,7 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
     let video = video_only(&dir);
     assert!(matches!(
         SpeechActivityRequest::new(video, range(0, 1), SpeechActivitySettings::default()),
-        Err(EngineError::Edit(engine::EditError::Unsupported(_)))
+        Err(AnalysisError::Edit(engine::EditError::Unsupported(_)))
     ));
 
     let copy = asset.path().with_file_name("unreadable.wav");
@@ -433,11 +433,60 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
     let (mut runner, mut cache, _dir) = setup();
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
-    assert!(matches!(
-        job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Media(_)))
+    let snapshot = runner.snapshot(job.id).unwrap();
+    let raw = snapshot.error.as_ref().unwrap();
+    let Some(AnalysisError::Media(media_source)) =
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>()
+    else {
+        panic!("speech producer changed")
+    };
+    assert!(std::ptr::eq(
+        media_source,
+        raw.source()
+            .unwrap()
+            .downcast_ref::<media::MediaError>()
+            .unwrap()
     ));
+    assert_eq!(raw.to_string(), "media operation failed");
+    assert_eq!(raw.code(), engine::control::ErrorCode::Media);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.job_policy().retry_after_seconds, None);
+    assert_eq!(snapshot.attempts, 1);
+    let listed = runner
+        .snapshots()
+        .into_iter()
+        .find(|row| row.id == job.id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+    let event = runner
+        .drain_events()
+        .into_iter()
+        .find(|row| row.id == job.id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    let mut session = engine::Session::new(
+        project::Project::empty(project::ProjectId(1), "".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let resync = session.snapshot_and_subscribe(&runner).unwrap();
+    assert!(resync.jobs.iter().any(|row| row.id == job.id
+        && row.error == Some(engine::control::ErrorCode::Media)
+        && row.state == JobState::Failed));
+    let AnalysisError::Runtime(engine::RuntimeError::Failed(retained)) =
+        job.finish(&mut runner, &mut cache).err().unwrap()
+    else {
+        panic!("speech finisher changed")
+    };
+    assert!(Arc::ptr_eq(raw, &retained));
+    assert!(runner.output_bytes(job.id).is_none());
+    assert_eq!(runner.memory_budget().snapshot().unwrap().used, 0);
     assert!(cache.is_empty());
+    std::fs::copy(asset.path(), &copy).unwrap();
+    let retry = request.submit(&mut runner, &mut cache).unwrap();
+    assert_eq!(wait(&mut runner, retry.id), JobState::Completed);
+    assert!(retry.finish(&mut runner, &mut cache).unwrap().is_some());
 
     for settings in [
         SpeechActivitySettings {

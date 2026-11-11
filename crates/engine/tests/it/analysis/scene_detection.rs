@@ -4,7 +4,7 @@
     reason = "synthetic fixtures and assertions"
 )]
 use engine::{
-    ByteBudget, Error as EngineError, Session,
+    AnalysisError, ByteBudget, Session,
     cache::ArtifactCache,
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
     scene_detection::*,
@@ -300,7 +300,7 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
     assert_eq!(wait(&mut runner, &cancelled), JobState::Cancelled);
     assert!(matches!(
         cancelled.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(cache.get(request.cache_key()).unwrap().is_none());
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
@@ -321,7 +321,7 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
         let counts = runner.counts();
         assert!(matches!(
             request.submit(&mut runner, &mut cache),
-            Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+            Err(AnalysisError::Runtime(engine::RuntimeError::CacheCorrupt))
         ));
         assert_eq!(runner.counts(), counts);
         assert_eq!(
@@ -481,7 +481,7 @@ fn cancellation_after_decoded_frame_leaves_no_cache_or_timeline_edit() {
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(cache.get(request.cache_key()).unwrap().is_none());
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);

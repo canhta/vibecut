@@ -1,8 +1,8 @@
 //! Produces conservative source-time shot analysis.
+use crate::analysis::{Error as AnalysisError, Result};
 mod reidentification;
 mod tracking;
 use crate::{
-    Error as EngineError,
     cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState,
@@ -127,7 +127,7 @@ impl AnalysisRequest {
         speech: Vec<SourceRange>,
         models: [u8; 32],
         settings: AnalysisSettings,
-    ) -> Result<Self, EngineError> {
+    ) -> Result<Self> {
         if range.start() < Tick::ZERO
             || range.duration().0 > MAX_SECONDS as i64 * TICKS_PER_SECOND
             || speech.len() > 100_000
@@ -136,14 +136,14 @@ impl AnalysisRequest {
             || !(VIDEO_STEP..=10 * TICKS_PER_SECOND).contains(&settings.min_shot.0)
             || asset.probe().duration.is_some_and(|end| range.end() > end)
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
                 "shot analysis request",
             )));
         }
         let mut end = range.start();
         for r in &speech {
             if r.start() < end || r.end() > range.end() {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
                     "analysis speech ranges",
                 )));
             }
@@ -154,7 +154,7 @@ impl AnalysisRequest {
             .streams
             .iter()
             .find(|s| s.kind == StreamKind::Video)
-            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+            .ok_or(AnalysisError::Edit(crate::session::EditError::Unsupported(
                 "shot analysis requires video",
             )))?;
         if video
@@ -166,7 +166,7 @@ impl AnalysisRequest {
                 .and_then(|d| video.start.unwrap_or(Tick::ZERO).checked_add(d))
                 .is_some_and(|end| range.end() > end)
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
                 "analysis video range or pixels",
             )));
         }
@@ -215,7 +215,7 @@ impl AnalysisRequest {
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
         detector: impl VisionDetector + 'static,
-    ) -> Result<AnalysisJob, EngineError> {
+    ) -> Result<AnalysisJob> {
         let cached = match cache.get(self.key) {
             Ok(Some(lease)) => {
                 self.decode(lease.bytes())?;
@@ -239,7 +239,7 @@ impl AnalysisRequest {
             },
         };
         let detector = Mutex::new(Some(detector));
-        let (id, cancel) = runner.submit::<crate::Error>(spec, move |ctx| {
+        let (id, cancel) = runner.submit::<AnalysisError>(spec, move |ctx| {
             ctx.check_cancelled()?;
             if let Some(bytes) = &cached {
                 return Ok(bytes.clone());
@@ -248,7 +248,9 @@ impl AnalysisRequest {
                 .lock()
                 .map_err(|_| crate::RuntimeError::Poisoned)?
                 .take()
-                .ok_or(EngineError::Session(crate::SessionError::StaleResult))?;
+                .ok_or(AnalysisError::from(
+                    crate::session::SessionError::StaleResult,
+                ))?;
             let result = request.analyze(&mut detector, ctx)?;
             let bytes = encode(&result)?;
             ctx.check_cancelled()?;
@@ -260,19 +262,19 @@ impl AnalysisRequest {
             request: self.clone(),
         })
     }
-    fn decode(&self, bytes: &[u8]) -> Result<AnalysisResult, EngineError> {
+    fn decode(&self, bytes: &[u8]) -> crate::runtime::Result<AnalysisResult> {
         if bytes.len() > MAX_BYTES {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
-        let result: AnalysisResult = serde_json::from_slice(bytes)
-            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        let result: AnalysisResult =
+            serde_json::from_slice(bytes).map_err(|_| crate::RuntimeError::CacheCorrupt)?;
         if result.version != VERSION
             || result.key != self.key.bytes()
             || result.models != self.models
             || result.shots.is_empty()
             || result.shots.len() > MAX_SHOTS
         {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         let mut start = self.range.start();
         let mut bins = 0;
@@ -284,7 +286,7 @@ impl AnalysisRequest {
                 || shot.people_count > shot.tracks.len()
                 || shot.seconds.is_empty()
             {
-                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(crate::RuntimeError::CacheCorrupt);
             }
             let mut identities = std::collections::BTreeSet::new();
             let mut ids = std::collections::BTreeSet::new();
@@ -297,7 +299,7 @@ impl AnalysisRequest {
                                 .any(|t| t.id == anchor.track && t.identity.is_none())
                         });
                     if !valid || !identities.insert((anchor.shot, anchor.track)) {
-                        return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                        return Err(crate::RuntimeError::CacheCorrupt);
                     }
                 }
                 if !ids.insert(t.id)
@@ -306,7 +308,7 @@ impl AnalysisRequest {
                     || t.bounds.get(2).is_none_or(|v| *v <= 0.)
                     || t.bounds.get(3).is_none_or(|v| *v <= 0.)
                 {
-                    return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                    return Err(crate::RuntimeError::CacheCorrupt);
                 }
             }
             let valid = |state: SpeakerState| match state {
@@ -319,13 +321,13 @@ impl AnalysisRequest {
                 _ => true,
             };
             if !valid(shot.speaker) {
-                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(crate::RuntimeError::CacheCorrupt);
             }
             if let SpeakerState::Visible { local, .. } = shot.speaker {
                 hint = Some(local);
             }
             if shot.continuity_hint != hint {
-                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(crate::RuntimeError::CacheCorrupt);
             }
             let mut second_start = start;
             for second in &shot.seconds {
@@ -335,18 +337,18 @@ impl AnalysisRequest {
                     || second.people_count > shot.tracks.len()
                     || !valid(second.speaker)
                 {
-                    return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                    return Err(crate::RuntimeError::CacheCorrupt);
                 }
                 second_start = second.range.end();
                 bins += 1;
             }
             if second_start != shot.range.end() || bins > MAX_SECONDS + MAX_SHOTS {
-                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(crate::RuntimeError::CacheCorrupt);
             }
             start = shot.range.end();
         }
         if start != self.range.end() {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         Ok(result)
     }
@@ -354,7 +356,7 @@ impl AnalysisRequest {
         &self,
         detector: &mut dyn VisionDetector,
         ctx: &JobContext,
-    ) -> Result<AnalysisResult, EngineError> {
+    ) -> Result<AnalysisResult> {
         let cuts = self.cuts(ctx)?;
         let mut result = AnalysisResult {
             version: VERSION.into(),
@@ -367,10 +369,10 @@ impl AnalysisRequest {
         for (index, pair) in cuts.windows(2).enumerate() {
             ctx.check_cancelled()?;
             let range = SourceRange::new(
-                *pair.first().ok_or(EngineError::Control(
+                *pair.first().ok_or(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ))?,
-                *pair.get(1).ok_or(EngineError::Control(
+                *pair.get(1).ok_or(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ))?,
             )?;
@@ -383,9 +385,9 @@ impl AnalysisRequest {
             result.shots.push(shot);
         }
         // Exercise the same structural validation as a reopened cache entry.
-        self.decode(&encode(&result)?)
+        Ok(self.decode(&encode(&result)?)?)
     }
-    fn cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>, EngineError> {
+    fn cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>> {
         let request = crate::scene_detection::DetectionRequest::new(
             self.asset.clone(),
             self.range,
@@ -406,7 +408,7 @@ impl AnalysisRequest {
         range: SourceRange,
         detector: &mut dyn VisionDetector,
         ctx: &JobContext,
-    ) -> Result<(ShotAnalysis, reidentification::Evidence), EngineError> {
+    ) -> Result<(ShotAnalysis, reidentification::Evidence)> {
         let audio = self
             .asset
             .probe()
@@ -530,26 +532,26 @@ impl AnalysisJob {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<Option<AnalysisResult>, EngineError> {
+    ) -> Result<Option<AnalysisResult>> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
-                snapshot
-                    .error
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
+            JobState::Cancelled => Err(AnalysisError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(AnalysisError::Runtime(crate::RuntimeError::Failed(
+                snapshot.error.ok_or(AnalysisError::from(
+                    crate::session::SessionError::StaleResult,
+                ))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(result))
             }
             _ => Ok(None),
@@ -569,10 +571,10 @@ impl Write for Limited {
         Ok(())
     }
 }
-fn encode(result: &AnalysisResult) -> Result<Vec<u8>, EngineError> {
+fn encode(result: &AnalysisResult) -> crate::session::Result<Vec<u8>> {
     let mut writer = Limited(Vec::new());
     serde_json::to_writer(&mut writer, result)
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| crate::session::EditError::from(crate::session::wire::ControlError::Limit))?;
     writer.0.shrink_to_fit();
     Ok(writer.0)
 }

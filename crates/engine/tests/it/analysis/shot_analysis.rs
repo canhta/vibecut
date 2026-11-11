@@ -6,8 +6,7 @@ use ai::{
     },
 };
 use engine::{
-    AnalysisRequest, AnalysisSettings, ByteBudget, Error as EngineError, Scene, SpeakerRef,
-    SpeakerState,
+    AnalysisError, AnalysisRequest, AnalysisSettings, ByteBudget, Scene, SpeakerRef, SpeakerState,
     cache::ArtifactCache,
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
 };
@@ -135,6 +134,7 @@ impl VisionDetector for Detector {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         match self.mode {
             1 => return Err(ai::Error::Inference),
+            9 => return Err(ai::Error::Cancelled),
             2 if frame.values()[0] > 200. => {
                 self.started.take().unwrap().send(()).unwrap();
                 while !hooks.cancelled() {
@@ -334,7 +334,7 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
     let counts = runner.counts();
     assert!(matches!(
         changed.submit(&mut runner, &mut cache, Detector::normal(calls.clone())),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(AnalysisError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     assert_eq!(calls.load(Ordering::SeqCst), before);
     assert_eq!(runner.counts(), counts);
@@ -348,7 +348,7 @@ fn cancelled_failed_panicking_and_invalid_detectors_publish_nothing() {
     let Some(asset) = fixture() else {
         return;
     };
-    for mode in [1, 2, 3, 4, 5] {
+    for mode in [1, 2, 3, 4, 5, 9] {
         let (mut runner, mut cache, _dir) = setup();
         let request = AnalysisRequest::new(
             asset.clone(),
@@ -383,7 +383,37 @@ fn cancelled_failed_panicking_and_invalid_detectors_publish_nothing() {
                 JobState::Failed
             }
         );
-        assert!(job.finish(&mut runner, &mut cache).is_err());
+        if mode == 1 || mode == 9 {
+            let snapshot = runner.snapshot(job.id).unwrap();
+            let raw = snapshot.error.as_ref().unwrap();
+            let Some(AnalysisError::Ai(source)) = (raw.as_ref()
+                as &(dyn std::error::Error + 'static))
+                .downcast_ref::<AnalysisError>()
+            else {
+                panic!("shot producer changed")
+            };
+            assert!(matches!(
+                (mode, source),
+                (1, ai::Error::Inference) | (9, ai::Error::Cancelled)
+            ));
+            assert!(std::ptr::eq(
+                source,
+                raw.source().unwrap().downcast_ref::<ai::Error>().unwrap()
+            ));
+            assert_eq!(raw.to_string(), "AI execution failed");
+            assert_eq!(raw.code(), engine::control::ErrorCode::Ai);
+            assert!(!raw.transient());
+            assert!(!raw.job_policy().terminal_cancelled);
+            assert_eq!(raw.job_policy().retry_after_seconds, None);
+            let AnalysisError::Runtime(engine::RuntimeError::Failed(retained)) =
+                job.finish(&mut runner, &mut cache).err().unwrap()
+            else {
+                panic!("shot finisher changed")
+            };
+            assert!(Arc::ptr_eq(raw, &retained));
+        } else {
+            assert!(job.finish(&mut runner, &mut cache).is_err());
+        }
         assert!(runner.output_bytes(job.id).is_none());
         assert!(cache.is_empty());
     }
@@ -635,7 +665,7 @@ fn short_and_audio_absent_evidence_stays_unknown_and_pre_cancel_never_runs() {
     assert_eq!(calls.load(Ordering::SeqCst), before);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
 }
 
@@ -742,7 +772,7 @@ fn cache_pressure_keeps_complete_output_for_finish_retry() {
         .unwrap();
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::BudgetFull))
+        Err(AnalysisError::Runtime(engine::RuntimeError::BudgetFull))
     ));
     assert!(runner.output_bytes(job.id).is_some());
     assert!(cache.is_empty());
@@ -812,7 +842,7 @@ fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
         .unwrap();
     assert!(matches!(
         request.submit(&mut runner, &mut cache, Detector::normal(calls)),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(AnalysisError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
 }
 

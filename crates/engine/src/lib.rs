@@ -100,6 +100,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Artifacts(#[from] ArtifactError),
+    #[error(transparent)]
+    Analysis(#[from] AnalysisError),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -113,6 +115,7 @@ impl Error {
             Self::Lut(inner) => return (inner.code(), inner.transient()),
             Self::Library(inner) => return (inner.code(), inner.transient()),
             Self::Artifacts(inner) => return (inner.code(), inner.transient()),
+            Self::Analysis(inner) => return (inner.code(), inner.transient()),
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::Session(inner) => return (inner.code(), inner.transient()),
             Self::Control(inner) => return (inner.code(), inner.transient()),
@@ -137,6 +140,7 @@ impl Failure for Error {
             Self::Transcript(error) => error.job_policy(),
             Self::Subtitles(error) => error.job_policy(),
             Self::Artifacts(error) => error.job_policy(),
+            Self::Analysis(error) => error.job_policy(),
             Self::Providers(error) => error.job_policy(),
             Self::Models(error) => error.job_policy(),
             Self::Lut(error) => error.job_policy(),
@@ -176,3 +180,5 @@ impl From<captions::Error> for Error {
 }
 
 pub use artifacts::Error as ArtifactError;
+
+pub use analysis::Error as AnalysisError;
