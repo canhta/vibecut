@@ -647,7 +647,13 @@ fn custom_store_metadata_quotas_bound_reopen_before_face_reads() {
         // must happen before opening any advertised data or allocating its length.
         let result = store(&root, vec![], vec![], offline()).list(Some("Quota"));
         if exceeds {
-            assert!(matches!(result, Err(EditError::Limit)), "{label}");
+            assert!(
+                matches!(
+                    result,
+                    Err(EditError::Control(engine::control::ControlError::Limit))
+                ),
+                "{label}"
+            );
         } else {
             assert!(
                 result.unwrap().is_empty(),

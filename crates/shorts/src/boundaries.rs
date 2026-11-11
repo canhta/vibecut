@@ -81,7 +81,7 @@ pub fn snap_clip_boundaries(
 ) -> ShortsResult<Vec<SnappedShort>> {
     validate_settings(settings)?;
     if shorts.len() > 32 || energy.len() > 360_001 {
-        return Err(EditError::Limit.into());
+        return Err(EditError::Control(engine::control::ControlError::Limit).into());
     }
     let units = captions::source_speech_units(transcript, profile).map_err(Error::kernel)?;
     if units.is_empty() {
@@ -132,7 +132,7 @@ pub fn snap_clip_boundaries(
             result.duration = result
                 .duration
                 .checked_add(adjusted.range.duration())
-                .ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
             result.segments.push(adjusted);
             result.adjustments.push(SegmentAdjustment { start, end });
         }
@@ -385,7 +385,11 @@ fn safe_frame(low: Tick, high: Tick, target: Tick, fps: FrameRate) -> Result<Opt
     }
     let floor = fps.snap(low)?;
     let first = if floor < low {
-        fps.tick_of(fps.frame_at(low)?.checked_add(1).ok_or(EditError::Limit)?)?
+        fps.tick_of(
+            fps.frame_at(low)?
+                .checked_add(1)
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?,
+        )?
     } else {
         floor
     };

@@ -34,7 +34,7 @@ pub(crate) fn submit(
                 expected.clone(),
                 context,
             )?;
-            crate::session::wire::bounded_json(&record, 16384)
+            crate::session::wire::bounded_json(&record, 16384).map_err(crate::EditError::from)
         },
     )?;
     Ok(id)

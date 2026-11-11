@@ -110,7 +110,9 @@ impl ProjectLibrary {
         let Some(now_unix_ms) = now_ms() else {
             return;
         };
-        let Ok(retention) = RETENTION_DAYS.checked_mul(DAY_MS).ok_or(EditError::Limit) else {
+        let Ok(retention) = RETENTION_DAYS.checked_mul(DAY_MS).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        )) else {
             return;
         };
         let Ok(entries) = fs::read_dir(&self.root) else {
@@ -210,7 +212,9 @@ impl ProjectLibrary {
         let mut retained_bytes = 0usize;
         for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
             if count >= MAX_ENTRIES * 4 {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             let entry = entry?;
             let name = entry.file_name();
@@ -225,9 +229,13 @@ impl ProjectLibrary {
                 continue;
             }
             let (entry, bytes) = self.read_entry(&entry.path(), name, None)?;
-            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Limit)?;
+            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             entries.push(entry);
         }
@@ -242,7 +250,9 @@ impl ProjectLibrary {
         let mut retained_bytes = 0usize;
         for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
             if count >= MAX_ENTRIES * 4 {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             let entry = entry?;
             let name = entry.file_name();
@@ -261,9 +271,13 @@ impl ProjectLibrary {
             }
             let trashed_unix_ms = read_trash_record(&entry.path());
             let (entry, bytes) = self.read_entry(&entry.path(), name, trashed_unix_ms)?;
-            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Limit)?;
+            retained_bytes = retained_bytes.checked_add(bytes).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             if retained_bytes > 16 << 20 || entries.len() >= MAX_ENTRIES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             entries.push(entry);
         }
@@ -279,7 +293,10 @@ impl ProjectLibrary {
         if !fs::symlink_metadata(directory)?.file_type().is_dir() {
             return Err(EditError::Invalid("library entry"));
         }
-        let id = ProjectId(u64::from_str_radix(name, 16).map_err(|_| EditError::InvalidParams)?);
+        let id =
+            ProjectId(u64::from_str_radix(name, 16).map_err(|_| {
+                EditError::Control(crate::session::wire::ControlError::InvalidParams)
+            })?);
         let path = directory.join(PROJECT);
         if !fs::symlink_metadata(&path)?.file_type().is_file() {
             return Err(EditError::Invalid("library project"));
@@ -428,7 +445,9 @@ impl ProjectLibrary {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<[u8; 32]> {
         if self.list()?.len() >= MAX_ENTRIES {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let destination = self.directory(id);
         if destination.try_exists()? {
@@ -468,11 +487,17 @@ impl ProjectLibrary {
                 if n == 0 {
                     break;
                 }
-                total = total.checked_add(n as u64).ok_or(EditError::Limit)?;
+                total = total.checked_add(n as u64).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 if total > 1 << 40 {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
-                let bytes = buffer.get(..n).ok_or(EditError::Limit)?;
+                let bytes = buffer.get(..n).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 output.write_all(bytes)?;
                 hasher.update(bytes);
             }
@@ -702,7 +727,9 @@ fn write_trash_record(directory: &Path, record: &TrashRecord) -> Result<()> {
     let bytes =
         serde_json::to_vec(record).map_err(|_| EditError::Invalid("library trash record"))?;
     if bytes.len() > 128 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     project::atomic_write(&path, &bytes)?;
     Ok(())

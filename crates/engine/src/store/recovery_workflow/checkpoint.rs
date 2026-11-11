@@ -87,7 +87,9 @@ impl Autosave {
         }
         let now = self.clock.now();
         if !Arc::ptr_eq(&self.observed, self.session.project()) {
-            self.revision = self.revision.checked_add(1).ok_or(EditError::Limit)?;
+            self.revision = self.revision.checked_add(1).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             self.observed = self.session.project().clone();
             self.last_change = now;
         }

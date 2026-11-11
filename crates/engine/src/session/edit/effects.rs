@@ -126,7 +126,9 @@ impl crate::Session {
             let id = (1..=256)
                 .map(|i| format!("color_grade{i}"))
                 .find(|id| !target.effects.iter().any(|e| &e.id == id))
-                .ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
             commands.push(crate::Command::AddEffect {
                 item,
                 effect: project::effect_definition("color_grade")?.instance(&id),

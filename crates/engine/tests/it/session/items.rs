@@ -783,7 +783,10 @@ fn text_patch_expansion_is_bounded_and_atomic() {
             assert_eq!(session.history_len(), (1, 0));
             session.undo().unwrap();
         } else {
-            assert!(matches!(result, Err(EditError::Limit)));
+            assert!(matches!(
+                result,
+                Err(EditError::Control(engine::control::ControlError::Limit))
+            ));
             assert_eq!(session.history_len(), (0, 0));
         }
         assert_eq!(session.project(), &before);

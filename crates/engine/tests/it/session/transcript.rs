@@ -514,7 +514,7 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
         .collect();
     assert!(matches!(
         plain.apply(Command::TranscriptDeleteRange { word_ids: many }),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     assert_unchanged(&plain, &before, &revision);
 
@@ -886,7 +886,7 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
         .collect();
     assert!(matches!(
         plain.apply(Command::TranscriptMergeCues { cue_ids: many }),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     assert_unchanged(&plain, &before, &revision);
 

@@ -43,7 +43,9 @@ impl MediaAccess {
             .sum::<usize>()
             > 256
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         Ok(snapshots)
     }

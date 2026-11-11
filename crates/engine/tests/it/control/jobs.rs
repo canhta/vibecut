@@ -507,7 +507,9 @@ fn lut_store_reopen_enforces_disk_quota_without_deleting_foreign_files() {
     drop(file);
     assert!(matches!(
         engine::luts::LutStore::open(dir.path()),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     assert_eq!(std::fs::metadata(&sentinel).unwrap().len(), (256 << 20) + 1);
     std::fs::remove_file(&sentinel).unwrap();

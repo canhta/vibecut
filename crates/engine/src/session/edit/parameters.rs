@@ -21,7 +21,9 @@ pub(super) fn apply_patch(
         *copied_text_bytes = copied_text_bytes
             .checked_add(value.as_str().len())
             .filter(|bytes| *bytes <= crate::session::wire::MAX_TEXT_BYTES)
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
     }
     match patch {
         crate::ItemParamPatch::BlendMode(mode) => target.blend_mode = *mode,

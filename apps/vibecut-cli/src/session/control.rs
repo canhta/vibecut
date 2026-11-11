@@ -101,7 +101,7 @@ fn control_with(
         session.observe_jobs(&runner);
         let frame = match read_control_frame(&mut input, control::MAX_FRAME_BYTES) {
             Ok(frame) => frame,
-            Err(CliError::Engine(EditError::Limit)) => {
+            Err(CliError::Engine(EditError::Control(engine::control::ControlError::Limit))) => {
                 write_control_error(
                     &mut out,
                     None,
@@ -123,7 +123,7 @@ fn control_with(
             Ok(value) => value,
             Err(error) => {
                 let code = error.code();
-                write_control_error(&mut out, None, code, frame_error_message(&error))?;
+                write_control_error(&mut out, None, code, frame_error_message(&error.into()))?;
                 last_exit = control_exit(code);
                 continue;
             }
@@ -282,7 +282,9 @@ fn control_exit(code: ErrorCode) -> u8 {
 
 fn frame_error_message(error: &EditError) -> &'static str {
     match error {
-        EditError::Limit => "control request exceeds the frame limit",
+        EditError::Control(engine::control::ControlError::Limit) => {
+            "control request exceeds the frame limit"
+        }
         _ => "control request is not valid control JSON",
     }
 }
@@ -343,7 +345,7 @@ fn read_control_frame(input: &mut impl BufRead, max: usize) -> Result<Option<Vec
             if !done {
                 drain_control_line(input)?;
             }
-            return Err(EditError::Limit.into());
+            return Err(EditError::Control(engine::control::ControlError::Limit).into());
         }
         let buffer = input.fill_buf()?;
         line.extend(buffer.iter().take(take).copied());

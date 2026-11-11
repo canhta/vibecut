@@ -1043,7 +1043,10 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
             engine::RuntimeError::WorkerPanicked.into(),
             "worker_failure",
         ),
-        (EditError::Limit, "limit"),
+        (
+            EditError::Control(engine::control::ControlError::Limit),
+            "limit",
+        ),
         (
             EditError::Session(engine::SessionError::StaleResult),
             "stale_result",

@@ -56,7 +56,7 @@ fn prepare_rejects_oversized_files_and_documents_without_cues() {
     };
     assert!(matches!(
         prepare_ass_import(&request(large)),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     let empty = dir.path().join("empty.ass");
     fs::write(&empty, b"[Script Info]\nTitle: none\n").unwrap();

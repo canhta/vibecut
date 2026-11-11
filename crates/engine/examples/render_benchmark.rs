@@ -63,7 +63,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 export_benchmark(hooks, mode == "blur")?
             };
-            serde_json::to_vec(&output).map_err(|_| EditError::InvalidParams)
+            serde_json::to_vec(&output)
+                .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))
         },
     )?;
     let mut charged_peak = 0u64;

@@ -8,7 +8,7 @@ pub(super) fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
     Ok(blake3::hash(
         &serde_json::to_vec(&json!({"command":request.command,"params":request.params,
             "base_rev":request.base_rev,"api_version":request.api_version,"registry_hash":request.registry_hash,"session_id":request.session_id}))
-        .map_err(|_| EditError::InvalidParams)?,
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?,
     ))
 }
 
@@ -55,7 +55,7 @@ impl Session {
         response: &Response,
     ) -> Result<()> {
         let bytes = serde_json::to_vec(response)
-            .map_err(|_| EditError::InvalidParams)?
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?
             .len()
             + key.0.len()
             + key.1.len()

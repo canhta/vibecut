@@ -16,7 +16,7 @@ fn clip_input(
     let mut segments = Vec::new();
     segments
         .try_reserve_exact(cues.len())
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     for cue in cues {
         let text = cue
             .texts
@@ -160,7 +160,7 @@ pub fn suggest(
     } = transcription;
     let input = clip_input(&cues, &source_language, &request.settings)?;
     if input.windows().map_err(Error::kernel)?.len() > 64 {
-        return Err(EditError::Limit.into());
+        return Err(EditError::Control(engine::control::ControlError::Limit).into());
     }
 
     let provider = Arc::new(build_suggester(&request.provider, credentials)?);
@@ -276,7 +276,7 @@ pub fn suggest(
     let mut rejected = Vec::new();
     clips
         .try_reserve_exact(suggested.clips.len())
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     for suggestion in &suggested.clips {
         match snap_candidate(suggestion, &transcript, &profile, &energy, &boundaries) {
             Ok(candidate) => clips.push(candidate),

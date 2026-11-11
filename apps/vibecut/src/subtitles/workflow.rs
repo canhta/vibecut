@@ -217,7 +217,7 @@ fn insert(
     start: Tick,
 ) -> engine::Result<Command> {
     if cues.cues.is_empty() || cues.cues.len() > 10_000 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     Ok(Command::InsertItem {
         placement: engine::Placement::Auto,

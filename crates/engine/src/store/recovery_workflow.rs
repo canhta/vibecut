@@ -219,7 +219,9 @@ impl Autosave {
             || schedule.max_dirty_age < schedule.debounce
             || schedule.max_dirty_age > Duration::from_secs(600)
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         if saved_path.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err(EditError::Invalid("save path must be absolute"));

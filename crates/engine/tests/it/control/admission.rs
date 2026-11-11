@@ -788,7 +788,9 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
     let revision = history.revision();
     assert!(matches!(
         crate::wire::run(&mut history, "trim_end", json!({"item":1,"at":20})),
-        Err(EditError::InvalidParams)
+        Err(EditError::Control(
+            engine::control::ControlError::InvalidParams
+        ))
     ));
     assert_eq!(history.project(), &before);
     assert_eq!(history.revision(), revision);
@@ -950,7 +952,9 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(E::Runtime(B::LoudnessStale), Refused, false),
         row!(
-            E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
+            E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Control(
+                engine::control::ControlError::Limit
+            )))),
             Limit,
             false
         ),
@@ -963,9 +967,21 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Providers(P::ConsentRequired), Permission, false),
         row!(E::Transcript(T::NoSpeech), Refused, false),
         row!(E::Io(io::Error::other("io")), Io, false),
-        row!(E::UnknownCommand, UnknownCommand, false),
-        row!(E::InvalidParams, InvalidParams, false),
-        row!(E::Limit, Limit, false),
+        row!(
+            E::Control(engine::control::ControlError::UnknownCommand),
+            UnknownCommand,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::InvalidParams),
+            InvalidParams,
+            false
+        ),
+        row!(
+            E::Control(engine::control::ControlError::Limit),
+            Limit,
+            false
+        ),
         row!(E::NoTrack(TrackId(1)), Refused, false),
         row!(E::NoAsset(media::AssetId(1)), Refused, false),
         row!(E::AssetsInUse(Vec::new()), Refused, false),
@@ -1091,7 +1107,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Runtime(B::QueueFull), C::QueueFull),
         (E::Runtime(B::WorkerPanicked), C::WorkerFailure),
-        (E::Limit, C::Limit),
+        (E::Control(engine::control::ControlError::Limit), C::Limit),
         (
             E::Session(engine::SessionError::StaleResult),
             C::StaleResult,
@@ -1119,7 +1135,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::IdExhausted), C::Refused),
         (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::CacheCorrupt), C::Job),
-        (E::Limit, C::Limit),
+        (E::Control(engine::control::ControlError::Limit), C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
         (
             E::Runtime(engine::RuntimeError::WorkerPanicked),

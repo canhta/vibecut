@@ -359,8 +359,12 @@ impl AnalysisRequest {
         for (index, pair) in cuts.windows(2).enumerate() {
             ctx.check_cancelled()?;
             let range = SourceRange::new(
-                *pair.first().ok_or(EditError::Limit)?,
-                *pair.get(1).ok_or(EditError::Limit)?,
+                *pair.first().ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?,
+                *pair.get(1).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?,
             )?;
             let (mut shot, evidence) = self.shot(index as u32, range, detector, ctx)?;
             identities.assign(index as u32, &mut shot.tracks, evidence, ctx)?;
@@ -559,7 +563,8 @@ impl Write for Limited {
 }
 fn encode(result: &AnalysisResult) -> Result<Vec<u8>, EditError> {
     let mut writer = Limited(Vec::new());
-    serde_json::to_writer(&mut writer, result).map_err(|_| EditError::Limit)?;
+    serde_json::to_writer(&mut writer, result)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     writer.0.shrink_to_fit();
     Ok(writer.0)
 }

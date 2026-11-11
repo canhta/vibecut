@@ -78,10 +78,18 @@ pub(crate) mod wire {
         match response.value {
             ResponseValue::Result(ControlResult::Edit { outcome }) => Ok(outcome),
             ResponseValue::Result(_) => Err(EditError::Invalid("wire helper: non-edit result")),
-            ResponseValue::Error(ErrorCode::UnknownCommand) => Err(EditError::UnknownCommand),
-            ResponseValue::Error(ErrorCode::InvalidParams) => Err(EditError::InvalidParams),
-            ResponseValue::Error(ErrorCode::Limit) => Err(EditError::Limit),
-            ResponseValue::Error(_) => Err(EditError::InvalidParams),
+            ResponseValue::Error(ErrorCode::UnknownCommand) => Err(EditError::Control(
+                engine::control::ControlError::UnknownCommand,
+            )),
+            ResponseValue::Error(ErrorCode::InvalidParams) => Err(EditError::Control(
+                engine::control::ControlError::InvalidParams,
+            )),
+            ResponseValue::Error(ErrorCode::Limit) => {
+                Err(EditError::Control(engine::control::ControlError::Limit))
+            }
+            ResponseValue::Error(_) => Err(EditError::Control(
+                engine::control::ControlError::InvalidParams,
+            )),
         }
     }
 }

@@ -1898,7 +1898,9 @@ fn clipboard_key_path_byte_and_batch_limits_preserve_the_previous_snapshot() {
     ];
     assert!(matches!(
         KeyframeClipboard::new(Tick(0), two),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     let paths: Vec<_> = (0..64)
         .map(|n| {
@@ -1913,7 +1915,9 @@ fn clipboard_key_path_byte_and_batch_limits_preserve_the_previous_snapshot() {
     too_many.push((AnimationPath::new("params.p64").unwrap(), param));
     assert!(matches!(
         KeyframeClipboard::new(Tick(0), too_many),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     let p = AnimationPath::new("params.text").unwrap();
     let text = |bytes| {
@@ -1931,7 +1935,9 @@ fn clipboard_key_path_byte_and_batch_limits_preserve_the_previous_snapshot() {
     };
     assert!(matches!(
         KeyframeClipboard::new(Tick(0), vec![(p.clone(), text(1 << 20))]),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     let mut boundary = json!({"version":1,"origin":0,"params":[{"path":"params.text","param":{"kind":"value","channels":{"value":{"kind":"text","value":""},"keys":[{"time":0,"value":{"kind":"text","value":""},"segment":"step","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]});
     let overhead = serde_json::to_vec(&boundary).unwrap().len();
@@ -1963,7 +1969,9 @@ fn clipboard_key_path_byte_and_batch_limits_preserve_the_previous_snapshot() {
         .collect();
     assert!(matches!(
         s.apply(Command::Batch { commands }),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     assert_eq!(s.project(), &before);
     assert_eq!(s.revision(), rev);
@@ -2314,7 +2322,10 @@ fn clipboard_copy_admission_counts_escaped_bases_and_selected_keys_at_the_byte_b
             assert_eq!(read["payload"], expected);
             assert_eq!(serde_json::to_vec(&read["payload"]).unwrap().len(), 1 << 20);
         } else {
-            assert!(matches!(result, Err(EditError::Limit)));
+            assert!(matches!(
+                result,
+                Err(EditError::Control(engine::control::ControlError::Limit))
+            ));
             assert_eq!(s.revision(), rev);
             let read = serde_json::to_value(ok(run(
                 &mut s,
@@ -2407,7 +2418,7 @@ fn clipboard_hostile_text_availability_and_copy_refuse_before_materializing_valu
     }
     assert!(matches!(
         s.apply(Command::CopyKeyframes { keys: refs }),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     assert_eq!(s.project(), &before);
     assert_eq!(s.revision(), rev);
@@ -2638,7 +2649,10 @@ fn clipboard_paste_eligibility_matches_locks_types_time_and_merged_channel_refus
                     EditError::Invalid("clipboard parameter type")
                 )),
                 _ => assert!(
-                    matches!(error, EditError::InvalidParams),
+                    matches!(
+                        error,
+                        EditError::Control(engine::control::ControlError::InvalidParams)
+                    ),
                     "{case}: {error:?}"
                 ),
             }

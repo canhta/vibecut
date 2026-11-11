@@ -70,7 +70,9 @@ impl EffectThumbnails {
         }
         effect.validate()?;
         if source.width().max(source.height()) > MAX_THUMBNAIL_EDGE {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let mut hash = blake3::Hasher::new();
         hash.update(&source.width().to_le_bytes());
@@ -85,7 +87,7 @@ impl EffectThumbnails {
             identity.update(&gain.to_bits().to_le_bytes());
         }
         serde_json::to_writer(Identity(&mut identity), &(&effect, &animations, local))
-            .map_err(|_| EditError::InvalidParams)?;
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?;
         let settings = identity.finalize();
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,

@@ -650,7 +650,7 @@ fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
     );
     assert!(matches!(
         control::bounded_json(&(edge + "x"), 16 << 20),
-        Err(engine::EditError::Limit)
+        Err(engine::control::ControlError::Limit)
     ));
     let mut frame = vec![b' '; 16 << 20];
     frame[0] = b'{';
@@ -659,6 +659,6 @@ fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
     frame.push(b' ');
     assert!(matches!(
         control::parse_frame(&frame),
-        Err(engine::EditError::Limit)
+        Err(engine::control::ControlError::Limit)
     ));
 }

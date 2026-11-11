@@ -116,13 +116,17 @@ impl Tracks {
                     .map(|(i, _)| i);
                 let track_index = best.unwrap_or(self.tracks.len());
                 if let Some(i) = best {
-                    let track = self.tracks.get_mut(i).ok_or(EditError::Limit)?;
+                    let track = self.tracks.get_mut(i).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
                     track.bounds = bounds;
                     track.seen = at;
                     track.visible = true;
                 } else {
                     if self.tracks.len() == 64 {
-                        return Err(EditError::Limit);
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ));
                     }
                     self.tracks.push(Track {
                         embeddings: Vec::new(),
@@ -136,7 +140,9 @@ impl Tracks {
                         scored: 0,
                     });
                 }
-                let track = self.tracks.get_mut(track_index).ok_or(EditError::Limit)?;
+                let track = self.tracks.get_mut(track_index).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 if track.embedding_attempts < 3 && track.observed >= track.embedding_attempts * 25 {
                     track.embedding_attempts += 1;
                     if let Some(points) = track.bounds.landmarks
@@ -148,7 +154,9 @@ impl Tracks {
                     }
                 }
             }
-            let bin = self.bins.get_mut(bin_index).ok_or(EditError::Limit)?;
+            let bin = self.bins.get_mut(bin_index).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             if self.tracks.iter().any(|t| t.visible) {
                 bin.scene = Scene::Camera;
             } else if bin.scene != Scene::Camera && !bin.classified {
@@ -167,8 +175,12 @@ impl Tracks {
                 bin.classified = true;
             }
         }
-        let bin = self.bins.get_mut(bin_index).ok_or(EditError::Limit)?;
-        bin.samples = bin.samples.checked_add(1).ok_or(EditError::Limit)?;
+        let bin = self.bins.get_mut(bin_index).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
+        bin.samples = bin.samples.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         for (i, track) in self
             .tracks
             .iter_mut()
@@ -177,8 +189,12 @@ impl Tracks {
         {
             ctx.check_cancelled()?;
             track.observed += 1;
-            let presence = bin.presence.get_mut(i).ok_or(EditError::Limit)?;
-            *presence = presence.checked_add(1).ok_or(EditError::Limit)?;
+            let presence = bin.presence.get_mut(i).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
+            *presence = presence.checked_add(1).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             let crop = frame.face_crop(
                 media::FaceBox {
                     x: f64::from(track.bounds.x),
@@ -196,9 +212,13 @@ impl Tracks {
             if !contiguous {
                 track.segments.push(Vec::new());
             }
-            let segment = track.segments.last_mut().ok_or(EditError::Limit)?;
+            let segment = track.segments.last_mut().ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             if segment.len() >= 75 {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             segment.push((at, crop.pixels().iter().map(|v| f32::from(*v)).collect()));
         }
@@ -214,7 +234,12 @@ impl Tracks {
         for feature in mfcc {
             let index =
                 ((feature.source_start.0 - self.range.start().0) / TICKS_PER_SECOND) as usize;
-            self.bins.get_mut(index).ok_or(EditError::Limit)?.audio = true;
+            self.bins
+                .get_mut(index)
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?
+                .audio = true;
         }
         for (id, track) in self.tracks.iter_mut().enumerate() {
             for segment in std::mem::take(&mut track.segments) {
@@ -266,7 +291,9 @@ impl Tracks {
                 for (i, at) in ticks.iter().enumerate() {
                     let smooth = probabilities
                         .get(i.saturating_sub(2)..(i + 3).min(probabilities.len()))
-                        .ok_or(EditError::Limit)?;
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
                     let score =
                         smooth.iter().map(|v| f64::from(*v)).sum::<f64>() / smooth.len() as f64;
                     track.score += score;
@@ -274,10 +301,18 @@ impl Tracks {
                     let bin = self
                         .bins
                         .get_mut(((at.0 - self.range.start().0) / TICKS_PER_SECOND) as usize)
-                        .ok_or(EditError::Limit)?;
-                    *bin.scores.get_mut(id).ok_or(EditError::Limit)? += score;
-                    let count = bin.scored.get_mut(id).ok_or(EditError::Limit)?;
-                    *count = count.checked_add(1).ok_or(EditError::Limit)?;
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
+                    *bin.scores.get_mut(id).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))? += score;
+                    let count = bin.scored.get_mut(id).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
+                    *count = count.checked_add(1).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
                 }
             }
         }

@@ -22,8 +22,9 @@ Engine owns the command registry, control admission, revisions, receipts, job po
 
 ## Entry points
 
-Control refusals use `engine::control::ControlError`, composed through the engine error
-where the adapter also handles IO or other owner failures. Output destination roles
+Control refusals, strict frame parsing and bounded response serialization use
+`engine::control::ControlError`, composed through the engine error where the adapter
+also handles IO or other owner failures. Output destination roles
 and pre-resolution spelling admission belong to [MCP control](../../docs/product/agent-control/mcp.md).
 
 `Grants::{output, output_granted}` and `Grants::default` carry the human's output grant. `Inbox::new` builds the headless queue and cache, `Inbox::attach_media` and `Inbox::attach_text` lend the desktop's process caches and transcript adapters, and `Inbox::poll`, `poll_projects`, `execute_project`, `observe`, `retain_projects` and `register_project` serve the desktop routing envelope. `Inbox::drained` reports when every transport closed and the queue is empty. `Server::bind` and `bind_with_media` own a desktop listener and its runtime; `Handler::all_tools`, `Framed` and `proxy` let the CLI compose its stdio and attach modes. `Error` carries a rejection, an IO failure or an engine failure.

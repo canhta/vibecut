@@ -41,7 +41,7 @@ impl ClipBatch {
         let mut clips = Vec::new();
         clips
             .try_reserve_exact(request.shorts.len())
-            .map_err(|_| EditError::Limit)?;
+            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
         for (index, short) in request.shorts.iter().enumerate() {
             clips.push(prepare_clip(
                 source,
@@ -110,11 +110,11 @@ fn prepare_clip(
     let mut ranges = Vec::new();
     ranges
         .try_reserve_exact(short.segments.len())
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     let mut starts = Vec::new();
     starts
         .try_reserve_exact(short.segments.len())
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     let mut cursor = Tick::ZERO;
     for segment in &short.segments {
         let range = segment.range;
@@ -132,7 +132,7 @@ fn prepare_clip(
         starts.push(cursor);
         cursor = cursor
             .checked_add(range.duration())
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
         ranges.push(range);
     }
     let mut ordered = ranges.clone();
@@ -150,7 +150,7 @@ fn prepare_clip(
     let mut video_items = Vec::new();
     video_items
         .try_reserve_exact(ranges.len())
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     for (range, start) in ranges.iter().zip(&starts) {
         video_items.push(Item {
             hidden: false,
@@ -193,8 +193,10 @@ fn prepare_clip(
             *cue_total = cue_total
                 .checked_add(bytes)
                 .filter(|total| *total <= MAX_BATCH_CUE_BYTES)
-                .ok_or(EditError::Limit)?;
-            sidecar_bytes = sidecar_bytes.checked_add(bytes).ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            sidecar_bytes = sidecar_bytes
+                .checked_add(bytes)
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
             if clipped.cues.is_empty() {
                 continue;
             }
@@ -216,11 +218,12 @@ fn prepare_clip(
         Some(TrackId(3))
     };
     if !options.formats.is_empty() {
-        let formats = u64::try_from(options.formats.len()).map_err(|_| EditError::Limit)?;
+        let formats = u64::try_from(options.formats.len())
+            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
         sidecar_bytes = sidecar_bytes
             .checked_mul(16)
             .and_then(|bytes| bytes.checked_add(4096u64.checked_mul(formats)?))
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
     } else {
         sidecar_bytes = 0;
     }
@@ -228,7 +231,7 @@ fn prepare_clip(
     timeline
         .overlays
         .try_reserve_exact(usize::from(caption_track.is_some()))
-        .map_err(|_| EditError::Limit)?;
+        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
     timeline.main = Track {
         id: TrackId(2),
         name: "Main Track".into(),
@@ -336,9 +339,9 @@ fn cue_bytes(cues: &CueTrack) -> Result<u64, EditError> {
     let mut total = 0u64;
     for cue in &cues.cues {
         let mut bytes = u64::try_from(cue.id.as_str().len() + cue.source_lang.as_str().len())
-            .map_err(|_| EditError::Limit)?
+            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?
             .checked_add(1024)
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
         for (language, text) in &cue.texts {
             let item = u64::try_from(
                 text.text.as_str().len()
@@ -348,12 +351,16 @@ fn cue_bytes(cues: &CueTrack) -> Result<u64, EditError> {
                         .as_ref()
                         .map_or(0, |reference| reference.as_str().len()),
             )
-            .map_err(|_| EditError::Limit)?
+            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?
             .checked_add(256)
-            .ok_or(EditError::Limit)?;
-            bytes = bytes.checked_add(item).ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            bytes = bytes
+                .checked_add(item)
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
         }
-        total = total.checked_add(bytes).ok_or(EditError::Limit)?;
+        total = total
+            .checked_add(bytes)
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
     }
     Ok(total)
 }

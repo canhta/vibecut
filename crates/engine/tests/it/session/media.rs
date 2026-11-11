@@ -165,7 +165,7 @@ fn hostile_removal_lists_are_refused_without_mutating_history() {
             ("empty", EditError::Invalid("media removal list")) => {}
             ("duplicate", EditError::Invalid("duplicate asset ID")) => {}
             ("unknown", EditError::NoAsset(AssetId(99))) => {}
-            ("oversized", EditError::Limit) => {}
+            ("oversized", EditError::Control(engine::control::ControlError::Limit)) => {}
             (_, other) => panic!("wrong refusal for {expected}: {other:?}"),
         }
         assert_eq!(session.project(), &before);

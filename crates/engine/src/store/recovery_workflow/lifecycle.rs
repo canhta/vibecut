@@ -98,7 +98,9 @@ impl Autosave {
         if *params == serde_json::json!({}) {
             Ok(())
         } else {
-            Err(EditError::InvalidParams)
+            Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))
         }
     }
     fn refresh_thumbnail(&mut self) -> crate::Result<()> {

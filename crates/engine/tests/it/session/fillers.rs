@@ -194,7 +194,7 @@ fn remove_fillers_refuses_edited_unknown_stale_and_hostile_ids_atomically() {
             ids: many,
             confirm_edited: false
         }),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     assert_unchanged(&plain, &before, &revision);
 

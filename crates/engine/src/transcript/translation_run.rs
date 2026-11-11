@@ -36,7 +36,9 @@ pub fn window(
     force: bool,
 ) -> crate::Result<TranslationWindow> {
     if selected.is_empty() || selected.len() > ai::MAX_SEGMENTS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let ids: BTreeSet<_> = selected.iter().collect();
     if ids.len() != selected.len() {
@@ -137,7 +139,9 @@ impl TranslationRun {
     ) -> crate::Result<Arc<Self>> {
         window.validate()?;
         if !(1..=10).contains(&max_attempts) {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let item = target
             .session

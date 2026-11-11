@@ -112,7 +112,9 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
                             .map_or(usize::MAX, |bytes| bytes.len()),
                     );
                     if recognition_bytes > 16 << 20 {
-                        failure = Some(EditError::Limit);
+                        failure = Some(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ));
                         return Err(media::MediaError::Cancelled);
                     }
                     recognitions.push(recognition);
@@ -301,7 +303,10 @@ pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EditErro
         .start()
         .to_units(i64::from(media::SPEECH_SAMPLE_RATE), Rounding::Nearest)?;
     let start = u64::try_from(start).map_err(|_| EditError::Invalid("sample origin"))?;
-    let size = u64::try_from(window.samples.len()).map_err(|_| EditError::Limit)?;
-    let end = start.checked_add(size).ok_or(EditError::Limit)?;
+    let size = u64::try_from(window.samples.len())
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+    let end = start.checked_add(size).ok_or(EditError::Control(
+        crate::session::wire::ControlError::Limit,
+    ))?;
     Ok((start, end))
 }

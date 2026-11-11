@@ -65,7 +65,9 @@ impl CacheKey {
             .any(|s| s.is_empty() || s.len() > 256)
             || inputs.settings.len() > 1024 * 1024
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let kind: &[u8] = match inputs.kind {
             ArtifactKind::SpeechAudio => b"speech-audio",
@@ -267,7 +269,9 @@ impl ArtifactCache {
             .map(|(key, entry)| (*key, entry.clone()))
             .collect();
         if entries.len() > 256 {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         Ok(CacheMaintenance {
             root: self.root.clone(),
@@ -291,7 +295,9 @@ impl ArtifactCache {
         max_entries: usize,
     ) -> Result<(Self, usize), EditError> {
         if !(1..=100_000).contains(&max_entries) {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
@@ -624,7 +630,9 @@ impl CacheMaintenanceReport {
             if let Some(sum) = a.checked_add(b) {
                 *a = sum;
             } else {
-                self.cause.get_or_insert(EditError::Limit);
+                self.cause.get_or_insert(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
         }
         self.root_unavailable |= other.root_unavailable;

@@ -45,11 +45,15 @@ impl WaveformRequest {
         let mut settings = [0u8; 6];
         settings
             .get_mut(..4)
-            .ok_or(EditError::Limit)?
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?
             .copy_from_slice(&audio.sample_rate.to_le_bytes());
         settings
             .get_mut(4..)
-            .ok_or(EditError::Limit)?
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?
             .copy_from_slice(&audio.channels.to_le_bytes());
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Waveform,
@@ -105,7 +109,9 @@ impl WaveformRequest {
             context.check_cancelled()?;
             let bytes = summary.encode()?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         })?;
@@ -265,20 +271,36 @@ fn reduce(
 ) -> Result<Vec<WaveformBar>, EditError> {
     let duration = i128::from(span.duration().0);
     let start = i128::from(span.start().0);
-    let columns = i128::try_from(columns).map_err(|_| EditError::Limit)?;
-    let mut bars = Vec::with_capacity(usize::try_from(columns).map_err(|_| EditError::Limit)?);
+    let columns = i128::try_from(columns)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+    let mut bars = Vec::with_capacity(
+        usize::try_from(columns)
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
+    );
     for index in 0..columns {
         let output_start = start
-            .checked_add(duration.checked_mul(index).ok_or(EditError::Limit)? / columns)
-            .ok_or(EditError::Limit)?;
+            .checked_add(
+                duration.checked_mul(index).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))? / columns,
+            )
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         let output_end = start
             .checked_add(
                 duration
-                    .checked_mul(index.checked_add(1).ok_or(EditError::Limit)?)
-                    .ok_or(EditError::Limit)?
+                    .checked_mul(index.checked_add(1).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?)
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?
                     / columns,
             )
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         let source_start = item.source_time_at(tick(output_start)?)?;
         let source_end = item
             .source_time_at(tick(output_end)?)?
@@ -319,7 +341,9 @@ fn reduce(
 }
 
 fn tick(value: i128) -> Result<Tick, EditError> {
-    Ok(Tick(i64::try_from(value).map_err(|_| EditError::Limit)?))
+    Ok(Tick(i64::try_from(value).map_err(|_| {
+        EditError::Control(crate::session::wire::ControlError::Limit)
+    })?))
 }
 
 fn audio_info(asset: &SourceAsset) -> Result<&AudioInfo, EditError> {

@@ -51,7 +51,7 @@ where
     let mut values = Vec::new();
     values
         .try_reserve_exact(total)
-        .map_err(|_| CliError::Engine(EditError::Limit))?;
+        .map_err(|_| CliError::Engine(EditError::Control(engine::control::ControlError::Limit)))?;
     let mut human = Vec::new();
     let mut exit = 0;
     for (index, job) in batch.jobs.iter().enumerate() {

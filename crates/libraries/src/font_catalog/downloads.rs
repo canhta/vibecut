@@ -214,7 +214,9 @@ pub(super) fn fetch(
         if read == 0 {
             break;
         }
-        let chunk = buffer.get(..read).ok_or(EditError::Limit)?;
+        let chunk = buffer
+            .get(..read)
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
         written += read as u64;
         if written > size {
             return Err(FontError::Integrity.into());

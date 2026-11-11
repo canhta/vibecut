@@ -68,6 +68,12 @@ pub enum ErrorCode {
 /// Protocol refusals shared by admission, receipt replay and event cursors.
 #[derive(Debug, thiserror::Error)]
 pub enum ControlError {
+    #[error("unknown command")]
+    UnknownCommand,
+    #[error("invalid command parameters")]
+    InvalidParams,
+    #[error("command limit exceeded")]
+    Limit,
     #[error("control schema version or catalog differs")]
     SchemaMismatch,
     #[error("session epoch differs")]
@@ -86,6 +92,9 @@ pub enum ControlError {
 impl Failure for ControlError {
     fn code(&self) -> ErrorCode {
         match self {
+            Self::UnknownCommand => ErrorCode::UnknownCommand,
+            Self::InvalidParams => ErrorCode::InvalidParams,
+            Self::Limit => ErrorCode::Limit,
             Self::SchemaMismatch => ErrorCode::SchemaMismatch,
             Self::SessionGone => ErrorCode::SessionGone,
             Self::StaleRevision => ErrorCode::StaleRevision,

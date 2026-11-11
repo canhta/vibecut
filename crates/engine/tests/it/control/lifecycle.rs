@@ -63,7 +63,9 @@ fn revision_and_job_target_share_ui_save_preview_undo_and_rollback_boundaries() 
         s.apply(Command::RenameProject {
             name: "preview".into(),
         })?;
-        Err(EditError::InvalidParams)
+        Err(EditError::Control(
+            engine::control::ControlError::InvalidParams,
+        ))
     });
     assert!(result.is_err());
     assert_ne!(s.revision(), before);
@@ -285,5 +287,8 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
         caller(&Allow),
         |_, _| panic!("invalid request must not publish"),
     );
-    assert!(matches!(invalid, Err(EditError::Limit)));
+    assert!(matches!(
+        invalid,
+        Err(EditError::Control(engine::control::ControlError::Limit))
+    ));
 }

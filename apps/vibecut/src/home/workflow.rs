@@ -154,7 +154,9 @@ pub(super) fn catalog_worker(
                             .max()
                             .unwrap_or(0)
                             .checked_add(1)
-                            .ok_or(engine::EditError::Limit)?;
+                            .ok_or(engine::EditError::Control(
+                                engine::control::ControlError::Limit,
+                            ))?;
                         library.execute(
                             source,
                             Command::DuplicateProject {

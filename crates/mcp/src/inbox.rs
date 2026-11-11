@@ -151,7 +151,7 @@ impl Inbox {
             .and_then(|fields| fields.remove("project_id"))
             .map(serde_json::from_value::<project::ProjectId>)
             .transpose()
-            .map_err(|_| EditError::InvalidParams);
+            .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams));
         let result = target.and_then(|id| dispatch(id, self, value));
         let _ = pending.reply.send(result);
         Ok(())
@@ -282,23 +282,29 @@ impl Inbox {
             captions,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
-        let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;
+        let mut value = serde_json::to_value(&response)
+            .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))?;
         // Send JPEG as MCP image content, not an array of byte-valued JSON numbers.
         if let ResponseValue::Result(ControlResult::Job { snapshot }) = &response.value
             && let Some(control::JobOutput::Preview(result)) = &snapshot.output
         {
-            let frames = serde_json::to_value(result).map_err(|_| EditError::InvalidParams)?;
+            let frames = serde_json::to_value(result)
+                .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))?;
             if let Some(frames) = frames.get("frames").and_then(Value::as_array) {
                 let mut images = Vec::new();
                 for frame in frames {
                     let bytes: Vec<u8> =
                         serde_json::from_value(frame.get("jpeg").cloned().unwrap_or(Value::Null))
-                            .map_err(|_| EditError::InvalidParams)?;
+                            .map_err(|_| {
+                            EditError::Control(engine::control::ControlError::InvalidParams)
+                        })?;
                     images.push(json!({"data":STANDARD.encode(bytes),"mimeType":"image/jpeg"}));
                 }
                 value
                     .as_object_mut()
-                    .ok_or(EditError::InvalidParams)?
+                    .ok_or(EditError::Control(
+                        engine::control::ControlError::InvalidParams,
+                    ))?
                     .insert("images".into(), json!(images));
                 if let Some(frames) = value
                     .pointer_mut("/value/value/snapshot/output/frames")

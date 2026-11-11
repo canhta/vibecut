@@ -542,7 +542,9 @@ impl ImportQueue {
                                     );
                                 }
                             }
-                            next = next.checked_add(1).ok_or(engine::EditError::Limit)?;
+                            next = next.checked_add(1).ok_or(engine::EditError::Control(
+                                engine::control::ControlError::Limit,
+                            ))?;
                             if send.send(ImportEvent::Imported(imported)).is_err() {
                                 return Ok(Vec::new());
                             }

@@ -22,19 +22,27 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
     while let Some((command, depth)) = stack.pop() {
         count += 1;
         if count > super::wire::MAX_BATCH_COMMANDS || depth > super::wire::MAX_BATCH_DEPTH {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         match command {
             Command::PasteKeyframes { at, source, .. } => {
                 if *at < Tick::ZERO || at.0 > super::wire::MAX_SAFE_INTEGER {
-                    return Err(EditError::InvalidParams);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ));
                 }
                 if let crate::KeyframePasteSource::Payload { payload } = source {
                     clipboard_bytes = clipboard_bytes
                         .checked_add(payload.compact_bytes()?)
-                        .ok_or(EditError::Limit)?;
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
                     if clipboard_bytes > super::clipboard::MAX_CLIPBOARD_BYTES {
-                        return Err(EditError::Limit);
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ));
                     }
                 }
             }
@@ -43,12 +51,16 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             }
             Command::Batch { commands } | Command::TimelineEdit { commands, .. } => {
                 if commands.len() > super::wire::MAX_BATCH_COMMANDS {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 stack.extend(commands.iter().map(|c| (c, depth + 1)));
             }
             Command::MoveItems { moves } if moves.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Command::TimelineMoveItems { items, .. }
             | Command::TimelineTrim { items, .. }
@@ -64,23 +76,33 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::SetSpeed { items, .. }
                 if items.len() > super::wire::MAX_COLLECTION =>
             {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Command::TranscriptDeleteRange { word_ids }
                 if word_ids.len() > super::wire::MAX_COLLECTION =>
             {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Command::TranscriptMergeCues { cue_ids }
                 if cue_ids.len() > super::wire::MAX_COLLECTION =>
             {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Command::RemoveFillers { ids, .. } if ids.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             other => outside_edit(other)?,
         }

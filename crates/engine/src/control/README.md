@@ -17,7 +17,7 @@ and nested batch publications refuse before effects. Effectful calls require the
 version; catalog reads need no digest.
 
 `ControlError` is the kernel wire owner's typed refusal, re-exported here.
-`Session::check_receipt_capacity`, `replay_receipt` and `events` return it directly;
+`build_request`, `Session::check_receipt_capacity`, `replay_receipt` and `events` return it directly;
 workflows with mixed failures compose it through the transparent root error.
 `Policy::authorize` retains its heterogeneous engine result so trusted policies can
 report their actual owner failures.

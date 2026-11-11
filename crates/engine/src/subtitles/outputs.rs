@@ -11,7 +11,9 @@ pub(crate) const MAX_CUES: usize = crate::session::wire::MAX_TRANSLATION_CUES;
 
 fn bounded(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     Ok(bytes)
 }
@@ -39,7 +41,9 @@ pub(crate) fn apply_command(result: CaptionsResult, start: Tick) -> Result<Comma
         result.range,
     )?;
     if cues.cues.is_empty() || cues.cues.len() > MAX_CUES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     Ok(Command::InsertItem {
         placement: Placement::Auto,

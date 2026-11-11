@@ -63,9 +63,12 @@ pub(crate) fn strong_etag(value: &str) -> bool {
 }
 pub fn model_key(model: &Model) -> Result<CacheKey, EditError> {
     model.validate()?;
-    let settings = serde_json::to_vec(model).map_err(|_| EditError::Limit)?;
+    let settings = serde_json::to_vec(model)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     if settings.len() as u64 > META_LIMIT / 4 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     CacheKey::new(KeyInputs {
         kind: ArtifactKind::ModelBundle,
@@ -126,7 +129,9 @@ impl NativeEdit {
             .lengths
             .iter()
             .try_fold(self.metadata_bytes, |n, len| {
-                n.checked_add(*len).ok_or(EditError::Limit)
+                n.checked_add(*len).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))
             })?;
         self._pin
             .0
@@ -159,7 +164,9 @@ fn envelope(key: CacheKey, state: &NativeState) -> Result<Vec<u8>, EditError> {
     let body = serde_json::to_vec(state)
         .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     if body.len() as u64 > META_LIMIT - HEADER as u64 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let mut bytes = Vec::with_capacity(HEADER + body.len());
     bytes.extend_from_slice(b"VCACHE01");
@@ -210,7 +217,9 @@ fn read_state(root: &Path, key: CacheKey) -> Result<NativeState, EditError> {
 }
 fn reserved_bytes(model: &Model) -> Result<u64, EditError> {
     model.files.iter().try_fold(META_LIMIT * 2, |n, f| {
-        n.checked_add(f.size).ok_or(EditError::Limit)
+        n.checked_add(f.size).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))
     })
 }
 impl ArtifactCache {
@@ -230,12 +239,16 @@ impl ArtifactCache {
             return Ok(false);
         };
         if self.entries.len() >= self.max_entries {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let (meta, lengths) = usage(path, &state)?;
-        let total = lengths
-            .iter()
-            .try_fold(meta, |n, len| n.checked_add(*len).ok_or(EditError::Limit))?;
+        let total = lengths.iter().try_fold(meta, |n, len| {
+            n.checked_add(*len).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))
+        })?;
         self.insert_native(key, total)?;
         Ok(true)
     }
@@ -317,7 +330,9 @@ impl ArtifactCache {
                     // A crash can leave bytes beyond the durable checkpoint. They
                     // are reclaimed before resumption, so credit their disk space.
                     sum.checked_add(file.size.saturating_sub(length))
-                        .ok_or(EditError::Limit)
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))
                 },
             )
         } else {

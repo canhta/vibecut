@@ -35,14 +35,18 @@ pub(crate) fn preview(
         return Err(EditError::TransactionActive);
     }
     if frames.is_empty() || frames.len() > MAX_PREVIEW_FRAMES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let project = session.project().clone();
     let fps = project.data().canvas.fps;
     for frame in &frames {
         let at = fps.tick_of(*frame)?;
         if *frame < 0 || at.0 > MAX_SAFE_INTEGER || (at >= project.duration() && at != Tick::ZERO) {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
     }
     let revision = session.revision();
@@ -71,15 +75,24 @@ pub(crate) fn preview(
                     .data()
                     .scene()
                     .timeline
-                    .rendered_items(at, at.checked_add(Tick(1)).ok_or(EditError::InvalidParams)?)
+                    .rendered_items(
+                        at,
+                        at.checked_add(Tick(1)).ok_or(EditError::Control(
+                            crate::session::wire::ControlError::InvalidParams,
+                        ))?,
+                    )
                     .into_iter()
                     .map(|i| i.id)
                     .collect();
                 if clips.iter().any(|id| id.0 > MAX_SAFE_INTEGER as u64) {
-                    return Err(EditError::InvalidParams);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ));
                 }
                 if clips.len() > MAX_PREVIEW_CLIPS {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 let canvas = &project.data().canvas;
                 let long = canvas.width.max(canvas.height);
@@ -125,7 +138,9 @@ pub(crate) fn preview(
                     || columns < 8
                     || band > settings.height as usize / 2
                 {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 data.scene_mut().timeline.insert_track(project::Track {
                     id: project::TrackId(next),
@@ -239,6 +254,7 @@ pub(crate) fn preview(
                 },
                 MAX_PREVIEW_RESULT_BYTES,
             )
+            .map_err(EditError::from)
         },
     )?;
     Ok(ControlResult::JobAccepted {

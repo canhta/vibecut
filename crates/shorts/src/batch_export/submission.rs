@@ -33,7 +33,7 @@ impl ClipBatch {
         let mut submitted = Vec::new();
         submitted
             .try_reserve_exact(self.clips.len())
-            .map_err(|_| EditError::Limit)?;
+            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
         for index in 0..self.clips.len() {
             if self.jobs.get(index).is_some_and(Option::is_some) {
                 continue;
@@ -195,7 +195,7 @@ fn submit_clip(
             let mut staged = Vec::new();
             staged
                 .try_reserve_exact(paths.subtitles.len())
-                .map_err(|_| EditError::Limit)?;
+                .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
             for (index, subtitle) in paths.subtitles.iter().enumerate() {
                 if subtitles_done.get(index).copied().unwrap_or(false) {
                     continue;

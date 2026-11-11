@@ -82,7 +82,8 @@ pub(crate) fn save_with_overwrite(
     }
     .write(
         overwrite,
-        u64::try_from(image.png.len()).map_err(|_| EditError::Limit)?,
+        u64::try_from(image.png.len())
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
         &project::atomic::Fs,
         |writer| {
             writer.write_all(&image.png)?;
@@ -187,7 +188,9 @@ fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
     );
     match encoded {
         Ok(()) => Ok(writer.bytes),
-        Err(_) if writer.exceeded => Err(EditError::Limit),
+        Err(_) if writer.exceeded => Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        )),
         Err(_) => Err(EditError::Invalid("snapshot encoding")),
     }
 }
