@@ -838,6 +838,8 @@ catalog! {
     ActionMediaSortType { key: "action_media_sort_type", en: "Sort by type", vi: "Sắp xếp theo loại" },
     ActionMediaView { key: "action_media_view", en: "Switch media view", vi: "Đổi dạng xem tư liệu" },
     ActionModelsOpen { key: "action_models_open", en: "Manage downloads", vi: "Quản lý tải xuống" },
+    ActionPlaybackJumpBookmarkNext { key: "action_playback_jump_bookmark_next", en: "Next bookmark", vi: "Đánh dấu tiếp theo" },
+    ActionPlaybackJumpBookmarkPrevious { key: "action_playback_jump_bookmark_previous", en: "Previous bookmark", vi: "Đánh dấu trước" },
     ActionPlaybackSeek { key: "action_playback_seek", en: "Seek to time", vi: "Tua đến thời điểm" },
     ActionPreviewFullscreen { key: "action_preview_fullscreen", en: "Toggle preview fullscreen", vi: "Xem toàn màn hình" },
     ActionPreviewRetry { key: "action_preview_retry", en: "Retry preview", vi: "Thử lại bản xem trước" },

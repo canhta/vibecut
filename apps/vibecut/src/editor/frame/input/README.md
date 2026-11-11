@@ -1,6 +1,7 @@
 # Keybindings
 
-Interface: `AppCommand` (`SetKeybinding`, `ResetKeybindings`), `PreviewZoom`, and the
+Interface: `AppCommand` (`SetKeybinding`, `ResetKeybindings`, `JumpBookmark`),
+`PreviewZoom`, `bookmark_target`, and the
 `Editor` methods `set_keybinding`, `reset_keybinding`, `reset_keybindings`,
 `open_shortcuts`, `shortcut_tab`, `set_shortcut_tab` and `record_shortcut`.
 

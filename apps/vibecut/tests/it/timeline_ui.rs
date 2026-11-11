@@ -197,6 +197,79 @@ fn editor_for(project: Project, preferences: Preferences) -> Editor {
 }
 
 #[test]
+fn ruler_bookmark_menu_jumps_and_disables_at_boundaries() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::BookmarkAdd {
+            start: Tick(3 * SECOND),
+            duration: Tick::ZERO,
+            note: "Early".into(),
+            color: project::Color([255, 255, 0, 255]),
+        })
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let ruler = harness.get(By::new().predicate(|node| node.author_id() == Some("timeline.ruler")));
+    ruler.click_secondary();
+    harness.run_steps(3);
+    let inspected = harness.state().inspect().unwrap();
+    assert!(
+        inspected
+            .widgets
+            .iter()
+            .find(|widget| widget.id == "timeline.menu.jump.next")
+            .unwrap()
+            .enabled
+    );
+    assert!(
+        !inspected
+            .widgets
+            .iter()
+            .find(|widget| widget.id == "timeline.menu.jump.previous")
+            .unwrap()
+            .enabled
+    );
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.menu.jump.next")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND)
+    );
+
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.ruler")))
+        .click_secondary();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.menu.jump.next")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(8 * SECOND)
+    );
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.ruler")))
+        .click_secondary();
+    harness.run_steps(3);
+    assert!(
+        !harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .find(|widget| widget.id == "timeline.menu.jump.next")
+            .unwrap()
+            .enabled
+    );
+}
+
+#[test]
 fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     let fixture = fixture();
     let id = fixture.video_a;

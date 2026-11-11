@@ -1,7 +1,7 @@
 # Action registry
 
 Interface: `actions()`, `action(id)`, `ActionSpec`, `ActionCategory`, `ActionTarget`,
-`UiAction`, `EngineAction`, and the keybinding types re-exported from
+`UiAction`, `BookmarkDirection`, `EngineAction`, and the keybinding types re-exported from
 [key input](../input/README.md).
 
 `actions()` is the single source of key, menu and button trigger ids and their

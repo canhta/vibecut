@@ -1,9 +1,14 @@
 //! Renders the timeline ruler.
 
-use crate::editor::timeline::{
-    Action, Align2, BookmarkView, Context, FontId, FrameRate, Id, MIN_ZOOM_FLOOR,
-    RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Rounding, State, Tick, TimelineLayout, Vec2,
-    display_time, egui, frame_snap, theme, view::Ink,
+use crate::{
+    actions::{BookmarkDirection, bookmark_target},
+    editor::timeline::{
+        Action, Align2, BookmarkView, Context, FontId, FrameRate, Id, MIN_ZOOM_FLOOR,
+        RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Rounding, State, Tick, TimelineLayout, Vec2,
+        display_time, egui, frame_snap, theme,
+        view::{Ink, tr},
+    },
+    i18n::Text,
 };
 
 impl State {
@@ -87,6 +92,7 @@ impl State {
             egui::Sense::click_and_drag(),
         );
         self.remember("timeline.ruler", &response);
+        self.bookmark_menu(cx, &response);
         let mut marker_clicked = false;
         for (id, start, duration, note, hit) in bookmark_hits {
             let response = ui.interact(
@@ -118,6 +124,39 @@ impl State {
             let at = frame_snap(cx, self.tick_at(pointer.x, layout.ruler.left()));
             self.push(Action::Seek(at));
         }
+    }
+    /// Right-click the ruler: jump to the next or previous marker through the
+    /// same lookup that gates the registered actions.
+    fn bookmark_menu(&mut self, cx: &Context<'_>, response: &egui::Response) {
+        let scene = cx.staged_project().data().scene();
+        response.context_menu(|ui| {
+            for (widget, id, text, direction) in [
+                (
+                    "timeline.menu.jump.next",
+                    "playback.jump_bookmark.next",
+                    Text::ActionPlaybackJumpBookmarkNext,
+                    BookmarkDirection::Next,
+                ),
+                (
+                    "timeline.menu.jump.previous",
+                    "playback.jump_bookmark.previous",
+                    Text::ActionPlaybackJumpBookmarkPrevious,
+                    BookmarkDirection::Previous,
+                ),
+            ] {
+                let enabled = bookmark_target(scene, cx.playhead, direction).is_some();
+                let mut button = egui::Button::new(tr(cx, text));
+                if let Some(shortcut) = cx.shortcut(id) {
+                    button = button.shortcut_text(shortcut);
+                }
+                let r = ui.add_enabled(enabled, button);
+                self.remember(widget, &r);
+                if enabled && r.clicked() {
+                    self.push(Action::Activate(id.to_owned()));
+                    ui.close();
+                }
+            }
+        });
     }
     pub(in crate::editor::timeline) fn paint_playhead(
         &self,

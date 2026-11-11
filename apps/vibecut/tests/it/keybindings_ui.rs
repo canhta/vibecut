@@ -264,6 +264,162 @@ fn shift_arrows_and_j_l_both_seek_one_second() {
 }
 
 #[test]
+fn bookmark_jump_dispatch_shares_the_playhead_without_project_or_history_change() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::BookmarkAdd {
+            start: Tick(3 * SECOND),
+            duration: Tick::ZERO,
+            note: "Early".into(),
+            color: project::Color([255, 255, 0, 255]),
+        })
+        .unwrap();
+    let selection: std::collections::BTreeSet<_> = [id].into_iter().collect();
+    editor.selection = selection.clone();
+    let project = serde_json::to_vec(editor.session.project().as_ref()).unwrap();
+    let can_undo = editor.session.can_undo();
+    assert!(editor.action_enabled("playback.jump_bookmark.next"));
+    assert!(!editor.action_enabled("playback.jump_bookmark.previous"));
+
+    editor
+        .dispatch(AppCommand::JumpBookmark(actions::BookmarkDirection::Next))
+        .unwrap();
+    assert_eq!(editor.playback.position().unwrap(), Tick(3 * SECOND));
+    assert_eq!(editor.inspect().unwrap().position, Tick(3 * SECOND));
+    editor
+        .dispatch(AppCommand::JumpBookmark(actions::BookmarkDirection::Next))
+        .unwrap();
+    assert_eq!(editor.playback.position().unwrap(), Tick(8 * SECOND));
+
+    let generation = editor.playback.generation();
+    let view = editor.session.metadata().view;
+    editor
+        .dispatch(AppCommand::JumpBookmark(actions::BookmarkDirection::Next))
+        .unwrap();
+    assert_eq!(editor.playback.position().unwrap(), Tick(8 * SECOND));
+    assert_eq!(
+        editor.playback.generation(),
+        generation,
+        "no seek at the end"
+    );
+    assert_eq!(editor.session.metadata().view, view, "no metadata write");
+
+    editor
+        .dispatch(AppCommand::JumpBookmark(
+            actions::BookmarkDirection::Previous,
+        ))
+        .unwrap();
+    assert_eq!(editor.playback.position().unwrap(), Tick(3 * SECOND));
+    editor
+        .dispatch(AppCommand::JumpBookmark(
+            actions::BookmarkDirection::Previous,
+        ))
+        .unwrap();
+    assert_eq!(editor.playback.position().unwrap(), Tick(3 * SECOND));
+
+    assert_eq!(editor.selection, selection);
+    assert_eq!(editor.session.can_undo(), can_undo);
+    assert_eq!(
+        serde_json::to_vec(editor.session.project().as_ref()).unwrap(),
+        project
+    );
+}
+
+#[test]
+fn bookmark_jump_bindings_persist_and_run_through_the_normal_keymap() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::BookmarkAdd {
+            start: Tick(3 * SECOND),
+            duration: Tick::ZERO,
+            note: "Early".into(),
+            color: project::Color([255, 255, 0, 255]),
+        })
+        .unwrap();
+    editor
+        .record_shortcut("playback.jump_bookmark.next", "Ctrl+Alt+Right")
+        .unwrap();
+    editor
+        .record_shortcut("playback.jump_bookmark.previous", "Ctrl+Alt+Left")
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&editor.preferences).unwrap();
+    let loaded = store.load().unwrap();
+    editor
+        .set_preference(
+            "keybindings",
+            serde_json::to_value(loaded.keybindings).unwrap(),
+        )
+        .unwrap();
+
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let chord = egui::Modifiers::COMMAND.plus(egui::Modifiers::ALT);
+    harness.state_mut().activate("transport.play").unwrap();
+    harness.run_steps(2);
+    assert!(harness.state().playback.playing());
+    harness.key_press_modifiers(chord, egui::Key::ArrowRight);
+    harness.run_steps(1);
+    assert!(harness.state().playback.playing(), "jump keeps playing");
+    assert!(
+        harness.state().playback.position().unwrap() >= Tick(3 * SECOND),
+        "a playing jump reaches the next bookmark, at {:?}",
+        harness.state().playback.position().unwrap()
+    );
+    harness.state_mut().activate("transport.pause").unwrap();
+    harness.run_steps(2);
+
+    harness
+        .state_mut()
+        .dispatch(AppCommand::Seek(Tick::ZERO))
+        .unwrap();
+    harness.run_steps(1);
+    harness.key_press_modifiers(chord, egui::Key::ArrowRight);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND)
+    );
+    harness.key_press_modifiers(chord, egui::Key::ArrowRight);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(8 * SECOND)
+    );
+    harness.key_press_modifiers(chord, egui::Key::ArrowRight);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(8 * SECOND),
+        "no wrap at the last bookmark"
+    );
+    harness.key_press_modifiers(chord, egui::Key::ArrowLeft);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND)
+    );
+
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("preview.timecode")))
+        .click();
+    harness.run_steps(2);
+    harness.key_press_modifiers(chord, egui::Key::ArrowRight);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND),
+        "a focused text field still blocks the transport chord"
+    );
+}
+
+#[test]
 fn registered_delete_target_is_executed_by_keys_buttons_and_direct_activation() {
     for ripple in [false, true] {
         for entry in ["key", "button", "dispatch"] {
