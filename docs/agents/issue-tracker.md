@@ -2,6 +2,8 @@
 
 Tickets live in git-ignored `.scratch/` in the coordinator's main checkout: plain files, the single source of truth, no tracker repository. `.spikes/` and `.samples/` sit beside it, also git-ignored; large media stay local. Workers on the coordinator's machine read and edit these files by absolute path (never stage, delete or overwrite another ticket's files; re-read a file before editing it). Workers on a remote host get the ticket inline and write reports and reviews under their own worktree's `.scratch/<milestone>/`; the coordinator transfers them into the main checkout and applies status, answer and map changes. The coordinator's private tooling lists ready work, ranks unresolved work by what it holds up, serves the read-only board on localhost from any linked worktree, and cleans up settled workers; it lives outside this repository.
 
+With a delegated host coordinator, that host's main checkout owns its assigned ticket contracts and full evidence. Transfer initial context once; the master board keeps linked status projections from compact ticket/stage/SHA/verdict/blocker updates. It does not become a second contract owner or require routine evidence copying and review. The private host inventory names current delegation and ticket-number reservations.
+
 | Path under `.scratch/` | Owns |
 |---|---|
 | `<milestone>/spec.md` | Scope |
