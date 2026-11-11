@@ -1486,6 +1486,26 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (|| E::Runtime(B::CacheBusy), C::Refused, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::CacheBusy))),
+            C::Refused,
+            false,
+        ),
+        (
+            || E::Runtime(B::Failed(Arc::new(E::Runtime(B::CacheBusy)))),
+            C::Refused,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Runtime(B::CacheBusy),
+                ))))))
+            },
+            C::Refused,
+            false,
+        ),
         (|| E::Runtime(B::ModelResponse), C::Refused, false),
         (
             || E::Runtime(B::Failed(Arc::new(B::ModelResponse))),
@@ -1656,6 +1676,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             .downcast_ref::<E>()
             .unwrap();
         let message = match typed {
+            E::Runtime(B::CacheBusy) => Some("cache is in use"),
             E::Runtime(B::ModelResponse) => {
                 Some("model transfer response does not match the requested representation")
             }

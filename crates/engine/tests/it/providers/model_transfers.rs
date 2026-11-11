@@ -358,11 +358,14 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     let pressure = budget.reserve(ByteOwner::Export, 512 * 1024).unwrap();
     assert!(lease.file("weights.bin").unwrap().exists());
     drop(pressure);
-    assert!(matches!(store.remove(&model), Err(EditError::CacheBusy)));
+    assert!(matches!(
+        store.remove(&model),
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+    ));
     drop(store);
     assert!(matches!(
         ArtifactCache::open(dir.path(), budget.clone(), 32),
-        Err(EditError::CacheBusy)
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     drop(lease);
     let (mut cache, diagnostics) = ArtifactCache::open(dir.path(), budget.clone(), 32).unwrap();
@@ -778,7 +781,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             model.clone(),
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EditError::CacheBusy)
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     token.cancel();
     runner.shutdown();
@@ -884,7 +887,10 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
     http.push(Reply::ok(data, "\"one\""));
     let (_, store, mut runner, clock) = setup(dir.path(), http.clone(), Io::healthy(), 2);
     let (id, _) = submit(&store, &mut runner, &model);
-    assert!(matches!(store.remove(&model), Err(EditError::CacheBusy)));
+    assert!(matches!(
+        store.remove(&model),
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+    ));
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         runner.tick().unwrap();
@@ -898,7 +904,10 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
         runner.tick().unwrap();
     }
     assert_eq!(http.count(), 1);
-    assert!(matches!(store.remove(&model), Err(EditError::CacheBusy)));
+    assert!(matches!(
+        store.remove(&model),
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+    ));
     assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Completed);
     assert_eq!(http.count(), 2);
 }
@@ -1002,7 +1011,7 @@ fn killed_process_resumes_only_the_durable_prefix_and_publishes_atomically() {
     let budget = ByteBudget::new(512 * 1024).unwrap();
     assert!(matches!(
         ArtifactCache::open(&root.path().join("cache"), budget.clone(), 32),
-        Err(EditError::CacheBusy)
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     child.0.kill().unwrap();
     child.0.wait().unwrap();

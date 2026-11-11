@@ -668,7 +668,7 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
     // A second owner would have to refuse: the desktop keeps the only open.
     assert!(matches!(
         engine::control::MediaAccess::open_in(cache.path(), budget.clone()),
-        Err(engine::EditError::CacheBusy)
+        Err(engine::EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     let history = session.history_len();
     let source_bytes = std::fs::read(asset.path()).unwrap();
@@ -1448,7 +1448,7 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         .request_cache(CacheAction::Refresh);
     assert!(matches!(
         harness.state().media.cache_ui().cause.as_deref(),
-        Some(engine::EditError::CacheBusy)
+        Some(engine::EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     assert_eq!(
         harness.state().media.cache_ui().report.unwrap().disk_bytes,
@@ -1456,6 +1456,13 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         "busy admission retains last measured size"
     );
     drop(guard);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label(crate::i18n::text(Locale::Vi, crate::i18n::Text::CacheBusy))
+            .is_some(),
+        "Settings must retain the specific busy copy for the composed runtime cause"
+    );
     drop(pinned);
     harness.state_mut().media.request_cache(CacheAction::Retry);
     wait(&mut harness);

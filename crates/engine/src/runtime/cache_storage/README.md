@@ -22,7 +22,8 @@ additional identity:
 
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded metadata after
 restart. Application placement chooses the directory and an OS file lock enforces one live
-writer (`CacheBusy` on contention). Cache writers and native model leases share the lock; the last
+writer (contention composes [`RuntimeError::CacheBusy`](../README.md#background-jobs-and-byte-policy)
+through `EditError::Runtime`). Cache writers and native model leases share the lock; the last
 logical owner explicitly unlocks it, so inherited or duplicated OS descriptors cannot keep a
 dropped cache busy. Open removes atomic staging debris and malformed canonical entries with a
 diagnostic count. Unrecognized files are skipped, never deleted, and sit outside cache

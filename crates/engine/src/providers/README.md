@@ -67,8 +67,10 @@ fingerprint and result validation.
 `open_default` uses [runtime's `CacheRoot::models()`](../runtime/README.md#default-cache-location);
 unavailable discovery returns runtime's `EditError::Unsupported`. `new` accepts an already owned cache and injected
 `ModelIo`. The runner must share that cache's ByteBudget. There is one active transfer per cache,
-including queue and backoff; state mutexes cover ownership changes only, never network, file IO or
-verification.
+including queue and backoff; another submission or removal during that ownership returns
+[`RuntimeError::CacheBusy`](../runtime/README.md#background-jobs-and-byte-policy) through
+`EditError::Runtime`, as does removal while a native model lease is live. State mutexes cover
+ownership changes only, never network, file IO or verification.
 
 `submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt, and reports
 Download/Verify/Publish stages through job events. The app's model manager owns showing source,

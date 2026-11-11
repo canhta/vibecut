@@ -50,14 +50,16 @@ impl CacheWork {
             .lock()
             .map_err(|_| crate::RuntimeError::Poisoned)?
             .take()
-            .ok_or(EditError::CacheBusy)?;
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
         Ok(Self {
             slot: slot.clone(),
             cache: Some(cache),
         })
     }
     fn cache(&mut self) -> Result<&mut ArtifactCache> {
-        self.cache.as_mut().ok_or(EditError::CacheBusy)
+        self.cache
+            .as_mut()
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))
     }
 }
 impl Drop for CacheWork {
@@ -67,7 +69,8 @@ impl Drop for CacheWork {
         }
     }
 }
-/// One active transfer per owned cache; additional submissions refuse CacheBusy.
+/// One active transfer per owned cache; additional submissions compose
+/// [`crate::RuntimeError::CacheBusy`] through `EditError::Runtime`.
 /// There is no runner/thread here: caller supplies its existing JobRunner.
 /// Drop does not remove files. Installed models and checkpoints require user removal.
 pub struct ModelTransfers {
@@ -139,7 +142,7 @@ impl ModelTransfers {
         let key = ArtifactCache::model_key(&model)?;
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| EditError::CacheBusy)?;
+            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheBusy))?;
         let reservation = Busy(self.busy.clone());
         let slot = self.cache.clone();
         let http = self.transport.clone();
@@ -167,7 +170,7 @@ impl ModelTransfers {
     /// Called only by an explicit model-manager removal action; live native leases refuse.
     pub fn remove(&self, model: &Model) -> Result<()> {
         if self.busy.load(Ordering::Acquire) {
-            return Err(EditError::CacheBusy);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let mut work = CacheWork::take(&self.cache)?;
         work.cache()?.remove_model(model)

@@ -144,7 +144,9 @@ impl Media {
                 .as_ref()
                 .ok_or(engine::EditError::Unsupported("media cache unavailable"))?;
             let access = access.try_lock().map_err(|error| match error {
-                std::sync::TryLockError::WouldBlock => engine::EditError::CacheBusy,
+                std::sync::TryLockError::WouldBlock => {
+                    engine::EditError::Runtime(engine::RuntimeError::CacheBusy)
+                }
                 std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
             })?;
             access.cache_maintenance()

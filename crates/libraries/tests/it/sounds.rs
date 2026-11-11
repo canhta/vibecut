@@ -941,6 +941,28 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
     let (id, _) = downloads
         .submit(&mut runner, "https://cdn.example/job.mp3")
         .unwrap();
+    // A queued download owns the library across all URL submissions. Refusal must
+    // not start another task or publish either URL before the admitted job runs.
+    for source in [
+        "https://cdn.example/job.mp3",
+        "https://cdn.example/other.mp3",
+    ] {
+        let error = downloads.submit(&mut runner, source).err().unwrap();
+        assert!(matches!(
+            error,
+            EditError::Runtime(engine::RuntimeError::CacheBusy)
+        ));
+        assert_eq!(
+            engine::Failure::code(&error),
+            engine::control::ErrorCode::Refused
+        );
+        assert!(!engine::Failure::transient(&error));
+        assert!(std::error::Error::source(&error).is_none());
+        assert_eq!(error.to_string(), "cache is in use");
+        assert_eq!(runner.counts().0, 1);
+        assert_eq!(http.0.load(Ordering::SeqCst), 0);
+        assert!(library.cached(source).unwrap().is_none());
+    }
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         runner.tick().unwrap();

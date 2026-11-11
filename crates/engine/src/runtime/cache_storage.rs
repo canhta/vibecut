@@ -295,7 +295,7 @@ impl ArtifactCache {
         }
         let root_lock = Arc::new(CacheLock(options.open(lock_path)?, fs::metadata(&root)?));
         root_lock.0.try_lock().map_err(|e| match e {
-            fs::TryLockError::WouldBlock => EditError::CacheBusy,
+            fs::TryLockError::WouldBlock => EditError::Runtime(crate::RuntimeError::CacheBusy),
             fs::TryLockError::Error(e) => EditError::Io(e),
         })?;
         let mut cache = Self {
@@ -840,14 +840,14 @@ mod tests {
         drop(cache);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),
-            Err(EditError::CacheBusy)
+            Err(EditError::Runtime(crate::RuntimeError::CacheBusy))
         ));
         drop(owner);
         let (reopened, _) = ArtifactCache::open(root.path(), budget.clone(), 32).unwrap();
         drop(retained);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),
-            Err(EditError::CacheBusy)
+            Err(EditError::Runtime(crate::RuntimeError::CacheBusy))
         ));
         drop(reopened);
         assert!(ArtifactCache::open(root.path(), budget, 32).is_ok());
