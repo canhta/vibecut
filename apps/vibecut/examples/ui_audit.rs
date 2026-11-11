@@ -8,26 +8,31 @@
 mod shorts_fixture;
 #[path = "../tests/it/support/subtitles.rs"]
 mod subtitles_fixture;
+use captions::{Cue, CueText, CueTrack, LanguageTag};
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
 use engine::{
     ByteBudget, Command, CreatedId, ItemParamPatch, NewItem, Placement, Session, TrackPlacement,
+    TrimEdge,
 };
 use media::{AssetData, AssetId, ContentHash, MediaError, SourceAsset, SourceStream, StreamKind};
 use project::{
-    AudioParams, Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextParams, TrackId,
-    TrackKind, VideoParams,
+    AudioParams, CaptionParams, Color, ItemId, ItemParams, OverlayParams, Project, ProjectId,
+    TextParams, TrackId, TrackKind, VideoParams,
 };
 use render::{AudioBlock, ExecutionHooks, Image, MemoryKind, SourceProvider, UnavailableReason};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fmt::Write as _,
+    fs,
     path::{Path, PathBuf},
+    process::Command as ProcessCommand,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -2749,6 +2754,912 @@ fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     Ok(app)
 }
 
+const README_WINDOW: [f32; 2] = [1440.0, 900.0];
+const README_GIF_FRAMES: usize = 80;
+const README_MAX_GIF: u64 = 5_000_000;
+const README_MAX_JPG: u64 = 512 * 1024;
+const README_SCRATCH: u64 = 8 << 30;
+
+fn hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut out, "{byte:02x}").ok();
+    }
+    out
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
+}
+
+struct ReadmeClock(AtomicU64);
+
+impl engine::jobs::Clock for ReadmeClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.load(Ordering::SeqCst))
+    }
+}
+
+fn sha256_file(path: &Path) -> Result<String, Failure> {
+    Ok(sha256_bytes(&fs::read(path)?))
+}
+
+fn tool_identity(tool: &str) -> Result<String, Failure> {
+    let output = testkit::oracle::command(tool).arg("-version").output()?;
+    if !output.status.success() {
+        return Err(format!("{tool} -version failed").into());
+    }
+    Ok(String::from_utf8(output.stdout)?
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_owned())
+}
+
+fn git_head(root: &Path) -> Result<String, Failure> {
+    let output = ProcessCommand::new("git")
+        .args(["-C", &root.to_string_lossy(), "rev-parse", "HEAD"])
+        .output()?;
+    if !output.status.success() {
+        return Err("git rev-parse HEAD failed".into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+fn free_bytes(path: &Path) -> Result<u64, Failure> {
+    #[cfg(windows)]
+    let output = ProcessCommand::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "(Get-Item -LiteralPath '{}').PSDrive.Free",
+                path.to_string_lossy().replace('\'', "''")
+            ),
+        ])
+        .output()?;
+    #[cfg(unix)]
+    let output = ProcessCommand::new("df")
+        .args(["-k", "-P", &path.to_string_lossy()])
+        .output()?;
+    if !output.status.success() {
+        return Err("scratch headroom probe failed".into());
+    }
+    let text = String::from_utf8(output.stdout)?;
+    #[cfg(windows)]
+    let bytes = text.trim().parse::<u64>()?;
+    #[cfg(unix)]
+    let bytes = text
+        .lines()
+        .nth(1)
+        .and_then(|line| line.split_whitespace().nth(3))
+        .and_then(|field| field.parse::<u64>().ok())
+        .map(|kib| kib.saturating_mul(1024))
+        .ok_or("df free space parse")?;
+    Ok(bytes)
+}
+
+fn ffmpeg(args: &[&str]) -> Result<(), Failure> {
+    let output = testkit::oracle::command("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-y"])
+        .args(args)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "ffmpeg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .last()
+                .unwrap_or("")
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn decode_rgb(path: &Path, filter: Option<&str>) -> Result<Vec<u8>, Failure> {
+    let mut command = testkit::oracle::command("ffmpeg");
+    command.args([
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        &path.to_string_lossy(),
+    ]);
+    if let Some(filter) = filter {
+        command.args(["-vf", filter]);
+    }
+    let output = command
+        .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "ffmpeg decode failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(output.stdout)
+}
+
+fn image_stats(pixels: &[u8]) -> serde_json::Value {
+    let channels = pixels.len() / 3;
+    if channels == 0 {
+        return serde_json::json!({"mean": 0.0, "min": 0, "max": 0, "spread": 0});
+    }
+    let sum: u64 = pixels.iter().map(|v| u64::from(*v)).sum();
+    let min = pixels.iter().copied().min().unwrap_or(0);
+    let max = pixels.iter().copied().max().unwrap_or(0);
+    serde_json::json!({
+        "mean": sum as f64 / pixels.len() as f64,
+        "min": min,
+        "max": max,
+        "spread": max - min
+    })
+}
+
+fn difference(left: &[u8], right: &[u8]) -> serde_json::Value {
+    let mut max = 0u8;
+    let mut sum = 0u64;
+    for (a, b) in left.iter().zip(right) {
+        let delta = a.abs_diff(*b);
+        max = max.max(delta);
+        sum += u64::from(delta);
+    }
+    serde_json::json!({
+        "mean_abs": sum as f64 / left.len().max(1) as f64,
+        "max_abs": max
+    })
+}
+
+fn publish(src: &Path, dst: &Path) -> Result<(), Failure> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(src, dst)?;
+    fs::remove_file(src).ok();
+    Ok(())
+}
+
+fn encode_jpg(raw: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
+    let name = out.file_name().ok_or("jpg filename")?;
+    let temp = out.with_file_name(format!(".{}.tmp.jpg", name.to_string_lossy()));
+    let mut bytes = 0;
+    for quality in ["2", "4", "6", "8", "12"] {
+        ffmpeg(&[
+            "-i",
+            &raw.to_string_lossy(),
+            "-vf",
+            "scale=960:-2:flags=lanczos",
+            "-frames:v",
+            "1",
+            "-q:v",
+            quality,
+            &temp.to_string_lossy(),
+        ])?;
+        bytes = fs::metadata(&temp)?.len();
+        if bytes <= README_MAX_JPG {
+            break;
+        }
+    }
+    if bytes > README_MAX_JPG {
+        return Err(format!("jpg exceeds 512 KiB: {bytes}").into());
+    }
+    let width = testkit::oracle::stream_field(&temp, "v:0", "width").parse::<u32>()?;
+    let height = testkit::oracle::stream_field(&temp, "v:0", "height").parse::<u32>()?;
+    if (width, height) != (960, 600) {
+        return Err(format!("jpg dimensions {width}x{height}").into());
+    }
+    let decoded = decode_rgb(&temp, None)?;
+    let source = decode_rgb(raw, Some("scale=960:-2:flags=lanczos"))?;
+    let stats = image_stats(&decoded);
+    if stats["spread"].as_u64().unwrap_or(0) < 16 {
+        return Err("jpg is blank".into());
+    }
+    let loss = difference(&source, &decoded);
+    publish(&temp, out)?;
+    Ok(serde_json::json!({
+        "bytes": bytes,
+        "width": width,
+        "height": height,
+        "decoded_pixels": decoded.len() / 3,
+        "stats": stats,
+        "source_vs_decoded": loss
+    }))
+}
+
+fn gif_timing(path: &Path) -> Result<(usize, f64, f64), Failure> {
+    let output = testkit::oracle::command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=pts_time,duration_time",
+            "-of",
+            "csv=p=0",
+            &path.to_string_lossy(),
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err("gif timing probe failed".into());
+    }
+    let mut frames = 0;
+    let mut max_delay_error = 0.0f64;
+    let mut end = 0.0f64;
+    for line in String::from_utf8(output.stdout)?.lines() {
+        let mut fields = line.split(',');
+        let Some(pts) = fields.next().and_then(|v| v.trim().parse::<f64>().ok()) else {
+            continue;
+        };
+        let delay = fields
+            .next()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        frames += 1;
+        max_delay_error = max_delay_error.max((delay - 0.1).abs());
+        end = pts + delay;
+    }
+    Ok((frames, max_delay_error, end))
+}
+
+fn encode_gif(run: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
+    let pattern = run.join("frame-%05d.png");
+    let pattern = pattern.to_str().ok_or("frame pattern path")?;
+    let temp = run.join("timeline.gif");
+    let scale = "scale=960:-2:flags=lanczos";
+    ffmpeg(&[
+        "-framerate",
+        "10",
+        "-i",
+        pattern,
+        "-frames:v",
+        "80",
+        "-vf",
+        scale,
+        "-loop",
+        "0",
+        &temp.to_string_lossy(),
+    ])?;
+    let mut palette = false;
+    if fs::metadata(&temp)?.len() > README_MAX_GIF {
+        palette = true;
+        let palette_file = run.join("palette.png");
+        ffmpeg(&[
+            "-framerate",
+            "10",
+            "-i",
+            pattern,
+            "-vf",
+            &format!("{scale},palettegen=stats_mode=diff"),
+            &palette_file.to_string_lossy(),
+        ])?;
+        ffmpeg(&[
+            "-framerate",
+            "10",
+            "-i",
+            pattern,
+            "-i",
+            &palette_file.to_string_lossy(),
+            "-lavfi",
+            &format!("{scale}[x];[x][1:v]paletteuse=dither=sierra2_4a"),
+            "-loop",
+            "0",
+            &temp.to_string_lossy(),
+        ])?;
+    }
+    let bytes = fs::metadata(&temp)?.len();
+    if bytes > README_MAX_GIF {
+        return Err(format!("gif exceeds 5,000,000 bytes: {bytes}").into());
+    }
+    let width = testkit::oracle::stream_field(&temp, "v:0", "width").parse::<u32>()?;
+    let height = testkit::oracle::stream_field(&temp, "v:0", "height").parse::<u32>()?;
+    let frames = testkit::oracle::decoded_frames(&temp, "v:0");
+    let (_, delay_error, end) = gif_timing(&temp)?;
+    if (width, height) != (960, 600) || frames != README_GIF_FRAMES as u64 {
+        return Err(format!("gif geometry/frames {width}x{height} {frames}").into());
+    }
+    if delay_error > 0.001 || (end - 8.0).abs() > 0.05 {
+        return Err(format!("gif timing delay_error={delay_error} end={end}").into());
+    }
+    let decoded = decode_rgb(&temp, Some("select=eq(n\\,40)"))?;
+    let source = decode_rgb(
+        &run.join("boundary-2.png"),
+        Some("scale=960:-2:flags=lanczos"),
+    )?;
+    let stats = image_stats(&decoded);
+    if stats["spread"].as_u64().unwrap_or(0) < 16 {
+        return Err("gif frame is blank".into());
+    }
+    let loss = difference(&source, &decoded);
+    ffmpeg(&["-i", &temp.to_string_lossy(), "-f", "null", "-"])?;
+    publish(&temp, out)?;
+    Ok(serde_json::json!({
+        "bytes": bytes,
+        "width": width,
+        "height": height,
+        "frames": frames,
+        "frame_delay_seconds": 0.1,
+        "duration_seconds": end,
+        "palette_optimized": palette,
+        "max_delay_error": delay_error,
+        "decoded_pixels": decoded.len() / 3,
+        "stats": stats,
+        "source_vs_decoded": loss
+    }))
+}
+
+fn readme_editor(app: &mut AppHarness) -> Result<&mut Editor, Failure> {
+    match &mut app.state_mut().app {
+        App::Editor(editor) => Ok(editor),
+        _ => Err("README capture requires an editor".into()),
+    }
+}
+
+fn readme_frame(app: &mut AppHarness, at: Tick) -> Result<(), Failure> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let ready = {
+            let editor = readme_editor(app)?;
+            editor.playback.poll(Instant::now())?;
+            editor.playback.frame().is_some_and(|frame| {
+                frame.generation == editor.playback.generation() && frame.at == at
+            })
+        };
+        if ready {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("README preview frame {} timed out", at.0).into());
+        }
+        app.run_steps(1);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        app.run_steps(1);
+        if app.state().presented_frame() == Some(at) {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("README preview frame {} not presented", at.0).into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    settle(app)?;
+    if app.state().presented_frame() != Some(at) {
+        return Err("settled README frame changed".into());
+    }
+    Ok(())
+}
+
+fn readme_seek(app: &mut AppHarness, at: Tick) -> Result<(), Failure> {
+    {
+        let editor = readme_editor(app)?;
+        let project = editor.session.project().clone();
+        editor.playback.seek(at, false, project)?;
+    }
+    readme_frame(app, at)
+}
+
+fn readme_capture(app: &mut AppHarness, path: &Path) -> Result<(), Failure> {
+    app.run_steps(2);
+    let image = app.render().map_err(std::io::Error::other)?;
+    let image = opaque(image, vibecut::window_color(true));
+    image.save(path)?;
+    Ok(())
+}
+
+fn readme_frame_digest(app: &mut AppHarness) -> Result<String, Failure> {
+    let editor = readme_editor(app)?;
+    let frame = editor.playback.frame().ok_or("missing README frame")?;
+    let mut hasher = Sha256::new();
+    for pixel in &frame.image.pixels {
+        hasher.update(pixel.to_array());
+    }
+    Ok(hex(&hasher.finalize()))
+}
+
+fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), Failure> {
+    let mut data = Project::empty(ProjectId(245), "README media".into())?.into_data();
+    data.canvas.width = 1280;
+    data.canvas.height = 720;
+    data.canvas.fps = FrameRate::FPS_30;
+    let session = Session::new(Project::new(data)?, 100)?;
+    let mut preferences = preferences(Theme::Dark, Locale::En);
+    preferences.assets_tab = vibecut::panels::AssetsTab::Media;
+    preferences.subtitles.source = "vi".into();
+    preferences.subtitles.target = "en".into();
+    preferences.subtitles.bilingual = true;
+    let playback = Playback::new(&session, ByteBudget::new(1 << 30)?, Arc::new(Files))?;
+    let mut editor = Editor::new(session, playback, preferences);
+    let clock = Arc::new(ReadmeClock(AtomicU64::new(0)));
+    editor.set_clock(clock.clone());
+    editor.drop_files(vec![source.to_owned()])?;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while editor.importing() {
+        editor.tick();
+        if Instant::now() >= deadline {
+            return Err("README media import timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    clock.0.store(6_000, Ordering::SeqCst);
+    editor.tick();
+    let canonical = std::fs::canonicalize(source)?;
+    let asset = editor
+        .session
+        .project()
+        .data()
+        .assets
+        .iter()
+        .find(|asset| asset.path() == canonical)
+        .cloned()
+        .ok_or("README media import produced no asset")?;
+    let probe = asset.probe();
+    let video = probe
+        .streams
+        .iter()
+        .find_map(|stream| stream.video.as_ref())
+        .ok_or("README media has no video probe")?;
+    if (video.width, video.height) != (1280, 720) {
+        return Err(format!("README source probe {}x{}", video.width, video.height).into());
+    }
+    let asset_id = asset.id();
+    let main = editor.session.project().data().scene().timeline.main.id;
+    let first = insert(
+        &mut editor.session,
+        main,
+        Tick::ZERO,
+        range(0, 6)?,
+        Some(asset_id),
+        ItemParams::Video(VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            crop: None,
+        }),
+    )?;
+    let second = insert(
+        &mut editor.session,
+        main,
+        Tick(6 * SECOND),
+        range(6, 10)?,
+        Some(asset_id),
+        ItemParams::Video(VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            crop: None,
+        }),
+    )?;
+    let audio = track(&mut editor.session, "Audio", TrackKind::Audio)?;
+    insert(
+        &mut editor.session,
+        audio,
+        Tick::ZERO,
+        range(0, 10)?,
+        Some(asset_id),
+        ItemParams::Audio(AudioParams {
+            fades: Default::default(),
+            volume: 0.0,
+            muted: false,
+            source: Default::default(),
+        }),
+    )?;
+    let text = track(&mut editor.session, "Text", TrackKind::Text)?;
+    insert(
+        &mut editor.session,
+        text,
+        Tick(2 * SECOND),
+        range(2, 6)?,
+        None,
+        ItemParams::Text(TextParams {
+            content: "Chapter one".into(),
+            font_size: 52.0,
+            color: Color([255, 255, 255, 255]),
+            position: project::TextPosition { x: 50.0, y: 70.0 },
+            ..Default::default()
+        }),
+    )?;
+    let caption_text = |text: &str| CueText {
+        text: text.into(),
+        edited: false,
+        translation_ref: None,
+    };
+    let cue = Cue {
+        id: "readme-cue".into(),
+        range: range(2, 6)?,
+        source_lang: LanguageTag::parse("vi")?,
+        texts: [
+            (LanguageTag::parse("vi")?, caption_text("Chào bạn")),
+            (LanguageTag::parse("en")?, caption_text("Hello friend")),
+        ]
+        .into_iter()
+        .collect(),
+        word_ranges: Vec::new(),
+        style: None,
+    };
+    let captions = track(&mut editor.session, "Captions", TrackKind::Text)?;
+    insert(
+        &mut editor.session,
+        captions,
+        Tick::ZERO,
+        range(0, 10)?,
+        Some(asset_id),
+        ItemParams::Caption(CaptionParams {
+            cues: CueTrack {
+                styles: Vec::new(),
+                cues: vec![cue],
+            },
+        }),
+    )?;
+    let mut settings = render::RenderSettings::from_project(editor.session.project());
+    settings.caption_languages = vec![LanguageTag::parse("vi")?, LanguageTag::parse("en")?];
+    editor.playback.set_render_settings(settings)?;
+    editor.selection = [first].into_iter().collect();
+    Ok((editor, first, second))
+}
+
+fn readme_boundary(
+    app: &mut AppHarness,
+    run: &Path,
+    index: usize,
+    label: &str,
+) -> Result<serde_json::Value, Failure> {
+    readme_seek(app, Tick(3 * SECOND))?;
+    let raw = run.join(format!("boundary-{index}.png"));
+    readme_capture(app, &raw)?;
+    let editor = readme_editor(app)?;
+    let project = editor.session.project();
+    let project_hash = sha256_bytes(&project::encode(project, false)?);
+    let revision = serde_json::to_string(&editor.session.revision())?;
+    let generation = editor.playback.generation();
+    let frame_at = editor.playback.frame().map(|frame| frame.at.0);
+    let presented = editor.presented_frame().map(|tick| tick.0);
+    Ok(serde_json::json!({
+        "boundary": index,
+        "label": label,
+        "raw": raw.file_name().map(|name| name.to_string_lossy().into_owned()),
+        "revision": revision,
+        "project_sha256": project_hash,
+        "generation": generation,
+        "frame_at": frame_at,
+        "presented_at": presented
+    }))
+}
+
+fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
+    if !matches!(slot, "hero" | "timeline") {
+        return Err(format!("unknown README slot `{slot}`; expected hero or timeline").into());
+    }
+    if !testkit::oracle::require("README capture") {
+        return Err("README capture requires ffmpeg and ffprobe".into());
+    }
+    let free = free_bytes(target)?;
+    if free < README_SCRATCH {
+        return Err(format!(
+            "README capture needs at least 8 GiB scratch headroom; found {free} bytes"
+        )
+        .into());
+    }
+    let run = target.join("readme-media").join(slot);
+    if run.exists() {
+        fs::remove_dir_all(&run)?;
+    }
+    fs::create_dir_all(&run)?;
+    let video = "testsrc2=size=1280x720:rate=30:duration=12";
+    let audio = "sine=frequency=997:sample_rate=44100:duration=12";
+    testkit::oracle::generate(
+        &run,
+        "README capture",
+        "source.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            video,
+            "-f",
+            "lavfi",
+            "-i",
+            audio,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "30",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-c:a",
+            "aac",
+            "-ac",
+            "1",
+            "-shortest",
+        ],
+    )
+    .ok_or("README source generation failed")?;
+    let source = run.join("source.mp4");
+    let source_hash = sha256_file(&source)?;
+    let tools = [tool_identity("ffmpeg")?, tool_identity("ffprobe")?];
+    let commit = git_head(root)?;
+    let (editor, first, _second) = readme_project(&source)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), 1.0, README_WINDOW);
+    readme_seek(&mut app, Tick(3 * SECOND))?;
+    let at_three = readme_frame_digest(&mut app)?;
+    readme_seek(&mut app, Tick(SECOND))?;
+    let at_one = readme_frame_digest(&mut app)?;
+    if at_three == at_one {
+        return Err("decoded README source frames are identical".into());
+    }
+    let editor = readme_editor(&mut app)?;
+    let project = editor.session.project();
+    let asset = project
+        .data()
+        .assets
+        .first()
+        .ok_or("README project lost its asset")?;
+    let probe = serde_json::to_value(asset.probe())?;
+    let source_relative = source
+        .strip_prefix(&run)
+        .unwrap_or(&source)
+        .to_string_lossy()
+        .into_owned();
+    let outputs = root.join("docs/assets/readme");
+    fs::create_dir_all(&outputs)?;
+    let mut manifest = serde_json::json!({
+        "slot": slot,
+        "command": format!("cargo xtask build -- cargo xtask ui-audit --readme {slot}"),
+        "source_commit": commit,
+        "source": {
+            "path": source_relative,
+            "sha256": source_hash,
+            "probe": probe,
+            "recipe": [
+                "-f lavfi -i testsrc2=size=1280x720:rate=30:duration=12",
+                "-f lavfi -i sine=frequency=997:sample_rate=44100:duration=12",
+                "-c:v libx264 -pix_fmt yuv420p -g 30 -color_primaries bt709 -color_trc bt709 -colorspace bt709",
+                "-c:a aac -ac 1 -shortest"
+            ]
+        },
+        "tools": tools,
+        "decoded_frame_sha256": { "at_1s": at_one, "at_3s": at_three }
+    });
+    if slot == "hero" {
+        readme_seek(&mut app, Tick(3 * SECOND))?;
+        let raw = run.join("hero-frame.png");
+        readme_capture(&mut app, &raw)?;
+        let jpg = outputs.join("hero.jpg");
+        let jpg_report = encode_jpg(&raw, &jpg)?;
+        let details = readme_boundary(&mut app, &run, 0, "settled multitrack project")?;
+        manifest["boundary"] = details;
+        manifest["outputs"] = serde_json::json!({"hero.jpg": jpg_report});
+    } else {
+        let boundaries = vec![readme_boundary(
+            &mut app,
+            &run,
+            0,
+            "initial multitrack project",
+        )?];
+        let split = {
+            let editor = readme_editor(&mut app)?;
+            let outcome = editor.session.apply(Command::SplitAt {
+                item: first,
+                at: Tick(4 * SECOND),
+            })?;
+            outcome
+                .created
+                .into_iter()
+                .find_map(|created| match created {
+                    CreatedId::Item(id) => Some(id),
+                    _ => None,
+                })
+                .ok_or("split created no right item")?
+        };
+        let other_ranges: Vec<_> = {
+            let editor = readme_editor(&mut app)?;
+            let first_item = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .find(|item| item.id == first)
+                .ok_or("split lost the first item")?;
+            if first_item.source_range.start() != Tick::ZERO
+                || first_item.source_range.end() != Tick(4 * SECOND)
+            {
+                return Err("split first source range is not 0..4s".into());
+            }
+            let right = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .find(|item| item.id == split)
+                .ok_or("split right item missing")?;
+            if right.start != Tick(4 * SECOND)
+                || right.source_range.start() != Tick(4 * SECOND)
+                || right.source_range.end() != Tick(6 * SECOND)
+            {
+                return Err("split right source range is not 4..6s".into());
+            }
+            editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| track.items.iter())
+                .filter(|item| item.id != first && item.id != split)
+                .map(|item| (item.id, item.source_range, item.start))
+                .collect()
+        };
+        let boundaries = {
+            let mut all = boundaries;
+            all.push(readme_boundary(&mut app, &run, 1, "split at 4s")?);
+            all
+        };
+        let boundaries = {
+            let editor = readme_editor(&mut app)?;
+            editor.session.apply(Command::TimelineTrim {
+                items: vec![split],
+                edge: TrimEdge::End,
+                delta: Tick(-SECOND / 2),
+            })?;
+            let right = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .find(|item| item.id == split)
+                .ok_or("trim lost the right item")?;
+            if right.source_range.end() != Tick(5 * SECOND + SECOND / 2) {
+                return Err("trim did not remove 0.5s from the right end".into());
+            }
+            for (id, source_range, start) in &other_ranges {
+                let item = editor
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| track.items.iter())
+                    .find(|item| item.id == *id)
+                    .ok_or("trim lost another item")?;
+                if item.source_range != *source_range || item.start != *start {
+                    return Err("trim changed another track/item".into());
+                }
+            }
+            let mut all = boundaries;
+            all.push(readme_boundary(
+                &mut app,
+                &run,
+                2,
+                "right end trimmed by 0.5s",
+            )?);
+            all
+        };
+        let boundaries = {
+            let editor = readme_editor(&mut app)?;
+            editor.session.apply(Command::Undo {})?;
+            let first_item = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .find(|item| item.id == first)
+                .ok_or("undo lost the first item")?;
+            let right = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .find(|item| item.id == split)
+                .ok_or("undo lost the split item")?;
+            if first_item.source_range.end() != Tick(4 * SECOND)
+                || right.source_range.start() != Tick(4 * SECOND)
+                || right.source_range.end() != Tick(6 * SECOND)
+            {
+                return Err("undo did not restore the split state".into());
+            }
+            let mut all = boundaries;
+            all.push(readme_boundary(
+                &mut app,
+                &run,
+                3,
+                "undo restores the split",
+            )?);
+            all
+        };
+        let mut frames = Vec::with_capacity(README_GIF_FRAMES);
+        for index in 0..README_GIF_FRAMES {
+            let boundary = index / 20;
+            let source = run.join(format!("boundary-{boundary}.png"));
+            let frame = run.join(format!("frame-{index:05}.png"));
+            fs::copy(&source, &frame)?;
+            let mut entry = boundaries.get(boundary).cloned().unwrap_or_default();
+            entry["frame"] = serde_json::json!(index);
+            entry["boundary"] = serde_json::json!(boundary);
+            frames.push(entry);
+        }
+        let gif_report = encode_gif(&run, &outputs.join("timeline.gif"))?;
+        let jpg_report = encode_jpg(&run.join("boundary-2.png"), &outputs.join("timeline.jpg"))?;
+        manifest["boundaries"] = serde_json::json!(boundaries);
+        manifest["frames"] = serde_json::json!(frames);
+        manifest["outputs"] = serde_json::json!({
+            "timeline.gif": gif_report,
+            "timeline.jpg": jpg_report
+        });
+    }
+    let source_note = format!(
+        "source: apps/vibecut/examples/ui_audit.rs --readme {slot} at {commit}; testsrc2 1280x720 30fps 12s plus 997Hz sine, source SHA256 {}",
+        manifest["source"]["sha256"].as_str().unwrap_or("")
+    );
+    let notes = "notes: original offscreen VibeCut capture of a generated synthetic project; authored Vietnamese/English caption, no recognition or translation was run; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md";
+    let files = if slot == "hero" {
+        vec![(
+            "hero.jpg",
+            "VibeCut editor with a multitrack project",
+            "The editor with file-backed video, audio, an authored title and bilingual caption.",
+        )]
+    } else {
+        vec![
+            (
+                "timeline.gif",
+                "Split, trim and undo on the VibeCut timeline",
+                "An actual offscreen edit: split at 4 s, trim the right end by 0.5 s, undo.",
+            ),
+            (
+                "timeline.jpg",
+                "Split, trim and undo on the VibeCut timeline",
+                "Poster frame for the timeline sequence: the right end after the 0.5 s trim.",
+            ),
+        ]
+    };
+    for (asset, title, description) in files {
+        let sidecar = format!(
+            "asset: {asset}\ntitle: {title}\nauthor: VibeCut contributors\n{source_note}\nlicense: GPL-3.0-only\nlicense-file: ../../../LICENSE\nadded: p0-core/22\n{notes}; capture: {description}\n"
+        );
+        fs::write(outputs.join(format!("{asset}.attribution")), sidecar)?;
+    }
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+    println!("readme-media: {} {}", slot, run.display());
+    Ok(())
+}
+
 fn main() -> Result<(), Failure> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize()?;
@@ -2757,10 +3668,17 @@ fn main() -> Result<(), Failure> {
         Some(path) => root.join(path),
         None => root.join("target"),
     };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(slot) = args.strip_prefix(&["--readme".to_owned()]) {
+        if slot.len() != 1 {
+            return Err("usage: cargo xtask ui-audit --readme hero|timeline".into());
+        }
+        return readme_media(&root, &target, &slot[0]);
+    }
     let output = target.join("ui-audit");
     std::fs::create_dir_all(&output)?;
     let references = reference_root(&root);
-    let selected = select(std::env::args().skip(1))?;
+    let selected = select(args.into_iter())?;
     let mut rows = Vec::new();
     for (scene, theme) in &selected {
         let variant = format!("{}-{}", scene.name, theme.key());
