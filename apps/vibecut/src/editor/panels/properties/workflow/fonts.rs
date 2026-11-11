@@ -29,13 +29,21 @@ impl State {
         }
     }
 
-    fn ensure_font_backend(&mut self) -> Result<()> {
+    fn ensure_font_backend(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+        let budget = desk.view().budget.clone();
         if self.font_backend.is_none() {
             let backend: Box<dyn font_picker::Backend> = Box::new(
-                font_picker::EngineBackend::native()
+                font_picker::EngineBackend::native(budget.clone())
                     .map_err(|_| Error::Invalid("font catalog unavailable"))?,
             );
             self.font_backend = Some(backend);
+        }
+        if let Some(backend) = self.font_backend.as_mut()
+            && backend.bind_budget(budget)?
+        {
+            self.font_import = None;
+            self.font_picker.importing = false;
+            self.font_picker.download = None;
         }
         Ok(())
     }
@@ -43,7 +51,7 @@ impl State {
     fn font_list(&mut self, desk: &mut Desk<'_>) -> Result<()> {
         self.font_picker.status = font_picker::Status::Loading;
         self.font_picker.request_sent = true;
-        if self.ensure_font_backend().is_err() {
+        if self.ensure_font_backend(desk).is_err() {
             self.font_picker.status = font_picker::Status::Failed;
             self.font_picker.request_sent = false;
             return Ok(());
@@ -88,7 +96,7 @@ impl State {
 
     fn font_select(&mut self, desk: &mut Desk<'_>, family: &str) -> Result<()> {
         let unchanged = self.font_picker.current.as_deref() == Some(family);
-        if self.ensure_font_backend().is_err() {
+        if self.ensure_font_backend(desk).is_err() {
             self.font_picker.close();
             return Ok(());
         }
@@ -121,7 +129,7 @@ impl State {
             cancelling: false,
             failed: false,
         });
-        if self.ensure_font_backend().is_err() {
+        if self.ensure_font_backend(desk).is_err() {
             if let Some(download) = self.font_picker.download.as_mut() {
                 download.failed = true;
             }
@@ -168,7 +176,7 @@ impl State {
         if !self.font_picker.open || self.font_import.is_some() {
             return Ok(());
         }
-        self.ensure_font_backend()?;
+        self.ensure_font_backend(desk)?;
         let locale = desk.view().preferences.locale;
         let choice = self
             .font_backend
@@ -260,6 +268,10 @@ impl State {
 
     /// Poll owned font work; imports never implicitly choose a family or edit text.
     pub(in crate::editor) fn poll_fonts(&mut self, desk: &mut Desk<'_>) {
+        if self.font_backend.is_some() && self.ensure_font_backend(desk).is_err() {
+            self.cancel_font_import(desk);
+            return;
+        }
         self.poll_font_import(desk);
         let Some(download) = self.font_picker.download.clone() else {
             return;

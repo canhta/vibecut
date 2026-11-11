@@ -82,7 +82,7 @@ impl FontStore {
             clip_range: [0; 32],
             translation: [0; 32],
         })?;
-        runner.submit(
+        runner.submit::<EditError>(
             JobSpec {
                 kind: JobKind::Import,
                 class: ResourceClass::Cpu,

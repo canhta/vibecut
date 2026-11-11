@@ -4,7 +4,7 @@ pub mod control;
 mod session;
 pub(crate) use session::transitions;
 use session::wire::ErrorCode;
-pub use session::wire::Failure;
+pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
@@ -232,6 +232,18 @@ impl EditError {
     }
 }
 impl Failure for EditError {
+    fn job_policy(&self) -> JobFailurePolicy {
+        match self {
+            Self::Runtime(error) => error.job_policy(),
+            Self::Ai(ai::Error::RateLimit {
+                retry_after_seconds,
+            }) => JobFailurePolicy {
+                retry_after_seconds: *retry_after_seconds,
+                ..Default::default()
+            },
+            _ => JobFailurePolicy::default(),
+        }
+    }
     fn code(&self) -> ErrorCode {
         self.classification().0
     }

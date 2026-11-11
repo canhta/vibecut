@@ -9,6 +9,14 @@ favourites and download projections; `Backend` is the seam to `fonts.list`,
 `fonts.load`, `fonts.download`, `fonts.import` and `job_cancel`, and tests inject one through
 `Editor::set_font_backend`.
 
+The production runner borrows the current editor's playback accounting policy, including
+its attached project scope. Import retains its512MiB reservation; downloads retain the
+font catalog's existing work declaration. Both use the common parent before source or
+provider work. Every workflow and poll rebinds a replaced policy, cancelling and joining
+old work before discarding its job ids; replacing
+the backend also resets picker/chooser state. No private budget or smaller reservation
+can admit work outside the shared application limit.
+
 All fonts, My fonts and Favorites always show. My fonts lists verified custom families.
 Favorites and the last tab persist through `ui.prefs.set`. The
 System/Google/Custom categories live inside All fonts. Rows have

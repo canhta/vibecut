@@ -210,7 +210,8 @@ impl From<ai::Stage> for JobStage {
         }
     }
 }
-type Task = Arc<dyn Fn(&JobContext) -> Result<Vec<u8>, EditError> + Send + Sync>;
+type TaskResult = Result<Vec<u8>, Arc<dyn Failure>>;
+type Task = Arc<dyn Fn(&JobContext) -> TaskResult + Send + Sync>;
 struct Pending {
     target: Option<JobTarget>,
     spec: JobSpec,
@@ -221,7 +222,7 @@ struct Pending {
 }
 struct Running {
     pending: Pending,
-    handle: JoinHandle<Result<Vec<u8>, EditError>>,
+    handle: JoinHandle<TaskResult>,
     _work: Vec<ByteLease>,
     result: ByteLease,
 }
@@ -297,27 +298,27 @@ impl JobRunner {
     /// obey reserved bytes and cancellation. Persist jobs may publish complete atomic
     /// journal/project files; other jobs must not publish partial files.
     /// Returning bytes cannot promote partial work. Encoded export restart is unsupported.
-    pub fn submit(
+    pub fn submit<E: Failure + 'static>(
         &mut self,
         spec: JobSpec,
-        task: impl Fn(&JobContext) -> Result<Vec<u8>, EditError> + Send + Sync + 'static,
+        task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
     ) -> Result<(JobId, CancelToken), EditError> {
         self.submit_target(spec, None, task)
     }
     /// Bind returned output to exactly this Session revision before scheduling.
-    pub fn submit_for_session(
+    pub fn submit_for_session<E: Failure + 'static>(
         &mut self,
         session: &Session,
         spec: JobSpec,
-        task: impl Fn(&JobContext) -> Result<Vec<u8>, EditError> + Send + Sync + 'static,
+        task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
     ) -> Result<(JobId, CancelToken), EditError> {
         self.submit_target(spec, Some(session.job_target()), task)
     }
-    fn submit_target(
+    fn submit_target<E: Failure + 'static>(
         &mut self,
         spec: JobSpec,
         target: Option<JobTarget>,
-        task: impl Fn(&JobContext) -> Result<Vec<u8>, EditError> + Send + Sync + 'static,
+        task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
     ) -> Result<(JobId, CancelToken), EditError> {
         if self.queue.len() >= self.config.queue {
             return Err(EditError::Runtime(crate::RuntimeError::QueueFull));
@@ -363,7 +364,9 @@ impl JobRunner {
             target,
             spec,
             snapshot,
-            task: Arc::new(task),
+            task: Arc::new(move |context| {
+                task(context).map_err(|error| Arc::new(error) as Arc<dyn Failure>)
+            }),
             context,
             ready: self.clock.now(),
         });
@@ -379,7 +382,8 @@ impl JobRunner {
             .min(self.config.retained)
     }
 
-    pub(crate) fn uses_budget(&self, budget: &ByteBudget) -> bool {
+    /// Whether this runner uses this exact accounting policy, including its child scope.
+    pub fn uses_budget(&self, budget: &ByteBudget) -> bool {
         self.budget.same_policy(budget)
     }
     /// Pump from the UI/CLI event loop. No wait for executing tasks; completed
@@ -401,10 +405,10 @@ impl JobRunner {
             } = running;
             let outcome = handle
                 .join()
-                .unwrap_or(Err(EditError::Runtime(crate::RuntimeError::WorkerPanicked)));
+                .unwrap_or_else(|_| Err(Arc::new(RuntimeError::WorkerPanicked)));
             drop(_work);
-            let outcome = if pending.context.cancelled() {
-                Err(EditError::Runtime(crate::RuntimeError::Cancelled))
+            let outcome: TaskResult = if pending.context.cancelled() {
+                Err(Arc::new(RuntimeError::Cancelled))
             } else {
                 outcome
             };
@@ -433,12 +437,12 @@ impl JobRunner {
                     .saturating_mul(1u32 << (pending.snapshot.attempts - 1));
                 // Provider delays are advisory and never allowed to park a job for
                 // an unbounded time; the runner's attempt budget still applies.
-                let retry_after = match &outcome {
-                    Err(EditError::Ai(ai::Error::RateLimit {
-                        retry_after_seconds: Some(seconds),
-                    })) => Some(Duration::from_secs(u64::from(*seconds).min(300))),
-                    _ => None,
-                };
+                let retry_after = outcome.as_ref().err().and_then(|error| {
+                    error
+                        .job_policy()
+                        .retry_after_seconds
+                        .map(|seconds| Duration::from_secs(u64::from(seconds).min(300)))
+                });
                 pending.ready =
                     now.saturating_add(retry_after.map_or(backoff, |at| backoff.max(at)));
                 pending.snapshot.state = JobState::Backoff;
@@ -481,11 +485,7 @@ impl JobRunner {
                 break;
             };
             if pending.context.cancelled() {
-                self.finish(
-                    pending,
-                    Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
-                    None,
-                );
+                self.finish(pending, Err(Arc::new(RuntimeError::Cancelled)), None);
                 continue;
             }
             if pending.ready > now
@@ -519,7 +519,7 @@ impl JobRunner {
                     continue;
                 }
                 Err(e) => {
-                    self.finish(pending, Err(e.into()), None);
+                    self.finish(pending, Err(Arc::new(e)), None);
                     continue;
                 }
             };
@@ -540,10 +540,12 @@ impl JobRunner {
                 .name("vibecut-job".into())
                 .spawn(move || {
                     catch_unwind(AssertUnwindSafe(|| {
-                        context.check_cancelled()?;
+                        context
+                            .check_cancelled()
+                            .map_err(|error| Arc::new(error) as Arc<dyn Failure>)?;
                         task(&context)
                     }))
-                    .unwrap_or(Err(EditError::Runtime(crate::RuntimeError::WorkerPanicked)))
+                    .unwrap_or_else(|_| Err(Arc::new(RuntimeError::WorkerPanicked)))
                 }) {
                 Ok(handle) => {
                     self.events
@@ -555,7 +557,7 @@ impl JobRunner {
                         result,
                     });
                 }
-                Err(e) => self.finish(pending, Err(e.into()), None),
+                Err(e) => self.finish(pending, Err(Arc::new(RuntimeError::Io(e))), None),
             }
         }
         Ok(())
@@ -574,15 +576,10 @@ impl JobRunner {
             self.budget.reserve(ByteOwner::JobResults, bytes.result)?,
         ))
     }
-    fn finish(
-        &mut self,
-        mut pending: Pending,
-        outcome: Result<Vec<u8>, EditError>,
-        charge: Option<ByteLease>,
-    ) {
+    fn finish(&mut self, mut pending: Pending, outcome: TaskResult, charge: Option<ByteLease>) {
         let outcome = outcome.and_then(|bytes| {
             if bytes.capacity() as u64 > pending.spec.bytes.result {
-                Err(EditError::Runtime(RuntimeError::ArtifactTooLarge))
+                Err(Arc::new(RuntimeError::ArtifactTooLarge) as Arc<dyn Failure>)
             } else {
                 Ok(bytes)
             }
@@ -604,13 +601,12 @@ impl JobRunner {
                 }
             }
             Err(error) => {
-                pending.snapshot.state =
-                    if matches!(error, EditError::Runtime(crate::RuntimeError::Cancelled)) {
-                        JobState::Cancelled
-                    } else {
-                        JobState::Failed
-                    };
-                pending.snapshot.error = Some(Arc::new(error));
+                pending.snapshot.state = if error.job_policy().terminal_cancelled {
+                    JobState::Cancelled
+                } else {
+                    JobState::Failed
+                };
+                pending.snapshot.error = Some(error);
             }
         }
         // Drop potentially large captures immediately on completion.

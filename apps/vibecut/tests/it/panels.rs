@@ -2352,6 +2352,16 @@ fn fonts_editor(fixture: Fixture, fonts: &FakeFonts) -> (Editor, ItemId) {
     editor.set_font_backend(Box::new(fonts.clone()));
     (editor, fixture.text)
 }
+fn font_fixture() -> Fixture {
+    let mut fixture = fixture();
+    fixture.editor.playback = Playback::new(
+        &fixture.editor.session,
+        ByteBudget::new(768 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    fixture
+}
 fn open_font_picker(harness: &mut Harness<Editor>) {
     harness.run_steps(2);
     click(harness, "inspector.text_font");
@@ -2386,15 +2396,17 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
                 )
                 .unwrap(),
             );
-            let fixture = fixture();
+            let fixture = font_fixture();
             let text = fixture.text;
             let mut editor = fixture.editor;
             editor.preferences.locale = locale;
             let input = source.clone();
             editor.set_font_backend(Box::new(
-                vibecut::font_picker::EngineBackend::with_store(store.clone(), move |_| {
-                    Box::pin(std::future::ready(Some(input.clone())))
-                })
+                vibecut::font_picker::EngineBackend::with_store(
+                    store.clone(),
+                    editor.playback.budget().clone(),
+                    move |_| Box::pin(std::future::ready(Some(input.clone()))),
+                )
                 .unwrap(),
             ));
             let mut h = crate::gpu::builder()
@@ -2482,9 +2494,11 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
             .unwrap();
             let mut editor = Editor::new(session, playback, h.state().preferences.clone());
             editor.set_font_backend(Box::new(
-                vibecut::font_picker::EngineBackend::with_store(store, |_| {
-                    Box::pin(std::future::ready(None))
-                })
+                vibecut::font_picker::EngineBackend::with_store(
+                    store,
+                    editor.playback.budget().clone(),
+                    |_| Box::pin(std::future::ready(None)),
+                )
                 .unwrap(),
             ));
             let mut reopened = build(editor);
@@ -2538,7 +2552,16 @@ fn custom_font_native_reopen_child() {
 #[test]
 fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
     use std::sync::atomic::{AtomicBool, Ordering};
-    for change in ["selection", "project", "time", "close", "tab"] {
+    for change in [
+        "selection",
+        "project",
+        "time",
+        "close",
+        "tab",
+        "budget",
+        "backend",
+        "editor",
+    ] {
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("custom.ttf");
         std::fs::write(
@@ -2559,24 +2582,28 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
             )
             .unwrap(),
         );
-        let fixture = fixture();
+        let fixture = font_fixture();
         let text = fixture.text;
         let video = fixture.video;
         let mut editor = fixture.editor;
         let ready = Arc::new(AtomicBool::new(false));
         let signal = ready.clone();
         editor.set_font_backend(Box::new(
-            vibecut::font_picker::EngineBackend::with_store(store, move |_| {
-                let signal = signal.clone();
-                let source = source.clone();
-                Box::pin(std::future::poll_fn(move |_| {
-                    if signal.load(Ordering::Acquire) {
-                        std::task::Poll::Ready(Some(source.clone()))
-                    } else {
-                        std::task::Poll::Pending
-                    }
-                }))
-            })
+            vibecut::font_picker::EngineBackend::with_store(
+                store,
+                editor.playback.budget().clone(),
+                move |_| {
+                    let signal = signal.clone();
+                    let source = source.clone();
+                    Box::pin(std::future::poll_fn(move |_| {
+                        if signal.load(Ordering::Acquire) {
+                            std::task::Poll::Ready(Some(source.clone()))
+                        } else {
+                            std::task::Poll::Pending
+                        }
+                    }))
+                },
+            )
             .unwrap(),
         ));
         let mut h = build(editor);
@@ -2600,6 +2627,17 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
             }
             "close" => click(&mut h, "fonts.close"),
             "tab" => click(&mut h, "inspector.tab.blending"),
+            "budget" => {
+                let replacement = Playback::new(
+                    &h.state().session,
+                    ByteBudget::new(64 << 20).unwrap(),
+                    Arc::new(Files),
+                )
+                .unwrap();
+                h.state_mut().playback = replacement;
+            }
+            "backend" => h.state_mut().set_font_backend(Box::new(FakeFonts::new())),
+            "editor" => *h.state_mut() = self::fixture().editor,
             _ => unreachable!(),
         }
         let snapshot = h.state().session.project().clone();
@@ -2617,6 +2655,283 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
     }
 }
 #[test]
+fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Source(Arc<AtomicUsize>);
+    impl libraries::fonts::FontFile for Source {
+        fn read(
+            &self,
+            _: &std::path::Path,
+            _: u64,
+            _: &engine::jobs::JobContext,
+        ) -> engine::Result<Vec<u8>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(b"corrupt font".to_vec())
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let store = Arc::new(
+        libraries::fonts::FontStore::new(
+            directory.path().join("fonts"),
+            vec![],
+            Vec::new,
+            Arc::new(ai::transport::UreqTransport::new()),
+            Arc::new(Source(reads.clone())),
+        )
+        .unwrap(),
+    );
+    let fixture = font_fixture();
+    let text = fixture.text;
+    let mut editor = fixture.editor;
+    let previous = editor.playback.budget().clone();
+    editor.set_font_backend(Box::new(
+        vibecut::font_picker::EngineBackend::with_store(
+            store,
+            editor.playback.budget().clone(),
+            |_| Box::pin(std::future::ready(Some(PathBuf::from("injected.ttf")))),
+        )
+        .unwrap(),
+    ));
+    let mut h = build(editor);
+    select(&mut h, text);
+    open_font_picker(&mut h);
+    // A retained picker/backend must follow a replacement editor execution scope.
+    let replacement = Playback::new(
+        &h.state().session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    h.state_mut().playback = replacement;
+    let budget = h.state().playback.budget().clone();
+    assert_eq!(budget.snapshot().unwrap().limit, 64 << 20);
+    let snapshot = h.state().session.project().clone();
+    click(&mut h, "fonts.upload");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !has_widget(&h, "fonts.import.failed") {
+        h.run_steps(1);
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        0,
+        "shared budget must admit before source read/decode"
+    );
+    assert_eq!(budget.snapshot().unwrap().owners[1], 0);
+    assert_eq!(previous.snapshot().unwrap().owners[1], 0);
+    assert!(Arc::ptr_eq(h.state().session.project(), &snapshot));
+    assert!(!directory.path().join("fonts").exists());
+}
+
+#[test]
+fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() {
+    use engine::ByteOwner;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    };
+    use std::time::{Duration, Instant};
+    struct Provider(AtomicUsize);
+    impl ai::transport::DownloadTransport for Provider {
+        fn get(
+            &self,
+            _: &str,
+            _: &[(String, String)],
+        ) -> Result<ai::transport::HttpStreamResponse, ai::Error> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ai::Error::Network)
+        }
+    }
+    struct Source {
+        reads: AtomicUsize,
+        started: mpsc::SyncSender<()>,
+        release: Mutex<mpsc::Receiver<Vec<u8>>>,
+    }
+    impl libraries::fonts::FontFile for Source {
+        fn read(
+            &self,
+            _: &std::path::Path,
+            _: u64,
+            context: &engine::jobs::JobContext,
+        ) -> engine::Result<Vec<u8>> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.started.send(()).unwrap();
+            let receiver = self.release.lock().unwrap();
+            loop {
+                context.check_cancelled()?;
+                match receiver.recv_timeout(Duration::from_millis(10)) {
+                    Ok(bytes) => {
+                        context.check_cancelled()?;
+                        return Ok(bytes);
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(_) => return Err(engine::EditError::Invalid("source gate closed")),
+                }
+            }
+        }
+    }
+    fn finish(backend: &mut vibecut::font_picker::EngineBackend, job: JobId) -> JobState {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let state = backend.job(job).unwrap().state;
+            if matches!(
+                state,
+                JobState::Completed | JobState::Failed | JobState::Cancelled
+            ) {
+                return state;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+    }
+    const WORK: u64 = 512 << 20;
+    let directory = tempfile::tempdir().unwrap();
+    let parent = ByteBudget::new(768 << 20).unwrap();
+    let children = [
+        parent.child(768 << 20).unwrap(),
+        parent.child(768 << 20).unwrap(),
+    ];
+    let (started, starts) = mpsc::sync_channel(1);
+    let (release, replies) = mpsc::channel();
+    let source = Arc::new(Source {
+        reads: AtomicUsize::new(0),
+        started,
+        release: Mutex::new(replies),
+    });
+    let provider = Arc::new(Provider(AtomicUsize::new(0)));
+    let stores: Vec<_> = (0..2)
+        .map(|i| {
+            Arc::new(
+                libraries::fonts::FontStore::new(
+                    directory.path().join(format!("fonts-{i}")),
+                    libraries::fonts::curated_google_families(),
+                    Vec::new,
+                    provider.clone(),
+                    source.clone(),
+                )
+                .unwrap(),
+            )
+        })
+        .collect();
+    let mut backends: Vec<_> = stores
+        .iter()
+        .zip(&children)
+        .map(|(store, budget)| {
+            vibecut::font_picker::EngineBackend::with_store(store.clone(), budget.clone(), |_| {
+                Box::pin(std::future::ready(None))
+            })
+            .unwrap()
+        })
+        .collect();
+    let mut sessions = [fixture().editor.session, fixture().editor.session];
+    let busy = parent.reserve(ByteOwner::Export, 300 << 20).unwrap();
+    let jobs: Vec<_> = backends
+        .iter_mut()
+        .zip(&mut sessions)
+        .map(|(backend, session)| {
+            backend
+                .import(session, PathBuf::from("injected.ttf"))
+                .unwrap()
+        })
+        .collect();
+    for (backend, job) in backends.iter_mut().zip(&jobs) {
+        assert_eq!(backend.job(*job).unwrap().state, JobState::Queued);
+    }
+    assert_eq!(source.reads.load(Ordering::SeqCst), 0);
+    assert_eq!(parent.snapshot().unwrap().used, 300 << 20);
+    assert_eq!(parent.snapshot().unwrap().owners[1], 0);
+    drop(busy);
+    backends[0].job(jobs[0]).unwrap();
+    starts.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(backends[1].job(jobs[1]).unwrap().state, JobState::Queued);
+    assert_eq!(source.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(parent.snapshot().unwrap().used, WORK);
+    assert_eq!(parent.snapshot().unwrap().owners[1], WORK);
+    assert_eq!(children[0].snapshot().unwrap().owners[1], WORK);
+    assert_eq!(children[1].snapshot().unwrap().used, 0);
+    backends[0].cancel(&mut sessions[0], jobs[0]).unwrap();
+    assert_eq!(finish(&mut backends[0], jobs[0]), JobState::Cancelled);
+    assert_eq!(parent.snapshot().unwrap().used, 0);
+    assert!(
+        !stores[0]
+            .list(None)
+            .unwrap()
+            .iter()
+            .any(|entry| entry.origin == FontOrigin::Custom)
+    );
+    backends[1].job(jobs[1]).unwrap();
+    starts.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(children[1].snapshot().unwrap().owners[1], WORK);
+    let valid = include_bytes!(
+        "../../../../crates/libraries/tests/fixtures/fonts/VibeCutFixtureSans-Regular.ttf"
+    );
+    release.send(valid.to_vec()).unwrap();
+    assert_eq!(finish(&mut backends[1], jobs[1]), JobState::Completed);
+    assert_eq!(parent.snapshot().unwrap().used, 0);
+    for (bytes, expected) in [
+        (b"corrupt font".to_vec(), JobState::Failed),
+        (valid.to_vec(), JobState::Completed),
+    ] {
+        let job = backends[0]
+            .import(&mut sessions[0], PathBuf::from("injected.ttf"))
+            .unwrap();
+        backends[0].job(job).unwrap();
+        starts.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(parent.snapshot().unwrap().owners[1], WORK);
+        release.send(bytes).unwrap();
+        assert_eq!(finish(&mut backends[0], job), expected);
+        assert_eq!(parent.snapshot().unwrap().used, 0);
+        assert_eq!(children[0].snapshot().unwrap().used, 0);
+        assert_eq!(
+            stores[0]
+                .list(None)
+                .unwrap()
+                .iter()
+                .any(|entry| entry.origin == FontOrigin::Custom),
+            expected == JobState::Completed
+        );
+    }
+    assert_eq!(source.reads.load(Ordering::SeqCst), 4);
+    // Moving an attached scope must cancel/join executing source work and retire ids.
+    let stale = backends[0]
+        .import(&mut sessions[0], PathBuf::from("injected.ttf"))
+        .unwrap();
+    backends[0].job(stale).unwrap();
+    starts.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(parent.snapshot().unwrap().owners[1], WORK);
+    assert!(
+        backends[0]
+            .bind_budget(parent.child(64 << 20).unwrap())
+            .unwrap()
+    );
+    assert_eq!(parent.snapshot().unwrap().used, 0);
+    assert!(backends[0].job(stale).is_none());
+    assert!(
+        backends[0]
+            .import(&mut sessions[0], PathBuf::from("injected.ttf"))
+            .is_err()
+    );
+    assert_eq!(parent.snapshot().unwrap().used, 0);
+    assert_eq!(source.reads.load(Ordering::SeqCst), 5);
+    assert!(backends[0].bind_budget(children[0].clone()).unwrap());
+    assert!(!backends[0].bind_budget(children[0].clone()).unwrap());
+    let busy = parent.reserve(ByteOwner::Export, 768 << 20).unwrap();
+    let job = backends[0].download(&mut sessions[0], "Lobster").unwrap();
+    assert_eq!(backends[0].job(job).unwrap().state, JobState::Queued);
+    assert_eq!(provider.0.load(Ordering::SeqCst), 0);
+    backends[0].cancel(&mut sessions[0], job).unwrap();
+    assert_eq!(finish(&mut backends[0], job), JobState::Cancelled);
+    assert_eq!(provider.0.load(Ordering::SeqCst), 0);
+    drop(busy);
+    let job = backends[0].download(&mut sessions[0], "Lobster").unwrap();
+    assert_eq!(finish(&mut backends[0], job), JobState::Failed);
+    assert_eq!(provider.0.load(Ordering::SeqCst), 1);
+    assert_eq!(parent.snapshot().unwrap().used, 0);
+}
+
+#[test]
 fn custom_font_import_cancel_and_failure_keep_the_authored_family() {
     for outcome in ["chooser_cancel", "cancel", "failure"] {
         let directory = tempfile::tempdir().unwrap();
@@ -2633,15 +2948,19 @@ fn custom_font_import_cancel_and_failure_keep_the_authored_family() {
             )
             .unwrap(),
         );
-        let fixture = fixture();
+        let fixture = font_fixture();
         let text = fixture.text;
         let mut editor = fixture.editor;
         editor.set_font_backend(Box::new(
-            vibecut::font_picker::EngineBackend::with_store(store, move |_| match outcome {
-                "chooser_cancel" => Box::pin(std::future::ready(None)),
-                "cancel" => Box::pin(std::future::pending()),
-                _ => Box::pin(std::future::ready(Some(source.clone()))),
-            })
+            vibecut::font_picker::EngineBackend::with_store(
+                store,
+                editor.playback.budget().clone(),
+                move |_| match outcome {
+                    "chooser_cancel" => Box::pin(std::future::ready(None)),
+                    "cancel" => Box::pin(std::future::pending()),
+                    _ => Box::pin(std::future::ready(Some(source.clone()))),
+                },
+            )
             .unwrap(),
         ));
         let mut h = build(editor);

@@ -625,6 +625,10 @@ impl Subtitles {
             self.fail(inner.clone());
             return;
         }
+        if matches!(runtime, Some(engine::RuntimeError::Cancelled)) {
+            self.problem = Some(Text::ShortsJobCancelled);
+            return;
+        }
         self.problem = Some(match root {
             Some(engine::EditError::Providers(engine::providers::Error::ModelMissing(id))) => {
                 self.missing_model = Some((*id).into());

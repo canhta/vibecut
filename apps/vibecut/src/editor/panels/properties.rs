@@ -97,6 +97,8 @@ impl State {
     /// Set the catalog backend the facade injects.
     pub(in crate::editor) fn set_font_backend(&mut self, backend: Box<dyn font_picker::Backend>) {
         self.font_backend = Some(backend);
+        self.font_import = None;
+        self.font_picker = font_picker::State::default();
     }
 
     /// Font picker state for the automation read.

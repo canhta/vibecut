@@ -14,6 +14,11 @@ pub type FontChoice =
 /// cancellation. A second adapter is the test host; production uses
 /// [`EngineBackend`].
 pub trait Backend: Send {
+    /// Attach current editor accounting; return true when old jobs were discarded.
+    /// Recording adapters with no background work need no accounting binding.
+    fn bind_budget(&mut self, _: ByteBudget) -> crate::Result<bool> {
+        Ok(false)
+    }
     fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice;
     fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId>;
     fn list(&mut self, session: &mut Session, query: Option<&str>)
@@ -33,9 +38,9 @@ pub struct EngineBackend {
     choose: Box<dyn FnMut(crate::i18n::Locale) -> FontChoice + Send>,
 }
 impl EngineBackend {
-    pub fn native() -> crate::Result<Self> {
+    pub fn native(budget: ByteBudget) -> crate::Result<Self> {
         let store = Arc::new(libraries::fonts::FontStore::native()?);
-        Self::with_store(store, |locale| {
+        Self::with_store(store, budget, |locale| {
             let title = crate::i18n::text(locale, crate::i18n::Text::FontUpload);
             let dialog = rfd::AsyncFileDialog::new()
                 .set_title(title)
@@ -45,9 +50,18 @@ impl EngineBackend {
     }
     pub fn with_store(
         store: Arc<libraries::fonts::FontStore>,
+        budget: ByteBudget,
         choose: impl FnMut(crate::i18n::Locale) -> FontChoice + Send + 'static,
     ) -> crate::Result<Self> {
-        let runner = JobRunner::new(
+        Ok(Self {
+            store,
+            runner: Self::runner(budget)?,
+            sequence: 0,
+            choose: Box::new(choose),
+        })
+    }
+    fn runner(budget: ByteBudget) -> crate::Result<JobRunner> {
+        Ok(JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
                 queue: 1,
@@ -56,15 +70,9 @@ impl EngineBackend {
                 backoff: Duration::from_millis(250),
                 progress_interval: Duration::from_millis(40),
             },
-            ByteBudget::new(512 << 20)?,
+            budget,
             Arc::new(SystemClock::default()),
-        )?;
-        Ok(Self {
-            store,
-            runner,
-            sequence: 0,
-            choose: Box::new(choose),
-        })
+        )?)
     }
     fn request(
         &mut self,
@@ -126,6 +134,14 @@ impl EngineBackend {
     }
 }
 impl Backend for EngineBackend {
+    fn bind_budget(&mut self, budget: ByteBudget) -> crate::Result<bool> {
+        if self.runner.uses_budget(&budget) {
+            return Ok(false);
+        }
+        self.runner.shutdown();
+        self.runner = Self::runner(budget)?;
+        Ok(true)
+    }
     fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice {
         (self.choose)(locale)
     }

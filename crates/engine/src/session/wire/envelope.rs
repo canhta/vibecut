@@ -65,10 +65,20 @@ pub enum ErrorCode {
     SoundCancelled,
     SoundIo,
 }
+/// Scheduling origin retained by a direct producer, never inherited by semantic wrappers.
+/// This policy is local execution metadata and is not serialized into wire envelopes.
+#[derive(Clone, Copy, Default)]
+pub struct JobFailurePolicy {
+    pub terminal_cancelled: bool,
+    pub retry_after_seconds: Option<u32>,
+}
 /// Owner-local classification shared by control transports and job scheduling.
 /// Code delegation preserves the cause; transience defaults to no retry.
 pub trait Failure: std::error::Error + Send + Sync {
     fn code(&self) -> ErrorCode;
+    fn job_policy(&self) -> JobFailurePolicy {
+        JobFailurePolicy::default()
+    }
     fn transient(&self) -> bool {
         false
     }
