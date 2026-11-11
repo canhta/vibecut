@@ -480,9 +480,12 @@ fn validate(data: &ProjectData) -> Result<()> {
                     }
                 }
                 ItemParams::Overlay(_) => {}
+                ItemParams::Graphic(p) => p.validate(&item.animations)?,
             }
-            if matches!(item.content, ItemParams::Text(_) | ItemParams::Overlay(_))
-                && asset.is_some()
+            if matches!(
+                item.content,
+                ItemParams::Text(_) | ItemParams::Overlay(_) | ItemParams::Graphic(_)
+            ) && asset.is_some()
             {
                 return Err(Error::Invalid("generated item cannot reference media"));
             }

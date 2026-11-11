@@ -47,6 +47,21 @@ impl Editor {
             && !self.dialogs.models.is_open()
     }
 
+    pub(in crate::editor) fn graphic_insertion_available(&self) -> bool {
+        self.properties.input_ready(&self.session)
+            && !self.player.transform.text_edit_open()
+            && self
+                .subtitles
+                .as_ref()
+                .is_none_or(|s| s.edit_ready(&self.session))
+            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !self.importing()
+            && self.lifecycle_action.is_none()
+            && !self.overlay_open
+            && !self.dialogs.export.is_open()
+            && !self.dialogs.models.is_open()
+    }
+
     pub(in crate::editor) fn text_animation_available(
         &self,
         state: &crate::editor::properties::State,
@@ -235,6 +250,10 @@ impl Editor {
             return false;
         };
         match spec.target {
+            ActionTarget::Ui {
+                action: UiAction::InsertGraphic(_),
+                ..
+            } => self.graphic_insertion_available(),
             ActionTarget::Ui {
                 action: UiAction::ApplyTextAnimation(_),
                 ..

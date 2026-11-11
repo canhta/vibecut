@@ -63,3 +63,5 @@ Language for the editor's privacy and execution boundaries.
 - **Automation id**: A stable identifier on an interactive widget that survives locale and layout changes, through which agents and tests address input.
 
 - **Saved caption preset**: A named project-owned `CueStyle` value with a stable `CaptionPresetId`. Apply copies it into cue styles; rename/delete never changes an applied copy. This ID differs from a cue table's `CueStyleId`.
+
+- **Graphic**: A saved generated rectangle or ellipse with fill/stroke appearance and ordinary item-relative animation; a Video-track item with no source asset. Other shape kinds remain outside the admitted scope.

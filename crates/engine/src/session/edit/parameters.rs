@@ -153,12 +153,23 @@ pub(super) fn apply_patch(
                 p.color = *v;
             }
         }
-        crate::ItemParamPatch::GraphicFill(v) => {
-            if let ItemParams::Overlay(p) = &mut target.content {
-                p.color = *v;
-            }
-        }
+        crate::ItemParamPatch::GraphicFill(v) => match &mut target.content {
+            ItemParams::Overlay(p) => p.color = *v,
+            ItemParams::Graphic(
+                project::GraphicParams::Rectangle { fill, .. }
+                | project::GraphicParams::Ellipse { fill, .. },
+            ) => *fill = *v,
+            _ => {}
+        },
         crate::ItemParamPatch::GraphicStroke(v) => {
+            if let ItemParams::Graphic(
+                project::GraphicParams::Rectangle { stroke, .. }
+                | project::GraphicParams::Ellipse { stroke, .. },
+            ) = &mut target.content
+            {
+                *stroke = *v;
+                return Ok(());
+            }
             let [r, g, b, a] = v.0;
             target.animations.set(
                 project::AnimationPath::new("params.strokeColor")?,
@@ -166,6 +177,32 @@ pub(super) fn apply_patch(
                     format!("#{r:02X}{g:02X}{b:02X}{a:02X}").into(),
                 ))?,
             )?;
+        }
+        crate::ItemParamPatch::GraphicStrokeWidth(v) => {
+            if let ItemParams::Graphic(
+                project::GraphicParams::Rectangle { stroke_width, .. }
+                | project::GraphicParams::Ellipse { stroke_width, .. },
+            ) = &mut target.content
+            {
+                *stroke_width = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicStrokeAlign(v) => {
+            if let ItemParams::Graphic(
+                project::GraphicParams::Rectangle { stroke_align, .. }
+                | project::GraphicParams::Ellipse { stroke_align, .. },
+            ) = &mut target.content
+            {
+                *stroke_align = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicCornerRadius(v) => {
+            if let ItemParams::Graphic(project::GraphicParams::Rectangle {
+                corner_radius, ..
+            }) = &mut target.content
+            {
+                *corner_radius = *v;
+            }
         }
         _ => return Err(EditError::Invalid("item patch")),
     }

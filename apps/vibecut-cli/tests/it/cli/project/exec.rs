@@ -1056,3 +1056,134 @@ fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
     let hertz = crossings as f64 / ((to - from) as f64 / 48000.0);
     assert!((hertz - 440.0).abs() < 15.0, "measured {hertz} Hz");
 }
+
+#[test]
+fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
+    assert!(tools());
+    for graphic in [
+        project::GraphicParams::rectangle(),
+        project::GraphicParams::ellipse(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Hình.vibecut");
+        let mut data = project::Project::empty(project::ProjectId(397), "Graphics".into())
+            .unwrap()
+            .into_data();
+        data.canvas.width = 320;
+        data.canvas.height = 180;
+        project::WriterLease::acquire(&file)
+            .unwrap()
+            .save(&project::Project::new(data).unwrap())
+            .unwrap();
+        let inserted = exec(
+            &file,
+            "timeline.insert",
+            json!({"placement":{"mode":"auto"},"item":{"source_asset":null,"source_range":{"start":0,"end":time::TICKS_PER_SECOND},"start":0,"animations":{},"content":project::ItemParams::Graphic(graphic)}}),
+        );
+        let item = inserted["placements"][0]["item"].clone();
+        assert!(item.is_u64());
+        exec(
+            &file,
+            "timeline.set_item_param",
+            json!({"item":item,"patch":{"field":"graphic_stroke_width","value":8.}}),
+        );
+        let color = project::Param::new(project::ParamValue::Color([1., 0., 0., 0.5])).unwrap();
+        exec(
+            &file,
+            "keyframes.set_param",
+            json!({"item":item,"path":"params.fill","param":color}),
+        );
+        exec(
+            &file,
+            "keyframes.add",
+            json!({"item":item,"path":"params.fill","component":"a","key":project::Keyframe::new(Tick(0),project::ParamValue::Scalar(0.5))}),
+        );
+        let png = dir.path().join("graphic.png");
+        let before = fs::read(&file).unwrap();
+        let params = json!({"time":0,"path":png}).to_string();
+        let refused = cli(&[
+            os("exec"),
+            file.as_os_str(),
+            os("preview.snapshot"),
+            os(&params),
+            os("--json"),
+        ]);
+        assert_eq!(code(&refused), 5);
+        assert_eq!(fs::read(&file).unwrap(), before);
+        assert!(!png.exists());
+        let mut snapshot = super::control::ControlSession::start(&file, &[]);
+        let initial =
+            snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+        let response=snapshot.send(json!({"request_id":"png","command":"preview.snapshot","params":{"time":0,"path":png},"base_rev":initial["rev_after"],"idempotency_key":"png"}));
+        assert_eq!(response["exit_code"], 0, "{response}");
+        assert_eq!(snapshot.finish().0, 0);
+        assert_eq!(fs::read(&file).unwrap(), before);
+        let mut snapshot = super::control::ControlSession::start(&file, &[]);
+        let initial =
+            snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+        let alias=snapshot.send(json!({"request_id":"alias","command":"preview.snapshot","params":{"time":0,"path":file},"base_rev":initial["rev_after"],"idempotency_key":"alias"}));
+        assert_eq!(alias["exit_code"], 5);
+        assert_eq!(snapshot.finish().0, 5);
+        assert_eq!(fs::read(&file).unwrap(), before);
+        let pixels = testkit::oracle::rgba(&png);
+        let center = &pixels[(90 * 320 + 160) * 4..(90 * 320 + 160) * 4 + 4];
+        assert!((i16::from(center[0]) - 188).abs() <= 1);
+        assert_eq!(&center[1..], &[0, 0, 255]);
+        let saved = project::load(&file).unwrap().project;
+        assert!(matches!(
+            saved.data().scene().timeline.main.items[0].content,
+            project::ItemParams::Graphic(_)
+        ));
+        let output = dir.path().join("graphic.mp4");
+        let encoded = cli(&[
+            os("export"),
+            file.as_os_str(),
+            os("--out"),
+            output.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&encoded),
+            0,
+            "{}",
+            String::from_utf8_lossy(&encoded.stderr)
+        );
+        let probe = testkit::oracle::probe(&output);
+        assert_eq!(probe["streams"][0]["width"], 320);
+        assert_eq!(probe["streams"][0]["height"], 180);
+        let frames = decoded_rgb(&output, 320, 180, &[0, 15, 29]);
+        let budget = engine::ByteBudget::new(64 << 20).unwrap();
+        let hooks = engine::ByteBudgetHooks::new(&budget, None);
+        let mut renderer =
+            render::Renderer::new(&saved, render::RenderSettings::from_project(&saved)).unwrap();
+        for (frame, n) in frames.iter().zip([0, 15, 29]) {
+            let expected = renderer
+                .render_frame(
+                    time::FrameRate::FPS_30.tick_of(n).unwrap(),
+                    &mut render::FileSources::default(),
+                    &hooks,
+                )
+                .unwrap()
+                .video_rgba8(1, &hooks)
+                .unwrap();
+            let mse = frame
+                .iter()
+                .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                .sum::<f64>()
+                / frame.len() as f64;
+            assert!(mse < 150., "graphic frame{n} MSE{mse}");
+        }
+        let mut control = super::control::ControlSession::start(&file, &[os("--no-save")]);
+        let initial = control.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+        let request = json!({"request_id":"graphic","command":"timeline.set_item_param","params":{"item":item,"patch":{"field":"graphic_stroke_width","value":4.}},"base_rev":initial["rev_after"],"idempotency_key":"graphic"});
+        let applied = control.send(request.clone());
+        assert_eq!(applied["exit_code"], 0);
+        assert_eq!(control.send(request.clone()), applied);
+        let mut stale = request;
+        stale["idempotency_key"] = json!("stale");
+        assert_eq!(control.send(stale)["exit_code"], 3);
+        assert_eq!(control.send(json!({"request_id":"undo","command":"undo","params":{},"base_rev":applied["rev_after"],"idempotency_key":"undo"}))["exit_code"],0);
+        assert_eq!(control.finish().0, 0);
+    }
+}

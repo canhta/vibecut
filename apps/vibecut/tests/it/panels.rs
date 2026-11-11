@@ -2659,3 +2659,292 @@ fn font_picker_screenshot_is_available() {
     image.save(&path).unwrap();
     assert!(path.exists());
 }
+
+#[test]
+fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
+    for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
+        for scale in [1., 2.] {
+            let mut f = fixture();
+            f.editor.preferences.locale = locale;
+            let ids = vec![f.text, f.video, f.silent_video, f.image, f.graphic, f.audio];
+            f.editor
+                .session
+                .apply(Command::Delete { items: ids })
+                .unwrap();
+            f.editor.preferences.assets_tab = AssetsTab::Stickers;
+            let mut h = crate::gpu::builder()
+                .with_size(egui::vec2(1440., 1000.))
+                .with_pixels_per_point(scale)
+                .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+            h.run_steps(3);
+            click(&mut h, "graphic.insert.rectangle");
+            let id = *h.state().selection.iter().next().unwrap();
+            assert!(matches!(
+                item(&h, id).content,
+                ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
+            ));
+            assert_eq!(item(&h, id).duration().unwrap(), Tick(5 * SECOND));
+            h.run_steps(3);
+            click(&mut h, "inspector.graphic.fill.key");
+            let fill = project::AnimationPath::new("params.fill").unwrap();
+            for component in [
+                project::ColorComponent::R,
+                project::ColorComponent::G,
+                project::ColorComponent::B,
+                project::ColorComponent::A,
+            ] {
+                assert_eq!(
+                    item(&h, id)
+                        .animations
+                        .get(&fill)
+                        .unwrap()
+                        .channel(Some(component))
+                        .unwrap()
+                        .keys()
+                        .len(),
+                    1
+                );
+            }
+            let mut independent = item(&h, id).animations.get(&fill).unwrap().clone();
+            let handle = project::CurveHandle {
+                dt: Tick(SECOND / 4),
+                dv: 0.1,
+            };
+            let mut first = independent
+                .channel(Some(project::ColorComponent::R))
+                .unwrap()
+                .keys()[0]
+                .clone();
+            first.segment = project::Segment::Bezier;
+            first.outgoing = Some(handle);
+            independent
+                .channel_mut(Some(project::ColorComponent::R))
+                .unwrap()
+                .put(first)
+                .unwrap();
+            independent
+                .channel_mut(Some(project::ColorComponent::R))
+                .unwrap()
+                .put(project::Keyframe::new(
+                    Tick(2 * SECOND),
+                    project::ParamValue::Scalar(1.),
+                ))
+                .unwrap();
+            independent
+                .channel_mut(Some(project::ColorComponent::A))
+                .unwrap()
+                .put(project::Keyframe::new(
+                    Tick(3 * SECOND),
+                    project::ParamValue::Scalar(0.8),
+                ))
+                .unwrap();
+            h.state_mut()
+                .session
+                .apply(Command::SetAnimatedParam {
+                    item: id,
+                    path: fill.clone(),
+                    param: independent,
+                })
+                .unwrap();
+            h.run_steps(2);
+            click(&mut h, "inspector.graphic.fill");
+            h.run_steps(2);
+            // Eight-digit hex changes alpha through the real shared picker.
+            click(&mut h, "color.hex");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.event(egui::Event::Text("FF000080".into()));
+            h.key_press(egui::Key::Enter);
+            h.run_steps(3);
+            let rgba = item(&h, id)
+                .animations
+                .value_at(&fill, Tick::ZERO)
+                .unwrap()
+                .unwrap();
+            assert_eq!(rgba, project::ParamValue::Color([1., 0., 0., 128. / 255.]));
+            let edited = item(&h, id).animations.get(&fill).unwrap().clone();
+            assert_eq!(
+                edited
+                    .channel(Some(project::ColorComponent::R))
+                    .unwrap()
+                    .keys()[0]
+                    .outgoing,
+                Some(handle)
+            );
+            assert_eq!(
+                edited
+                    .channel(Some(project::ColorComponent::R))
+                    .unwrap()
+                    .keys()[1]
+                    .time,
+                Tick(2 * SECOND)
+            );
+            assert_eq!(
+                edited
+                    .channel(Some(project::ColorComponent::A))
+                    .unwrap()
+                    .keys()[1]
+                    .value,
+                project::ParamValue::Scalar(0.8)
+            );
+            h.key_press(egui::Key::Escape);
+            h.run_steps(2);
+            click(&mut h, "inspector.graphic.strokeWidth.increase");
+            assert_eq!(
+                item(&h, id)
+                    .animations
+                    .value_at(
+                        &project::AnimationPath::new("params.strokeWidth").unwrap(),
+                        Tick::ZERO
+                    )
+                    .unwrap(),
+                Some(project::ParamValue::Scalar(1.))
+            );
+            click(&mut h, "inspector.keyframe.graphic.strokeWidth");
+            let history = h.state().session.history_len().0;
+            click(&mut h, "inspector.graphic.strokeWidth");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.event(egui::Event::Text("12".into()));
+            h.key_press(egui::Key::Enter);
+            h.run_steps(3);
+            assert_eq!(h.state().session.history_len().0, history + 1);
+            click(&mut h, "inspector.graphic.strokeAlign");
+            click(&mut h, "inspector.graphic.strokeAlign.outside");
+            click(&mut h, "inspector.graphic.strokeAlign.key");
+            let align = item(&h, id)
+                .animations
+                .get(&project::AnimationPath::new("params.strokeAlign").unwrap())
+                .unwrap()
+                .clone();
+            assert_eq!(
+                align.value_at(Tick::ZERO).unwrap(),
+                project::ParamValue::Text("outside".into())
+            );
+            assert_eq!(
+                align.channel(None).unwrap().keys()[0].segment,
+                project::Segment::Step
+            );
+            click(&mut h, "inspector.graphic.cornerRadius.increase");
+            assert_eq!(
+                item(&h, id)
+                    .animations
+                    .value_at(
+                        &project::AnimationPath::new("params.cornerRadius").unwrap(),
+                        Tick::ZERO
+                    )
+                    .unwrap(),
+                Some(project::ParamValue::Scalar(1.))
+            );
+            let before = h.state().session.project().clone();
+            click(&mut h, "inspector.graphic.cornerRadius");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.event(egui::Event::Text("35".into()));
+            h.run_steps(2);
+            assert!(!h.state().action_enabled("graphic.insert.ellipse"));
+            assert!(h.state_mut().activate("graphic.insert.ellipse").is_err());
+            assert_eq!(
+                h.state().session.project(),
+                &before,
+                "disabled insertion does not flush focused Graphic draft"
+            );
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(Tick(SECOND)))
+                .unwrap();
+            h.run_steps(2);
+            h.key_press(egui::Key::Tab);
+            h.run_steps(2);
+            assert_eq!(
+                h.state().session.project(),
+                &before,
+                "playhead change cancels stale radius draft"
+            );
+            h.state_mut().activate("edit.undo").unwrap();
+            h.state_mut().activate("edit.redo").unwrap();
+            h.run_steps(2);
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+            std::fs::create_dir_all(&root).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while !h.state().playback.frame().is_some_and(|frame| {
+                frame.generation == h.state().playback.generation() && frame.at == Tick(SECOND)
+            }) {
+                h.run_steps(1);
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "completed Graphic preview"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            let frame = h.state().playback.frame().unwrap();
+            let center = frame.image.pixels
+                [frame.image.size[1] / 2 * frame.image.size[0] + frame.image.size[0] / 2];
+            assert!(
+                center.r() > 100 && center.g() < 10 && center.b() < 10,
+                "real red Graphic preview, {center:?}"
+            );
+            h.run_steps(2);
+            let capture = h.render().unwrap();
+            capture
+                .save(root.join(format!("p1-31-graphics-{locale:?}-{scale}x.png")))
+                .unwrap();
+            if locale == vibecut::i18n::Locale::En && scale == 1. {
+                capture.save(root.join("p1-31-graphics.png")).unwrap();
+            }
+            let path = root.join(format!("p1-397-{locale:?}-{scale}x.vibecut"));
+            project::WriterLease::acquire(&path)
+                .unwrap()
+                .save(h.state().session.project())
+                .unwrap();
+            assert_eq!(
+                project::load(&path).unwrap().project,
+                **h.state().session.project()
+            );
+            click(&mut h, "inspector.graphic.stroke");
+            h.run_steps(2);
+            let before = h.state().session.project().clone();
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(Tick(2 * SECOND)))
+                .unwrap();
+            h.run_steps(2);
+            assert!(h.state().inspect().unwrap().color_preview.is_none());
+            assert_eq!(h.state().session.project(), &before);
+            click(&mut h, "graphic.insert.ellipse");
+            let ellipse = *h.state().selection.iter().next().unwrap();
+            h.run_steps(3);
+            assert!(matches!(
+                item(&h, ellipse).content,
+                ItemParams::Graphic(project::GraphicParams::Ellipse { .. })
+            ));
+            assert!(
+                !h.state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == "inspector.graphic.cornerRadius")
+            );
+            let rectangle_time = item(&h, id).start.checked_add(Tick(SECOND)).unwrap();
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(rectangle_time))
+                .unwrap();
+            select(&mut h, id);
+            click(&mut h, "inspector.graphic.strokeAlign");
+            assert!(
+                h.state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == "inspector.graphic.strokeAlign.outside")
+            );
+            select(&mut h, ellipse);
+            assert!(
+                !h.state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == "inspector.graphic.strokeAlign.outside"),
+                "selection change closes stale alignment menu"
+            );
+        }
+    }
+}

@@ -1261,3 +1261,301 @@ fn rgba_ingress_observes_cancellation_and_releases_its_reservation() {
     ));
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn graphic_fill_ring_opacity_and_native_geometry_match_analytic_pixels_without_sources() {
+    // Independent true ellipse distance: minimize Euclidean distance on the first
+    // quadrant, bracket every local minimum before refinement (not renderer contours).
+    fn distance(x: f64, y: f64, a: f64, b: f64) -> f64 {
+        let (x, y) = (x.abs(), y.abs());
+        let f = |t: f64| (x - a * t.cos()).hypot(y - b * t.sin());
+        let mut best = f(0.).min(f(std::f64::consts::FRAC_PI_2));
+        for i in 0..64 {
+            let mut lo = i as f64 * std::f64::consts::FRAC_PI_2 / 64.;
+            let mut hi = (i + 1) as f64 * std::f64::consts::FRAC_PI_2 / 64.;
+            for _ in 0..30 {
+                let l = lo + (hi - lo) / 3.;
+                let r = hi - (hi - lo) / 3.;
+                if f(l) < f(r) { hi = r } else { lo = l }
+            }
+            best = best.min(f((lo + hi) / 2.));
+        }
+        if (x / a).powi(2) + (y / b).powi(2) <= 1. {
+            best
+        } else {
+            -best
+        }
+    }
+    for ellipse in [false, true] {
+        for scale in [1, 2, 4] {
+            for aspect in [1., 1.5] {
+                for width in [0., 1., 64.] {
+                    for align in [
+                        project::StrokeAlign::Inside,
+                        project::StrokeAlign::Center,
+                        project::StrokeAlign::Outside,
+                    ] {
+                        for radius in if ellipse {
+                            vec![0.]
+                        } else {
+                            vec![0., 25., 50.]
+                        } {
+                            let hooks = Hooks::default();
+                            let mut data = solid_project(1, 128, 128, [0; 4]).into_data();
+                            data.canvas.background = project::Color([0; 4]);
+                            let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+                            item.content = project::ItemParams::Graphic(if ellipse {
+                                project::GraphicParams::Ellipse {
+                                    fill: project::Color([255, 0, 0, 128]),
+                                    stroke: project::Color([0, 0, 255, 128]),
+                                    stroke_width: width,
+                                    stroke_align: align,
+                                }
+                            } else {
+                                project::GraphicParams::Rectangle {
+                                    fill: project::Color([255, 0, 0, 128]),
+                                    stroke: project::Color([0, 0, 255, 128]),
+                                    stroke_width: width,
+                                    stroke_align: align,
+                                    corner_radius: radius,
+                                }
+                            });
+                            for (name, c) in
+                                [("fill", [1., 0., 0., 0.5]), ("stroke", [0., 0., 1., 0.5])]
+                            {
+                                item.animations
+                                    .set(
+                                        project::AnimationPath::new(format!("params.{name}"))
+                                            .unwrap(),
+                                        project::Param::new(project::ParamValue::Color(c)).unwrap(),
+                                    )
+                                    .unwrap();
+                            }
+                            item.animations
+                                .set(
+                                    project::BuiltinPath::Opacity.into(),
+                                    project::Param::new(project::ParamValue::Scalar(0.5)).unwrap(),
+                                )
+                                .unwrap();
+                            let p = project::Project::new(data).unwrap();
+                            let mut settings = RenderSettings::from_project(&p);
+                            settings.width = 128 * scale;
+                            settings.height = 128 * scale;
+                            settings.placements.insert(
+                                project::ItemId(0),
+                                Placement {
+                                    destination: Rect {
+                                        x: 0.25 + 0.25 / f64::from(settings.width),
+                                        y: 0.25,
+                                        width: 0.375 * aspect,
+                                        height: 0.375,
+                                    },
+                                    ..Default::default()
+                                },
+                            );
+                            let mut renderer = Renderer::new(&p, settings).unwrap();
+                            let frame = renderer.render_frame(Tick(0), &mut Empty, &hooks).unwrap();
+                            assert_eq!(
+                                frame.pixels(),
+                                renderer
+                                    .preview_frame(Tick(0), &mut Empty, &hooks)
+                                    .unwrap()
+                                    .pixels()
+                            );
+                            let size = 128. * f64::from(scale);
+                            let (dw, dh) =
+                                (48. * aspect * f64::from(scale), 48. * f64::from(scale));
+                            let (cx, cy) = (size * 0.25 + 0.25 + dw / 2., size * 0.25 + dh / 2.);
+                            let inset = if align == project::StrokeAlign::Center {
+                                width / 2.
+                            } else {
+                                0.
+                            };
+                            let (a, b) = (
+                                dw * (512. - 2. * inset) / 1024.,
+                                dh * (512. - 2. * inset) / 1024.,
+                            );
+                            let w = width * dw.min(dh) / 512.;
+                            let (inside, outside) = match align {
+                                project::StrokeAlign::Inside => (w, 0.),
+                                project::StrokeAlign::Center => (w / 2., w / 2.),
+                                project::StrokeAlign::Outside => (0., w),
+                            };
+                            let f = |d: f64| (d + 0.5).clamp(0., 1.);
+                            for (x, y) in [
+                                (cx.floor(), cy.floor()),
+                                ((cx + a).floor(), cy.floor()),
+                                ((cx + a - w).floor(), cy.floor()),
+                                ((cx + a + w).floor(), cy.floor()),
+                                ((cx + a * 0.7).floor(), (cy + b * 0.7).floor()),
+                                (0., 0.),
+                            ] {
+                                let (px, py) = (x + 0.5 - cx, y + 0.5 - cy);
+                                let d = if ellipse {
+                                    distance(px, py, a, b)
+                                } else {
+                                    let (rx, ry) = (a * radius / 50., b * radius / 50.);
+                                    let (qx, qy) = (px.abs() - (a - rx), py.abs() - (b - ry));
+                                    if radius > 0. && qx > 0. && qy > 0. {
+                                        distance(qx, qy, rx, ry)
+                                    } else if radius > 0. {
+                                        (a - px.abs()).min(b - py.abs())
+                                    } else {
+                                        -(qx.max(0.).hypot(qy.max(0.)) + qx.max(qy).min(0.))
+                                    }
+                                };
+                                let fill = 0.5 * f(d);
+                                let ring = 0.5 * (f(d + outside) - f(d - inside)).max(0.);
+                                let expected = [
+                                    fill * (1. - ring) * 0.5,
+                                    0.,
+                                    ring * 0.5,
+                                    (ring + fill * (1. - ring)) * 0.5,
+                                ];
+                                let pixel = frame.pixels()
+                                    [y as usize * frame.width() as usize + x as usize];
+                                let tolerance = if ellipse || radius > 0. {
+                                    (a.max(b) * 0.00028 + 0.051) * 0.5
+                                } else {
+                                    3e-6
+                                };
+                                for (actual, expected) in pixel.into_iter().zip(expected) {
+                                    assert!(
+                                        (f64::from(actual) - expected).abs() < tolerance,
+                                        "ellipse={ellipse} scale={scale} width={width} radius={radius} align={align:?} at{x},{y}: {pixel:?} expected {expected}"
+                                    );
+                                }
+                            }
+                            drop(frame);
+                            drop(renderer);
+                            assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn graphic_budget_cancel_and_once_opacity_release_every_reservation() {
+    let mut data = solid_project(1, 64, 64, [0; 4]).into_data();
+    data.canvas.background = project::Color([0; 4]);
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    item.content = project::ItemParams::Graphic(project::GraphicParams::Rectangle {
+        fill: project::Color([255, 0, 0, 128]),
+        stroke: project::Color([0, 0, 255, 128]),
+        stroke_width: 64.,
+        stroke_align: project::StrokeAlign::Inside,
+        corner_radius: 0.,
+    });
+    item.animations
+        .set(
+            project::BuiltinPath::Opacity.into(),
+            project::Param::new(project::ParamValue::Scalar(0.5)).unwrap(),
+        )
+        .unwrap();
+    let p = project::Project::new(data).unwrap();
+    let settings = RenderSettings::from_project(&p);
+    for limit in [1, 65536, 131072, 196608] {
+        let h = Hooks {
+            limit,
+            ..Default::default()
+        };
+        let mut renderer = Renderer::new(&p, settings.clone()).unwrap();
+        assert!(matches!(
+            renderer.render_frame(Tick(0), &mut Empty, &h),
+            Err(Error::Budget { .. })
+        ));
+        drop(renderer);
+        assert_eq!(h.used.load(Ordering::SeqCst), 0);
+    }
+    struct Cancel {
+        h: Hooks,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl ExecutionHooks for Cancel {
+        fn cancelled(&self) -> bool {
+            self.calls.fetch_add(1, Ordering::SeqCst) > 40
+        }
+        fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>> {
+            self.h.reserve(kind, bytes)
+        }
+        fn begin_publish(&self) -> Result<()> {
+            self.h.begin_publish()
+        }
+        fn progress(&self, _: Stage, _: f32) -> Result<()> {
+            Ok(())
+        }
+    }
+    let h = Cancel {
+        h: Hooks::default(),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let mut renderer = Renderer::new(&p, settings.clone()).unwrap();
+    assert!(matches!(
+        renderer.render_frame(Tick(0), &mut Empty, &h),
+        Err(Error::Cancelled)
+    ));
+    assert_eq!(h.h.used.load(Ordering::SeqCst), 0);
+    let h = Hooks::default();
+    let image = renderer.render_frame(Tick(0), &mut Empty, &h).unwrap();
+    // At a fully covered inside ring, blue is over red before opacity, not two
+    // independently attenuated paints. Static alpha128 is deliberately not 0.5.
+    let a = 128. / 255.;
+    let expected = [a * (1. - a) * 0.5, 0., a * 0.5, (a + a * (1. - a)) * 0.5];
+    for (actual, expected) in image.pixels()[3 * 64 + 32].into_iter().zip(expected) {
+        assert!((actual - expected).abs() < 3e-6);
+    }
+    assert_eq!(renderer.text_cache_stats().entries, 0);
+}
+
+#[test]
+fn graphic_effect_mask_transform_and_final_opacity_keep_the_shared_stage_order() {
+    let mut data = solid_project(1, 64, 64, [0; 4]).into_data();
+    data.canvas.background = project::Color([0; 4]);
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    item.content = project::ItemParams::Graphic(project::GraphicParams::rectangle());
+    item.animations
+        .set(
+            project::AnimationPath::new("params.fill").unwrap(),
+            project::Param::new(project::ParamValue::Color([0.25, 0., 0., 0.5])).unwrap(),
+        )
+        .unwrap();
+    item.effects.push(
+        project::effect_definition("color_grade")
+            .unwrap()
+            .instance("grade")
+            .with("brightness", project::EffectValue::Scalar(50.))
+            .unwrap(),
+    );
+    let mut mask = project::Mask::new("half", project::MaskShape::Rectangle);
+    mask.opacity = 0.5;
+    item.masks.push(mask);
+    for (path, v) in [("opacity", 0.5), ("transform.positionX", 8.)] {
+        item.animations
+            .set(
+                project::AnimationPath::new(path).unwrap(),
+                project::Param::new(project::ParamValue::Scalar(v)).unwrap(),
+            )
+            .unwrap();
+    }
+    let p = project::Project::new(data).unwrap();
+    let h = Hooks::default();
+    let mut renderer = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+    let frame = renderer.render_frame(Tick(0), &mut Empty, &h).unwrap();
+    for (actual, expected) in frame.pixels()[32 * 64 + 40]
+        .into_iter()
+        .zip([0.0625, 0., 0., 0.125])
+    {
+        assert!((actual - expected).abs() < 3e-6, "{actual} vs {expected}");
+    }
+    assert_eq!(frame.pixels()[32 * 64 + 2], [0.; 4]);
+    assert_eq!(
+        frame.pixels(),
+        renderer
+            .preview_frame(Tick(0), &mut Empty, &h)
+            .unwrap()
+            .pixels()
+    );
+}

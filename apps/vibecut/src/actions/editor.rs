@@ -109,6 +109,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "graphic.insert.rectangle",
+        Text::GraphicRectangle,
+        ActionCategory::Edit,
+        "graphic insertion workflow",
+        UiAction::InsertGraphic(super::GraphicShape::Rectangle),
+        &[],
+    ),
+    ActionSpec::ui(
+        "graphic.insert.ellipse",
+        Text::GraphicEllipse,
+        ActionCategory::Edit,
+        "graphic insertion workflow",
+        UiAction::InsertGraphic(super::GraphicShape::Ellipse),
+        &[],
+    ),
+    ActionSpec::ui(
         "text.insert",
         Text::ActionTextInsert,
         ActionCategory::Edit,

@@ -179,6 +179,9 @@ pub enum ItemParamPatch {
     Crop(Option<project::Crop>),
     GraphicFill(Color),
     GraphicStroke(Color),
+    GraphicStrokeWidth(f64),
+    GraphicStrokeAlign(project::StrokeAlign),
+    GraphicCornerRadius(f64),
 }
 impl ItemParamPatch {
     pub(crate) fn transform(&self) -> Option<(project::TransformField, f64)> {
@@ -226,7 +229,15 @@ impl ItemParamPatch {
                 )
                 | (
                     Self::GraphicFill(_) | Self::GraphicStroke(_),
-                    ItemParams::Overlay(_)
+                    ItemParams::Overlay(_) | ItemParams::Graphic(_)
+                )
+                | (
+                    Self::GraphicStrokeWidth(_) | Self::GraphicStrokeAlign(_),
+                    ItemParams::Graphic(_)
+                )
+                | (
+                    Self::GraphicCornerRadius(_),
+                    ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
                 )
         )
     }
@@ -239,6 +250,9 @@ impl ItemParamPatch {
             };
         }
         let valid = match self {
+            Self::GraphicStrokeWidth(v) => v.is_finite() && (0. ..=64.).contains(v),
+            Self::GraphicCornerRadius(v) => v.is_finite() && (0. ..=50.).contains(v),
+            Self::GraphicStrokeAlign(_) => true,
             Self::BlendMode(_) => true,
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
             Self::AudioGain(v) => project::valid_volume(*v),

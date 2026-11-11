@@ -21,7 +21,9 @@ impl Editor {
             return Err(Error::NotAvailable(ticket));
         }
         // A disabled style action must not flush an unrelated caption draft.
-        if (id.starts_with("subtitles.style.") || id.starts_with("text.animation."))
+        if (id.starts_with("subtitles.style.")
+            || id.starts_with("text.animation.")
+            || id.starts_with("graphic.insert."))
             && !self.action_enabled(id)
         {
             return Err(Error::ActionDisabled(spec.id));
@@ -124,6 +126,7 @@ impl Editor {
                     self.reveal_media(asset)?;
                 }
                 UiAction::InsertText => self.insert_text(),
+                UiAction::InsertGraphic(shape) => self.insert_graphic(shape),
                 UiAction::ApplyTextAnimation(preset) => {
                     let item = crate::editor::context::single(&self.selection)
                         .ok_or(Error::Invalid("text animation selection"))?;
