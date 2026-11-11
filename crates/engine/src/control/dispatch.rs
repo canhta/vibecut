@@ -130,8 +130,11 @@ impl Session {
                 removed: (sound_access(caller)?.unsave)(id)?,
             }),
             Command::JobStatus { job } => {
-                let mut snapshot =
-                    JobView::from(runner.snapshot(job).ok_or(EditError::JobNotRetained)?);
+                let mut snapshot = JobView::from(
+                    runner
+                        .snapshot(job)
+                        .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?,
+                );
                 if matches!(
                     snapshot.kind,
                     JobKind::GenerateWaveform
@@ -386,7 +389,9 @@ impl Session {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
-                let snapshot = runner.snapshot(job).ok_or(EditError::JobNotRetained)?;
+                let snapshot = runner
+                    .snapshot(job)
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 if snapshot.kind != JobKind::Transcribe {
                     return Err(EditError::Invalid("job is not a transcription"));
                 }
@@ -395,7 +400,9 @@ impl Session {
                 }
                 runner.validate_output_target(job, self)?;
                 let result = crate::subtitles::decode_captions(
-                    runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
+                    runner
+                        .output_bytes(job)
+                        .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?,
                 )?;
                 let asset = self
                     .project()

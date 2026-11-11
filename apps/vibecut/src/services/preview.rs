@@ -287,7 +287,7 @@ impl SnapshotDialog {
                     budget,
                     Arc::new(SystemClock::default()),
                 )
-                .map_err(Error::Engine)?,
+                .map_err(Error::from)?,
             ),
         };
         let id = self.requests.fetch_add(1, Ordering::Relaxed);
@@ -345,7 +345,7 @@ fn error_for(code: ErrorCode) -> EditError {
         ErrorCode::IdempotencyConflict => EditError::IdempotencyConflict,
         ErrorCode::ReceiptCapacity => EditError::ReceiptCapacity,
         ErrorCode::ResyncRequired => EditError::ResyncRequired,
-        ErrorCode::JobNotRetained => EditError::JobNotRetained,
+        ErrorCode::JobNotRetained => EditError::Runtime(engine::RuntimeError::JobNotRetained),
         ErrorCode::Cancelled => EditError::Runtime(engine::RuntimeError::Cancelled),
         ErrorCode::QueueFull => EditError::Runtime(engine::RuntimeError::QueueFull),
         ErrorCode::SchemaMismatch => EditError::SchemaMismatch,

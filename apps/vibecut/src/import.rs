@@ -763,7 +763,7 @@ impl ImportQueue {
             }
             Err(error) => {
                 self.phase = Phase::Idle;
-                Err(error)
+                Err(error.into())
             }
         }
     }

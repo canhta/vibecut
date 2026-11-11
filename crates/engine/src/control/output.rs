@@ -7,7 +7,7 @@ use crate::{EditError, Result};
 /// every [`JobKind`], so a new kind does not compile until it states what it returns.
 /// A kind that returns data and has lost its bytes refuses `JobNotRetained`.
 pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOutput>> {
-    let retained = || bytes.ok_or(EditError::JobNotRetained);
+    let retained = || bytes.ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained));
     Ok(Some(match kind {
         JobKind::Transcribe => {
             JobOutput::Captions(Box::new(crate::subtitles::decode_captions(retained()?)?))

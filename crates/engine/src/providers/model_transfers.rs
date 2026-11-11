@@ -147,7 +147,7 @@ impl ModelTransfers {
         let slot = self.cache.clone();
         let http = self.transport.clone();
         let io = self.io.clone();
-        runner.submit::<crate::EditError>(
+        Ok(runner.submit::<crate::EditError>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,
@@ -165,7 +165,7 @@ impl ModelTransfers {
                 download(work.cache()?, &model, http.as_ref(), io.as_ref(), ctx)?;
                 Ok(Vec::new())
             },
-        )
+        )?)
     }
     /// Called only by an explicit model-manager removal action; live native leases refuse.
     pub fn remove(&self, model: &Model) -> Result<()> {

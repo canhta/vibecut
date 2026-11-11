@@ -819,7 +819,7 @@ fn publication_seal_prevents_a_cancelled_job_from_claiming_success_after_promoti
     let token_slot = Arc::new(Mutex::new(None::<CancelToken>));
     let slot = token_slot.clone();
     let (id, token) = r
-        .submit(
+        .submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,

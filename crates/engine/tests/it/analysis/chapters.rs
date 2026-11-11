@@ -335,7 +335,10 @@ fn generation_maps_cues_to_output_time_and_decodes_the_document() {
 
     let bytes = serde_json::to_vec(&document).unwrap();
     assert_eq!(decode(&bytes).unwrap(), document);
-    assert!(job.finish(&mut runner).is_err());
+    assert!(matches!(
+        job.finish(&mut runner),
+        Err(EditError::Runtime(engine::RuntimeError::JobNotRetained))
+    ));
     runner.shutdown();
 }
 
