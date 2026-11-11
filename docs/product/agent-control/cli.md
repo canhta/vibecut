@@ -164,7 +164,7 @@ With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"
 Typed engine diagnostics project the owner's `Failure` code to the documented label and exit.
 Stdout control frames separately project that code to protocol exits. Direct errors retain
 those exits: `budget` uses 2, `stale_result` uses 3, `worker_failure` and `io` use 7, and the
-remaining refined classes use 5. `JobFailure` delegates its inner wire code, so a wrapped
+remaining refined classes use 5. `RuntimeError::Failed` delegates its inner wire code, so a wrapped
 limit, stale result or IO failure intentionally becomes control exit 2, 3 or 7 respectively.
 Recovery persistence failures also delegate the stored cause's code: disk IO uses `io`/7,
 worker unwind uses `job`/7, limits use `usage`/2 and budget refusal uses `job`/7 in typed CLI
