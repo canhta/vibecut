@@ -19,6 +19,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
+use vibecut::lifecycle::EditorSession::Memory;
 use vibecut::{
     Editor, ElementKind, PropertiesTab, egui,
     font_picker::{Backend, Status},
@@ -239,6 +240,7 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
         id,
         "inspector.text_color.picker" | "inspector.background_color"
     ) || id.starts_with("inspector.text_")
+        || id.starts_with("text.animation.")
     {
         for _ in 0..12 {
             let panel = harness.state().panels()["inspector"];
@@ -1388,6 +1390,505 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
         panic!("audio")
     };
     assert_eq!(params.volume, 0.04);
+}
+
+#[test]
+fn text_fades_click_edit_undo_reopen_and_capture_both_locales() {
+    for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
+        for scale in [1.0, 2.0] {
+            let mut f = fixture();
+            f.editor.preferences.locale = locale;
+            f.editor
+                .session
+                .apply(Command::Delete {
+                    items: vec![f.video, f.silent_video, f.image, f.graphic, f.audio],
+                })
+                .unwrap();
+            f.editor.prepare_subtitles().unwrap(); // Idle captions with no caption target remain eligible.
+            f.editor
+                .set_item_field(f.text, "text_content", "Tiếng Việt\nEnglish")
+                .unwrap();
+            f.editor.set_item_field(f.text, "opacity", "0.6").unwrap();
+            let mut h = crate::gpu::builder()
+                .with_size(egui::vec2(1440.0, 1000.0))
+                .with_pixels_per_point(scale)
+                .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+            h.run_steps(3);
+            select(&mut h, f.text);
+            let history = h.state().session.history_len().0;
+            click(&mut h, "text.animation.fade_in_out");
+            assert_eq!(h.state().session.history_len().0, history + 1);
+            let fade = item(&h, f.text).animations;
+            assert_eq!(
+                fade.get(&project::BuiltinPath::Opacity.into())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap()
+                    .keys()
+                    .len(),
+                4
+            );
+            h.state_mut().activate("edit.undo").unwrap();
+            h.state_mut()
+                .activate("text.animation.fade_in_out")
+                .unwrap();
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(Tick(38_102_400_000)))
+                .unwrap();
+            h.run_steps(3);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while !h.state().playback.frame().is_some_and(|frame| {
+                frame.generation == h.state().playback.generation()
+                    && frame.at == Tick(33_868_800_000)
+            }) {
+                h.run_steps(1);
+                assert!(std::time::Instant::now() < deadline, "title preview frame");
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+            std::fs::create_dir_all(&root).unwrap();
+            let image = h.render().unwrap();
+            image
+                .save(root.join(format!("p1-58-text-{locale:?}-{scale}x.png")))
+                .unwrap();
+            if locale == vibecut::i18n::Locale::En && scale == 1.0 {
+                image.save(root.join("p1-58-text-extras.png")).unwrap();
+            }
+            click(&mut h, "inspector.tab.blending");
+            assert_eq!(
+                h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+                    .value()
+                    .as_deref(),
+                Some("30%")
+            );
+            click(&mut h, "inspector.opacity.increase");
+            let at = Tick(38_102_400_000);
+            let value = |h: &Harness<Editor>| {
+                item(h, f.text)
+                    .animations
+                    .value_at(&project::BuiltinPath::Opacity.into(), at)
+                    .unwrap()
+            };
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.31)));
+            let history = h.state().session.history_len().0;
+            for (finish, text, expected, steps) in [
+                (egui::Key::Enter, "45", 0.45, 1),
+                (egui::Key::Escape, "80", 0.45, 1),
+            ] {
+                click(&mut h, "inspector.opacity");
+                h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+                h.event(egui::Event::Text(text.into()));
+                h.key_press(finish);
+                h.run_steps(3);
+                assert_eq!(value(&h), Some(project::ParamValue::Scalar(expected)));
+                assert_eq!(h.state().session.history_len().0, history + steps);
+            }
+            drag(&mut h, "inspector.opacity.scrub", egui::vec2(20.0, 0.0));
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.5)));
+            let history = h.state().session.history_len();
+            drag_to(&mut h, "inspector.opacity.scrub", egui::vec2(20.0, 0.0));
+            h.key_press(egui::Key::Escape);
+            h.run_steps(2);
+            h.drop_at(egui::pos2(700.0, 300.0));
+            h.run_steps(2);
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.5)));
+            assert_eq!(h.state().session.history_len(), history);
+            click(&mut h, "inspector.opacity");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.event(egui::Event::Text("51".into()));
+            h.key_press(egui::Key::Tab);
+            h.run_steps(3);
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.51)));
+            assert_eq!(h.state().session.history_len().0, history.0 + 1);
+            let file = root.join(format!("p1-388-{locale:?}-{scale}x.vibecut"));
+            project::WriterLease::acquire(&file)
+                .unwrap()
+                .save(h.state().session.project())
+                .unwrap();
+            let reopened = project::load(&file).unwrap().project;
+            assert_eq!(reopened, **h.state().session.project());
+            h.state_mut().session = Memory(Box::new(Session::new(reopened, 10).unwrap()));
+            h.run_steps(3);
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(at))
+                .unwrap();
+            h.run_steps(3);
+            click(&mut h, "inspector.opacity.increase");
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.52)));
+            let times: Vec<_> = item(&h, f.text)
+                .animations
+                .get(&project::BuiltinPath::Opacity.into())
+                .unwrap()
+                .channel(None)
+                .unwrap()
+                .keys()
+                .iter()
+                .map(|k| k.time)
+                .collect();
+            for time in times {
+                h.state_mut()
+                    .session
+                    .apply(Command::RemoveKeyframe {
+                        item: f.text,
+                        path: project::BuiltinPath::Opacity.into(),
+                        component: None,
+                        time,
+                    })
+                    .unwrap();
+            }
+            h.run_steps(3);
+            assert_eq!(value(&h), Some(project::ParamValue::Scalar(0.6)));
+            assert_eq!(
+                h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+                    .value()
+                    .as_deref(),
+                Some("60%")
+            );
+        }
+    }
+}
+
+#[test]
+fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
+    for change in [
+        "time", "target", "lock", "tab", "snapshot", "undo", "remove", "scene", "project",
+    ] {
+        let mut f = fixture();
+        f.editor.selection = [f.text].into_iter().collect();
+        f.editor.activate("text.animation.fade_in_out").unwrap();
+        let mut h = build(f.editor);
+        h.run_steps(3);
+        click(&mut h, "inspector.tab.blending");
+        click(&mut h, "inspector.opacity");
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.event(egui::Event::Text("82".into()));
+        h.run_steps(2);
+        let track = h
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|t| t.items.iter().any(|i| i.id == f.text))
+            .unwrap()
+            .id;
+        match change {
+            "time" => h
+                .state_mut()
+                .dispatch(vibecut::AppCommand::Seek(Tick(SECOND)))
+                .unwrap(),
+            "target" => h.state_mut().selection = [f.video].into_iter().collect(),
+            "lock" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::SetTrackLocked {
+                        track,
+                        locked: true,
+                    })
+                    .unwrap();
+            }
+            "tab" => {
+                h.state_mut()
+                    .preferences
+                    .properties_tabs
+                    .insert("text".into(), "text".into());
+            }
+            "snapshot" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::RenameProject {
+                        name: "changed".into(),
+                    })
+                    .unwrap();
+            }
+            "undo" => {
+                h.state_mut().activate("edit.undo").unwrap();
+            }
+            "remove" => {
+                h.state_mut()
+                    .session
+                    .apply(Command::Delete {
+                        items: vec![f.text],
+                    })
+                    .unwrap();
+            }
+            "scene" => {
+                let out = h
+                    .state_mut()
+                    .session
+                    .apply(Command::CreateScene {
+                        name: "other".into(),
+                    })
+                    .unwrap();
+                let CreatedId::Scene(scene) = out.created[0] else {
+                    panic!("scene")
+                };
+                h.state_mut()
+                    .session
+                    .apply(Command::SwitchScene { scene })
+                    .unwrap();
+            }
+            "project" => {
+                let empty = Project::empty(ProjectId(388), "other".into()).unwrap();
+                h.state_mut().session = Memory(Box::new(Session::new(empty, 10).unwrap()));
+            }
+            _ => unreachable!(),
+        }
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        h.run_steps(3);
+        h.key_press(egui::Key::Tab);
+        h.run_steps(3);
+        assert_eq!(h.state().session.project(), &before, "{change}");
+        assert_eq!(h.state().session.history_len(), history, "{change}");
+    }
+    let mut f = fixture();
+    f.editor.selection = [f.text].into_iter().collect();
+    f.editor.activate("text.animation.fade_in_out").unwrap();
+    let track = f
+        .editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|t| t.items.iter().any(|i| i.id == f.text))
+        .unwrap()
+        .id;
+    f.editor
+        .session
+        .execute(
+            "move_item",
+            serde_json::json!({"item":f.text,"track":track,"start":SECOND}),
+        )
+        .unwrap();
+    for (at, value) in [
+        (Tick::ZERO, "0.8"),
+        (Tick(3 * SECOND), "0.8"),
+        (Tick(SECOND), "2"),
+        (Tick(SECOND), "NaN"),
+    ] {
+        f.editor.dispatch(vibecut::AppCommand::Seek(at)).unwrap();
+        let before = f.editor.session.project().clone();
+        assert!(f.editor.set_item_field(f.text, "opacity", value).is_err());
+        assert_eq!(f.editor.session.project(), &before);
+    }
+}
+
+#[test]
+fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_drafts() {
+    let mut f = fixture();
+    let cues = captions::parse(
+        b"1\n00:00:00,000 --> 00:00:02,000\nCaption\n",
+        captions::Format::Srt,
+        captions::LanguageTag::parse("en").unwrap(),
+    )
+    .unwrap()
+    .track;
+    let cue = cues.cues[0].id.clone();
+    let track = add_track(&mut f.editor.session, "Captions", TrackKind::Text);
+    insert(
+        &mut f.editor.session,
+        track,
+        Tick::ZERO,
+        Tick(2 * SECOND),
+        Some(AssetId(1)),
+        ItemParams::Caption(project::CaptionParams { cues }),
+    );
+    f.editor.preferences.assets_tab = AssetsTab::Captions;
+    f.editor.prepare_subtitles().unwrap();
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    h.get(
+        By::new().predicate(|n| {
+            n.author_id() == Some(format!("subtitles.cue.{}", cue.as_str()).as_str())
+        }),
+    )
+    .click_accesskit();
+    h.run_steps(3);
+    select(&mut h, f.text);
+    let field = format!("subtitles.text.{}.en", cue.as_str());
+    h.get(By::new().predicate(|n| n.author_id() == Some(field.as_str())))
+        .focus();
+    h.run_steps(2);
+    for dirty in [false, true] {
+        if dirty {
+            h.get(By::new().predicate(|n| n.author_id() == Some(field.as_str())))
+                .type_text(" pending");
+            h.run_steps(2);
+        }
+        let before = h.state().session.project().clone();
+        let selection = h.state().selection.clone();
+        let history = h.state().session.history_len();
+        assert!(!h.state().action_enabled("text.animation.fade_in"));
+        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+        assert_eq!(h.state().session.project(), &before);
+        assert_eq!(h.state().session.history_len(), history);
+        assert_eq!(h.state().selection, selection);
+        assert!(
+            h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+                .accesskit_node()
+                .is_disabled()
+        );
+        assert!(h.state_mut().activate("subtitles.style.box").is_err());
+    }
+    // Switch away without activating/flushing: the changed caption draft is now unfocused.
+    h.ctx
+        .memory_mut(|m| m.surrender_focus(m.focused().unwrap()));
+    h.state_mut().preferences.assets_tab = AssetsTab::Media;
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut().subtitles = None;
+    h.run_steps(2);
+    click(&mut h, "inspector.text_size");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("83".into()));
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    assert_eq!(h.state().session.project(), &before);
+    // The inspector caller must see its actual held State, so even an AccessKit click cannot apply.
+    h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+        .click_accesskit();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    for selected in [vec![f.video], vec![f.text, f.video]] {
+        h.state_mut().selection = selected.into_iter().collect();
+        h.run_steps(2);
+        assert!(!has_widget(&h, "text.animation.fade_in"));
+        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    }
+    select(&mut h, f.text);
+    h.state_mut().session.begin_gesture().unwrap();
+    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    h.state_mut().session.cancel_gesture().unwrap();
+    let track = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|t| t.items.iter().any(|i| i.id == f.text))
+        .unwrap()
+        .id;
+    h.state_mut()
+        .session
+        .execute(
+            "track.set_locked",
+            serde_json::json!({"track":track.0,"locked":true}),
+        )
+        .unwrap();
+    h.run_steps(2);
+    assert!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    h.state_mut()
+        .session
+        .execute(
+            "track.set_locked",
+            serde_json::json!({"track":track.0,"locked":false}),
+        )
+        .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let session = Session::new((**h.state().session.project()).clone(), 10).unwrap();
+    let mut saving = engine::recovery::Autosave::new(
+        &root.path().join("recovery"),
+        session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(engine::jobs::SystemClock::default()),
+        Default::default(),
+    )
+    .unwrap();
+    saving.save_as(root.path().join("title.vibecut")).unwrap();
+    h.state_mut().session = vibecut::lifecycle::EditorSession::Persistent(Box::new(saving));
+    let before = h.state().session.project().clone();
+    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut().session.autosave().unwrap().flush().unwrap();
+    drop(h);
+
+    let mut f = fixture();
+    f.editor
+        .session
+        .apply(Command::Delete {
+            items: vec![f.video, f.silent_video, f.image, f.graphic, f.audio],
+        })
+        .unwrap();
+    f.editor.set_item_field(f.text, "text_size", "49").unwrap();
+    f.editor.session.undo().unwrap();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    select(&mut h, f.text);
+    let point = widget_rect(&h, "preview.transform.left")
+        .center()
+        .lerp(widget_rect(&h, "preview.transform.right").center(), 0.5);
+    for _ in 0..2 {
+        h.event(egui::Event::PointerMoved(point));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+    }
+    h.run_steps(3);
+    assert!(
+        has_widget(&h, "preview.text.edit"),
+        "real clean inline editor opens"
+    );
+    assert!(!h.state().session.gesture_active());
+    assert_eq!(h.state().session.history_len().1, 1);
+    for dirty in [false, true] {
+        if dirty {
+            h.get(By::new().predicate(|n| n.author_id() == Some("preview.text.edit")))
+                .type_text(" pending");
+            h.run_steps(2);
+            assert!(h.state().session.gesture_active());
+        }
+        let before = h.state().session.project().clone();
+        let candidate = h.state().session.preview_project().cloned();
+        let history = h.state().session.history_len();
+        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+        assert!(!h.state().action_enabled("text.animation.fade_in"));
+        assert_eq!(h.state().session.project(), &before);
+        assert_eq!(h.state().session.preview_project(), candidate.as_ref());
+        assert_eq!(h.state().session.history_len(), history);
+        assert!(
+            has_widget(&h, "preview.text.edit"),
+            "refusal leaves editor open"
+        );
+        assert!(
+            h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+                .accesskit_node()
+                .is_disabled()
+        );
+    }
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(!has_widget(&h, "preview.text.edit"));
+    assert!(h.state().action_enabled("text.animation.fade_in"));
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    h.state_mut().activate("text.animation.fade_in").unwrap();
+    assert_eq!(h.state().session.history_len(), (history.0 + 1, 0));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]

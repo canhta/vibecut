@@ -669,4 +669,82 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         json!(entries),
         serde_json::to_value(engine::registry()).unwrap()
     );
+    let fade = entries
+        .iter()
+        .find(|e| e["id"] == "text.apply_animation")
+        .unwrap();
+    assert_eq!(
+        fade["params_schema"]["$defs"]["TextAnimationPreset"]["enum"],
+        json!(["fade_in", "fade_out", "fade_in_out"])
+    );
+    let initial = client.call("inspect", json!({}), None, None);
+    let inserted = client.call("timeline.insert",json!({"placement":{"mode":"auto"},"item":{
+        "source_asset":null,"source_range":{"start":0,"end":254016000000_i64},"start":0,
+        "animations":{},"content":project::ItemParams::Text(project::TextParams::new("Tiếng Việt\nEnglish"))}}),Some(&initial["rev_after"]),Some("title"));
+    let item = inserted["value"]["value"]["outcome"]["placements"][0]["item"].clone();
+    assert!(!item.is_null(), "{inserted}");
+    let params = json!({"item":item,"preset":"fade_in_out"});
+    let applied = client.call(
+        "text.apply_animation",
+        params.clone(),
+        Some(&inserted["rev_after"]),
+        Some("fade"),
+    );
+    assert_eq!(applied["value"]["status"], "result", "{applied}");
+    let removed = client.call(
+        "keyframes.remove",
+        json!({"item":item,"path":"opacity","component":null,"time":0}),
+        Some(&applied["rev_after"]),
+        Some("remove"),
+    );
+    assert_eq!(removed["value"]["status"], "result");
+    assert_eq!(
+        client.call(
+            "text.apply_animation",
+            params.clone(),
+            Some(&inserted["rev_after"]),
+            Some("fade")
+        ),
+        applied
+    );
+    let stale = client.call(
+        "text.apply_animation",
+        params,
+        Some(&inserted["rev_after"]),
+        Some("stale-fade"),
+    );
+    assert_eq!(stale["value"]["value"], "stale_revision");
+    let undo = client.call(
+        "undo",
+        json!({}),
+        Some(&removed["rev_after"]),
+        Some("undo-remove"),
+    );
+    assert_eq!(undo["value"]["status"], "result");
+    let saved = client.call(
+        "project.save",
+        json!({}),
+        Some(&undo["rev_after"]),
+        Some("save-fade"),
+    );
+    assert_eq!(saved["value"]["status"], "result");
+    let loaded = project::load(&path).unwrap().project;
+    let keys = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| json!(i.id) == item)
+        .unwrap()
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys();
+    assert_eq!(
+        keys.iter().map(|k| k.time.0).collect::<Vec<_>>(),
+        [0, 76_204_800_000, 177_811_200_000, 254_016_000_000]
+    );
 }

@@ -219,6 +219,134 @@ fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
 }
 
 #[test]
+fn cli_text_fades_execute_reopen_export_and_control_replay() {
+    assert!(tools());
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("text.vibecut");
+    let output = dir.path().join("text.mp4");
+    let mut data = project::Project::empty(project::ProjectId(388), "Fades".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 320;
+    data.canvas.height = 180;
+    data.canvas.fps = time::FrameRate::FPS_30;
+    let mut session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
+    let content = project::ItemParams::Text(project::TextParams {
+        content: "Tiếng Việt\nEnglish".into(),
+        font_size: 24.0,
+        background: Some(Default::default()),
+        ..Default::default()
+    });
+    let placed = session
+        .apply(engine::Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                source_asset: None,
+                start: Tick::ZERO,
+                source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+                content,
+                animations: Default::default(),
+                retime: Default::default(),
+            },
+        })
+        .unwrap();
+    let engine::CreatedId::Item(item) = *placed.created.last().unwrap() else {
+        panic!("text")
+    };
+    project::WriterLease::acquire(&file)
+        .unwrap()
+        .save(session.project())
+        .unwrap();
+    exec(
+        &file,
+        "text.apply_animation",
+        json!({"item":item.0,"preset":"fade_in_out"}),
+    );
+    let saved = project::load(&file).unwrap().project;
+    let title = saved
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap();
+    assert_eq!(
+        title
+            .animations
+            .get(&project::BuiltinPath::Opacity.into())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .len(),
+        4
+    );
+    let before = fs::read(&file).unwrap();
+    let refused = cli(&[
+        os("exec"),
+        file.as_os_str(),
+        os("text.apply_animation"),
+        os(&json!({"item":item.0,"preset":"fade_out"}).to_string()),
+        os("--json"),
+    ]);
+    assert_eq!(code(&refused), 5);
+    assert_eq!(fs::read(&file).unwrap(), before);
+    assert_eq!(
+        code(&cli(&[
+            os("export"),
+            file.as_os_str(),
+            os("--out"),
+            output.as_os_str(),
+            os("--json")
+        ])),
+        0
+    );
+    let frames = decoded_rgb(&output, 320, 180, &[0, 4, 15, 26]);
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let mut renderer =
+        render::Renderer::new(&saved, render::RenderSettings::from_project(&saved)).unwrap();
+    for (frame, n) in frames.iter().zip([0, 4, 15, 26]) {
+        let expected = renderer
+            .render_frame(
+                time::FrameRate::FPS_30.tick_of(n).unwrap(),
+                &mut render::FileSources::default(),
+                &hooks,
+            )
+            .unwrap()
+            .video_rgba8(1, &hooks)
+            .unwrap();
+        let mse = frame
+            .iter()
+            .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum::<f64>()
+            / frame.len() as f64;
+        assert!(mse < 150.0, "CLI title frame {n} MSE {mse}");
+    }
+    let mut control = super::control::ControlSession::start(&file, &[os("--no-save")]);
+    let initial = control.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let request = json!({"request_id":"fade","command":"text.apply_animation","params":{"item":item.0,"preset":"fade_in_out"},"base_rev":initial["rev_after"],"idempotency_key":"fade"});
+    let applied = control.send(request.clone());
+    assert_eq!(applied["exit_code"], 0);
+    let undo=control.send(json!({"request_id":"undo","command":"undo","params":{},"base_rev":applied["rev_after"],"idempotency_key":"undo"}));
+    assert_eq!(
+        undo["exit_code"], 5,
+        "reopened session has no earlier history"
+    );
+    let edit=control.send(json!({"request_id":"key","command":"keyframes.remove","params":{"item":item.0,"path":"opacity","component":null,"time":0},"base_rev":applied["rev_after"],"idempotency_key":"key"}));
+    assert_eq!(edit["exit_code"], 0);
+    assert_eq!(control.send(request.clone()), applied);
+    let mut stale = request;
+    stale["idempotency_key"] = json!("stale");
+    assert_eq!(control.send(stale)["exit_code"], 3);
+    let undo=control.send(json!({"request_id":"undo-key","command":"undo","params":{},"base_rev":edit["rev_after"],"idempotency_key":"undo-key"}));
+    assert_eq!(undo["exit_code"], 0);
+    assert_eq!(control.finish().0, 0);
+}
+
+#[test]
 fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
     if !tools() {
         return;

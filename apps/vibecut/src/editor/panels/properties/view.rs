@@ -72,6 +72,26 @@ pub(in crate::editor) fn show(
     );
     ui.set_clip_rect(area);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
+    if let Some((snapshot, item, at)) = &panel.state.opacity_edit {
+        let visible = element_kind(panel.cx.session.project(), *item).is_some_and(|(kind, _)| {
+            panel
+                .cx
+                .preferences
+                .properties_tabs
+                .get(kind.id())
+                .map(String::as_str)
+                == Some("blending")
+        });
+        if !std::sync::Arc::ptr_eq(snapshot, panel.cx.session.project())
+            || single(panel.cx.selection) != Some(*item)
+            || *at != panel.cx.playhead
+            || read::item_locked(panel.cx.session.project(), *item)
+            || !visible
+            || panel.state.details
+        {
+            panel.actions.extend(panel.state.cancel_opacity());
+        }
+    }
     if let Some((item, ref id, time)) = panel.state.spatial_edit.clone() {
         let exists = read::item(panel.cx.session.project(), item).is_some_and(|candidate| {
             candidate
@@ -540,6 +560,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             body.add_space(12.0);
         }
         if let Some(tab) = clicked.or(sub_clicked) {
+            self.actions.extend(self.state.cancel_opacity());
             self.state.focus = None;
             self.actions.push(Action::SetTab {
                 kind: kind.id(),
@@ -736,7 +757,14 @@ impl<'a, 'c> Panel<'a, 'c> {
                     false,
                     |panel, ui| {
                         panel.blend_control(ui, item);
-                        panel.slider_row(ui, item, OPACITY_SCRUB);
+                        let editable =
+                            !read::channel_has_keys(panel.cx.session.project(), item, "opacity")
+                                || read::range_of(panel.cx.session.project(), item).is_some_and(
+                                    |(start, end)| {
+                                        start <= panel.cx.playhead && panel.cx.playhead < end
+                                    },
+                                );
+                        ui.add_enabled_ui(editable, |ui| panel.slider_row(ui, item, OPACITY_SCRUB));
                     },
                 );
             }

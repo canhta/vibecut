@@ -230,7 +230,14 @@ impl Editor {
     /// Draw the properties area and route what it asks for.
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let mut properties = std::mem::take(&mut self.properties);
-        let cx = self.context();
+        let mut cx = self.context();
+        if !self.text_animation_available(&properties) {
+            cx.disabled.extend([
+                "text.animation.fade_in",
+                "text.animation.fade_out",
+                "text.animation.fade_in_out",
+            ]);
+        }
         let actions = crate::editor::properties::show(&mut properties, &cx, ui);
         drop(cx);
         self.properties = properties;

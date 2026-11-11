@@ -584,6 +584,89 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
     }
 }
 
+#[test]
+fn text_fade_samples_survive_encoded_decode_without_a_new_golden() {
+    assert!(tools());
+    let mut data = scene().into_data();
+    let title = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == project::ItemId(1))
+        .unwrap();
+    let project::ItemParams::Text(text) = &mut title.content else {
+        panic!("title")
+    };
+    text.content = "Tiếng Việt\nEnglish".into();
+    text.color.0[3] = 160;
+    text.background = Some(project::TextBackground {
+        color: project::Color([20, 80, 120, 128]),
+        ..Default::default()
+    });
+    let mut opacity = project::Param::new(project::ParamValue::Scalar(0.6)).unwrap();
+    for (t, v) in [
+        (0, 0.0),
+        (76_204_800_000, 0.6),
+        (177_811_200_000, 0.6),
+        (254_016_000_000, 0.0),
+    ] {
+        opacity
+            .channel_mut(None)
+            .unwrap()
+            .put(project::Keyframe::new(
+                Tick(t),
+                project::ParamValue::Scalar(v),
+            ))
+            .unwrap();
+    }
+    title
+        .animations
+        .set(project::BuiltinPath::Opacity.into(), opacity)
+        .unwrap();
+    let p = project::Project::new(data).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.render.width = 256;
+    settings.render.height = 192;
+    settings.include_audio = false;
+    settings.mode = ExportMode::Encode;
+    settings.quality = 100;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    for n in [0, 4, 15, 26] {
+        let at = time::FrameRate::FPS_30.tick_of(n).unwrap();
+        let h = Hooks::default();
+        let expected = Renderer::new(&p, settings.render.clone())
+            .unwrap()
+            .render_frame(at, &mut Pixels, &h)
+            .unwrap()
+            .video_rgba8(1, &h)
+            .unwrap()
+            .bytes;
+        let path = root().join(format!("text-fade-{n}.mp4"));
+        export_with_sources(
+            &p,
+            TimeRange::new(at, at.checked_add(tick(1, 30)).unwrap()).unwrap(),
+            &settings,
+            &path,
+            &mut Pixels,
+            &Hooks::default(),
+        )
+        .unwrap();
+        let actual = rgba(&path);
+        assert_eq!(actual.len(), expected.len());
+        for rows in [0..192, 80..192] {
+            let range = rows.start * 256 * 4..rows.end * 256 * 4;
+            let mse = actual[range.clone()]
+                .iter()
+                .zip(&expected[range])
+                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                .sum::<f64>()
+                / ((rows.end - rows.start) * 256 * 4) as f64;
+            assert!(mse < 150.0, "fade frame {n} MSE {mse}");
+        }
+    }
+}
+
 /// Every decoded RGBA frame of `path`, in display order.
 fn all_frames(path: &std::path::Path, frame_len: usize) -> Vec<Vec<u8>> {
     let output = tool_command("ffmpeg")

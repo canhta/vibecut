@@ -139,6 +139,17 @@ The item ID comes from inspection. `custom` takes a complete `CueStyle` in `styl
 [generated command reference](commands.md). SRT/VTT text stays
 unchanged; there is no subtitle preset flag or preset field in export settings.
 
+Text fades use the ordinary edit path and saved opacity keys:
+
+```sh
+vibecut-cli exec project.vibecut text.apply_animation '{"item":3,"preset":"fade_in_out"}'
+vibecut-cli export project.vibecut --out title.mp4
+```
+
+Use the inspected Text item ID; choices are `fade_in`, `fade_out` and `fade_in_out`.
+The [edit owner](../../../crates/engine/src/session/edit/README.md#text-animation)
+defines duration, base and conflict rules. CLI control and MCP use this same command.
+
 ## Export admission
 
 The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared render owner. `--settings <JSON>` is `render::OutputOptions`: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`, `bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`, `range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and `scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are required; other versions and unknown fields refuse. Defaults and bounds: [render contract](../../../crates/render/README.md). `--aspect` overrides output geometry; an explicit settings resolution wins. All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds `paths` with every completed file; `path` stays the requested stem.
