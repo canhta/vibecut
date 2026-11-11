@@ -23,6 +23,28 @@ impl Session {
         ripple: bool,
     ) -> Result<Outcome> {
         match command {
+            Command::CopyKeyframes { keys } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                if let Some(payload) = crate::session::clipboard::KeyframeClipboard::capture(
+                    self.project().data(),
+                    &keys,
+                )? {
+                    let same = self
+                        .clipboard
+                        .as_deref()
+                        .map(|stored| stored.same_bytes(&payload))
+                        .transpose()?
+                        .unwrap_or(false);
+                    if !same {
+                        self.clipboard = Some(Arc::new(payload));
+                        self.end_merge();
+                        self.invalidate_revision(false)?;
+                    }
+                }
+                outcome(false)
+            }
             Command::TimelineSetRipple { enabled } => self.set_ripple(enabled),
             Command::TimelinePreview { commands } => self.preview(commands, wire, ripple),
             Command::SwitchScene { scene } => self.switch_scene(scene, wire),

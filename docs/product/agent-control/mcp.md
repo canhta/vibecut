@@ -74,3 +74,10 @@ optional ASR setup refuses caption work without preventing ordinary inspection o
 and `captions.translate` names an existing caption item. Apply with the accepted revision, then
 publish with `export_subtitles` under the existing output grant. A remote run without approved
 consent fails before that window's upload; a client cannot add consent or source paths.
+
+The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
+`clipboard.paste_keyframes` run through `command_run` (and their generated all-tools
+names). Read returns the bounded payload in structuredContent. Attached UI and MCP
+share the selected Editor's Session store; other editors and headless processes start
+empty. No keyframe data is written to the system clipboard. Transfer and lifetime:
+[clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).

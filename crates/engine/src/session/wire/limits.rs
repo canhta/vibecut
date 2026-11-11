@@ -31,6 +31,9 @@ pub const MAX_PAUSE_MS: i64 = 10_000;
 /// Static admission budgets travel with the catalog and participate in its hash.
 #[derive(Clone, Copy, Debug, Serialize, schemars::JsonSchema)]
 pub struct Limits {
+    pub clipboard_keys: usize,
+    pub clipboard_paths: usize,
+    pub clipboard_bytes: usize,
     pub frame_bytes: usize,
     pub response_bytes: usize,
     pub depth: usize,
@@ -52,6 +55,9 @@ pub struct Limits {
     pub safe_integer: i64,
 }
 pub const LIMITS: Limits = Limits {
+    clipboard_keys: super::super::clipboard::MAX_CLIPBOARD_KEYS,
+    clipboard_paths: super::super::clipboard::MAX_CLIPBOARD_PATHS,
+    clipboard_bytes: super::super::clipboard::MAX_CLIPBOARD_BYTES,
     frame_bytes: MAX_FRAME_BYTES,
     response_bytes: MAX_RESPONSE_BYTES,
     depth: MAX_DEPTH,

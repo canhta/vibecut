@@ -1,5 +1,5 @@
 //! Admits export only when requested loudness normalization was measured for exactly this audio.
-use crate::EditError;
+use super::{Error, Result};
 use project::{ItemParams, Project, ProjectData};
 
 /// Version of the measurement recipe; part of every content key and cache key.
@@ -68,13 +68,13 @@ pub fn content_key(data: &ProjectData) -> [u8; 32] {
 
 /// Export admission: requested normalization needs gains measured for exactly
 /// this audio content, so preview and export cannot disagree.
-pub fn admit(project: &Project) -> Result<(), EditError> {
+pub fn admit(project: &Project) -> Result<()> {
     let l = &project.data().settings.loudness;
     if l.clip.is_none() && l.master.is_none() {
         return Ok(());
     }
     match &l.measured {
         Some(m) if m.key == content_key(project.data()) => Ok(()),
-        _ => Err(EditError::LoudnessStale),
+        _ => Err(Error::LoudnessStale),
     }
 }

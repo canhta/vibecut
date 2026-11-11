@@ -381,6 +381,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "begin_gesture",
                 "captions.delete_preset",
                 "captions.rename_preset",
+                "clipboard.copy_keyframes",
+                "clipboard.read",
                 "timeline.set_ripple",
             ],
         ),
@@ -417,6 +419,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             Availability::UnlockedItem,
             &[
                 "audio.set_fade",
+                "clipboard.paste_keyframes",
                 "delete",
                 "keyframes.add",
                 "keyframes.delete_selection",

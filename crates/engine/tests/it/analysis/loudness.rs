@@ -130,7 +130,7 @@ fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EditErro
         runner.tick().unwrap();
         let snapshot = runner.snapshot(job).unwrap();
         match snapshot.state {
-            JobState::Cancelled => return Err(EditError::Cancelled),
+            JobState::Cancelled => return Err(EditError::Runtime(engine::RuntimeError::Cancelled)),
             JobState::Failed => {
                 return Err(EditError::Runtime(engine::RuntimeError::Failed(
                     snapshot.error.unwrap(),
@@ -166,6 +166,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     let mut runner = runner(&budget);
     let reads = Arc::new(AtomicUsize::new(0));
     let mut session = session();
+    admit(session.project()).unwrap();
     session
         .apply(engine::Command::SetLoudness {
             scope: project::LoudnessScope::Master,
@@ -176,7 +177,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     // Targets alone are not exportable: gains must be measured first.
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
 
     let job = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();
@@ -209,7 +210,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         .unwrap();
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
     session.undo().unwrap();
     admit(session.project()).unwrap();
@@ -222,7 +223,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         .unwrap();
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
 }
 
@@ -251,7 +252,7 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     runner.cancel_job(cancelled).unwrap();
     assert!(matches!(
         finish(&mut runner, cancelled),
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }

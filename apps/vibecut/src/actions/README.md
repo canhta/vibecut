@@ -30,3 +30,8 @@ metadata work; an actual jump uses the existing Seek path.
 
 `Chord`, `KeybindingPreferences`, `Keymap` and `Dispatch` live in
 [key input](../input/README.md).
+
+`edit.copy` and `edit.paste` run selected-key workflows through typed Session commands;
+Paste requires an entry in that editor's Session. Item-only Copy and mask-point clipboard
+remain unavailable. Eligibility and draft preflight belong to
+[frame input](../editor/frame/input/README.md#clipboard-actions).

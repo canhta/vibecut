@@ -31,13 +31,15 @@ impl Editor {
         &mut self,
         paint: impl FnOnce(&mut timeline::State, &Context<'_>) -> Vec<timeline::Action>,
     ) {
-        let mut state = std::mem::take(&mut self.timeline);
-        let mut cx = self.context();
-        cx.disabled = timeline::TOOLBAR_ACTIONS
+        let disabled = timeline::TOOLBAR_ACTIONS
             .iter()
             .copied()
+            .chain(["edit.copy", "edit.paste"])
             .filter(|id| crate::actions::action(id).is_some() && !self.action_enabled(id))
             .collect();
+        let mut state = std::mem::take(&mut self.timeline);
+        let mut cx = self.context();
+        cx.disabled = disabled;
         cx.effect_targets = self.effect_drag.is_some().then(|| {
             self.session
                 .project()

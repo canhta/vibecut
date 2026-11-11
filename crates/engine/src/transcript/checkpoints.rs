@@ -24,7 +24,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     checkpoints: &mut usize,
 ) -> Result<ai::Recognition, EditError> {
     if hooks.cancelled() {
-        return Err(EditError::Cancelled);
+        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
     }
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
@@ -104,7 +104,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         }
     };
     if hooks.cancelled() {
-        return Err(EditError::Cancelled);
+        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
     }
     let Some(aligner) = providers.aligner_arc() else {
         return Ok(raw);
@@ -133,7 +133,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
 
 pub(super) fn provider_error(error: ai::Error) -> EditError {
     match error {
-        ai::Error::Cancelled => EditError::Cancelled,
+        ai::Error::Cancelled => EditError::Runtime(crate::RuntimeError::Cancelled),
         error => error.into(),
     }
 }
@@ -168,7 +168,7 @@ pub fn wait_for_job(
                     None => EditError::Invalid("job failed without diagnostics"),
                 });
             }
-            JobState::Cancelled => return Err(EditError::Cancelled),
+            JobState::Cancelled => return Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             _ => {
                 if cancel.cancelled() {
                     token.cancel();

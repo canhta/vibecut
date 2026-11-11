@@ -499,7 +499,7 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
             kind: project::TrackKind::Video,
         })?;
         target = Some(s.job_target());
-        Err(EditError::Cancelled)
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
     });
     assert!(result.is_err());
     assert!(

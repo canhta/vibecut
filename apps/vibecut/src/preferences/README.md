@@ -17,4 +17,6 @@ defaults with a `PreferenceIssue` warning; an unreadable document restores syste
 defaults without rewriting the bytes. Reads and writes share a 16 KiB budget, unknown
 keys are refused, and the lane map, colour list, section map, window map (64 entries)
 and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo and
-never touch project JSON.
+never touch project JSON. Ripple mode and keyframe lane visibility persist outside
+undo history, so entering an editing mode or opening its lanes cannot shadow the
+project edit's next Undo.

@@ -46,6 +46,11 @@ mod exit_codes {
                 5
             ),
             row!(E::Runtime(engine::RuntimeError::StorageFull), "rejected", 5),
+            row!(
+                E::Runtime(engine::RuntimeError::LoudnessStale),
+                "rejected",
+                5
+            ),
             row!(E::Runtime(engine::RuntimeError::NetworkTransient), "job", 7),
             row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
             row!(E::SchemaMismatch, "rejected", 5),
@@ -71,7 +76,7 @@ mod exit_codes {
                 "rejected",
                 5
             ),
-            row!(E::Cancelled, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::Cancelled), "job", 7),
             row!(E::Runtime(engine::RuntimeError::WorkerPanicked), "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
@@ -186,8 +191,27 @@ mod exit_codes {
                 assert_eq!(error.code(), ("job", 7));
             }
         }
-        let refusals: [(fn() -> engine::RuntimeError, &str); 3] = [
+        for depth in 0..=2 {
+            for composed in [false, true] {
+                let mut cause: Arc<dyn engine::Failure> = if composed {
+                    Arc::new(E::Runtime(engine::RuntimeError::Cancelled))
+                } else {
+                    Arc::new(engine::RuntimeError::Cancelled)
+                };
+                for _ in 0..depth {
+                    cause = Arc::new(E::Runtime(engine::RuntimeError::Failed(cause)));
+                }
+                let error = CliError::Job(cause);
+                assert_eq!(error.code(), ("job", 7));
+                assert_eq!(error.value()["message"], "job cancelled");
+            }
+        }
+        let refusals: [(fn() -> engine::RuntimeError, &str); 4] = [
             (|| engine::RuntimeError::CacheBusy, "cache is in use"),
+            (
+                || engine::RuntimeError::LoudnessStale,
+                "loudness gains are missing or measured for different audio; measure again",
+            ),
             (
                 || engine::RuntimeError::ModelResponse,
                 "model transfer response does not match the requested representation",

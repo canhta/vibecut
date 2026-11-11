@@ -93,6 +93,13 @@ one update per configured interval (minimum 10 ms, including stage changes); `ti
 changed snapshots, and terminal and cancelling states bypass the limit. Slow consumers cannot
 block workers.
 
+`Cancelled` owns the source-free, nontransient `job cancelled` diagnostic and
+`Cancelled` wire code. `JobContext::check_cancelled` and `begin_publication` return
+the runtime result; ordinary engine callbacks compose it through `EditError::Runtime`.
+Only that direct composed variant produces a Cancelled terminal state. Explicit
+`Failed` and recovery persistence wrappers retain their original causes and remain
+Failed, even when their delegated code is `Cancelled`.
+
 Cancellation is checked before execution and again before promoting success; late partial
 success is discarded. `JobContext::commit_publication` atomically seals cancellation before
 publishing an irreversible complete artifact and sets the Publish stage. A cancellation that
@@ -122,6 +129,11 @@ during a transaction and invalidates pre-save targets. Opening another Session g
 identity; a valid old artifact may stay cached without being applied.
 
 ## Render execution
+
+`admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or
+mismatched measured gains with code `Refused`, no source and no transience. Export
+submission composes this error before admitting any single- or multi-scene job;
+no target needs no measurement. The content key excludes the master fader.
 
 `submit_export` submits an immutable Project snapshot to the runner's export resource class.
 `JobContext` implements render's `ExecutionHooks`, leasing actual buffers from the shared

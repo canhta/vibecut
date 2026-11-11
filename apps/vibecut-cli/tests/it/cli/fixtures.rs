@@ -1,6 +1,6 @@
 //! Supplies native command fixtures through a shared test interface.
 mod project;
-pub(super) use project::{
+pub(crate) use project::{
     add_track, exec, info, new_project, overlay_project, overlay_project_color,
 };
 mod media;

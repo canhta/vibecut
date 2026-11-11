@@ -62,7 +62,7 @@ impl Cancellation {
     /// Refuse the next operation stage after cooperative cancellation.
     pub fn checkpoint(&self) -> Result<(), EditError> {
         if self.cancelled() {
-            Err(EditError::Cancelled)
+            Err(EditError::Runtime(crate::RuntimeError::Cancelled))
         } else {
             Ok(())
         }

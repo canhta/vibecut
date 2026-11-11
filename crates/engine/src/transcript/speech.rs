@@ -130,7 +130,9 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     }
     match extraction {
         Ok(()) => {}
-        Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+        Err(media::MediaError::Cancelled) => {
+            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+        }
         Err(error) => return Err(error.into()),
     }
     cancel.checkpoint()?;
@@ -234,7 +236,9 @@ impl Providers {
                         )
                         .map_err(|error| match error {
                             ai::Error::Unsupported => ProviderError::AutoLanguageUnsupported.into(),
-                            ai::Error::Cancelled => EditError::Cancelled,
+                            ai::Error::Cancelled => {
+                                EditError::Runtime(crate::RuntimeError::Cancelled)
+                            }
                             error => EditError::Ai(error),
                         })
                 }) {
@@ -254,7 +258,9 @@ impl Providers {
         }
         match result {
             Ok(()) => {}
-            Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+            Err(media::MediaError::Cancelled) => {
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            }
             Err(error) => return Err(error.into()),
         }
         cancel.checkpoint()?;

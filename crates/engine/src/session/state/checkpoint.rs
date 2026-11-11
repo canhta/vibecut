@@ -17,6 +17,7 @@ use std::{collections::VecDeque, sync::Arc};
 /// transactions use [`State::rewind`] instead, which keeps the ID counter
 /// because their children already returned IDs to the caller.
 pub(super) struct Checkpoint {
+    clipboard: Option<Arc<crate::KeyframeClipboard>>,
     metadata: project::Metadata,
     revision: Arc<Revision>,
     ledger_sequence: u64,
@@ -30,6 +31,7 @@ pub(super) struct Checkpoint {
 impl Checkpoint {
     pub(super) fn take(session: &Session) -> Self {
         let Session {
+            clipboard,
             metadata,
             protected: _,
             identity: _,
@@ -44,6 +46,7 @@ impl Checkpoint {
             ripple,
         } = session;
         Self {
+            clipboard: clipboard.clone(),
             metadata: metadata.clone(),
             revision: revision.clone(),
             ledger_sequence: ledger.sequence,
@@ -55,6 +58,11 @@ impl Checkpoint {
         }
     }
 
+    pub(super) fn identity_changed(&self, session: &Session) -> bool {
+        self.state.project.data().id != session.state.project.data().id
+            || self.state.project.data().current_scene_id
+                != session.state.project.data().current_scene_id
+    }
     /// The command replaced the project but left the revision it started with.
     pub(super) fn project_changed_at_same_revision(&self, session: &Session) -> bool {
         Arc::ptr_eq(&self.revision, &session.revision)
@@ -63,6 +71,7 @@ impl Checkpoint {
 
     pub(super) fn restore(self, session: &mut Session) {
         let Session {
+            clipboard,
             metadata,
             protected: _,
             identity: _,
@@ -76,6 +85,7 @@ impl Checkpoint {
             grouping: _,
             ripple,
         } = session;
+        *clipboard = self.clipboard;
         *metadata = self.metadata;
         *revision = self.revision;
         ledger.sequence = self.ledger_sequence;

@@ -215,12 +215,22 @@ pub struct ArtifactCache {
 }
 
 /// Shared by the writer and native model leases; the final logical owner unlocks.
-struct CacheLock(fs::File, fs::Metadata);
+struct CacheLock {
+    file: fs::File,
+    #[cfg(not(windows))]
+    directory: fs::Metadata,
+    #[cfg(windows)]
+    _directory: fs::File,
+    #[cfg(windows)]
+    directory_id: file_id::FileId,
+    #[cfg(windows)]
+    file_id: file_id::FileId,
+}
 impl Drop for CacheLock {
     fn drop(&mut self) {
         // Closing alone can retain flock through a concurrently spawned child's
         // inherited descriptor. Match the lock lifetime to our logical owners.
-        let _ = self.0.unlock();
+        let _ = self.file.unlock();
     }
 }
 /// Explicit pin: eviction/clear skips this entry until all leases are dropped.
@@ -293,8 +303,27 @@ impl ArtifactCache {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let root_lock = Arc::new(CacheLock(options.open(lock_path)?, fs::metadata(&root)?));
-        root_lock.0.try_lock().map_err(|e| match e {
+        #[cfg(windows)]
+        let directory = {
+            use std::os::windows::fs::OpenOptionsExt;
+            // Keep the original directory alive so its identity cannot recycle.
+            fs::File::options()
+                .access_mode(0)
+                .custom_flags(0x02000000) // FILE_FLAG_BACKUP_SEMANTICS
+                .open(&root)?
+        };
+        let root_lock = Arc::new(CacheLock {
+            file: options.open(&lock_path)?,
+            #[cfg(not(windows))]
+            directory: fs::metadata(&root)?,
+            #[cfg(windows)]
+            _directory: directory,
+            #[cfg(windows)]
+            directory_id: windows_file_identity(&root)?,
+            #[cfg(windows)]
+            file_id: windows_file_identity(&lock_path)?,
+        });
+        root_lock.file.try_lock().map_err(|e| match e {
             fs::TryLockError::WouldBlock => EditError::Runtime(crate::RuntimeError::CacheBusy),
             fs::TryLockError::Error(e) => EditError::Io(e),
         })?;
@@ -628,14 +657,34 @@ fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
             .is_some_and(|(a, b)| a == b)
     }
 }
+#[cfg(windows)]
+fn windows_file_identity(path: &Path) -> std::io::Result<file_id::FileId> {
+    let identity = file_id::get_high_res_file_id(path)?;
+    match identity {
+        file_id::FileId::HighRes { file_id, .. } if file_id != 0 => Ok(identity),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "cache filesystem does not supply stable file identity",
+        )),
+    }
+}
 fn check_root(root: &Path, lock: &CacheLock) -> Result<(), EditError> {
     let valid = || -> std::io::Result<bool> {
         let directory = fs::symlink_metadata(root)?;
         let named_lock = fs::symlink_metadata(root.join(".cache.lock"))?;
-        Ok(directory.file_type().is_dir()
-            && same_file(&directory, &lock.1)
-            && named_lock.file_type().is_file()
-            && same_file(&named_lock, &lock.0.metadata()?))
+        if !directory.file_type().is_dir() || !named_lock.file_type().is_file() {
+            return Ok(false);
+        }
+        #[cfg(windows)]
+        {
+            Ok(windows_file_identity(root)? == lock.directory_id
+                && windows_file_identity(&root.join(".cache.lock"))? == lock.file_id)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(same_file(&directory, &lock.directory)
+                && same_file(&named_lock, &lock.file.metadata()?))
+        }
     };
     match valid() {
         Ok(true) => Ok(()),
@@ -680,7 +729,9 @@ impl CacheMaintenance {
                 continue;
             }
             if !stopped && cancelled() {
-                report.cause.get_or_insert(EditError::Cancelled);
+                report
+                    .cause
+                    .get_or_insert(EditError::Runtime(crate::RuntimeError::Cancelled));
                 stopped = true;
             }
             let measurement = (|| -> Result<Option<u64>, EditError> {
@@ -836,7 +887,7 @@ mod tests {
         let owner = cache.root_lock.clone();
         // A duplicated open file description pins the same flock, just as a
         // concurrent fork can before its child execs or closes the descriptor.
-        let retained = owner.0.try_clone().unwrap();
+        let retained = owner.file.try_clone().unwrap();
         drop(cache);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),

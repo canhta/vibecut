@@ -35,6 +35,9 @@ blake3.workspace = true
 text.workspace = true
 fs4 = "1.1.0"
 
+[target.'cfg(windows)'.dependencies]
+file-id = "0.2.3"
+
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true

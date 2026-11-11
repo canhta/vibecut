@@ -725,7 +725,7 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &cancel
         ),
-        Err(engine::EditError::Cancelled)
+        Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(cache.clear().unwrap(), 0);
@@ -1088,7 +1088,10 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
     )
     .unwrap_err();
     thread.join().unwrap();
-    assert!(matches!(error, engine::EditError::Cancelled));
+    assert!(matches!(
+        error,
+        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+    ));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!request.srt.unwrap().exists());
 }
@@ -1133,7 +1136,10 @@ fn cancellation_before_export_preserves_the_existing_output() {
         &cancel,
     )
     .unwrap_err();
-    assert!(matches!(error, engine::EditError::Cancelled));
+    assert!(matches!(
+        error,
+        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+    ));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep this file");
 }
 
@@ -1222,7 +1228,10 @@ fn operation_cancellation_stops_a_running_translation_job() {
     )
     .unwrap_err();
     thread.join().unwrap();
-    assert!(matches!(error, engine::EditError::Cancelled));
+    assert!(matches!(
+        error,
+        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+    ));
     assert!(!request.srt.unwrap().exists());
 }
 
@@ -1263,7 +1272,10 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
         &cancel,
     )
     .unwrap_err();
-    assert!(matches!(error, engine::EditError::Cancelled));
+    assert!(matches!(
+        error,
+        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+    ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert!(!request.srt.unwrap().exists());
 }

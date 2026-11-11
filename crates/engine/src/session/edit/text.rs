@@ -198,6 +198,7 @@ pub(super) fn import_captions(
         next,
         sources,
         copied_text_bytes,
+        None,
     )?
     .into_data();
     let target = match track {
@@ -226,6 +227,7 @@ pub(super) fn import_captions(
                 next,
                 sources,
                 copied_text_bytes,
+                None,
             )?
             .into_data();
             created
@@ -256,6 +258,7 @@ pub(super) fn import_captions(
         next,
         sources,
         copied_text_bytes,
+        None,
     )?
     .into_data();
     // Imported content must survive a save: a result that cannot be encoded

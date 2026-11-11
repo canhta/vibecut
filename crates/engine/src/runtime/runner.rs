@@ -124,14 +124,14 @@ impl JobContext {
     }
     /// Atomically close cancellation before one irreversible output publication.
     /// Late cancel requests are ignored; failed publication still returns its error.
-    pub fn begin_publication(&self) -> Result<(), EditError> {
+    pub fn begin_publication(&self) -> RuntimeResult<()> {
         match self
             .cancel
             .0
             .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
         {
             Ok(_) | Err(2) => Ok(()),
-            _ => Err(EditError::Cancelled),
+            _ => Err(RuntimeError::Cancelled),
         }
     }
     pub fn cancelled(&self) -> bool {
@@ -140,9 +140,9 @@ impl JobContext {
     pub(crate) fn media_cancel_flag(&self) -> Arc<AtomicBool> {
         self.cancel.1.clone()
     }
-    pub fn check_cancelled(&self) -> Result<(), EditError> {
+    pub fn check_cancelled(&self) -> RuntimeResult<()> {
         if self.cancelled() {
-            Err(EditError::Cancelled)
+            Err(RuntimeError::Cancelled)
         } else {
             Ok(())
         }
@@ -406,7 +406,7 @@ impl JobRunner {
                 .unwrap_or(Err(EditError::Runtime(crate::RuntimeError::WorkerPanicked)));
             drop(_work);
             let outcome = if pending.context.cancelled() {
-                Err(EditError::Cancelled)
+                Err(EditError::Runtime(crate::RuntimeError::Cancelled))
             } else {
                 outcome
             };
@@ -483,7 +483,11 @@ impl JobRunner {
                 break;
             };
             if pending.context.cancelled() {
-                self.finish(pending, Err(EditError::Cancelled), None);
+                self.finish(
+                    pending,
+                    Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
+                    None,
+                );
                 continue;
             }
             if pending.ready > now
@@ -602,11 +606,12 @@ impl JobRunner {
                 }
             }
             Err(error) => {
-                pending.snapshot.state = if matches!(error, EditError::Cancelled) {
-                    JobState::Cancelled
-                } else {
-                    JobState::Failed
-                };
+                pending.snapshot.state =
+                    if matches!(error, EditError::Runtime(crate::RuntimeError::Cancelled)) {
+                        JobState::Cancelled
+                    } else {
+                        JobState::Failed
+                    };
                 pending.snapshot.error = Some(Arc::new(error));
             }
         }

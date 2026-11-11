@@ -44,6 +44,14 @@ impl Session {
         caller: &Caller<'_>,
     ) -> Result<ControlResult> {
         match command {
+            Command::ReadClipboard {} => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                Ok(ControlResult::Clipboard {
+                    payload: self.clipboard_payload(),
+                })
+            }
             Command::Inspect {} => {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);

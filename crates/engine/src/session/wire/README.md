@@ -17,3 +17,8 @@ its code recursively, as does recovery's erased persistence cause. Delegating a 
 make a wrapper transient: only direct network and selected AI failures qualify, subject to
 runtime's existing retry/publication gates. Refined failure classes change envelopes and the
 catalog digest within the current API; consumers use the current digest.
+
+`ControlResult::Clipboard` returns the nullable bounded snapshot only on read responses.
+Static catalog limits include clipboard keys, paths and compact bytes; the aggregate
+explicit payload bytes in an edit tree share the same cap before candidate cloning.
+Copy revision and lifetime rules: [clipboard](../README.md#keyframe-clipboard).

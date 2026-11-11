@@ -183,7 +183,9 @@ fn wait_for_job(
                 });
             }
             JobState::Cancelled => {
-                return Err(CliError::Job(Arc::new(EditError::Cancelled)));
+                return Err(CliError::Job(Arc::new(EditError::Runtime(
+                    engine::RuntimeError::Cancelled,
+                ))));
             }
             _ => std::thread::sleep(Duration::from_millis(5)),
         }

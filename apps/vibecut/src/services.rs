@@ -5,3 +5,4 @@ pub mod crop;
 pub mod playback;
 pub mod preview;
 pub mod progress;
+pub mod text_clipboard;

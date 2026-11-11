@@ -107,7 +107,9 @@ pub(in crate::editor) fn set_item_field(
     field: &str,
     value: &str,
 ) -> Result<()> {
-    if field == "opacity" && read::channel_has_keys(desk.view().session.project(), item, field) {
+    if (field == "opacity" || matches!(field, "params.strokeWidth" | "params.cornerRadius"))
+        && read::channel_has_keys(desk.view().session.project(), item, field)
+    {
         let (start, end) = read::range_of(desk.view().session.project(), item)
             .ok_or(Error::Invalid("opacity target"))?;
         let at = desk.view().playhead;
@@ -118,7 +120,17 @@ pub(in crate::editor) fn set_item_field(
             .trim()
             .parse::<f64>()
             .ok()
-            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            .filter(|value| {
+                value.is_finite()
+                    && (0.0..=if field == "opacity" {
+                        1.
+                    } else if field == "params.strokeWidth" {
+                        64.
+                    } else {
+                        50.
+                    })
+                        .contains(value)
+            })
             .ok_or(Error::Invalid("opacity"))?;
         return set_keyframe_at(desk, item, field, at.saturating_sub(start), value);
     }
@@ -130,6 +142,28 @@ pub(in crate::editor) fn set_item_field(
         let (_, maintain_pitch, _) =
             read::retime_of(desk.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
         return super::speed::set_speed(desk, item, speed, maintain_pitch);
+    }
+    if matches!(field, "params.strokeWidth" | "params.cornerRadius") {
+        let max = if field == "params.strokeWidth" {
+            64.
+        } else {
+            50.
+        };
+        let value = value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && (0. ..=max).contains(v))
+            .ok_or(Error::Invalid("graphic scalar"))?;
+        desk.apply_result(
+            engine::Command::SetAnimatedParam {
+                item,
+                path: project::AnimationPath::new(field)?,
+                param: project::Param::new(project::ParamValue::Scalar(value))?,
+            },
+            false,
+        )?;
+        return Ok(());
     }
     let patch = item_patch(field, value)?;
     desk.apply_result(engine::Command::SetItemField { item, patch }, false)?;

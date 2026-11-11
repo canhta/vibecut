@@ -913,3 +913,96 @@ fn export_memory_pressure_cannot_consume_another_windows_autosave_allowance() {
     drop(caches);
     drop(export);
 }
+
+#[test]
+fn workspace_editor_raw_text_paste_edits_rename_without_dispatching_clipboard_actions() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
+    h.run_steps(3);
+    let old_name = h
+        .state()
+        .focused_editor()
+        .unwrap()
+        .session
+        .project()
+        .data()
+        .name
+        .as_str()
+        .to_owned();
+    let history = h.state().focused_editor().unwrap().session.history_len();
+    h.get(By::new().predicate(|n| n.author_id() == Some("project.rename")))
+        .click();
+    h.run_steps(2);
+    h.get(By::new().predicate(|n| n.author_id() == Some("project.rename.input")))
+        .click();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
+    h.state_mut().text_clipboard =
+        vibecut::services::text_clipboard::TextClipboard::new(|| Some("Tiếng Việt".into()));
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::V,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        !h.output()
+            .viewport_output
+            .values()
+            .flat_map(|v| &v.commands)
+            .any(|c| matches!(c, egui::ViewportCommand::RequestPaste))
+    );
+    h.run_steps(2);
+    assert_eq!(
+        h.state()
+            .focused_editor()
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        old_name
+    );
+    assert_eq!(
+        h.state().focused_editor().unwrap().session.history_len(),
+        history
+    );
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(
+        h.state()
+            .focused_editor()
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "Tiếng Việt"
+    );
+    assert!(
+        !h.state()
+            .focused_editor()
+            .unwrap()
+            .session
+            .clipboard_has_entry()
+    );
+}

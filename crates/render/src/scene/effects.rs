@@ -951,7 +951,13 @@ fn streak_blur(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
     let [gx, gy] = geometry.clip_pixel_scale();
     let dx = 2.0 * length * a.sin() * gx;
     let dy = -2.0 * length * a.cos() * gy;
-    let span = dx.hypot(dy);
+    // Equal gains cancel direction analytically. Reconstructing this length
+    // from rounded trig components can cross an integer and add a whole tap.
+    let span = if gx == gy {
+        2.0 * length * gx
+    } else {
+        dx.hypot(dy)
+    };
     if !span.is_finite() || !((dx as f32).is_finite() && (dy as f32).is_finite()) {
         return Err(Error::Invalid("effect spatial extent"));
     }
