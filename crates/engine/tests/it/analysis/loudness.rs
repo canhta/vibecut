@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::jobs::*;
 use engine::loudness::{LoudnessResult, admit, decode, submit_loudness};
-use engine::{ByteBudget, EditError, Session};
+use engine::{ByteBudget, Error as EngineError, Session};
 use std::{
     sync::{
         Arc,
@@ -124,15 +124,17 @@ fn runner(budget: &ByteBudget) -> JobRunner {
     .unwrap()
 }
 
-fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EditError> {
+fn finish(runner: &mut JobRunner, job: JobId) -> Result<LoudnessResult, EngineError> {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         runner.tick().unwrap();
         let snapshot = runner.snapshot(job).unwrap();
         match snapshot.state {
-            JobState::Cancelled => return Err(EditError::Runtime(engine::RuntimeError::Cancelled)),
+            JobState::Cancelled => {
+                return Err(EngineError::Runtime(engine::RuntimeError::Cancelled));
+            }
             JobState::Failed => {
-                return Err(EditError::Runtime(engine::RuntimeError::Failed(
+                return Err(EngineError::Runtime(engine::RuntimeError::Failed(
                     snapshot.error.unwrap(),
                 )));
             }
@@ -148,7 +150,7 @@ fn submit(
     runner: &mut JobRunner,
     session: &Session,
     tone: (f32, &Arc<AtomicUsize>, bool),
-) -> Result<JobId, EditError> {
+) -> Result<JobId, EngineError> {
     let (level, reads, fail) = tone;
     let reads = reads.clone();
     submit_loudness(runner, session.project().clone(), move || {
@@ -245,14 +247,14 @@ fn measurement_job_refuses_unset_targets_fails_typed_and_cancels() {
     let failing = submit(&mut runner, &session, (0.1, &reads, true)).unwrap();
     assert!(matches!(
         finish(&mut runner, failing),
-        Err(EditError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Render(render::Error::Invalid(_))))
+        Err(EngineError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Render(render::Error::Invalid(_))))
     ));
 
     let cancelled = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();
     runner.cancel_job(cancelled).unwrap();
     assert!(matches!(
         finish(&mut runner, cancelled),
-        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }

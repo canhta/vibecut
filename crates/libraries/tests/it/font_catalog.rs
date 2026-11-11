@@ -10,7 +10,7 @@ use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::FontError;
 use engine::control::{FontEntry, FontLoadState, FontOrigin, FontState};
 use engine::{
-    ByteBudget, EditError,
+    ByteBudget, Error as EngineError,
     jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::fonts::{
@@ -351,7 +351,7 @@ fn custom_import_copies_valid_formats_and_deduplicates_without_source_dependency
         let mut runner = runner();
         assert!(matches!(
             store.submit_import(&mut runner, input.clone(), false),
-            Err(EditError::Control(
+            Err(EngineError::Control(
                 engine::control::ControlError::Permission
             ))
         ));
@@ -499,8 +499,8 @@ fn custom_import_refuses_hostile_data_conflicts_and_cancel_without_publication()
     assert_eq!(entries_below(&root), before);
     let error = runner.snapshot(job).unwrap().error.unwrap();
     assert!(matches!(
-        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EditError>(),
-        Some(EditError::Font(FontError::Conflict))
+        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EngineError>(),
+        Some(EngineError::Font(FontError::Conflict))
     ));
     runner.shutdown();
 }
@@ -551,7 +551,7 @@ fn custom_import_cancels_during_source_read_and_preserves_foreign_store_entries(
     wait_started(&mut runner, &started_rx);
     assert!(matches!(
         store.submit_import(&mut runner, PathBuf::from("second.ttf"), true),
-        Err(EditError::Font(FontError::ImportActive))
+        Err(EngineError::Font(FontError::ImportActive))
     ));
     token.cancel();
     release.send(()).unwrap();
@@ -587,8 +587,8 @@ fn custom_import_accented_family_conflicts_and_resolution_share_one_identity() {
     assert_eq!(finish(&mut runner, job), JobState::Failed);
     let error = runner.snapshot(job).unwrap().error.unwrap();
     assert!(matches!(
-        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EditError>(),
-        Some(EditError::Font(FontError::Conflict))
+        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EngineError>(),
+        Some(EngineError::Font(FontError::Conflict))
     ));
     assert_eq!(entries_below(&root), before);
     assert_eq!(
@@ -650,7 +650,7 @@ fn custom_store_metadata_quotas_bound_reopen_before_face_reads() {
             assert!(
                 matches!(
                     result,
-                    Err(EditError::Control(engine::control::ControlError::Limit))
+                    Err(EngineError::Control(engine::control::ControlError::Limit))
                 ),
                 "{label}"
             );
@@ -825,7 +825,7 @@ fn system_fonts_load_lazily_and_unknown_families_fall_back_deterministically() {
     fs::write(&file, b"damaged").unwrap();
     assert!(matches!(
         store.load("VibeCut Fixture Sans"),
-        Err(EditError::Font(FontError::Face(
+        Err(EngineError::Font(FontError::Face(
             text::FontError::Unreadable
         )))
     ));
@@ -860,7 +860,10 @@ fn system_fonts_load_lazily_and_unknown_families_fall_back_deterministically() {
         assert!(faces.iter().all(|face| *face == inter));
     }
     for hostile in ["", "  ", &"x".repeat(257)] {
-        assert!(matches!(store.load(hostile), Err(EditError::Invalid(_))));
+        assert!(matches!(
+            store.load(hostile),
+            Err(EngineError::Edit(engine::EditError::Invalid(_)))
+        ));
     }
 }
 
@@ -1011,14 +1014,14 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
 
     assert!(matches!(
         store.submit_download(&mut runner, "Gate Sample", false),
-        Err(EditError::Providers(
+        Err(EngineError::Providers(
             engine::providers::Error::ConsentRequired
         ))
     ));
     for refused in ["Inter", "Not In Catalog", ""] {
         assert!(matches!(
             store.submit_download(&mut runner, refused, true),
-            Err(EditError::Font(FontError::NotDownloadable))
+            Err(EngineError::Font(FontError::NotDownloadable))
         ));
     }
     assert_eq!(server.calls.load(Ordering::SeqCst), 0);
@@ -1047,14 +1050,14 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| -> Result<Vec<u8>, engine::EditError> { panic!("cancelled filler ran") },
+                |_| -> Result<Vec<u8>, engine::Error> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(cancel);
     }
     assert!(matches!(
         store.submit_download(&mut runner, "Gate Sample", true),
-        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+        Err(EngineError::Runtime(engine::RuntimeError::QueueFull))
     ));
     assert_eq!(runner.counts().0, 16);
     assert_eq!(server.calls.load(Ordering::SeqCst), 0);
@@ -1077,7 +1080,7 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
     wait_started(&mut runner, &started_rx);
     assert!(matches!(
         store.submit_download(&mut runner, "gate sample", true),
-        Err(EditError::Font(FontError::DownloadActive))
+        Err(EngineError::Font(FontError::DownloadActive))
     ));
     drop(release);
     assert_eq!(finish(&mut runner, id), JobState::Completed);
@@ -1179,8 +1182,8 @@ fn failed_or_cancelled_downloads_leave_no_cache_entry() {
         assert_eq!(raw.transient(), network, "{label}");
         if network {
             assert!(matches!(
-                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
-                Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
+                Some(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
             ));
             assert_eq!(raw.code(), engine::control::ErrorCode::Job);
             assert!(raw.source().is_none());
@@ -1356,7 +1359,9 @@ fn native_cache_child() {
     if mode == "unavailable" {
         assert!(matches!(
             FontStore::native(),
-            Err(EditError::Unsupported("OS cache location unavailable"))
+            Err(EngineError::Edit(engine::EditError::Unsupported(
+                "OS cache location unavailable"
+            )))
         ));
         return;
     }
@@ -1390,7 +1395,7 @@ fn native_cache_child() {
     };
     #[cfg(unix)]
     std::os::unix::fs::symlink(&fonts, &fonts).unwrap();
-    assert!(matches!(store.load("Lobster"), Err(EditError::Io(_))));
+    assert!(matches!(store.load("Lobster"), Err(EngineError::Io(_))));
     #[cfg(windows)]
     {
         drop(hold);

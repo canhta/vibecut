@@ -6,7 +6,8 @@ use ai::{
     },
 };
 use engine::{
-    AnalysisRequest, AnalysisSettings, ByteBudget, EditError, Scene, SpeakerRef, SpeakerState,
+    AnalysisRequest, AnalysisSettings, ByteBudget, Error as EngineError, Scene, SpeakerRef,
+    SpeakerState,
     cache::ArtifactCache,
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
 };
@@ -333,7 +334,7 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
     let counts = runner.counts();
     assert!(matches!(
         changed.submit(&mut runner, &mut cache, Detector::normal(calls.clone())),
-        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     assert_eq!(calls.load(Ordering::SeqCst), before);
     assert_eq!(runner.counts(), counts);
@@ -634,7 +635,7 @@ fn short_and_audio_absent_evidence_stays_unknown_and_pre_cancel_never_runs() {
     assert_eq!(calls.load(Ordering::SeqCst), before);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
     ));
 }
 
@@ -741,7 +742,7 @@ fn cache_pressure_keeps_complete_output_for_finish_retry() {
         .unwrap();
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Runtime(engine::RuntimeError::BudgetFull))
+        Err(EngineError::Runtime(engine::RuntimeError::BudgetFull))
     ));
     assert!(runner.output_bytes(job.id).is_some());
     assert!(cache.is_empty());
@@ -811,7 +812,7 @@ fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
         .unwrap();
     assert!(matches!(
         request.submit(&mut runner, &mut cache, Detector::normal(calls)),
-        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
 }
 

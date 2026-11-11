@@ -333,9 +333,9 @@ impl ExportDialog {
                 }
                 self.cancelling = false;
                 if let Some(error) = &failure
-                    && let Some(engine::EditError::Render(render::Error::Unavailable(items))) =
+                    && let Some(engine::Error::Render(render::Error::Unavailable(items))) =
                         (error.as_ref() as &(dyn std::error::Error + 'static))
-                            .downcast_ref::<engine::EditError>()
+                            .downcast_ref::<engine::Error>()
                     && self.unavailable != *items
                 {
                     self.consent = false;
@@ -921,10 +921,10 @@ fn export_failure(error: &(dyn engine::Failure + 'static)) -> Text {
             _ => Text::ExportFailure,
         };
     }
-    let Some(error) = cause.downcast_ref::<engine::EditError>() else {
+    let Some(error) = cause.downcast_ref::<engine::Error>() else {
         return Text::ExportFailure;
     };
-    use engine::{EditError as E, RuntimeError as B};
+    use engine::{Error as E, RuntimeError as B};
     use render::Error as R;
     match error {
         E::Runtime(B::BudgetFull | B::ArtifactTooLarge)

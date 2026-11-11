@@ -1,6 +1,6 @@
 //! Applies selected translations through bounded attempts.
 use crate::{
-    EditError, Session,
+    Error as EngineError, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
 };
@@ -20,7 +20,7 @@ use std::{
 /// Bounded provenance for the complete resolved provider, independent of model-ID length.
 pub(crate) fn translation_reference(config: &ai::ProviderConfig) -> crate::Result<NfcText> {
     let identity = serde_json::to_vec(&("caption-translation-v1", config))
-        .map_err(|_| EditError::Invalid("translation reference"))?;
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("translation reference")))?;
     Ok(format!("translation:{}", blake3::hash(&identity)).into())
 }
 
@@ -36,13 +36,15 @@ pub fn window(
     force: bool,
 ) -> crate::Result<TranslationWindow> {
     if selected.is_empty() || selected.len() > ai::MAX_SEGMENTS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
     let ids: BTreeSet<_> = selected.iter().collect();
     if ids.len() != selected.len() {
-        return Err(EditError::Invalid("duplicate translation selection"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "duplicate translation selection",
+        )));
     }
     let item = session
         .project()
@@ -52,13 +54,17 @@ pub fn window(
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
-        .ok_or(EditError::NoItem(item))?;
+        .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
     let ItemParams::Caption(params) = &item.content else {
-        return Err(EditError::Invalid("translation requires caption item"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "translation requires caption item",
+        )));
     };
     let cues = &params.cues.cues;
     if ids.iter().any(|id| !cues.iter().any(|c| &c.id == *id)) {
-        return Err(EditError::Invalid("missing selected cue"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "missing selected cue",
+        )));
     }
     let mut segments = Vec::new();
     let mut first = None;
@@ -69,13 +75,17 @@ pub fn window(
             continue;
         }
         if source.as_ref().is_some_and(|s| s != &cue.source_lang) {
-            return Err(EditError::Invalid("mixed translation source languages"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "mixed translation source languages",
+            )));
         }
         source = Some(cue.source_lang.clone());
         let text = cue
             .texts
             .get(&cue.source_lang)
-            .ok_or(EditError::Invalid("missing source text"))?
+            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                "missing source text",
+            )))?
             .text
             .clone();
         segments.push(ai::TranslationSegment {
@@ -85,8 +95,12 @@ pub fn window(
         first.get_or_insert(index);
         last = index;
     }
-    let first = first.ok_or(EditError::Invalid("no unprotected translation selection"))?;
-    let source = source.ok_or(EditError::Invalid("translation source"))?;
+    let first = first.ok_or(EngineError::Edit(crate::EditError::Invalid(
+        "no unprotected translation selection",
+    )))?;
+    let source = source.ok_or(EngineError::Edit(crate::EditError::Invalid(
+        "translation source",
+    )))?;
     let context = |index: usize| {
         cues.get(index)
             .filter(|c| c.source_lang == source)
@@ -139,7 +153,7 @@ impl TranslationRun {
     ) -> crate::Result<Arc<Self>> {
         window.validate()?;
         if !(1..=10).contains(&max_attempts) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -152,9 +166,11 @@ impl TranslationRun {
             .iter()
             .flat_map(|t| &t.items)
             .find(|i| i.id == target.item)
-            .ok_or(EditError::NoItem(target.item))?;
+            .ok_or(EngineError::Edit(crate::EditError::NoItem(target.item)))?;
         let ItemParams::Caption(params) = &item.content else {
-            return Err(EditError::Invalid("translation requires caption item"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "translation requires caption item",
+            )));
         };
         if window.segments.iter().any(|segment| {
             !params.cues.cues.iter().any(|cue| {
@@ -166,7 +182,7 @@ impl TranslationRun {
                         .is_some_and(|text| text.text == segment.text)
             })
         }) {
-            return Err(EditError::Session(crate::SessionError::StaleResult));
+            return Err(EngineError::Session(crate::SessionError::StaleResult));
         }
         let payload = window.consent_text()?;
         if scope.texts != [payload]
@@ -206,7 +222,7 @@ impl TranslationRun {
     /// retry; Schema and transient transport errors use its bounded backoff policy.
     pub fn run(&self, hooks: &dyn ExecutionHooks) -> crate::Result<Vec<u8>> {
         if hooks.cancelled() {
-            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
         }
         self.attempts
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
@@ -222,8 +238,11 @@ impl TranslationRun {
             },
             hooks,
         )?;
-        serde_json::to_vec(&output)
-            .map_err(|_| EditError::Invalid("translation result serialization"))
+        serde_json::to_vec(&output).map_err(|_| {
+            EngineError::Edit(crate::EditError::Invalid(
+                "translation result serialization",
+            ))
+        })
     }
     pub fn submit(
         self: &Arc<Self>,

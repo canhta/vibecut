@@ -1,5 +1,5 @@
 //! Presents explicit upload consent scope.
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
 use serde_json::{Value, json};
 use std::io;
@@ -18,13 +18,13 @@ impl CliConsent {
     }
 }
 impl ConsentPrompt for CliConsent {
-    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), EditError> {
+    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), EngineError> {
         if !self.accept_unknown_price {
             return Err(ai::Error::Cost.into());
         }
         self.approve(request)
     }
-    fn approve(&self, request: &UploadRequest) -> Result<(), EditError> {
+    fn approve(&self, request: &UploadRequest) -> Result<(), EngineError> {
         let operation = match request.operation {
             CatalogOperation::Transcribe => "transcribe",
             CatalogOperation::Translate => "translate",
@@ -102,7 +102,7 @@ mod tests {
         };
         assert!(matches!(
             CliConsent::new(true, false).approve_unknown_price(&request),
-            Err(EditError::Ai(ai::Error::Cost))
+            Err(EngineError::Ai(ai::Error::Cost))
         ));
         assert!(
             CliConsent::new(false, true)

@@ -1,5 +1,5 @@
 //! Builds a project session around a cue set.
-use crate::{Command, EditError, NewItem, Outcome, Session};
+use crate::{Command, Error as EngineError, NewItem, Outcome, Session};
 use captions::{Cue, CueTrack};
 use media::SourceAsset;
 use project::{Animations, CaptionParams, ItemParams, Project, ProjectId, TrackId, TrackKind};
@@ -12,7 +12,7 @@ pub fn build_session(
     duration: Tick,
     with_video: bool,
     portrait: Option<bool>,
-) -> Result<Session, EditError> {
+) -> Result<Session, EngineError> {
     let mut data = Project::empty(ProjectId(1), "Subtitles".into())?.into_data();
     if with_video
         && let Some(video) = asset
@@ -83,7 +83,7 @@ pub fn build_session(
     Ok(session)
 }
 
-fn track_id(outcome: Outcome) -> Result<TrackId, EditError> {
+fn track_id(outcome: Outcome) -> Result<TrackId, EngineError> {
     outcome
         .created
         .into_iter()
@@ -91,9 +91,11 @@ fn track_id(outcome: Outcome) -> Result<TrackId, EditError> {
             crate::CreatedId::Track(id) => Some(id),
             _ => None,
         })
-        .ok_or(EditError::Invalid("track was not created"))
+        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            "track was not created",
+        )))
 }
-pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
+pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, EngineError> {
     session
         .project()
         .data()
@@ -104,5 +106,7 @@ pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, Edit
         .flat_map(|track| &track.items)
         .find(|item| matches!(item.content, ItemParams::Caption(_)))
         .map(|item| item.id)
-        .ok_or(EditError::Invalid("missing caption item"))
+        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            "missing caption item",
+        )))
 }

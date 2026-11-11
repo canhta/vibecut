@@ -1,7 +1,7 @@
 //! Prepares ordered-segment short projects.
 use super::{
     Arc, CaptionParams, ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath,
-    CueTrack, EditError, Error, Item, ItemId, ItemParams, MAX_BATCH_CLIPS, MAX_BATCH_CUE_BYTES,
+    CueTrack, EngineError, Error, Item, ItemId, ItemParams, MAX_BATCH_CLIPS, MAX_BATCH_CUE_BYTES,
     MAX_CLIP_SEGMENTS, Mutex, NameSet, Options, PreparedClip, Project, ProjectData, Published,
     Tick, Timeline, Track, TrackId, TrackKind, VideoParams, extension, job_key, name_base,
 };
@@ -16,14 +16,16 @@ impl ClipBatch {
             .assets
             .iter()
             .find(|asset| asset.id() == request.asset)
-            .ok_or(EditError::Invalid("clip source asset"))?;
+            .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                "clip source asset",
+            )))?;
         if !asset
             .probe()
             .streams
             .iter()
             .any(|stream| stream.kind == media::StreamKind::Video)
         {
-            return Err(EditError::Invalid("clip source media").into());
+            return Err(EngineError::Edit(engine::EditError::Invalid("clip source media")).into());
         }
         let options = Options {
             asset,
@@ -41,7 +43,7 @@ impl ClipBatch {
         let mut clips = Vec::new();
         clips
             .try_reserve_exact(request.shorts.len())
-            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
         for (index, short) in request.shorts.iter().enumerate() {
             clips.push(prepare_clip(
                 source,
@@ -58,23 +60,33 @@ impl ClipBatch {
     }
 }
 
-fn validate_request(request: &ClipBatchRequest) -> Result<(), EditError> {
+fn validate_request(request: &ClipBatchRequest) -> Result<(), EngineError> {
     if request.shorts.is_empty() || request.shorts.len() > MAX_BATCH_CLIPS {
-        return Err(EditError::Invalid("clip batch size"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip batch size",
+        )));
     }
     if !request.directory.is_dir() {
-        return Err(EditError::Invalid("clip output directory"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip output directory",
+        )));
     }
     if request.max_output_bytes == 0 || request.max_output_bytes > (1 << 40) {
-        return Err(EditError::Invalid("clip output byte ceiling"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip output byte ceiling",
+        )));
     }
     if request.languages.len() > 2
         || (request.languages.len() == 2 && request.languages.first() == request.languages.get(1))
     {
-        return Err(EditError::Invalid("clip caption languages"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip caption languages",
+        )));
     }
     if !request.subtitle_formats.is_empty() && request.languages.is_empty() {
-        return Err(EditError::Invalid("clip subtitle languages"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip subtitle languages",
+        )));
     }
     for (index, format) in request.subtitle_formats.iter().enumerate() {
         if request
@@ -82,7 +94,9 @@ fn validate_request(request: &ClipBatchRequest) -> Result<(), EditError> {
             .get(..index)
             .is_some_and(|earlier| earlier.contains(format))
         {
-            return Err(EditError::Invalid("clip subtitle formats"));
+            return Err(EngineError::Edit(engine::EditError::Invalid(
+                "clip subtitle formats",
+            )));
         }
     }
     Ok(())
@@ -110,11 +124,11 @@ fn prepare_clip(
     let mut ranges = Vec::new();
     ranges
         .try_reserve_exact(short.segments.len())
-        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
     let mut starts = Vec::new();
     starts
         .try_reserve_exact(short.segments.len())
-        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
     let mut cursor = Tick::ZERO;
     for segment in &short.segments {
         let range = segment.range;
@@ -132,7 +146,7 @@ fn prepare_clip(
         starts.push(cursor);
         cursor = cursor
             .checked_add(range.duration())
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         ranges.push(range);
     }
     let mut ordered = ranges.clone();
@@ -150,7 +164,7 @@ fn prepare_clip(
     let mut video_items = Vec::new();
     video_items
         .try_reserve_exact(ranges.len())
-        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
     for (range, start) in ranges.iter().zip(&starts) {
         video_items.push(Item {
             hidden: false,
@@ -173,7 +187,7 @@ fn prepare_clip(
         });
         next_item = next_item
             .checked_add(1)
-            .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
+            .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
     }
     let mut caption_items = Vec::new();
     let mut sidecar_bytes = 0u64;
@@ -182,8 +196,8 @@ fn prepare_clip(
     } else {
         for (segment, start) in short.segments.iter().zip(&starts) {
             let mapping = captions::EditMapping::new(vec![(segment.range, segment.range.start())])
-                .map_err(Error::kernel)?;
-            let clipped = mapping.map_cues(options.cues).map_err(Error::kernel)?;
+                .map_err(Error::engine)?;
+            let clipped = mapping.map_cues(options.cues).map_err(Error::engine)?;
             for cue in &clipped.cues {
                 for language in options.languages {
                     if !cue.texts.contains_key(language) {
@@ -195,10 +209,10 @@ fn prepare_clip(
             *cue_total = cue_total
                 .checked_add(bytes)
                 .filter(|total| *total <= MAX_BATCH_CUE_BYTES)
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
             sidecar_bytes = sidecar_bytes
                 .checked_add(bytes)
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
             if clipped.cues.is_empty() {
                 continue;
             }
@@ -217,17 +231,17 @@ fn prepare_clip(
             });
             next_item = next_item
                 .checked_add(1)
-                .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
+                .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
         }
         Some(TrackId(3))
     };
     if !options.formats.is_empty() {
         let formats = u64::try_from(options.formats.len())
-            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
         sidecar_bytes = sidecar_bytes
             .checked_mul(16)
             .and_then(|bytes| bytes.checked_add(4096u64.checked_mul(formats)?))
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
     } else {
         sidecar_bytes = 0;
     }
@@ -235,7 +249,7 @@ fn prepare_clip(
     timeline
         .overlays
         .try_reserve_exact(usize::from(caption_track.is_some()))
-        .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
     timeline.main = Track {
         id: TrackId(2),
         name: "Main Track".into(),
@@ -271,12 +285,12 @@ fn prepare_clip(
             bookmarks: Vec::new(),
         }]
         .try_into()
-        .map_err(Error::kernel)?,
+        .map_err(Error::engine)?,
         current_scene_id: project::SceneId(0),
         settings: source.data().settings.clone(),
         caption_presets: source.data().caption_presets.clone(),
     })
-    .map_err(Error::kernel)?;
+    .map_err(Error::engine)?;
     let mut settings = render::ExportSettings::from_project(&project);
     settings.render = render::RenderSettings::portrait(&project);
     settings.render.caption_languages = options.languages.to_vec();
@@ -306,7 +320,7 @@ fn prepare_clip(
     settings.allow_degraded = options.allow_degraded;
     settings.max_bytes = options.max_output_bytes;
     // Validate geometry, crop rectangles and caption style before submitting.
-    render::Renderer::new(&project, settings.render.clone()).map_err(Error::kernel)?;
+    render::Renderer::new(&project, settings.render.clone()).map_err(Error::engine)?;
     let video = options.directory.join(format!("{base}.mp4"));
     let subtitles = options
         .formats
@@ -339,13 +353,13 @@ fn prepare_clip(
     })
 }
 
-fn cue_bytes(cues: &CueTrack) -> Result<u64, EditError> {
+fn cue_bytes(cues: &CueTrack) -> Result<u64, EngineError> {
     let mut total = 0u64;
     for cue in &cues.cues {
         let mut bytes = u64::try_from(cue.id.as_str().len() + cue.source_lang.as_str().len())
-            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?
             .checked_add(1024)
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         for (language, text) in &cue.texts {
             let item = u64::try_from(
                 text.text.as_str().len()
@@ -355,16 +369,16 @@ fn cue_bytes(cues: &CueTrack) -> Result<u64, EditError> {
                         .as_ref()
                         .map_or(0, |reference| reference.as_str().len()),
             )
-            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?
             .checked_add(256)
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
             bytes = bytes
                 .checked_add(item)
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         }
         total = total
             .checked_add(bytes)
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
     }
     Ok(total)
 }

@@ -12,15 +12,17 @@ impl crate::TextAnimationPreset {
     fn opacity(self, target: &project::Item, fps: time::FrameRate) -> Result<project::Param> {
         use project::{Channel, Extrapolation::Hold, Keyframe, Param, ParamValue::Scalar};
         if !matches!(target.content, project::ItemParams::Text(_)) {
-            return Err(crate::EditError::Invalid("text animation requires text"));
+            return Err(crate::session::EditError::Invalid(
+                "text animation requires text",
+            ));
         }
         let length = target.duration()?;
         let minimum = fps
             .tick_of(1)?
             .checked_add(fps.tick_of(1)?)
-            .ok_or(crate::EditError::Invalid("time overflow"))?;
+            .ok_or(crate::session::EditError::Invalid("time overflow"))?;
         if length < minimum {
-            return Err(crate::EditError::Invalid(
+            return Err(crate::session::EditError::Invalid(
                 "text animation requires two frames",
             ));
         }
@@ -28,17 +30,17 @@ impl crate::TextAnimationPreset {
             None => 1.0,
             Some(Param::Value(channel)) => match channel.base() {
                 Scalar(base) => *base,
-                _ => return Err(crate::EditError::Invalid("text opacity base")),
+                _ => return Err(crate::session::EditError::Invalid("text opacity base")),
             },
-            _ => return Err(crate::EditError::Invalid("text opacity base")),
+            _ => return Err(crate::session::EditError::Invalid("text opacity base")),
         };
         if !base.is_finite() || !(0.0..=1.0).contains(&base) {
-            return Err(crate::EditError::Invalid("text opacity base"));
+            return Err(crate::session::EditError::Invalid("text opacity base"));
         }
         let d = Tick(76_204_800_000.min(length.0 / 2));
         let exit = length
             .checked_sub(d)
-            .ok_or(crate::EditError::Invalid("time overflow"))?;
+            .ok_or(crate::session::EditError::Invalid("time overflow"))?;
         let pairs = match self {
             Self::FadeIn => vec![(Tick::ZERO, 0.0), (d, base)],
             Self::FadeOut => vec![(exit, base), (length, 0.0)],
@@ -71,7 +73,7 @@ pub(super) fn execute_apply_text_animation(
             return Ok(data);
         }
         if existing.channel(None)?.keys().len() != 0 {
-            return Err(crate::EditError::Invalid(
+            return Err(crate::session::EditError::Invalid(
                 "remove opacity keys before changing animation",
             ));
         }
@@ -123,7 +125,9 @@ pub(super) fn execute_delete_keyframes(
     keys: Vec<crate::KeyframeRef>,
 ) -> Result<ProjectData> {
     if keys.is_empty() {
-        return Err(crate::EditError::Invalid("empty keyframe selection"));
+        return Err(crate::session::EditError::Invalid(
+            "empty keyframe selection",
+        ));
     }
     for key in keys {
         item(&mut data, key.item)?

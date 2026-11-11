@@ -39,6 +39,13 @@ Entry points: use [Session commands](src/session/README.md#public-entry-points) 
 [the job runner](src/runtime/README.md#background-jobs-and-byte-policy) for bounded work and
 [the subtitle workflow](src/subtitles/README.md#subtitle-workflow) for speech-to-caption composition.
 
-`EditError` retains typed sources and implements the wire's
+Pure Session editing returns the Kernel's `EditError`, declared with `AssetUsage` in
+`session/edit.rs` and re-exported publicly. It knows only edit refusals and lower
+Control/Session/project/time/caption failures. `engine::Error` is the mixed workflow
+aggregate; `engine::Result<T>` uses that aggregate and composes edit failures through
+`Error::Edit`. Specific project/time/caption conversions follow the same edit owner,
+so classification and source wrappers are declared once.
+
+Both errors retain typed sources and implement the wire's
 [Failure contract](src/session/wire/README.md). Error declaration owners state their
 codes; transports consume them rather than classify the engine union independently.

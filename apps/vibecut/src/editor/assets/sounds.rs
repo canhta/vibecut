@@ -7,7 +7,7 @@ use crate::{Error, Result};
 use ai::transport::HttpTransport;
 use engine::SoundError;
 use engine::{
-    ByteBudget, EditError,
+    ByteBudget, Error as EngineError,
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::sounds::{
@@ -86,11 +86,11 @@ impl SoundsProblem {
         }
     }
 
-    pub fn from_edit(error: &EditError) -> Self {
+    pub fn from_edit(error: &EngineError) -> Self {
         match error {
-            EditError::Sounds(error) => Self::from_error(error),
-            EditError::Runtime(engine::RuntimeError::NetworkTransient) => Self::Network,
-            EditError::Runtime(engine::RuntimeError::CacheBusy) => Self::CacheBusy,
+            EngineError::Sounds(error) => Self::from_error(error),
+            EngineError::Runtime(engine::RuntimeError::NetworkTransient) => Self::Network,
+            EngineError::Runtime(engine::RuntimeError::CacheBusy) => Self::CacheBusy,
             _ => Self::CacheFailed,
         }
     }
@@ -648,7 +648,7 @@ impl Sounds {
                             .as_deref()
                             .and_then(|error| {
                                 (error as &(dyn std::error::Error + 'static))
-                                    .downcast_ref::<EditError>()
+                                    .downcast_ref::<EngineError>()
                             })
                             .map(SoundsProblem::from_edit)
                             .filter(|problem| !matches!(problem, SoundsProblem::Cancelled))

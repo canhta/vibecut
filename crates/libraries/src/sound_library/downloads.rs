@@ -1,7 +1,7 @@
 //! Transfers sound audio through bounded jobs.
 use super::{
     Arc, ArtifactKind, AtomicBool, Busy, CacheKey, CachedSound, CancelToken, DownloadTransport,
-    EditError, Error, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, KeyInputs,
+    EngineError, Error, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, KeyInputs,
     MAX_AUDIO_BYTES, NEXT, Ordering, Read, ResourceClass, Sound, SoundDownloads, SoundLibrary,
     Write, download_redirect, fs, retry_after, url,
 };
@@ -46,7 +46,7 @@ impl SoundDownloads {
         }
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| EditError::Runtime(engine::RuntimeError::CacheBusy))?;
+            .map_err(|_| EngineError::Runtime(engine::RuntimeError::CacheBusy))?;
         let guard = Busy(self.busy.clone());
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::SoundAudio,
@@ -85,7 +85,7 @@ impl SoundDownloads {
                 }) {
                     Ok(_) => Ok(Vec::new()),
                     Err(Error::Network) => {
-                        Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                        Err(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
                     }
                     Err(error) => Err(error.into()),
                 }

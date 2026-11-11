@@ -1,5 +1,5 @@
 //! Maintains video transitions across candidate edits.
-use crate::{EditError, Result};
+use crate::session::{EditError, Result};
 use project::{ProjectData, Timeline, Transition, TransitionId};
 use std::collections::BTreeMap;
 use time::Tick;

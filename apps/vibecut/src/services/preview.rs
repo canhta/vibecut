@@ -6,7 +6,7 @@
 use super::playback::Frame;
 use crate::{Error, Result, egui};
 use engine::{
-    ByteBudget, EditError, Session,
+    ByteBudget, Error as EngineError, Session,
     control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
 };
@@ -269,7 +269,7 @@ impl SnapshotDialog {
         self.error = None;
         if session.project().duration() == Tick::ZERO {
             self.error = Some(ErrorCode::EmptyProject);
-            return Err(Error::Engine(EditError::EmptyProject));
+            return Err(Error::Engine(EngineError::EmptyProject));
         }
         session.protect_paths(protected)?;
         let runner = match &mut self.runner {
@@ -332,38 +332,40 @@ impl SnapshotDialog {
     }
 }
 
-fn error_for(code: ErrorCode) -> EditError {
+fn error_for(code: ErrorCode) -> EngineError {
     match code {
-        ErrorCode::EmptyProject => EditError::EmptyProject,
-        ErrorCode::TransactionActive => EditError::Session(engine::SessionError::TransactionActive),
-        ErrorCode::Permission => EditError::Control(engine::control::ControlError::Permission),
+        ErrorCode::EmptyProject => EngineError::EmptyProject,
+        ErrorCode::TransactionActive => {
+            EngineError::Session(engine::SessionError::TransactionActive)
+        }
+        ErrorCode::Permission => EngineError::Control(engine::control::ControlError::Permission),
         ErrorCode::Limit | ErrorCode::Budget => {
-            EditError::Control(engine::control::ControlError::Limit)
+            EngineError::Control(engine::control::ControlError::Limit)
         }
         ErrorCode::InvalidParams => {
-            EditError::Control(engine::control::ControlError::InvalidParams)
+            EngineError::Control(engine::control::ControlError::InvalidParams)
         }
         ErrorCode::UnknownCommand => {
-            EditError::Control(engine::control::ControlError::UnknownCommand)
+            EngineError::Control(engine::control::ControlError::UnknownCommand)
         }
-        ErrorCode::SessionGone => EditError::Control(engine::control::ControlError::SessionGone),
+        ErrorCode::SessionGone => EngineError::Control(engine::control::ControlError::SessionGone),
         ErrorCode::StaleRevision | ErrorCode::StaleResult => {
-            EditError::Control(engine::control::ControlError::StaleRevision)
+            EngineError::Control(engine::control::ControlError::StaleRevision)
         }
         ErrorCode::IdempotencyConflict => {
-            EditError::Control(engine::control::ControlError::IdempotencyConflict)
+            EngineError::Control(engine::control::ControlError::IdempotencyConflict)
         }
         ErrorCode::ReceiptCapacity => {
-            EditError::Control(engine::control::ControlError::ReceiptCapacity)
+            EngineError::Control(engine::control::ControlError::ReceiptCapacity)
         }
         ErrorCode::ResyncRequired => {
-            EditError::Control(engine::control::ControlError::ResyncRequired)
+            EngineError::Control(engine::control::ControlError::ResyncRequired)
         }
-        ErrorCode::JobNotRetained => EditError::Runtime(engine::RuntimeError::JobNotRetained),
-        ErrorCode::Cancelled => EditError::Runtime(engine::RuntimeError::Cancelled),
-        ErrorCode::QueueFull => EditError::Runtime(engine::RuntimeError::QueueFull),
+        ErrorCode::JobNotRetained => EngineError::Runtime(engine::RuntimeError::JobNotRetained),
+        ErrorCode::Cancelled => EngineError::Runtime(engine::RuntimeError::Cancelled),
+        ErrorCode::QueueFull => EngineError::Runtime(engine::RuntimeError::QueueFull),
         ErrorCode::SchemaMismatch => {
-            EditError::Control(engine::control::ControlError::SchemaMismatch)
+            EngineError::Control(engine::control::ControlError::SchemaMismatch)
         }
         ErrorCode::Refused
         | ErrorCode::Failed
@@ -385,7 +387,9 @@ fn error_for(code: ErrorCode) -> EditError {
         | ErrorCode::WorkerFailure
         | ErrorCode::SoundLimit
         | ErrorCode::SoundCancelled
-        | ErrorCode::SoundIo => EditError::Invalid("snapshot write failed"),
+        | ErrorCode::SoundIo => {
+            EngineError::Edit(engine::EditError::Invalid("snapshot write failed"))
+        }
     }
 }
 

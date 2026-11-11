@@ -4,7 +4,7 @@ use crate::jobs::{
     Clock, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
 };
 use crate::session::wire::{ErrorCode, Failure};
-use crate::{ByteBudget, EditError, JobTarget, Session};
+use crate::{ByteBudget, Error as EngineError, JobTarget, Session};
 use project::{Project, SaveReceipt, WriterLease};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -134,8 +134,8 @@ struct Flight {
 // Admission refusals precede a persistence job and can be corrected by choosing
 // another destination. Worker/publication failures must remain sticky.
 enum PumpFailure {
-    Admission(EditError),
-    Persistence(EditError),
+    Admission(EngineError),
+    Persistence(EngineError),
 }
 /// One active Session, one journal, one in-flight persistence job and one latest
 /// pending snapshot. Drop joins workers but deliberately performs no implicit save.
@@ -219,12 +219,14 @@ impl Autosave {
             || schedule.max_dirty_age < schedule.debounce
             || schedule.max_dirty_age > Duration::from_secs(600)
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
         if saved_path.as_ref().is_some_and(|p| !p.is_absolute()) {
-            return Err(EditError::Invalid("save path must be absolute"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "save path must be absolute",
+            )));
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
@@ -496,7 +498,7 @@ mod tests {
             fn cause<'a>(
                 e: &'a (dyn std::error::Error + 'static),
             ) -> &'a (dyn std::error::Error + 'static) {
-                if let Some(EditError::Recovery(error)) = e.downcast_ref::<EditError>() {
+                if let Some(EngineError::Recovery(error)) = e.downcast_ref::<EngineError>() {
                     return cause(error);
                 }
                 if let Some(Error::PersistenceFailed(error)) = e.downcast_ref::<Error>() {
@@ -511,17 +513,17 @@ mod tests {
                     crate::RuntimeError::WorkerPanicked | crate::RuntimeError::Cancelled
                 ));
             } else {
-                match original.downcast_ref::<EditError>().unwrap() {
-                    EditError::Io(error) => {
+                match original.downcast_ref::<EngineError>().unwrap() {
+                    EngineError::Io(error) => {
                         assert_eq!(error.kind(), std::io::ErrorKind::StorageFull)
                     }
-                    EditError::Runtime(crate::RuntimeError::WorkerPanicked) => {
+                    EngineError::Runtime(crate::RuntimeError::WorkerPanicked) => {
                         assert_eq!(code, ErrorCode::WorkerFailure)
                     }
-                    EditError::Runtime(crate::RuntimeError::Cancelled) => {
+                    EngineError::Runtime(crate::RuntimeError::Cancelled) => {
                         assert_eq!(code, ErrorCode::Cancelled)
                     }
-                    EditError::Session(crate::SessionError::StaleResult) => {
+                    EngineError::Session(crate::SessionError::StaleResult) => {
                         assert_eq!(code, ErrorCode::StaleResult)
                     }
                     _ => panic!("lost the typed worker cause"),
@@ -530,7 +532,7 @@ mod tests {
             assert_eq!(error.code(), code);
             assert!(!error.transient());
             let shared = a.failure.as_ref().unwrap().clone();
-            let EditError::Recovery(Error::PersistenceFailed(repeated)) = a.tick().unwrap_err()
+            let EngineError::Recovery(Error::PersistenceFailed(repeated)) = a.tick().unwrap_err()
             else {
                 panic!("worker failures, including nested stale results, must remain sticky");
             };
@@ -593,10 +595,10 @@ mod tests {
         panic!("injected persistence unwind")
     }
     fn cancelled() -> crate::Result<()> {
-        Err(EditError::Runtime(crate::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(crate::RuntimeError::Cancelled))
     }
     fn worker_stale() -> crate::Result<()> {
-        Err(EditError::Session(crate::SessionError::StaleResult))
+        Err(EngineError::Session(crate::SessionError::StaleResult))
     }
     #[test]
     fn unsupported_lock_is_not_misclassified_as_a_dead_session() {

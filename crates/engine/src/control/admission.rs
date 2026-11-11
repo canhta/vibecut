@@ -6,7 +6,7 @@ use crate::session::wire::{
     API_VERSION, ControlResult, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload, Request,
     Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
 };
-use crate::{Command, EditError, Effect, Lifecycle, Outcome, Result, Session};
+use crate::{Command, Effect, Error as EngineError, Lifecycle, Outcome, Result, Session};
 
 impl Session {
     /// Parse a bounded UTF-8 frame, rejecting duplicate keys before dispatch.
@@ -18,7 +18,7 @@ impl Session {
     ) -> Result<Response> {
         let value = parse_frame(bytes)?;
         let request = serde_json::from_value(value)
-            .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?;
+            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?;
         self.control_request(request, caller, runner)
     }
 }
@@ -52,7 +52,9 @@ impl Session {
                 ResponseValue::Result(value) => Ok(value),
                 // A replayed refusal carries only its wire code; the adapter maps it
                 // as the generic refusal it is.
-                ResponseValue::Error(_) => Err(EditError::Unsupported("replayed control refusal")),
+                ResponseValue::Error(_) => Err(EngineError::Edit(crate::EditError::Unsupported(
+                    "replayed control refusal",
+                ))),
             },
         }
     }
@@ -62,7 +64,7 @@ impl Session {
         request: Request,
         caller: Caller<'_>,
         runner: &mut JobRunner,
-    ) -> Result<(Response, Option<EditError>)> {
+    ) -> Result<(Response, Option<EngineError>)> {
         crate::session::budget(&request.params)?;
         let frame = bounded_json(&request, MAX_FRAME_BYTES)?;
         parse_frame(&frame)?;
@@ -71,7 +73,7 @@ impl Session {
             || caller.principal.is_empty()
             || caller.principal.len() > MAX_KEY_BYTES
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -111,14 +113,14 @@ impl Session {
         request: &Request,
         caller: &Caller<'_>,
         runner: &mut JobRunner,
-    ) -> Result<(Response, Option<EditError>)> {
+    ) -> Result<(Response, Option<EngineError>)> {
         if request.api_version != API_VERSION {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         if request.session_id != self.session_id() {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SessionGone,
             ));
         }
@@ -127,7 +129,7 @@ impl Session {
         if (effectful || request.registry_hash.is_some())
             && request.registry_hash.as_deref() != Some(registry_hash())
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
@@ -142,7 +144,7 @@ impl Session {
                     | Command::TimelineDiscardPreview {}
             )
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Permission,
             ));
         }
@@ -163,11 +165,14 @@ impl Session {
             bounded_json(path, MAX_PATH_BYTES)?;
         }
         let key = if effectful {
-            let key = request.idempotency_key.as_ref().ok_or(EditError::Control(
-                crate::session::wire::ControlError::InvalidParams,
-            ))?;
+            let key = request
+                .idempotency_key
+                .as_ref()
+                .ok_or(EngineError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ))?;
             if key.is_empty() || key.len() > MAX_KEY_BYTES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -177,12 +182,12 @@ impl Session {
             }
             self.check_receipt_capacity()?;
             if request.base_rev.as_ref() != Some(&self.revision()) {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::StaleRevision,
                 ));
             }
             if self.transaction_active() && caller.external {
-                return Err(EditError::Session(
+                return Err(EngineError::Session(
                     crate::session::SessionError::TransactionActive,
                 ));
             }
@@ -262,7 +267,7 @@ impl Session {
             || caller.principal.is_empty()
             || caller.principal.len() > MAX_KEY_BYTES
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -301,33 +306,36 @@ impl Session {
         publish: impl FnOnce(&project::Project, &project::Metadata) -> Result<()>,
     ) -> Result<Response> {
         if request.api_version != API_VERSION {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         if request.session_id != self.session_id() {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SessionGone,
             ));
         }
         let command = decode_command(&request.command, request.params.clone())?;
         if !matches!(command, Command::SaveProject {}) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::InvalidParams,
             ));
         }
         if request.registry_hash.as_deref() != Some(registry_hash()) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         caller.policy.authorize(&command, self.project())?;
         let fingerprint = control_fingerprint(request)?;
-        let key = request.idempotency_key.as_ref().ok_or(EditError::Control(
-            crate::session::wire::ControlError::InvalidParams,
-        ))?;
+        let key = request
+            .idempotency_key
+            .as_ref()
+            .ok_or(EngineError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))?;
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -337,12 +345,12 @@ impl Session {
         }
         self.check_receipt_capacity()?;
         if request.base_rev.as_ref() != Some(&self.revision()) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::StaleRevision,
             ));
         }
         if self.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }
@@ -351,8 +359,8 @@ impl Session {
         metadata.touch();
         let outcome = match publish(self.project(), &metadata) {
             Ok(()) => match self.restore_metadata(metadata) {
-                Ok(()) => self.saved(),
-                Err(error) => Err(error),
+                Ok(()) => self.saved().map_err(EngineError::from),
+                Err(error) => Err(error.into()),
             },
             Err(error) => Err(error),
         };

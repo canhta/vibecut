@@ -1,6 +1,7 @@
 //! Reads lexicon filler candidates in output time and resolves reviewed ids to measured words.
+use crate::session::{EditError, Result};
 
-use crate::{EditError, Result, WordId};
+use crate::WordId;
 use captions::{FillerKind, FillerLexicon, LanguageTag, NfcText};
 use project::{Item, ItemId, ItemParams, ProjectData, WordSpan};
 use std::collections::BTreeMap;

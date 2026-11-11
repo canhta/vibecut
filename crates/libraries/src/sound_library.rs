@@ -4,7 +4,7 @@ use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
-use engine::{EditError, Placement, Result, Session};
+use engine::{Error as EngineError, Placement, Result, Session};
 use media::{AssetData, ContentHash, SourceAsset, SourceProbe};
 use project::LibrarySound;
 use serde::{Deserialize, Serialize};

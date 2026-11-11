@@ -10,7 +10,7 @@ use super::adapters::{Credentials, open_chapter, open_filler};
 use super::catalog::{CatalogOperation, TextProvider};
 use super::consent::{ConsentPrompt, Cost, UploadRequest, approve_upload};
 use super::error::Error;
-use crate::EditError;
+use crate::Error as EngineError;
 use ai::chapters::{ChapterGenerator, ChapterInput};
 use ai::fillers::{FillerClassifier, FillerInput};
 use ai::{Consent, CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
@@ -51,7 +51,7 @@ impl StoredConsent {
     }
 }
 impl ConsentPrompt for StoredConsent {
-    fn approve(&self, request: &UploadRequest) -> Result<(), EditError> {
+    fn approve(&self, request: &UploadRequest) -> Result<(), EngineError> {
         let covered = |ceiling: &Money| match &request.cost {
             Cost::Free => true,
             Cost::UpperBound { currency, micros } => {
@@ -92,7 +92,7 @@ impl TextAccess {
         provider: TextProvider,
         credentials: &Credentials,
         consent: Box<dyn ConsentPrompt + Send + Sync>,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         Ok(Self::new(
             open_chapter(&provider, credentials)?,
             open_filler(&provider, credentials)?,
@@ -114,7 +114,7 @@ impl TextAccess {
     pub(crate) fn prepare_chapter(
         &self,
         input: &ChapterInput,
-    ) -> Result<PreparedChapter, EditError> {
+    ) -> Result<PreparedChapter, EngineError> {
         let scope = Scope::chapters(
             self.chapter_provider().clone(),
             input,
@@ -138,7 +138,7 @@ impl TextAccess {
     pub(crate) fn prepare_fillers(
         &self,
         input: &FillerInput,
-    ) -> Result<PreparedFillers, EditError> {
+    ) -> Result<PreparedFillers, EngineError> {
         let scope = Scope::fillers(
             self.filler_provider().clone(),
             input,
@@ -164,7 +164,7 @@ impl TextAccess {
         scope: &Scope,
         disclosure: Option<UploadDisclosure>,
         estimate: &CostEstimate,
-    ) -> Result<Consent, EditError> {
+    ) -> Result<Consent, EngineError> {
         let request =
             UploadRequest::for_scope(operation, &scope.provider, disclosure, estimate, scope)?;
         approve_upload(self.consent.as_ref(), &request, scope, estimate)

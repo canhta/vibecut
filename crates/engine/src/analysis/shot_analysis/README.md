@@ -49,6 +49,6 @@ pressure leaves the runner output available for another finish attempt; cancelli
 promotion leaves no cache entry. `AnalysisRequest` keys bind source content, exact requested
 range, speech evidence, detector and model fingerprint, settings and analysis recipe. Reopened payloads
 validate their bound fingerprints, partition, tracks, probabilities and continuity hints, and a
-stale payload is `EditError::Runtime(RuntimeError::CacheCorrupt)`, never a hit.
+stale payload is `engine::Error::Runtime(RuntimeError::CacheCorrupt)`, never a hit.
 Envelope corruption is a cache miss; an invalid payload inside a valid envelope
 refuses submission before detector work and does not replace that entry.

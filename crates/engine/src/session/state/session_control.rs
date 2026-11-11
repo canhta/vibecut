@@ -1,7 +1,8 @@
 //! Executes the commands declared `SessionControl`.
 use super::{Session, Snapshot};
+use crate::session::{EditError, Result};
 use crate::session::{SessionError, edit, wire};
-use crate::{Command, EditError, Outcome, Result};
+use crate::{Command, Outcome};
 use project::Project;
 use std::sync::Arc;
 

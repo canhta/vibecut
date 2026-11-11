@@ -11,13 +11,13 @@ use shorts::clip_suggest::{self, ClipRequest, SnapSettings};
 use std::{sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 
-fn engine_error(error: shorts::Error) -> engine::EditError {
+fn engine_error(error: shorts::Error) -> engine::Error {
     match error {
         shorts::Error::Engine(error) => error,
         // Generation collects boundary refusals as rejected clips, so a refusal
         // here is a contract breach; report it as the workflow's generic failure.
         shorts::Error::ClipBoundary { .. } | shorts::Error::ClipExport { .. } => {
-            engine::EditError::Invalid("shorts workflow refusal")
+            engine::Error::Edit(engine::EditError::Invalid("shorts workflow refusal"))
         }
     }
 }

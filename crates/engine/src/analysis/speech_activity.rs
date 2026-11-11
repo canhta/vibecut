@@ -1,6 +1,6 @@
 //! Classifies source speech audio into speech and pause spans by frame energy.
 use crate::{
-    EditError,
+    Error as EngineError,
     cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState,
@@ -103,31 +103,38 @@ impl SpeechActivityRequest {
         asset: SourceAsset,
         range: SourceRange,
         settings: SpeechActivitySettings,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         if range.start() < Tick::ZERO
             || range.duration().0 > MAX_SECONDS * TICKS_PER_SECOND
             || asset.probe().duration.is_some_and(|end| range.end() > end)
             || !(0..=10 * TICKS_PER_SECOND).contains(&settings.min_pause.0)
             || !(0..=10 * TICKS_PER_SECOND).contains(&settings.min_speech.0)
         {
-            return Err(EditError::Invalid("speech activity request"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity request",
+            )));
         }
         let audio = asset
             .probe()
             .streams
             .iter()
             .find(|stream| stream.kind == StreamKind::Audio)
-            .ok_or(EditError::Unsupported("speech activity requires audio"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                "speech activity requires audio",
+            )))?;
         if audio.audio.is_none()
             || audio
                 .duration
                 .and_then(|duration| audio.start.unwrap_or(Tick::ZERO).checked_add(duration))
                 .is_some_and(|end| range.end() > end)
         {
-            return Err(EditError::Invalid("speech activity audio bounds"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity audio bounds",
+            )));
         }
-        let canonical = serde_json::to_vec(&(range, settings))
-            .map_err(|_| EditError::Invalid("speech activity settings"))?;
+        let canonical = serde_json::to_vec(&(range, settings)).map_err(|_| {
+            EngineError::Edit(crate::EditError::Invalid("speech activity settings"))
+        })?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::SpeechActivity,
             source: asset.content_hash().0,
@@ -158,13 +165,13 @@ impl SpeechActivityRequest {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<SpeechActivityJob, EditError> {
+    ) -> Result<SpeechActivityJob, EngineError> {
         let cached = match cache.get(self.key) {
             Ok(Some(lease)) => {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
+            Ok(None) | Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(error) => return Err(error),
         };
         let request = self.clone();
@@ -190,9 +197,9 @@ impl SpeechActivityRequest {
             let result = request.analyze(context)?;
             context.check_cancelled()?;
             let bytes = serde_json::to_vec(&result)
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -205,12 +212,12 @@ impl SpeechActivityRequest {
         })
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<SpeechActivityResult, EditError> {
+    fn decode(&self, bytes: &[u8]) -> Result<SpeechActivityResult, EngineError> {
         if bytes.len() > MAX_BYTES {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let result: SpeechActivityResult = serde_json::from_slice(bytes)
-            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if result.version != RECIPE
             || result.key != self.key.bytes()
             || result.source != self.asset.content_hash().0
@@ -219,7 +226,7 @@ impl SpeechActivityRequest {
             || result.spans.is_empty()
             || result.spans.len() > MAX_SPANS
         {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut start = self.range.start();
         let mut previous = None;
@@ -230,13 +237,13 @@ impl SpeechActivityRequest {
                 || !(0.0..=1.0).contains(&span.confidence)
                 || previous == Some(span.activity)
             {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             start = span.range.end();
             previous = Some(span.activity);
         }
         if start != self.range.end() {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         Ok(result)
     }
@@ -249,9 +256,11 @@ impl SpeechActivityRequest {
         context: &JobContext,
         base: f32,
         span: f32,
-    ) -> Result<(Vec<SpeechActivitySpan>, u64), EditError> {
+    ) -> Result<(Vec<SpeechActivitySpan>, u64), EngineError> {
         if !base.is_finite() || !span.is_finite() || base < 0.0 || span < 0.0 || base + span > 1.0 {
-            return Err(EditError::Invalid("speech activity progress"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity progress",
+            )));
         }
         let extract = SpeechExtractSettings {
             overlap: Tick::ZERO,
@@ -288,7 +297,7 @@ impl SpeechActivityRequest {
         detector.finish()
     }
 
-    fn analyze(&self, context: &JobContext) -> Result<SpeechActivityResult, EditError> {
+    fn analyze(&self, context: &JobContext) -> Result<SpeechActivityResult, EngineError> {
         let (spans, analyzed_frames) = self.detect(context, 0.0, 1.0)?;
         Ok(SpeechActivityResult {
             version: RECIPE.into(),
@@ -308,26 +317,26 @@ impl SpeechActivityJob {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<Option<SpeechActivityResult>, EditError> {
+    ) -> Result<Option<SpeechActivityResult>, EngineError> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
+            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
                 snapshot
                     .error
-                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
+                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(result))
             }
             _ => Ok(None),
@@ -387,15 +396,19 @@ impl Detector {
     }
 
     /// Append one contiguous PCM window and record every complete frame.
-    fn push_samples(&mut self, samples: &[f32], window: SourceRange) -> Result<(), EditError> {
+    fn push_samples(&mut self, samples: &[f32], window: SourceRange) -> Result<(), EngineError> {
         match self.next_window {
             Some(expected) if window.start() != expected => {
-                return Err(EditError::Invalid("speech activity window clock"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "speech activity window clock",
+                )));
             }
             None if window.start() < self.range.start()
                 || window.start().0 - self.range.start().0 > ticks_of(1)?.0 =>
             {
-                return Err(EditError::Invalid("speech activity first window"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "speech activity first window",
+                )));
             }
             _ => {}
         }
@@ -407,14 +420,16 @@ impl Detector {
             Some(start) => {
                 start
                     .checked_add(ticks_of(self.pending.len())?)
-                    .ok_or(EditError::Control(
+                    .ok_or(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ))?
             }
             None => window.start(),
         };
         if expected != window.start() {
-            return Err(EditError::Invalid("speech activity sample clock"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity sample clock",
+            )));
         }
         self.pending_start.get_or_insert(window.start());
         self.pending.extend_from_slice(samples);
@@ -424,18 +439,19 @@ impl Detector {
         Ok(())
     }
 
-    fn push_frame(&mut self) -> Result<(), EditError> {
-        let samples = self
-            .pending
-            .get(..FRAME_SAMPLES)
-            .ok_or(EditError::Invalid("speech activity frame"))?;
+    fn push_frame(&mut self) -> Result<(), EngineError> {
+        let samples = self.pending.get(..FRAME_SAMPLES).ok_or(EngineError::Edit(
+            crate::EditError::Invalid("speech activity frame"),
+        ))?;
         let db = frame_db(samples);
         let start = self
             .pending_start
-            .ok_or(EditError::Invalid("speech activity frame clock"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity frame clock",
+            )))?;
         let end = start
             .checked_add(ticks_of(FRAME_SAMPLES)?)
-            .ok_or(EditError::Control(
+            .ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
         self.record(db, start)?;
@@ -444,12 +460,14 @@ impl Detector {
         Ok(())
     }
 
-    fn record(&mut self, db: f64, start: Tick) -> Result<(), EditError> {
+    fn record(&mut self, db: f64, start: Tick) -> Result<(), EngineError> {
         if !db.is_finite() && db != f64::NEG_INFINITY {
-            return Err(EditError::Invalid("speech activity energy"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity energy",
+            )));
         }
         if self.frames_db.len() >= MAX_FRAMES {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -461,37 +479,42 @@ impl Detector {
         } else {
             ((db.clamp(-120.0, 0.0) + 120.0).round() as usize).min(120)
         };
-        let count = self
-            .histogram
-            .get_mut(bin)
-            .ok_or(EditError::Invalid("speech activity histogram"))?;
-        *count = count.checked_add(1).ok_or(EditError::Control(
+        let count =
+            self.histogram
+                .get_mut(bin)
+                .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                    "speech activity histogram",
+                )))?;
+        *count = count.checked_add(1).ok_or(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ))?;
         self.block_min = Some(self.block_min.map_or(value, |min| min.min(value)));
         self.block_frames += 1;
         if self.block_frames == NOISE_BLOCK_FRAMES {
-            self.block_minima.push(
-                self.block_min
-                    .take()
-                    .ok_or(EditError::Invalid("speech activity block"))?,
-            );
+            self.block_minima
+                .push(self.block_min.take().ok_or(EngineError::Edit(
+                    crate::EditError::Invalid("speech activity block"),
+                ))?);
             self.block_frames = 0;
         }
         Ok(())
     }
 
-    fn finish(mut self) -> Result<(Vec<SpeechActivitySpan>, u64), EditError> {
+    fn finish(mut self) -> Result<(Vec<SpeechActivitySpan>, u64), EngineError> {
         let partial = self.pending.len();
         if partial > 0 {
-            let samples = self
-                .pending
-                .get(..)
-                .ok_or(EditError::Invalid("speech activity frame"))?;
+            let samples =
+                self.pending
+                    .get(..)
+                    .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                        "speech activity frame",
+                    )))?;
             let db = frame_db(samples);
             let start = self
                 .pending_start
-                .ok_or(EditError::Invalid("speech activity frame clock"))?;
+                .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                    "speech activity frame clock",
+                )))?;
             self.record(db, start)?;
         }
         if let Some(min) = self.block_min.take() {
@@ -499,7 +522,9 @@ impl Detector {
         }
         let frames = self.frames_db.len();
         if frames == 0 {
-            return Err(EditError::Unsupported("speech activity has no samples"));
+            return Err(EngineError::Edit(crate::EditError::Unsupported(
+                "speech activity has no samples",
+            )));
         }
         let floor = percentile_sorted(&mut self.block_minima, NOISE_PERCENTILE)?;
         let median = histogram_percentile(&self.histogram, 0.5)?;
@@ -509,7 +534,9 @@ impl Detector {
         let gate = (floor + NOISE_MARGIN_DB).min(median - NOISE_GUARD_DB);
         let first = self
             .first_start
-            .ok_or(EditError::Invalid("speech activity frame clock"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity frame clock",
+            )))?;
         let step = ticks_of(FRAME_SAMPLES)?;
         let mut runs = Vec::new();
         for (index, db) in self.frames_db.iter().enumerate() {
@@ -521,7 +548,7 @@ impl Detector {
             };
             let end = start
                 .checked_add(ticks_of(samples)?)
-                .ok_or(EditError::Control(
+                .ok_or(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ))?;
             let (activity, speech_confidence, pause_confidence) = classify_db(f64::from(*db), gate);
@@ -540,13 +567,15 @@ impl Detector {
         let mut spans = finalize(runs, self.min_speech, self.min_pause)?;
         let last = spans
             .last_mut()
-            .ok_or(EditError::Unsupported("speech activity has no spans"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                "speech activity has no spans",
+            )))?;
         if last.range.end() > self.range.end() {
             last.range = SourceRange::new(last.range.start(), self.range.end())?;
         } else if last.range.end() < self.range.end() {
             // Resampling can leave less than one sample of rounding at the edge.
             if self.range.end().0 - last.range.end().0 > ticks_of(1)?.0 {
-                return Err(EditError::Media(media::MediaError::Invalid(
+                return Err(EngineError::Media(media::MediaError::Invalid(
                     "speech activity sample clock",
                 )));
             }
@@ -554,16 +583,22 @@ impl Detector {
         }
         let first = spans
             .first_mut()
-            .ok_or(EditError::Unsupported("speech activity has no spans"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                "speech activity has no spans",
+            )))?;
         if first.range.start() > self.range.start() {
             // The first decoded sample is the first sample boundary at or after
             // the requested start; extend the span across that sub-sample gap.
             if first.range.start().0 - self.range.start().0 > ticks_of(1)?.0 {
-                return Err(EditError::Invalid("speech activity range"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "speech activity range",
+                )));
             }
             first.range = SourceRange::new(self.range.start(), first.range.end())?;
         } else if first.range.start() != self.range.start() {
-            return Err(EditError::Invalid("speech activity range"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity range",
+            )));
         }
         Ok((spans, frames as u64))
     }
@@ -607,46 +642,48 @@ fn classify_db(db: f64, gate: f64) -> (Activity, f64, f64) {
     }
 }
 
-fn frame_start(first: Tick, step: Tick, index: usize) -> Result<Tick, EditError> {
+fn frame_start(first: Tick, step: Tick, index: usize) -> Result<Tick, EngineError> {
     let index = i64::try_from(index)
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
-    let offset = step.0.checked_mul(index).ok_or(EditError::Control(
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+    let offset = step.0.checked_mul(index).ok_or(EngineError::Control(
         crate::session::wire::ControlError::Limit,
     ))?;
     Ok(Tick(first.0.checked_add(offset).ok_or(
-        EditError::Control(crate::session::wire::ControlError::Limit),
+        EngineError::Control(crate::session::wire::ControlError::Limit),
     )?))
 }
 
-fn percentile_sorted(values: &mut [f32], percentile: f64) -> Result<f64, EditError> {
+fn percentile_sorted(values: &mut [f32], percentile: f64) -> Result<f64, EngineError> {
     if values.is_empty() {
-        return Err(EditError::Unsupported("speech activity has no blocks"));
+        return Err(EngineError::Edit(crate::EditError::Unsupported(
+            "speech activity has no blocks",
+        )));
     }
     values.sort_unstable_by(f32::total_cmp);
     let rank = (((values.len() - 1) as f64) * percentile).round() as usize;
-    Ok(f64::from(
-        *values
-            .get(rank)
-            .ok_or(EditError::Invalid("speech activity percentile"))?,
-    ))
+    Ok(f64::from(*values.get(rank).ok_or(EngineError::Edit(
+        crate::EditError::Invalid("speech activity percentile"),
+    ))?))
 }
 
-fn histogram_percentile(histogram: &[u32; 121], percentile: f64) -> Result<f64, EditError> {
+fn histogram_percentile(histogram: &[u32; 121], percentile: f64) -> Result<f64, EngineError> {
     let total = histogram
         .iter()
         .try_fold(0u64, |total, count| total.checked_add(u64::from(*count)))
-        .ok_or(EditError::Control(
+        .ok_or(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ))?;
     if total == 0 {
-        return Err(EditError::Unsupported("speech activity has no frames"));
+        return Err(EngineError::Edit(crate::EditError::Unsupported(
+            "speech activity has no frames",
+        )));
     }
     let rank = (((total - 1) as f64) * percentile).round() as u64;
     let mut cumulative = 0u64;
     for (index, count) in histogram.iter().enumerate() {
         cumulative = cumulative
             .checked_add(u64::from(*count))
-            .ok_or(EditError::Control(
+            .ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
         if cumulative > rank {
@@ -660,7 +697,7 @@ fn finalize(
     runs: Vec<Run>,
     min_speech: i64,
     min_pause: i64,
-) -> Result<Vec<SpeechActivitySpan>, EditError> {
+) -> Result<Vec<SpeechActivitySpan>, EngineError> {
     // Drop short speech first so a click cannot split one long pause into two
     // short ones that hangover would then swallow.
     let mut without_blips = Vec::with_capacity(runs.len());
@@ -692,10 +729,12 @@ fn finalize(
         merge_run(&mut without_dips, run.with_activity(activity))?;
     }
     if without_dips.is_empty() {
-        return Err(EditError::Unsupported("speech activity has no spans"));
+        return Err(EngineError::Edit(crate::EditError::Unsupported(
+            "speech activity has no spans",
+        )));
     }
     if without_dips.len() > MAX_SPANS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -707,7 +746,9 @@ fn finalize(
         };
         let confidence = sum / run.frames as f64;
         if !confidence.is_finite() || !(0.0..=1.0).contains(&confidence) {
-            return Err(EditError::Invalid("speech activity confidence"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity confidence",
+            )));
         }
         spans.push(SpeechActivitySpan {
             range: SourceRange::new(run.start, run.end)?,
@@ -718,18 +759,20 @@ fn finalize(
     Ok(spans)
 }
 
-fn merge_run(runs: &mut Vec<Run>, run: Run) -> Result<(), EditError> {
+fn merge_run(runs: &mut Vec<Run>, run: Run) -> Result<(), EngineError> {
     if let Some(last) = runs.last_mut()
         && last.activity == run.activity
     {
         if last.end != run.start {
-            return Err(EditError::Invalid("speech activity run clock"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "speech activity run clock",
+            )));
         }
         last.end = run.end;
         last.frames = last
             .frames
             .checked_add(run.frames)
-            .ok_or(EditError::Control(
+            .ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
         last.speech_confidence += run.speech_confidence;
@@ -737,7 +780,7 @@ fn merge_run(runs: &mut Vec<Run>, run: Run) -> Result<(), EditError> {
         return Ok(());
     }
     if runs.len() >= MAX_RUNS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -745,9 +788,9 @@ fn merge_run(runs: &mut Vec<Run>, run: Run) -> Result<(), EditError> {
     Ok(())
 }
 
-fn ticks_of(samples: usize) -> Result<Tick, EditError> {
+fn ticks_of(samples: usize) -> Result<Tick, EngineError> {
     let samples = i64::try_from(samples)
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
     Ok(Tick::from_units(
         samples,
         i64::from(SPEECH_SAMPLE_RATE),

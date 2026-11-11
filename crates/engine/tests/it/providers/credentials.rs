@@ -4,7 +4,7 @@
     clippy::panic,
     reason = "isolated synthetic credential fixtures"
 )]
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::providers::{Credentials, Error};
 use std::process::Command;
 
@@ -26,11 +26,11 @@ fn selected_environment_credential_ignores_unrelated_invalid_values() {
             "valid" => result.unwrap(),
             "missing" => assert!(matches!(
                 result,
-                Err(EditError::Providers(Error::CredentialMissing(name))) if name == provider
+                Err(EngineError::Providers(Error::CredentialMissing(name))) if name == provider
             )),
             "invalid" => assert!(matches!(
                 result,
-                Err(EditError::Ai(ai::Error::Invalid("API key")))
+                Err(EngineError::Ai(ai::Error::Invalid("API key")))
             )),
             _ => panic!("unknown synthetic expectation"),
         }

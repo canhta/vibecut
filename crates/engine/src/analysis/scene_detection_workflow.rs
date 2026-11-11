@@ -1,7 +1,7 @@
 //! Deterministic source-time scene candidates; analysis never mutates a project.
 use crate::session::wire::{ChangeKind, DetectionResult, SceneCandidate};
 use crate::{
-    Command, EditError, Session,
+    Command, Error as EngineError, Session,
     cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState,
@@ -69,7 +69,7 @@ impl DetectionRequest {
         asset: SourceAsset,
         range: SourceRange,
         settings: DetectionSettings,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         if range.start() < Tick::ZERO
             || range.duration().0 > 86400 * TICKS_PER_SECOND
             || asset.probe().duration.is_some_and(|d| range.end() > d)
@@ -82,14 +82,18 @@ impl DetectionRequest {
             || settings.fade_step >= settings.hard_threshold
             || !(0..=10 * TICKS_PER_SECOND).contains(&settings.min_scene.0)
         {
-            return Err(EditError::Invalid("scene detection settings or range"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "scene detection settings or range",
+            )));
         }
         let video = asset
             .probe()
             .streams
             .iter()
             .find(|s| s.kind == StreamKind::Video)
-            .ok_or(EditError::Unsupported("scene detection requires video"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                "scene detection requires video",
+            )))?;
         if video.video.as_ref().is_none_or(|v| {
             v.width == 0 || v.height == 0 || u64::from(v.width) * u64::from(v.height) > MAX_PIXELS
         }) || video
@@ -97,10 +101,12 @@ impl DetectionRequest {
             .and_then(|d| video.start.unwrap_or(Tick::ZERO).checked_add(d))
             .is_some_and(|end| range.end() > end)
         {
-            return Err(EditError::Invalid("scene detection video bounds"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "scene detection video bounds",
+            )));
         }
         let canonical = serde_json::to_vec(&(range, settings))
-            .map_err(|_| EditError::Invalid("scene settings"))?;
+            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("scene settings")))?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::SceneDetection,
             source: asset.content_hash().0,
@@ -129,13 +135,13 @@ impl DetectionRequest {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<DetectionJob, EditError> {
+    ) -> Result<DetectionJob, EngineError> {
         let cached = match cache.get(self.key) {
             Ok(Some(lease)) => {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
+            Ok(None) | Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(e) => return Err(e),
         };
         let request = self.clone();
@@ -158,9 +164,9 @@ impl DetectionRequest {
                 }
                 let result = request.analyze(ctx)?;
                 let bytes = serde_json::to_vec(&result)
-                    .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                    .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
                 if bytes.len() > MAX_BYTES {
-                    return Err(EditError::Control(
+                    return Err(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -173,30 +179,30 @@ impl DetectionRequest {
             request: self.clone(),
         })
     }
-    fn decode(&self, bytes: &[u8]) -> Result<DetectionResult, EditError> {
+    fn decode(&self, bytes: &[u8]) -> Result<DetectionResult, EngineError> {
         let result =
-            decode(bytes).map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+            decode(bytes).map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if result.key != self.key.bytes()
             || result.source != self.asset.content_hash().0
             || result.range != self.range
         {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut previous = self.range.start();
         for c in &result.candidates {
             if c.at - previous < self.settings.min_scene
                 || self.range.end() - c.at < self.settings.min_scene
             {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             previous = c.at;
         }
         Ok(result)
     }
-    pub(crate) fn analyze(&self, ctx: &JobContext) -> Result<DetectionResult, EditError> {
+    pub(crate) fn analyze(&self, ctx: &JobContext) -> Result<DetectionResult, EngineError> {
         self.analyze_with_mode(ctx, Discovery::Reviewed)
     }
-    pub(crate) fn hard_cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>, EditError> {
+    pub(crate) fn hard_cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>, EngineError> {
         Ok(self
             .analyze_with_mode(ctx, Discovery::ShotCuts)?
             .candidates
@@ -208,7 +214,7 @@ impl DetectionRequest {
         &self,
         ctx: &JobContext,
         mode: Discovery,
-    ) -> Result<DetectionResult, EditError> {
+    ) -> Result<DetectionResult, EngineError> {
         let mut detector = Detector::new(self.range, self.settings, mode);
         let mut from = self.range.start();
         while from < self.range.end() {
@@ -245,7 +251,9 @@ impl DetectionRequest {
         }
         detector.finish_fade()?;
         if detector.count == 0 {
-            return Err(EditError::Unsupported("scene detection has no frames"));
+            return Err(EngineError::Edit(crate::EditError::Unsupported(
+                "scene detection has no frames",
+            )));
         }
         Ok(DetectionResult {
             key: self.key.bytes(),
@@ -258,14 +266,18 @@ impl DetectionRequest {
 }
 /// Decode and validate retained job bytes: bounded, strictly ordered candidates
 /// inside the detected range with finite confidences.
-pub fn decode(bytes: &[u8]) -> Result<DetectionResult, EditError> {
+pub fn decode(bytes: &[u8]) -> Result<DetectionResult, EngineError> {
     if bytes.len() > MAX_BYTES {
-        return Err(EditError::Invalid("scene detection result"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "scene detection result",
+        )));
     }
-    let result: DetectionResult =
-        serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("scene detection result"))?;
+    let result: DetectionResult = serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("scene detection result")))?;
     if result.candidates.len() > MAX_MARKERS || result.decoded_frames == 0 {
-        return Err(EditError::Invalid("scene detection result"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "scene detection result",
+        )));
     }
     let mut previous = result.range.start();
     for c in &result.candidates {
@@ -274,7 +286,9 @@ pub fn decode(bytes: &[u8]) -> Result<DetectionResult, EditError> {
             || !c.confidence.is_finite()
             || !(0.0..=1.).contains(&c.confidence)
         {
-            return Err(EditError::Invalid("scene detection result"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "scene detection result",
+            )));
         }
         previous = c.at;
     }
@@ -287,21 +301,21 @@ impl DetectionJob {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<Option<DetectionResult>, EditError> {
+    ) -> Result<Option<DetectionResult>, EngineError> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
+            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
                 snapshot
                     .error
-                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
+                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 Ok(Some(result))
@@ -319,9 +333,9 @@ pub fn apply_reviewed(
     item: ItemId,
     result: &DetectionResult,
     selected: &[usize],
-) -> Result<(), EditError> {
+) -> Result<(), EngineError> {
     if selected.len() > MAX_MARKERS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -332,27 +346,32 @@ pub fn apply_reviewed(
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
-        .ok_or(EditError::NoItem(item))?;
+        .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
     let source = target
         .source_asset
         .and_then(|id| data.assets.iter().find(|a| a.id() == id))
-        .ok_or(EditError::Session(crate::SessionError::StaleResult))?;
+        .ok_or(EngineError::Session(crate::SessionError::StaleResult))?;
     if !matches!(target.content, ItemParams::Video(_)) || source.content_hash().0 != result.source {
-        return Err(EditError::Session(crate::SessionError::StaleResult));
+        return Err(EngineError::Session(crate::SessionError::StaleResult));
     }
     let mut times = std::collections::BTreeSet::new();
     for &index in selected {
-        let marker = result
-            .candidates
-            .get(index)
-            .ok_or(EditError::Invalid("reviewed scene marker"))?;
+        let marker =
+            result
+                .candidates
+                .get(index)
+                .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                    "reviewed scene marker",
+                )))?;
         if marker.at <= target.source_range.start()
             || marker.at >= target.source_range.end()
             || marker.at <= result.range.start()
             || marker.at >= result.range.end()
             || !times.insert(target.output_time_of(marker.at)?)
         {
-            return Err(EditError::Invalid("reviewed scene marker"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "reviewed scene marker",
+            )));
         }
     }
     if times.is_empty() {
@@ -369,7 +388,7 @@ pub fn apply_reviewed(
                 commands: chunk.to_vec(),
             })?;
         }
-        Ok(())
+        Ok::<(), crate::EditError>(())
     })?;
     Ok(())
 }

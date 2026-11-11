@@ -2,7 +2,7 @@
 use crate::error::{BoundaryFailure, Error, Result as ShortsResult};
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, Transcript};
-use engine::{EditError, Result};
+use engine::{Error as EngineError, Result};
 use media::SpeechEnergyWindow;
 use serde::Serialize;
 use time::{FrameRate, SourceRange, Tick};
@@ -81,18 +81,23 @@ pub fn snap_clip_boundaries(
 ) -> ShortsResult<Vec<SnappedShort>> {
     validate_settings(settings)?;
     if shorts.len() > 32 || energy.len() > 360_001 {
-        return Err(EditError::Control(engine::control::ControlError::Limit).into());
+        return Err(EngineError::Control(engine::control::ControlError::Limit).into());
     }
-    let units = captions::source_speech_units(transcript, profile).map_err(Error::kernel)?;
+    let units = captions::source_speech_units(transcript, profile).map_err(Error::engine)?;
     if units.is_empty() {
-        return Err(EditError::Invalid("empty boundary transcript").into());
+        return Err(
+            EngineError::Edit(engine::EditError::Invalid("empty boundary transcript")).into(),
+        );
     }
     let mut gaps = Vec::new();
     let mut previous = settings.source_range.start();
     let mut sentence = true;
     for unit in &units {
         if unit.range.start() < previous || unit.range.end() > settings.source_range.end() {
-            return Err(EditError::Invalid("boundary transcript outside source").into());
+            return Err(EngineError::Edit(engine::EditError::Invalid(
+                "boundary transcript outside source",
+            ))
+            .into());
         }
         gaps.push(Gap {
             start: previous,
@@ -128,11 +133,11 @@ pub fn snap_clip_boundaries(
             }
             let mut adjusted = segment.clone();
             adjusted.range =
-                SourceRange::new(start.adjusted, end.adjusted).map_err(Error::kernel)?;
+                SourceRange::new(start.adjusted, end.adjusted).map_err(Error::engine)?;
             result.duration = result
                 .duration
                 .checked_add(adjusted.range.duration())
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
             result.segments.push(adjusted);
             result.adjustments.push(SegmentAdjustment { start, end });
         }
@@ -164,7 +169,9 @@ fn validate_settings(s: &ClipBoundarySettings) -> Result<()> {
         || s.min_segment_duration > s.max_duration
         || !(1..=32).contains(&s.max_segments)
     {
-        return Err(EditError::Invalid("clip boundary settings"));
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip boundary settings",
+        )));
     }
     Ok(())
 }
@@ -217,7 +224,9 @@ fn silence_ranges(
     let mut previous = Tick::ZERO;
     for window in windows {
         if !window.rms.is_finite() || window.rms < 0.0 || window.range.start() < previous {
-            return Err(EditError::Invalid("speech energy windows"));
+            return Err(EngineError::Edit(engine::EditError::Invalid(
+                "speech energy windows",
+            )));
         }
         previous = window.range.end();
         if window.rms > s.silence_rms {
@@ -388,7 +397,7 @@ fn safe_frame(low: Tick, high: Tick, target: Tick, fps: FrameRate) -> Result<Opt
         fps.tick_of(
             fps.frame_at(low)?
                 .checked_add(1)
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?,
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?,
         )?
     } else {
         floor

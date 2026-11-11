@@ -922,8 +922,8 @@ fn save_refuses_every_source_alias_without_replacing_media() {
                 error
                     .as_deref()
                     .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                        .downcast_ref::<engine::EditError>()),
-                Some(engine::EditError::Render(render::Error::Invalid(
+                        .downcast_ref::<engine::Error>()),
+                Some(engine::Error::Render(render::Error::Invalid(
                     "output aliases a source"
                         | "output aliases a source by hard link"
                         | "output hard-links a source"

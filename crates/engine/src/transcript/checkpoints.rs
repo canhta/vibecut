@@ -1,7 +1,7 @@
 //! Reuses independently committed ASR windows.
 use super::operation::{Cancellation, Progress, Stage};
 use super::speech::sample_range;
-use crate::EditError;
+use crate::Error as EngineError;
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobId, JobOutput, JobRunner, JobState};
 use crate::providers::{ConsentPrompt, Cost, Providers, approve_upload};
@@ -22,9 +22,9 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     window: SpeechWindow,
     cost: &mut Cost,
     checkpoints: &mut usize,
-) -> Result<ai::Recognition, EditError> {
+) -> Result<ai::Recognition, EngineError> {
     if hooks.cancelled() {
-        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+        return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
     }
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
@@ -50,15 +50,16 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
         match (*guard).borrow_mut().get(key) {
             Ok(value) => value,
-            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
+            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
             Err(error) => return Err(error),
         }
     };
     let raw = match cached {
         Some(lease) => {
             *checkpoints = checkpoints.saturating_add(1);
-            serde_json::from_slice(lease.bytes())
-                .map_err(|_| EditError::Invalid("cached recognition is malformed"))?
+            serde_json::from_slice(lease.bytes()).map_err(|_| {
+                EngineError::Edit(crate::EditError::Invalid("cached recognition is malformed"))
+            })?
         }
         None => {
             let estimate = providers.transcriber().estimate(&scope);
@@ -90,7 +91,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
                 let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
                 match (*guard).borrow_mut().put(key, &bytes) {
                     Ok(()) => {}
-                    Err(EditError::Runtime(
+                    Err(EngineError::Runtime(
                         crate::RuntimeError::BudgetFull | crate::RuntimeError::ArtifactTooLarge,
                     )) => {}
                     Err(error) => return Err(error),
@@ -100,7 +101,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         }
     };
     if hooks.cancelled() {
-        return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+        return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
     }
     let Some(aligner) = providers.aligner_arc() else {
         return Ok(raw);
@@ -127,9 +128,9 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     .map_err(provider_error)?)
 }
 
-pub(super) fn provider_error(error: ai::Error) -> EditError {
+pub(super) fn provider_error(error: ai::Error) -> EngineError {
     match error {
-        ai::Error::Cancelled => EditError::Runtime(crate::RuntimeError::Cancelled),
+        ai::Error::Cancelled => EngineError::Runtime(crate::RuntimeError::Cancelled),
         error => error.into(),
     }
 }
@@ -142,7 +143,7 @@ pub fn wait_for_job(
     token: &CancelToken,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<JobOutput, EditError> {
+) -> Result<JobOutput, EngineError> {
     loop {
         if cancel.cancelled() {
             token.cancel();
@@ -155,22 +156,26 @@ pub fn wait_for_job(
         }
         let snapshot = runner
             .snapshot(id)
-            .ok_or(EditError::Session(crate::SessionError::StaleResult))?;
+            .ok_or(EngineError::Session(crate::SessionError::StaleResult))?;
         match snapshot.state {
             // A completed job is returned even if cancellation arrived during its
             // publication fence; callers decide whether later stages may proceed.
             JobState::Completed => {
                 return runner
                     .take_output(id)
-                    .ok_or(EditError::Session(crate::SessionError::StaleResult));
+                    .ok_or(EngineError::Session(crate::SessionError::StaleResult));
             }
             JobState::Failed => {
                 return Err(match snapshot.error {
-                    Some(error) => EditError::Runtime(crate::RuntimeError::Failed(error)),
-                    None => EditError::Invalid("job failed without diagnostics"),
+                    Some(error) => EngineError::Runtime(crate::RuntimeError::Failed(error)),
+                    None => EngineError::Edit(crate::EditError::Invalid(
+                        "job failed without diagnostics",
+                    )),
                 });
             }
-            JobState::Cancelled => return Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Cancelled => {
+                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+            }
             _ => {
                 if cancel.cancelled() {
                     token.cancel();

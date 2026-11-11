@@ -1,5 +1,5 @@
 //! Executes persistent session lifecycle operations.
-use super::{Autosave, Duration, EditError, Error, PathBuf, Session};
+use super::{Autosave, Duration, EngineError, Error, PathBuf, Session};
 use crate::Lifecycle;
 impl Autosave {
     /// Reserve the destination, then queue journal/project publication off-thread.
@@ -8,7 +8,9 @@ impl Autosave {
     /// acknowledgement is not a successful save boundary.
     pub fn save_as(&mut self, path: PathBuf) -> crate::Result<()> {
         if !path.is_absolute() {
-            return Err(EditError::Invalid("save path must be absolute"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "save path must be absolute",
+            )));
         }
         // WriterLease resolves existing symlinks before publication. Apply the
         // storage boundary to that destination, not merely the supplied parent.
@@ -19,7 +21,9 @@ impl Autosave {
         };
         let parent = destination
             .parent()
-            .ok_or(EditError::Invalid("save destination"))?
+            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                "save destination",
+            )))?
             .canonicalize()?;
         let root = self
             .directory
@@ -27,16 +31,16 @@ impl Autosave {
             .ok_or(Error::Corrupt)?
             .canonicalize()?;
         if parent.starts_with(root) {
-            return Err(EditError::Invalid(
+            return Err(EngineError::Edit(crate::EditError::Invalid(
                 "save destination is inside recovery storage",
-            ));
+            )));
         }
         self.tick()?;
         if self.saving() {
             return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }
@@ -65,7 +69,7 @@ impl Autosave {
                 | Lifecycle::Restore
                 | Lifecycle::Purge,
             )
-            | None => self.session.apply(command),
+            | None => Ok(self.session.apply(command)?),
         }
     }
     /// Dispatch a registry command; the declared lifecycle route picks the persistence
@@ -93,21 +97,21 @@ impl Autosave {
                 | Lifecycle::Restore
                 | Lifecycle::Purge,
             )
-            | None => self.session.execute(id, params),
+            | None => Ok(self.session.execute(id, params)?),
         }
     }
     fn empty_params(&self, params: &serde_json::Value) -> crate::Result<()> {
         if *params == serde_json::json!({}) {
             Ok(())
         } else {
-            Err(EditError::Control(
+            Err(EngineError::Control(
                 crate::session::wire::ControlError::InvalidParams,
             ))
         }
     }
     fn refresh_thumbnail(&mut self) -> crate::Result<()> {
         if self.session.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }
@@ -120,7 +124,7 @@ impl Autosave {
         if let Some(writer) = &self.writer {
             writer.save_metadata(&metadata)?;
         }
-        self.session.restore_metadata(metadata)
+        Ok(self.session.restore_metadata(metadata)?)
     }
 }
 fn unchanged() -> crate::Outcome {
@@ -162,7 +166,7 @@ impl Autosave {
     /// Failure refuses the boundary; Drop alone never claims to have flushed.
     pub fn flush(&mut self) -> crate::Result<u64> {
         if self.session.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }

@@ -1,6 +1,6 @@
 //! Lends process resources to caption jobs.
 use crate::{
-    EditError, Result,
+    Error as EngineError, Result,
     cache::ArtifactCache,
     providers::{ConsentPrompt, Providers},
 };
@@ -15,7 +15,7 @@ struct Resources {
 /// unrelated control commands from starting. No command supplies credentials or approval.
 #[derive(Clone)]
 pub struct CaptionAccess {
-    resources: std::result::Result<Arc<Resources>, Arc<EditError>>,
+    resources: std::result::Result<Arc<Resources>, Arc<EngineError>>,
     consent: Arc<dyn ConsentPrompt + Send + Sync>,
 }
 impl CaptionAccess {
@@ -30,7 +30,7 @@ impl CaptionAccess {
         }
     }
     /// Retain an optional composition failure for caption commands; other commands stay usable.
-    pub fn unavailable(error: EditError) -> Self {
+    pub fn unavailable(error: EngineError) -> Self {
         Self {
             resources: Err(Arc::new(error)),
             consent: Arc::new(crate::providers::DenyUploads),

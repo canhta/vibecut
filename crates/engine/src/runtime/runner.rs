@@ -2,7 +2,9 @@
 use super::{Error as RuntimeError, Result as RuntimeResult};
 use crate::Failure;
 use crate::cache::CacheKey;
-use crate::{ByteBudget, ByteLease, ByteOwner, Command, EditError, JobTarget, Outcome, Session};
+use crate::{
+    ByteBudget, ByteLease, ByteOwner, Command, Error as EngineError, JobTarget, Outcome, Session,
+};
 use std::{
     collections::{BTreeMap, VecDeque},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -239,12 +241,16 @@ pub struct JobOutput {
 impl JobOutput {
     /// Apply with the Session identity captured by submit_for_session, never a
     /// freshly supplied revision. Non-session artifact jobs cannot apply edits.
-    pub fn apply(&self, session: &mut Session, command: Command) -> Result<Outcome, EditError> {
-        let target = self
-            .target
-            .as_ref()
-            .ok_or(EditError::Unsupported("job has no Session target"))?;
-        session.apply_job_result(target, command)
+    pub fn apply(&self, session: &mut Session, command: Command) -> Result<Outcome, EngineError> {
+        let target =
+            self.target
+                .as_ref()
+                .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                    "job has no Session target",
+                )))?;
+        session
+            .apply_job_result(target, command)
+            .map_err(EngineError::from)
     }
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
@@ -672,13 +678,13 @@ impl JobRunner {
         &self,
         id: JobId,
         session: &Session,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), EngineError> {
         let output = self
             .finished
             .iter()
             .find(|f| f.snapshot.id == id)
             .and_then(|f| f.output.as_ref())
-            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
         let target = output
             .target
             .as_ref()

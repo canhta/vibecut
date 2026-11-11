@@ -3035,7 +3035,11 @@ fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() 
                         return Ok(bytes);
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(_) => return Err(engine::EditError::Invalid("source gate closed")),
+                    Err(_) => {
+                        return Err(engine::Error::Edit(engine::EditError::Invalid(
+                            "source gate closed",
+                        )));
+                    }
                 }
             }
         }

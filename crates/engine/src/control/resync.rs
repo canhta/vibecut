@@ -4,7 +4,7 @@ use crate::jobs::{JobRunner, JobSnapshot};
 use crate::session::wire::{
     ControlError, ControlResult, Cursor, Event, JobView, Payload, Response, ResponseValue, Snapshot,
 };
-use crate::{EditError, Result, Session};
+use crate::{Error as EngineError, Result, Session};
 
 impl From<JobSnapshot> for JobView {
     fn from(s: JobSnapshot) -> Self {
@@ -59,7 +59,7 @@ impl Session {
     /// ownership. Preview state is deliberately not presented as committed state.
     pub fn snapshot_and_subscribe(&mut self, runner: &JobRunner) -> Result<Snapshot> {
         if self.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }

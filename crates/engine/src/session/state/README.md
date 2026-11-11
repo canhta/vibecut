@@ -27,3 +27,8 @@ Commands declared `SessionControl` (ripple policy, timeline preview, scene switc
 The Session clipboard snapshot is restored by `Checkpoint` alongside the revision,
 but deliberately excluded from `State` and history snapshots. Committed identity
 changes clear it under the [clipboard contract](../README.md#keyframe-clipboard).
+
+Pure state, selection, history and command operations return the edit owner's Result.
+The existing `transaction` seam is generic over the actual caller error with
+`From<EditError>`: Kernel refusals convert once and callback errors return unchanged.
+Rollback and ID retirement follow the same rules regardless of that caller's error type.

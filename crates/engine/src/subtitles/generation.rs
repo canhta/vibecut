@@ -2,7 +2,7 @@
 use super::{CaptionAccess, outputs::MAX_RESULT_BYTES};
 use crate::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::transcript::{Cancellation, Progress, Stage};
-use crate::{EditError, Result, Session, session::wire::CaptionsResult};
+use crate::{Error as EngineError, Result, Session, session::wire::CaptionsResult};
 use captions::LanguageTag;
 use time::{SourceRange, Tick};
 
@@ -22,11 +22,13 @@ pub(crate) fn generate(
         .iter()
         .find(|a| a.id() == asset)
         .cloned()
-        .ok_or(EditError::NoAsset(asset))?;
+        .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset)))?;
     let duration = crate::transcript::media_duration(&asset)?;
     let range = range.unwrap_or(SourceRange::new(Tick::ZERO, duration)?);
     if range.start() < Tick::ZERO || range.end() > duration {
-        return Err(EditError::Invalid("transcription range outside asset"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "transcription range outside asset",
+        )));
     }
     let (providers, consent) = access.share()?;
     let cache = access.cache()?.clone();
@@ -84,12 +86,12 @@ pub(crate) fn generate(
                 model: config.model().clone(),
             };
             if result.cues.len() > super::outputs::MAX_CUES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
-                .map_err(crate::EditError::from)
+                .map_err(crate::Error::from)
         },
     )?;
     Ok(id)
@@ -98,7 +100,7 @@ pub(crate) fn generate(
 pub(crate) fn validate_source(asset: &media::SourceAsset) -> Result<()> {
     let current = media::SourceAsset::import(asset.id(), asset.path().to_owned())?;
     if current.content_hash() != asset.content_hash() || current.probe() != asset.probe() {
-        return Err(EditError::Session(crate::SessionError::StaleResult));
+        return Err(EngineError::Session(crate::SessionError::StaleResult));
     }
     Ok(())
 }

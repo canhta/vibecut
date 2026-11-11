@@ -3,7 +3,7 @@
 use super::*;
 use engine::providers::TextAccess;
 use engine::{
-    ByteBudget, Command, EditError, Session,
+    ByteBudget, Command, Error as EngineError, Session,
     control::{self, Policy},
 };
 use rmcp::ServiceExt;
@@ -40,7 +40,7 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
     );
     assert!(matches!(
         grant.authorize(&export(root.path().join("other/out.mp4")), &project),
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::Permission
         ))
     ));
@@ -56,13 +56,13 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
     );
     assert!(matches!(
         grant.authorize(&snapshot(root.path().join("other/frame.png")), &project),
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::Permission
         ))
     ));
     assert!(matches!(
         Grants::default().authorize(&snapshot(output.join("frame.png")), &project),
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::Permission
         ))
     ));
@@ -123,7 +123,7 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
         }
         assert!(matches!(
             grant.authorize(&export(alias.join("out.mp4")), &project),
-            Err(EditError::Control(
+            Err(EngineError::Control(
                 engine::control::ControlError::Permission
             ))
         ));
@@ -680,7 +680,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
                 assert!(
                     matches!(
                         result,
-                        Err(EditError::Control(
+                        Err(EngineError::Control(
                             engine::control::ControlError::Permission
                         ))
                     ),
@@ -738,13 +738,13 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
                     project::ProjectId(1) => &mut first,
                     project::ProjectId(2) => &mut second,
                     _ => {
-                        return Err(EditError::Control(
+                        return Err(EngineError::Control(
                             engine::control::ControlError::SessionGone,
                         ));
                     }
                 };
                 inbox.execute_project(session, value, |_, _| {
-                    Err(EditError::Control(
+                    Err(EngineError::Control(
                         engine::control::ControlError::Permission,
                     ))
                 })
@@ -853,7 +853,7 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
                     &mut second
                 };
                 inbox.execute_project(session, value, |_, _| {
-                    Err(EditError::Control(
+                    Err(EngineError::Control(
                         engine::control::ControlError::Permission,
                     ))
                 })
@@ -1044,11 +1044,11 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
             "worker_failure",
         ),
         (
-            EditError::Control(engine::control::ControlError::Limit),
+            EngineError::Control(engine::control::ControlError::Limit),
             "limit",
         ),
         (
-            EditError::Session(engine::SessionError::StaleResult),
+            EngineError::Session(engine::SessionError::StaleResult),
             "stale_result",
         ),
         (engine::RuntimeError::BudgetFull.into(), "budget"),
@@ -1057,16 +1057,16 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
             engine::RuntimeError::Io(std::io::Error::other("eviction")).into(),
             "io",
         ),
-        (EditError::Io(std::io::Error::other("disk")), "io"),
+        (EngineError::Io(std::io::Error::other("disk")), "io"),
         (
-            engine::recovery::Error::PersistenceFailed(Arc::new(EditError::Io(
+            engine::recovery::Error::PersistenceFailed(Arc::new(EngineError::Io(
                 std::io::Error::other("disk"),
             )))
             .into(),
             "io",
         ),
         (
-            EditError::Render(render::Error::Unavailable(Vec::new())),
+            EngineError::Render(render::Error::Unavailable(Vec::new())),
             "unavailable",
         ),
     ]
@@ -1079,9 +1079,11 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
         }
         inbox
             .poll_projects(|_, _, _| {
-                Err(EditError::Runtime(engine::RuntimeError::Failed(Arc::new(
-                    EditError::Runtime(engine::RuntimeError::Failed(Arc::new(inner))),
-                ))))
+                Err(EngineError::Runtime(engine::RuntimeError::Failed(
+                    Arc::new(EngineError::Runtime(engine::RuntimeError::Failed(
+                        Arc::new(inner),
+                    ))),
+                )))
             })
             .unwrap();
         let value = response(&mut read).await;

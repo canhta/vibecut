@@ -8,7 +8,7 @@ Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_public
 `cache::CacheRoot::discover()` selects the per-user OS cache base using native environment
 paths: macOS `HOME/Library/Caches`, Windows `LOCALAPPDATA`, other systems `XDG_CACHE_HOME`
 when present, otherwise `HOME/.cache`. A missing or nonabsolute selected base returns
-`EditError::Unsupported` with safe static context. A present empty or relative XDG value
+kernel `engine::EditError::Unsupported` composed through `engine::Error::Edit` with safe static context. A present empty or relative XDG value
 refuses rather than falling back to HOME. Discovery performs no filesystem IO, creation,
 download, eviction or migration; Debug redacts the location.
 
@@ -25,7 +25,7 @@ failures, cache ownership contention and unusable cached artifacts; `RuntimeErro
 `CacheBusy` owns cache writer-lock, native model pin/lease and active-transfer contention:
 its original static diagnostic is `cache is in use`, with code `Refused`, no source and no
 transience. Cache, provider and sound-download callers compose it through the one transparent
-`EditError::Runtime` wrapper. It does not authorize automatic retry, reclaim or fallback;
+`engine::Error::Runtime` wrapper. It does not authorize automatic retry, reclaim or fallback;
 explicit `Failed` wrappers keep the refusal code and remain nontransient.
 `CacheCorrupt` is source-free, nontransient and classified as `Job`; its static
 message does not authorize fallback. Each artifact consumer owns whether corruption
@@ -33,7 +33,7 @@ means recompute, a failed display or refusal; explicit `Failed` wrappers do not
 change that policy. `QueueFull` owns pending admission refusal
 and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Upper cache, job and Session operations
-compose it through transparent `EditError::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
+compose it through transparent `engine::Error::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
 transport failures: static message `transient network failure`, `Job`, source-free
 and transient only as a direct runtime variant. All other runtime variants remain
 nontransient. `ModelResponse` owns unusable model-transfer representations and
@@ -45,7 +45,7 @@ without inheriting transience or adding a source-chain link. Only `BudgetFull` p
 Task closures return their declared `Failure` owner through generic `submit` and
 `submit_for_session`. The task adapter erases each returned error once into its actual
 `Arc<dyn Failure>`; execution, retained snapshots and coalesced events share that Arc.
-Existing higher workflows declare their composed `EditError`; runtime-generated
+Existing higher workflows declare their composed `engine::Error`; runtime-generated
 cancellation, unwind and reservation failures remain direct runtime errors.
 Snapshots retain the raw
 `Arc<dyn Failure>` after typed cancellation/retry decisions; only explicit failed-workflow
@@ -109,7 +109,7 @@ block workers.
 
 `Cancelled` owns the source-free, nontransient `job cancelled` diagnostic and
 `Cancelled` wire code. `JobContext::check_cancelled` and `begin_publication` return
-the runtime result; ordinary engine callbacks compose it through `EditError::Runtime`.
+the runtime result; ordinary engine callbacks compose it through `engine::Error::Runtime`.
 Direct runtime cancellation and its transparent root composition publish terminal
 cancellation through the local `Failure::job_policy`. Explicit
 `Failed` and recovery persistence wrappers retain their original causes and remain

@@ -1,5 +1,5 @@
 //! Publishes durable copied LUT bundles.
-use crate::{EditError, Result, jobs::JobContext};
+use crate::{Error as EngineError, Result, jobs::JobContext};
 use project::{LutId, LutRecord, ProjectId};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -26,7 +26,9 @@ struct Provenance {
 impl Provenance {
     fn record(self, directory: PathBuf) -> Result<LutRecord> {
         if self.version != 1 {
-            return Err(EditError::Invalid("LUT bundle version"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "LUT bundle version",
+            )));
         }
         let record = LutRecord {
             id: self.id,
@@ -72,7 +74,9 @@ impl Drop for Pending {
 fn plain(path: &Path) -> Result<fs::Metadata> {
     let meta = fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() {
-        return Err(EditError::Invalid("LUT path is a symlink"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "LUT path is a symlink",
+        )));
     }
     Ok(meta)
 }
@@ -80,7 +84,9 @@ fn parents(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(EditError::Invalid("LUT parent is a symlink"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT parent is a symlink",
+                )));
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -99,25 +105,29 @@ fn usage(root: &Path) -> Result<(u64, usize, usize)> {
             let entry = entry?;
             count += 1;
             if count > 4096 {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
             let meta = plain(&entry.path())?;
             if meta.is_dir() {
                 if depth >= 2 {
-                    return Err(EditError::Invalid("LUT store nesting"));
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "LUT store nesting",
+                    )));
                 }
                 if depth == 1 {
                     bundles += 1;
                 }
                 dirs.push((entry.path(), depth + 1));
             } else if meta.is_file() {
-                bytes = bytes.checked_add(meta.len()).ok_or(EditError::Control(
+                bytes = bytes.checked_add(meta.len()).ok_or(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ))?;
             } else {
-                return Err(EditError::Invalid("LUT store entry"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT store entry",
+                )));
             }
         }
     }
@@ -134,7 +144,7 @@ impl LutStore {
         let lease = project::WriterLease::acquire(&root.join("store.vibecut"))?;
         let (bytes, _, bundles) = usage(&root)?;
         if bytes > QUOTA || bundles > 1024 {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -168,7 +178,7 @@ impl LutStore {
                 .saturating_add(MAX_BUNDLE)
                 > QUOTA
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -200,21 +210,23 @@ impl LutStore {
         parents(source)?;
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
         let source_name = source
             .file_name()
             .and_then(|s| s.to_str())
-            .ok_or(EditError::Invalid("LUT source filename"))?;
+            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                "LUT source filename",
+            )))?;
         if source_name.len() > 256
             || name
                 .as_ref()
                 .is_some_and(|s| s.as_str().is_empty() || s.as_str().len() > 256)
             || licence.as_ref().is_some_and(|s| s.as_str().len() > 1024)
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -241,13 +253,15 @@ impl LutStore {
             if n == 0 {
                 break;
             }
-            copied = copied.checked_add(n as u64).ok_or(EditError::Control(
+            copied = copied.checked_add(n as u64).ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
             if copied > metadata.len() {
-                return Err(EditError::Invalid("LUT source changed"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT source changed",
+                )));
             }
-            output.write_all(buffer.get(..n).ok_or(EditError::Control(
+            output.write_all(buffer.get(..n).ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?)?;
         }
@@ -257,7 +271,9 @@ impl LutStore {
             || plain(source)?.len() != metadata.len()
             || plain(source)?.modified()? != metadata.modified()?
         {
-            return Err(EditError::Invalid("LUT source changed"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "LUT source changed",
+            )));
         }
         let (cube, source_hash) =
             render::lut::read_cube(&original, render::lut::MAX_CUBE_SOURCE, context)?;
@@ -273,7 +289,7 @@ impl LutStore {
         drop(output);
         drop(cube);
         if plain(&canonical)?.len() > render::lut::MAX_CUBE_CANONICAL {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -295,20 +311,26 @@ impl LutStore {
         if let Some(expected) = expected {
             expected.validate()?;
             if expected.id != id {
-                return Err(EditError::Invalid("LUT relink content differs"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT relink content differs",
+                )));
             }
             // Managed copies keep their original path; only a matching persisted
             // provenance proves that a damaged directory belongs to this record.
             let owned_store = expected.directory == destination;
             if !owned_store && read_record(&expected.directory)? != expected {
-                return Err(EditError::Invalid("LUT relink destination"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT relink destination",
+                )));
             }
             if name.as_ref().is_some_and(|name| *name != expected.name)
                 || licence
                     .as_ref()
                     .is_some_and(|licence| Some(licence) != expected.licence.as_ref())
             {
-                return Err(EditError::Invalid("conflicting LUT provenance"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "conflicting LUT provenance",
+                )));
             }
             record = expected;
         }
@@ -341,14 +363,14 @@ impl LutStore {
             &record
                 .directory
                 .parent()
-                .ok_or(EditError::Invalid("LUT parent"))?
+                .ok_or(EngineError::Edit(crate::EditError::Invalid("LUT parent")))?
                 .join(format!("{}.bundle", record.id.hex())),
             std::time::Duration::from_secs(5),
             &|| context.cancelled(),
         )
         .map_err(|error| {
             if context.cancelled() {
-                EditError::from(crate::RuntimeError::Cancelled)
+                EngineError::from(crate::RuntimeError::Cancelled)
             } else {
                 error.into()
             }
@@ -357,33 +379,41 @@ impl LutStore {
         if record.directory.exists() {
             let existing = read_record(&record.directory)?;
             if existing.id != record.id {
-                return Err(EditError::Invalid("foreign LUT destination"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "foreign LUT destination",
+                )));
             }
             if (name.is_some() && existing.name != record.name)
                 || (licence.is_some() && existing.licence != record.licence)
             {
-                return Err(EditError::Invalid("conflicting LUT provenance"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "conflicting LUT provenance",
+                )));
             }
             match verify_bundle(&existing, || context.cancelled()) {
                 Ok(()) => return Ok(existing),
                 Err(
-                    EditError::Invalid(_)
-                    | EditError::Control(crate::session::wire::ControlError::Limit),
+                    EngineError::Edit(crate::EditError::Invalid(_))
+                    | EngineError::Control(crate::session::wire::ControlError::Limit),
                 ) => {}
-                Err(EditError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(EngineError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
             }
             if !repairing {
-                return Err(EditError::Invalid("damaged LUT needs matching relink"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "damaged LUT needs matching relink",
+                )));
             }
             if existing != record {
-                return Err(EditError::Invalid("LUT relink provenance"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "LUT relink provenance",
+                )));
             }
             let backup = super::projects::staging_directory(
                 record
                     .directory
                     .parent()
-                    .ok_or(EditError::Invalid("LUT parent"))?,
+                    .ok_or(EngineError::Edit(crate::EditError::Invalid("LUT parent")))?,
                 "lut-repair",
             )?;
             let _backup = super::projects::DirectoryGuard(Some(backup.clone()));
@@ -428,11 +458,11 @@ fn hash_file(path: &Path, limit: u64, cancelled: &dyn Fn() -> bool) -> Result<me
         }
         count += n as u64;
         if count > limit {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
-        hash.update(buffer.get(..n).ok_or(EditError::Control(
+        hash.update(buffer.get(..n).ok_or(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ))?);
     }
@@ -441,7 +471,7 @@ fn hash_file(path: &Path, limit: u64, cancelled: &dyn Fn() -> bool) -> Result<me
 fn read_provenance(directory: &Path) -> Result<Provenance> {
     parents(directory)?;
     if !plain(directory)?.is_dir() {
-        return Err(EditError::Invalid("LUT bundle"));
+        return Err(EngineError::Edit(crate::EditError::Invalid("LUT bundle")));
     }
     for (index, entry) in fs::read_dir(directory)?.enumerate() {
         let entry = entry?;
@@ -449,23 +479,28 @@ fn read_provenance(directory: &Path) -> Result<Provenance> {
             || !FILES.iter().any(|name| entry.file_name() == *name)
             || !plain(&entry.path())?.is_file()
         {
-            return Err(EditError::Invalid("foreign LUT bundle entry"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "foreign LUT bundle entry",
+            )));
         }
     }
     let path = directory.join("provenance.json");
     let meta = plain(&path)?;
     if !meta.is_file() || meta.len() > 16384 {
-        return Err(EditError::Invalid("LUT provenance"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "LUT provenance",
+        )));
     }
     let mut file = fs::File::open(path)?.take(16385);
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
     if bytes.len() > 16384 {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
-    serde_json::from_slice(&bytes).map_err(|_| EditError::Invalid("LUT provenance"))
+    serde_json::from_slice(&bytes)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("LUT provenance")))
 }
 fn read_record(directory: &Path) -> Result<LutRecord> {
     read_provenance(directory)?.record(directory.to_owned())
@@ -476,7 +511,9 @@ pub(crate) fn verify_bundle(record: &LutRecord, cancelled: impl Fn() -> bool) ->
     let provenance = read_provenance(&record.directory)?;
     let actual_hash = provenance.copied_source_hash;
     if provenance.record(record.directory.clone())? != *record {
-        return Err(EditError::Invalid("LUT provenance differs"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "LUT provenance differs",
+        )));
     }
     for (name, limit, hash) in [
         (FILES[0], render::lut::MAX_CUBE_CANONICAL, record.id),
@@ -489,10 +526,14 @@ pub(crate) fn verify_bundle(record: &LutRecord, cancelled: impl Fn() -> bool) ->
         let path = record.directory.join(name);
         let meta = plain(&path)?;
         if !meta.is_file() || meta.len() > limit {
-            return Err(EditError::Invalid("LUT bundle file"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "LUT bundle file",
+            )));
         }
         if LutId::new(hash_file(&path, limit, &cancelled)?) != hash {
-            return Err(EditError::Invalid("LUT bundle changed"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "LUT bundle changed",
+            )));
         }
     }
     Ok(())
@@ -527,11 +568,11 @@ pub(crate) fn copy_bundle(
             }
             count += n as u64;
             if count > MAX_BUNDLE {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
-            output.write_all(buffer.get(..n).ok_or(EditError::Control(
+            output.write_all(buffer.get(..n).ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?)?;
         }

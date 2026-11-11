@@ -1,6 +1,6 @@
 //! Prepares ASS caption imports for headless callers.
 
-use crate::{Command, EditError, NfcText};
+use crate::{Command, Error as EngineError, NfcText};
 use captions::{AssWarning, LanguageTag, parse_ass};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use std::io::Read;
@@ -35,18 +35,22 @@ pub struct AssImportReport {
 /// Read at most [`captions::ass::MAX_ASS_BYTES`] and build the import command.
 /// No project mutation happens here, so a parse failure leaves the caller's
 /// session untouched.
-pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport, EditError> {
+pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport, EngineError> {
     let bytes = read_bounded(&request.path)?;
     let import = parse_ass(&bytes)?;
     if import.cues.is_empty() {
-        return Err(EditError::Unsupported("no captions in ASS file"));
+        return Err(EngineError::Edit(crate::EditError::Unsupported(
+            "no captions in ASS file",
+        )));
     }
     let end = import
         .cues
         .iter()
         .map(|cue| cue.range.end())
         .max()
-        .ok_or(EditError::Unsupported("no captions in ASS file"))?;
+        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+            "no captions in ASS file",
+        )))?;
     let path = std::fs::canonicalize(&request.path)?;
     let asset = SourceAsset::try_from(AssetData {
         ephemeral: true,
@@ -79,15 +83,15 @@ pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport,
     })
 }
 
-fn read_bounded(path: &Path) -> Result<Vec<u8>, EditError> {
+fn read_bounded(path: &Path) -> Result<Vec<u8>, EngineError> {
     let limit = u64::try_from(captions::ass::MAX_ASS_BYTES)
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)?;
     if bytes.len() > captions::ass::MAX_ASS_BYTES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }

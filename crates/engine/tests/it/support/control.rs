@@ -12,7 +12,7 @@ use engine::control::{
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, Command, EditError, Session};
+use engine::{ByteBudget, Command, Error as EngineError, Session};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
@@ -29,7 +29,7 @@ impl Policy for Allow {
 pub(crate) struct Deny;
 impl Policy for Deny {
     fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::Permission,
         ))
     }
@@ -647,7 +647,7 @@ pub(crate) fn key() -> engine::cache::CacheKey {
     .unwrap()
 }
 pub(crate) fn submit(r: &mut JobRunner) -> engine::jobs::JobId {
-    r.submit::<engine::EditError>(
+    r.submit::<engine::Error>(
         JobSpec {
             kind: JobKind::Import,
             class: ResourceClass::Cpu,
@@ -704,7 +704,7 @@ fn fake_fonts_import(
     accepted: bool,
 ) -> engine::Result<engine::jobs::JobId> {
     if !accepted {
-        return Err(engine::EditError::Control(
+        return Err(engine::Error::Control(
             engine::control::ControlError::Permission,
         ));
     }

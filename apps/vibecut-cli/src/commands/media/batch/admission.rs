@@ -6,7 +6,7 @@ use super::{
 use crate::CliError;
 use crate::output::json_path;
 use crate::session::resolve_target;
-use engine::EditError;
+use engine::Error as EngineError;
 #[cfg(target_os = "macos")]
 use engine::NfcText;
 use engine::control;
@@ -39,13 +39,13 @@ pub(super) fn load(
         .take((MAX_JOB_FILE_BYTES as u64) + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() > MAX_JOB_FILE_BYTES {
-        return Err(CliError::Engine(EditError::Control(
+        return Err(CliError::Engine(EngineError::Control(
             engine::control::ControlError::Limit,
         )));
     }
     let value = control::parse_frame(&bytes).map_err(|error| match error {
         control::ControlError::Limit => {
-            CliError::Engine(EditError::Control(engine::control::ControlError::Limit))
+            CliError::Engine(EngineError::Control(engine::control::ControlError::Limit))
         }
         _ => invalid_job_file(),
     })?;
@@ -59,7 +59,7 @@ pub(super) fn load(
         ));
     }
     if file.jobs.len() > MAX_BATCH_JOBS {
-        return Err(CliError::Engine(EditError::Control(
+        return Err(CliError::Engine(EngineError::Control(
             engine::control::ControlError::Limit,
         )));
     }
@@ -81,8 +81,9 @@ pub(super) fn load(
     let base = fs::canonicalize(base)?;
     let job_file_target = destination_key(path)?;
     let mut jobs = Vec::new();
-    jobs.try_reserve_exact(file.jobs.len())
-        .map_err(|_| CliError::Engine(EditError::Control(engine::control::ControlError::Limit)))?;
+    jobs.try_reserve_exact(file.jobs.len()).map_err(|_| {
+        CliError::Engine(EngineError::Control(engine::control::ControlError::Limit))
+    })?;
     let mut destinations = BTreeSet::new();
     for entry in file.jobs {
         let project = resolve_path(&base, &entry.project, "project")?;
@@ -193,7 +194,7 @@ pub(super) fn add_project_bytes(total: u64, size: u64) -> Result<u64, CliError> 
     total
         .checked_add(size)
         .filter(|total| *total <= MAX_BATCH_PROJECT_BYTES)
-        .ok_or(CliError::Engine(EditError::Control(
+        .ok_or(CliError::Engine(EngineError::Control(
             engine::control::ControlError::Limit,
         )))
 }
@@ -223,7 +224,7 @@ fn resolve_path(base: &Path, raw: &str, what: &str) -> Result<PathBuf, CliError>
         )));
     }
     if raw.len() > MAX_JOB_PATH_BYTES {
-        return Err(CliError::Engine(EditError::Control(
+        return Err(CliError::Engine(EngineError::Control(
             engine::control::ControlError::Limit,
         )));
     }

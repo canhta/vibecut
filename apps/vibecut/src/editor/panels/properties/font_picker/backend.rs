@@ -4,7 +4,7 @@ use engine::control::{
     ResponseValue, registry_hash,
 };
 use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
-use engine::{ByteBudget, EditError, Session};
+use engine::{ByteBudget, Error as EngineError, Session};
 use std::sync::Arc;
 use std::time::Duration;
 pub type FontChoice =
@@ -124,13 +124,15 @@ impl EngineBackend {
         )?;
         match response.value {
             ResponseValue::Result(value) => Ok(value),
-            ResponseValue::Error(code) => Err(EditError::Invalid(match code {
-                engine::control::ErrorCode::Permission => "font command refused",
-                engine::control::ErrorCode::QueueFull => "font queue full",
-                engine::control::ErrorCode::Cancelled => "font command cancelled",
-                _ => "font command failed",
-            })
-            .into()),
+            ResponseValue::Error(code) => {
+                Err(EngineError::Edit(engine::EditError::Invalid(match code {
+                    engine::control::ErrorCode::Permission => "font command refused",
+                    engine::control::ErrorCode::QueueFull => "font queue full",
+                    engine::control::ErrorCode::Cancelled => "font command cancelled",
+                    _ => "font command failed",
+                }))
+                .into())
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ use engine::control::{
     Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
 };
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::{Command, EditError, Session, control};
+use engine::{Command, Error as EngineError, Session, control};
 use project::{Project, WriterLease};
 use serde_json::{Value, json};
 use std::io;
@@ -34,7 +34,7 @@ impl Policy for ControlPolicy {
                 .published_path()
                 .is_some_and(|(_, overwrite)| overwrite)
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             ));
         }
@@ -101,7 +101,7 @@ fn control_with(
         session.observe_jobs(&runner);
         let frame = match read_control_frame(&mut input, control::MAX_FRAME_BYTES) {
             Ok(frame) => frame,
-            Err(CliError::Engine(EditError::Control(engine::control::ControlError::Limit))) => {
+            Err(CliError::Engine(EngineError::Control(engine::control::ControlError::Limit))) => {
                 write_control_error(
                     &mut out,
                     None,
@@ -280,9 +280,9 @@ fn control_exit(code: ErrorCode) -> u8 {
     }
 }
 
-fn frame_error_message(error: &EditError) -> &'static str {
+fn frame_error_message(error: &EngineError) -> &'static str {
     match error {
-        EditError::Control(engine::control::ControlError::Limit) => {
+        EngineError::Control(engine::control::ControlError::Limit) => {
             "control request exceeds the frame limit"
         }
         _ => "control request is not valid control JSON",
@@ -345,7 +345,7 @@ fn read_control_frame(input: &mut impl BufRead, max: usize) -> Result<Option<Vec
             if !done {
                 drain_control_line(input)?;
             }
-            return Err(EditError::Control(engine::control::ControlError::Limit).into());
+            return Err(EngineError::Control(engine::control::ControlError::Limit).into());
         }
         let buffer = input.fill_buf()?;
         line.extend(buffer.iter().take(take).copied());

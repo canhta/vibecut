@@ -41,7 +41,7 @@ fn add(
     s: &mut Session,
     alignment: TransitionAlignment,
     duration: i64,
-) -> engine::Result<engine::Outcome> {
+) -> Result<engine::Outcome, engine::EditError> {
     s.apply(Command::AddTransition {
         track: TrackId(1),
         from: ItemId(10),

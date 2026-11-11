@@ -1,5 +1,6 @@
 //! Transfers bounded snapshots of selected item-local animation keys.
-use crate::{EditError, KeyframeRef, Result};
+use crate::KeyframeRef;
+use crate::session::{EditError, Result};
 use project::{AnimationPath, Channel, ColorComponent, Param, ProjectData};
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use std::collections::{BTreeMap, BTreeSet};

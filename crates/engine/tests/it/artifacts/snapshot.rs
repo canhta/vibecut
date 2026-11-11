@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue};
-use engine::{ByteBudget, Command, EditError, Session};
+use engine::{ByteBudget, Command, Error as EngineError, Session};
 use project::{Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId};
 use std::{path::PathBuf, sync::Arc};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
@@ -280,12 +280,12 @@ fn snapshot_refuses_empty_project_with_project_is_empty() {
     let out = dir.path().join("empty.png");
     let empty = Project::empty(ProjectId(2), "Empty".into()).unwrap();
     let error = engine::snapshot::save(&empty, Tick::ZERO, &out, &[]).unwrap_err();
-    assert!(matches!(error, EditError::EmptyProject));
+    assert!(matches!(error, EngineError::EmptyProject));
     assert_eq!(error.to_string(), "Project is empty");
     assert!(!out.exists());
     assert!(matches!(
         engine::snapshot::default_name(&empty, Tick::ZERO),
-        Err(EditError::EmptyProject)
+        Err(EngineError::EmptyProject)
     ));
 
     let mut session = Session::new(empty, 10).unwrap();

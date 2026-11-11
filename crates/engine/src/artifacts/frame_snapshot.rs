@@ -4,7 +4,7 @@
 //! reuses project's same-directory staging owner: a private temp file is written,
 //! synced and renamed over the destination only after source/project alias
 //! admission succeeds. A refusal or failed write leaves no partial destination.
-use crate::{ByteBudget, ByteBudgetHooks, EditError, Result};
+use crate::{ByteBudget, ByteBudgetHooks, Error as EngineError, Result};
 use image::ImageEncoder;
 use project::Project;
 use std::{
@@ -83,7 +83,7 @@ pub(crate) fn save_with_overwrite(
     .write(
         overwrite,
         u64::try_from(image.png.len())
-            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         &project::atomic::Fs,
         |writer| {
             writer.write_all(&image.png)?;
@@ -123,10 +123,12 @@ pub fn default_name(project: &Project, time: Tick) -> Result<String> {
 pub fn render_time(project: &Project, time: Tick) -> Result<Tick> {
     let duration = project.duration();
     if duration == Tick::ZERO {
-        return Err(EditError::EmptyProject);
+        return Err(EngineError::EmptyProject);
     }
     if time < Tick::ZERO {
-        return Err(EditError::Invalid("snapshot time"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "snapshot time",
+        )));
     }
     if time < duration {
         return Ok(time);
@@ -188,10 +190,12 @@ fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
     );
     match encoded {
         Ok(()) => Ok(writer.bytes),
-        Err(_) if writer.exceeded => Err(EditError::Control(
+        Err(_) if writer.exceeded => Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         )),
-        Err(_) => Err(EditError::Invalid("snapshot encoding")),
+        Err(_) => Err(EngineError::Edit(crate::EditError::Invalid(
+            "snapshot encoding",
+        ))),
     }
 }
 
@@ -284,7 +288,10 @@ mod tests {
         let path = dir.path().join("snapshot.png");
         std::fs::write(&path, b"previous").unwrap();
         let error = publish(&path, b"new png", &project(), &[], &hooks(), &FullDisk).unwrap_err();
-        assert!(matches!(error, EditError::Project(project::Error::Io(_))));
+        assert!(matches!(
+            error,
+            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+        ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
@@ -296,7 +303,10 @@ mod tests {
         std::fs::write(&path, b"previous").unwrap();
         let error =
             publish(&path, b"new png", &project(), &[], &hooks(), &FailPublish).unwrap_err();
-        assert!(matches!(error, EditError::Project(project::Error::Io(_))));
+        assert!(matches!(
+            error,
+            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+        ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }

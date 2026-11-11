@@ -2,7 +2,7 @@
 use super::checkpoints::{hex, transcribe_window};
 use super::error::Error as TranscriptError;
 use super::operation::{Cancellation, Progress, Stage, Transcription};
-use crate::EditError;
+use crate::Error as EngineError;
 use crate::cache::ArtifactCache;
 use crate::providers::{ConsentPrompt, Cost, Error as ProviderError, Providers};
 use ai::SampleRange;
@@ -45,14 +45,14 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     progress: &dyn Progress,
     cancel: &Cancellation,
     hooks: &dyn ai::ExecutionHooks,
-) -> Result<Transcription, EditError> {
+) -> Result<Transcription, EngineError> {
     if !["vi", "en", "zh"]
         .iter()
         .any(|tag| *tag == source_language.as_str())
     {
-        return Err(EditError::Unsupported(
+        return Err(EngineError::Edit(crate::EditError::Unsupported(
             "source language must be vi, en or zh",
-        ));
+        )));
     }
     cancel.checkpoint()?;
     let started = Instant::now();
@@ -71,7 +71,9 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     };
     let full_range = range.unwrap_or(SourceRange::new(Tick::ZERO, duration)?);
     if full_range.start() < Tick::ZERO || full_range.end() > duration {
-        return Err(EditError::Invalid("transcription range outside asset"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "transcription range outside asset",
+        )));
     }
     let fingerprint = NfcText::from(hex(&asset.content_hash().0));
     let mut recognitions = Vec::new();
@@ -112,7 +114,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
                             .map_or(usize::MAX, |bytes| bytes.len()),
                     );
                     if recognition_bytes > 16 << 20 {
-                        failure = Some(EditError::Control(
+                        failure = Some(EngineError::Control(
                             crate::session::wire::ControlError::Limit,
                         ));
                         return Err(media::MediaError::Cancelled);
@@ -133,7 +135,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     match extraction {
         Ok(()) => {}
         Err(media::MediaError::Cancelled) => {
-            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
         }
         Err(error) => return Err(error.into()),
     }
@@ -180,7 +182,7 @@ impl Providers {
         &self,
         input: &Path,
         cancel: &Cancellation,
-    ) -> Result<LanguageTag, EditError> {
+    ) -> Result<LanguageTag, EngineError> {
         cancel.checkpoint()?;
         let asset = SourceAsset::import(media::AssetId(1), input.to_path_buf())?;
         let duration = media_duration(&asset)?;
@@ -194,7 +196,7 @@ impl Providers {
         asset: &SourceAsset,
         duration: Tick,
         cancel: &Cancellation,
-    ) -> Result<LanguageTag, EditError> {
+    ) -> Result<LanguageTag, EngineError> {
         self.detect_language_with_hooks(asset, duration, cancel, cancel)
     }
 
@@ -204,7 +206,7 @@ impl Providers {
         duration: Tick,
         cancel: &Cancellation,
         hooks: &dyn ai::ExecutionHooks,
-    ) -> Result<LanguageTag, EditError> {
+    ) -> Result<LanguageTag, EngineError> {
         cancel.checkpoint()?;
         let end = duration.min(Tick::from_seconds_f64(
             MIN_CAPTION_SECONDS as f64,
@@ -239,9 +241,9 @@ impl Providers {
                         .map_err(|error| match error {
                             ai::Error::Unsupported => ProviderError::AutoLanguageUnsupported.into(),
                             ai::Error::Cancelled => {
-                                EditError::Runtime(crate::RuntimeError::Cancelled)
+                                EngineError::Runtime(crate::RuntimeError::Cancelled)
                             }
-                            error => EditError::Ai(error),
+                            error => EngineError::Ai(error),
                         })
                 }) {
                     Ok(language) => {
@@ -261,7 +263,7 @@ impl Providers {
         match result {
             Ok(()) => {}
             Err(media::MediaError::Cancelled) => {
-                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
             }
             Err(error) => return Err(error.into()),
         }
@@ -284,28 +286,31 @@ fn mean_confidence(transcript: &Transcript) -> Option<f64> {
     (count > 0).then(|| sum / count as f64)
 }
 
-fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange), EditError> {
+fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange), EngineError> {
     let (start, end) = sample_range(window)?;
     Ok((window.samples.as_slice(), SampleRange::new(start, end)?))
 }
 
-pub(crate) fn media_duration(asset: &SourceAsset) -> Result<Tick, EditError> {
+pub(crate) fn media_duration(asset: &SourceAsset) -> Result<Tick, EngineError> {
     asset
         .probe()
         .duration
         .filter(|value| *value > Tick::ZERO)
-        .ok_or(EditError::Unsupported("media duration is unknown"))
+        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+            "media duration is unknown",
+        )))
 }
 
-pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EditError> {
+pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EngineError> {
     let start = window
         .source_range
         .start()
         .to_units(i64::from(media::SPEECH_SAMPLE_RATE), Rounding::Nearest)?;
-    let start = u64::try_from(start).map_err(|_| EditError::Invalid("sample origin"))?;
+    let start = u64::try_from(start)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("sample origin")))?;
     let size = u64::try_from(window.samples.len())
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
-    let end = start.checked_add(size).ok_or(EditError::Control(
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+    let end = start.checked_add(size).ok_or(EngineError::Control(
         crate::session::wire::ControlError::Limit,
     ))?;
     Ok((start, end))

@@ -1,7 +1,7 @@
 # Session
 
 Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `CueId`,
-`WordId`, `wire`.
+`WordId`, `EditError`, `AssetUsage`, `wire`.
 
 `SessionError::StaleResult` owns stale job-target refusal: the original static diagnostic,
 StaleResult code, no source or transience, and ordinary job policy. The one typed identity
@@ -9,7 +9,8 @@ guard compares original epoch and revision Arc pointers only. `apply_job_result`
 identity before refusing an active transaction and applying a command. Translation submission,
 recovery adoption and retained Runtime output validation consume the same guard, retaining
 their own transaction/no-output/consent checks and ordering. Higher APIs compose the error
-through transparent `EditError::Session`; this is not a new wire tag.
+through `EditError::Session` inside pure editing or `engine::Error::Session` at a mixed
+workflow boundary; this is not a new wire tag.
 
 The Session owner fills identity entropy through one crate-visible operation returning
 `SessionError::ControlIdentity` on platform failure: `control identity unavailable`, Refused,
@@ -22,12 +23,22 @@ Session lifetime and history refusals belong to the same `SessionError` owner:
 active transaction/gesture, absent gesture/history and command unwind. Their diagnostics
 and categories remain source-free, nontransient and ordinary job policy. Command unwind
 is distinct from Runtime worker panic. Higher workflows compose these causes through
-`EditError::Session`, including catalog-local undo/redo with no retained history.
+`EditError::Session` in pure editing. Catalog-local undo/redo composes its no-history
+refusal directly in the mixed `engine::Error::Session` boundary.
 
 The internal gesture start returns only `SessionError`, consumed by BeginGesture and
 TimelinePreview. Public begin/commit/cancel, undo/redo and guarded transactions still run
 through the mixed command boundary: generation reservation, wire/project validation and
 checkpoint rollback are not bypassed to narrow their signatures.
+
+Pure Kernel methods return `Result<T, EditError>`; the local Result names that one
+owner, never the engine aggregate. EditError has no Runtime/recovery/provider/render/AI
+variant. Higher workflows compose genuine edit errors with `engine::Error::Edit`.
+
+`transaction` accepts a caller error `E: From<EditError>` and returns that same E.
+Callback refusal is returned unchanged after rollback; only Kernel admission, squash,
+revision and unwind refusals convert through EditError. This keeps both pure edits and
+mixed workflow callbacks usable without introducing upper-owner knowledge here.
 
 ## Public entry points
 
@@ -126,7 +137,7 @@ cancellation or failure restores the previous pending event. Consumers render pr
 return no newly created IDs; individual preview commands return their provisional IDs.
 
 Commands and groups catch unwinding panics, restore their engine state and return
-`EditError::Panicked` without formatting payloads. What a refused or unwound command restores,
+`EditError::Session(SessionError::Panicked)` without formatting payloads. What a refused or unwound command restores,
 and what it deliberately keeps, is the [rollback contract](state/README.md#rollback). Aborts,
 OOM and double-panic termination cannot be recovered; the application owns panic-hook policy.
 Successful undo and redo always break merging. App presentation, scopes and preferences are not

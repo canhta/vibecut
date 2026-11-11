@@ -5,7 +5,7 @@
 //! renamed only after project/source alias admission. Each file is atomic; a failure
 //! before its fence preserves the previous destination and removes staging.
 pub use crate::ChapterSidecars;
-use crate::{EditError, Result};
+use crate::{Error as EngineError, Result};
 use ai::chapters::ChapterDocument;
 use project::Project;
 use std::{
@@ -16,7 +16,9 @@ use std::{
 /// `<stem>.txt` and `<stem>.json`, preserving a native file name exactly.
 pub fn sidecar_paths(stem: &Path) -> Result<ChapterSidecars> {
     if stem.file_name().is_none_or(|name| name.is_empty()) {
-        return Err(EditError::Invalid("chapter sidecar stem"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "chapter sidecar stem",
+        )));
     }
     let append = |suffix: &str| {
         let mut name = stem.as_os_str().to_owned();
@@ -59,13 +61,17 @@ pub fn write_to_directory(
     document: &ChapterDocument,
 ) -> Result<ChapterSidecars> {
     if !directory.is_dir() {
-        return Err(EditError::Invalid("chapter sidecar directory"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "chapter sidecar directory",
+        )));
     }
     let name = crate::default_file_name(project.data().name.as_str(), "json");
     let stem = directory.join(name.trim_end_matches(".json"));
     let paths = sidecar_paths(&stem)?;
     if paths.text.exists() || paths.json.exists() {
-        return Err(EditError::Invalid("chapter sidecar destination exists"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "chapter sidecar destination exists",
+        )));
     }
     write(
         project,
@@ -104,8 +110,8 @@ fn write_with_fs(
     fs: &dyn project::atomic::AtomicFs,
 ) -> Result<ChapterSidecars> {
     let paths = sidecar_paths(stem)?;
-    let text = document.to_text().map_err(EditError::Ai)?;
-    let json = document.to_json().map_err(EditError::Ai)?;
+    let text = document.to_text().map_err(EngineError::Ai)?;
+    let json = document.to_json().map_err(EngineError::Ai)?;
     let text_publication = crate::publication::Publication {
         project,
         path: &paths.text,
@@ -125,7 +131,7 @@ fn write_with_fs(
     text_publication.write(
         overwrite,
         u64::try_from(text.len())
-            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
         |writer| {
             writer.write_all(text.as_bytes())?;
@@ -135,7 +141,7 @@ fn write_with_fs(
     json_publication.write(
         overwrite,
         u64::try_from(json.len())
-            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
         |writer| {
             writer.write_all(&json)?;
@@ -240,7 +246,10 @@ mod tests {
                 fs,
             )
             .unwrap_err();
-            assert!(matches!(error, EditError::Project(project::Error::Io(_))));
+            assert!(matches!(
+                error,
+                EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+            ));
             assert_eq!(std::fs::read(&paths.text).unwrap(), b"previous text");
             assert_eq!(std::fs::read(&paths.json).unwrap(), b"previous json");
             assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
@@ -263,7 +272,10 @@ mod tests {
             &FailsOnSecond(Default::default()),
         )
         .unwrap_err();
-        assert!(matches!(error, EditError::Project(project::Error::Io(_))));
+        assert!(matches!(
+            error,
+            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+        ));
         assert!(
             std::fs::read(&paths.text)
                 .unwrap()

@@ -7,7 +7,7 @@
 //! none, so a repeated query decodes again.
 pub use crate::session::wire::{OutputSpan, PauseCandidates};
 use crate::{
-    EditError,
+    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobState,
@@ -46,23 +46,25 @@ impl Default for PauseSettings {
 impl PauseSettings {
     /// `pad` keeps a detection frame of silence on each side, so a fade of at most
     /// the pad never attenuates speech.
-    pub fn validate(self) -> Result<(), EditError> {
+    pub fn validate(self) -> Result<(), EngineError> {
         if !(0..=MAX_PAUSE_MS).contains(&self.min_pause_ms)
             || !(0..=MAX_PAUSE_MS).contains(&self.pad_ms)
             || !(0..=self.pad_ms).contains(&self.crossfade_ms)
         {
-            return Err(EditError::Invalid("pause settings"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "pause settings",
+            )));
         }
         Ok(())
     }
-    pub fn min_pause(self) -> Result<Tick, EditError> {
+    pub fn min_pause(self) -> Result<Tick, EngineError> {
         Ok(Tick::from_units(
             self.min_pause_ms,
             1000,
             Rounding::Nearest,
         )?)
     }
-    pub fn pad(self) -> Result<Tick, EditError> {
+    pub fn pad(self) -> Result<Tick, EngineError> {
         Ok(Tick::from_units(self.pad_ms, 1000, Rounding::Nearest)?)
     }
 }
@@ -93,10 +95,10 @@ pub struct PauseCandidatesJob {
     pub cancel: CancelToken,
 }
 impl PauseCandidatesRequest {
-    pub fn new(project: Arc<Project>, settings: PauseSettings) -> Result<Self, EditError> {
+    pub fn new(project: Arc<Project>, settings: PauseSettings) -> Result<Self, EngineError> {
         settings.validate()?;
-        let canonical =
-            serde_json::to_vec(&settings).map_err(|_| EditError::Invalid("pause settings"))?;
+        let canonical = serde_json::to_vec(&settings)
+            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("pause settings")))?;
         let source = scene_digest(project.data())?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::PauseCandidates,
@@ -123,7 +125,7 @@ impl PauseCandidatesRequest {
 
     /// Enqueue one CPU job. An inaudible timeline still completes with zero spans,
     /// so callers never special-case an empty project.
-    pub fn submit(&self, runner: &mut JobRunner) -> Result<PauseCandidatesJob, EditError> {
+    pub fn submit(&self, runner: &mut JobRunner) -> Result<PauseCandidatesJob, EngineError> {
         let request = self.clone();
         // One retained 10-minute PCM window (38.4 MB) plus the detector history
         // (96 MiB) and at most 1 MiB of serialized spans.
@@ -143,9 +145,9 @@ impl PauseCandidatesRequest {
             let result = request.analyze(context)?;
             context.check_cancelled()?;
             let bytes = serde_json::to_vec(&result)
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -154,7 +156,7 @@ impl PauseCandidatesRequest {
         Ok(PauseCandidatesJob { id, cancel })
     }
 
-    fn analyze(&self, context: &JobContext) -> Result<PauseCandidates, EditError> {
+    fn analyze(&self, context: &JobContext) -> Result<PauseCandidates, EngineError> {
         let asks = asks(self.project.data())?;
         let total = asks.len().max(1);
         let min_pause = self.settings.min_pause()?;
@@ -184,25 +186,25 @@ impl PauseCandidatesRequest {
 impl PauseCandidatesJob {
     /// Validate and decode complete output; typed terminal failures and
     /// cancellation propagate.
-    pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<PauseCandidates>, EditError> {
+    pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<PauseCandidates>, EngineError> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
+            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
                 snapshot
                     .error
-                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
+                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(result))
             }
             _ => Ok(None),
@@ -212,21 +214,25 @@ impl PauseCandidatesJob {
 
 /// Decode and validate retained job bytes. A result must be a sorted, bounded,
 /// non-overlapping span list.
-pub fn decode(bytes: &[u8]) -> Result<PauseCandidates, EditError> {
+pub fn decode(bytes: &[u8]) -> Result<PauseCandidates, EngineError> {
     if bytes.len() > MAX_BYTES {
-        return Err(EditError::Invalid("pause candidates result"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "pause candidates result",
+        )));
     }
-    let result: PauseCandidates =
-        serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("pause candidates result"))?;
+    let result: PauseCandidates = serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("pause candidates result")))?;
     if result.spans.len() > MAX_PAUSE_SPANS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
     let mut previous = Tick::ZERO;
     for span in &result.spans {
         if span.start < previous || span.end <= span.start {
-            return Err(EditError::Invalid("pause candidates result"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "pause candidates result",
+            )));
         }
         previous = span.end;
     }
@@ -234,7 +240,7 @@ pub fn decode(bytes: &[u8]) -> Result<PauseCandidates, EditError> {
 }
 
 /// Output-time word ranges of every caption item in the active scene.
-fn word_spans(data: &ProjectData) -> Result<Vec<SourceRange>, EditError> {
+fn word_spans(data: &ProjectData) -> Result<Vec<SourceRange>, EngineError> {
     Ok(crate::session::transcript::scene_words(data.scene())?
         .into_iter()
         .map(|word| word.output)
@@ -249,13 +255,15 @@ fn audible(item: &Item) -> bool {
     }
 }
 
-fn source_asset<'a>(data: &'a ProjectData, item: &Item) -> Result<&'a SourceAsset, EditError> {
+fn source_asset<'a>(data: &'a ProjectData, item: &Item) -> Result<&'a SourceAsset, EngineError> {
     item.source_asset
         .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
-        .ok_or(EditError::Invalid("pause candidate item has no asset"))
+        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            "pause candidate item has no asset",
+        )))
 }
 
-fn asks(data: &ProjectData) -> Result<Vec<Ask>, EditError> {
+fn asks(data: &ProjectData) -> Result<Vec<Ask>, EngineError> {
     let mut sources: BTreeMap<[u8; 32], (SourceAsset, Vec<SourceRange>)> = BTreeMap::new();
     for track in data.scene().timeline.iter() {
         if track.muted {
@@ -305,7 +313,7 @@ fn asks(data: &ProjectData) -> Result<Vec<Ask>, EditError> {
     Ok(asks)
 }
 
-fn scene_digest(data: &ProjectData) -> Result<[u8; 32], EditError> {
+fn scene_digest(data: &ProjectData) -> Result<[u8; 32], EngineError> {
     let mut hash = blake3::Hasher::new();
     hash.update(RECIPE.as_bytes());
     for track in data.scene().timeline.iter() {
@@ -335,7 +343,7 @@ fn assemble(
     data: &ProjectData,
     settings: PauseSettings,
     analyses: &[Analysis],
-) -> Result<PauseCandidates, EditError> {
+) -> Result<PauseCandidates, EngineError> {
     let pad = settings.pad()?;
     let timeline = &data.scene().timeline;
     let mut spans = Vec::new();
@@ -388,7 +396,7 @@ fn assemble(
     let spans = subtract(merge(spans), &word_spans(data)?);
     let spans = merge(spans);
     if spans.len() > MAX_PAUSE_SPANS {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }

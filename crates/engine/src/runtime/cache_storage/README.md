@@ -23,7 +23,7 @@ additional identity:
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded metadata after
 restart. Application placement chooses the directory and an OS file lock enforces one live
 writer (contention composes [`RuntimeError::CacheBusy`](../README.md#background-jobs-and-byte-policy)
-through `EditError::Runtime`). Cache writers and native model leases share the lock; the last
+through `engine::Error::Runtime`). Cache writers and native model leases share the lock; the last
 logical owner explicitly unlocks it, so inherited or duplicated OS descriptors cannot keep a
 dropped cache busy. Open removes atomic staging debris and malformed canonical entries with a
 diagnostic count. Unrecognized files are skipped, never deleted, and sit outside cache
@@ -31,10 +31,10 @@ accounting; directory scanning streams metadata, and excess entries evict withou
 payloads.
 
 Headers bind the canonical key; `get` checks admitted size, header and payload digest before
-returning a hit. Corruption or a missing file returns `RuntimeError::CacheCorrupt` through `EditError::Runtime`; corrupt-file removal waits
+returning a hit. Corruption or a missing file returns `RuntimeError::CacheCorrupt` through `engine::Error::Runtime`; corrupt-file removal waits
 for older reader pins to release, so a caller can record the typed diagnostic and recompute.
 Other IO errors retain their source. Reservation/pin/evict failures compose the runtime owner's
-error through `EditError::Runtime`; other cache filesystem failures retain their existing root IO.
+error through `engine::Error::Runtime`; other cache filesystem failures retain their existing root IO.
 A failed unlink retains its charge and resets the eviction pin so repair and retry remain possible.
 ASR checkpoint writes tolerate only runtime budget pressure, never IO or poisoned accounting.
 

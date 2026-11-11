@@ -288,7 +288,7 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
             if matches!(command, engine::Command::JobCancel { .. }) {
                 Ok(())
             } else {
-                Err(engine::EditError::Control(
+                Err(engine::Error::Control(
                     engine::control::ControlError::Permission,
                 ))
             }

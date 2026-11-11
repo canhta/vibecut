@@ -1658,7 +1658,7 @@ fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
     assert_eq!(
         previews.failure("channel_mix"),
         Some(
-            engine::EditError::Runtime(engine::RuntimeError::JobNotRetained)
+            engine::Error::Runtime(engine::RuntimeError::JobNotRetained)
                 .to_string()
                 .as_str()
         )

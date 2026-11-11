@@ -517,7 +517,7 @@ impl State {
             move |ctx| {
                 ctx.check_cancelled()?;
                 if worker_cancel.cancelled() {
-                    return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
+                    return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
                 }
                 match generator.run(
                     request.clone(),
@@ -526,19 +526,15 @@ impl State {
                     &worker_cancel,
                 ) {
                     Ok(source) => {
-                        send.send(Ok(source)).map_err(|_| {
-                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
+                        send.send(Ok(source))
+                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(Error::Worker(error.clone()))).map_err(|_| {
-                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
-                            error,
-                        )))
+                        send.send(Err(Error::Worker(error.clone())))
+                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
+                        Err(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
                     }
                 }
             },
@@ -783,7 +779,7 @@ impl State {
             .ok_or(Error::Invalid("segment index"))?
             .range = SourceRange::new(start, end)?;
         let profile = captions::LanguageRegistry::standard()
-            .map_err(engine::EditError::from)?
+            .map_err(engine::Error::from)?
             .profile(&source.transcript.source_lang)
             .clone();
         let snapped = snap_clip_boundaries(
@@ -973,7 +969,7 @@ impl State {
         });
         data.scene_mut().timeline = project::Timeline::default();
         let mut session = Session::new(project::Project::new(data)?, 100)?;
-        session.transaction(|s| {
+        session.transaction(|s| -> std::result::Result<(), engine::EditError> {
             for track in prepared.data().scene().timeline.iter() {
                 let target = if track.kind == project::TrackKind::Video {
                     s.project().data().scene().timeline.main.id
@@ -1072,31 +1068,30 @@ pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
             _ => Text::ShortsError,
         };
     }
-    let Some(error) =
-        (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>()
+    let Some(error) = (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>()
     else {
         return Text::ShortsError;
     };
     match error {
-        engine::EditError::Providers(
+        engine::Error::Providers(
             engine::providers::Error::ModelMissing(_) | engine::providers::Error::RunnerMissing,
         ) => Text::ShortsModelMissing,
-        engine::EditError::Providers(engine::providers::Error::CredentialMissing(_)) => {
+        engine::Error::Providers(engine::providers::Error::CredentialMissing(_)) => {
             Text::ShortsCredentialsMissing
         }
-        engine::EditError::Providers(engine::providers::Error::ConsentRequired) => {
+        engine::Error::Providers(engine::providers::Error::ConsentRequired) => {
             Text::ShortsConsentRequired
         }
-        engine::EditError::Runtime(engine::RuntimeError::BudgetFull)
-        | engine::EditError::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
-        engine::EditError::Render(render::Error::Unavailable(_)) => Text::ShortsSourceUnavailable,
-        engine::EditError::Io(e) | engine::EditError::Runtime(engine::RuntimeError::Io(e))
+        engine::Error::Runtime(engine::RuntimeError::BudgetFull)
+        | engine::Error::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
+        engine::Error::Render(render::Error::Unavailable(_)) => Text::ShortsSourceUnavailable,
+        engine::Error::Io(e) | engine::Error::Runtime(engine::RuntimeError::Io(e))
             if e.kind() == std::io::ErrorKind::AlreadyExists =>
         {
             Text::ShortsOutputExists
         }
-        engine::EditError::Project(project::Error::Io(e))
-        | engine::EditError::Render(
+        engine::Error::Edit(engine::EditError::Project(project::Error::Io(e)))
+        | engine::Error::Render(
             render::Error::Io(e) | render::Error::Project(project::Error::Io(e)),
         ) if e.kind() == std::io::ErrorKind::AlreadyExists => Text::ShortsOutputExists,
         _ => Text::ShortsError,

@@ -1,6 +1,7 @@
 //! Advances the session revision and records each change in the ledger.
 use super::wire::{Payload, Revision};
-use crate::{EditError, Result, Session};
+use crate::Session;
+use crate::session::{EditError, Result};
 use std::sync::Arc;
 
 impl Session {

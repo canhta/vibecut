@@ -4,7 +4,7 @@ use crate::args::CliError;
 use crate::output::wait_for_job;
 use crate::output::{Output, json_path};
 use crate::session::same_target;
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
 use project::Project;
@@ -68,7 +68,7 @@ pub(crate) fn export_project_with(
         TimeRange,
         render::ExportSettings,
         PathBuf,
-    ) -> Result<(JobId, engine::jobs::CancelToken), EditError>,
+    ) -> Result<(JobId, engine::jobs::CancelToken), EngineError>,
 ) -> Result<Output, CliError> {
     export_configured(
         context,
@@ -98,7 +98,7 @@ fn export_configured(
         TimeRange,
         render::ExportSettings,
         PathBuf,
-    ) -> Result<(JobId, engine::jobs::CancelToken), EditError>,
+    ) -> Result<(JobId, engine::jobs::CancelToken), EngineError>,
 ) -> Result<Output, CliError> {
     let loaded = project::load(&project_path)?;
     let project = loaded.project;

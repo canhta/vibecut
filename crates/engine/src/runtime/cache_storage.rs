@@ -1,7 +1,7 @@
 //! Retains content-addressed execution artifacts.
 mod native;
 use super::{Error as RuntimeError, Result as RuntimeResult};
-use crate::{ByteBudget, ByteLease, ByteOwner, EditError};
+use crate::{ByteBudget, ByteLease, ByteOwner, Error as EngineError};
 pub use native::ModelLease;
 pub(crate) use native::{NativeEdit, strong_etag};
 use std::{
@@ -59,13 +59,13 @@ impl CacheKey {
         hash.update(fingerprint.as_bytes());
         Self(*hash.finalize().as_bytes())
     }
-    pub fn new(inputs: KeyInputs<'_>) -> Result<Self, EditError> {
+    pub fn new(inputs: KeyInputs<'_>) -> Result<Self, EngineError> {
         if [inputs.provider, inputs.model, inputs.version]
             .iter()
             .any(|s| s.is_empty() || s.len() > 256)
             || inputs.settings.len() > 1024 * 1024
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -254,13 +254,13 @@ impl ArtifactLease {
     }
 }
 impl ArtifactCache {
-    fn check_root(&self) -> Result<(), EditError> {
+    fn check_root(&self) -> Result<(), EngineError> {
         check_root(&self.root, &self.root_lock)
     }
     /// Capture registered ordinary artifacts without IO or reader pins. The
     /// desktop's two stores admit at most 256 entries in total. Larger snapshots
     /// refuse rather than truncate a disk-size claim.
-    pub fn maintenance(&self) -> Result<CacheMaintenance, EditError> {
+    pub fn maintenance(&self) -> Result<CacheMaintenance, EngineError> {
         let entries: Vec<_> = self
             .entries
             .iter()
@@ -269,7 +269,7 @@ impl ArtifactCache {
             .map(|(key, entry)| (*key, entry.clone()))
             .collect();
         if entries.len() > 256 {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -293,20 +293,20 @@ impl ArtifactCache {
         root: &Path,
         budget: ByteBudget,
         max_entries: usize,
-    ) -> Result<(Self, usize), EditError> {
+    ) -> Result<(Self, usize), EngineError> {
         if !(1..=100_000).contains(&max_entries) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
         fs::create_dir_all(root)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let root = fs::canonicalize(root)?;
         let lock_path = root.join(".cache.lock");
         if fs::symlink_metadata(&lock_path).is_ok_and(|m| !m.file_type().is_file()) {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut options = fs::File::options();
         options.read(true).write(true).create(true).truncate(false);
@@ -336,8 +336,8 @@ impl ArtifactCache {
             file_id: windows_file_identity(&lock_path)?,
         });
         root_lock.file.try_lock().map_err(|e| match e {
-            fs::TryLockError::WouldBlock => EditError::Runtime(crate::RuntimeError::CacheBusy),
-            fs::TryLockError::Error(e) => EditError::Io(e),
+            fs::TryLockError::WouldBlock => EngineError::Runtime(crate::RuntimeError::CacheBusy),
+            fs::TryLockError::Error(e) => EngineError::Io(e),
         })?;
         let mut cache = Self {
             root: root.clone(),
@@ -423,7 +423,7 @@ impl ArtifactCache {
     fn prune(&mut self) {
         self.entries.retain(|_, entry| !entry.removed());
     }
-    fn insert(&mut self, key: CacheKey, charge: ByteLease, len: u64) -> Result<(), EditError> {
+    fn insert(&mut self, key: CacheKey, charge: ByteLease, len: u64) -> Result<(), EngineError> {
         self.prune();
         let artifact = Arc::new(StoredArtifact {
             path: self.path(key),
@@ -440,17 +440,17 @@ impl ArtifactCache {
     fn path(&self, key: CacheKey) -> PathBuf {
         self.root.join(key.filename())
     }
-    fn remove(&mut self, key: CacheKey) -> Result<(), EditError> {
+    fn remove(&mut self, key: CacheKey) -> Result<(), EngineError> {
         if let Some(entry) = self.entries.get(&key)
             && !entry.removed()
             && !entry.evict()?
         {
-            return Err(EditError::Runtime(RuntimeError::BudgetFull));
+            return Err(EngineError::Runtime(RuntimeError::BudgetFull));
         }
         self.entries.remove(&key);
         Ok(())
     }
-    fn evict_one(&mut self) -> Result<(), EditError> {
+    fn evict_one(&mut self) -> Result<(), EngineError> {
         self.prune();
         let key = self
             .entries
@@ -458,25 +458,25 @@ impl ArtifactCache {
             .filter(|(_, e)| !e.pinned())
             .min_by_key(|(_, e)| e.stamp())
             .map(|(key, _)| *key)
-            .ok_or(EditError::Runtime(RuntimeError::BudgetFull))?;
+            .ok_or(EngineError::Runtime(RuntimeError::BudgetFull))?;
         self.remove(key)
     }
     /// Commit only a complete artifact. Jobs call this only after successful finish;
     /// ASR may commit each complete chunk separately, keyed by its exact source range.
-    pub fn put(&mut self, key: CacheKey, bytes: &[u8]) -> Result<(), EditError> {
+    pub fn put(&mut self, key: CacheKey, bytes: &[u8]) -> Result<(), EngineError> {
         self.check_root()?;
         let len = bytes
             .len()
             .checked_add(HEADER)
-            .ok_or(EditError::Runtime(RuntimeError::ArtifactTooLarge))? as u64;
+            .ok_or(EngineError::Runtime(RuntimeError::ArtifactTooLarge))? as u64;
         // Charge staging memory before building the envelope. Admission may evict disk.
         if len > self.budget.snapshot()?.limit / 2 {
-            return Err(EditError::Runtime(RuntimeError::ArtifactTooLarge));
+            return Err(EngineError::Runtime(RuntimeError::ArtifactTooLarge));
         }
         self.prune();
         if let Some(entry) = self.entries.get(&key) {
             if entry.pinned() {
-                return Err(EditError::Runtime(RuntimeError::BudgetFull));
+                return Err(EngineError::Runtime(RuntimeError::BudgetFull));
             }
             self.remove(key)?;
         }
@@ -486,7 +486,8 @@ impl ArtifactCache {
         let disk = self.budget.reserve(ByteOwner::PersistentCache, len)?;
         let _staging = self.budget.reserve(ByteOwner::CacheReads, len)?;
         let mut envelope = Vec::with_capacity(
-            usize::try_from(len).map_err(|_| EditError::Runtime(RuntimeError::ArtifactTooLarge))?,
+            usize::try_from(len)
+                .map_err(|_| EngineError::Runtime(RuntimeError::ArtifactTooLarge))?,
         );
         envelope.extend_from_slice(b"VCACHE01");
         envelope.extend_from_slice(&key.0);
@@ -497,14 +498,16 @@ impl ArtifactCache {
     }
     /// Corrupt/missing entries are never hits. Removal of corrupt files waits
     /// for any earlier reader pins; callers receive CacheCorrupt on each failed read.
-    pub fn get(&mut self, key: CacheKey) -> Result<Option<ArtifactLease>, EditError> {
+    pub fn get(&mut self, key: CacheKey) -> Result<Option<ArtifactLease>, EngineError> {
         self.check_root()?;
         self.prune();
         let Some(entry) = self.entries.get(&key) else {
             return Ok(None);
         };
         if entry.native {
-            return Err(EditError::Unsupported("native bundle requires model lease"));
+            return Err(EngineError::Edit(crate::EditError::Unsupported(
+                "native bundle requires model lease",
+            )));
         }
         let Some(pin) = entry.pin()? else {
             self.entries.remove(&key);
@@ -515,22 +518,22 @@ impl ArtifactCache {
         let result = (|| {
             let meta = fs::symlink_metadata(&path)?;
             if !meta.is_file() || meta.file_type().is_symlink() || meta.len() != expected_len {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let _charge = self.budget.reserve(ByteOwner::CacheReads, meta.len())?;
             let len = usize::try_from(meta.len())
-                .map_err(|_| EditError::Runtime(RuntimeError::ArtifactTooLarge))?;
+                .map_err(|_| EngineError::Runtime(RuntimeError::ArtifactTooLarge))?;
             let mut bytes = vec![0; len];
             let mut file = fs::File::open(&path)?;
             if let Err(e) = file.read_exact(&mut bytes) {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                    return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
                 }
                 return Err(e.into());
             }
             let mut extra = [0u8; 1];
             if file.read(&mut extra)? != 0 {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             if bytes.len() as u64 != meta.len()
                 || bytes.get(..8) != Some(b"VCACHE01")
@@ -542,7 +545,7 @@ impl ArtifactCache {
                         .as_ref()
                         .map(|h| h.as_bytes().as_slice())
             {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             // Keep the envelope allocation: no second payload copy.
             Ok(ArtifactLease {
@@ -558,29 +561,29 @@ impl ArtifactCache {
                 }
                 Ok(Some(lease))
             }
-            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
                 // Existing reader pins retain their immutable bytes. Reclaim the
                 // corrupt file after their release; preserve the corruption diagnostic.
                 match self.remove(key) {
-                    Ok(()) | Err(EditError::Runtime(RuntimeError::BudgetFull)) => {}
+                    Ok(()) | Err(EngineError::Runtime(RuntimeError::BudgetFull)) => {}
                     Err(e) => return Err(e),
                 }
-                Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+                Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
-            Err(EditError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(EngineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
                 // Retire disk accounting through the same eviction state; a
                 // reader lease must retain the missing entry until release.
                 match self.remove(key) {
-                    Ok(()) | Err(EditError::Runtime(RuntimeError::BudgetFull)) => {}
+                    Ok(()) | Err(EngineError::Runtime(RuntimeError::BudgetFull)) => {}
                     Err(error) => return Err(error),
                 }
-                Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt))
+                Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
             }
             Err(e) => Err(e),
         }
     }
     /// Remove unpinned entries; return how many are still explicitly in use.
-    pub fn clear(&mut self) -> Result<usize, EditError> {
+    pub fn clear(&mut self) -> Result<usize, EngineError> {
         self.prune();
         let keys: Vec<_> = self
             .entries
@@ -613,7 +616,7 @@ pub struct CacheMaintenanceReport {
     pub missing: u64,
     pub failed: u64,
     pub root_unavailable: bool,
-    pub cause: Option<EditError>,
+    pub cause: Option<EngineError>,
 }
 impl CacheMaintenanceReport {
     /// Combine the desktop's two disjoint snapshots without hiding partial work.
@@ -630,7 +633,7 @@ impl CacheMaintenanceReport {
             if let Some(sum) = a.checked_add(b) {
                 *a = sum;
             } else {
-                self.cause.get_or_insert(EditError::Control(
+                self.cause.get_or_insert(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -640,7 +643,7 @@ impl CacheMaintenanceReport {
             self.cause = other.cause;
         }
     }
-    fn fail(&mut self, error: EditError) {
+    fn fail(&mut self, error: EngineError) {
         self.failed += 1; // snapshots are bounded to 256
         self.cause.get_or_insert(error);
     }
@@ -652,7 +655,7 @@ pub struct CacheMaintenance {
     root_lock: Arc<CacheLock>,
     entries: Vec<(CacheKey, Arc<StoredArtifact>)>,
 }
-fn corrupt() -> EditError {
+fn corrupt() -> EngineError {
     RuntimeError::CacheCorrupt.into()
 }
 fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
@@ -682,7 +685,7 @@ fn windows_file_identity(path: &Path) -> std::io::Result<file_id::FileId> {
         )),
     }
 }
-fn check_root(root: &Path, lock: &CacheLock) -> Result<(), EditError> {
+fn check_root(root: &Path, lock: &CacheLock) -> Result<(), EngineError> {
     let valid = || -> std::io::Result<bool> {
         let directory = fs::symlink_metadata(root)?;
         let named_lock = fs::symlink_metadata(root.join(".cache.lock"))?;
@@ -735,7 +738,7 @@ impl CacheMaintenance {
             // stale while another editor was generating or reclaiming.
             if let Err(error) = check_root(&self.root, &self.root_lock) {
                 report.root_unavailable =
-                    matches!(error, EditError::Runtime(RuntimeError::CacheCorrupt));
+                    matches!(error, EngineError::Runtime(RuntimeError::CacheCorrupt));
                 report.fail(error);
                 return report;
             }
@@ -745,10 +748,10 @@ impl CacheMaintenance {
             if !stopped && cancelled() {
                 report
                     .cause
-                    .get_or_insert(EditError::Runtime(crate::RuntimeError::Cancelled));
+                    .get_or_insert(EngineError::Runtime(crate::RuntimeError::Cancelled));
                 stopped = true;
             }
-            let measurement = (|| -> Result<Option<u64>, EditError> {
+            let measurement = (|| -> Result<Option<u64>, EngineError> {
                 let meta = match fs::symlink_metadata(&entry.path) {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
                     result => result?,
@@ -815,7 +818,7 @@ impl CacheMaintenance {
         // Empty/deleted stores must not masquerade as a successful zero.
         if let Err(error) = check_root(&self.root, &self.root_lock) {
             report.root_unavailable =
-                matches!(error, EditError::Runtime(RuntimeError::CacheCorrupt));
+                matches!(error, EngineError::Runtime(RuntimeError::CacheCorrupt));
             report.fail(error);
         }
         report
@@ -825,7 +828,7 @@ impl CacheMaintenance {
 #[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::{ArtifactCache, ByteBudget, EditError};
+    use super::{ArtifactCache, ByteBudget, EngineError};
 
     #[test]
     fn cache_maintenance_partial_unlink_failure_retains_charge_and_retries() {
@@ -880,7 +883,7 @@ mod tests {
             (200, 100, 1, 1)
         );
         assert!(
-            matches!(report.cause, Some(EditError::Runtime(RuntimeError::Io(ref error))) if error.kind() == std::io::ErrorKind::PermissionDenied)
+            matches!(report.cause, Some(EngineError::Runtime(RuntimeError::Io(ref error))) if error.kind() == std::io::ErrorKind::PermissionDenied)
         );
         assert_eq!(budget.snapshot().unwrap().used, native_charge + 100);
         let retry = cache
@@ -905,14 +908,14 @@ mod tests {
         drop(cache);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),
-            Err(EditError::Runtime(crate::RuntimeError::CacheBusy))
+            Err(EngineError::Runtime(crate::RuntimeError::CacheBusy))
         ));
         drop(owner);
         let (reopened, _) = ArtifactCache::open(root.path(), budget.clone(), 32).unwrap();
         drop(retained);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),
-            Err(EditError::Runtime(crate::RuntimeError::CacheBusy))
+            Err(EngineError::Runtime(crate::RuntimeError::CacheBusy))
         ));
         drop(reopened);
         assert!(ArtifactCache::open(root.path(), budget, 32).is_ok());

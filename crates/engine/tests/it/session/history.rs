@@ -405,34 +405,35 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
         s.undo().unwrap();
         let before = s.project().clone();
         let history = s.history_len();
-        let result: engine::Result<()> = s.transaction(|group| {
-            assert!(matches!(
-                group.transaction(|_| Ok(())),
-                Err(EditError::Session(engine::SessionError::TransactionActive))
-            ));
-            assert!(matches!(
-                group.begin_gesture(),
-                Err(EditError::Session(engine::SessionError::TransactionActive))
-            ));
-            assert!(matches!(
-                group.redo(),
-                Err(EditError::Session(engine::SessionError::TransactionActive))
-            ));
-            for _ in 0..10 {
-                group.apply(Command::BookmarkAdd {
-                    start: Tick(0),
-                    duration: Tick(0),
-                    note: "".into(),
-                    color: Color([0; 4]),
-                })?;
-                assert_eq!(group.history_len(), history);
-                assert!(group.take_change().is_none());
-            }
-            if unwind {
-                panic!("injected staged-group unwind");
-            }
-            Err(EditError::Invalid("injected group failure"))
-        });
+        let result: Result<(), engine::EditError> =
+            s.transaction(|group| -> Result<(), EditError> {
+                assert!(matches!(
+                    group.transaction(|_| Ok::<(), EditError>(())),
+                    Err(EditError::Session(engine::SessionError::TransactionActive))
+                ));
+                assert!(matches!(
+                    group.begin_gesture(),
+                    Err(EditError::Session(engine::SessionError::TransactionActive))
+                ));
+                assert!(matches!(
+                    group.redo(),
+                    Err(EditError::Session(engine::SessionError::TransactionActive))
+                ));
+                for _ in 0..10 {
+                    group.apply(Command::BookmarkAdd {
+                        start: Tick(0),
+                        duration: Tick(0),
+                        note: "".into(),
+                        color: Color([0; 4]),
+                    })?;
+                    assert_eq!(group.history_len(), history);
+                    assert!(group.take_change().is_none());
+                }
+                if unwind {
+                    panic!("injected staged-group unwind");
+                }
+                Err(EditError::Invalid("injected group failure"))
+            });
         if unwind {
             assert!(matches!(
                 result,
@@ -448,6 +449,27 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
         assert!(Arc::ptr_eq(&before, &s.take_change().unwrap()));
         s.redo().unwrap();
     }
+    let mut s = Session::new(project(), 1).unwrap();
+    let before = s.project().clone();
+    let history = s.history_len();
+    let cause: Arc<dyn engine::Failure> = Arc::new(engine::Error::Ai(ai::Error::RateLimit {
+        retry_after_seconds: Some(3),
+    }));
+    let expected = cause.clone();
+    let result: engine::Result<()> = s.transaction(move |group| {
+        group.apply(Command::RenameProject {
+            name: "discarded".into(),
+        })?;
+        Err(engine::Error::Runtime(engine::RuntimeError::Failed(cause)))
+    });
+    let engine::Error::Runtime(engine::RuntimeError::Failed(returned)) = result.unwrap_err() else {
+        panic!("mixed callback cause changed")
+    };
+    assert!(Arc::ptr_eq(&returned, &expected));
+    assert!(Arc::ptr_eq(s.project(), &before));
+    assert_eq!(s.history_len(), history);
+    assert!(!s.transaction_active());
+    assert!(s.take_change().is_none());
 }
 #[test]
 fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
@@ -459,7 +481,7 @@ fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
     .unwrap();
     let before = s.project().clone();
     s.take_change();
-    s.transaction(|group| {
+    s.transaction(|group| -> Result<(), EditError> {
         for start in 0..10 {
             group.apply(Command::MoveItem {
                 item: ItemId(10),
@@ -481,7 +503,7 @@ fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
     assert!(!s.commit_gesture().unwrap().changed);
     assert!(s.take_change().is_none());
     assert!(s.can_redo());
-    s.transaction(|_| Ok(())).unwrap();
+    s.transaction(|_| Ok::<(), EditError>(())).unwrap();
     assert!(s.can_redo());
     assert!(s.take_change().is_none());
     assert!(!Arc::ptr_eq(&initial, s.project()));
@@ -499,17 +521,18 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
             Some("drag"),
         )
         .unwrap();
-        let result: engine::Result<()> = s.transaction(|group| {
-            group.apply(Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(5),
-            })?;
-            if unwind {
-                panic!("injected group unwind");
-            }
-            Err(EditError::Invalid("refused"))
-        });
+        let result: Result<(), engine::EditError> =
+            s.transaction(|group| -> Result<(), EditError> {
+                group.apply(Command::MoveItem {
+                    item: ItemId(10),
+                    track: TrackId(2),
+                    start: Tick(5),
+                })?;
+                if unwind {
+                    panic!("injected group unwind");
+                }
+                Err(EditError::Invalid("refused"))
+            });
         assert!(result.is_err());
         s.apply_merged(
             Command::MoveItem {

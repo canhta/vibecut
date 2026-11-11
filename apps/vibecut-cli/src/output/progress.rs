@@ -1,6 +1,6 @@
 //! Observes engine jobs through stderr progress.
 use crate::args::CliError;
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState};
 use engine::transcript::{Progress, Stage};
 use std::io;
@@ -39,7 +39,7 @@ pub(crate) fn wait_for_job(runner: &mut JobRunner, id: JobId) -> Result<(), CliE
                 });
             }
             JobState::Cancelled => {
-                return Err(CliError::Job(Arc::new(EditError::Runtime(
+                return Err(CliError::Job(Arc::new(EngineError::Runtime(
                     engine::RuntimeError::Cancelled,
                 ))));
             }

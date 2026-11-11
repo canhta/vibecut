@@ -408,7 +408,9 @@ impl Editor {
                         .iter()
                         .any(|t| t.items.iter().any(|i| i.id == item))
                     {
-                        return Err(Error::Engine(engine::EditError::NoItem(item)));
+                        return Err(Error::Engine(engine::Error::Edit(
+                            engine::EditError::NoItem(item),
+                        )));
                     }
                     self.select_single(item);
                 }

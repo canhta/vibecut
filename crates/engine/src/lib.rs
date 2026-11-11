@@ -5,6 +5,7 @@ mod session;
 pub(crate) use session::transitions;
 use session::wire::ErrorCode;
 pub use session::wire::{Failure, JobFailurePolicy};
+pub use session::{AssetUsage, EditError, FontError, JobTarget, Session, SessionError, SoundError};
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
@@ -12,7 +13,6 @@ pub use session::{
     Move, NewItem, Outcome, Placement, TextAnimationPreset, TrackPlacement, TranscriptCue,
     TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
 };
-pub use session::{FontError, JobTarget, Session, SessionError, SoundError};
 mod runtime;
 pub use runtime::cache;
 pub use runtime::jobs;
@@ -60,17 +60,11 @@ pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
 pub use providers::models;
 
 pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
-/// One media asset's timeline usage, retained in the typed removal refusal.
-/// Item IDs are stable identifiers, never user-authored text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AssetUsage {
-    pub asset: media::AssetId,
-    pub items: Vec<project::ItemId>,
-}
-
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
-pub enum EditError {
+pub enum Error {
+    #[error(transparent)]
+    Edit(#[from] EditError),
     #[error(transparent)]
     Control(#[from] control::ControlError),
 
@@ -96,46 +90,14 @@ pub enum EditError {
     Transcript(#[from] transcript::Error),
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),
-    #[error("missing track {0:?}")]
-    NoTrack(project::TrackId),
-    #[error("missing media asset {0:?}")]
-    NoAsset(media::AssetId),
-    #[error("media asset is used by timeline items: {0:?}")]
-    AssetsInUse(Vec<AssetUsage>),
-    #[error("missing item {0:?}")]
-    NoItem(project::ItemId),
-    #[error("track {0:?} is locked")]
-    Locked(project::TrackId),
-    #[error("transcript selection is in another scene")]
-    SceneBoundary,
-    #[error("transcript cue text is edited and protects its words")]
-    Protected,
-    #[error("transcript cues are not adjacent")]
-    CuesNotAdjacent,
-    #[error("transcript cues are on different tracks")]
-    CuesAcrossTracks,
-    #[error("transcript cues are in different items")]
-    CuesAcrossItems,
-    #[error("items overlap on track {0:?}")]
-    Overlap(project::TrackId),
     #[error("Project is empty")]
     EmptyProject,
-    #[error("invalid edit: {0}")]
-    Invalid(&'static str),
-    #[error("unsupported edit: {0}")]
-    Unsupported(&'static str),
-    #[error("project candidate rejected")]
-    Project(#[from] project::Error),
-    #[error("invalid edit time")]
-    Time(#[from] time::TimeError),
-    #[error("invalid caption mapping")]
-    Captions(#[from] captions::Error),
 }
-pub type Result<T> = std::result::Result<T, EditError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 pub use runtime::{default_file_name, sanitize_file_name};
 
-impl EditError {
+impl Error {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
@@ -161,33 +123,16 @@ impl EditError {
                     inner.is_transient(),
                 );
             }
-            Self::Io(_) | Self::Project(project::Error::Io(_)) => C::Io,
-            Self::Project(project::Error::Busy) => C::Busy,
-            Self::Project(project::Error::Conflict) => C::Conflict,
-            Self::Project(project::Error::Media(_)) => C::Media,
-            Self::NoTrack(_)
-            | Self::NoAsset(_)
-            | Self::AssetsInUse(_)
-            | Self::NoItem(_)
-            | Self::Locked(_)
-            | Self::SceneBoundary
-            | Self::Protected
-            | Self::CuesNotAdjacent
-            | Self::CuesAcrossTracks
-            | Self::CuesAcrossItems
-            | Self::Overlap(_)
-            | Self::Invalid(_)
-            | Self::Unsupported(_)
-            | Self::Project(_)
-            | Self::Time(_)
-            | Self::Captions(_) => C::Refused,
+            Self::Io(_) => C::Io,
+            Self::Edit(inner) => return (inner.code(), inner.transient()),
         };
         (code, false)
     }
 }
-impl Failure for EditError {
+impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
+            Self::Edit(error) => error.job_policy(),
             Self::Runtime(error) => error.job_policy(),
             Self::Session(error) => error.job_policy(),
             Self::Control(error) => error.job_policy(),
@@ -205,5 +150,23 @@ impl Failure for EditError {
     }
     fn transient(&self) -> bool {
         self.classification().1
+    }
+}
+
+impl From<project::Error> for Error {
+    fn from(error: project::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
+
+impl From<time::TimeError> for Error {
+    fn from(error: time::TimeError) -> Self {
+        Self::Edit(error.into())
+    }
+}
+
+impl From<captions::Error> for Error {
+    fn from(error: captions::Error) -> Self {
+        Self::Edit(error.into())
     }
 }

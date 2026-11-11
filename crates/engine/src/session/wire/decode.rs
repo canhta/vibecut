@@ -1,6 +1,7 @@
 //! Decodes a command id and its parameters against the registry schemas.
 use super::budget;
-use crate::{Command, EditError, Result, registry};
+use crate::session::{EditError, Result};
+use crate::{Command, registry};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::OnceLock};
 

@@ -1,5 +1,5 @@
 //! Associates confident face tracks across shots.
-use super::{EditError, FaceTrack, SpeakerRef};
+use super::{EngineError, FaceTrack, SpeakerRef};
 use ai::vision::FaceEmbedding;
 
 // Calibrated on agent-labelled interview boundaries; evidence and limitations
@@ -20,14 +20,14 @@ impl Identities {
         tracks: &mut [FaceTrack],
         evidence: Evidence,
         ctx: &dyn ai::ExecutionHooks,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), EngineError> {
         if ctx.cancelled() {
-            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
         }
         let mut decisions = Vec::new();
         for (id, samples) in &evidence {
             if ctx.cancelled() {
-                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
             }
             let mut scores: Vec<_> = self
                 .anchors
@@ -56,7 +56,7 @@ impl Identities {
         }
         for track in tracks.iter_mut() {
             if ctx.cancelled() {
-                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
             }
             track.identity = decisions
                 .iter()
@@ -74,11 +74,11 @@ impl Identities {
         // faces cannot identify each other; ambiguous faces remain Unknown.
         for (id, samples) in evidence {
             if ctx.cancelled() {
-                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
             }
             if tracks.iter().any(|t| t.id == id && t.identity.is_none()) {
                 if self.anchors.len() == MAX_ANCHORS {
-                    return Err(EditError::Control(
+                    return Err(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -217,7 +217,7 @@ mod tests {
                 vec![(0, vec![sample(1., 0.)])],
                 &Hooks(true)
             ),
-            Err(EditError::Runtime(crate::RuntimeError::Cancelled))
+            Err(EngineError::Runtime(crate::RuntimeError::Cancelled))
         ));
         identities.anchors = (0..MAX_ANCHORS)
             .map(|i| {
@@ -237,7 +237,7 @@ mod tests {
                 vec![(0, vec![sample(0., 1.)])],
                 &Hooks(false)
             ),
-            Err(EditError::Control(
+            Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit
             ))
         ));

@@ -250,9 +250,7 @@ impl State {
             JobState::Failed | JobState::Cancelled => {
                 self.lut.capture = None;
                 return Err(snapshot.error.map_or(Error::Cancelled, |error| {
-                    Error::Engine(engine::EditError::Runtime(engine::RuntimeError::Failed(
-                        error,
-                    )))
+                    Error::Engine(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
                 }));
             }
             _ => {}

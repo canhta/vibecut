@@ -1,5 +1,5 @@
 //! Publishes admitted output artifacts.
-use crate::{EditError, Result};
+use crate::{Error as EngineError, Result};
 use project::atomic::{AtomicFs, Overwrite, StreamingStage, StreamingWriter};
 use std::path::{Path, PathBuf};
 
@@ -33,7 +33,7 @@ impl Publication<'_> {
 
     pub(crate) fn admit(&self) -> Result<()> {
         if self.hooks.cancelled() {
-            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
         }
         render::validate_output_path(self.project, self.path, self.hooks)?;
         project::atomic::admit_destination(self.path)?;
@@ -51,7 +51,9 @@ impl Publication<'_> {
                 })
                 || self.same_file(path)?
             {
-                return Err(EditError::Invalid("output aliases an active project file"));
+                return Err(EngineError::Edit(crate::EditError::Invalid(
+                    "output aliases an active project file",
+                )));
             }
         }
         Ok(())

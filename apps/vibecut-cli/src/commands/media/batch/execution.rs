@@ -5,7 +5,7 @@ use crate::output::{progress_percent, stage_name};
 use crate::session::Context;
 use crate::session::{export_job_key, export_settings};
 use crate::{CliError, Output};
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::cache::CacheKey;
 use engine::jobs::{CancelToken, JobRunner, JobState};
 use engine::jobs::{JobId, JobStage};
@@ -32,7 +32,7 @@ where
         TimeRange,
         render::ExportSettings,
         PathBuf,
-    ) -> Result<(JobId, CancelToken), EditError>,
+    ) -> Result<(JobId, CancelToken), EngineError>,
 {
     let budget = context.budget()?;
     let mut runner = JobRunner::new(
@@ -49,9 +49,9 @@ where
     )?;
     let total = batch.jobs.len();
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(total)
-        .map_err(|_| CliError::Engine(EditError::Control(engine::control::ControlError::Limit)))?;
+    values.try_reserve_exact(total).map_err(|_| {
+        CliError::Engine(EngineError::Control(engine::control::ControlError::Limit))
+    })?;
     let mut human = Vec::new();
     let mut exit = 0;
     for (index, job) in batch.jobs.iter().enumerate() {
@@ -129,7 +129,7 @@ where
         TimeRange,
         render::ExportSettings,
         PathBuf,
-    ) -> Result<(JobId, CancelToken), EditError>,
+    ) -> Result<(JobId, CancelToken), EngineError>,
 {
     let duration = project.duration();
     if duration <= Tick::ZERO {
@@ -183,7 +183,7 @@ fn wait_for_job(
                 });
             }
             JobState::Cancelled => {
-                return Err(CliError::Job(Arc::new(EditError::Runtime(
+                return Err(CliError::Job(Arc::new(EngineError::Runtime(
                     engine::RuntimeError::Cancelled,
                 ))));
             }

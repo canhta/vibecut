@@ -1,6 +1,6 @@
 //! Holds the trusted command-line grants that bound every MCP client request.
 use crate::Error;
-use engine::{Command, EditError, GrantClass, control::Policy};
+use engine::{Command, Error as EngineError, GrantClass, control::Policy};
 use std::path::{Path, PathBuf};
 
 /// Trusted command-line grants. A client request can never broaden them.
@@ -38,11 +38,11 @@ impl Grants {
         directory: bool,
         project: &project::Project,
     ) -> engine::Result<()> {
-        let root = self.output.as_ref().ok_or(EditError::Control(
+        let root = self.output.as_ref().ok_or(EngineError::Control(
             engine::control::ControlError::Permission,
         ))?;
         if overwrite || !path.is_absolute() || path.file_name().is_none() {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             ));
         }
@@ -50,35 +50,35 @@ impl Grants {
         // the client may only select the one granted directory.
         if directory {
             if path != root && Some(path) != self.selected_output.as_deref() {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     engine::control::ControlError::Permission,
                 ));
             }
             let selected = std::fs::canonicalize(path)
-                .map_err(|_| EditError::Control(engine::control::ControlError::Permission))?;
+                .map_err(|_| EngineError::Control(engine::control::ControlError::Permission))?;
             return if &selected == root && selected.is_dir() {
                 Ok(())
             } else {
-                Err(EditError::Control(
+                Err(EngineError::Control(
                     engine::control::ControlError::Permission,
                 ))
             };
         }
-        let parent = path.parent().ok_or(EditError::Control(
+        let parent = path.parent().ok_or(EngineError::Control(
             engine::control::ControlError::Permission,
         ))?;
         // Only resolve a directory explicitly selected by the human.
         // Resolving an arbitrary client parent first could touch an
         // ungranted filesystem or initiate a Windows UNC connection.
         if parent != root && Some(parent) != self.selected_output.as_deref() {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             ));
         }
         let parent = std::fs::canonicalize(parent)
-            .map_err(|_| EditError::Control(engine::control::ControlError::Permission))?;
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Permission))?;
         if &parent != root || path.is_dir() {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             ));
         }
@@ -89,7 +89,7 @@ impl Grants {
             .iter()
             .any(|asset| asset.path() == path)
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             ));
         }
@@ -104,7 +104,7 @@ impl Policy for Grants {
         match command.grant() {
             Some(GrantClass::Agent) => Ok(()),
             Some(GrantClass::Output) => {
-                let (path, overwrite) = command.published_path().ok_or(EditError::Control(
+                let (path, overwrite) = command.published_path().ok_or(EngineError::Control(
                     engine::control::ControlError::Permission,
                 ))?;
                 self.output_path(
@@ -114,7 +114,7 @@ impl Policy for Grants {
                     project,
                 )
             }
-            Some(GrantClass::Human) | None => Err(EditError::Control(
+            Some(GrantClass::Human) | None => Err(EngineError::Control(
                 engine::control::ControlError::Permission,
             )),
         }

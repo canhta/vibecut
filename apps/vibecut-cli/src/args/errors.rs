@@ -1,5 +1,5 @@
 //! Maps typed CLI refusals to stable process diagnostics.
-use engine::{EditError, Failure, control::ErrorCode, providers};
+use engine::{Error as EngineError, Failure, control::ErrorCode, providers};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
@@ -12,7 +12,7 @@ pub enum CliError {
     #[error(transparent)]
     Project(#[from] project::Error),
     #[error(transparent)]
-    Engine(#[from] EditError),
+    Engine(#[from] EngineError),
     #[error(transparent)]
     Shorts(#[from] shorts::Error),
     #[error(transparent)]
@@ -99,9 +99,9 @@ impl CliError {
         match self {
             Self::Render(render::Error::Unavailable(list)) => Some(list),
             Self::Job(error) => match (error.as_ref() as &(dyn std::error::Error + 'static))
-                .downcast_ref::<EditError>()
+                .downcast_ref::<EngineError>()
             {
-                Some(EditError::Render(render::Error::Unavailable(list))) => Some(list),
+                Some(EngineError::Render(render::Error::Unavailable(list))) => Some(list),
                 _ => None,
             },
             _ => None,
@@ -111,12 +111,12 @@ impl CliError {
 
 fn edit_message(error: &(dyn Failure + 'static)) -> String {
     let cause: &(dyn std::error::Error + 'static) = error;
-    let root = cause.downcast_ref::<EditError>();
-    if let Some(EditError::Providers(providers::Error::ModelMissing(id))) = root {
+    let root = cause.downcast_ref::<EngineError>();
+    if let Some(EngineError::Providers(providers::Error::ModelMissing(id))) = root {
         return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
     }
     let runtime = match root {
-        Some(EditError::Runtime(error)) => Some(error),
+        Some(EngineError::Runtime(error)) => Some(error),
         _ => cause.downcast_ref::<engine::RuntimeError>(),
     };
     match runtime {
@@ -186,6 +186,12 @@ fn reason_name(reason: render::UnavailableReason) -> &'static str {
 
 impl From<engine::RuntimeError> for CliError {
     fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}
+
+impl From<engine::EditError> for CliError {
+    fn from(error: engine::EditError) -> Self {
         Self::Engine(error.into())
     }
 }

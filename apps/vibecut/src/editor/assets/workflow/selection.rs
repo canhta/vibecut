@@ -136,7 +136,9 @@ impl Editor {
             .iter()
             .any(|candidate| candidate.id() == asset && !candidate.ephemeral())
         {
-            return Err(Error::Engine(engine::EditError::NoAsset(asset)));
+            return Err(Error::Engine(engine::Error::Edit(
+                engine::EditError::NoAsset(asset),
+            )));
         }
         if self.preferences.assets_tab != AssetsTab::Media {
             self.preferences

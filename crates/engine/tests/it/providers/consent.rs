@@ -6,7 +6,7 @@ use ai::{
     TranslationWindow, Translator,
 };
 use captions::LanguageTag;
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::providers::{CatalogOperation, ConsentPrompt, Cost, StoredConsent, UploadRequest};
 use std::sync::Arc;
 
@@ -309,7 +309,9 @@ fn a_local_provider_has_no_upload_to_consent_to() {
     );
     assert!(matches!(
         refused,
-        Err(EditError::Unsupported("local provider has no upload"))
+        Err(EngineError::Edit(engine::EditError::Unsupported(
+            "local provider has no upload"
+        )))
     ));
 }
 
@@ -342,7 +344,7 @@ fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
         assert!(
             matches!(
                 consent.approve(&request),
-                Err(EditError::Providers(
+                Err(EngineError::Providers(
                     engine::providers::Error::ConsentRequired
                 ))
             ),
@@ -378,7 +380,7 @@ fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
         if allowed {
             result.unwrap();
         } else {
-            assert!(matches!(result, Err(EditError::Ai(ai::Error::Cost))));
+            assert!(matches!(result, Err(EngineError::Ai(ai::Error::Cost))));
         }
     }
 }
@@ -386,10 +388,10 @@ fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
 fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_disclosure() {
     struct Explicit;
     impl ConsentPrompt for Explicit {
-        fn approve(&self, _: &UploadRequest) -> Result<(), EditError> {
+        fn approve(&self, _: &UploadRequest) -> Result<(), EngineError> {
             Err(ai::Error::ConsentRequired.into())
         }
-        fn approve_unknown_price(&self, _: &UploadRequest) -> Result<(), EditError> {
+        fn approve_unknown_price(&self, _: &UploadRequest) -> Result<(), EngineError> {
             Ok(())
         }
     }
@@ -418,7 +420,7 @@ fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_dis
             &scope,
             &estimate
         ),
-        Err(EditError::Ai(ai::Error::Cost))
+        Err(EngineError::Ai(ai::Error::Cost))
     ));
     let consent =
         engine::providers::approve_upload(&Explicit, &request, &scope, &estimate).unwrap();
@@ -427,7 +429,7 @@ fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_dis
     changed.model = "fixture-other".into();
     assert!(matches!(
         engine::providers::approve_upload(&Explicit, &changed, &scope, &estimate),
-        Err(EditError::Ai(ai::Error::ConsentRequired))
+        Err(EngineError::Ai(ai::Error::ConsentRequired))
     ));
     changed = request.clone();
     changed.operation = CatalogOperation::Translate;

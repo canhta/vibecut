@@ -293,7 +293,7 @@ impl ThumbnailDisk {
                 Ok(Some(image))
             }
             Ok(None) => Ok(None),
-            Err(engine::EditError::Runtime(
+            Err(engine::Error::Runtime(
                 engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge,
             )) => Err(MediaError::TooLarge("retained thumbnail budget")),
             Err(error) => {
@@ -542,7 +542,7 @@ impl ImportQueue {
                                     );
                                 }
                             }
-                            next = next.checked_add(1).ok_or(engine::EditError::Control(
+                            next = next.checked_add(1).ok_or(engine::Error::Control(
                                 engine::control::ControlError::Limit,
                             ))?;
                             if send.send(ImportEvent::Imported(imported)).is_err() {
@@ -683,7 +683,7 @@ impl ImportQueue {
     }
     /// Thumbnails run as a second registered job after probing, so the library
     /// can show `probing` badges before decode starts.
-    fn start_thumbnails(&mut self) -> std::result::Result<(), engine::EditError> {
+    fn start_thumbnails(&mut self) -> std::result::Result<(), engine::Error> {
         let assets = std::mem::take(&mut self.pending);
         let total = assets.len();
         self.phase = Phase::Thumbnail;
@@ -782,7 +782,7 @@ pub fn needs_thumbnail(imported: &ImportedSource) -> bool {
 fn job_key(
     kind: ArtifactKind,
     model: &'static str,
-) -> std::result::Result<CacheKey, engine::EditError> {
+) -> std::result::Result<CacheKey, engine::Error> {
     CacheKey::new(KeyInputs {
         kind,
         source: [0; 32],
@@ -801,9 +801,9 @@ fn finish(
     send: &mpsc::SyncSender<ImportEvent>,
     cancelled: bool,
     error: Option<Arc<dyn engine::Failure + 'static>>,
-) -> std::result::Result<Vec<u8>, engine::EditError> {
+) -> std::result::Result<Vec<u8>, engine::Error> {
     if send.send(ImportEvent::Done { cancelled, error }).is_err() {
-        return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
+        return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
     }
     Ok(Vec::new())
 }

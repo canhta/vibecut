@@ -1,8 +1,9 @@
 //! Owns editable session history.
 use super::edit;
+use crate::session::{EditError, Result};
 mod checkpoint;
 mod session_control;
-use crate::{Command, EditError, NewItem, Outcome, Placement, Result};
+use crate::{Command, NewItem, Outcome, Placement};
 use checkpoint::Checkpoint;
 use project::{AudioParams, AudioSource, ItemId, ItemParams, LibrarySound, Project};
 use serde_json::Value;
@@ -370,11 +371,12 @@ impl Session {
     /// Stage commands as one undo step. An error or unwind restores project, undo/redo,
     /// merging and deferred events. Nested transactions/gestures and undo/redo are refused.
     /// Successful child IDs remain retired even if the outer group rolls back.
-    pub fn transaction<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    pub fn transaction<T, E: From<EditError>>(
+        &mut self,
+        run: impl FnOnce(&mut Self) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
         if self.transaction_active() {
-            return Err(EditError::Session(
-                crate::session::SessionError::TransactionActive,
-            ));
+            return Err(EditError::Session(crate::session::SessionError::TransactionActive).into());
         }
         self.generation.checked_add(1).ok_or(EditError::Control(
             crate::session::wire::ControlError::Limit,
@@ -395,7 +397,7 @@ impl Session {
                 self.state.rewind(before);
                 match failed {
                     Ok(Err(error)) => Err(error),
-                    _ => Err(EditError::Session(crate::session::SessionError::Panicked)),
+                    _ => Err(EditError::Session(crate::session::SessionError::Panicked).into()),
                 }
             }
         }
@@ -531,7 +533,7 @@ impl Session {
             })?;
             created.extend(outcome.created);
             placements.extend(outcome.placements);
-            Ok(())
+            Ok::<(), EditError>(())
         })?;
         Ok(Outcome {
             changed: true,

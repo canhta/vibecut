@@ -3,7 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::{Output, json_path};
 use crate::session::{Context, Edit, History, WritePolicy, run_leased};
-use engine::{EditError, NfcText};
+use engine::{Error as EngineError, NfcText};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -127,7 +127,7 @@ fn captions_import(args: Vec<OsString>) -> Result<Output, CliError> {
                 .max()
                 .unwrap_or(0)
                 .checked_add(1)
-                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+                .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
             let report = engine::prepare_ass_import(&engine::AssImportRequest {
                 path: file,
                 language,

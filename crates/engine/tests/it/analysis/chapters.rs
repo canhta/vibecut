@@ -3,7 +3,7 @@
 use engine::chapters::{ChapterJob, ChapterRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
-use engine::{ByteBudget, EditError};
+use engine::{ByteBudget, Error as EngineError};
 use project::{
     CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
@@ -220,7 +220,7 @@ struct Grant {
     allowed: Arc<AtomicBool>,
 }
 impl ConsentPrompt for Grant {
-    fn approve(&self, _: &UploadRequest) -> Result<(), engine::EditError> {
+    fn approve(&self, _: &UploadRequest) -> Result<(), engine::Error> {
         if self.allowed.load(Ordering::SeqCst) {
             Ok(())
         } else {
@@ -337,7 +337,7 @@ fn generation_maps_cues_to_output_time_and_decodes_the_document() {
     assert_eq!(decode(&bytes).unwrap(), document);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EditError::Runtime(engine::RuntimeError::JobNotRetained))
+        Err(EngineError::Runtime(engine::RuntimeError::JobNotRetained))
     ));
     runner.shutdown();
 }
@@ -348,21 +348,21 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     let en = captions::LanguageTag::parse("en").unwrap();
     assert!(matches!(
         ChapterRequest::new(&empty, en.clone(), 4),
-        Err(EditError::Ai(ai::Error::Chapters(
+        Err(EngineError::Ai(ai::Error::Chapters(
             ai::chapters::ChapterRefusal::EmptyTranscript
         )))
     ));
     let fr = captions::LanguageTag::parse("fr").unwrap();
     assert!(matches!(
         ChapterRequest::new(&empty, fr, 4),
-        Err(EditError::Ai(ai::Error::Chapters(
+        Err(EngineError::Ai(ai::Error::Chapters(
             ai::chapters::ChapterRefusal::UnsupportedLanguage
         )))
     ));
     for max in [0, 51] {
         assert!(matches!(
             ChapterRequest::new(&project(), en.clone(), max),
-            Err(EditError::Ai(ai::Error::Chapters(
+            Err(EngineError::Ai(ai::Error::Chapters(
                 ai::chapters::ChapterRefusal::InvalidSettings
             )))
         ));
@@ -370,7 +370,7 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     let vi = captions::LanguageTag::parse("vi").unwrap();
     assert!(matches!(
         ChapterRequest::new(&project(), vi, 4),
-        Err(EditError::Ai(ai::Error::Chapters(
+        Err(EngineError::Ai(ai::Error::Chapters(
             ai::chapters::ChapterRefusal::EmptyTranscript
         )))
     ));
@@ -392,7 +392,7 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     let hostile = Arc::new(Project::new(data).unwrap());
     assert!(matches!(
         ChapterRequest::new(&hostile, en, 4),
-        Err(EditError::Ai(ai::Error::Chapters(
+        Err(EngineError::Ai(ai::Error::Chapters(
             ai::chapters::ChapterRefusal::InvalidSegments
         )))
     ));
@@ -416,7 +416,7 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     );
     assert!(matches!(
         request.submit(&mut runner, &denied),
-        Err(EditError::Providers(
+        Err(EngineError::Providers(
             engine::providers::Error::ConsentRequired
         ))
     ));
@@ -428,7 +428,7 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
     ));
     runner.shutdown();
 }
@@ -444,7 +444,7 @@ fn provider_failures_are_typed_job_failures() {
     assert_eq!(wait(&mut runner, &job), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EditError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Ai(ai::Error::Auth)))
+        Err(EngineError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Ai(ai::Error::Auth)))
     ));
     runner.shutdown();
 }

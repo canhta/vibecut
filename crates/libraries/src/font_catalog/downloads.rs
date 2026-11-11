@@ -1,7 +1,7 @@
 //! Transfers pinned font files into durable storage.
 use super::{
     ADMITTED_BY, Active, Arc, ArtifactKind, AtomicU64, BTreeSet, BUFFER, Cache, CacheKey,
-    CancelToken, Digest, DownloadTransport, EditError, FontError, FontStore, GOOGLE_FONTS_COMMIT,
+    CancelToken, Digest, DownloadTransport, EngineError, FontError, FontStore, GOOGLE_FONTS_COMMIT,
     GoogleFamily, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, KeyInputs,
     LICENSE_FILE, Mutex, Ordering, Path, PathBuf, Read, ResourceClass, Result, Sha256, Staging,
     WORK_BYTES, Write, fs, io, read_cache,
@@ -45,7 +45,7 @@ impl FontStore {
         })?;
         let root = self.root.clone();
         let transport = self.transport.clone();
-        Ok(runner.submit::<engine::EditError>(
+        Ok(runner.submit::<engine::Error>(
             JobSpec {
                 kind: JobKind::DownloadFont,
                 class: ResourceClass::Network,
@@ -210,13 +210,13 @@ pub(super) fn fetch(
         ctx.check_cancelled()?;
         let read = body
             .read(&mut buffer)
-            .map_err(|_| EditError::Runtime(engine::RuntimeError::NetworkTransient))?;
+            .map_err(|_| EngineError::Runtime(engine::RuntimeError::NetworkTransient))?;
         if read == 0 {
             break;
         }
         let chunk = buffer
             .get(..read)
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         written += read as u64;
         if written > size {
             return Err(FontError::Integrity.into());

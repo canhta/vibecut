@@ -11,7 +11,7 @@ use crate::{
     services::playback::{Files, Playback},
 };
 use engine::{
-    ByteBudget, Command, EditError, Session,
+    ByteBudget, Command, Error as EngineError, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
@@ -1165,7 +1165,7 @@ impl EditorWindow {
             translation: [0; 32],
         })?;
         let worker_input = input.clone();
-        let submitted = self.runner.borrow_mut().submit::<engine::EditError>(
+        let submitted = self.runner.borrow_mut().submit::<engine::Error>(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -1181,7 +1181,9 @@ impl EditorWindow {
                     .lock()
                     .map_err(|_| engine::RuntimeError::Poisoned)?
                     .take()
-                    .ok_or(EditError::Invalid("missing lifecycle work"))?;
+                    .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                        "missing lifecycle work",
+                    )))?;
                 let result = run(
                     work,
                     &root,
@@ -1190,7 +1192,7 @@ impl EditorWindow {
                     preferences.clone(),
                 );
                 send.send(result)
-                    .map_err(|_| EditError::Runtime(engine::RuntimeError::Cancelled))?;
+                    .map_err(|_| EngineError::Runtime(engine::RuntimeError::Cancelled))?;
                 Ok(Vec::new())
             },
         );
@@ -1258,14 +1260,12 @@ impl EditorWindow {
                 }
             }
         }
-        let result = pending.receive.try_recv().unwrap_or_else(|_| {
-            Err(snapshot
-                .error
-                .map(Error::Worker)
-                .unwrap_or(Error::Engine(EditError::Runtime(
-                    engine::RuntimeError::WorkerPanicked,
-                ))))
-        });
+        let result =
+            pending.receive.try_recv().unwrap_or_else(|_| {
+                Err(snapshot.error.map(Error::Worker).unwrap_or(Error::Engine(
+                    EngineError::Runtime(engine::RuntimeError::WorkerPanicked),
+                )))
+            });
         // A Save As whose publication already completed is a successful Save As
         // even when the cancel arrives afterwards: the engine has rekeyed the
         // editor to the copy, so dropping the completion would leave the window
@@ -1489,17 +1489,21 @@ impl EditorWindow {
                 .collapsible(false)
                 .show(ui.ctx(), |ui| {
                     let text = match self.error.as_ref() {
-                        Some(Error::Engine(EditError::Project(project::Error::TooNew {
-                            ..
-                        })))
+                        Some(Error::Engine(EngineError::Edit(engine::EditError::Project(
+                            project::Error::TooNew { .. },
+                        ))))
                         | Some(Error::Project(project::Error::TooNew { .. })) => Text::TooNew,
-                        Some(Error::Engine(EditError::Project(project::Error::TooOld {
-                            ..
-                        })))
+                        Some(Error::Engine(EngineError::Edit(engine::EditError::Project(
+                            project::Error::TooOld { .. },
+                        ))))
                         | Some(Error::Project(project::Error::TooOld { .. })) => Text::TooOld,
-                        Some(Error::Engine(EditError::Project(project::Error::Busy)))
+                        Some(Error::Engine(EngineError::Edit(engine::EditError::Project(
+                            project::Error::Busy,
+                        ))))
                         | Some(Error::Project(project::Error::Busy)) => Text::Busy,
-                        Some(Error::Engine(EditError::Project(project::Error::Conflict)))
+                        Some(Error::Engine(EngineError::Edit(engine::EditError::Project(
+                            project::Error::Conflict,
+                        ))))
                         | Some(Error::Project(project::Error::Conflict)) => Text::Conflict,
                         _ => Text::ProjectError,
                     };
@@ -1638,7 +1642,7 @@ fn run(
             Schedule::default(),
         ) {
             Ok(open) => open,
-            Err(EditError::Project(project::Error::Io(e)))
+            Err(EngineError::Edit(engine::EditError::Project(project::Error::Io(e))))
                 if e.kind() == std::io::ErrorKind::NotFound
                     && path.parent().is_some_and(|parent| parent.is_dir()) =>
             {
@@ -1684,7 +1688,7 @@ fn run(
                     }
                     autosave.flush()?;
                     if autosave.saving() || autosave.is_dirty() {
-                        return Err(EditError::Session(engine::SessionError::StaleResult).into());
+                        return Err(EngineError::Session(engine::SessionError::StaleResult).into());
                     }
                 }
                 if leave || close {
@@ -1905,7 +1909,7 @@ mod tests {
                 let (id, cancel) = window
                     .runner
                     .borrow_mut()
-                    .submit::<engine::EditError>(
+                    .submit::<engine::Error>(
                         JobSpec {
                             kind: JobKind::Persist,
                             class: ResourceClass::Cpu,
@@ -1955,7 +1959,7 @@ mod tests {
                     ));
                     assert_eq!(snapshot.state, JobState::Failed);
                 }
-                Error::Engine(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+                Error::Engine(EngineError::Runtime(engine::RuntimeError::WorkerPanicked))
                     if mode == 1 =>
                 {
                     assert_eq!(snapshot.state, JobState::Completed);

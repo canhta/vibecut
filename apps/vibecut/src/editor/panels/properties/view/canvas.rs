@@ -187,14 +187,14 @@ impl Panel<'_, '_> {
                 Text::CacheRestart
             } else {
                 match cause {
-                    engine::EditError::Runtime(engine::RuntimeError::Cancelled) => {
-                        Text::CacheCancelled
-                    }
-                    engine::EditError::Runtime(engine::RuntimeError::CacheCorrupt) => {
+                    engine::Error::Runtime(engine::RuntimeError::Cancelled) => Text::CacheCancelled,
+                    engine::Error::Runtime(engine::RuntimeError::CacheCorrupt) => {
                         Text::CacheCorrupt
                     }
-                    engine::EditError::Runtime(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
-                    engine::EditError::Unsupported(_) => Text::CacheUnavailable,
+                    engine::Error::Runtime(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
+                    engine::Error::Edit(engine::EditError::Unsupported(_)) => {
+                        Text::CacheUnavailable
+                    }
                     _ => Text::CacheFailed,
                 }
             };

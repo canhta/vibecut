@@ -7,7 +7,7 @@
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{Cue, CueText, CueTrack, Format, LanguageTag};
 use engine::jobs::{JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock};
-use engine::{ByteBudget, EditError};
+use engine::{ByteBudget, Error as EngineError};
 use media::{AssetData, AssetId, SourceAsset, SourceStream, StreamKind, TimeBase};
 use project::{Project, ProjectId};
 use shorts::{ClipBatch, ClipBatchRequest, ClipShort};
@@ -451,7 +451,7 @@ fn reserved(stem: &str) -> bool {
 
 #[test]
 fn refuses_hostile_batches_at_the_short_or_request_level() {
-    use engine::EditError;
+    use engine::Error as EngineError;
     let dir = tempfile::tempdir().unwrap();
     let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
     let one = |segments| ClipShort::new("Short", segments);
@@ -526,8 +526,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20,
         ),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip caption languages"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip caption languages")
         )))
     ));
     assert!(matches!(
@@ -537,8 +537,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![],
             1 << 20,
         ),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip caption languages"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip caption languages")
         )))
     ));
     assert!(matches!(
@@ -548,8 +548,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![Format::Srt],
             1 << 20
         ),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip subtitle languages"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip subtitle languages")
         )))
     ));
     assert!(matches!(
@@ -559,14 +559,14 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
             vec![Format::Srt, Format::Srt],
             1 << 20,
         ),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip subtitle formats"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip subtitle formats")
         )))
     ));
     assert!(matches!(
         prepare(one(vec![segment(0, 1, 0)]), vec![], vec![], 0),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip output byte ceiling"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip output byte ceiling")
         )))
     ));
     let bad_crop = ClipShort::new("Crop", vec![segment(0, 1, 0)]).with_crop(Some(project::Crop {
@@ -575,7 +575,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     }));
     assert!(matches!(
         prepare(bad_crop, vec![], vec![], 1 << 20),
-        Err(shorts::Error::Engine(EditError::Render(
+        Err(shorts::Error::Engine(EngineError::Render(
             render::Error::Invalid("normalized rectangle")
         )))
     ));
@@ -590,8 +590,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     };
     assert!(matches!(
         ClipBatch::prepare(&source, missing_asset),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip source asset"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip source asset")
         )))
     ));
     let mut missing_directory = batch(
@@ -603,8 +603,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     missing_directory.directory = dir.path().join("absent");
     assert!(matches!(
         ClipBatch::prepare(&source, missing_directory),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip output directory"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip output directory")
         )))
     ));
     let empty = ClipBatchRequest {
@@ -613,7 +613,9 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
     };
     assert!(matches!(
         ClipBatch::prepare(&source, empty),
-        Err(shorts::Error::Engine(EditError::Invalid("clip batch size")))
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip batch size")
+        )))
     ));
     let mut audio_only = AssetData::from(asset(2, dir.path().join("missing-source.mp4"), 10));
     audio_only
@@ -631,8 +633,8 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
                 dir.path()
             ),
         ),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip source media"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip source media")
         )))
     ));
 }
@@ -653,9 +655,9 @@ fn missing_source_fails_each_short_with_typed_diagnostics_and_allows_retry() {
     for (index, snapshot) in snapshots.iter().enumerate() {
         assert_eq!(snapshot.state, JobState::Failed);
         match snapshot.error.as_deref().and_then(|error| {
-            (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         }) {
-            Some(EditError::Render(render::Error::Unavailable(details))) => {
+            Some(EngineError::Render(render::Error::Unavailable(details))) => {
                 assert_eq!(details.len(), 2);
                 for detail in details {
                     assert_eq!(detail.asset, AssetId(1));
@@ -704,7 +706,9 @@ fn cancelling_one_short_mid_batch_leaves_neighbours_and_retries() {
     assert_eq!(snapshots[1].state, JobState::Failed);
     assert!(matches!(
         batch.cancel(9),
-        Err(shorts::Error::Engine(EditError::Invalid(_)))
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid(_)
+        )))
     ));
     batch.cancel_all();
 }
@@ -741,8 +745,8 @@ fn storage_ceiling_refuses_before_publishing_and_preserves_previous_files() {
     assert!(matches!(
         snapshots[0].error.as_deref().and_then(|error| (error
             as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()),
-        Some(EditError::Io(_) | EditError::Project(_))
+            .downcast_ref::<EngineError>()),
+        Some(EngineError::Io(_) | EngineError::Edit(engine::EditError::Project(_)))
     ));
     assert_eq!(std::fs::read(&video).unwrap(), b"previous video");
     assert_eq!(std::fs::read(&subtitle).unwrap(), b"previous subtitle");
@@ -946,8 +950,8 @@ fn cancelling_mid_batch_completes_neighbours_and_retry_finishes() {
     assert!(batch.paths(1).unwrap().video.exists());
     assert!(matches!(
         batch.retry(&mut runner, 0),
-        Err(shorts::Error::Engine(EditError::Invalid(
-            "clip is not retryable"
+        Err(shorts::Error::Engine(EngineError::Edit(
+            engine::EditError::Invalid("clip is not retryable")
         )))
     ));
     assert_eq!(temporary_files(&out), 0);
@@ -1039,11 +1043,11 @@ fn video_storage_ceiling_preserves_previous_output() {
                 .error
                 .as_deref()
                 .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<EditError>()),
+                    .downcast_ref::<EngineError>()),
             Some(
-                EditError::Io(_)
-                    | EditError::Project(_)
-                    | EditError::Render(render::Error::Io(_) | render::Error::Media(_))
+                EngineError::Io(_)
+                    | EngineError::Edit(engine::EditError::Project(_))
+                    | EngineError::Render(render::Error::Io(_) | render::Error::Media(_))
             )
         ),
         "{:?}",
@@ -1107,8 +1111,8 @@ fn source_sidecar_alias_is_refused_before_publication() {
                 .error
                 .as_deref()
                 .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<EditError>()),
-            Some(EditError::Render(render::Error::Invalid(
+                    .downcast_ref::<EngineError>()),
+            Some(EngineError::Render(render::Error::Invalid(
                 "output aliases a source"
             )))
         ),
@@ -1154,8 +1158,8 @@ fn source_video_alias_is_refused_even_with_overwrite() {
                 .error
                 .as_deref()
                 .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<EditError>()),
-            Some(EditError::Render(render::Error::Invalid(
+                    .downcast_ref::<EngineError>()),
+            Some(EngineError::Render(render::Error::Invalid(
                 "output aliases a source"
             )))
         ),

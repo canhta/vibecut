@@ -4,7 +4,7 @@ use crate::session::wire::{
     ControlResult, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_SAFE_INTEGER,
     PREVIEW_QUALITY, PreviewFrame, PreviewResult, bounded_json,
 };
-use crate::{EditError, Result, Session};
+use crate::{Error as EngineError, Result, Session};
 use std::io::Write;
 use time::{SourceRange, Tick};
 
@@ -32,12 +32,12 @@ pub(crate) fn preview(
     runner: &mut JobRunner,
 ) -> Result<ControlResult> {
     if session.transaction_active() {
-        return Err(EditError::Session(
+        return Err(EngineError::Session(
             crate::session::SessionError::TransactionActive,
         ));
     }
     if frames.is_empty() || frames.len() > MAX_PREVIEW_FRAMES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -46,7 +46,7 @@ pub(crate) fn preview(
     for frame in &frames {
         let at = fps.tick_of(*frame)?;
         if *frame < 0 || at.0 > MAX_SAFE_INTEGER || (at >= project.duration() && at != Tick::ZERO) {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::InvalidParams,
             ));
         }
@@ -79,7 +79,7 @@ pub(crate) fn preview(
                     .timeline
                     .rendered_items(
                         at,
-                        at.checked_add(Tick(1)).ok_or(EditError::Control(
+                        at.checked_add(Tick(1)).ok_or(EngineError::Control(
                             crate::session::wire::ControlError::InvalidParams,
                         ))?,
                     )
@@ -87,12 +87,12 @@ pub(crate) fn preview(
                     .map(|i| i.id)
                     .collect();
                 if clips.iter().any(|id| id.0 > MAX_SAFE_INTEGER as u64) {
-                    return Err(EditError::Control(
+                    return Err(EngineError::Control(
                         crate::session::wire::ControlError::InvalidParams,
                     ));
                 }
                 if clips.len() > MAX_PREVIEW_CLIPS {
-                    return Err(EditError::Control(
+                    return Err(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -118,16 +118,16 @@ pub(crate) fn preview(
                     .max()
                     .unwrap_or(0)
                     .checked_add(1)
-                    .ok_or(EditError::Session(
+                    .ok_or(EngineError::Session(
                         crate::session::SessionError::IdExhausted,
                     ))?;
                 let background_id = project::ItemId(next.checked_add(1).ok_or(
-                    EditError::Session(crate::session::SessionError::IdExhausted),
+                    EngineError::Session(crate::session::SessionError::IdExhausted),
                 )?);
                 let label_track = project::TrackId(next.checked_add(2).ok_or(
-                    EditError::Session(crate::session::SessionError::IdExhausted),
+                    EngineError::Session(crate::session::SessionError::IdExhausted),
                 )?);
-                let label_id = project::ItemId(next.checked_add(3).ok_or(EditError::Session(
+                let label_id = project::ItemId(next.checked_add(3).ok_or(EngineError::Session(
                     crate::session::SessionError::IdExhausted,
                 ))?);
                 let label = format!(
@@ -146,7 +146,7 @@ pub(crate) fn preview(
                     || columns < 8
                     || band > settings.height as usize / 2
                 {
-                    return Err(EditError::Control(
+                    return Err(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -245,7 +245,9 @@ pub(crate) fn preview(
                 let mut jpeg = JpegWriter(Vec::new());
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, PREVIEW_QUALITY)
                     .encode(&rgb, width, height, image::ExtendedColorType::Rgb8)
-                    .map_err(|_| EditError::Invalid("preview encoding"))?;
+                    .map_err(|_| {
+                        EngineError::Edit(crate::EditError::Invalid("preview encoding"))
+                    })?;
                 output.push(PreviewFrame {
                     frame: *frame,
                     output_tick: at,
@@ -262,7 +264,7 @@ pub(crate) fn preview(
                 },
                 MAX_PREVIEW_RESULT_BYTES,
             )
-            .map_err(EditError::from)
+            .map_err(EngineError::from)
         },
     )?;
     Ok(ControlResult::JobAccepted {

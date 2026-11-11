@@ -3,7 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
 use crate::session::{Context, Edit, History, WritePolicy, run_leased};
-use engine::{CreatedId, EditError};
+use engine::{CreatedId, Error as EngineError};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -29,7 +29,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
             |_session| {
                 if params != json!({}) {
                     return Err(
-                        EditError::Control(engine::control::ControlError::InvalidParams).into(),
+                        EngineError::Control(engine::control::ControlError::InvalidParams).into(),
                     );
                 }
                 Ok(Edit {
