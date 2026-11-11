@@ -1642,7 +1642,7 @@ fn run(
             Schedule::default(),
         ) {
             Ok(open) => open,
-            Err(EngineError::Edit(engine::EditError::Project(project::Error::Io(e))))
+            Err(recovery::Error::Edit(engine::EditError::Project(project::Error::Io(e))))
                 if e.kind() == std::io::ErrorKind::NotFound
                     && path.parent().is_some_and(|parent| parent.is_dir()) =>
             {

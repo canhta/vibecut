@@ -39,6 +39,20 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(
+                E::Recovery(engine::recovery::Error::Runtime(
+                    engine::RuntimeError::NetworkTransient
+                )),
+                "job",
+                7
+            ),
+            row!(
+                E::Recovery(engine::recovery::Error::Edit(engine::EditError::Session(
+                    engine::SessionError::StaleResult
+                ))),
+                "job",
+                7
+            ),
             row!(E::Runtime(engine::RuntimeError::CacheBusy), "rejected", 5),
             row!(
                 E::Runtime(engine::RuntimeError::ModelResponse),

@@ -10,11 +10,15 @@ saved file means flushing first and constructing `Autosave::open`. Each observed
 snapshot advances a checked session-local revision; gesture previews are never journaled.
 
 `recovery::Error` owns recovery refusals, filesystem/format causes and sticky persistence
-failures. Discovery, candidate discard and protected export paths return `recovery::Result`;
-discovery retains those concrete diagnostics. Methods composing Session edits or runtime jobs
-retain the engine result and wrap recovery errors upward. No recovery error contains that root
-error type. A sticky failure shares an `Arc<dyn Failure>` retaining the original typed cause;
-borrowed standard Error downcasts remain available. Its wire code delegates to the cause, but
+failures. Autosave lifecycle/checkpoint operations and their persistence jobs return
+`recovery::Result`, composing genuine lower Kernel Edit and Runtime causes. Discovery, candidate
+discard and protected export paths retain their direct Recovery Project/IO wrappers; Autosave
+writer operations preserve Project failures through Kernel Edit. Candidate recovery itself
+returns the narrower Kernel edit result. Higher mixed consumers compose `engine::Error::Recovery`;
+no recovery operation imports that aggregate. Direct Runtime policy delegates, while owned
+refusals/Project/IO and sticky persistence envelopes retain ordinary opaque policy. A sticky failure shares an `Arc<dyn Failure>` retaining the original typed cause;
+borrowed standard Error downcasts remain available, and repeated diagnostics share the same
+worker cause without another persistence envelope. Its wire code delegates to the cause, but
 it is never transient and its displayed message stays `session persistence failed`.
 
 Call `tick()` from the app event loop. `Schedule::default()` uses an 800 ms debounce and a 10 s

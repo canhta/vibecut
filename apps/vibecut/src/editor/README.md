@@ -35,3 +35,5 @@ production uses `FileSources` as export does. `AudioPort::fill` accepts a headle
 device callback.
 
 Responsibilities and layers: [structure](../../../../docs/engineering/structure.md).
+
+Persistent-session diagnostics retain the typed shared [Recovery cause](../../../../crates/engine/src/store/recovery_workflow/README.md) until the workspace presents it.
