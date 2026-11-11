@@ -795,6 +795,7 @@ fn job_key(
         clip_range: [0; 32],
         translation: [0; 32],
     })
+    .map_err(engine::Error::from)
 }
 
 fn finish(

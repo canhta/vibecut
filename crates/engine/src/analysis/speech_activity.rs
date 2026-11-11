@@ -171,8 +171,8 @@ impl SpeechActivityRequest {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
-            Err(error) => return Err(error),
+            Ok(None) | Err(crate::RuntimeError::CacheCorrupt) => None,
+            Err(error) => return Err(error.into()),
         };
         let request = self.clone();
         // The media speech extract retains one default 10-minute PCM window

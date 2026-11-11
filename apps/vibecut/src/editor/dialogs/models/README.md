@@ -21,6 +21,9 @@ accepting a licence or starting transcription never starts a transfer: the affir
 Download click is the only place a `DownloadConsent` is granted. Closing during a
 transfer is refused; Cancel leaves the engine checkpoint for Resume. The composed runtime
 `CacheBusy` refusal keeps the existing Busy presentation and starts no second transfer;
-releasing the owning transfer permits a later explicit Download.
+releasing the owning transfer permits a later explicit Download. Installed-file verification
+retains the original AI cause in `RuntimeError::Model`; integrity/storage rows inspect the
+borrowed contained error while keeping its shared Arc intact. Verification cancellation
+remains an opaque resource failure and does not become scheduler cancellation.
 
 AI task progress and per-upload consent live in [`services`](../../../services/README.md).

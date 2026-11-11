@@ -38,6 +38,7 @@ pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> Result<Ca
         clip_range: *frame.finalize().as_bytes(),
         translation: [0; 32],
     })
+    .map_err(EngineError::from)
 }
 
 /// Shared retained pixels and allowance for CPU image, upload staging and GPU
@@ -123,7 +124,7 @@ pub struct ThumbnailCache {
 impl ThumbnailCache {
     /// Registered disk artifacts only; does not count retained decoded images.
     pub fn maintenance(&self) -> Result<crate::cache::CacheMaintenance> {
-        self.cache.maintenance()
+        self.cache.maintenance().map_err(EngineError::from)
     }
 
     pub fn open(root: &Path, budget: ByteBudget, max_entries: usize) -> Result<Self> {
@@ -180,10 +181,10 @@ impl ThumbnailCache {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+            Err(crate::RuntimeError::CacheCorrupt) => {
                 return Ok(ThumbnailLookup::Corrupt);
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         };
         let Some(lease) = lease else {
             return Ok(ThumbnailLookup::Missing);
@@ -233,7 +234,7 @@ impl ThumbnailCache {
         payload.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
         payload.extend_from_slice(&metadata);
         payload.extend_from_slice(&image);
-        self.cache.put(key, &payload)
+        self.cache.put(key, &payload).map_err(EngineError::from)
     }
 
     /// Cache hit without decoding; otherwise decode once and publish. The

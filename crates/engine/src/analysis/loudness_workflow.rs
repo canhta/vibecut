@@ -35,6 +35,7 @@ fn job_key(content: [u8; 32]) -> Result<CacheKey, EngineError> {
         clip_range: [0; 32],
         translation: [0; 32],
     })
+    .map_err(EngineError::from)
 }
 
 /// Queue one CPU measurement of the project's requested targets. The result is

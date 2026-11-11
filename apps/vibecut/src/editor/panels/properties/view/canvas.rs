@@ -172,13 +172,16 @@ impl Panel<'_, '_> {
             let response = ui.label(egui::RichText::new(summary).small().color(self.secondary()));
             self.remember("inspector.cache.result", &response);
         }
-        let cause = cache.cause.as_deref().or_else(|| {
-            cache
+        let cause = cache.cause.as_deref();
+        let runtime = match cause {
+            Some(engine::Error::Runtime(error)) => Some(error),
+            Some(_) => None,
+            None => cache
                 .report
                 .as_ref()
-                .and_then(|report| report.cause.as_ref())
-        });
-        if let Some(cause) = cause {
+                .and_then(|report| report.cause.as_ref()),
+        };
+        if cause.is_some() || runtime.is_some() {
             let key = if cache
                 .report
                 .as_ref()
@@ -186,13 +189,18 @@ impl Panel<'_, '_> {
             {
                 Text::CacheRestart
             } else {
-                match cause {
-                    engine::Error::Runtime(engine::RuntimeError::Cancelled) => Text::CacheCancelled,
-                    engine::Error::Runtime(engine::RuntimeError::CacheCorrupt) => {
-                        Text::CacheCorrupt
+                match runtime {
+                    Some(engine::RuntimeError::Cancelled) => Text::CacheCancelled,
+                    Some(engine::RuntimeError::CacheCorrupt) => Text::CacheCorrupt,
+                    Some(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
+                    Some(engine::RuntimeError::Edit(engine::EditError::Unsupported(_))) => {
+                        Text::CacheUnavailable
                     }
-                    engine::Error::Runtime(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
-                    engine::Error::Edit(engine::EditError::Unsupported(_)) => {
+                    _ if matches!(
+                        cause,
+                        Some(engine::Error::Edit(engine::EditError::Unsupported(_)))
+                    ) =>
+                    {
                         Text::CacheUnavailable
                     }
                     _ => Text::CacheFailed,

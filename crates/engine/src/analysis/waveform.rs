@@ -86,8 +86,8 @@ impl WaveformRequest {
                 .decode(lease.bytes())
                 .ok()
                 .map(|_| lease.bytes().to_vec()),
-            Ok(None) | Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
-            Err(error) => return Err(error),
+            Ok(None) | Err(crate::RuntimeError::CacheCorrupt) => None,
+            Err(error) => return Err(error.into()),
         };
         let request = self.clone();
         let spec = JobSpec {
@@ -244,7 +244,7 @@ pub fn display(
         Err(EngineError::Edit(crate::EditError::Unsupported(_))) => {
             return Ok(WaveformState::Unsupported);
         }
-        Err(error) => return Err(error),
+        Err(error) => return Err(error.into()),
     };
     let clip = TimeRange::new(item.start, item.end()?)?;
     let span = visible
@@ -255,12 +255,12 @@ pub fn display(
     let lease = match cache.get(request.key) {
         Ok(Some(lease)) => lease,
         Ok(None) => return Ok(WaveformState::Pending),
-        Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+        Err(crate::RuntimeError::CacheCorrupt) => {
             return Ok(WaveformState::Failed(EngineError::Runtime(
                 crate::RuntimeError::CacheCorrupt,
             )));
         }
-        Err(error) => return Err(error),
+        Err(error) => return Err(error.into()),
     };
     let summary = match request.decode(lease.bytes()) {
         Ok(summary) => summary,

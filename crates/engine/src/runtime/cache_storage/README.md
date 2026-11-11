@@ -23,7 +23,7 @@ additional identity:
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded metadata after
 restart. Application placement chooses the directory and an OS file lock enforces one live
 writer (contention composes [`RuntimeError::CacheBusy`](../README.md#background-jobs-and-byte-policy)
-through `engine::Error::Runtime`). Cache writers and native model leases share the lock; the last
+directly). Cache writers and native model leases share the lock; the last
 logical owner explicitly unlocks it, so inherited or duplicated OS descriptors cannot keep a
 dropped cache busy. Open removes atomic staging debris and malformed canonical entries with a
 diagnostic count. Unrecognized files are skipped, never deleted, and sit outside cache
@@ -31,10 +31,12 @@ accounting; directory scanning streams metadata, and excess entries evict withou
 payloads.
 
 Headers bind the canonical key; `get` checks admitted size, header and payload digest before
-returning a hit. Corruption or a missing file returns `RuntimeError::CacheCorrupt` through `engine::Error::Runtime`; corrupt-file removal waits
+returning a hit. Corruption or a missing file returns direct `RuntimeError::CacheCorrupt`; corrupt-file removal waits
 for older reader pins to release, so a caller can record the typed diagnostic and recompute.
-Other IO errors retain their source. Reservation/pin/evict failures compose the runtime owner's
-error through `engine::Error::Runtime`; other cache filesystem failures retain their existing root IO.
+Other IO errors retain their source. All cache operations return the Runtime result. Reservation/pin/evict failures and
+filesystem IO retain their direct Runtime owner and original source; mixed callers compose
+upward at their workflow boundary. Atomic writer failures preserve Kernel Project sources
+through transparent `RuntimeError::Edit`.
 A failed unlink retains its charge and resets the eviction pin so repair and retry remain possible.
 ASR checkpoint writes tolerate only runtime budget pressure, never IO or poisoned accounting.
 
@@ -66,7 +68,7 @@ is a reusable artifact.
 without IO or reader pins. `CacheMaintenance::run` measures file lengths including envelopes,
 reading at most each header; unknown files, native bundles and substituted non-files remain
 untouched. Clear shares atomic eviction with budget reclamation, skips live pins and retains
-charges on failed unlink. Reports preserve prior removals, survivors and the first typed cause
+charges on failed unlink. Reports preserve prior removals, survivors and the first typed Runtime cause
 on partial failure or cancellation; a missing pinned file has zero disk bytes but keeps its
 charge and immutable read bytes until release and a later pass. Generation can repopulate a
 snapshot. Root/lock identity checks refuse settled deletion or replacement, including writes

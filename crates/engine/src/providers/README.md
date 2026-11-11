@@ -99,3 +99,8 @@ tail. Range resumption requires a strong matching ETag and exact Content-Range a
 200 response replaces the prefix, and weak or missing validators restart from zero. Malformed,
 encoded, excess, truncated and hash-invalid responses never publish, and the shared HTTPS client
 bounds redirects and has finite timeouts. Weights are never Git or installer content.
+
+Native cache metadata and installed-file verification failures arrive through
+`RuntimeError::Model` with the original AI source; this opaque resource failure does not
+turn AI verification cancellation into direct scheduler cancellation. Transfer callbacks
+retain their declared mixed engine error, consent, retry and publication policy.

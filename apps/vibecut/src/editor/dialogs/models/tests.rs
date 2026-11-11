@@ -515,8 +515,8 @@ fn checksum_failure_is_discarded_and_reported() {
     http.push(Reply::ok(Arc::from(vec![4u8; expected.len()]), "\"one\""));
     let manager = manager(
         dir.path(),
-        vec![fixture],
-        http,
+        vec![fixture.clone()],
+        http.clone(),
         Arc::new(Io {
             available: u64::MAX,
         }),
@@ -535,8 +535,39 @@ fn checksum_failure_is_discarded_and_reported() {
             .is_some()
     );
     assert!(inspection.installed.is_empty());
-}
 
+    http.push(Reply::ok(Arc::from(expected.clone()), "\"fixed\""));
+    bench.click("models.download.fixture-hash");
+    wait_terminal(&mut bench);
+    assert_eq!(inspect(&bench).job.unwrap().state, JobState::Completed);
+    let path = dir
+        .path()
+        .join(ArtifactCache::model_key(&fixture).unwrap().filename())
+        .join(&fixture.files.first().unwrap().name);
+    drop(bench);
+    std::fs::write(&path, vec![4; expected.len()]).unwrap();
+    let calls = http.count();
+    let manager = self::manager(
+        dir.path(),
+        vec![fixture],
+        http.clone(),
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    let mut cached = self::bench(open(manager, "fixture-hash"));
+    wait_check(&mut cached);
+    let inspection = inspect(&cached);
+    assert!(inspection.installed.is_empty());
+    assert!(
+        cached
+            .harness()
+            .query_by_label("Download was damaged. Try again.")
+            .is_some()
+    );
+    assert_eq!(http.count(), calls);
+    assert_eq!(std::fs::read(path).unwrap(), vec![4; expected.len()]);
+}
 #[test]
 fn foreign_bundle_is_reported_as_corrupt_without_download_or_adoption() {
     let dir = tempfile::tempdir().unwrap();

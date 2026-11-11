@@ -126,6 +126,18 @@ mod exit_codes {
             row!(E::Render(render::Error::Cancelled), "render", 6),
             row!(E::Media(media::MediaError::Cancelled), "media", 6),
             row!(E::Ai(ai::Error::Auth), "ai", 4),
+            row!(
+                E::Runtime(engine::RuntimeError::Model(ai::Error::Cancelled)),
+                "ai",
+                4
+            ),
+            row!(
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(
+                    engine::RuntimeError::Model(ai::Error::ModelIntegrity)
+                ))),
+                "ai",
+                4
+            ),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
             row!(
@@ -431,6 +443,9 @@ mod exit_codes {
         ))));
         assert_eq!(wrapped.code(), ("job", 7));
         assert_eq!(wrapped.value()["message"], "transient network failure");
+        let model = CliError::Job(Arc::new(engine::RuntimeError::Model(ai::Error::Cancelled)));
+        assert_eq!(model.code(), ("ai", 4));
+        assert_eq!(model.value()["message"], "AI execution failed");
         let cache = CliError::Job(Arc::new(engine::RuntimeError::CacheCorrupt));
         assert_eq!(cache.code(), ("job", 7));
         assert_eq!(cache.value()["message"], "corrupt cache entry skipped");

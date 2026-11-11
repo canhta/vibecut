@@ -8,7 +8,7 @@ Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_public
 `cache::CacheRoot::discover()` selects the per-user OS cache base using native environment
 paths: macOS `HOME/Library/Caches`, Windows `LOCALAPPDATA`, other systems `XDG_CACHE_HOME`
 when present, otherwise `HOME/.cache`. A missing or nonabsolute selected base returns
-kernel `engine::EditError::Unsupported` composed through `engine::Error::Edit` with safe static context. A present empty or relative XDG value
+kernel `engine::EditError::Unsupported` composed through `RuntimeError::Edit` with safe static context. A present empty or relative XDG value
 refuses rather than falling back to HOME. Discovery performs no filesystem IO, creation,
 download, eviction or migration; Debug redacts the location.
 
@@ -17,6 +17,20 @@ The named paths preserve the existing layout: `models()` is `<base>/VibeCut/mode
 `thumbnails()` is `<base>/VibeCut/models/thumbnails`. These defaults do not reinterpret
 caller-injected `ArtifactCache` or `MediaAccess::open_in` roots. Cache consumers retain
 their existing storage, budget and cleanup policy.
+
+## Cache result boundary
+
+Cache location discovery, artifact keys/storage, native model leases/state and maintenance
+return `runtime::Result` directly. `CacheMaintenanceReport::cause` retains the original
+`RuntimeError`, including partial work and cancellation; mixed workflows compose through
+`engine::Error::Runtime` only at their own boundary. Resource IO/Limit/Invalid and cache
+failures use their direct Runtime variants. Project atomic-write and unsupported capability
+failures preserve their lower Kernel cause through transparent `RuntimeError::Edit`.
+Native model metadata validation and SHA verification retain `ai::Error` in the consumed
+`RuntimeError::Model` source wrapper: the static `AI execution failed` diagnostic, `Ai`
+code, no transience and ordinary scheduling policy. Verification cancellation remains that
+opaque model error, distinct from direct Runtime cancellation. Other AI workflow producers
+retain their own policies.
 
 ## Background jobs and byte policy
 
@@ -32,7 +46,7 @@ message does not authorize fallback. Each artifact consumer owns whether corrupt
 means recompute, a failed display or refusal; explicit `Failed` wrappers do not
 change that policy. `QueueFull` owns pending admission refusal
 and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
-runner's private reservation return this closed result. Upper cache, job and Session operations
+runner's private reservation return this closed result. Higher feature, job and Session operations
 compose it through transparent `engine::Error::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
 transport failures: static message `transient network failure`, `Job`, source-free
 and transient only as a direct runtime variant. All other runtime variants remain

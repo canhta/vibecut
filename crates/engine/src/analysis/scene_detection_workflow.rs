@@ -141,8 +141,8 @@ impl DetectionRequest {
                 self.decode(lease.bytes())?;
                 Some(lease.bytes().to_vec())
             }
-            Ok(None) | Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
-            Err(e) => return Err(e),
+            Ok(None) | Err(crate::RuntimeError::CacheCorrupt) => None,
+            Err(e) => return Err(e.into()),
         };
         let request = self.clone();
         let (id, cancel) = runner.submit(
