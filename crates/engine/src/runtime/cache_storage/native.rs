@@ -129,10 +129,11 @@ impl NativeEdit {
             .0
             .charge
             .lock()
-            .map_err(|_| EditError::JobPoisoned)?
+            .map_err(|_| crate::RuntimeError::Poisoned)?
             .as_mut()
             .ok_or(EditError::CacheCorrupt)?
             .resize_models(total)
+            .map_err(EditError::from)
     }
 }
 fn usage(root: &Path, state: &NativeState) -> Result<(u64, Vec<u64>), EditError> {

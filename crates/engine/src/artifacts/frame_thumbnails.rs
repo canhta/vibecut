@@ -213,7 +213,7 @@ impl ThumbnailCache {
         let metadata = serde_json::to_vec(asset)
             .map_err(|_| EditError::Invalid("thumbnail probe metadata"))?;
         if metadata.len() > 1 << 20 {
-            return Err(EditError::ArtifactTooLarge);
+            return Err(crate::RuntimeError::ArtifactTooLarge.into());
         }
         let image = thumbnail.encode();
         let mut payload = Vec::with_capacity(12 + metadata.len() + image.len());
@@ -282,7 +282,7 @@ mod tests {
         drop(image);
         assert_eq!(budget.snapshot().unwrap().used, charge);
         let pressure = budget.reserve(crate::ByteOwner::JobResults, (1 << 20) - charge + 1);
-        assert!(matches!(pressure, Err(EditError::BudgetFull)));
+        assert!(matches!(pressure, Err(crate::RuntimeError::BudgetFull)));
         drop(ui);
         assert_eq!(budget.snapshot().unwrap().used, 0);
         assert!(

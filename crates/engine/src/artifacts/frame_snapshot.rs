@@ -144,7 +144,7 @@ fn local_budget(project: &Project) -> Result<ByteBudget> {
         .saturating_mul(4)
         .saturating_add(64 << 20)
         .min(MAX_SNAPSHOT_MEMORY);
-    ByteBudget::new(limit)
+    Ok(ByteBudget::new(limit)?)
 }
 
 fn render(

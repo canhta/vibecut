@@ -46,7 +46,7 @@ impl ConsentPrompt for TaskEvents {
         let (send, receive) = mpsc::sync_channel(1);
         self.state
             .lock()
-            .map_err(|_| engine::EditError::JobPoisoned)?
+            .map_err(|_| engine::RuntimeError::Poisoned)?
             .upload = Some(Upload {
             request: request.clone(),
             reply: send,

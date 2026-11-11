@@ -70,7 +70,12 @@ impl Editor {
         first: u64,
     ) -> Result<()> {
         let result = self.import_queue()?.start(paths.clone(), first);
-        if matches!(result, Err(Error::Engine(engine::EditError::BudgetFull))) {
+        if matches!(
+            result,
+            Err(Error::Engine(engine::EditError::Runtime(
+                engine::RuntimeError::BudgetFull
+            )))
+        ) {
             self.thumbnail_textures.get_mut().clear();
             self.thumbnails.clear();
             self.import_queue()?.evict_thumbnails();

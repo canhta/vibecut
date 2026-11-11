@@ -48,7 +48,7 @@ impl CacheWork {
     fn take(slot: &Arc<Mutex<Option<ArtifactCache>>>) -> Result<Self> {
         let cache = slot
             .lock()
-            .map_err(|_| EditError::JobPoisoned)?
+            .map_err(|_| crate::RuntimeError::Poisoned)?
             .take()
             .ok_or(EditError::CacheBusy)?;
         Ok(Self {

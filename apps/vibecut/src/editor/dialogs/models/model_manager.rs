@@ -794,7 +794,9 @@ fn problem_for(error: &EditError) -> ModelProblem {
         EditError::CacheBusy => ModelProblem::Busy,
         EditError::CacheCorrupt => ModelProblem::Corrupt,
         EditError::Cancelled => ModelProblem::Cancelled,
-        EditError::Io(error) if error.kind() == std::io::ErrorKind::StorageFull => {
+        EditError::Io(error) | EditError::Runtime(engine::RuntimeError::Io(error))
+            if error.kind() == std::io::ErrorKind::StorageFull =>
+        {
             ModelProblem::StorageFull
         }
         _ => ModelProblem::Failed,

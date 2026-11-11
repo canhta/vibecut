@@ -65,7 +65,7 @@ impl FontStore {
 }
 impl Active {
     pub(super) fn acquire(set: &Arc<Mutex<BTreeSet<String>>>, slug: &str) -> Result<Self> {
-        let mut held = set.lock().map_err(|_| EditError::JobPoisoned)?;
+        let mut held = set.lock().map_err(|_| engine::RuntimeError::Poisoned)?;
         if !held.insert(slug.to_owned()) {
             return Err(FontError::DownloadActive.into());
         }

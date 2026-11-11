@@ -116,7 +116,10 @@ impl EffectThumbnails {
                     return Err(EditError::Invalid("thumbnail byte policy"));
                 }
                 {
-                    let mut entries = cache.entries.lock().map_err(|_| EditError::JobPoisoned)?;
+                    let mut entries = cache
+                        .entries
+                        .lock()
+                        .map_err(|_| crate::RuntimeError::Poisoned)?;
                     if let Some(index) = entries.iter().position(|e| e.key == key) {
                         let entry = entries.remove(index).ok_or(EditError::CacheCorrupt)?;
                         let result = entry.bytes.clone();
@@ -140,7 +143,10 @@ impl EffectThumbnails {
                 context.check_cancelled()?;
                 // Evict before admission so a full cache can progress under pressure.
                 {
-                    let mut entries = cache.entries.lock().map_err(|_| EditError::JobPoisoned)?;
+                    let mut entries = cache
+                        .entries
+                        .lock()
+                        .map_err(|_| crate::RuntimeError::Poisoned)?;
                     if entries.len() >= MAX_THUMBNAILS {
                         entries.pop_front();
                     }
@@ -151,7 +157,10 @@ impl EffectThumbnails {
                 let retained = packed.bytes.clone();
                 let output = packed.bytes.clone();
                 context.commit_publication(|| {
-                    let mut entries = cache.entries.lock().map_err(|_| EditError::JobPoisoned)?;
+                    let mut entries = cache
+                        .entries
+                        .lock()
+                        .map_err(|_| crate::RuntimeError::Poisoned)?;
                     // Concurrent identical jobs replace, rather than duplicate, entries.
                     entries.retain(|entry| entry.key != key);
                     while entries.len() >= MAX_THUMBNAILS {

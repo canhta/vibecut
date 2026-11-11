@@ -20,6 +20,14 @@ their existing storage, budget and cleanup policy.
 
 ## Background jobs and byte policy
 
+`runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
+failures; `RuntimeError` is the engine re-export. `ByteBudget`, artifact pin/evict and the
+runner's private reservation return this closed result. Upper cache, job and Session operations
+compose it through transparent `EditError::Runtime`. IO keeps its owned source; all six runtime
+variants are nontransient. Only `BudgetFull` permits reclaim or queued waiting;
+`ArtifactTooLarge` is immediate refusal even though both publish the `budget` wire code.
+Task closures and snapshots still own `EditError`; this does not erase generic job failures.
+
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.
 `submit(spec, task)` returns a `JobId` and `CancelToken`; `tick()` joins finished workers,
 admits queued work and observes progress, and the application calls it from its event loop.

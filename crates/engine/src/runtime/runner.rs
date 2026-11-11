@@ -1,4 +1,5 @@
 //! Caller-driven bounded scheduling of blocking domain execution.
+use super::{Error as RuntimeError, Result as RuntimeResult};
 use crate::Failure;
 use crate::cache::CacheKey;
 use crate::{ByteBudget, ByteLease, ByteOwner, Command, EditError, JobTarget, Outcome, Session};
@@ -155,7 +156,7 @@ impl JobContext {
     ) -> Result<T, EditError> {
         self.begin_publication()?;
         {
-            let mut progress = self.progress.lock().map_err(|_| EditError::JobPoisoned)?;
+            let mut progress = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
             progress.stage = JobStage::Publish;
             progress.at = self.clock.now();
         }
@@ -169,7 +170,7 @@ impl JobContext {
             return Err(EditError::Invalid("job progress"));
         }
         let now = self.clock.now();
-        let mut p = self.progress.lock().map_err(|_| EditError::JobPoisoned)?;
+        let mut p = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
         if now.saturating_sub(p.at) >= self.interval {
             *p = Progress {
                 stage,
@@ -329,9 +330,9 @@ impl JobRunner {
         ]
         .into_iter()
         .try_fold(0u64, |a, b| a.checked_add(b))
-        .ok_or(EditError::ArtifactTooLarge)?;
+        .ok_or(EditError::Runtime(RuntimeError::ArtifactTooLarge))?;
         if total > self.budget.snapshot()?.limit {
-            return Err(EditError::ArtifactTooLarge);
+            return Err(EditError::Runtime(RuntimeError::ArtifactTooLarge));
         }
         let id = JobId(self.next);
         self.next = self.next.checked_add(1).ok_or(EditError::IdExhausted)?;
@@ -454,7 +455,7 @@ impl JobRunner {
                 .context
                 .progress
                 .lock()
-                .map_err(|_| EditError::JobPoisoned)?;
+                .map_err(|_| RuntimeError::Poisoned)?;
             let s = &mut running.pending.snapshot;
             if running.pending.context.publication_started() && s.state != JobState::Publishing {
                 s.state = JobState::Publishing;
@@ -498,7 +499,8 @@ impl JobRunner {
                 continue;
             }
             let mut reservation = self.reserve(pending.spec.bytes);
-            while matches!(reservation, Err(EditError::BudgetFull)) && !self.finished.is_empty() {
+            while matches!(reservation, Err(RuntimeError::BudgetFull)) && !self.finished.is_empty()
+            {
                 if let Some(old) = self.finished.pop_front() {
                     self.events.remove(&old.snapshot.id);
                 }
@@ -506,12 +508,12 @@ impl JobRunner {
             }
             let (work, result) = match reservation {
                 Ok(v) => v,
-                Err(EditError::BudgetFull) => {
+                Err(RuntimeError::BudgetFull) => {
                     self.queue.push_back(pending);
                     continue;
                 }
                 Err(e) => {
-                    self.finish(pending, Err(e), None);
+                    self.finish(pending, Err(e.into()), None);
                     continue;
                 }
             };
@@ -552,7 +554,7 @@ impl JobRunner {
         }
         Ok(())
     }
-    fn reserve(&self, bytes: JobBytes) -> Result<(Vec<ByteLease>, ByteLease), EditError> {
+    fn reserve(&self, bytes: JobBytes) -> RuntimeResult<(Vec<ByteLease>, ByteLease)> {
         let mut work = Vec::new();
         for (owner, bytes) in [
             (ByteOwner::DecodedFrames, bytes.decoded_frames),
@@ -574,7 +576,7 @@ impl JobRunner {
     ) {
         let outcome = outcome.and_then(|bytes| {
             if bytes.capacity() as u64 > pending.spec.bytes.result {
-                Err(EditError::ArtifactTooLarge)
+                Err(EditError::Runtime(RuntimeError::ArtifactTooLarge))
             } else {
                 Ok(bytes)
             }
