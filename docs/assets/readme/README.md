@@ -52,7 +52,7 @@ or translated speech. No provider/model received the film.
 | `timeline.gif` | 108685 | `971c15b1b69dbfb87514cff441a6d15fd755590ad27f51fb4812dd12578d4f5c` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
 | `timeline.jpg` | 97240 | `24ea8f891526f08d306b49e1ce9c65b43e7117eaf4d590616080afc69edccaa7` | 960x600 poster at the trimmed state (frame 40) |
 
-Generated at source commit `752c05dc81c92de2b7be65fb88710a1b932b7195`.
+Generated at source commit `48a9b56b9c73e9f95a23af9ffcce6dcd5d6ec4b3`.
 Measured source-vs-decoded RGB mean/max absolute error was 0.861/24 for
 `hero.jpg`, 0.863/24 for `timeline.jpg`, and 0.791/101 for the palette-optimized
 GIF frame 40. The per-run manifest is the authoritative receipt for a particular
