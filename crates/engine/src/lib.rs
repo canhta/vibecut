@@ -84,8 +84,6 @@ pub enum EditError {
     ReceiptCapacity,
     #[error("event cursor requires a new snapshot")]
     ResyncRequired,
-    #[error("control identity unavailable")]
-    ControlIdentity,
 
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
@@ -205,8 +203,7 @@ impl EditError {
             Self::Project(project::Error::Busy) => C::Busy,
             Self::Project(project::Error::Conflict) => C::Conflict,
             Self::Project(project::Error::Media(_)) => C::Media,
-            Self::ControlIdentity
-            | Self::NoTrack(_)
+            Self::NoTrack(_)
             | Self::NoAsset(_)
             | Self::AssetsInUse(_)
             | Self::NoItem(_)
