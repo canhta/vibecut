@@ -3,7 +3,7 @@
 use engine::fillers::{FillerJob, FillerRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
-use engine::{ByteBudget, Error as EngineError};
+use engine::{AnalysisError, ByteBudget};
 use project::{
     CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
@@ -308,8 +308,8 @@ fn unknown_duplicate_and_disallowed_marker_ids_are_typed_refusals() {
         assert_eq!(wait(&mut runner, &job), JobState::Failed);
         assert!(matches!(
             job.finish(&mut runner),
-            Err(EngineError::Runtime(engine::RuntimeError::Failed(error)))
-                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Ai(ai::Error::Fillers(ai::fillers::FillerRefusal::InvalidSegments))
+            Err(AnalysisError::Runtime(engine::RuntimeError::Failed(error)))
+                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Ai(ai::Error::Fillers(ai::fillers::FillerRefusal::InvalidSegments))
                 ))
         ));
     }
@@ -334,7 +334,7 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     let mut runner = runner();
     assert!(matches!(
         request.submit(&mut runner, &access),
-        Err(EngineError::Providers(
+        Err(AnalysisError::Providers(
             engine::providers::Error::ConsentRequired
         ))
     ));
@@ -346,7 +346,7 @@ fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
 }
 
@@ -355,20 +355,20 @@ fn empty_unsupported_and_untimed_transcripts_refuse_before_a_job() {
     let empty = Arc::new(Project::empty(ProjectId(1), "Empty".into()).unwrap());
     assert!(matches!(
         FillerRequest::new(&empty, captions::LanguageTag::parse("en").unwrap(), false),
-        Err(EngineError::Ai(ai::Error::Fillers(
+        Err(AnalysisError::Ai(ai::Error::Fillers(
             ai::fillers::FillerRefusal::EmptyTranscript
         )))
     ));
     assert!(matches!(
         FillerRequest::new(&empty, captions::LanguageTag::parse("fr").unwrap(), false),
-        Err(EngineError::Ai(ai::Error::Fillers(
+        Err(AnalysisError::Ai(ai::Error::Fillers(
             ai::fillers::FillerRefusal::UnsupportedLanguage
         )))
     ));
     let project = project();
     assert!(matches!(
         FillerRequest::new(&project, captions::LanguageTag::parse("vi").unwrap(), false),
-        Err(EngineError::Ai(ai::Error::Fillers(
+        Err(AnalysisError::Ai(ai::Error::Fillers(
             ai::fillers::FillerRefusal::EmptyTranscript
         )))
     ));

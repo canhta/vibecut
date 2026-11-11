@@ -97,6 +97,7 @@ impl MediaAccess {
         columns: usize,
     ) -> Result<WaveformState, EngineError> {
         waveform::display(asset, item, visible, columns, &mut self.artifacts)
+            .map_err(EngineError::from)
     }
 
     /// Cache-only thumbnail tiles for one clip's visible range at a timeline

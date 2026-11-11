@@ -630,6 +630,36 @@ mod exit_codes {
         assert_eq!(library.code(), ("rejected", 5));
         assert_eq!(library.value()["message"], "no history step available");
         for composed in [false, true] {
+            let analysis = engine::AnalysisError::Render(render::Error::Unavailable(Vec::new()));
+            let error = if composed {
+                CliError::Job(Arc::new(E::Analysis(analysis)))
+            } else {
+                CliError::Job(Arc::new(analysis))
+            };
+            assert_eq!(error.value()["code"], "unavailable");
+            assert_eq!(error.value()["unavailable"], serde_json::json!([]));
+            let analysis = engine::AnalysisError::Providers(P::ModelMissing("test-model"));
+            let error = if composed {
+                CliError::Job(Arc::new(E::Analysis(analysis)))
+            } else {
+                CliError::Job(Arc::new(analysis))
+            };
+            assert_eq!(
+                error.value()["message"],
+                "local model test-model is not installed; run `vibecut-cli model download test-model`"
+            );
+            let analysis = engine::AnalysisError::Runtime(engine::RuntimeError::Failed(Arc::new(
+                engine::AnalysisError::Media(media::MediaError::Cancelled),
+            )));
+            let error = if composed {
+                CliError::Job(Arc::new(E::Analysis(analysis)))
+            } else {
+                CliError::Job(Arc::new(analysis))
+            };
+            assert_eq!(error.value()["code"], "media");
+            assert_eq!(error.value()["message"], "media operation failed");
+        }
+        for composed in [false, true] {
             let artifact = engine::ArtifactError::Render(render::Error::Unavailable(Vec::new()));
             let raw: Arc<dyn engine::Failure> = if composed {
                 Arc::new(E::Artifacts(artifact))

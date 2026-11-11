@@ -5,8 +5,8 @@
 //! time, validates the complete input, obtains the human consent token from the
 //! lent [`crate::providers::TextAccess`] and runs one provider attempt. Cancellation discards the
 //! result; a typed refusal happens before the job is enqueued.
+use crate::analysis::{Error as AnalysisError, Result};
 use crate::{
-    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState},
     providers::TextAccess,
@@ -38,11 +38,7 @@ impl ChapterRequest {
     /// Snapshot the requested language's cues in output time and validate them.
     /// An unsupported language, an empty transcript, hostile bounds or
     /// non-increasing/overlapping cues refuse before any provider work.
-    pub fn new(
-        project: &Arc<Project>,
-        language: LanguageTag,
-        max_chapters: usize,
-    ) -> Result<Self, EngineError> {
+    pub fn new(project: &Arc<Project>, language: LanguageTag, max_chapters: usize) -> Result<Self> {
         if !ai::supports_text_language(&language) {
             return Err(ai::Error::from(ChapterRefusal::UnsupportedLanguage).into());
         }
@@ -77,8 +73,9 @@ impl ChapterRequest {
             },
         };
         input.validate().map_err(ai::Error::from)?;
-        let source = serde_json::to_vec(&input)
-            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("chapter input")))?;
+        let source = serde_json::to_vec(&input).map_err(|_| {
+            AnalysisError::Edit(crate::session::EditError::Invalid("chapter input"))
+        })?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Chapters,
             source: *blake3::hash(&source).as_bytes(),
@@ -107,11 +104,7 @@ impl ChapterRequest {
 
     /// Obtain consent synchronously, then enqueue one network job. A refusal
     /// returns the typed reason and leaves the runner untouched.
-    pub fn submit(
-        &self,
-        runner: &mut JobRunner,
-        access: &TextAccess,
-    ) -> Result<ChapterJob, EngineError> {
+    pub fn submit(&self, runner: &mut JobRunner, access: &TextAccess) -> Result<ChapterJob> {
         let prepared = access.prepare_chapter(&self.input)?;
         let input = self.input.clone();
         let spec = JobSpec {
@@ -137,9 +130,9 @@ impl ChapterRequest {
             )?;
             context.progress(crate::jobs::JobStage::Process, 0.9)?;
             let bytes = serde_json::to_vec(&document)
-                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| AnalysisError::from(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_RESULT_BYTES {
-                return Err(EngineError::Control(
+                return Err(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -152,25 +145,25 @@ impl ChapterRequest {
 impl ChapterJob {
     /// Validate and decode complete output; typed terminal failures and
     /// cancellation propagate.
-    pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<ChapterDocument>, EngineError> {
+    pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<ChapterDocument>> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
-                snapshot
-                    .error
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
+            JobState::Cancelled => Err(AnalysisError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(AnalysisError::Runtime(crate::RuntimeError::Failed(
+                snapshot.error.ok_or(AnalysisError::from(
+                    crate::session::SessionError::StaleResult,
+                ))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let document = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(document))
             }
             _ => Ok(None),
@@ -179,11 +172,11 @@ impl ChapterJob {
 }
 
 /// Decode retained job bytes through the versioned document validator.
-pub fn decode(bytes: &[u8]) -> Result<ChapterDocument, EngineError> {
+pub fn decode(bytes: &[u8]) -> Result<ChapterDocument> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EngineError::Control(
+        return Err(AnalysisError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
-    ChapterDocument::from_json(bytes).map_err(EngineError::Ai)
+    ChapterDocument::from_json(bytes).map_err(AnalysisError::Ai)
 }

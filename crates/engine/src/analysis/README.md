@@ -4,7 +4,13 @@ Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapte
 `AnalysisRequest`, `AnalysisJob`.
 
 Every workflow here measures source media, never mutates a project, and returns a typed
-`engine::Error`. A request binds its source content and settings into a cache key; `submit` queues
+`AnalysisError` (re-exported at the engine door). Its `Edit`, `Runtime`, `Providers`,
+`Media`, `Render` and `Ai` causes retain their typed source and existing failure policy;
+higher mixed workflows compose `engine::Error::Analysis`. Kernel-only validation and
+reviewed edits return `EditError`, while cache/key operations and cache-only display
+failures retain `RuntimeError`. Failed-job finishers retain the original shared cause in
+opaque `RuntimeError::Failed` without inheriting cancellation, retry or advisory policy.
+A request binds its source content and settings into a cache key; `submit` queues
 one local or network job; `finish` validates and caches complete output, so cancellation before
 runner promotion leaves no cache entry and cache pressure preserves the runner output for a retry.
 Artifact corruption uses [RuntimeError::CacheCorrupt](../runtime/README.md).

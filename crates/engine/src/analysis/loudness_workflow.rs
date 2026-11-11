@@ -1,10 +1,10 @@
 //! Two-pass EBU R128 normalization: content-bound gains, a measurement job over
 //! the production mix graph, and export admission. The job never edits the
 //! project; the caller applies its gains through `audio.apply_loudness`.
+use crate::analysis::{Error as AnalysisError, Result};
 use crate::runtime::{LOUDNESS_VERSION as VERSION, loudness_content_key as content_key};
 use crate::session::wire::LoudnessResult;
 use crate::{
-    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
 };
@@ -22,7 +22,7 @@ impl From<render::Measurement> for crate::session::wire::Measured {
     }
 }
 
-fn job_key(content: [u8; 32]) -> Result<CacheKey, EngineError> {
+fn job_key(content: [u8; 32]) -> crate::runtime::Result<CacheKey> {
     CacheKey::new(KeyInputs {
         kind: ArtifactKind::Loudness,
         source: content,
@@ -35,7 +35,6 @@ fn job_key(content: [u8; 32]) -> Result<CacheKey, EngineError> {
         clip_range: [0; 32],
         translation: [0; 32],
     })
-    .map_err(EngineError::from)
 }
 
 /// Queue one CPU measurement of the project's requested targets. The result is
@@ -45,10 +44,10 @@ pub fn submit_loudness(
     runner: &mut JobRunner,
     project: Arc<Project>,
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
-) -> Result<JobId, EngineError> {
+) -> Result<JobId> {
     let l = &project.data().settings.loudness;
     if l.clip.is_none() && l.master.is_none() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
             "no loudness target set",
         )));
     }
@@ -79,9 +78,9 @@ pub fn submit_loudness(
             };
             context.check_cancelled()?;
             let bytes = serde_json::to_vec(&result)
-                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| AnalysisError::from(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EngineError::Control(
+                return Err(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -92,18 +91,14 @@ pub fn submit_loudness(
 }
 
 /// Decode and validate retained job bytes.
-pub fn decode(bytes: &[u8]) -> Result<LoudnessResult, EngineError> {
+pub fn decode(bytes: &[u8]) -> crate::session::Result<LoudnessResult> {
     if bytes.len() > MAX_BYTES {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "loudness result",
-        )));
+        return Err(crate::session::EditError::Invalid("loudness result"));
     }
     let result: LoudnessResult = serde_json::from_slice(bytes)
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("loudness result")))?;
+        .map_err(|_| crate::session::EditError::Invalid("loudness result"))?;
     if !result.gains.is_valid() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "loudness result",
-        )));
+        return Err(crate::session::EditError::Invalid("loudness result"));
     }
     Ok(result)
 }

@@ -520,30 +520,32 @@ impl VisualQuery for Media {
         else {
             return WaveState::Pending;
         };
-        match state {
-            Ok(engine::waveform::WaveformState::Ready(display)) => WaveState::Ready(
-                display
-                    .bars()
-                    .iter()
-                    .map(|bar| WaveBar {
-                        min: bar.min,
-                        max: bar.max,
-                        over: bar.over,
-                    })
-                    .collect(),
-            ),
+        let error = match state {
+            Ok(engine::waveform::WaveformState::Ready(display)) => {
+                return WaveState::Ready(
+                    display
+                        .bars()
+                        .iter()
+                        .map(|bar| WaveBar {
+                            min: bar.min,
+                            max: bar.max,
+                            over: bar.over,
+                        })
+                        .collect(),
+                );
+            }
             Ok(engine::waveform::WaveformState::Pending) => {
                 self.enqueue(VisualRequest::Waveform { asset: asset.id() });
-                WaveState::Pending
+                return WaveState::Pending;
             }
-            Ok(engine::waveform::WaveformState::Failed(error)) | Err(error) => {
-                if self.display_failed(error, VisualRequest::Waveform { asset: asset.id() }) {
-                    WaveState::Pending
-                } else {
-                    WaveState::Failed
-                }
-            }
-            Ok(engine::waveform::WaveformState::Unsupported) => WaveState::Unsupported,
+            Ok(engine::waveform::WaveformState::Failed(error)) => error.into(),
+            Err(error) => error,
+            Ok(engine::waveform::WaveformState::Unsupported) => return WaveState::Unsupported,
+        };
+        if self.display_failed(error, VisualRequest::Waveform { asset: asset.id() }) {
+            WaveState::Pending
+        } else {
+            WaveState::Failed
         }
     }
 

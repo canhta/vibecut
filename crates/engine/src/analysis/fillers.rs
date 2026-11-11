@@ -6,8 +6,8 @@
 //! runs one provider attempt. Returned IDs must exist in that exact transcript;
 //! unknown or duplicate IDs fail the job with the typed `InvalidSegments` reason.
 //! Cancellation discards the result and no project mutation ever happens.
+use crate::analysis::{Error as AnalysisError, Result};
 use crate::{
-    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState},
     providers::TextAccess,
@@ -56,7 +56,7 @@ impl FillerRequest {
         project: &Arc<Project>,
         language: LanguageTag,
         include_markers: bool,
-    ) -> Result<Self, EngineError> {
+    ) -> Result<Self> {
         if !ai::supports_text_language(&language) {
             return Err(ai::Error::from(FillerRefusal::UnsupportedLanguage).into());
         }
@@ -138,7 +138,7 @@ impl FillerRequest {
         };
         input.validate().map_err(ai::Error::from)?;
         let source = serde_json::to_vec(&input)
-            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("filler input")))?;
+            .map_err(|_| AnalysisError::Edit(crate::session::EditError::Invalid("filler input")))?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Fillers,
             source: *blake3::hash(&source).as_bytes(),
@@ -167,11 +167,7 @@ impl FillerRequest {
 
     /// Obtain consent synchronously, then enqueue one network job. A refusal
     /// returns the typed reason and leaves the runner untouched.
-    pub fn submit(
-        &self,
-        runner: &mut JobRunner,
-        access: &TextAccess,
-    ) -> Result<FillerJob, EngineError> {
+    pub fn submit(&self, runner: &mut JobRunner, access: &TextAccess) -> Result<FillerJob> {
         let prepared = access.prepare_fillers(&self.input)?;
         let input = self.input.clone();
         let words = self.words.clone();
@@ -199,9 +195,9 @@ impl FillerRequest {
             context.progress(crate::jobs::JobStage::Process, 0.9)?;
             let candidates = resolve(&findings, &words)?;
             let bytes = serde_json::to_vec(&candidates)
-                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| AnalysisError::from(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_RESULT_BYTES {
-                return Err(EngineError::Control(
+                return Err(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -214,28 +210,25 @@ impl FillerRequest {
 impl FillerJob {
     /// Validate and decode complete output; typed terminal failures and
     /// cancellation propagate.
-    pub fn finish(
-        &self,
-        runner: &mut JobRunner,
-    ) -> Result<Option<Vec<FillerCandidate>>, EngineError> {
+    pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<Vec<FillerCandidate>>> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
-                snapshot
-                    .error
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
+            JobState::Cancelled => Err(AnalysisError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(AnalysisError::Runtime(crate::RuntimeError::Failed(
+                snapshot.error.ok_or(AnalysisError::from(
+                    crate::session::SessionError::StaleResult,
+                ))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let candidates = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(candidates))
             }
             _ => Ok(None),
@@ -247,7 +240,7 @@ impl FillerJob {
 fn resolve(
     findings: &[FillerFinding],
     words: &BTreeMap<NfcText, Word>,
-) -> Result<Vec<FillerCandidate>, EngineError> {
+) -> Result<Vec<FillerCandidate>> {
     let mut candidates = Vec::with_capacity(findings.len());
     for finding in findings {
         let word = words
@@ -270,16 +263,16 @@ fn resolve(
 }
 
 /// Decode retained job bytes as the exact candidate list.
-pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EngineError> {
+pub fn decode(bytes: &[u8]) -> crate::session::Result<Vec<FillerCandidate>> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EngineError::Control(
+        return Err(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
     let candidates: Vec<FillerCandidate> = serde_json::from_slice(bytes)
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("filler result")))?;
+        .map_err(|_| crate::session::EditError::Invalid("filler result"))?;
     if candidates.len() > crate::session::wire::MAX_COLLECTION {
-        return Err(EngineError::Control(
+        return Err(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -288,9 +281,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EngineError> {
             || candidate.range.start < Tick::ZERO
             || candidate.range.end <= candidate.range.start
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "filler result",
-            )));
+            return Err(crate::session::EditError::Invalid("filler result"));
         }
     }
     Ok(candidates)

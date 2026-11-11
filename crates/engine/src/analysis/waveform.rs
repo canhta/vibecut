@@ -1,6 +1,6 @@
 //! Generates and caches bounded source peak summaries for clip waveforms.
+use crate::analysis::{Error as AnalysisError, Result};
 use crate::{
-    Error as EngineError,
     cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState,
@@ -35,23 +35,23 @@ pub struct WaveformJob {
 impl WaveformRequest {
     /// Admit one source with a mono or stereo audio stream. Keys bind the source
     /// content hash, sample rate, channel count and the versioned recipe.
-    pub fn new(asset: SourceAsset) -> Result<Self, EngineError> {
+    pub fn new(asset: SourceAsset) -> Result<Self> {
         let audio = audio_info(&asset)?;
         if !(8_000..=192_000).contains(&audio.sample_rate) || !(1..=2).contains(&audio.channels) {
-            return Err(EngineError::Edit(crate::EditError::Unsupported(
+            return Err(AnalysisError::Edit(crate::session::EditError::Unsupported(
                 "waveform requires mono or stereo audio",
             )));
         }
         let mut settings = [0u8; 6];
         settings
             .get_mut(..4)
-            .ok_or(EngineError::Control(
+            .ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?
             .copy_from_slice(&audio.sample_rate.to_le_bytes());
         settings
             .get_mut(4..)
-            .ok_or(EngineError::Control(
+            .ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?
             .copy_from_slice(&audio.channels.to_le_bytes());
@@ -76,11 +76,7 @@ impl WaveformRequest {
 
     /// Enqueue one CPU job. A warm cache entry opens no source. Only `finish`
     /// publishes a complete cache entry.
-    pub fn submit(
-        &self,
-        runner: &mut JobRunner,
-        cache: &mut ArtifactCache,
-    ) -> Result<WaveformJob, EngineError> {
+    pub fn submit(&self, runner: &mut JobRunner, cache: &mut ArtifactCache) -> Result<WaveformJob> {
         let cached = match cache.get(self.key) {
             Ok(Some(lease)) => self
                 .decode(lease.bytes())
@@ -109,7 +105,7 @@ impl WaveformRequest {
             context.check_cancelled()?;
             let bytes = summary.encode()?;
             if bytes.len() > MAX_BYTES {
-                return Err(EngineError::Control(
+                return Err(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -122,23 +118,21 @@ impl WaveformRequest {
         })
     }
 
-    fn analyze(&self, context: &JobContext) -> Result<PeakSummary, EngineError> {
+    fn analyze(&self, context: &JobContext) -> Result<PeakSummary> {
         context.progress(JobStage::Analyzing, 0.0)?;
         let summary = media::peak_summary(&self.asset, context.media_cancel_flag())?;
         context.check_cancelled()?;
         Ok(summary)
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<PeakSummary, EngineError> {
+    fn decode(&self, bytes: &[u8]) -> crate::runtime::Result<PeakSummary> {
         if bytes.len() > MAX_BYTES {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
-        let summary = PeakSummary::decode(bytes)
-            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
-        let audio = audio_info(&self.asset)
-            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        let summary = PeakSummary::decode(bytes).map_err(|_| crate::RuntimeError::CacheCorrupt)?;
+        let audio = audio_info(&self.asset).map_err(|_| crate::RuntimeError::CacheCorrupt)?;
         if summary.sample_rate() != audio.sample_rate || summary.channels() != audio.channels {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         Ok(summary)
     }
@@ -151,26 +145,26 @@ impl WaveformJob {
         &self,
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
-    ) -> Result<Option<PeakSummary>, EngineError> {
+    ) -> Result<Option<PeakSummary>> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
-                snapshot
-                    .error
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
+            JobState::Cancelled => Err(AnalysisError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(AnalysisError::Runtime(crate::RuntimeError::Failed(
+                snapshot.error.ok_or(AnalysisError::from(
+                    crate::session::SessionError::StaleResult,
+                ))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let summary = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(AnalysisError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(summary))
             }
             _ => Ok(None),
@@ -211,7 +205,7 @@ pub enum WaveformState {
     /// Generation has not produced a cached summary yet.
     Pending,
     /// The cached summary cannot be decoded and must be regenerated.
-    Failed(EngineError),
+    Failed(crate::runtime::Error),
     /// The clip's source has no mono or stereo audio stream.
     Unsupported,
 }
@@ -228,37 +222,36 @@ pub fn display(
     visible: TimeRange,
     columns: usize,
     cache: &mut ArtifactCache,
-) -> Result<WaveformState, EngineError> {
+) -> Result<WaveformState> {
     if !(1..=MAX_COLUMNS).contains(&columns) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
             "waveform display columns",
         )));
     }
     if item.source_asset != Some(asset.id()) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(AnalysisError::Edit(crate::session::EditError::Invalid(
             "waveform display asset",
         )));
     }
     let request = match WaveformRequest::new(asset.clone()) {
         Ok(request) => request,
-        Err(EngineError::Edit(crate::EditError::Unsupported(_))) => {
+        Err(AnalysisError::Edit(crate::session::EditError::Unsupported(_))) => {
             return Ok(WaveformState::Unsupported);
         }
         Err(error) => return Err(error.into()),
     };
     let clip = TimeRange::new(item.start, item.end()?)?;
-    let span = visible
-        .intersect(clip)
-        .ok_or(EngineError::Edit(crate::EditError::Invalid(
-            "waveform display outside clip",
-        )))?;
+    let span =
+        visible
+            .intersect(clip)
+            .ok_or(AnalysisError::Edit(crate::session::EditError::Invalid(
+                "waveform display outside clip",
+            )))?;
     let lease = match cache.get(request.key) {
         Ok(Some(lease)) => lease,
         Ok(None) => return Ok(WaveformState::Pending),
         Err(crate::RuntimeError::CacheCorrupt) => {
-            return Ok(WaveformState::Failed(EngineError::Runtime(
-                crate::RuntimeError::CacheCorrupt,
-            )));
+            return Ok(WaveformState::Failed(crate::RuntimeError::CacheCorrupt));
         }
         Err(error) => return Err(error.into()),
     };
@@ -276,37 +269,40 @@ fn reduce(
     span: TimeRange,
     columns: usize,
     summary: &PeakSummary,
-) -> Result<Vec<WaveformBar>, EngineError> {
+) -> crate::session::Result<Vec<WaveformBar>> {
     let duration = i128::from(span.duration().0);
     let start = i128::from(span.start().0);
     let columns = i128::try_from(columns)
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
-    let mut bars = Vec::with_capacity(
-        usize::try_from(columns)
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
-    );
+        .map_err(|_| crate::session::EditError::from(crate::session::wire::ControlError::Limit))?;
+    let mut bars =
+        Vec::with_capacity(usize::try_from(columns).map_err(|_| {
+            crate::session::EditError::from(crate::session::wire::ControlError::Limit)
+        })?);
     for index in 0..columns {
         let output_start = start
             .checked_add(
-                duration.checked_mul(index).ok_or(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ))? / columns,
+                duration
+                    .checked_mul(index)
+                    .ok_or(crate::session::EditError::from(
+                        crate::session::wire::ControlError::Limit,
+                    ))?
+                    / columns,
             )
-            .ok_or(EngineError::Control(
+            .ok_or(crate::session::EditError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
         let output_end = start
             .checked_add(
                 duration
-                    .checked_mul(index.checked_add(1).ok_or(EngineError::Control(
+                    .checked_mul(index.checked_add(1).ok_or(crate::session::EditError::from(
                         crate::session::wire::ControlError::Limit,
                     ))?)
-                    .ok_or(EngineError::Control(
+                    .ok_or(crate::session::EditError::from(
                         crate::session::wire::ControlError::Limit,
                     ))?
                     / columns,
             )
-            .ok_or(EngineError::Control(
+            .ok_or(crate::session::EditError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
         let source_start = item.source_time_at(tick(output_start)?)?;
@@ -348,20 +344,20 @@ fn reduce(
     Ok(bars)
 }
 
-fn tick(value: i128) -> Result<Tick, EngineError> {
+fn tick(value: i128) -> crate::session::Result<Tick> {
     Ok(Tick(i64::try_from(value).map_err(|_| {
-        EngineError::Control(crate::session::wire::ControlError::Limit)
+        crate::session::EditError::from(crate::session::wire::ControlError::Limit)
     })?))
 }
 
-fn audio_info(asset: &SourceAsset) -> Result<&AudioInfo, EngineError> {
+fn audio_info(asset: &SourceAsset) -> crate::session::Result<&AudioInfo> {
     asset
         .probe()
         .streams
         .iter()
         .find(|stream| stream.kind == StreamKind::Audio)
         .and_then(|stream| stream.audio.as_ref())
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(crate::session::EditError::Unsupported(
             "waveform requires audio",
-        )))
+        ))
 }

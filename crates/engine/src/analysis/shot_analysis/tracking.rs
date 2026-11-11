@@ -1,9 +1,10 @@
 //! Tracks visible faces inside a shot.
 use super::{
-    AUDIO_STEP, EngineError, FaceTrack, JobContext, Scene, SceneKind, SecondAnalysis, ShotAnalysis,
-    SourceRange, SpeakerRef, SpeakerState, TICKS_PER_SECOND, Tick, VIDEO_STEP, VisionDetector,
-    VisionFrame, VisionPrepLimits,
+    AUDIO_STEP, FaceTrack, JobContext, Scene, SceneKind, SecondAnalysis, ShotAnalysis, SourceRange,
+    SpeakerRef, SpeakerState, TICKS_PER_SECOND, Tick, VIDEO_STEP, VisionDetector, VisionFrame,
+    VisionPrepLimits,
 };
+use crate::analysis::{Error as AnalysisError, Result};
 use ai::vision::{
     FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, SceneFrame, ShotResult, SpeakerChunk,
 };
@@ -65,7 +66,7 @@ impl Tracks {
         at: Tick,
         detector: &mut dyn VisionDetector,
         ctx: &JobContext,
-    ) -> Result<(), EngineError> {
+    ) -> Result<()> {
         ctx.check_cancelled()?;
         let bin_index = ((at.0 - self.range.start().0) / TICKS_PER_SECOND) as usize;
         if self.frame.is_multiple_of(3) {
@@ -116,7 +117,7 @@ impl Tracks {
                     .map(|(i, _)| i);
                 let track_index = best.unwrap_or(self.tracks.len());
                 if let Some(i) = best {
-                    let track = self.tracks.get_mut(i).ok_or(EngineError::Control(
+                    let track = self.tracks.get_mut(i).ok_or(AnalysisError::from(
                         crate::session::wire::ControlError::Limit,
                     ))?;
                     track.bounds = bounds;
@@ -124,7 +125,7 @@ impl Tracks {
                     track.visible = true;
                 } else {
                     if self.tracks.len() == 64 {
-                        return Err(EngineError::Control(
+                        return Err(AnalysisError::from(
                             crate::session::wire::ControlError::Limit,
                         ));
                     }
@@ -140,12 +141,9 @@ impl Tracks {
                         scored: 0,
                     });
                 }
-                let track = self
-                    .tracks
-                    .get_mut(track_index)
-                    .ok_or(EngineError::Control(
-                        crate::session::wire::ControlError::Limit,
-                    ))?;
+                let track = self.tracks.get_mut(track_index).ok_or(AnalysisError::from(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 if track.embedding_attempts < 3 && track.observed >= track.embedding_attempts * 25 {
                     track.embedding_attempts += 1;
                     if let Some(points) = track.bounds.landmarks
@@ -157,7 +155,7 @@ impl Tracks {
                     }
                 }
             }
-            let bin = self.bins.get_mut(bin_index).ok_or(EngineError::Control(
+            let bin = self.bins.get_mut(bin_index).ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
             if self.tracks.iter().any(|t| t.visible) {
@@ -178,10 +176,10 @@ impl Tracks {
                 bin.classified = true;
             }
         }
-        let bin = self.bins.get_mut(bin_index).ok_or(EngineError::Control(
+        let bin = self.bins.get_mut(bin_index).ok_or(AnalysisError::from(
             crate::session::wire::ControlError::Limit,
         ))?;
-        bin.samples = bin.samples.checked_add(1).ok_or(EngineError::Control(
+        bin.samples = bin.samples.checked_add(1).ok_or(AnalysisError::from(
             crate::session::wire::ControlError::Limit,
         ))?;
         for (i, track) in self
@@ -192,10 +190,10 @@ impl Tracks {
         {
             ctx.check_cancelled()?;
             track.observed += 1;
-            let presence = bin.presence.get_mut(i).ok_or(EngineError::Control(
+            let presence = bin.presence.get_mut(i).ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
-            *presence = presence.checked_add(1).ok_or(EngineError::Control(
+            *presence = presence.checked_add(1).ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
             let crop = frame.face_crop(
@@ -215,11 +213,11 @@ impl Tracks {
             if !contiguous {
                 track.segments.push(Vec::new());
             }
-            let segment = track.segments.last_mut().ok_or(EngineError::Control(
+            let segment = track.segments.last_mut().ok_or(AnalysisError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
             if segment.len() >= 75 {
-                return Err(EngineError::Control(
+                return Err(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -233,13 +231,13 @@ impl Tracks {
         mfcc: &[media::MfccFrame],
         detector: &mut dyn VisionDetector,
         ctx: &JobContext,
-    ) -> Result<(), EngineError> {
+    ) -> Result<()> {
         for feature in mfcc {
             let index =
                 ((feature.source_start.0 - self.range.start().0) / TICKS_PER_SECOND) as usize;
             self.bins
                 .get_mut(index)
-                .ok_or(EngineError::Control(
+                .ok_or(AnalysisError::from(
                     crate::session::wire::ControlError::Limit,
                 ))?
                 .audio = true;
@@ -294,7 +292,7 @@ impl Tracks {
                 for (i, at) in ticks.iter().enumerate() {
                     let smooth = probabilities
                         .get(i.saturating_sub(2)..(i + 3).min(probabilities.len()))
-                        .ok_or(EngineError::Control(
+                        .ok_or(AnalysisError::from(
                             crate::session::wire::ControlError::Limit,
                         ))?;
                     let score =
@@ -304,16 +302,16 @@ impl Tracks {
                     let bin = self
                         .bins
                         .get_mut(((at.0 - self.range.start().0) / TICKS_PER_SECOND) as usize)
-                        .ok_or(EngineError::Control(
+                        .ok_or(AnalysisError::from(
                             crate::session::wire::ControlError::Limit,
                         ))?;
-                    *bin.scores.get_mut(id).ok_or(EngineError::Control(
+                    *bin.scores.get_mut(id).ok_or(AnalysisError::from(
                         crate::session::wire::ControlError::Limit,
                     ))? += score;
-                    let count = bin.scored.get_mut(id).ok_or(EngineError::Control(
+                    let count = bin.scored.get_mut(id).ok_or(AnalysisError::from(
                         crate::session::wire::ControlError::Limit,
                     ))?;
-                    *count = count.checked_add(1).ok_or(EngineError::Control(
+                    *count = count.checked_add(1).ok_or(AnalysisError::from(
                         crate::session::wire::ControlError::Limit,
                     ))?;
                 }
@@ -325,7 +323,7 @@ impl Tracks {
         self,
         speech: &[SourceRange],
         audio: bool,
-    ) -> Result<(ShotAnalysis, super::reidentification::Evidence), EngineError> {
+    ) -> Result<(ShotAnalysis, super::reidentification::Evidence)> {
         let tracks: Vec<_> = self
             .tracks
             .iter()

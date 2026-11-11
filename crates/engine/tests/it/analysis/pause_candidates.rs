@@ -5,7 +5,7 @@
     reason = "synthetic fixtures and explicit assertions"
 )]
 use engine::{
-    ByteBudget, Error as EngineError, Session,
+    AnalysisError, ByteBudget, Session,
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
     pause_candidates::{PauseCandidates, PauseCandidatesRequest, PauseSettings},
 };
@@ -303,7 +303,7 @@ fn candidate_job_cancels_and_reports_typed_failures() {
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Cancelled))
     ));
 
     // A moved source fails the job with the media error.
@@ -317,7 +317,7 @@ fn candidate_job_cancels_and_reports_typed_failures() {
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EngineError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Media(_)))
+        Err(AnalysisError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Media(_)))
     ));
     runner.shutdown();
 }
