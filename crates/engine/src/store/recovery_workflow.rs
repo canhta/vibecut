@@ -519,7 +519,9 @@ mod tests {
                     EditError::Runtime(crate::RuntimeError::Cancelled) => {
                         assert_eq!(code, ErrorCode::Cancelled)
                     }
-                    EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
+                    EditError::Session(crate::SessionError::StaleResult) => {
+                        assert_eq!(code, ErrorCode::StaleResult)
+                    }
                     _ => panic!("lost the typed worker cause"),
                 }
             }
@@ -592,7 +594,7 @@ mod tests {
         Err(EditError::Runtime(crate::RuntimeError::Cancelled))
     }
     fn worker_stale() -> crate::Result<()> {
-        Err(EditError::StaleResult)
+        Err(EditError::Session(crate::SessionError::StaleResult))
     }
     #[test]
     fn unsupported_lock_is_not_misclassified_as_a_dead_session() {

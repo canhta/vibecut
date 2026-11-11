@@ -5,7 +5,7 @@ mod failures;
 mod revision;
 mod state;
 pub(crate) mod wire;
-pub use failures::{FontError, SoundError};
+pub use failures::{FontError, SessionError, SoundError};
 pub use state::{JobTarget, Session};
 pub use wire::ChapterSidecars;
 pub(crate) use wire::budget;

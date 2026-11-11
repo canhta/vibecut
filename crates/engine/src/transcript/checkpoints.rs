@@ -157,11 +157,17 @@ pub fn wait_for_job(
                 progress.job(&event);
             }
         }
-        let snapshot = runner.snapshot(id).ok_or(EditError::StaleResult)?;
+        let snapshot = runner
+            .snapshot(id)
+            .ok_or(EditError::Session(crate::SessionError::StaleResult))?;
         match snapshot.state {
             // A completed job is returned even if cancellation arrived during its
             // publication fence; callers decide whether later stages may proceed.
-            JobState::Completed => return runner.take_output(id).ok_or(EditError::StaleResult),
+            JobState::Completed => {
+                return runner
+                    .take_output(id)
+                    .ok_or(EditError::Session(crate::SessionError::StaleResult));
+            }
             JobState::Failed => {
                 return Err(match snapshot.error {
                     Some(error) => EditError::Runtime(crate::RuntimeError::Failed(error)),

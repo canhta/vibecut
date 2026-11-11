@@ -240,7 +240,7 @@ impl AnalysisRequest {
                 .lock()
                 .map_err(|_| crate::RuntimeError::Poisoned)?
                 .take()
-                .ok_or(EditError::StaleResult)?;
+                .ok_or(EditError::Session(crate::SessionError::StaleResult))?;
             let result = request.analyze(&mut detector, ctx)?;
             let bytes = encode(&result)?;
             ctx.check_cancelled()?;
@@ -525,7 +525,9 @@ impl AnalysisJob {
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
-                snapshot.error.ok_or(EditError::StaleResult)?,
+                snapshot
+                    .error
+                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner

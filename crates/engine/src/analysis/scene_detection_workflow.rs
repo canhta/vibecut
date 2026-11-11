@@ -291,7 +291,9 @@ impl DetectionJob {
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
-                snapshot.error.ok_or(EditError::StaleResult)?,
+                snapshot
+                    .error
+                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
@@ -329,9 +331,9 @@ pub fn apply_reviewed(
     let source = target
         .source_asset
         .and_then(|id| data.assets.iter().find(|a| a.id() == id))
-        .ok_or(EditError::StaleResult)?;
+        .ok_or(EditError::Session(crate::SessionError::StaleResult))?;
     if !matches!(target.content, ItemParams::Video(_)) || source.content_hash().0 != result.source {
-        return Err(EditError::StaleResult);
+        return Err(EditError::Session(crate::SessionError::StaleResult));
     }
     let mut times = std::collections::BTreeSet::new();
     for &index in selected {
