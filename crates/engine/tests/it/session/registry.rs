@@ -153,17 +153,34 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     ));
     assert!(Session::new(project(), 0).is_err());
     assert!(Session::new(project(), 1001).is_err());
-    let mut data = project().into_data();
-    data.scene_mut().timeline.overlays.first_mut().unwrap().id = TrackId(u64::MAX);
-    let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
-    assert!(matches!(
-        s.apply(Command::AddTrack {
+    for last_id_available in [false, true] {
+        let mut data = project().into_data();
+        data.scene_mut().timeline.overlays.first_mut().unwrap().id =
+            TrackId(if last_id_available {
+                u64::MAX - 1
+            } else {
+                u64::MAX
+            });
+        let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
+        let add = || Command::AddTrack {
             placement: engine::TrackPlacement::Auto,
             name: "".into(),
-            kind: TrackKind::Video
-        }),
-        Err(EditError::IdExhausted)
-    ));
+            kind: TrackKind::Video,
+        };
+        if last_id_available {
+            let result = s.apply(add()).unwrap();
+            assert_eq!(result.created, vec![CreatedId::Track(TrackId(u64::MAX))]);
+            s.undo().unwrap();
+        }
+        let before = (s.project().clone(), s.history_len(), s.revision());
+        s.take_change();
+        assert!(matches!(
+            s.apply(add()),
+            Err(EditError::Session(engine::SessionError::IdExhausted))
+        ));
+        assert_eq!((s.project().clone(), s.history_len(), s.revision()), before);
+        assert!(s.take_change().is_none());
+    }
 }
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]

@@ -124,8 +124,6 @@ pub enum EditError {
     Invalid(&'static str),
     #[error("unsupported edit: {0}")]
     Unsupported(&'static str),
-    #[error("identifier space exhausted")]
-    IdExhausted,
     #[error("project candidate rejected")]
     Project(#[from] project::Error),
     #[error("invalid edit time")]
@@ -180,7 +178,6 @@ impl EditError {
             | Self::Overlap(_)
             | Self::Invalid(_)
             | Self::Unsupported(_)
-            | Self::IdExhausted
             | Self::Project(_)
             | Self::Time(_)
             | Self::Captions(_) => C::Refused,

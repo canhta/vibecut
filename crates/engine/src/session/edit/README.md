@@ -117,3 +117,7 @@ Generated rectangles and ellipses insert through `timeline.insert` and ordinary 
 
 Keyframe Paste uses this same candidate/validation/one-undo path. Transfer and refusal
 rules belong to the [clipboard contract](../README.md#keyframe-clipboard).
+
+The private edit allocator returns `SessionError` directly. Callers compose it into
+mixed edit results; it neither wraps the counter nor changes allocation admission.
+ID retirement and checkpoint rules belong to [Session](../README.md#public-entry-points).

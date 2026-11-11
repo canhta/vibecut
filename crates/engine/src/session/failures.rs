@@ -5,6 +5,8 @@ use super::wire::{ErrorCode, Failure};
 /// Refusals owned by Session identity, command lifetime and history custody.
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
+    #[error("identifier space exhausted")]
+    IdExhausted,
     #[error("a gesture or transaction is active")]
     TransactionActive,
     #[error("no gesture is active")]
@@ -22,7 +24,7 @@ impl Failure for SessionError {
     fn code(&self) -> ErrorCode {
         match self {
             Self::TransactionActive | Self::NoGesture => ErrorCode::TransactionActive,
-            Self::NoHistory => ErrorCode::Refused,
+            Self::NoHistory | Self::IdExhausted => ErrorCode::Refused,
             Self::Panicked => ErrorCode::Failed,
             Self::StaleResult => ErrorCode::StaleResult,
             Self::ControlIdentity => ErrorCode::Refused,
