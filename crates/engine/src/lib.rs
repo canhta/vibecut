@@ -93,8 +93,6 @@ pub enum EditError {
     Recovery(#[from] recovery::Error),
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
-    #[error("job cancelled")]
-    Cancelled,
     #[error("job result is stale")]
     StaleResult,
     #[error("render execution failed")]
@@ -183,7 +181,6 @@ impl EditError {
             Self::UnknownCommand => C::UnknownCommand,
             Self::InvalidParams => C::InvalidParams,
             Self::Limit => C::Limit,
-            Self::Cancelled => C::Cancelled,
             Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,

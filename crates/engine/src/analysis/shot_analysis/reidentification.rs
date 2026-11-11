@@ -22,12 +22,12 @@ impl Identities {
         ctx: &dyn ai::ExecutionHooks,
     ) -> Result<(), EditError> {
         if ctx.cancelled() {
-            return Err(EditError::Cancelled);
+            return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
         }
         let mut decisions = Vec::new();
         for (id, samples) in &evidence {
             if ctx.cancelled() {
-                return Err(EditError::Cancelled);
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
             }
             let mut scores: Vec<_> = self
                 .anchors
@@ -56,7 +56,7 @@ impl Identities {
         }
         for track in tracks.iter_mut() {
             if ctx.cancelled() {
-                return Err(EditError::Cancelled);
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
             }
             track.identity = decisions
                 .iter()
@@ -74,7 +74,7 @@ impl Identities {
         // faces cannot identify each other; ambiguous faces remain Unknown.
         for (id, samples) in evidence {
             if ctx.cancelled() {
-                return Err(EditError::Cancelled);
+                return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
             }
             if tracks.iter().any(|t| t.id == id && t.identity.is_none()) {
                 if self.anchors.len() == MAX_ANCHORS {
@@ -215,7 +215,7 @@ mod tests {
                 vec![(0, vec![sample(1., 0.)])],
                 &Hooks(true)
             ),
-            Err(EditError::Cancelled)
+            Err(EditError::Runtime(crate::RuntimeError::Cancelled))
         ));
         identities.anchors = (0..MAX_ANCHORS)
             .map(|i| {

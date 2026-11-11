@@ -366,7 +366,7 @@ fn download(
             loop {
                 if ctx.cancelled() {
                     durable(&mut edit, &file, index, offset)?;
-                    return Err(EditError::Cancelled);
+                    return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                 }
                 let limit = usize::try_from(
                     (expected.size - offset)
@@ -398,7 +398,7 @@ fn download(
                 }
                 if ctx.cancelled() {
                     durable(&mut edit, &file, index, offset)?;
-                    return Err(EditError::Cancelled);
+                    return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
                 }
                 edit.report_length(
                     index,

@@ -301,7 +301,10 @@ fn candidate_job_cancels_and_reports_typed_failures() {
     let job = request.submit(&mut runner).unwrap();
     job.cancel.cancel();
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
-    assert!(matches!(job.finish(&mut runner), Err(EditError::Cancelled)));
+    assert!(matches!(
+        job.finish(&mut runner),
+        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+    ));
 
     // A moved source fails the job with the media error.
     let copy = audio.path().with_file_name("candidate-unreadable.wav");

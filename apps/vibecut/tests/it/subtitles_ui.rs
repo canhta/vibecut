@@ -1788,7 +1788,7 @@ impl Workflow for GenerateWorkflow {
             )?;
         }
         if cancel.cancelled() {
-            return Err(engine::EditError::Cancelled);
+            return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
         }
         Ok(Command::InsertItem {
             placement: engine::Placement::Auto,

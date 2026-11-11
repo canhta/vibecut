@@ -20,7 +20,7 @@ impl Workflow for LocalWorkflow {
         cancel: &Cancellation,
     ) -> engine::Result<Command> {
         if cancel.cancelled() {
-            return Err(EditError::Cancelled);
+            return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
         }
         match work {
             Work::Import {
@@ -140,7 +140,7 @@ impl Workflow for LocalWorkflow {
                     range,
                 )?;
                 if cancel.cancelled() {
-                    return Err(EditError::Cancelled);
+                    return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
                 }
                 insert(cues, Some(asset.id()), range, start)
             }
@@ -189,7 +189,7 @@ impl Workflow for LocalWorkflow {
                     .content
                     .clone();
                 if cancel.cancelled() {
-                    return Err(EditError::Cancelled);
+                    return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
                 }
                 Ok(Command::SetItemParam { item, content })
             }

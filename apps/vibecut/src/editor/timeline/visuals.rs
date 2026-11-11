@@ -577,7 +577,7 @@ fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
             assert!(cancel.load(Ordering::Acquire));
             CacheMaintenanceReport {
                 removed_bytes: 100,
-                cause: Some(engine::EditError::Cancelled),
+                cause: Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled)),
                 ..Default::default()
             }
         })
@@ -600,7 +600,10 @@ fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
     }
     let report = media.cache_ui().report.unwrap();
     assert_eq!(report.removed_bytes, 100);
-    assert!(matches!(report.cause, Some(engine::EditError::Cancelled)));
+    assert!(matches!(
+        report.cause,
+        Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
+    ));
     let worker = CacheWorker::spawn(|_| panic!("injected worker unwind")).unwrap();
     let report = worker.handle.join().unwrap();
     assert!(matches!(

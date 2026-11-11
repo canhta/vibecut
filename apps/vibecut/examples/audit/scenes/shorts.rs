@@ -29,7 +29,7 @@ impl vibecut::shorts::Generator for Hold {
         while !cancel.cancelled() {
             std::thread::sleep(Duration::from_millis(20));
         }
-        Err(engine::EditError::Cancelled)
+        Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
     }
 }
 
