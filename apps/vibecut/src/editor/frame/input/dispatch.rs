@@ -42,6 +42,7 @@ impl Editor {
         state
             .animation_target(&self.session, &self.selection)
             .is_some()
+            && !self.player.transform.text_edit_open()
             && self
                 .subtitles
                 .as_ref()

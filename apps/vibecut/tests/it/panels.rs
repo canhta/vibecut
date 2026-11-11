@@ -1818,6 +1818,77 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     assert_eq!(h.state().session.project(), &before);
     h.state_mut().session.autosave().unwrap().flush().unwrap();
     drop(h);
+
+    let mut f = fixture();
+    f.editor
+        .session
+        .apply(Command::Delete {
+            items: vec![f.video, f.silent_video, f.image, f.graphic, f.audio],
+        })
+        .unwrap();
+    f.editor.set_item_field(f.text, "text_size", "49").unwrap();
+    f.editor.session.undo().unwrap();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    select(&mut h, f.text);
+    let point = widget_rect(&h, "preview.transform.left")
+        .center()
+        .lerp(widget_rect(&h, "preview.transform.right").center(), 0.5);
+    for _ in 0..2 {
+        h.event(egui::Event::PointerMoved(point));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+    }
+    h.run_steps(3);
+    assert!(
+        has_widget(&h, "preview.text.edit"),
+        "real clean inline editor opens"
+    );
+    assert!(!h.state().session.gesture_active());
+    assert_eq!(h.state().session.history_len().1, 1);
+    for dirty in [false, true] {
+        if dirty {
+            h.get(By::new().predicate(|n| n.author_id() == Some("preview.text.edit")))
+                .type_text(" pending");
+            h.run_steps(2);
+            assert!(h.state().session.gesture_active());
+        }
+        let before = h.state().session.project().clone();
+        let candidate = h.state().session.preview_project().cloned();
+        let history = h.state().session.history_len();
+        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+        assert!(!h.state().action_enabled("text.animation.fade_in"));
+        assert_eq!(h.state().session.project(), &before);
+        assert_eq!(h.state().session.preview_project(), candidate.as_ref());
+        assert_eq!(h.state().session.history_len(), history);
+        assert!(
+            has_widget(&h, "preview.text.edit"),
+            "refusal leaves editor open"
+        );
+        assert!(
+            h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+                .accesskit_node()
+                .is_disabled()
+        );
+    }
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(!has_widget(&h, "preview.text.edit"));
+    assert!(h.state().action_enabled("text.animation.fade_in"));
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    h.state_mut().activate("text.animation.fade_in").unwrap();
+    assert_eq!(h.state().session.history_len(), (history.0 + 1, 0));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
