@@ -32,8 +32,9 @@ scene's audible items (timing, source content, volume/mute and their automation)
 sample rate and both targets; the master fader is excluded because measurement ignores it.
 
 `submit_export*` calls `admit_loudness` (owned by `runtime/`, exported as `loudness::admit`),
-which refuses `LoudnessStale` when a target is set and the stored gains are missing or measured
-for different audio, so preview and export cannot disagree. Undo restores the gains with the
+which returns `runtime::Result<()>` and refuses `RuntimeError::LoudnessStale` when a target is
+set and the stored gains are missing or measured for different audio, so preview and export
+cannot disagree. Undo restores the gains with the
 content. Limits: `LoudnessGains::MAX_CLIPS` 4096 clips and a 1 MiB result.
 
 ## Scene detection

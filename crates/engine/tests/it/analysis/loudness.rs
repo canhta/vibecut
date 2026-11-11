@@ -166,6 +166,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     let mut runner = runner(&budget);
     let reads = Arc::new(AtomicUsize::new(0));
     let mut session = session();
+    admit(session.project()).unwrap();
     session
         .apply(engine::Command::SetLoudness {
             scope: project::LoudnessScope::Master,
@@ -176,7 +177,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     // Targets alone are not exportable: gains must be measured first.
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
 
     let job = submit(&mut runner, &session, (0.1, &reads, false)).unwrap();
@@ -209,7 +210,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         .unwrap();
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
     session.undo().unwrap();
     admit(session.project()).unwrap();
@@ -222,7 +223,7 @@ fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
         .unwrap();
     assert!(matches!(
         admit(session.project()),
-        Err(EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
 }
 

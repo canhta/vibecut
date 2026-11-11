@@ -1521,6 +1521,21 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             C::Refused,
             false,
         ),
+        (|| E::Runtime(B::LoudnessStale), C::Refused, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::LoudnessStale))),
+            C::Refused,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Runtime(B::LoudnessStale),
+                ))))))
+            },
+            C::Refused,
+            false,
+        ),
         (|| E::Runtime(B::StorageFull), C::Refused, false),
         (
             || E::Runtime(B::Failed(Arc::new(B::StorageFull))),
@@ -1681,6 +1696,9 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
                 Some("model transfer response does not match the requested representation")
             }
             E::Runtime(B::StorageFull) => Some("model storage is full"),
+            E::Runtime(B::LoudnessStale) => {
+                Some("loudness gains are missing or measured for different audio; measure again")
+            }
             _ => None,
         };
         if let Some(message) = message {
