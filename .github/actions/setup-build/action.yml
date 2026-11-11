@@ -26,11 +26,11 @@ runs:
     - name: Install Linux system libraries
       if: runner.os == 'Linux'
       shell: bash
-      # cpal links ALSA at build time, so every Linux compile needs its
-      # development headers and pkg-config even when the media cache hits.
+      # cpal needs ALSA headers; offscreen egui tests need a Vulkan loader
+      # and Mesa's software adapter, including when the media cache hits.
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
+        sudo apt-get install -y libasound2-dev pkg-config libvulkan1 mesa-vulkan-drivers
     - id: rust
       if: inputs.rust-cache == 'true'
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
