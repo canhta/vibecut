@@ -42,10 +42,10 @@ project duration, and Fit / 25 / 50 / 75 / 100 / 150 / 200% zoom presets with co
 value. Ctrl/Cmd+wheel and pinch zoom; plain wheel, two-finger scroll and middle-drag pan
 only above 100%, clamped to the canvas bounds. Fullscreen covers the window and sends the
 native viewport request; Esc or the toggle exits. The fit flag, explicit scale and last
-snapshot directory persist in the preference document. The header and context menus offer
-the next/previous bookmark actions, enabled and dispatched through the frame's one
-clamped, no-wrap bookmark lookup; an actual jump shares `playback.seek` and preserves play
-state, selection and history.
+snapshot directory persist in the preference document. The canvas context menu offers the
+next/previous bookmark actions, enabled and dispatched through the
+[action registry's bookmark lookup](../../../actions/README.md#bookmark-navigation); an
+actual jump shares `playback.seek` and preserves play state, selection and history.
 
 ## Crop
 

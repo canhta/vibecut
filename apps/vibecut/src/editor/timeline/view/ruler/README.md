@@ -11,4 +11,5 @@ Whole-second labels split into ten ticks when they fit; finer labels use frame t
 divide the label interval. Major labels show `MM:SS` (or `H:MM:SS`) while labels fall on
 whole seconds, and time's shared DF/NDF frame timecode once labels are finer than one
 second. Right-clicking the ruler opens the next/previous bookmark entries, enabled and
-dispatched through the frame's one clamped, no-wrap bookmark lookup.
+dispatched through the
+[action registry's bookmark lookup](../../../../actions/README.md#bookmark-navigation).

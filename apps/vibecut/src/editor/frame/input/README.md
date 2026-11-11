@@ -1,9 +1,11 @@
 # Keybindings
 
 Interface: `AppCommand` (`SetKeybinding`, `ResetKeybindings`, `JumpBookmark`),
-`PreviewZoom`, `bookmark_target`, and the
+`PreviewZoom`, and the
 `Editor` methods `set_keybinding`, `reset_keybinding`, `reset_keybindings`,
 `open_shortcuts`, `shortcut_tab`, `set_shortcut_tab` and `record_shortcut`.
+`JumpBookmark` delegates the playhead search to the
+[action registry owner](../../../actions/README.md#bookmark-navigation).
 
 The shortcuts dialog reads `actions()`, `action(id)`, `ActionSpec` metadata and defaults,
 `bindable()` availability, effective bindings and conflicts on `KeybindingPreferences` /

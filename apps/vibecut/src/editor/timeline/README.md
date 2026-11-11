@@ -49,9 +49,9 @@ step; drafts stay in the panel and the project changes only when the frame runs 
 command. The target-free [colour service](../../services/color_picker/README.md) supplies
 the controls; the marker target and commit action stay in timeline. Escape closes the
 colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
-Right-clicking the ruler offers `playback.jump_bookmark.next` and
-`.previous`; each seeks the shared transport through the same clamped, no-wrap
-lookup that gates the registered actions, skipping markers already at the playhead.
+Right-clicking the ruler opens its
+[bookmark navigation menu](view/ruler/README.md); the lookup policy is owned by the
+[action registry](../../actions/README.md#bookmark-navigation).
 
 ## Track controls
 
