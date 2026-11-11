@@ -1,8 +1,22 @@
 # Subtitles
 
 Interface: `run`, `prepare_ass_import`, `SubtitleRequest`, `SubtitleOutcome`, `AssImportRequest`,
-`AssImportReport`, `CaptionAccess`, `decode_captions`, `decode_translations`; `LanguageTag` is re-exported. Selected providers come from
+`AssImportReport`, `Error`, `Result`, `CaptionAccess`, `decode_captions`, `decode_translations`; `LanguageTag` is re-exported. Selected providers come from
 [`providers`](../providers/README.md).
+
+## Failures
+
+The complete subtitle workflows and registered caption jobs return this owner's `Error` and
+`Result`, retaining only consumed Kernel Edit, Runtime, Transcript, Providers, Media, AI and IO
+causes. Higher workflows compose them through `engine::Error::Subtitles`; lower owners never
+name this feature. Foreign AI/Media classification is borrowed from their existing execution
+owners. Direct Runtime policy delegates; semantic Failed envelopes remain opaque.
+
+Bounded result decoding, apply-command construction and caption-track lookup return Kernel
+Edit results. Export-key construction and CaptionAccess resource access return Runtime results.
+An unavailable CaptionAccess stores one typed `Arc<subtitles::Error>`; each resource refusal
+keeps that same Arc in Runtime Failed, preserving its code without inheriting retry, advisory
+or terminal-cancellation policy. Optional setup does not disable unrelated commands.
 
 ## Subtitle workflow
 

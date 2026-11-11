@@ -124,25 +124,38 @@ impl CliError {
 fn edit_message(error: &(dyn Failure + 'static)) -> String {
     let cause: &(dyn std::error::Error + 'static) = error;
     let root = cause.downcast_ref::<EngineError>();
-    let transcript = match root {
-        Some(EngineError::Transcript(transcript)) => Some(transcript),
-        _ => cause.downcast_ref::<engine::transcript::Error>(),
+    let subtitles = match root {
+        Some(EngineError::Subtitles(subtitles)) => Some(subtitles),
+        _ => cause.downcast_ref::<engine::subtitles::Error>(),
     };
-    let providers = match transcript {
-        Some(engine::transcript::Error::Providers(providers)) => Some(providers),
+    let transcript = match subtitles {
+        Some(engine::subtitles::Error::Transcript(transcript)) => Some(transcript),
         _ => match root {
-            Some(EngineError::Providers(providers)) => Some(providers),
-            _ => cause.downcast_ref::<providers::Error>(),
+            Some(EngineError::Transcript(transcript)) => Some(transcript),
+            _ => cause.downcast_ref::<engine::transcript::Error>(),
+        },
+    };
+    let providers = match subtitles {
+        Some(engine::subtitles::Error::Providers(providers)) => Some(providers),
+        _ => match transcript {
+            Some(engine::transcript::Error::Providers(providers)) => Some(providers),
+            _ => match root {
+                Some(EngineError::Providers(providers)) => Some(providers),
+                _ => cause.downcast_ref::<providers::Error>(),
+            },
         },
     };
     if let Some(providers::Error::ModelMissing(id)) = providers {
         return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
     }
-    let runtime = match transcript {
-        Some(engine::transcript::Error::Runtime(error)) => Some(error),
-        _ => match root {
-            Some(EngineError::Runtime(error)) => Some(error),
-            _ => cause.downcast_ref::<engine::RuntimeError>(),
+    let runtime = match subtitles {
+        Some(engine::subtitles::Error::Runtime(error)) => Some(error),
+        _ => match transcript {
+            Some(engine::transcript::Error::Runtime(error)) => Some(error),
+            _ => match root {
+                Some(EngineError::Runtime(error)) => Some(error),
+                _ => cause.downcast_ref::<engine::RuntimeError>(),
+            },
         },
     };
     match runtime {
@@ -236,6 +249,12 @@ impl From<engine::providers::Error> for CliError {
 
 impl From<engine::transcript::Error> for CliError {
     fn from(error: engine::transcript::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}
+
+impl From<engine::subtitles::Error> for CliError {
+    fn from(error: engine::subtitles::Error) -> Self {
         Self::Engine(error.into())
     }
 }

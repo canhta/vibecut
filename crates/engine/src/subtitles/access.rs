@@ -1,6 +1,7 @@
 //! Lends process resources to caption jobs.
+use super::Error as SubtitleError;
+use crate::runtime::{Error as RuntimeError, Result as RuntimeResult};
 use crate::{
-    Error as EngineError, Result,
     cache::ArtifactCache,
     providers::{ConsentPrompt, Providers},
 };
@@ -15,7 +16,7 @@ struct Resources {
 /// unrelated control commands from starting. No command supplies credentials or approval.
 #[derive(Clone)]
 pub struct CaptionAccess {
-    resources: std::result::Result<Arc<Resources>, Arc<EngineError>>,
+    resources: std::result::Result<Arc<Resources>, Arc<SubtitleError>>,
     consent: Arc<dyn ConsentPrompt + Send + Sync>,
 }
 impl CaptionAccess {
@@ -30,23 +31,25 @@ impl CaptionAccess {
         }
     }
     /// Retain an optional composition failure for caption commands; other commands stay usable.
-    pub fn unavailable(error: EngineError) -> Self {
+    pub fn unavailable(error: SubtitleError) -> Self {
         Self {
             resources: Err(Arc::new(error)),
             consent: Arc::new(crate::providers::DenyUploads),
         }
     }
-    fn resources(&self) -> Result<&Resources> {
+    fn resources(&self) -> RuntimeResult<&Resources> {
         match &self.resources {
             Ok(resources) => Ok(resources),
-            Err(error) => Err(crate::RuntimeError::Failed(error.clone()).into()),
+            Err(error) => Err(RuntimeError::Failed(error.clone())),
         }
     }
     /// Reuse this cache for every workflow in the process; never open its root twice.
-    pub fn cache(&self) -> Result<&Arc<Mutex<ArtifactCache>>> {
+    pub fn cache(&self) -> RuntimeResult<&Arc<Mutex<ArtifactCache>>> {
         Ok(&self.resources()?.cache)
     }
-    pub(crate) fn share(&self) -> Result<(Arc<Providers>, Arc<dyn ConsentPrompt + Send + Sync>)> {
+    pub(crate) fn share(
+        &self,
+    ) -> RuntimeResult<(Arc<Providers>, Arc<dyn ConsentPrompt + Send + Sync>)> {
         Ok((self.resources()?.providers.clone(), self.consent.clone()))
     }
 }

@@ -94,6 +94,8 @@ pub enum Error {
     Providers(#[from] providers::Error),
     #[error(transparent)]
     Transcript(#[from] transcript::Error),
+    #[error(transparent)]
+    Subtitles(#[from] subtitles::Error),
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),
     #[error("Project is empty")]
@@ -119,6 +121,7 @@ impl Error {
             Self::Font(inner) => inner.code(),
             Self::Providers(inner) => return (inner.code(), inner.transient()),
             Self::Transcript(inner) => return (inner.code(), inner.transient()),
+            Self::Subtitles(inner) => return (inner.code(), inner.transient()),
             Self::Render(inner) => inner.code(),
             Self::Media(error) => error.code(),
             Self::Ai(inner) => return (inner.code(), inner.transient()),
@@ -132,6 +135,7 @@ impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
             Self::Transcript(error) => error.job_policy(),
+            Self::Subtitles(error) => error.job_policy(),
             Self::Providers(error) => error.job_policy(),
             Self::Models(error) => error.job_policy(),
             Self::Lut(error) => error.job_policy(),

@@ -11,7 +11,8 @@ from the same verified font store before control rendering and export. Opening a
 project never downloads or changes its authored family key.
 
 The control and headless MCP roots lend optional local `CaptionAccess` with `DenyUploads`.
-Their shared runtime construction retains setup refusals for caption commands without stopping
+Their setup closure returns the Subtitles result and retains its typed setup refusal.
+Shared runtime construction retains setup refusals for caption commands without stopping
 ordinary control work; provider setup and checkpoint ownership follow the
 [caption contract](../../../../crates/engine/src/subtitles/README.md#caption-workflow-commands).
 
