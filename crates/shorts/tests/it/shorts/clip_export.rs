@@ -207,6 +207,14 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
         name: "Project look".into(),
         style: style.clone(),
     });
+    data.luts.push(project::LutRecord {
+        id: project::LutId::new(media::ContentHash::from_bytes(b"registered look")),
+        name: "Imported look".into(),
+        licence: None,
+        source_name: "look.cube".into(),
+        source_hash: media::ContentHash::from_bytes(b"original"),
+        directory: dir.path().join("durable-look"),
+    });
     let source = Project::new(data).unwrap();
     let mut cues = CueTrack {
         styles: Vec::new(),
@@ -244,6 +252,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
         prepared.data().caption_presets,
         source.data().caption_presets
     );
+    assert_eq!(prepared.data().luts, source.data().luts);
     let video = prepared
         .data()
         .scene()

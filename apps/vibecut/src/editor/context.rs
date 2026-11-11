@@ -185,6 +185,8 @@ impl Thumbnails<'_> {
 /// A cross-area request the frame drains after the area that raised it returns.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Request {
+    /// Open the LUT source picker after the properties area returns.
+    ImportLut,
     /// Move the shared transport.
     Seek(time::Tick),
     Cache(CacheAction),

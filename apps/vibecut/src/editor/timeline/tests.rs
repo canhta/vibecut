@@ -1376,7 +1376,9 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
     )
     .unwrap();
     let shared = Arc::new(Mutex::new(engine::control::MediaAccess::new(
-        artifacts, thumbnails,
+        artifacts,
+        thumbnails,
+        engine::luts::LutStore::open(&dir.path().join("luts")).unwrap(),
     )));
     let rig = Rig::new();
     let mut editor = crate::Editor::new(rig.session, rig.playback, rig.preferences);

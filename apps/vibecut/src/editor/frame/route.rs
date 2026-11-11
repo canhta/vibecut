@@ -559,6 +559,9 @@ impl Editor {
             for request in std::mem::take(&mut self.requests) {
                 match request {
                     Request::Cache(action) => self.media.request_cache(action),
+                    Request::ImportLut => {
+                        self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportLut);
+                    }
                     Request::Seek(at) => {
                         if let Err(error) = self.seek(at) {
                             self.desk().fail(error.to_string());

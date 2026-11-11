@@ -30,6 +30,274 @@ use vibecut::{
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
+#[test]
+fn lut_picker_applies_real_job_and_discards_stale_completion() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("Vietnamese look.cube");
+    std::fs::write(
+        &source,
+        "LUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n",
+    )
+    .unwrap();
+    let mut workspace = vibecut::workspace::Workspace::new(
+        root.path().join("recovery"),
+        Preferences::default(),
+        None,
+    )
+    .unwrap();
+    let fixture = fixture();
+    let video = fixture.image;
+    let image = fixture.video;
+    let mut data = fixture.editor.session.project().data().clone();
+    let picture = root.path().join("synthetic.png");
+    image::RgbaImage::from_fn(64, 64, |x, y| {
+        image::Rgba([(x * 4) as u8, (y * 4) as u8, 80, 255])
+    })
+    .save(&picture)
+    .unwrap();
+    *data
+        .assets
+        .iter_mut()
+        .find(|a| a.id() == AssetId(3))
+        .unwrap() = SourceAsset::import(AssetId(3), picture).unwrap();
+    data.scene_mut().timeline.iter_mut().for_each(|track| {
+        track.items.retain(|i| i.id == video);
+        for item in &mut track.items {
+            item.start = Tick::ZERO;
+        }
+    });
+    let session = Session::new(Project::new(data).unwrap(), 50).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(768 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor
+        .preferences
+        .properties_tabs
+        .insert("image".into(), "adjust".into());
+    editor.selection = [video].into_iter().collect();
+    editor
+        .playback
+        .seek(Tick::ZERO, false, editor.session.project().clone())
+        .unwrap();
+    let project = workspace.register_editor(Box::new(editor));
+    let editor = *workspace
+        .windows
+        .get_mut(&project)
+        .unwrap()
+        .editor
+        .take()
+        .unwrap();
+    let mut h = build(editor);
+    h.run_steps(3);
+    click(&mut h, "inspector.tab.adjust");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while h.state().playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "synthetic source frame unavailable: {:?}",
+            h.state().playback.error()
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    h.render()
+        .unwrap()
+        .save(target.join("p1-410-lut-before.png"))
+        .unwrap();
+    assert!(has_widget(&h, "inspector.lut.select"));
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    let baseline_generation = h.state().playback.frame().unwrap().generation;
+    let baseline_pixels = h.state().playback.frame().unwrap().image.pixels.clone();
+    click(&mut h, "inspector.lut.import");
+    assert_eq!(
+        h.state_mut().take_lifecycle_action(),
+        Some(vibecut::lifecycle::EditorAction::ImportLut)
+    );
+    assert!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("inspector.lut.import")))
+            .accesskit_node()
+            .is_disabled()
+    );
+    h.state_mut().lut_picked_file(Some(source.clone())).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while h.state().session.project().data().luts.is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "LUT job did not apply"
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while h
+        .state()
+        .playback
+        .frame()
+        .is_none_or(|frame| frame.generation <= baseline_generation)
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "edited frame unavailable"
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_ne!(
+        h.state().playback.frame().unwrap().image.pixels,
+        baseline_pixels
+    );
+    let applied = h.state().session.project().clone();
+    assert!(has_widget(&h, "inspector.lut.strength"));
+    h.state_mut().session.apply(Command::Undo {}).unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    h.state_mut().session.apply(Command::Redo {}).unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &applied);
+    for (locale, language) in [
+        (vibecut::i18n::Locale::En, "en"),
+        (vibecut::i18n::Locale::Vi, "vi"),
+    ] {
+        h.state_mut().preferences.locale = locale;
+        for scale in [1., 2.] {
+            h.input_mut()
+                .viewports
+                .get_mut(&egui::ViewportId::ROOT)
+                .unwrap()
+                .native_pixels_per_point = Some(scale);
+            h.ctx.set_zoom_factor(1.);
+            h.run_steps(3);
+            let capture = h.render().unwrap();
+            capture
+                .save(target.join(format!("p1-410-lut-{language}-{scale}x.png")))
+                .unwrap();
+            if language == "en" && scale == 1. {
+                capture.save(target.join("p1-69-lut.png")).unwrap();
+            }
+        }
+    }
+    h.input_mut()
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .native_pixels_per_point = Some(1.);
+    h.ctx.set_zoom_factor(1.);
+    h.state_mut().preferences.locale = vibecut::i18n::Locale::En;
+    h.run_steps(3);
+    enter(&mut h, "inspector.lut.strength", "50");
+    let fifty = h.state().session.project().clone();
+    assert_eq!(
+        item(&h, video)
+            .effects
+            .iter()
+            .find(|e| e.kind == "color_grade")
+            .unwrap()
+            .value("lut_strength"),
+        Some(&project::EffectValue::Scalar(50.))
+    );
+    drag_to(&mut h, "inspector.lut.strength.scrub", egui::vec2(24., 0.));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    h.drop_at(egui::pos2(0., 0.));
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &fifty);
+    h.state_mut().session.apply(Command::Undo {}).unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &applied);
+    let canonical = h.state().session.project().data().luts[0]
+        .directory
+        .join("canonical.cube");
+    std::fs::remove_file(&canonical).unwrap();
+    let snapshot = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick::ZERO, false, snapshot)
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !has_widget(&h, "inspector.lut.relink") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "missing LUT did not expose Locate"
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let revision = h.state().session.revision();
+    click(&mut h, "inspector.lut.relink");
+    h.state_mut().take_lifecycle_action();
+    h.state_mut().lut_picked_file(Some(source.clone())).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while has_widget(&h, "inspector.lut.relink") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "matching relink did not recover"
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(canonical.is_file());
+    assert_eq!(h.state().session.revision(), revision);
+    assert_eq!(h.state().session.project(), &applied);
+    let invalid = root.path().join("invalid.cube");
+    std::fs::write(&invalid, b"LUT_1D_SIZE 2\n").unwrap();
+    click(&mut h, "inspector.lut.import");
+    h.state_mut().take_lifecycle_action();
+    h.state_mut().lut_picked_file(Some(invalid)).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while h
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.lut.import")))
+        .accesskit_node()
+        .is_disabled()
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "invalid import did not finish"
+        );
+        h.state_mut().tick();
+        h.run_steps(1);
+        std::thread::yield_now();
+    }
+    assert_eq!(h.state().session.project(), &applied);
+    assert_eq!(h.state().session.revision(), revision);
+    click(&mut h, "inspector.lut.import");
+    h.state_mut().take_lifecycle_action();
+    let snapshot = h.state().session.project().clone();
+    let captured_revision = h.state().session.revision();
+    h.state_mut()
+        .session
+        .apply(Command::RenameProject {
+            name: "Intervening edit".into(),
+        })
+        .unwrap();
+    h.state_mut().session.apply(Command::Undo {}).unwrap();
+    assert!(Arc::ptr_eq(h.state().session.project(), &snapshot));
+    assert_ne!(h.state().session.revision(), captured_revision);
+    let history = h.state().session.history_len();
+    assert!(h.state_mut().lut_picked_file(Some(source.clone())).is_err());
+    assert_eq!(h.state().session.project(), &snapshot);
+    assert_eq!(h.state().session.history_len(), history);
+    h.run_steps(2);
+    click(&mut h, "inspector.lut.import");
+    h.state_mut().take_lifecycle_action();
+    h.state_mut().selection = [image].into_iter().collect();
+    assert!(h.state_mut().lut_picked_file(Some(source)).is_err());
+    assert_eq!(h.state().session.project(), &applied);
+}
+
 struct Fixture {
     editor: Editor,
     text: ItemId,

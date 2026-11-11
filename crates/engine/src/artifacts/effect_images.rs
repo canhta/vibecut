@@ -129,8 +129,14 @@ impl EffectThumbnails {
                         return Ok(result);
                     }
                 }
-                let passes =
-                    render::effects::evaluate_effect(&animations, &effect, local, geometry, true)?;
+                let passes = render::effects::evaluate_effect(
+                    &animations,
+                    &effect,
+                    local,
+                    geometry,
+                    true,
+                    &render::lut::LutResources::default(),
+                )?;
                 let owned = render::Image::from_working_pixels(
                     source.width(),
                     source.height(),

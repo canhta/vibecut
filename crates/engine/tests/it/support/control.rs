@@ -486,7 +486,11 @@ pub(crate) fn media_access(root: &Path) -> MediaAccess {
     let thumbnails =
         engine::thumbnails::ThumbnailCache::open(&root.join("media-thumbnails"), budget, 16)
             .unwrap();
-    MediaAccess::new(artifacts, thumbnails)
+    MediaAccess::new(
+        artifacts,
+        thumbnails,
+        engine::luts::LutStore::open(&root.join("luts")).unwrap(),
+    )
 }
 /// The seed with two adjacent measured-word cues for transcript edit examples.
 pub(crate) fn with_words(seed: &Session) -> Session {

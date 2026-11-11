@@ -131,6 +131,14 @@ static DEFINITIONS: &[EffectDefinition] = &[
             grade_param("contrast", "Contrast"),
             grade_param("saturation", "Saturation"),
             grade_param("hue", "Hue"),
+            EffectParamDefinition {
+                id: "lut",
+                name: "LUT",
+                kind: EffectParamKind::Lut,
+                default: EffectValue::Lut(None),
+                animatable: false,
+            },
+            slider("lut_strength", "LUT strength", (0.0, 100.0), 100.0, false),
         ],
     },
     EffectDefinition {

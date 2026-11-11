@@ -1,5 +1,7 @@
 # Properties workflow
 
+The LUT workflow captures its target before requesting the frame-owned file picker, submits the registered engine job through shared process media access, and applies only a completed descriptor whose session, snapshot, selection, lock and tab still match. The frame owns picker lifecycle and polling composition; the area's state is restored before it can receive another action. No area reads another area's private state or edits the project outside engine commands.
+
 Interface: `add_effect_to_item`, `apply`, `effect_refusal`,
 `set_item_field`, `set_shared_field`, `transform_scrub`.
 

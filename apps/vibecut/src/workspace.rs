@@ -684,6 +684,7 @@ enum PickerAction {
     Open,
     Save { leave: bool, close: bool },
     ImportMedia,
+    ImportLut,
     ExportSave,
     SnapshotSave,
 }
@@ -970,6 +971,10 @@ impl EditorWindow {
                 }
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
+            PickerAction::ImportLut => {
+                let dialog = rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube"]);
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
             PickerAction::ImportMedia => {
                 let dialog = rfd::AsyncFileDialog::new()
                     .add_filter(self.tr(Text::Media), crate::import::MEDIA_EXTENSIONS);
@@ -1015,6 +1020,13 @@ impl EditorWindow {
         } else {
             self.persist(None, leave, close, false)
         }
+    }
+    /// Complete the real LUT picker without opening a native window in tests.
+    pub fn lut_picked_file(&mut self, path: Option<PathBuf>) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .lut_picked_file(path)
     }
     /// Apply native picker result paths through the same import path as drops.
     /// This OS boundary accepts injected results without opening a native dialog.
@@ -1063,7 +1075,13 @@ impl EditorWindow {
             .poll(&mut std::task::Context::from_waker(&picker.waker))
         {
             std::task::Poll::Pending => self.picker = Some(picker),
-            std::task::Poll::Ready(None) => {}
+            std::task::Poll::Ready(None) => {
+                if matches!(picker.action, PickerAction::ImportLut)
+                    && let Err(error) = self.lut_picked_file(None)
+                {
+                    self.error = Some(error);
+                }
+            }
             std::task::Poll::Ready(Some(mut files)) => {
                 let result = match picker.action {
                     PickerAction::Open => match files.pop() {
@@ -1093,6 +1111,9 @@ impl EditorWindow {
                             Ok(())
                         }
                     },
+                    PickerAction::ImportLut => {
+                        self.lut_picked_file(files.pop().map(|file| file.path().to_owned()))
+                    }
                     PickerAction::ImportMedia => {
                         let paths = files
                             .into_iter()
@@ -1367,6 +1388,7 @@ impl EditorWindow {
                     EditorAction::ExportSave => self.pick(ui.ctx(), PickerAction::ExportSave),
                     EditorAction::SnapshotSave => self.pick(ui.ctx(), PickerAction::SnapshotSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
+                    EditorAction::ImportLut => self.pick(ui.ctx(), PickerAction::ImportLut),
                     EditorAction::FocusHome => {
                         self.focus_home = true;
                         Ok(())
@@ -2057,6 +2079,113 @@ mod tests {
                 .as_str(),
             "picker test"
         );
+    }
+    #[test]
+    fn cancelled_lut_picker_releases_capture_without_project_edit() {
+        use egui_kittest::kittest::{By, NodeT, Queryable};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("source.png");
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([80, 120, 200, 255]))
+            .save(&path)
+            .unwrap();
+        let mut data = project::Project::empty(project::ProjectId(410), "LUT cancel".into())
+            .unwrap()
+            .into_data();
+        data.assets
+            .push(media::SourceAsset::import(media::AssetId(1), path).unwrap());
+        data.scene_mut().timeline.main.items.push(project::Item {
+            id: project::ItemId(2),
+            source_asset: Some(media::AssetId(1)),
+            source_range: time::SourceRange::new(
+                time::Tick::ZERO,
+                time::Tick(time::TICKS_PER_SECOND),
+            )
+            .unwrap(),
+            start: time::Tick::ZERO,
+            content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: false,
+                volume: 0.,
+                muted: false,
+                crop: None,
+            }),
+            effects: vec![],
+            masks: vec![],
+            animations: Default::default(),
+            retime: Default::default(),
+            blend_mode: Default::default(),
+            hidden: false,
+        });
+        let session = engine::Session::new(project::Project::new(data).unwrap(), 20).unwrap();
+        let playback = Playback::new(
+            &session,
+            ByteBudget::new(768 << 20).unwrap(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        let mut editor = Editor::new(session, playback, Preferences::default());
+        editor
+            .preferences
+            .properties_tabs
+            .insert("image".into(), "adjust".into());
+        editor.selection = [project::ItemId(2)].into_iter().collect();
+        let mut workspace =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        let id = workspace.register_editor(Box::new(editor));
+        let window = workspace.windows.remove(&id).unwrap();
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1440., 900.))
+            .build_ui_state(
+                |ui, window: &mut EditorWindow| window.editor.as_mut().unwrap().ui(ui),
+                window,
+            );
+        harness.run_steps(3);
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("inspector.tab.adjust")))
+            .click();
+        harness.run_steps(2);
+        let before = harness
+            .state()
+            .editor
+            .as_ref()
+            .unwrap()
+            .session
+            .project()
+            .clone();
+        let revision = harness.state().editor.as_ref().unwrap().session.revision();
+        let history = harness
+            .state()
+            .editor
+            .as_ref()
+            .unwrap()
+            .session
+            .history_len();
+        let import =
+            || By::new().predicate(|node| node.author_id() == Some("inspector.lut.import"));
+        harness.get(import()).click();
+        harness.run_steps(2);
+        assert_eq!(
+            harness
+                .state_mut()
+                .editor
+                .as_mut()
+                .unwrap()
+                .take_lifecycle_action(),
+            Some(EditorAction::ImportLut)
+        );
+        assert!(harness.get(import()).accesskit_node().is_disabled());
+        harness.state_mut().picker = Some(Picker {
+            future: Box::pin(std::future::ready(None)),
+            action: PickerAction::ImportLut,
+            waker: std::task::Waker::noop().clone(),
+        });
+        harness.state_mut().poll_picker();
+        harness.run_steps(2);
+        assert!(!harness.get(import()).accesskit_node().is_disabled());
+        let editor = harness.state().editor.as_ref().unwrap();
+        assert_eq!(editor.session.project(), &before);
+        assert_eq!(editor.session.revision(), revision);
+        assert_eq!(editor.session.history_len(), history);
     }
     #[test]
     fn lane_preferences_are_dropped_only_for_projects_whose_file_is_gone() {

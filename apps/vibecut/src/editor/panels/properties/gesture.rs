@@ -69,20 +69,30 @@ pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ScrubTarget {
     Item(&'static str),
-    Effect { effect: String, key: String },
+    Effect {
+        effect: String,
+        key: String,
+        inspector: bool,
+    },
 }
 impl ScrubTarget {
     pub(in crate::editor) fn draft_key(&self) -> String {
         match self {
             Self::Item(field) => (*field).to_owned(),
-            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}"),
+            Self::Effect { effect, key, .. } => format!("effects.{effect}.param.{key}"),
+        }
+    }
+    pub(super) fn field_id(&self) -> String {
+        match self {
+            Self::Item(field) => format!("inspector.{field}"),
+            Self::Effect {
+                inspector: true, ..
+            } => "inspector.lut.strength".into(),
+            Self::Effect { effect, key, .. } => format!("effects.{effect}.param.{key}"),
         }
     }
     pub(in crate::editor) fn widget_id(&self) -> String {
-        match self {
-            Self::Item(field) => format!("inspector.{field}.scrub"),
-            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}.scrub"),
-        }
+        format!("{}.scrub", self.field_id())
     }
 }
 #[derive(Clone, Debug)]

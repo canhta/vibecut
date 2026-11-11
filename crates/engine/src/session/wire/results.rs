@@ -118,6 +118,8 @@ pub struct JobView {
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JobOutput {
+    /// Durable descriptor for a subsequent color.register_lut edit.
+    Lut(project::LutRecord),
     /// Inline JPEG frames of a `preview` job.
     Preview(PreviewResult),
     /// Reviewed-span candidates of `timeline.pause_candidates`.

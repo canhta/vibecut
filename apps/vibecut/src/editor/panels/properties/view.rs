@@ -101,7 +101,8 @@ pub(in crate::editor) fn show(
             panel.actions.extend(panel.state.cancel_opacity());
         }
     }
-    if let Some((item, ref id, time)) = panel.state.spatial_edit.clone() {
+    if let Some((item, ref target, time)) = panel.state.spatial_edit.clone() {
+        let id = target.draft_key();
         let exists = read::item(panel.cx.session.project(), item).is_some_and(|candidate| {
             candidate
                 .effects
@@ -114,7 +115,7 @@ pub(in crate::editor) fn show(
             || read::item_locked(panel.cx.session.project(), item)
         {
             panel.actions.extend(panel.state.end_scrub(false));
-            panel.state.drafts.remove(id);
+            panel.state.drafts.remove(&id);
             panel.state.focus = None;
             panel.state.spatial_edit = None;
         }
@@ -142,11 +143,16 @@ pub(in crate::editor) fn show(
         panel.actions.extend(panel.state.close_picker());
     }
     panel.area(&mut ui, area);
-    if let Some((_, ref id, _)) = panel.state.spatial_edit.clone()
-        && !panel.state.widgets.iter().any(|widget| widget.id == *id)
+    if let Some((_, ref target, _)) = panel.state.spatial_edit.clone()
+        && !panel
+            .state
+            .widgets
+            .iter()
+            .any(|widget| widget.id == target.field_id())
     {
+        let id = target.draft_key();
         panel.actions.extend(panel.state.end_scrub(false));
-        panel.state.drafts.remove(id);
+        panel.state.drafts.remove(&id);
         panel.state.focus = None;
         panel.state.spatial_edit = None;
     }

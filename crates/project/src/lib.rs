@@ -22,12 +22,13 @@ pub use persistence::{
 pub use visual::{
     ANGLE_MAX, BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, Crop, DEFAULT_WEIGHT, EffectDefinition, EffectInstance, EffectParamDefinition,
-    EffectParamKind, EffectShelf, EffectValue, GRADE_MAX, GRADE_MIN, MASK_SCALARS,
-    MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath, MaskShape, MaskStroke,
-    MaskVertex, PACKED_COLOR_MAX, POINT_MAX, StrokeAlign, TRANSITION_DEFINITIONS, TransformField,
-    Transition, TransitionAlignment, TransitionDefinition, TransitionId, TransitionParamDef,
-    TransitionParamKind, TransitionParams, TransitionValue, effect_definition, effect_definitions,
-    packed_color, transition_definition, valid_letter_spacing, valid_line_height, valid_weight,
+    EffectParamKind, EffectParamUpdate, EffectShelf, EffectValue, GRADE_MAX, GRADE_MIN, LutId,
+    LutRecord, LutReference, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode,
+    MaskPath, MaskShape, MaskStroke, MaskVertex, PACKED_COLOR_MAX, POINT_MAX, StrokeAlign,
+    TRANSITION_DEFINITIONS, TransformField, Transition, TransitionAlignment, TransitionDefinition,
+    TransitionId, TransitionParamDef, TransitionParamKind, TransitionParams, TransitionValue,
+    effect_definition, effect_definitions, packed_color, transition_definition,
+    valid_letter_spacing, valid_line_height, valid_weight,
 };
 
 #[derive(Debug, thiserror::Error)]

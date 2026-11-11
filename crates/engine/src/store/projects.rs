@@ -484,6 +484,20 @@ impl ProjectLibrary {
             value.path = destination.join(relative);
             *asset = value.try_into()?;
         }
+        if !data.luts.is_empty() {
+            private_directory(&stage.join("media/luts"), false)?;
+            for record in &mut data.luts {
+                checkpoint(cancelled)?;
+                let relative = PathBuf::from("media/luts").join(record.id.hex());
+                super::lut_storage::copy_bundle(
+                    record,
+                    &stage.join(&relative),
+                    &self.budget,
+                    cancelled,
+                )?;
+                record.directory = destination.join(relative);
+            }
+        }
         let project = Project::new(data)?;
         let hash = fingerprint(&project)?;
         // Capture from the source while rewritten destination paths are not published.
@@ -581,6 +595,12 @@ impl ProjectLibrary {
                             return Err(project::Error::Conflict.into());
                         }
                     }
+                    for record in &project.data().luts {
+                        let _lut_memory = self
+                            .budget
+                            .reserve(crate::ByteOwner::PersistentCache, 256 << 10)?;
+                        super::lut_storage::verify_bundle(record, cancelled)?;
+                    }
                     checkpoint(cancelled)?;
                     lease.move_directory(hidden)?;
                 }
@@ -632,7 +652,14 @@ impl Drop for ProjectLibrary {
         self.clear_history();
     }
 }
-struct DirectoryGuard(Option<PathBuf>);
+pub(super) struct DirectoryGuard(pub(super) Option<PathBuf>);
+pub(super) fn staging_directory(parent: &Path, prefix: &str) -> Result<PathBuf> {
+    let mut bytes = [0; 16];
+    getrandom::fill(&mut bytes).map_err(|_| EditError::ControlIdentity)?;
+    let path = parent.join(format!(".{prefix}-{}", blake3::hash(&bytes).to_hex()));
+    private_directory(&path, false)?;
+    Ok(path)
+}
 impl Drop for DirectoryGuard {
     fn drop(&mut self) {
         if let Some(path) = &self.0 {

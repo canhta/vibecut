@@ -1,5 +1,7 @@
 # VibeCut
 
+**Imported LUT** is a user-owned display-referred sRGB colour table copied into a durable project resource bundle. Its `LutId` identifies canonical cube content; source bytes, name and optional user-supplied licence remain provenance. Render owns interpolation and working-pixel conversion.
+
 Language for the editor's privacy and execution boundaries.
 - **Local-first**: Editing and project data stay on the user's computer by default; remote AI processing requires explicit consent.
 - **Headless core**: The editing capabilities that run without a graphical interface.

@@ -4,6 +4,8 @@ Measured geometry and panel designs for the Editor window. Shared rules: [UI des
 
 ## Measured frame
 
+Imported 3D cube LUT controls in Adjust are a newly adopted composition, not a measured reference match: after the four grade controls, a LUT selector with Import, a static Strength row and conditional Locate for missing data. They reuse the existing 39 px property rows, 22 px fields, 12 px type and kit icons; no new visual token. The [Properties owner](../../../apps/vibecut/src/editor/panels/properties/README.md) defines capture/invalidation and file-completion behaviour. Original-file movement does not lose an imported look; missing copied bytes produce a visible typed failure until matching relink.
+
 Shots 221513 (empty) and 221643 (populated). Window 1727×1029, minimum 1280×800 [proposed].
 
 - Frame: top bar 36 px; one 42 px strip below it carrying the feature tabs (left), the player title (centre) and the properties tabs (right); content row 490 px; 6 px gutter; timeline 447 px; 8 px bottom inset. Content:timeline = 52:48 excluding the strip; full upper row:timeline = 532:447 (221643: column x=300, y 38–1067; row y=200 and y=700).

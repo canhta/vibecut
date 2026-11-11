@@ -10,6 +10,7 @@ vibecut-cli - headless VibeCut control
 
 Usage:
   vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20] [--min-scene-ticks <ticks>]
+  vibecut-cli color lut <project> --import <file> --item <id> [--strength <0..100>]
   vibecut-cli probe <file>
   vibecut-cli media waveform <project> --asset <id>
   vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]

@@ -12,6 +12,132 @@ fn spatial_effect(kind: &str) -> bool {
 }
 
 impl Panel<'_, '_> {
+    fn lut_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        definition: &project::EffectDefinition,
+    ) {
+        let current = read::item(self.cx.session.project(), item)
+            .and_then(|i| i.effects.iter().find(|e| e.id == effect))
+            .and_then(|e| e.value("lut"))
+            .and_then(|v| {
+                if let project::EffectValue::Lut(id) = v {
+                    *id
+                } else {
+                    None
+                }
+            });
+        let records = self.cx.session.project().data().luts.clone();
+        let busy = self.state.lut.busy();
+        let enabled = !busy
+            && !read::item_locked(self.cx.session.project(), item)
+            && !self.cx.session.transaction_active();
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::Lut));
+        value_ui.add_enabled_ui(enabled, |ui| {
+            ui.spacing_mut().interact_size.y = theme::size::FIELD;
+            let label = current
+                .and_then(|id| records.iter().find(|r| r.id == id))
+                .map_or(self.tr(Text::LutNone), |r| r.name.as_str());
+            let combo = egui::ComboBox::from_id_salt(Id::unique("inspector.lut.select"))
+                .width((ui.available_width() - 30.).max(40.))
+                .selected_text(label)
+                .show_ui(ui, |ui| {
+                    let response = ui.selectable_label(current.is_none(), self.tr(Text::LutNone));
+                    self.remember("inspector.lut.none", &response);
+                    if response.clicked() {
+                        self.actions.push(Action::SelectLut { item, id: None });
+                        ui.close();
+                    }
+                    for record in &records {
+                        let response =
+                            ui.selectable_label(current == Some(record.id), record.name.as_str());
+                        self.remember(
+                            format!("inspector.lut.option.{}", record.id.hex()),
+                            &response,
+                        );
+                        if response.clicked() {
+                            self.actions.push(Action::SelectLut {
+                                item,
+                                id: Some(record.id),
+                            });
+                            ui.close();
+                        }
+                    }
+                })
+                .response;
+            combo.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::ComboBox, enabled, self.tr(Text::Lut))
+            });
+            self.remember("inspector.lut.select", &combo);
+            let import = crate::kit::icon_button(
+                ui,
+                "inspector.lut.import",
+                Icon::Plus,
+                self.tr(Text::LutImport),
+                false,
+            );
+            self.remember("inspector.lut.import", &import);
+            if import.clicked() {
+                self.actions.push(Action::ImportLut {
+                    item,
+                    expected: None,
+                });
+            }
+        });
+        if let Some(parameter) = definition.param("lut_strength") {
+            let value = read::effect_param_value_at(
+                self.cx.session.project(),
+                item,
+                effect,
+                "lut_strength",
+                self.effect_time(item),
+            )
+            .unwrap_or(100.);
+            ui.add_enabled_ui(enabled && current.is_some(), |ui| {
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(Text::LutStrength));
+                self.effect_scrub_value(
+                    &mut value_ui,
+                    item,
+                    effect,
+                    definition.id,
+                    parameter,
+                    value,
+                    true,
+                )
+            });
+        }
+        if busy {
+            ui.label(self.tr(Text::LutLoading));
+        }
+        if current.is_some() && current == self.state.lut.unavailable {
+            let response = ui
+                .add_enabled_ui(enabled, |ui| {
+                    crate::kit::icon_button(
+                        ui,
+                        "inspector.lut.relink",
+                        Icon::FolderOpen,
+                        self.tr(Text::LutLocate),
+                        false,
+                    )
+                })
+                .inner;
+            self.remember_with_icon(
+                "inspector.lut.relink",
+                Some(Icon::FolderOpen.name()),
+                &response,
+            );
+            if response.clicked() {
+                self.actions.push(Action::ImportLut {
+                    item,
+                    expected: current,
+                });
+            }
+        }
+    }
     /// The item-relative playhead for a value read, or the clip start outside it.
     pub(super) fn effect_time(&self, item: ItemId) -> Tick {
         let Some((start, end)) = read::range_of(self.cx.session.project(), item) else {
@@ -47,13 +173,18 @@ impl Panel<'_, '_> {
         });
         let id = existing.unwrap_or_else(|| definition.id.to_owned());
         let at = self.effect_time(item);
-        for parameter in definition.params {
+        for parameter in definition
+            .params
+            .iter()
+            .filter(|p| p.id != "lut" && p.id != "lut_strength")
+        {
             let current =
                 read::effect_param_value_at(self.cx.session.project(), item, &id, parameter.id, at)
                     .or_else(|| parameter.default.scalar())
                     .unwrap_or(0.0);
             self.effect_scrub_field(ui, item, &id, definition.id, parameter, current);
         }
+        self.lut_controls(ui, item, &id, definition);
     }
 
     pub(super) fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
@@ -221,7 +352,8 @@ impl Panel<'_, '_> {
                                     self.effect_color_field(ui, item, &effect.id, parameter.id);
                                 }
                                 project::EffectParamKind::Color
-                                | project::EffectParamKind::Point => {}
+                                | project::EffectParamKind::Point
+                                | project::EffectParamKind::Lut => {}
                             }
                         }
                     }
@@ -460,8 +592,20 @@ impl Panel<'_, '_> {
         parameter: &project::EffectParamDefinition,
         current: f64,
     ) {
+        self.effect_scrub_value(ui, item, effect, kind, parameter, current, false);
+    }
+    fn effect_scrub_value(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        kind: &str,
+        parameter: &project::EffectParamDefinition,
+        current: f64,
+        row: bool,
+    ) {
         let spec = effect_scrub_spec(parameter);
-        let spatial = spatial_effect(kind);
+        let spatial = spatial_effect(kind) || row;
         if spatial
             && self.actions.iter().any(|a| {
                 matches!(a, Action::SetTab { .. } | Action::Activate(_))
@@ -486,13 +630,21 @@ impl Panel<'_, '_> {
                 _ => "",
             }
         };
-        ui.add_space(theme::space::MD);
+        if !row {
+            ui.add_space(theme::space::MD);
+        }
         let label = crate::i18n::effect_label(kind, Some(parameter.id))
             .map_or(parameter.name, |key| self.tr(key));
-        let caption = ui.label(label);
-        let draft_key = format!("effects.{effect}.param.{}", parameter.id);
+        let caption = (!row).then(|| ui.label(label));
+        let target = ScrubTarget::Effect {
+            effect: effect.to_owned(),
+            key: parameter.id.to_owned(),
+            inspector: row,
+        };
+        let draft_key = target.draft_key();
+        let widget_key = target.field_id();
         ui.horizontal(|ui| {
-            let handle_id = format!("effects.{effect}.param.{}.scrub", parameter.id);
+            let handle_id = target.widget_id();
             let (rect, handle) = ui.allocate_exact_size(
                 Vec2::new(theme::size::CONTROL, theme::size::FIELD),
                 egui::Sense::click_and_drag(),
@@ -512,18 +664,14 @@ impl Panel<'_, '_> {
                 &handle,
             );
             if handle.drag_started() {
-                self.start_effect_scrub(item, effect, parameter.id, current);
+                self.start_scrub_target(item, target.clone(), current);
                 if spatial {
-                    self.state.spatial_edit = Some((item, draft_key.clone(), self.cx.playhead));
+                    self.state.spatial_edit = Some((item, target.clone(), self.cx.playhead));
                 }
             }
             if handle.dragged()
                 && let Some(mut scrub) = self.state.scrub.take()
             {
-                let target = ScrubTarget::Effect {
-                    effect: effect.to_owned(),
-                    key: parameter.id.to_owned(),
-                };
                 if scrub.target == target {
                     let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
                         / f64::from(spec.pixels_per_step);
@@ -560,26 +708,38 @@ impl Panel<'_, '_> {
                         spec.format(current)
                     }
                 });
-            let response = ui
-                .add_sized(
-                    [width, if spatial { theme::size::FIELD } else { 26.0 }],
-                    egui::TextEdit::singleline(&mut next)
-                        .char_limit(32)
-                        .background_color(self.control_fill())
-                        .id(Id::unique(&draft_key))
-                        .hint_text(
-                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
-                        ),
-                )
-                .labelled_by(caption.id);
-            self.remember(draft_key.clone(), &response);
+            let response = ui.add_sized(
+                [width, if spatial { theme::size::FIELD } else { 26.0 }],
+                egui::TextEdit::singleline(&mut next)
+                    .char_limit(32)
+                    .background_color(self.control_fill())
+                    .id(Id::unique(&draft_key))
+                    .hint_text(
+                        egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                    ),
+            );
+            let response = if let Some(caption) = &caption {
+                response.labelled_by(caption.id)
+            } else {
+                response
+            };
+            if row {
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::Role::TextInput,
+                        ui.is_enabled(),
+                        self.tr(Text::LutStrength),
+                    )
+                });
+            }
+            self.remember(widget_key.clone(), &response);
             if spatial {
                 ui.label(unit);
             }
             if response.has_focus() {
                 self.state.focus = Some(draft_key.clone());
                 if spatial {
-                    self.state.spatial_edit = Some((item, draft_key.clone(), self.cx.playhead));
+                    self.state.spatial_edit = Some((item, target.clone(), self.cx.playhead));
                 }
             }
             if response.changed() {

@@ -38,6 +38,7 @@ pub enum EditorAction {
     SaveAs,
     FocusHome,
     ImportMedia,
+    ImportLut,
     ExportSave,
     SnapshotSave,
 }

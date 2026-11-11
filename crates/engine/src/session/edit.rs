@@ -481,6 +481,16 @@ pub(crate) fn apply(
         EditCommand::ReorderMasks { item: id, order } => {
             data = masks::execute_reorder_masks(data, id, order)?;
         }
+        EditCommand::RegisterLut { record } => {
+            record.validate()?;
+            if let Some(existing) = data.luts.iter().find(|r| r.id == record.id) {
+                if existing != &record {
+                    return Err(EditError::Invalid("conflicting LUT registration"));
+                }
+            } else {
+                data.luts.push(record);
+            }
+        }
         EditCommand::AddEffect { item: id, effect } => {
             data = effects::execute_add_effect(data, id, effect)?;
         }

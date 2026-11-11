@@ -316,14 +316,6 @@ impl Panel<'_, '_> {
         }
     }
 
-    pub(super) fn start_effect_scrub(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
-        let target = ScrubTarget::Effect {
-            effect: effect.to_owned(),
-            key: key.to_owned(),
-        };
-        self.start_scrub_target(item, target, value);
-    }
-
     pub(super) fn start_scrub_target(&mut self, item: ItemId, target: ScrubTarget, value: f64) {
         let actions = self.state.begin_scrub(item, target, value);
         self.actions.extend(actions);

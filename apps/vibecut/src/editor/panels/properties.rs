@@ -46,7 +46,7 @@ pub(in crate::editor) struct State {
     /// Project/Details switch shown while no single element is selected.
     details: bool,
     scrub: Option<ScrubDrag>,
-    spatial_edit: Option<(ItemId, String, Tick)>,
+    spatial_edit: Option<(ItemId, ScrubTarget, Tick)>,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
     picker: Option<color_picker::Draft>,
@@ -56,6 +56,7 @@ pub(in crate::editor) struct State {
     font_picker: font_picker::State,
     /// Catalog commands for the font picker; opened lazily on first use.
     font_backend: Option<Box<dyn font_picker::Backend>>,
+    lut: workflow::lut::LutWorkflow,
     /// Mask row's shape and field sub-panel.
     mask: mask_picker::State,
     /// Clip whose Chroma key is switched on before any colour is picked; the
@@ -153,6 +154,7 @@ impl Default for State {
             color_base: None,
             font_picker: font_picker::State::default(),
             font_backend: None,
+            lut: workflow::lut::LutWorkflow::default(),
             mask: mask_picker::State::default(),
             chroma_staged: None,
             area: None,

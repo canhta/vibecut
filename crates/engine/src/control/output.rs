@@ -9,6 +9,9 @@ use crate::{EditError, Result};
 pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOutput>> {
     let retained = || bytes.ok_or(EditError::JobNotRetained);
     Ok(Some(match kind {
+        JobKind::ImportLut => JobOutput::Lut(
+            serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
+        ),
         JobKind::Preview => JobOutput::Preview(
             serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
         ),

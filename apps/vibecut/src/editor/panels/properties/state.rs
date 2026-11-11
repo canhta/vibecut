@@ -16,6 +16,14 @@ pub(in crate::editor) struct Widget {
 /// Requests the properties area cannot satisfy alone; the frame routes them
 /// in order after `show` returns.
 pub(in crate::editor) enum Action {
+    ImportLut {
+        item: ItemId,
+        expected: Option<project::LutId>,
+    },
+    SelectLut {
+        item: ItemId,
+        id: Option<project::LutId>,
+    },
     ApplyTextAnimation {
         item: ItemId,
         preset: engine::TextAnimationPreset,
