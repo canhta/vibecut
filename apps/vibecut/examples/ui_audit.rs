@@ -28,13 +28,14 @@ use std::{
     collections::BTreeSet,
     fmt::Write as _,
     fs,
+    io::Read,
     path::{Path, PathBuf},
-    process::Command as ProcessCommand,
+    process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -2762,7 +2763,13 @@ const README_SCRATCH: u64 = 8 << 30;
 const BBB_SOURCE_URL: &str = "https://www.peach.themazzone.com/big_buck_bunny_720p_h264.mov";
 const BBB_SOURCE_BYTES: u64 = 416_751_190;
 const BBB_SOURCE_SHA256: &str = "45c8bafeb9a53df7f491198d2e71529701bcf1cd51805782089fac1d32869f9b";
+const BBB_EXCERPT_BYTES: u64 = 4_544_843;
+const BBB_EXCERPT_SHA256: &str = "66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1";
 const BBB_CREDIT: &str = "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org";
+const TOOL_METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+const TOOL_WORK_TIMEOUT: Duration = Duration::from_secs(120);
+const TOOL_STDOUT_CAP: usize = 16 << 20;
+const TOOL_STDERR_CAP: usize = 64 << 10;
 
 fn hex(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -2784,12 +2791,171 @@ impl engine::jobs::Clock for ReadmeClock {
     }
 }
 
-fn sha256_file(path: &Path) -> Result<String, Failure> {
-    Ok(sha256_bytes(&fs::read(path)?))
+fn stream_sha256(path: &Path) -> Result<String, Failure> {
+    let metadata = fs::metadata(path)?;
+    if metadata.len() != BBB_EXCERPT_BYTES {
+        return Err(format!(
+            "README source is not the admitted Big Buck Bunny excerpt: expected {BBB_EXCERPT_BYTES} bytes, found {}",
+            metadata.len()
+        )
+        .into());
+    }
+    let mut file = fs::File::open(path)?;
+    let mut buffer = [0u8; 1 << 16];
+    let mut hasher = Sha256::new();
+    let mut total = 0u64;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        if total > BBB_EXCERPT_BYTES {
+            return Err("README source grew beyond the admitted excerpt".into());
+        }
+        hasher.update(&buffer[..read]);
+    }
+    if total != BBB_EXCERPT_BYTES {
+        return Err("README source ended before the admitted excerpt".into());
+    }
+    let digest = hex(&hasher.finalize());
+    if digest != BBB_EXCERPT_SHA256 {
+        return Err(format!(
+            "README source SHA-256 mismatch: expected {BBB_EXCERPT_SHA256}, found {digest}"
+        )
+        .into());
+    }
+    Ok(digest)
+}
+
+#[derive(Debug)]
+struct SupervisedOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+struct ChildGuard(Option<Child>);
+
+impl ChildGuard {
+    fn child(&mut self) -> Result<&mut Child, Failure> {
+        self.0
+            .as_mut()
+            .ok_or_else(|| "supervised child missing".into())
+    }
+
+    fn kill(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            child.kill().ok();
+            child.wait().ok();
+        }
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
+fn read_bounded(mut reader: impl Read, cap: usize, overflow: Arc<AtomicBool>) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut buffer = [0u8; 8192];
+    let mut total = 0usize;
+    loop {
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(_) => break,
+        };
+        total = total.saturating_add(read);
+        if total > cap {
+            overflow.store(true, Ordering::SeqCst);
+        }
+        let room = cap.saturating_sub(out.len());
+        if room > 0 {
+            out.extend_from_slice(&buffer[..read.min(room)]);
+        }
+    }
+    out
+}
+
+fn tool_command(program: &str) -> ProcessCommand {
+    let mut command = ProcessCommand::new(program);
+    command
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH");
+    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
+    {
+        let production = PathBuf::from(prefix).join("bin");
+        let paths: Vec<_> = std::env::split_paths(&paths)
+            .filter(|path| path != &production)
+            .collect();
+        if let Ok(path) = std::env::join_paths(paths) {
+            command.env("PATH", path);
+        }
+    }
+    command
+}
+
+fn run_tool(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    stdout_cap: usize,
+) -> Result<SupervisedOutput, Failure> {
+    let mut child = tool_command(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("spawn {program}: {error}"))?;
+    let stdout = child.stdout.take().ok_or("tool stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("tool stderr unavailable")?;
+    let overflow = Arc::new(AtomicBool::new(false));
+    let out_flag = overflow.clone();
+    let err_flag = overflow.clone();
+    let out_thread = std::thread::spawn(move || read_bounded(stdout, stdout_cap, out_flag));
+    let err_thread = std::thread::spawn(move || read_bounded(stderr, TOOL_STDERR_CAP, err_flag));
+    let mut guard = ChildGuard(Some(child));
+    let deadline = Instant::now() + timeout;
+    let mut status = None;
+    while Instant::now() < deadline {
+        if overflow.load(Ordering::SeqCst) {
+            break;
+        }
+        if let Some(exit) = guard.child()?.try_wait()? {
+            status = Some(exit);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    if status.is_none() {
+        guard.kill();
+    }
+    let stdout = out_thread
+        .join()
+        .map_err(|_| format!("{program} stdout reader panicked"))?;
+    let stderr = err_thread
+        .join()
+        .map_err(|_| format!("{program} stderr reader panicked"))?;
+    if overflow.load(Ordering::SeqCst) {
+        return Err(format!("{program} output exceeded its bounded cap").into());
+    }
+    let Some(status) = status else {
+        return Err(format!("{program} timed out after {timeout:?}").into());
+    };
+    guard.0.take();
+    Ok(SupervisedOutput {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn tool_identity(tool: &str) -> Result<String, Failure> {
-    let output = testkit::oracle::command(tool).arg("-version").output()?;
+    let output = run_tool(tool, &["-version"], TOOL_METADATA_TIMEOUT, TOOL_STDERR_CAP)?;
     if !output.status.success() {
         return Err(format!("{tool} -version failed").into());
     }
@@ -2801,9 +2967,13 @@ fn tool_identity(tool: &str) -> Result<String, Failure> {
 }
 
 fn git_head(root: &Path) -> Result<String, Failure> {
-    let output = ProcessCommand::new("git")
-        .args(["-C", &root.to_string_lossy(), "rev-parse", "HEAD"])
-        .output()?;
+    let root = root.to_string_lossy().into_owned();
+    let output = run_tool(
+        "git",
+        &["-C", &root, "rev-parse", "HEAD"],
+        TOOL_METADATA_TIMEOUT,
+        TOOL_STDERR_CAP,
+    )?;
     if !output.status.success() {
         return Err("git rev-parse HEAD failed".into());
     }
@@ -2811,22 +2981,29 @@ fn git_head(root: &Path) -> Result<String, Failure> {
 }
 
 fn free_bytes(path: &Path) -> Result<u64, Failure> {
+    let path = path.to_string_lossy().into_owned();
     #[cfg(windows)]
-    let output = ProcessCommand::new("powershell")
-        .args([
+    let output = run_tool(
+        "powershell",
+        &[
             "-NoProfile",
             "-NonInteractive",
             "-Command",
             &format!(
                 "(Get-Item -LiteralPath '{}').PSDrive.Free",
-                path.to_string_lossy().replace('\'', "''")
+                path.replace('\'', "''")
             ),
-        ])
-        .output()?;
+        ],
+        TOOL_METADATA_TIMEOUT,
+        TOOL_STDERR_CAP,
+    )?;
     #[cfg(unix)]
-    let output = ProcessCommand::new("df")
-        .args(["-k", "-P", &path.to_string_lossy()])
-        .output()?;
+    let output = run_tool(
+        "df",
+        &["-k", "-P", &path],
+        TOOL_METADATA_TIMEOUT,
+        TOOL_STDERR_CAP,
+    )?;
     if !output.status.success() {
         return Err("scratch headroom probe failed".into());
     }
@@ -2845,10 +3022,9 @@ fn free_bytes(path: &Path) -> Result<u64, Failure> {
 }
 
 fn ffmpeg(args: &[&str]) -> Result<(), Failure> {
-    let output = testkit::oracle::command("ffmpeg")
-        .args(["-hide_banner", "-loglevel", "error", "-y"])
-        .args(args)
-        .output()?;
+    let mut all = vec!["-hide_banner", "-loglevel", "error", "-y"];
+    all.extend_from_slice(args);
+    let output = run_tool("ffmpeg", &all, TOOL_WORK_TIMEOUT, TOOL_STDOUT_CAP)?;
     if !output.status.success() {
         return Err(format!(
             "ffmpeg failed: {}",
@@ -2863,20 +3039,13 @@ fn ffmpeg(args: &[&str]) -> Result<(), Failure> {
 }
 
 fn decode_rgb(path: &Path, filter: Option<&str>) -> Result<Vec<u8>, Failure> {
-    let mut command = testkit::oracle::command("ffmpeg");
-    command.args([
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        &path.to_string_lossy(),
-    ]);
+    let path = path.to_string_lossy().into_owned();
+    let mut args = vec!["-hide_banner", "-loglevel", "error", "-i", path.as_str()];
     if let Some(filter) = filter {
-        command.args(["-vf", filter]);
+        args.extend(["-vf", filter]);
     }
-    let output = command
-        .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
-        .output()?;
+    args.extend(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
+    let output = run_tool("ffmpeg", &args, TOOL_WORK_TIMEOUT, TOOL_STDOUT_CAP)?;
     if !output.status.success() {
         return Err(format!(
             "ffmpeg decode failed: {}",
@@ -2885,6 +3054,59 @@ fn decode_rgb(path: &Path, filter: Option<&str>) -> Result<Vec<u8>, Failure> {
         .into());
     }
     Ok(output.stdout)
+}
+
+fn probe_field(path: &Path, select: &str, entry: &str) -> Result<String, Failure> {
+    let path_value = path.to_string_lossy().into_owned();
+    let entry = format!("stream={entry}");
+    let output = run_tool(
+        "ffprobe",
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            select,
+            "-show_entries",
+            &entry,
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            &path_value,
+        ],
+        TOOL_METADATA_TIMEOUT,
+        TOOL_STDERR_CAP,
+    )?;
+    if !output.status.success() {
+        return Err("ffprobe field failed".into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+fn decoded_frame_count(path: &Path) -> Result<u64, Failure> {
+    let path_value = path.to_string_lossy().into_owned();
+    let output = run_tool(
+        "ffprobe",
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            &path_value,
+        ],
+        TOOL_WORK_TIMEOUT,
+        TOOL_STDERR_CAP,
+    )?;
+    if !output.status.success() {
+        return Err("ffprobe frame count failed".into());
+    }
+    String::from_utf8(output.stdout)?
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "ffprobe frame count parse".into())
 }
 
 fn image_stats(pixels: &[u8]) -> serde_json::Value {
@@ -2926,6 +3148,102 @@ fn publish(src: &Path, dst: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
+fn owned_by_runner(outputs: &Path, name: &str, slot: &str) -> Result<bool, Failure> {
+    let media = outputs.join(name);
+    let sidecar = outputs.join(format!("{name}.attribution"));
+    if !media.exists() && !sidecar.exists() {
+        return Ok(false);
+    }
+    let text = fs::read_to_string(&sidecar).map_err(|_| {
+        format!("refusing unrelated existing README output `{name}`: no runner sidecar")
+    })?;
+    let marker = format!("ui_audit.rs --readme {slot}");
+    Ok(text
+        .lines()
+        .any(|line| line.trim() == format!("asset: {name}"))
+        && text.lines().any(|line| line.trim() == "added: p0-core/22")
+        && text
+            .lines()
+            .any(|line| line.starts_with("source:") && line.contains(&marker)))
+}
+
+fn publish_outputs(
+    stage: &Path,
+    outputs: &Path,
+    slot: &str,
+    media_names: &[&str],
+    all_names: &[&str],
+    run: &Path,
+    run_id: &str,
+) -> Result<(), Failure> {
+    for name in media_names {
+        owned_by_runner(outputs, name, slot)?;
+    }
+    let backup = outputs.join(format!(".readme-media-backup-{run_id}"));
+    if backup.exists() {
+        return Err("README publication backup already exists".into());
+    }
+    fs::create_dir_all(&backup)?;
+    let mut published = Vec::new();
+    let mut backed = Vec::new();
+    let mut apply = || -> Result<(), Failure> {
+        for name in all_names {
+            let src = stage.join(name);
+            if !src.is_file() {
+                return Err(format!("staged README output `{name}` is missing").into());
+            }
+            let dst = outputs.join(name);
+            if dst.exists() {
+                fs::rename(&dst, backup.join(name))?;
+                backed.push(*name);
+            }
+            let temp = outputs.join(format!(".{name}.tmp-{run_id}"));
+            if temp.exists() {
+                fs::remove_file(&temp)?;
+            }
+            fs::copy(&src, &temp)?;
+            fs::rename(&temp, &dst)?;
+            published.push(*name);
+        }
+        Ok(())
+    };
+    match apply() {
+        Ok(()) => {
+            fs::remove_dir_all(&backup).ok();
+            Ok(())
+        }
+        Err(error) => {
+            let mut rollback = Vec::new();
+            for name in published.iter().rev() {
+                let path = outputs.join(name);
+                if path.exists() && fs::remove_file(&path).is_err() {
+                    rollback.push(format!("remove {name}"));
+                }
+            }
+            for name in backed.iter().rev() {
+                if fs::rename(backup.join(name), outputs.join(name)).is_err() {
+                    rollback.push(format!("restore {name}"));
+                }
+            }
+            if rollback.is_empty() {
+                fs::remove_dir_all(&backup).ok();
+                Err(error)
+            } else {
+                fs::write(
+                    run.join("preserve-staging"),
+                    format!("rollback incomplete: {}", rollback.join(", ")),
+                )?;
+                Err(format!(
+                    "{error}; rollback incomplete ({}) with backups at {}",
+                    rollback.join(", "),
+                    backup.display()
+                )
+                .into())
+            }
+        }
+    }
+}
+
 fn encode_jpg(raw: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
     let name = out.file_name().ok_or("jpg filename")?;
     let temp = out.with_file_name(format!(".{}.tmp.jpg", name.to_string_lossy()));
@@ -2950,8 +3268,8 @@ fn encode_jpg(raw: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
     if bytes > README_MAX_JPG {
         return Err(format!("jpg exceeds 512 KiB: {bytes}").into());
     }
-    let width = testkit::oracle::stream_field(&temp, "v:0", "width").parse::<u32>()?;
-    let height = testkit::oracle::stream_field(&temp, "v:0", "height").parse::<u32>()?;
+    let width = probe_field(&temp, "v:0", "width")?.parse::<u32>()?;
+    let height = probe_field(&temp, "v:0", "height")?.parse::<u32>()?;
     if (width, height) != (960, 600) {
         return Err(format!("jpg dimensions {width}x{height}").into());
     }
@@ -2974,8 +3292,10 @@ fn encode_jpg(raw: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
 }
 
 fn gif_timing(path: &Path) -> Result<(usize, f64, f64), Failure> {
-    let output = testkit::oracle::command("ffprobe")
-        .args([
+    let path_value = path.to_string_lossy().into_owned();
+    let output = run_tool(
+        "ffprobe",
+        &[
             "-v",
             "error",
             "-select_streams",
@@ -2984,9 +3304,11 @@ fn gif_timing(path: &Path) -> Result<(usize, f64, f64), Failure> {
             "frame=pts_time,duration_time",
             "-of",
             "csv=p=0",
-            &path.to_string_lossy(),
-        ])
-        .output()?;
+            &path_value,
+        ],
+        TOOL_METADATA_TIMEOUT,
+        1 << 20,
+    )?;
     if !output.status.success() {
         return Err("gif timing probe failed".into());
     }
@@ -3058,9 +3380,9 @@ fn encode_gif(run: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
     if bytes > README_MAX_GIF {
         return Err(format!("gif exceeds 5,000,000 bytes: {bytes}").into());
     }
-    let width = testkit::oracle::stream_field(&temp, "v:0", "width").parse::<u32>()?;
-    let height = testkit::oracle::stream_field(&temp, "v:0", "height").parse::<u32>()?;
-    let frames = testkit::oracle::decoded_frames(&temp, "v:0");
+    let width = probe_field(&temp, "v:0", "width")?.parse::<u32>()?;
+    let height = probe_field(&temp, "v:0", "height")?.parse::<u32>()?;
+    let frames = decoded_frame_count(&temp)?;
     let (_, delay_error, end) = gif_timing(&temp)?;
     if (width, height) != (960, 600) || frames != README_GIF_FRAMES as u64 {
         return Err(format!("gif geometry/frames {width}x{height} {frames}").into());
@@ -3320,7 +3642,10 @@ fn readme_boundary(
     readme_capture(app, &raw)?;
     let editor = readme_editor(app)?;
     let project = editor.session.project();
-    let project_hash = sha256_bytes(&project::encode(project, false)?);
+    let snapshot = project::encode(project, false)?;
+    let project_hash = sha256_bytes(&snapshot);
+    let snapshot_name = format!("boundary-{index}.project");
+    fs::write(run.join(&snapshot_name), &snapshot)?;
     let revision = serde_json::to_string(&editor.session.revision())?;
     let generation = editor.playback.generation();
     let frame_at = editor.playback.frame().map(|frame| frame.at.0);
@@ -3329,12 +3654,113 @@ fn readme_boundary(
         "boundary": index,
         "label": label,
         "raw": raw.file_name().map(|name| name.to_string_lossy().into_owned()),
+        "snapshot": snapshot_name,
+        "snapshot_sha256": project_hash,
         "revision": revision,
         "project_sha256": project_hash,
         "generation": generation,
         "frame_at": frame_at,
         "presented_at": presented
     }))
+}
+
+fn verify_snapshots(
+    run: &Path,
+    first: ItemId,
+    split: ItemId,
+) -> Result<serde_json::Value, Failure> {
+    let load = |index: usize| -> Result<project::ProjectData, Failure> {
+        let bytes = fs::read(run.join(format!("boundary-{index}.project")))?;
+        Ok(project::decode(&bytes)?.project.into_data())
+    };
+    let initial = load(0)?;
+    let split_state = load(1)?;
+    let trimmed_state = load(2)?;
+    let undone_state = load(3)?;
+    if undone_state != split_state {
+        return Err("undo snapshot does not equal the split snapshot".into());
+    }
+    let split_right = split_state
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .find(|item| item.id == split)
+        .ok_or("split snapshot has no right item")?
+        .clone();
+    let mut trimmed_reverted = trimmed_state.clone();
+    {
+        let right = trimmed_reverted
+            .scene_mut()
+            .timeline
+            .main
+            .items
+            .iter_mut()
+            .find(|item| item.id == split)
+            .ok_or("trim snapshot has no right item")?;
+        right.source_range = split_right.source_range;
+        right.retime = split_right.retime;
+    }
+    if trimmed_reverted != split_state {
+        return Err("trim snapshot changed more than the right item range/retime".into());
+    }
+    let initial_first = initial
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .find(|item| item.id == first)
+        .ok_or("initial snapshot has no first item")?
+        .clone();
+    let mut split_reverted = split_state.clone();
+    split_reverted
+        .scene_mut()
+        .timeline
+        .main
+        .items
+        .retain(|item| item.id != split);
+    {
+        let left = split_reverted
+            .scene_mut()
+            .timeline
+            .main
+            .items
+            .iter_mut()
+            .find(|item| item.id == first)
+            .ok_or("split snapshot has no first item")?;
+        left.source_range = initial_first.source_range;
+        left.retime = initial_first.retime;
+    }
+    if split_reverted != initial {
+        return Err(
+            "split snapshot changed more than the first item range/retime and new right item"
+                .into(),
+        );
+    }
+    Ok(serde_json::json!({
+        "undo_matches_split": true,
+        "trim_only_right_range": true,
+        "split_only_first_range_and_new_item": true
+    }))
+}
+
+fn unique_run_dir(target: &Path, slot: &str) -> Result<PathBuf, Failure> {
+    let root = target.join("readme-media").join(slot);
+    fs::create_dir_all(&root)?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "system clock before epoch")?
+        .as_millis();
+    for attempt in 0..1000 {
+        let run = root.join(format!("{stamp}-{}-{attempt}", std::process::id()));
+        if !run.exists() {
+            fs::create_dir(&run)?;
+            return Ok(run);
+        }
+    }
+    Err("could not allocate a unique README run directory".into())
 }
 
 fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result<(), Failure> {
@@ -3350,9 +3776,8 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
     if !source.is_file() {
         return Err("README source must be a local file".into());
     }
-    if !testkit::oracle::require("README capture") {
-        return Err("README capture requires ffmpeg and ffprobe".into());
-    }
+    let source_hash = stream_sha256(&source)?;
+    let tools = [tool_identity("ffmpeg")?, tool_identity("ffprobe")?];
     let free = free_bytes(target)?;
     if free < README_SCRATCH {
         return Err(format!(
@@ -3360,15 +3785,24 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         )
         .into());
     }
-    let run = target.join("readme-media").join(slot);
-    if run.exists() {
-        fs::remove_dir_all(&run)?;
+    let run = unique_run_dir(target, slot)?;
+    let result = readme_media_run(root, slot, &source, &run, &source_hash, &tools);
+    if result.is_err() && !run.join("preserve-staging").exists() {
+        fs::remove_dir_all(&run).ok();
     }
-    fs::create_dir_all(&run)?;
-    let source_hash = sha256_file(&source)?;
-    let tools = [tool_identity("ffmpeg")?, tool_identity("ffprobe")?];
+    result
+}
+
+fn readme_media_run(
+    root: &Path,
+    slot: &str,
+    source: &Path,
+    run: &Path,
+    source_hash: &str,
+    tools: &[String; 2],
+) -> Result<(), Failure> {
     let commit = git_head(root)?;
-    let (editor, first, _second) = readme_project(&source)?;
+    let (editor, first, _second) = readme_project(source)?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), 1.0, README_WINDOW);
     readme_seek(&mut app, Tick(3 * SECOND))?;
     let at_three = readme_frame_digest(&mut app)?;
@@ -3391,6 +3825,8 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         .unwrap_or_else(|| "excerpt.mp4".into());
     let outputs = root.join("docs/assets/readme");
     fs::create_dir_all(&outputs)?;
+    let stage = run.join("stage");
+    fs::create_dir_all(&stage)?;
     let mut manifest = serde_json::json!({
         "slot": slot,
         "command": format!("cargo xtask build -- cargo xtask ui-audit --readme {slot} --source <local Big Buck Bunny excerpt>"),
@@ -3423,7 +3859,7 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         readme_seek(&mut app, Tick(3 * SECOND))?;
         let raw = run.join("hero-frame.png");
         readme_capture(&mut app, &raw)?;
-        let jpg = outputs.join("hero.jpg");
+        let jpg = stage.join("hero.jpg");
         let jpg_report = encode_jpg(&raw, &jpg)?;
         let details = readme_boundary(&mut app, &run, 0, "settled multitrack project")?;
         manifest["boundary"] = details;
@@ -3435,12 +3871,22 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
             0,
             "initial multitrack project",
         )?];
+        let mut commands = Vec::new();
         let split = {
             let editor = readme_editor(&mut app)?;
-            let outcome = editor.session.apply(Command::SplitAt {
+            let command = Command::SplitAt {
                 item: first,
                 at: Tick(4 * SECOND),
-            })?;
+            };
+            let command_json = serde_json::to_value(&command)?;
+            let outcome = editor.session.apply(command)?;
+            commands.push(serde_json::json!({
+                "boundary": 1,
+                "command": command_json,
+                "changed": outcome.changed,
+                "created": serde_json::to_value(&outcome.created)?,
+                "placements": serde_json::to_value(&outcome.placements)?
+            }));
             outcome
                 .created
                 .into_iter()
@@ -3504,11 +3950,20 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         };
         let boundaries = {
             let editor = readme_editor(&mut app)?;
-            editor.session.apply(Command::TimelineTrim {
+            let command = Command::TimelineTrim {
                 items: vec![split],
                 edge: TrimEdge::End,
                 delta: Tick(-SECOND / 2),
-            })?;
+            };
+            let command_json = serde_json::to_value(&command)?;
+            let outcome = editor.session.apply(command)?;
+            commands.push(serde_json::json!({
+                "boundary": 2,
+                "command": command_json,
+                "changed": outcome.changed,
+                "created": serde_json::to_value(&outcome.created)?,
+                "placements": serde_json::to_value(&outcome.placements)?
+            }));
             let right = editor
                 .session
                 .project()
@@ -3549,7 +4004,16 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         };
         let boundaries = {
             let editor = readme_editor(&mut app)?;
-            editor.session.apply(Command::Undo {})?;
+            let command = Command::Undo {};
+            let command_json = serde_json::to_value(&command)?;
+            let outcome = editor.session.apply(command)?;
+            commands.push(serde_json::json!({
+                "boundary": 3,
+                "command": command_json,
+                "changed": outcome.changed,
+                "created": serde_json::to_value(&outcome.created)?,
+                "placements": serde_json::to_value(&outcome.placements)?
+            }));
             let first_item = editor
                 .session
                 .project()
@@ -3598,8 +4062,10 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
             entry["boundary"] = serde_json::json!(boundary);
             frames.push(entry);
         }
-        let gif_report = encode_gif(&run, &outputs.join("timeline.gif"))?;
-        let jpg_report = encode_jpg(&run.join("boundary-2.png"), &outputs.join("timeline.jpg"))?;
+        let gif_report = encode_gif(&run, &stage.join("timeline.gif"))?;
+        let jpg_report = encode_jpg(&run.join("boundary-2.png"), &stage.join("timeline.jpg"))?;
+        manifest["snapshot_verification"] = verify_snapshots(&run, first, split)?;
+        manifest["commands"] = serde_json::json!(commands);
         manifest["boundaries"] = serde_json::json!(boundaries);
         manifest["frames"] = serde_json::json!(frames);
         manifest["outputs"] = serde_json::json!({
@@ -3636,8 +4102,32 @@ fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result
         let sidecar = format!(
             "asset: {asset}\ntitle: {title}\nauthor: Blender Foundation; VibeCut contributors\n{source_note}\nlicense: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)\nlicense-file: ../../licenses/CC-BY-3.0.txt\nadded: p0-core/22\n{notes}; capture: {description}\n"
         );
-        fs::write(outputs.join(format!("{asset}.attribution")), sidecar)?;
+        fs::write(stage.join(format!("{asset}.attribution")), sidecar)?;
     }
+    manifest["publication"] = serde_json::json!("staged");
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+    let (media, all): (&[&str], &[&str]) = if slot == "hero" {
+        (&["hero.jpg"], &["hero.jpg", "hero.jpg.attribution"])
+    } else {
+        (
+            &["timeline.gif", "timeline.jpg"],
+            &[
+                "timeline.gif",
+                "timeline.gif.attribution",
+                "timeline.jpg",
+                "timeline.jpg.attribution",
+            ],
+        )
+    };
+    let run_id = run
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .ok_or("README run id")?;
+    publish_outputs(&stage, &outputs, slot, media, all, run, &run_id)?;
+    manifest["publication"] = serde_json::json!("published");
     fs::write(
         run.join("manifest.json"),
         serde_json::to_vec_pretty(&manifest)?,
@@ -4171,6 +4661,138 @@ impl vibecut::import::ThumbnailSource for AssetsThumbnail {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readme_capture_refuses_wrong_source_before_staging_and_keeps_history() -> Result<(), Failure>
+    {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let media = root.join("docs/assets/readme");
+        fs::create_dir_all(&media)?;
+        fs::write(media.join("hero.jpg"), b"keep")?;
+        let old_run = root.join("target/readme-media/hero/old-run");
+        fs::create_dir_all(&old_run)?;
+        fs::write(old_run.join("manifest.json"), b"history")?;
+        let source = root.join("wrong.mp4");
+        fs::write(&source, b"not the admitted excerpt")?;
+        let error = readme_media(root, &root.join("target"), "hero", &source).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("not the admitted Big Buck Bunny")
+        );
+        assert_eq!(fs::read(media.join("hero.jpg"))?, b"keep");
+        assert_eq!(fs::read(old_run.join("manifest.json"))?, b"history");
+        assert_eq!(
+            fs::read_dir(root.join("target/readme-media/hero"))
+                .map_err(|error| error.to_string())?
+                .count(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn publish_rolls_back_after_a_real_file_failure() -> Result<(), Failure> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let stage = root.join("stage");
+        let finals = root.join("finals");
+        let run = root.join("run");
+        fs::create_dir_all(&stage)?;
+        fs::create_dir_all(&finals)?;
+        fs::create_dir_all(&run)?;
+        let owned = "asset: hero.jpg\ntitle: old\nauthor: VibeCut contributors\nsource: apps/vibecut/examples/ui_audit.rs --readme hero at old\nlicense: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)\nlicense-file: ../../licenses/CC-BY-3.0.txt\nadded: p0-core/22\nnotes: old\n";
+        fs::write(finals.join("hero.jpg"), b"old-media")?;
+        fs::write(finals.join("hero.jpg.attribution"), owned)?;
+        fs::write(stage.join("hero.jpg"), b"new-media")?;
+        fs::write(stage.join("hero.jpg.attribution"), owned)?;
+        let error = publish_outputs(
+            &stage,
+            &finals,
+            "hero",
+            &["hero.jpg"],
+            &["hero.jpg", "hero.jpg.attribution", "timeline.jpg"],
+            &run,
+            "run1",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("staged README output"));
+        assert_eq!(fs::read(finals.join("hero.jpg"))?, b"old-media");
+        assert_eq!(
+            fs::read_to_string(finals.join("hero.jpg.attribution"))?,
+            owned
+        );
+        assert!(!finals.join(".readme-media-backup-run1").exists());
+        assert!(!run.join("preserve-staging").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn publish_refuses_an_unrelated_existing_final() -> Result<(), Failure> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let stage = root.join("stage");
+        let finals = root.join("finals");
+        let run = root.join("run");
+        fs::create_dir_all(&stage)?;
+        fs::create_dir_all(&finals)?;
+        fs::create_dir_all(&run)?;
+        fs::write(finals.join("hero.jpg"), b"unrelated")?;
+        fs::write(stage.join("hero.jpg"), b"new-media")?;
+        fs::write(stage.join("hero.jpg.attribution"), b"asset: hero.jpg\n")?;
+        let error = publish_outputs(
+            &stage,
+            &finals,
+            "hero",
+            &["hero.jpg"],
+            &["hero.jpg"],
+            &run,
+            "run2",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("refusing unrelated"));
+        assert_eq!(fs::read(finals.join("hero.jpg"))?, b"unrelated");
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn supervised_runner_times_out_and_reaps_a_stalled_process() {
+        let start = Instant::now();
+        let error = run_tool(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 5",
+            ],
+            Duration::from_millis(150),
+            1024,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert!(start.elapsed() < Duration::from_secs(3));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn supervised_runner_refuses_bounded_output_overflow() {
+        let error = run_tool(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::Out.Write('x' * 10000)",
+            ],
+            Duration::from_secs(5),
+            100,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("bounded cap"), "{error}");
+    }
 
     #[test]
     fn readme_capture_refuses_unknown_slots_before_touching_final_or_staging() -> Result<(), Failure>

@@ -61,7 +61,7 @@ Cut, split, trim, ripple, snap and group clips across video, audio and text
 tracks, with undo.
 
 </td>
-<td width="50%"><picture><source srcset="docs/assets/readme/timeline.gif" type="image/gif"><img src="docs/assets/readme/timeline.jpg" width="960" alt="Split, trim and undo a synthetic multitrack timeline in VibeCut"></picture></td>
+<td width="50%"><picture><source srcset="docs/assets/readme/timeline.gif" type="image/gif"><img src="docs/assets/readme/timeline.jpg" width="960" alt="Split, trim and undo a Big Buck Bunny multitrack timeline in VibeCut"></picture></td>
 </tr>
 <tr>
 <td width="50%" valign="middle">

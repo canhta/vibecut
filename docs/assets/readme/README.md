@@ -62,8 +62,11 @@ capture.
 
 Prerequisites are the existing external FFmpeg/FFprobe oracle, the normal warm
 MSYS2/Clang runtime DLLs, and the shared local excerpt. Capture refuses less than
-8 GiB of scratch headroom, a missing/unreadable source or missing tools. There is
-no synthetic fallback.
+8 GiB of scratch headroom, a missing/unreadable source or missing tools. It first
+checks the source metadata is exactly 4,544,843 bytes and streams it through a
+bounded hash buffer to require SHA-256 `66518061…21a1`; wrong size/hash is refused
+before any run directory, staging, import or attribution exists. There is no
+synthetic or alternate-source fallback.
 
 ```sh
 cargo xtask build -- cargo xtask ui-audit --readme hero --source /absolute/path/to/big-buck-bunny-12s-720p30.mp4
@@ -89,11 +92,34 @@ their ranges. The poster is the trimmed state.
 After every edit the runner seeks the real snapshot at 3 seconds, polls until the
 frame generation equals the current generation and the frame time equals the
 requested tick, requires the presented tick to match, settles effect/thumbnail
-work and captures. Raw PNG frames, source probe, tool identities, source/excerpt
-hashes, revisions, project hashes, generation/tick per boundary and all 80 frame
-mappings stay outside Git under the run's target `readme-media/<slot>/` subtree
-(`manifest.json` beside the frames). Only the three final media files and their
-sidecars are tracked.
+work and captures. Every boundary also writes a complete encoded
+`boundary-<n>.project` snapshot plus the actual command value, changed flag,
+created IDs, placements, revision/generation/requested/presented ticks and frame
+mapping. On success the runner reopens all four snapshots and verifies only the
+admitted deltas: undo equals the split snapshot, trim changes only the returned
+right range/retime, and split changes only the first range/retime plus the new
+right item; all other tracks/fields must stay equal.
+
+Each invocation allocates a fresh `target/readme-media/<slot>/<timestamp>-<pid>-<n>/`
+run directory and never deletes older runs. A failed run removes only its own new
+staging after all owned Editor/import/external work has ended; a successful run
+keeps raw PNGs, snapshots, manifest and stage. Capture prepares and validates the
+complete media+sidecar set plus manifest before final replacement. Existing
+destinations are accepted only when their runner sidecar proves ownership
+(`asset`, `added: p0-core/22`, matching `ui_audit.rs --readme <slot>`); unrelated
+files refuse. Publication uses same-volume temporary files and backups, and rolls
+back ordinary returned errors so earlier finals/metadata remain byte-identical.
+A failed rollback retains recoverable backups and marks the run for diagnosis; no
+crash-wide or multi-file atomicity is claimed. Only the three final media files
+and their sidecars are tracked.
+
+All external tools used by this mode (FFmpeg/FFprobe, Git, PowerShell/df
+headroom probe, metadata, encode/decode) run through one private supervised
+runner with 10 s metadata / 120 s work deadlines, bounded stdout/stderr, pipe
+readers, and kill+wait/reap on timeout, overflow or unwind. Decoded RGB is capped
+at 16 MiB, ample for one 1440x900 RGB frame. A stalled child and bounded-output
+violation are exercised by the example tests. Interactive cancellation is not a
+separate signal UI; hard process-kill recovery is outside this bounded tool.
 
 ## Independent output checks
 
