@@ -3325,7 +3325,7 @@ fn streak_hard_entry_soft_drag_keys_units_and_cancel_use_real_commands() {
 
 #[test]
 fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
-    for reason in ["selection", "panel", "effect", "lock"] {
+    for reason in ["selection", "panel", "effect", "lock", "remove"] {
         let f = fixture();
         let video = f.video;
         let image = f.image;
@@ -3334,13 +3334,17 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
         h.run_steps(3);
         open_effect_tabs(&mut h, video);
         click(&mut h, "effects.add.directional_blur");
+        type_value(&mut h, "effects.directional_blur.param.length", "8");
         let before = h.state().session.project().clone();
         click(&mut h, "effects.directional_blur.param.length");
         h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
         h.event(egui::Event::Text("125".into()));
+        h.run_steps(2);
+        let history = h.state().session.history_len();
         match reason {
             "selection" => select(&mut h, image),
             "panel" => click(&mut h, "inspector.group.basic"),
+            "remove" => click(&mut h, "effects.remove.directional_blur"),
             "effect" => {
                 h.state_mut()
                     .session
@@ -3365,10 +3369,10 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
         h.run_steps(3);
         h.key_press(egui::Key::Enter);
         h.run_steps(2);
-        if reason != "effect" {
+        if !matches!(reason, "effect" | "remove") {
             assert_eq!(
                 effects(&h, video)[0].value("length"),
-                Some(&EffectValue::Scalar(0.0)),
+                Some(&EffectValue::Scalar(8.0)),
                 "{reason}"
             );
         } else {
@@ -3376,6 +3380,19 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
         }
         if matches!(reason, "selection" | "panel") {
             assert!(Arc::ptr_eq(h.state().session.project(), &before));
+        }
+        if reason == "remove" {
+            assert_eq!(h.state().session.history_len().0, history.0 + 1);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(2);
+            assert_eq!(h.state().session.project(), &before);
+            assert_eq!(
+                effects(&h, video)[0].value("length"),
+                Some(&EffectValue::Scalar(8.0))
+            );
+            h.state_mut().activate("edit.redo").unwrap();
+            h.run_steps(2);
+            assert!(effects(&h, video).is_empty());
         }
     }
 }

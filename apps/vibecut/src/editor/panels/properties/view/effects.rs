@@ -457,12 +457,14 @@ impl Panel<'_, '_> {
         let spec = effect_scrub_spec(parameter);
         let spatial = kind == "directional_blur";
         if spatial
-            && self
-                .actions
-                .iter()
-                .any(|a| matches!(a, Action::SetTab { .. } | Action::Activate(_)))
+            && self.actions.iter().any(|a| {
+                matches!(a, Action::SetTab { .. } | Action::Activate(_))
+                    || matches!(a, Action::RemoveEffect { item: target, effect: id }
+                            if *target == item && id == effect)
+            })
         {
-            self.actions.extend(self.state.end_scrub(false));
+            let cancel = self.state.end_scrub(false);
+            self.actions.splice(0..0, cancel);
             self.state.drafts.clear();
             self.state.focus = None;
             self.state.spatial_edit = None;

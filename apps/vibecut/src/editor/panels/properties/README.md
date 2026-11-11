@@ -106,4 +106,6 @@ Streak Blur uses a54x22 field with visible degree/pixel units. Its length drag s
 0..20 at1px per2 pointer pixels; typed values admit0..1000 and display authored
 precision. Out-of-range input refuses. Direction admits+/-360 degrees. Zero-key
 bases stay authoritative; keyed edits affect real-local keys. Time, selection,
-lock, effect or panel changes cancel pending edits. Other controls retain behavior.
+lock, effect or panel changes cancel pending edits. A queued row removal cancels
+drafts and scrubs before removal, so blur cannot recreate the removed effect.
+Other controls retain behavior.
