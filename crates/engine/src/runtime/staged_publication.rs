@@ -1,5 +1,5 @@
 //! Publishes admitted output artifacts.
-use crate::{Error as EngineError, Result};
+use super::{Error as RuntimeError, Result};
 use project::atomic::{AtomicFs, Overwrite, StreamingStage, StreamingWriter};
 use std::path::{Path, PathBuf};
 
@@ -11,29 +11,30 @@ pub(crate) struct Publication<'a> {
 }
 
 impl Publication<'_> {
-    pub fn write(
+    pub fn write<E: From<RuntimeError>>(
         &self,
         overwrite: Overwrite,
         max_bytes: u64,
         fs: &dyn AtomicFs,
-        write: impl FnOnce(&mut StreamingWriter) -> Result<()>,
-    ) -> Result<()> {
+        write: impl FnOnce(&mut StreamingWriter) -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
         self.admit()?;
-        let stage = StreamingStage::new(self.path, overwrite, max_bytes)?;
+        let stage =
+            StreamingStage::new(self.path, overwrite, max_bytes).map_err(RuntimeError::from)?;
         {
-            let mut writer = stage.writer()?;
+            let mut writer = stage.writer().map_err(RuntimeError::from)?;
             write(&mut writer)?;
         }
-        let finalized = stage.finalize_with(fs)?;
+        let finalized = stage.finalize_with(fs).map_err(RuntimeError::from)?;
         self.admit()?;
-        self.hooks.begin_publish()?;
-        finalized.publish_with(fs)?;
+        self.hooks.begin_publish().map_err(RuntimeError::from)?;
+        finalized.publish_with(fs).map_err(RuntimeError::from)?;
         Ok(())
     }
 
     pub(crate) fn admit(&self) -> Result<()> {
         if self.hooks.cancelled() {
-            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(RuntimeError::Cancelled);
         }
         render::validate_output_path(self.project, self.path, self.hooks)?;
         project::atomic::admit_destination(self.path)?;
@@ -51,7 +52,7 @@ impl Publication<'_> {
                 })
                 || self.same_file(path)?
             {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(RuntimeError::Edit(crate::EditError::Invalid(
                     "output aliases an active project file",
                 )));
             }

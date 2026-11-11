@@ -118,8 +118,8 @@ fn project_metadata_and_source_aliases_publish_neither_file() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Render(render::Error::Invalid(_))
-            | EngineError::Edit(engine::EditError::Invalid(_))
+        EngineError::Runtime(engine::RuntimeError::Render(render::Error::Invalid(_)))
+            | EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"source bytes");
     assert!(!dir.path().join("Nguồn tiếng Việt.json").exists());
@@ -137,7 +137,7 @@ fn project_metadata_and_source_aliases_publish_neither_file() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Edit(engine::EditError::Invalid(_))
+        EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
     ));
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
@@ -201,7 +201,9 @@ fn existing_sidecars_are_preserved_without_overwrite_authorization() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Edit(engine::EditError::Project(project::Error::Io(_)))
+        EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Project(
+            project::Error::Io(_)
+        )))
     ));
     assert_eq!(std::fs::read(&paths.text).unwrap(), b"previous text");
     assert_eq!(std::fs::read(&paths.json).unwrap(), b"previous json");

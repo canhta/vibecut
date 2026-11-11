@@ -127,6 +127,23 @@ mod exit_codes {
             row!(E::Media(media::MediaError::Cancelled), "media", 6),
             row!(E::Ai(ai::Error::Auth), "ai", 4),
             row!(
+                E::Runtime(engine::RuntimeError::Render(render::Error::Unavailable(
+                    Vec::new()
+                ))),
+                "unavailable",
+                4
+            ),
+            row!(
+                E::Runtime(engine::RuntimeError::Render(render::Error::Cancelled)),
+                "render",
+                6
+            ),
+            row!(
+                E::Runtime(engine::RuntimeError::Media(media::MediaError::Cancelled)),
+                "media",
+                6
+            ),
+            row!(
                 E::Lut(engine::luts::Error::Render(render::Error::Unavailable(
                     Vec::new()
                 ))),

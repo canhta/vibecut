@@ -2,6 +2,12 @@
 use crate::cache::CacheKey;
 use crate::session::wire::{ErrorCode, Failure};
 
+impl Failure for media::MediaError {
+    fn code(&self) -> ErrorCode {
+        ErrorCode::Media
+    }
+}
+
 impl Failure for render::Error {
     fn code(&self) -> ErrorCode {
         match self {

@@ -32,7 +32,7 @@ impl Failure for Error {
             Self::Edit(error) => error.code(),
             Self::Runtime(error) => error.code(),
             Self::Io(_) => ErrorCode::Io,
-            Self::Media(_) => ErrorCode::Media,
+            Self::Media(error) => error.code(),
         }
     }
     fn transient(&self) -> bool {

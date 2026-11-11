@@ -98,15 +98,24 @@ impl CliError {
     fn unavailable(&self) -> Option<&[render::Unavailable]> {
         match self {
             Self::Render(render::Error::Unavailable(list)) => Some(list),
-            Self::Job(error) => match (error.as_ref() as &(dyn std::error::Error + 'static))
-                .downcast_ref::<EngineError>()
-            {
-                Some(EngineError::Render(render::Error::Unavailable(list)))
-                | Some(EngineError::Lut(engine::luts::Error::Render(
-                    render::Error::Unavailable(list),
-                ))) => Some(list),
-                _ => None,
-            },
+            Self::Job(error) => {
+                let raw = error.as_ref() as &(dyn std::error::Error + 'static);
+                match raw.downcast_ref::<EngineError>() {
+                    Some(EngineError::Render(render::Error::Unavailable(list)))
+                    | Some(EngineError::Runtime(engine::RuntimeError::Render(
+                        render::Error::Unavailable(list),
+                    )))
+                    | Some(EngineError::Lut(engine::luts::Error::Render(
+                        render::Error::Unavailable(list),
+                    ))) => Some(list),
+                    _ => match raw.downcast_ref::<engine::RuntimeError>() {
+                        Some(engine::RuntimeError::Render(render::Error::Unavailable(list))) => {
+                            Some(list)
+                        }
+                        _ => None,
+                    },
+                }
+            }
             _ => None,
         }
     }

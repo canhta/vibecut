@@ -2021,6 +2021,16 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             C::Unavailable,
             false,
         ),
+        (
+            || E::Runtime(B::Render(render::Error::Cancelled)),
+            C::Render,
+            false,
+        ),
+        (
+            || E::Runtime(B::Media(media::MediaError::Cancelled)),
+            C::Media,
+            false,
+        ),
         (|| E::Io(std::io::Error::other("io")), C::Io, false),
         (|| E::Ai(ai::Error::Incomplete), C::Ai, false),
         (

@@ -7,3 +7,14 @@ The `publication` module owns admission and staged writing for completed exports
 `submit_export_publication` copies a retained completed render through this owner with a bounded 64 KiB buffer on the job runner. No admission, copy or sync runs on the UI thread.
 
 Cancellation before the fence and storage failures preserve the prior destination and the completed input. After the fence a committed destination reports Completed. The adapter retains the input until the job terminates and joins the runner before cleanup on shutdown. Individual filesystem calls cannot be interrupted; external processes racing path replacement are outside the atomic owner's guarantees.
+
+Publication admission, normalization and same-file resource checks return Runtime results.
+Render and Media preserve their original typed sources/static wrapper diagnostics and reuse
+Runtime execution's foreign projections; Project validation composes through Kernel Edit.
+Only direct Runtime cancellation/transience delegates scheduling policy; foreign cancellation
+and Failed remain opaque. Higher workflows compose guard failures at their own boundary.
+
+The existing writer operation accepts a caller error E:From<RuntimeError> and returns that
+same E. Writer callback refusal is forwarded unchanged; only admission/stage/writer/finalize/
+hook/publish guards convert through Runtime into E. Pure PNG byte writers consume the Runtime
+result, while mixed sidecar/export workflows retain their actual caller result and source.
