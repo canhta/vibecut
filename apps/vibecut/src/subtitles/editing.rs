@@ -8,6 +8,29 @@ use project::{ItemId, ItemParams};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 impl Subtitles {
+    /// Style actions never implicitly commit a focused or changed caption draft.
+    pub(crate) fn style_available(&self, session: &Session) -> bool {
+        !self.busy()
+            && !session.transaction_active()
+            && self.text_focus.is_none()
+            && !self.drafts.iter().any(|((cue, language), draft)| {
+                super::draft_text(session.project(), self.item, cue, language)
+                    .map_or(!draft.is_empty(), |original| original != draft)
+            })
+            && self.caption(session).is_some_and(|(item, params)| {
+                !params.cues.cues.is_empty()
+                    && session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .any(|track| {
+                            !track.locked && track.items.iter().any(|value| value.id == item.id)
+                        })
+            })
+    }
+
     /// Commit pending inline drafts before switching tabs or executing another command.
     pub(crate) fn flush_drafts(&mut self, session: &mut Session) -> Result<bool> {
         self.refresh(session);
@@ -64,6 +87,22 @@ impl Subtitles {
         id: &str,
     ) -> Result<()> {
         match id {
+            "subtitles.style.outline" | "subtitles.style.box" => {
+                if !self.style_available(session) {
+                    return Err(Error::Invalid("caption style unavailable"));
+                }
+                session.apply(Command::ApplyCaptionStyle {
+                    item: self.item.ok_or(Error::Invalid("caption item"))?,
+                    style: engine::CaptionStyleApply::Preset {
+                        preset: if id == "subtitles.style.box" {
+                            engine::CaptionPreset::Box
+                        } else {
+                            engine::CaptionPreset::Outline
+                        },
+                    },
+                })?;
+                self.refresh(session);
+            }
             "subtitles.cancel" => self.cancel(),
             "subtitles.consent.approve" => self.approve_upload(true)?,
             "subtitles.consent.deny" => self.approve_upload(false)?,

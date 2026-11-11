@@ -178,9 +178,9 @@ impl CueAlignment {
 /// persisted table without bound.
 pub const MAX_CUE_STYLES: usize = 1_024;
 
-/// Imported static cue styling. Sizes and margins are ratios of the ASS script
-/// resolution so the values survive a different project canvas; cues without a
-/// style id use the caller's presentation defaults.
+/// Saved static cue styling. Sizes and margins are ratios of the authoring canvas
+/// (the script resolution for ASS imports); cues without a style id use the
+/// caller's presentation defaults.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CueStyle {
@@ -243,7 +243,7 @@ pub struct Cue {
     /// imported or estimated cues; never invented from proportional text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub word_ranges: Vec<SourceRange>,
-    /// Shared style preserved from an ASS import; absent for generated/SRT/VTT cues.
+    /// Shared saved style, imported or explicitly applied; absent uses presentation defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<CueStyleId>,
 }

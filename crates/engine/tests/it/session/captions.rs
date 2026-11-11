@@ -8,6 +8,347 @@ use serde_json::json;
 use std::sync::Arc;
 use time::Tick;
 
+fn preset_style(boxed: bool) -> captions::CueStyle {
+    captions::CueStyle {
+        font_family: "Inter".into(),
+        font_size_ratio: 48.0 / 1080.0,
+        primary_color: [255; 4],
+        outline_color: [0, 0, 0, 255],
+        background_color: if boxed { [0, 0, 0, 255] } else { [0; 4] },
+        border_style: if boxed { 3 } else { 1 },
+        alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+        margin_left_ratio: 0.05,
+        margin_right_ratio: 0.05,
+        margin_vertical_ratio: 0.05,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    }
+}
+fn apply_style(style: engine::CaptionStyleApply) -> Command {
+    Command::ApplyCaptionStyle {
+        item: ItemId(1),
+        style,
+    }
+}
+fn saved_cues(s: &Session) -> &captions::CueTrack {
+    let ItemParams::Caption(params) = &get(s, 1).content else {
+        panic!("caption")
+    };
+    &params.cues
+}
+
+fn style_source_project() -> Project {
+    let mut data = caption_project().into_data();
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    item.animations
+        .set(
+            project::AnimationPath::new("opacity").unwrap(),
+            project::Param::new(project::ParamValue::Scalar(0.8)).unwrap(),
+        )
+        .unwrap();
+    let ItemParams::Caption(p) = &mut item.content else {
+        panic!("caption")
+    };
+    let mut other = ass_style();
+    other.primary_color = [20, 60, 240, 255];
+    p.cues.styles = vec![ass_style(), other];
+    p.cues.cues[0].range = range(110, 150);
+    p.cues.cues[0].word_ranges = vec![range(110, 130), range(130, 150)];
+    p.cues.cues[0].style = Some(captions::CueStyleId(0));
+    let mut second = p.cues.cues[0].clone();
+    second.id = "source/1".into();
+    second.range = range(150, 190);
+    second.word_ranges = vec![range(150, 170), range(170, 190)];
+    second.style = Some(captions::CueStyleId(1));
+    p.cues.cues.push(second);
+    let mut other = item.clone();
+    other.id = ItemId(2);
+    other.start = Tick(2000);
+    data.scene_mut().timeline.overlays[0].items.push(other);
+    Project::new(data).unwrap()
+}
+
+#[test]
+fn caption_style_values_noop_history_and_saved_file_use_real_commands() {
+    use engine::{CaptionPreset, CaptionStyleApply};
+    for boxed in [false, true] {
+        let mut s = Session::new(style_source_project(), 20).unwrap();
+        s.set_selection([ItemId(1)].into()).unwrap();
+        let before = s.project().clone();
+        let files = |cues: &captions::CueTrack| {
+            [captions::Format::Srt, captions::Format::WebVtt].map(|format| {
+                captions::export(cues, format, &[captions::LanguageTag::parse("vi").unwrap()])
+                    .unwrap()
+                    .text
+            })
+        };
+        let text_file = files(saved_cues(&s));
+        let expected = preset_style(boxed);
+        let outcome = if boxed {
+            s.execute(
+                "captions.apply_style",
+                json!({"item":1,"style":{"kind":"preset","preset":"box"}}),
+            )
+            .unwrap()
+        } else {
+            s.apply(apply_style(CaptionStyleApply::Preset {
+                preset: CaptionPreset::Outline,
+            }))
+            .unwrap()
+        };
+        assert!(outcome.changed && outcome.created.is_empty());
+        assert_eq!(s.history_len(), (1, 0));
+        let mut original = before.data().clone();
+        let ItemParams::Caption(params) =
+            &mut original.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            panic!("caption")
+        };
+        params.cues.styles = vec![expected.clone()];
+        for cue in &mut params.cues.cues {
+            cue.style = Some(captions::CueStyleId(0));
+        }
+        assert_eq!(
+            s.project().data(),
+            &original,
+            "only style values and refs change"
+        );
+        assert_eq!(s.selection(), &[ItemId(1)].into());
+        assert_eq!(files(saved_cues(&s)), text_file);
+        let styled = s.project().clone();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("styled.vibecut");
+        project::WriterLease::acquire(&path)
+            .unwrap()
+            .save(s.project())
+            .unwrap();
+        assert_eq!(&project::load(&path).unwrap().project, styled.as_ref());
+        let mut bytes: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for version in [project::SCHEMA_VERSION - 1, project::SCHEMA_VERSION + 1] {
+            bytes["schema_version"] = json!(version);
+            assert!(matches!(
+                project::decode(&serde_json::to_vec(&bytes).unwrap()),
+                Err(project::Error::TooOld { .. } | project::Error::TooNew { .. })
+            ));
+        }
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before);
+        s.redo().unwrap();
+        assert_eq!(s.project(), &styled);
+        let mut custom = expected.clone();
+        custom.primary_color = [30, 240, 80, 255];
+        s.execute(
+            "captions.apply_style",
+            json!({"item":1,"style":{"kind":"custom","style":custom}}),
+        )
+        .unwrap();
+        assert_eq!(saved_cues(&s).styles, vec![custom]);
+        s.undo().unwrap();
+        s.take_change();
+        let revision = s.revision();
+        assert!(
+            !s.apply(apply_style(CaptionStyleApply::Custom {
+                style: expected.clone()
+            }))
+            .unwrap()
+            .changed
+        );
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), (1, 1));
+        assert!(s.take_change().is_none());
+        // Equal referenced entries and an unused different entry must not compact on a no-op.
+        let mut d = s.project().data().clone();
+        let ItemParams::Caption(p) = &mut d.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            panic!("caption")
+        };
+        p.cues.styles = vec![expected.clone(), expected.clone(), ass_style()];
+        p.cues.cues[0].style = Some(captions::CueStyleId(1));
+        let mut s = Session::new(Project::new(d).unwrap(), 10).unwrap();
+        let original = s.project().clone();
+        assert!(
+            !s.apply(apply_style(CaptionStyleApply::Custom { style: expected }))
+                .unwrap()
+                .changed
+        );
+        assert!(Arc::ptr_eq(&original, s.project()));
+        assert_eq!(s.history_len(), (0, 0));
+    }
+}
+
+#[test]
+fn caption_style_refusals_and_batch_leave_the_entire_session_unchanged() {
+    use engine::{CaptionStyleApply, EditError};
+    for case in [
+        "locked",
+        "missing",
+        "wrong-kind",
+        "empty",
+        "invalid",
+        "invalid-family",
+        "invalid-margin",
+        "invalid-alignment",
+        "invalid-size",
+        "other-scene",
+        "batch",
+    ] {
+        let mut d = caption_project().into_data();
+        if case == "locked" {
+            d.scene_mut().timeline.overlays[0].locked = true;
+            let ItemParams::Caption(p) = &mut d.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                panic!("caption")
+            };
+            p.cues.styles = vec![preset_style(false)];
+            p.cues.cues[0].style = Some(captions::CueStyleId(0));
+        }
+        if case == "wrong-kind" {
+            let value = &mut d.scene_mut().timeline.overlays[0].items[0];
+            value.content = ItemParams::Text(project::TextParams::new("title"));
+            value.source_asset = None;
+        }
+        if case == "empty" {
+            let ItemParams::Caption(p) = &mut d.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                panic!("caption")
+            };
+            p.cues.cues.clear();
+        }
+        let mut s = Session::new(Project::new(d).unwrap(), 10).unwrap();
+        if case == "other-scene" {
+            let result = s
+                .apply(Command::CreateScene {
+                    name: "Other".into(),
+                })
+                .unwrap();
+            let CreatedId::Scene(scene) = result.created[0] else {
+                panic!("scene")
+            };
+            s.apply(Command::SwitchScene { scene }).unwrap();
+        }
+        let mut style = preset_style(false);
+        if case == "invalid" {
+            style.font_size_ratio = f32::NAN;
+        }
+        match case {
+            "invalid-family" => style.font_family = " ".into(),
+            "invalid-margin" => style.margin_left_ratio = 10.01,
+            "invalid-alignment" => style.alignment.numpad = 9,
+            "invalid-size" => style.font_size_ratio = 0.0,
+            _ => {}
+        }
+        let command = if case == "batch" {
+            Command::Batch {
+                commands: vec![
+                    apply_style(CaptionStyleApply::Custom { style }),
+                    Command::Delete {
+                        items: vec![ItemId(999)],
+                    },
+                ],
+            }
+        } else {
+            Command::ApplyCaptionStyle {
+                item: ItemId(if case == "missing" { 999 } else { 1 }),
+                style: CaptionStyleApply::Custom { style },
+            }
+        };
+        s.take_change();
+        let before = s.project().clone();
+        let revision = s.revision();
+        let history = s.history_len();
+        let error = s.apply(command).unwrap_err();
+        assert!(
+            match case {
+                "locked" => matches!(error, EditError::Locked(TrackId(1))),
+                "missing" | "batch" => matches!(error, EditError::NoItem(ItemId(999))),
+                "other-scene" => matches!(error, EditError::SceneBoundary),
+                _ => matches!(error, EditError::Invalid(_)),
+            },
+            "{case}: {error}"
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), history);
+        assert!(s.take_change().is_none());
+    }
+    let mut s = Session::new(caption_project(), 10).unwrap();
+    let before = s.project().clone();
+    for style in [
+        json!({"kind":"preset","preset":"unknown"}),
+        json!({"kind":"preset","preset":"box","extra":0}),
+        json!({"kind":"custom","style":{"font_family":"Inter"}}),
+        json!({"kind":"other"}),
+    ] {
+        assert!(
+            s.execute("captions.apply_style", json!({"item":1,"style":style}))
+                .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), (0, 0));
+    }
+    let mut style = serde_json::to_value(preset_style(false)).unwrap();
+    style["extra"] = json!(0);
+    assert!(
+        s.execute(
+            "captions.apply_style",
+            json!({"item":1,"style":{"kind":"custom","style":style}})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn caption_style_retained_trim_cancel_commit_and_text_edit_preserve_source_data() {
+    use engine::CaptionStyleApply;
+    for commit in [false, true] {
+        let mut s = Session::new(style_source_project(), 10).unwrap();
+        let before = s.project().clone();
+        s.begin_gesture().unwrap();
+        s.apply(caption_trim(false, 1005)).unwrap(); // No visible cue, but a retained source cue.
+        s.apply(apply_style(CaptionStyleApply::Custom {
+            style: preset_style(true),
+        }))
+        .unwrap();
+        s.apply(caption_trim(false, 1100)).unwrap();
+        assert_eq!(saved_cues(&s).styles, vec![preset_style(true)]);
+        assert_eq!(saved_cues(&s).cues[0].texts, {
+            let ItemParams::Caption(p) =
+                &before.data().scene().timeline.overlays[0].items[0].content
+            else {
+                panic!("caption")
+            };
+            p.cues.cues[0].texts.clone()
+        });
+        if commit {
+            s.commit_gesture().unwrap();
+            assert_eq!(s.history_len(), (1, 0));
+            let styled = s.project().clone();
+            s.undo().unwrap();
+            assert_eq!(s.project(), &before);
+            s.redo().unwrap();
+            assert_eq!(s.project(), &styled);
+            let mut content = get(&s, 1).content.clone();
+            let ItemParams::Caption(p) = &mut content else {
+                panic!("caption")
+            };
+            p.cues.cues[0].texts.values_mut().next().unwrap().text = "Edited".into();
+            s.apply(Command::SetItemParam {
+                item: ItemId(1),
+                content,
+            })
+            .unwrap();
+            assert_eq!(saved_cues(&s).styles, vec![preset_style(true)]);
+        } else {
+            s.cancel_gesture().unwrap();
+            assert_eq!(s.project(), &before);
+            assert_eq!(s.history_len(), (0, 0));
+        }
+    }
+}
+
 #[test]
 fn caption_splits_and_trims_reuse_mapping_and_preserve_source_text_metadata() {
     let mut s = Session::new(caption_project(), 10).unwrap();

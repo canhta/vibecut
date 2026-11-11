@@ -128,6 +128,17 @@ Jobs run in file order on one export worker. The result has `status` (`completed
 
 A project is the `.vibecut` file owned by the project crate: [project contract](../../../crates/project/src/persistence/README.md#envelope-and-limits). Lease admission follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
 
+Saved caption looks use the ordinary edit and export paths:
+
+```sh
+vibecut-cli exec project.vibecut captions.apply_style '{"item":4,"style":{"kind":"preset","preset":"box"}}'
+vibecut-cli export project.vibecut --out captions.mp4
+```
+
+The item ID comes from inspection. `custom` takes a complete `CueStyle` in `style`; see the
+[generated command reference](commands.md). SRT/VTT text stays
+unchanged; there is no subtitle preset flag or preset field in export settings.
+
 ## Export admission
 
 The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared render owner. `--settings <JSON>` is `render::OutputOptions`: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`, `bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`, `range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and `scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are required; other versions and unknown fields refuse. Defaults and bounds: [render contract](../../../crates/render/README.md). `--aspect` overrides output geometry; an explicit settings resolution wins. All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds `paths` with every completed file; `path` stays the requested stem.

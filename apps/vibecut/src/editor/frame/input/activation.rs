@@ -20,6 +20,10 @@ impl Editor {
         if let Some(ticket) = spec.pending_ticket() {
             return Err(Error::NotAvailable(ticket));
         }
+        // A disabled style action must not flush an unrelated caption draft.
+        if id.starts_with("subtitles.style.") && !self.action_enabled(id) {
+            return Err(Error::ActionDisabled(spec.id));
+        }
         self.activate_with(Some(id), |editor| {
             editor.activate_action(id, spec, argument)
         })
