@@ -445,7 +445,7 @@ fn labelled_preview_preserves_production_picture_outside_the_label_band() {
     let mut r = runner();
     let project = s.project().clone();
     let (reference, _) = r
-        .submit(
+        .submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,

@@ -63,7 +63,7 @@ fn export_refuses_when_a_source_disappears_mid_job() {
         true,
         move |runner, input_key, project, range, mut settings, path| {
             settings.mode = render::ExportMode::Encode;
-            runner.submit(
+            runner.submit::<engine::EditError>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,

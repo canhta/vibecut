@@ -491,28 +491,37 @@ mod tests {
                 .unwrap();
             a.fault = Some(fault);
             let error = a.flush().unwrap_err();
-            fn cause<'a>(e: &'a (dyn std::error::Error + 'static)) -> &'a EditError {
-                if let Some(error) = e.downcast_ref::<EditError>() {
-                    return match error {
-                        EditError::Recovery(error) => cause(error),
-                        other => other,
-                    };
+            fn cause<'a>(
+                e: &'a (dyn std::error::Error + 'static),
+            ) -> &'a (dyn std::error::Error + 'static) {
+                if let Some(EditError::Recovery(error)) = e.downcast_ref::<EditError>() {
+                    return cause(error);
                 }
-                let Some(Error::PersistenceFailed(error)) = e.downcast_ref::<Error>() else {
-                    panic!("expected the original stored failure");
-                };
-                cause(error.as_ref())
+                if let Some(Error::PersistenceFailed(error)) = e.downcast_ref::<Error>() {
+                    return cause(error.as_ref());
+                }
+                e
             }
-            match cause(&error) {
-                EditError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::StorageFull),
-                EditError::Runtime(crate::RuntimeError::WorkerPanicked) => {
-                    assert_eq!(code, ErrorCode::WorkerFailure)
+            let original = cause(&error);
+            if let Some(error) = original.downcast_ref::<crate::RuntimeError>() {
+                assert!(matches!(
+                    error,
+                    crate::RuntimeError::WorkerPanicked | crate::RuntimeError::Cancelled
+                ));
+            } else {
+                match original.downcast_ref::<EditError>().unwrap() {
+                    EditError::Io(error) => {
+                        assert_eq!(error.kind(), std::io::ErrorKind::StorageFull)
+                    }
+                    EditError::Runtime(crate::RuntimeError::WorkerPanicked) => {
+                        assert_eq!(code, ErrorCode::WorkerFailure)
+                    }
+                    EditError::Runtime(crate::RuntimeError::Cancelled) => {
+                        assert_eq!(code, ErrorCode::Cancelled)
+                    }
+                    EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
+                    _ => panic!("lost the typed worker cause"),
                 }
-                EditError::Runtime(crate::RuntimeError::Cancelled) => {
-                    assert_eq!(code, ErrorCode::Cancelled)
-                }
-                EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
-                _ => panic!("lost the typed worker cause"),
             }
             assert_eq!(error.code(), code);
             assert!(!error.transient());

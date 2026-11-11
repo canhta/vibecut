@@ -603,7 +603,7 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| panic!("cancelled filler ran"),
+                |_| -> Result<Vec<u8>, engine::EditError> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(cancel);
