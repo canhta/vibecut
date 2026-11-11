@@ -3302,14 +3302,14 @@ fn streak_hard_entry_soft_drag_keys_units_and_cancel_use_real_commands() {
     );
     assert_eq!(h.get_by_label("Length").value().as_deref(), Some("141.25"));
     click(&mut h, &format!("{field}.keyframe"));
-    // A pending edit cannot apply at a different real-local tick.
     click(&mut h, field);
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.event(egui::Event::Text("190".into()));
+    h.run_steps(2);
     let project = h.state().session.project().clone();
     h.state_mut()
         .playback
-        .seek(Tick(SECOND), false, project)
+        .seek(Tick(3 * SECOND), false, project)
         .unwrap();
     h.run_steps(3);
     let animation = item(&h, video).animations;
@@ -3317,16 +3317,10 @@ fn streak_hard_entry_soft_drag_keys_units_and_cancel_use_real_commands() {
         animation.value_at(&path, Tick::ZERO).unwrap(),
         Some(project::ParamValue::Scalar(141.25))
     );
-    assert_eq!(
-        animation
-            .get(&path)
-            .unwrap()
-            .channel(None)
-            .unwrap()
-            .keys()
-            .len(),
-        1
-    );
+    let keys = animation.get(&path).unwrap().channel(None).unwrap().keys();
+    assert_eq!(keys.len(), 1);
+    let node = h.get(By::new().predicate(|n| n.author_id() == Some(field)));
+    assert!(node.accesskit_node().is_disabled());
 }
 
 #[test]
