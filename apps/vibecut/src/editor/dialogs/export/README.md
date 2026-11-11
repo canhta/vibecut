@@ -28,6 +28,12 @@ keeps the current and remaining finished files; closing the dialog discards them
 `export.run` and `export.retry` submit through engine's one export job path and share
 playback's byte budget.
 
+Desktop export keeps the CPU effect reference in its render settings. Native preview
+attachment is separate from the shared render state, so a successful GPU preview
+does not attach an adapter to export. The [render effect interface](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter)
+accepts an optional device-free adapter; its native resource contract lives with
+[GPU effects](../../../effects/README.md).
+
 On completion the app opens the asynchronous native save dialog with the sanitized
 `<ProjectName>.<ext>` and last save directory. Filenames keep Unicode and spaces,
 replace invalid filesystem characters, trim trailing dots and spaces and escape
