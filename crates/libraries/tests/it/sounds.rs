@@ -917,7 +917,7 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| panic!("cancelled filler ran"),
+                |_| -> Result<Vec<u8>, engine::EditError> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(token);

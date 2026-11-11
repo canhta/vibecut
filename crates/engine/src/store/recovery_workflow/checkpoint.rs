@@ -322,7 +322,7 @@ impl Autosave {
         let published_snapshot = project.clone();
         let slot = save.as_ref().map(|save| save.slot.clone());
         let recovery_snapshot = snapshot.clone();
-        let submitted = self.runner.submit(
+        let submitted = self.runner.submit::<crate::EditError>(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,

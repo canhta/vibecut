@@ -380,10 +380,8 @@ fn engine_catches_preview_worker_panic_and_app_reports_failure() {
             };
             assert!(matches!(
                 (cause.as_ref() as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<engine::EditError>(),
-                Some(engine::EditError::Runtime(
-                    engine::RuntimeError::WorkerPanicked
-                ))
+                    .downcast_ref::<engine::RuntimeError>(),
+                Some(engine::RuntimeError::WorkerPanicked)
             ));
             break;
         }

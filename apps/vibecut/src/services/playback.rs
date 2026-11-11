@@ -333,46 +333,49 @@ impl Playback {
                 self.sources.clone(),
                 self.budget.clone(),
             );
-            let submitted = self.runner.submit(self.spec, move |hooks| {
-                while !hooks.cancelled() {
-                    let generation = if audio {
-                        &port.epoch
-                    } else {
-                        &preview_generation
-                    };
-                    let epoch = generation.load(Ordering::Acquire);
-                    let result = if audio {
-                        audio_loop(&request, &port, sources.as_ref(), hooks)
-                    } else {
-                        video_loop(
-                            &request,
-                            &output,
-                            &port,
-                            &preview_generation,
-                            &budget,
-                            sources.as_ref(),
-                            hooks,
-                        )
-                    };
-                    if let Err(error) = result
-                        && !hooks.cancelled()
-                    {
-                        if let Ok(mut out) = output.lock()
-                            && generation.load(Ordering::Acquire) == epoch
+            let submitted = self
+                .runner
+                .submit::<engine::EditError>(self.spec, move |hooks| {
+                    while !hooks.cancelled() {
+                        let generation = if audio {
+                            &port.epoch
+                        } else {
+                            &preview_generation
+                        };
+                        let epoch = generation.load(Ordering::Acquire);
+                        let result = if audio {
+                            audio_loop(&request, &port, sources.as_ref(), hooks)
+                        } else {
+                            video_loop(
+                                &request,
+                                &output,
+                                &port,
+                                &preview_generation,
+                                &budget,
+                                sources.as_ref(),
+                                hooks,
+                            )
+                        };
+                        if let Err(error) = result
+                            && !hooks.cancelled()
                         {
-                            if audio {
-                                out.audio_error = Some(Arc::new(error));
-                            } else {
-                                out.error = Some(Arc::new(error));
+                            if let Ok(mut out) = output.lock()
+                                && generation.load(Ordering::Acquire) == epoch
+                            {
+                                if audio {
+                                    out.audio_error = Some(Arc::new(error));
+                                } else {
+                                    out.error = Some(Arc::new(error));
+                                }
+                            }
+                            while !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch
+                            {
+                                std::thread::sleep(Duration::from_millis(2));
                             }
                         }
-                        while !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch {
-                            std::thread::sleep(Duration::from_millis(2));
-                        }
                     }
-                }
-                Ok(Vec::new())
-            });
+                    Ok(Vec::new())
+                });
             match submitted {
                 Ok((job, cancel)) => {
                     self.cancels.push(cancel);

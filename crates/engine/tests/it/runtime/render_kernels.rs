@@ -45,7 +45,7 @@ fn execute(
     })
     .unwrap();
     let (id, _) = runner
-        .submit(
+        .submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,
