@@ -746,7 +746,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
     let mut fillers = Vec::new();
     for _ in 0..2 {
         let (_, token) = runner
-            .submit(
+            .submit::<engine::EditError>(
                 JobSpec {
                     kind: JobKind::DownloadModel,
                     class: ResourceClass::Network,

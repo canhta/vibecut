@@ -42,7 +42,12 @@ and code `Refused`. Transfer and cache consumers compose them upward without
 changing their refusal, checkpoint or publication policy. `Failed` shares a typed erased cause and delegates its code,
 without inheriting transience or adding a source-chain link. Only `BudgetFull` permits reclaim or queued waiting;
 `ArtifactTooLarge` is immediate refusal even though both publish the `budget` wire code.
-Task closures still return the current composed `EditError`. Snapshots retain the raw
+Task closures return their declared `Failure` owner through generic `submit` and
+`submit_for_session`. The task adapter erases each returned error once into its actual
+`Arc<dyn Failure>`; execution, retained snapshots and coalesced events share that Arc.
+Existing higher workflows declare their composed `EditError`; runtime-generated
+cancellation, unwind and reservation failures remain direct runtime errors.
+Snapshots retain the raw
 `Arc<dyn Failure>` after typed cancellation/retry decisions; only explicit failed-workflow
 propagation adds a `RuntimeError::Failed` envelope. This does not make callbacks generic.
 
@@ -94,7 +99,8 @@ block workers.
 `Cancelled` owns the source-free, nontransient `job cancelled` diagnostic and
 `Cancelled` wire code. `JobContext::check_cancelled` and `begin_publication` return
 the runtime result; ordinary engine callbacks compose it through `EditError::Runtime`.
-Only that direct composed variant produces a Cancelled terminal state. Explicit
+Direct runtime cancellation and its transparent root composition publish terminal
+cancellation through the local `Failure::job_policy`. Explicit
 `Failed` and recovery persistence wrappers retain their original causes and remain
 Failed, even when their delegated code is `Cancelled`.
 
@@ -106,7 +112,7 @@ publication error is not retried. The closure must do its final cancellation-awa
 before sealing, and failure never yields a `JobOutput`.
 
 `Transcribe`, `Translate`, `SuggestClips`, `GenerateChapters`, `ClassifyFillers`,
-`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry direct `RuntimeError::NetworkTransient` composed through `EditError::Runtime` or an
+`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry direct `RuntimeError::NetworkTransient` or its transparent root composition, or an
 `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured
 schema failure). An `ai` rate limit carrying
 `Retry-After` raises that attempt's backoff, capped at five minutes. Auth, quota, payload,

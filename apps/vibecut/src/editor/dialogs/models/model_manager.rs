@@ -331,10 +331,7 @@ impl ModelManager {
                 let problem = snapshot
                     .error
                     .as_deref()
-                    .and_then(|error| {
-                        (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
-                    })
-                    .map_or(ModelProblem::Failed, problem_for);
+                    .map_or(ModelProblem::Failed, |error| problem_for(error));
                 if problem == ModelProblem::Network {
                     self.resumable.insert(model.clone());
                 } else {
@@ -780,7 +777,23 @@ fn error_from(error: Error) -> EditError {
         _ => EditError::Invalid("model download"),
     }
 }
-fn problem_for(error: &EditError) -> ModelProblem {
+fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
+    if let Some(runtime) = error.downcast_ref::<engine::RuntimeError>() {
+        return match runtime {
+            engine::RuntimeError::StorageFull => ModelProblem::StorageFull,
+            engine::RuntimeError::NetworkTransient => ModelProblem::Network,
+            engine::RuntimeError::CacheBusy => ModelProblem::Busy,
+            engine::RuntimeError::CacheCorrupt => ModelProblem::Corrupt,
+            engine::RuntimeError::Cancelled => ModelProblem::Cancelled,
+            engine::RuntimeError::Io(error) if error.kind() == std::io::ErrorKind::StorageFull => {
+                ModelProblem::StorageFull
+            }
+            _ => ModelProblem::Failed,
+        };
+    }
+    let Some(error) = error.downcast_ref::<EditError>() else {
+        return ModelProblem::Failed;
+    };
     match error {
         EditError::Runtime(engine::RuntimeError::StorageFull)
         | EditError::Ai(

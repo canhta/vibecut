@@ -1059,6 +1059,19 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
 }
 
 pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
+    if let Some(runtime) =
+        (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::RuntimeError>()
+    {
+        return match runtime {
+            engine::RuntimeError::BudgetFull => Text::ShortsMemory,
+            engine::RuntimeError::Io(error)
+                if error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                Text::ShortsOutputExists
+            }
+            _ => Text::ShortsError,
+        };
+    }
     let Some(error) =
         (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>()
     else {

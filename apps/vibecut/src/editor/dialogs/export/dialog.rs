@@ -732,10 +732,6 @@ impl ExportDialog {
                             .snapshot
                             .as_ref()
                             .and_then(|snapshot| snapshot.error.as_deref())
-                            .and_then(|error| {
-                                (error as &(dyn std::error::Error + 'static))
-                                    .downcast_ref::<engine::EditError>()
-                            })
                             .map_or(Text::ExportFailure, export_failure);
                         ui.colored_label(theme::error_text(dark), tr(label));
                     }
@@ -914,7 +910,20 @@ fn unavailable_details(
     }
 }
 
-fn export_failure(error: &engine::EditError) -> Text {
+fn export_failure(error: &(dyn engine::Failure + 'static)) -> Text {
+    let cause: &(dyn std::error::Error + 'static) = error;
+    if let Some(runtime) = cause.downcast_ref::<engine::RuntimeError>() {
+        return match runtime {
+            engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge => {
+                Text::ExportMemory
+            }
+            engine::RuntimeError::Io(_) => Text::ExportStorage,
+            _ => Text::ExportFailure,
+        };
+    }
+    let Some(error) = cause.downcast_ref::<engine::EditError>() else {
+        return Text::ExportFailure;
+    };
     use engine::{EditError as E, RuntimeError as B};
     use render::Error as R;
     match error {

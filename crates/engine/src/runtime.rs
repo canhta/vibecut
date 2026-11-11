@@ -1,5 +1,5 @@
 //! Executes bounded background work over shared resources.
-use crate::session::wire::{ErrorCode, Failure};
+use crate::session::wire::{ErrorCode, Failure, JobFailurePolicy};
 
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +38,12 @@ pub enum Error {
     Failed(std::sync::Arc<dyn Failure + 'static>),
 }
 impl Failure for Error {
+    fn job_policy(&self) -> JobFailurePolicy {
+        JobFailurePolicy {
+            terminal_cancelled: matches!(self, Self::Cancelled),
+            retry_after_seconds: None,
+        }
+    }
     fn code(&self) -> ErrorCode {
         match self {
             Self::Cancelled => ErrorCode::Cancelled,

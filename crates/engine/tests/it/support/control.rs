@@ -640,7 +640,7 @@ pub(crate) fn key() -> engine::cache::CacheKey {
     .unwrap()
 }
 pub(crate) fn submit(r: &mut JobRunner) -> engine::jobs::JobId {
-    r.submit(
+    r.submit::<engine::EditError>(
         JobSpec {
             kind: JobKind::Import,
             class: ResourceClass::Cpu,

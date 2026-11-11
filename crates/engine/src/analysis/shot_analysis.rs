@@ -231,7 +231,7 @@ impl AnalysisRequest {
             },
         };
         let detector = Mutex::new(Some(detector));
-        let (id, cancel) = runner.submit(spec, move |ctx| {
+        let (id, cancel) = runner.submit::<crate::EditError>(spec, move |ctx| {
             ctx.check_cancelled()?;
             if let Some(bytes) = &cached {
                 return Ok(bytes.clone());

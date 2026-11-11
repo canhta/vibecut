@@ -89,7 +89,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     let (mut r, _) = runner(&budget);
     let (started, start) = mpsc::sync_channel(1);
     let (id, cancel) = r
-        .submit(spec(ResourceClass::Cpu), move |ctx| {
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |ctx| {
             started.send(()).unwrap();
             while !ctx.cancelled() {
                 std::thread::yield_now();
@@ -104,25 +104,27 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     assert_eq!(pump(&mut r, id).state, JobState::Cancelled);
     assert!(r.take_output(id).is_none());
     let (id, _) = r
-        .submit(spec(ResourceClass::Cpu), |_| panic!("worker failure"))
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| panic!("worker failure"))
         .unwrap();
     assert!(matches!(
-        pump(&mut r, id).error.as_deref().and_then(|error| (error
-            as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()),
-        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+        pump(&mut r, id)
+            .error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<B>()),
+        Some(B::WorkerPanicked)
     ));
     let (id, _) = r
-        .submit(spec(ResourceClass::Cpu), |_| Ok(vec![0; 11]))
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| Ok(vec![0; 11]))
         .unwrap();
     assert!(matches!(
-        pump(&mut r, id).error.as_deref().and_then(|error| (error
-            as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()),
-        Some(EditError::Runtime(B::ArtifactTooLarge))
+        pump(&mut r, id)
+            .error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<B>()),
+        Some(B::ArtifactTooLarge)
     ));
     let (id, token) = r
-        .submit(spec(ResourceClass::Cpu), |_| {
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| {
             panic!("cancelled queued work ran")
         })
         .unwrap();
@@ -211,6 +213,59 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
+    for direct in [true, false] {
+        let (id, _) = r
+            .submit(spec(ResourceClass::Network), move |context| {
+                context.begin_publication()?;
+                Err(if direct {
+                    B::Cancelled
+                } else {
+                    B::Failed(Arc::new(B::Cancelled))
+                })
+            })
+            .unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (
+                if direct {
+                    JobState::Cancelled
+                } else {
+                    JobState::Failed
+                },
+                1,
+            )
+        );
+        let raw = snapshot.error.as_ref().unwrap();
+        let cause = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<B>()
+            .unwrap();
+        assert!(matches!(
+            (direct, cause),
+            (true, B::Cancelled) | (false, B::Failed(_))
+        ));
+        assert_eq!(raw.code(), engine::control::ErrorCode::Cancelled);
+        assert!(!raw.transient());
+        assert!(raw.source().is_none());
+        assert_eq!(
+            raw.to_string(),
+            if direct {
+                "job cancelled"
+            } else {
+                "background job failed: job cancelled"
+            }
+        );
+        let listed = r.snapshots().into_iter().find(|row| row.id == id).unwrap();
+        let event = r
+            .drain_events()
+            .into_iter()
+            .find(|row| row.id == id)
+            .unwrap();
+        assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+        assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
 }
 
 #[test]
@@ -239,7 +294,7 @@ fn worker_unwind_routes_keep_typed_failures_and_cancellation_order() {
         let (release, gate) = mpsc::sync_channel(1);
         let gate = std::sync::Mutex::new(gate);
         let (id, token) = r
-            .submit(spec(ResourceClass::Network), move |ctx| {
+            .submit::<engine::EditError>(spec(ResourceClass::Network), move |ctx| {
                 let _capture = &capture;
                 if mode == 3 {
                     ctx.begin_publication()?;
@@ -275,10 +330,9 @@ fn worker_unwind_routes_keep_typed_failures_and_cancellation_order() {
         assert!(matches!(
             (
                 mode,
-                (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+                (cause as &(dyn std::error::Error + 'static)).downcast_ref::<B>()
             ),
-            (2, Some(EditError::Runtime(engine::RuntimeError::Cancelled)))
-                | (0 | 1 | 3, Some(EditError::Runtime(B::WorkerPanicked)))
+            (2, Some(B::Cancelled)) | (0 | 1 | 3, Some(B::WorkerPanicked))
         ));
         assert_eq!(
             cause.code(),
@@ -386,7 +440,9 @@ fn submitted_raw_and_wrapped_causes_share_lifetime_past_retention_and_runner_dro
         assert!(Arc::ptr_eq(&raw, &event));
         let weak = Arc::downgrade(&raw);
         for _ in 0..3 {
-            let (next, _) = r.submit(spec(ResourceClass::Cpu), |_| Ok(vec![])).unwrap();
+            let (next, _) = r
+                .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| Ok(vec![]))
+                .unwrap();
             assert_eq!(pump(&mut r, next).state, JobState::Completed);
             drop(r.take_output(next).unwrap());
         }
@@ -428,7 +484,7 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
                 if mode == 1 {
                     context.begin_publication()?;
                 }
-                Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                Err(B::NetworkTransient)
             })
             .unwrap();
         r.tick().unwrap();
@@ -437,7 +493,7 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
             for _ in 0..config().queue {
                 // The active network worker keeps fillers queued until its join,
                 // so an earlier tick cannot free the retry's pending slot.
-                r.submit(spec(ResourceClass::Network), |_| Ok(vec![]))
+                r.submit::<engine::EditError>(spec(ResourceClass::Network), |_| Ok(vec![]))
                     .unwrap();
             }
             assert_eq!(r.counts().0, config().queue);
@@ -459,15 +515,11 @@ fn eligible_retry_respects_a_filled_queue_and_gated_publication_or_cancellation(
             )
         );
         let error = (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()
+            .downcast_ref::<B>()
             .unwrap();
         assert!(matches!(
             (mode, error),
-            (1, EditError::Runtime(engine::RuntimeError::Cancelled))
-                | (
-                    0 | 2,
-                    EditError::Runtime(engine::RuntimeError::NetworkTransient)
-                )
+            (1, B::Cancelled) | (0 | 2, B::NetworkTransient)
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(r.counts().0 <= config().queue);
@@ -546,31 +598,39 @@ fn ai_transient_failures_retry_with_retry_after_but_auth_fails_once() {
     ] {
         let budget = ByteBudget::new(1000).unwrap();
         let (mut r, clock) = runner(&budget);
-        let count = Arc::new(AtomicUsize::new(0));
-        let attempts = count.clone();
-        let mut suggestion = spec(ResourceClass::Network);
-        suggestion.kind = kind;
+        for (advisory, delay) in [
+            (Some(0), 100),
+            (None, 100),
+            (Some(3), 3_000),
+            (Some(3_600), 300_000),
+        ] {
+            let count = Arc::new(AtomicUsize::new(0));
+            let attempts = count.clone();
+            let mut request = spec(ResourceClass::Network);
+            request.kind = kind;
+            let (id, _) = r
+                .submit(request, move |_| {
+                    if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Err(EditError::Ai(ai::Error::RateLimit {
+                            retry_after_seconds: advisory,
+                        }))
+                    } else {
+                        Ok(vec![7])
+                    }
+                })
+                .unwrap();
+            assert_eq!(pump(&mut r, id).state, JobState::Backoff);
+            clock.advance(delay - 1);
+            r.tick().unwrap();
+            assert_eq!(count.load(Ordering::SeqCst), 1);
+            clock.advance(1);
+            assert_eq!(pump(&mut r, id).state, JobState::Completed);
+            assert_eq!(r.take_output(id).unwrap().bytes(), [7]);
+        }
+        let mut request = spec(ResourceClass::Network);
+        request.kind = kind;
         let (id, _) = r
-            .submit(suggestion, move |_| {
-                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                    Err(EditError::Ai(ai::Error::RateLimit {
-                        retry_after_seconds: Some(3),
-                    }))
-                } else {
-                    Ok(vec![7])
-                }
-            })
-            .unwrap();
-        assert_eq!(pump(&mut r, id).state, JobState::Backoff);
-        clock.advance(2_999);
-        r.tick().unwrap();
-        assert_eq!(count.load(Ordering::SeqCst), 1);
-        clock.advance(1);
-        assert_eq!(pump(&mut r, id).state, JobState::Completed);
-        assert_eq!(r.take_output(id).unwrap().bytes(), [7]);
-
-        let (id, _) = r
-            .submit(suggestion, |_| Err(EditError::Ai(ai::Error::Auth)))
+            .submit(request, |_| Err(EditError::Ai(ai::Error::Auth)))
             .unwrap();
         assert_eq!(pump(&mut r, id).attempts, 1);
         assert!(matches!(
@@ -582,28 +642,44 @@ fn ai_transient_failures_retry_with_retry_after_but_auth_fails_once() {
                     .downcast_ref::<EditError>()),
             Some(EditError::Ai(ai::Error::Auth))
         ));
-
-        let count = Arc::new(AtomicUsize::new(0));
-        let attempts = count.clone();
-        let (id, _) = r
-            .submit(suggestion, move |_| {
-                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                    Err(EditError::Ai(ai::Error::RateLimit {
-                        retry_after_seconds: Some(3_600),
-                    }))
-                } else {
-                    Ok(vec![8])
-                }
-            })
-            .unwrap();
-        assert_eq!(pump(&mut r, id).state, JobState::Backoff);
-        clock.advance(299_999);
-        r.tick().unwrap();
-        assert_eq!(count.load(Ordering::SeqCst), 1);
-        clock.advance(1);
-        assert_eq!(pump(&mut r, id).state, JobState::Completed);
-        assert_eq!(r.take_output(id).unwrap().bytes(), [8]);
     }
+    #[derive(Debug)]
+    struct Opaque;
+    impl std::fmt::Display for Opaque {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("opaque retryable failure")
+        }
+    }
+    impl std::error::Error for Opaque {}
+    impl Failure for Opaque {
+        fn code(&self) -> engine::control::ErrorCode {
+            engine::control::ErrorCode::Ai
+        }
+        fn transient(&self) -> bool {
+            true
+        }
+    }
+    let budget = ByteBudget::new(1000).unwrap();
+    let (mut r, clock) = runner(&budget);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let attempts = calls.clone();
+    let (id, _) = r
+        .submit(spec(ResourceClass::Network), move |_| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(Opaque)
+            } else {
+                Ok(vec![1])
+            }
+        })
+        .unwrap();
+    assert_eq!(pump(&mut r, id).state, JobState::Backoff);
+    clock.advance(99);
+    r.tick().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    clock.advance(1);
+    assert_eq!(pump(&mut r, id).state, JobState::Completed);
+    drop(r.take_output(id).unwrap());
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 #[test]
@@ -613,15 +689,17 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let hold = Arc::new(std::sync::Barrier::new(2));
     let gate = hold.clone();
     let (cpu, _) = r
-        .submit(spec(ResourceClass::Cpu), move |_| {
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |_| {
             gate.wait();
             Ok(vec![])
         })
         .unwrap();
     r.tick().unwrap();
-    let (cpu2, token) = r.submit(spec(ResourceClass::Cpu), |_| Ok(vec![])).unwrap();
+    let (cpu2, token) = r
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| Ok(vec![]))
+        .unwrap();
     let (network, _) = r
-        .submit(spec(ResourceClass::Network), |_| Ok(vec![]))
+        .submit::<engine::EditError>(spec(ResourceClass::Network), |_| Ok(vec![]))
         .unwrap();
     let ran = Arc::new(AtomicUsize::new(0));
     let captured = Arc::new(());
@@ -629,7 +707,7 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let calls = ran.clone();
     let before = (r.counts(), budget.snapshot().unwrap().used);
     assert!(matches!(
-        r.submit(spec(ResourceClass::Cpu), move |_| {
+        r.submit::<engine::EditError>(spec(ResourceClass::Cpu), move |_| {
             let _capture = &captured;
             calls.fetch_add(1, Ordering::SeqCst);
             Ok(vec![])
@@ -650,7 +728,7 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     // Counts alone would allow a second class, but shared bytes prevent it.
     let held = budget.reserve(ByteOwner::Compositor, 200).unwrap();
     let (id, _) = r
-        .submit(spec(ResourceClass::GpuEncoder), |_| Ok(vec![]))
+        .submit::<EditError>(spec(ResourceClass::GpuEncoder), |_| Ok(vec![]))
         .unwrap();
     assert_eq!(id, JobId(network.0 + 1), "refusal consumed an ID");
     r.tick().unwrap();
@@ -665,7 +743,7 @@ fn progress_and_slow_consumer_retention_are_bounded_over_repeated_jobs() {
     for _ in 0..200 {
         let clock = clock.clone();
         let (id, _) = r
-            .submit(spec(ResourceClass::Cpu), move |ctx| {
+            .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |ctx| {
                 assert!(ctx.progress(JobStage::Process, f32::NAN).is_err());
                 for _ in 0..100 {
                     ctx.progress(JobStage::Process, 0.5)?;
@@ -865,7 +943,7 @@ fn cache_failure_keeps_token_seal_order_and_raw_cause_custody() {
         let (resume, wait) = mpsc::sync_channel(0);
         let wait = std::sync::Mutex::new(wait);
         let (id, token) = r
-            .submit(spec(class), move |context| {
+            .submit::<engine::EditError>(spec(class), move |context| {
                 if seal {
                     context.begin_publication()?;
                 }
@@ -892,21 +970,22 @@ fn cache_failure_keeps_token_seal_order_and_raw_cause_custody() {
             }
         );
         let cause = snapshot.error.as_ref().unwrap();
-        let typed = (cause.as_ref() as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()
-            .unwrap();
-        assert!(matches!(
-            (cancelled, typed),
-            (true, EditError::Runtime(engine::RuntimeError::Cancelled))
-                | (false, EditError::Runtime(B::CacheCorrupt))
-        ));
+        let typed = cause.as_ref() as &(dyn std::error::Error + 'static);
+        if cancelled {
+            assert!(matches!(typed.downcast_ref::<B>(), Some(B::Cancelled)));
+        } else {
+            assert!(matches!(
+                typed.downcast_ref::<EditError>(),
+                Some(EditError::Runtime(B::CacheCorrupt))
+            ));
+        }
         assert!(!cause.transient());
-        assert!(std::error::Error::source(typed).is_none());
+        assert!(cause.source().is_none());
         let weak = Arc::downgrade(cause);
         assert!(r.take_output(id).is_none());
         for _ in 0..3 {
             let (other, _) = r
-                .submit(spec(ResourceClass::Cpu), |_| Ok(Vec::new()))
+                .submit::<engine::EditError>(spec(ResourceClass::Cpu), |_| Ok(Vec::new()))
                 .unwrap();
             pump(&mut r, other);
         }
@@ -927,7 +1006,7 @@ fn public_job_resumes_finalized_asr_chunks_after_worker_crash() {
     let cache = Arc::new(std::sync::Mutex::new(cache));
     let checkpoint = cache.clone();
     let (id, _) = r
-        .submit(spec(ResourceClass::Cpu), move |_| {
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |_| {
             checkpoint.lock().unwrap().put(key(1), b"one").unwrap();
             panic!("simulated crash after finalized chunk, before whole result");
         })
@@ -942,7 +1021,7 @@ fn public_job_resumes_finalized_asr_chunks_after_worker_crash() {
     let executed = Arc::new(AtomicUsize::new(0));
     let count = executed.clone();
     let (id, _) = r
-        .submit(spec(ResourceClass::Cpu), move |ctx| {
+        .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |ctx| {
             let mut output = Vec::with_capacity(6);
             for chunk in 1..=2 {
                 ctx.check_cancelled()?;
@@ -979,7 +1058,7 @@ fn worker_progress_is_throttled_and_shutdown_joins_cancellable_work() {
             while !ctx.cancelled() {
                 std::thread::yield_now();
             }
-            Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+            ctx.check_cancelled().map(|()| Vec::new())
         })
         .unwrap();
     r.tick().unwrap();
@@ -1034,7 +1113,9 @@ fn submitted_output_carries_original_session_revision_through_completion() {
         kind: project::TrackKind::Video,
     };
     let (id, _) = r
-        .submit_for_session(&session, spec(ResourceClass::Cpu), |_| Ok(vec![1]))
+        .submit_for_session::<engine::EditError>(&session, spec(ResourceClass::Cpu), |_| {
+            Ok(vec![1])
+        })
         .unwrap();
     session.apply(command()).unwrap();
     session.undo().unwrap();
@@ -1045,7 +1126,9 @@ fn submitted_output_carries_original_session_revision_through_completion() {
         Err(EditError::StaleResult)
     ));
     let (id, _) = r
-        .submit_for_session(&session, spec(ResourceClass::Cpu), |_| Ok(vec![2]))
+        .submit_for_session::<engine::EditError>(&session, spec(ResourceClass::Cpu), |_| {
+            Ok(vec![2])
+        })
         .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Completed);
     assert!(
@@ -1109,8 +1192,10 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
             s.apply(add())?;
             target = Some(s.job_target());
             job = Some(
-                r.submit_for_session(s, spec(ResourceClass::Cpu), |_| Ok(vec![1]))?
-                    .0,
+                r.submit_for_session::<engine::EditError>(s, spec(ResourceClass::Cpu), |_| {
+                    Ok(vec![1])
+                })?
+                .0,
             );
             match mode {
                 0 => Err(EditError::Runtime(engine::RuntimeError::Cancelled)),
@@ -1203,7 +1288,9 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
         compositor: 800,
         ..Default::default()
     };
-    let (id, _) = r.submit(request, |_| Ok(vec![])).unwrap();
+    let (id, _) = r
+        .submit::<engine::EditError>(request, |_| Ok(vec![]))
+        .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Completed);
     assert_eq!(pinned.bytes(), [0; 28]);
     assert!(cache.get(key(0)).unwrap().is_some());
@@ -1214,7 +1301,7 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
     // Truly oversized work is rejected at admission; active pins are temporary pressure.
     request.bytes.compositor = 1001;
     assert!(matches!(
-        r.submit(request, |_| Ok(vec![])),
+        r.submit::<engine::EditError>(request, |_| Ok(vec![])),
         Err(EditError::Runtime(B::ArtifactTooLarge))
     ));
     drop(cache); // Release the exclusive root writer before reopening.
@@ -1222,7 +1309,9 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
     cache.put(key(1), &[1; 328]).unwrap();
     let pin = cache.get(key(1)).unwrap().unwrap();
     request.bytes.compositor = 300;
-    let (id, _) = r.submit(request, |_| Ok(vec![])).unwrap();
+    let (id, _) = r
+        .submit::<engine::EditError>(request, |_| Ok(vec![]))
+        .unwrap();
     r.tick().unwrap();
     assert_eq!(r.snapshot(id).unwrap().state, JobState::Queued);
     assert_eq!(pin.bytes(), [1; 328]);
@@ -1366,12 +1455,12 @@ fn reclaim_io_failure_preserves_charge_and_can_retry_after_repair() {
         ..Default::default()
     };
     let (id, _) = r
-        .submit(request, |_| panic!("failed admission must not run"))
+        .submit::<engine::EditError>(request, |_| panic!("failed admission must not run"))
         .unwrap();
     let failed = pump(&mut r, id);
     assert_eq!((failed.state, failed.attempts), (JobState::Failed, 0));
     assert!(
-        matches!(failed.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()), Some(EditError::Runtime(B::Io(error))) if error.kind() == kind)
+        matches!(failed.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<B>()), Some(B::Io(error)) if error.kind() == kind)
     );
     assert!(r.take_output(id).is_none());
     let state = session.snapshot_and_subscribe(&r).unwrap();
@@ -1505,7 +1594,7 @@ fn unpinned_cache_must_not_permanently_starve_admitted_job() {
     };
     let mut runner = JobRunner::new(config, budget, Arc::new(SystemClock::default())).unwrap();
     let (id, _) = runner
-        .submit(
+        .submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,
