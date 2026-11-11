@@ -148,7 +148,10 @@ times. Nonparticipating RGBA components and unrelated paths remain exact. The lo
 anchor is scene output `at` minus destination start, plus each original time minus
 snapshot origin: there is no media mapping, snapping or clamping. Destination locks,
 missing channels, incompatible types, overflow and final project budgets refuse all
-paths. Stored-empty Paste is a no-op without target lookup. Changed Paste is one undo
+paths. Paste availability borrows the target and visits only snapshot paths/components:
+it checks translated times and merged per-channel counts with replacement at equal times,
+without cloning any target channel or unrelated value. Actual Paste shares this admission
+before constructing participating channels in the ordinary atomic edit candidate. Stored-empty Paste is a no-op without target lookup. Changed Paste is one undo
 step and does not move the playhead; equal content preserves redo.
 
 The Session holds one immutable Arc snapshot outside project/history/persistence.

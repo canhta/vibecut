@@ -5203,6 +5203,18 @@ fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_wi
     let f = fixture();
     let id = f.video_a;
     let mut editor = f.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.5);
+    editor
+        .session
+        .apply(Command::CopyKeyframes {
+            keys: vec![engine::KeyframeRef {
+                item: id,
+                path: project::BuiltinPath::Opacity.into(),
+                component: None,
+                time: Tick(2 * SECOND),
+            }],
+        })
+        .unwrap();
     let path = project::AnimationPath::new("params.text").unwrap();
     let mut key = project::Keyframe::new(
         Tick::ZERO,
@@ -5263,8 +5275,46 @@ fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_wi
             .any(|c| matches!(c, egui::OutputCommand::CopyText(_)))
     );
     h.run_steps(3);
-    assert!(!h.state().session.clipboard_has_entry());
+    assert!(h.state().session.clipboard_has_entry());
     assert_eq!(h.state().session.project(), &before);
     assert_eq!(h.state().session.revision(), rev);
     assert_eq!(h.state().session.history_len(), history);
+    // The same oversized Text is unrelated to the small retained opacity snapshot.
+    // Real frame admission and action dispatch must allow that Paste with one undo.
+    assert!(h.state().action_enabled("edit.paste"));
+    h.state_mut().activate("edit.paste").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    let destination = item(h.state(), id);
+    let old_item = before
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == id)
+        .unwrap();
+    assert_eq!(
+        destination
+            .animations
+            .get(&project::AnimationPath::new("params.text").unwrap()),
+        old_item
+            .animations
+            .get(&project::AnimationPath::new("params.text").unwrap())
+    );
+    assert_eq!(
+        destination
+            .animations
+            .get(&project::BuiltinPath::Opacity.into())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[0]
+            .value,
+        project::ParamValue::Scalar(0.5)
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+    assert!(h.state().session.clipboard_has_entry());
 }

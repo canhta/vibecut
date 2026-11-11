@@ -2413,6 +2413,62 @@ fn clipboard_hostile_text_availability_and_copy_refuse_before_materializing_valu
     assert_eq!(s.revision(), rev);
     assert_eq!(s.history_len(), history);
     assert_eq!(s.selection(), &selection);
+    // The same real 64 MiB Text is unrelated to the small stored opacity snapshot.
+    // Availability must inspect only that snapshot's paths; actual edits keep ordinary
+    // atomic candidate ownership. No heap instrumentation is used as an oracle.
+    for _ in 0..8 {
+        assert!(s.can_paste_keyframes(ItemId(2), frame(100)));
+        assert!(s.can_paste_keyframes(ItemId(2), frame(101)));
+        assert!(!s.can_paste_keyframes(ItemId(2), Tick(-1)));
+        assert!(!s.can_paste_keyframes(ItemId(999), frame(100)));
+    }
+    assert!(std::sync::Arc::ptr_eq(s.project(), &before));
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.selection(), &selection);
+    assert!(s.take_change().is_none());
+    let paste = |at| Command::PasteKeyframes {
+        item: ItemId(2),
+        at,
+        source: engine::KeyframePasteSource::Stored,
+    };
+    assert!(!s.apply(paste(frame(100))).unwrap().changed);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    assert!(s.apply(paste(frame(101))).unwrap().changed);
+    let dest = item(&s, ItemId(2));
+    assert_eq!(
+        dest.animations.get(&p),
+        before
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == ItemId(2))
+            .unwrap()
+            .animations
+            .get(&p)
+    );
+    assert_eq!(
+        dest.animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[1]
+            .time,
+        frame(1)
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    let undone = s.revision();
+    let redo_history = s.history_len();
+    assert!(s.can_paste_keyframes(ItemId(2), frame(100)));
+    assert!(!s.apply(paste(frame(100))).unwrap().changed);
+    assert_eq!(s.revision(), undone);
+    assert_eq!(s.history_len(), redo_history);
+    assert_eq!(s.selection(), &selection);
     // Read through the consumed control boundary, proving the earlier scalar store survived.
     let mut r = crate::support::control::runner();
     let stored = crate::support::control::ok(crate::support::control::run(
@@ -2426,4 +2482,255 @@ fn clipboard_hostile_text_availability_and_copy_refuse_before_materializing_valu
         serde_json::to_value(stored).unwrap()["payload"]["params"][0]["path"],
         "opacity"
     );
+}
+
+#[test]
+fn clipboard_paste_eligibility_matches_locks_types_time_and_merged_channel_refusals() {
+    use engine::{EditError, KeyframePasteSource::Stored, KeyframeRef};
+    const SAFE: i64 = 9_007_199_254_740_991;
+    for case in [
+        "zero",
+        "replacement",
+        "full-replacement",
+        "new-at-limit",
+        "one-collision",
+        "missing-path",
+        "value-kind",
+        "param-kind",
+        "locked-repeat",
+        "negative-scene",
+        "unsafe-scene",
+        "translated-overflow",
+        "negative-local",
+        "unsafe-local",
+        "missing-item",
+    ] {
+        let p = AnimationPath::new("params.transfer").unwrap();
+        let source_param = Param::Value(
+            Channel::new(
+                ParamValue::Scalar(0.7),
+                vec![
+                    Keyframe::new(Tick(0), ParamValue::Scalar(0.5)),
+                    Keyframe::new(Tick(12), ParamValue::Scalar(0.9)),
+                ],
+                Extrapolation::Linear,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        );
+        let mut data = session().project().data().clone();
+        let track = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .find(|t| t.id == TrackId(2))
+            .unwrap();
+        let target = &mut track.items[0];
+        target.start = match case {
+            "negative-local" => Tick(100),
+            "unsafe-local" => Tick(SAFE + 1),
+            _ => Tick::ZERO,
+        };
+        let param = match case {
+            "missing-path" => None,
+            "value-kind" => Some(Param::new(ParamValue::Text("held".into())).unwrap()),
+            "param-kind" => Some(Param::new(ParamValue::Color([0.2; 4])).unwrap()),
+            "replacement" | "locked-repeat" => Some(source_param.clone()),
+            "full-replacement" | "new-at-limit" | "one-collision" => Some(Param::Value(
+                Channel::new(
+                    ParamValue::Scalar(0.1),
+                    (0..4096)
+                        .map(|t| Keyframe::new(Tick(t), ParamValue::Scalar(0.2)))
+                        .collect(),
+                    Extrapolation::Hold,
+                    Extrapolation::Hold,
+                )
+                .unwrap(),
+            )),
+            _ => Some(Param::new(ParamValue::Scalar(0.1)).unwrap()),
+        };
+        if let Some(param) = param {
+            target.animations.set(p.clone(), param).unwrap();
+        }
+        let mut source = target.clone();
+        source.id = ItemId(3);
+        source.start = target.start.checked_add(frame(800)).unwrap();
+        source.animations = Animations::default();
+        source.animations.set(p.clone(), source_param).unwrap();
+        track.items.push(source);
+        track.locked = case == "locked-repeat";
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        s.apply(Command::CopyKeyframes {
+            keys: [0, 12]
+                .map(|t| KeyframeRef {
+                    item: ItemId(3),
+                    path: p.clone(),
+                    component: None,
+                    time: Tick(t),
+                })
+                .to_vec(),
+        })
+        .unwrap(); // Copy remains allowed on a locked source track.
+        s.set_selection([ItemId(2)].into_iter().collect()).unwrap();
+        let target_id = if case == "missing-item" {
+            ItemId(999)
+        } else {
+            ItemId(2)
+        };
+        let at = match case {
+            "negative-scene" => Tick(-1),
+            "unsafe-scene" => Tick(SAFE + 1),
+            "translated-overflow" => Tick(SAFE - 5),
+            "new-at-limit" => Tick(4096),
+            "one-collision" => Tick(4090),
+            _ => Tick::ZERO,
+        };
+        let expected = matches!(
+            case,
+            "zero" | "replacement" | "full-replacement" | "negative-local"
+        );
+        let before = s.project().clone();
+        let rev = s.revision();
+        let history = s.history_len();
+        let selection = s.selection().clone();
+        for _ in 0..4 {
+            assert_eq!(s.can_paste_keyframes(target_id, at), expected, "{case}");
+        }
+        assert!(std::sync::Arc::ptr_eq(s.project(), &before), "{case}");
+        assert_eq!(s.revision(), rev, "{case}");
+        assert_eq!(s.history_len(), history, "{case}");
+        assert_eq!(s.selection(), &selection, "{case}");
+        assert!(s.take_change().is_none(), "{case}");
+        let result = s.apply(Command::PasteKeyframes {
+            item: target_id,
+            at,
+            source: Stored,
+        });
+        assert_eq!(result.is_ok(), expected, "{case}: {result:?}");
+        if expected {
+            let changed = result.unwrap().changed;
+            assert_eq!(changed, case != "replacement", "{case}");
+            if changed {
+                s.undo().unwrap();
+            }
+            assert_eq!(s.project(), &before, "{case}");
+        } else {
+            let error = result.unwrap_err();
+            match case {
+                "new-at-limit" | "one-collision" => assert!(
+                    matches!(
+                        error,
+                        EditError::Project(project::Error::TooLarge("channel keys"))
+                    ),
+                    "{error:?}"
+                ),
+                "locked-repeat" => assert!(matches!(error, EditError::Locked(TrackId(2)))),
+                "missing-path" => assert!(matches!(
+                    error,
+                    EditError::Project(project::Error::Invalid("missing animated parameter"))
+                )),
+                "missing-item" => assert!(matches!(error, EditError::NoItem(ItemId(999)))),
+                "value-kind" => {
+                    assert!(matches!(error, EditError::Invalid("clipboard value type")))
+                }
+                "param-kind" => assert!(matches!(
+                    error,
+                    EditError::Invalid("clipboard parameter type")
+                )),
+                _ => assert!(
+                    matches!(error, EditError::InvalidParams),
+                    "{case}: {error:?}"
+                ),
+            }
+            assert_eq!(s.project(), &before, "{case}");
+            assert_eq!(s.revision(), rev, "{case}");
+            assert_eq!(s.history_len(), history, "{case}");
+            assert_eq!(s.selection(), &selection, "{case}");
+            assert!(s.take_change().is_none(), "{case}");
+        }
+    }
+}
+
+#[test]
+fn clipboard_paste_eligibility_counts_only_participating_rgba_channels() {
+    use engine::{KeyframePasteSource::Stored, KeyframeRef};
+    for full_component in [ColorComponent::G, ColorComponent::R] {
+        let p = AnimationPath::new("params.transferColor").unwrap();
+        let mut data = session().project().data().clone();
+        let track = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .find(|t| t.id == TrackId(2))
+            .unwrap();
+        let mut target = Param::new(ParamValue::Color([0.2; 4])).unwrap();
+        *target.channel_mut(Some(full_component)).unwrap() = Channel::new(
+            ParamValue::Scalar(0.2),
+            (0..4096)
+                .map(|t| Keyframe::new(Tick(t), ParamValue::Scalar(0.3)))
+                .collect(),
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap();
+        track.items[0].animations.set(p.clone(), target).unwrap();
+        let mut source = track.items[0].clone();
+        source.id = ItemId(3);
+        source.start = frame(800);
+        let mut param = Param::new(ParamValue::Color([0.7; 4])).unwrap();
+        param
+            .channel_mut(Some(ColorComponent::R))
+            .unwrap()
+            .put(Keyframe::new(Tick::ZERO, ParamValue::Scalar(0.8)))
+            .unwrap();
+        source.animations.set(p.clone(), param).unwrap();
+        track.items.push(source);
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        s.apply(Command::CopyKeyframes {
+            keys: vec![KeyframeRef {
+                item: ItemId(3),
+                path: p.clone(),
+                component: Some(ColorComponent::R),
+                time: Tick::ZERO,
+            }],
+        })
+        .unwrap();
+        let before = s.project().clone();
+        let at = frame(100).checked_add(Tick(4096)).unwrap();
+        let expected = full_component == ColorComponent::G;
+        assert_eq!(s.can_paste_keyframes(ItemId(2), at), expected);
+        assert!(std::sync::Arc::ptr_eq(s.project(), &before));
+        let result = s.apply(Command::PasteKeyframes {
+            item: ItemId(2),
+            at,
+            source: Stored,
+        });
+        assert_eq!(result.is_ok(), expected);
+        if expected {
+            let dest = item(&s, ItemId(2)).animations.get(&p).unwrap();
+            let original = before
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .find(|i| i.id == ItemId(2))
+                .unwrap()
+                .animations
+                .get(&p)
+                .unwrap();
+            for component in [ColorComponent::G, ColorComponent::B, ColorComponent::A] {
+                assert_eq!(
+                    dest.channel(Some(component)).unwrap(),
+                    original.channel(Some(component)).unwrap()
+                );
+            }
+            assert_eq!(
+                dest.channel(Some(ColorComponent::R)).unwrap().keys()[0].time,
+                Tick(4096)
+            );
+        } else {
+            assert_eq!(s.project(), &before);
+        }
+    }
 }

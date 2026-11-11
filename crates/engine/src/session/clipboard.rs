@@ -446,7 +446,7 @@ impl KeyframeClipboard {
         }
         Self::new(origin, params).map(Some)
     }
-    pub(super) fn paste(&self, target: &mut project::Item, at: Tick) -> Result<()> {
+    pub(super) fn admit_paste(&self, target: &project::Item, at: Tick) -> Result<Tick> {
         if at < Tick::ZERO {
             return Err(EditError::InvalidParams);
         }
@@ -456,27 +456,56 @@ impl KeyframeClipboard {
                 .ok_or(EditError::InvalidParams)?,
         )?;
         for p in &self.params {
-            let destination = target.animations.get_mut(&p.path)?;
+            let destination = target
+                .animations
+                .get(&p.path)
+                .ok_or(project::Error::Invalid("missing animated parameter"))?;
             if std::mem::discriminant(destination) != std::mem::discriminant(&p.param) {
                 return Err(EditError::Invalid("clipboard parameter type"));
             }
-            for (source, dest) in channels(&p.param).iter().zip(channels_mut(destination)) {
+            for (source, dest) in channels(&p.param).iter().zip(channels(destination)) {
                 if source.keys().is_empty() {
                     continue;
                 }
                 if std::mem::discriminant(source.base()) != std::mem::discriminant(dest.base()) {
                     return Err(EditError::Invalid("clipboard value type"));
                 }
+                let mut count = dest.keys().len();
+                for key in source.keys() {
+                    let time = self.pasted_time(anchor, key.time)?;
+                    if dest.keys().binary_search_by_key(&time, |k| k.time).is_err() {
+                        count = count.checked_add(1).ok_or(EditError::Limit)?;
+                    }
+                }
+                if count > project::MAX_CHANNEL_KEYS {
+                    return Err(project::Error::TooLarge("channel keys").into());
+                }
+            }
+        }
+        Ok(anchor)
+    }
+    fn pasted_time(&self, anchor: Tick, time: Tick) -> Result<Tick> {
+        let offset = time
+            .checked_sub(self.origin)
+            .ok_or(EditError::InvalidParams)?;
+        exact(anchor.checked_add(offset).ok_or(EditError::InvalidParams)?)
+    }
+    pub(super) fn paste(&self, target: &mut project::Item, at: Tick) -> Result<()> {
+        // Availability and the edit share borrowed admission before any target key clone.
+        let anchor = self.admit_paste(target, at)?;
+        for p in &self.params {
+            let destination = target.animations.get_mut(&p.path)?;
+            for (source, dest) in channels(&p.param).iter().zip(channels_mut(destination)) {
+                if source.keys().is_empty() {
+                    continue;
+                }
                 let mut keys: BTreeMap<_, _> =
                     dest.keys().iter().map(|k| (k.time, k.clone())).collect();
-                for k in source.keys() {
-                    let offset = k
-                        .time
-                        .checked_sub(self.origin)
-                        .ok_or(EditError::InvalidParams)?;
-                    let mut key = k.clone();
-                    key.time = exact(anchor.checked_add(offset).ok_or(EditError::InvalidParams)?)?;
-                    keys.insert(key.time, key);
+                for key in source.keys() {
+                    let time = self.pasted_time(anchor, key.time)?;
+                    let mut key = key.clone();
+                    key.time = time;
+                    keys.insert(time, key);
                 }
                 let (before, after) = source.extrapolation();
                 *dest = Channel::new(

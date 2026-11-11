@@ -161,7 +161,7 @@ impl Session {
             .filter(|t| !t.locked)
             .flat_map(|t| &t.items)
             .find(|i| i.id == item)
-            .is_some_and(|i| payload.paste(&mut i.clone(), at).is_ok())
+            .is_some_and(|i| payload.admit_paste(i, at).is_ok())
     }
     pub(crate) fn clipboard_payload(&self) -> Option<super::KeyframeClipboard> {
         self.clipboard.as_deref().cloned()
