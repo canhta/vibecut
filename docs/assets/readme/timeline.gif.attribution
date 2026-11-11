@@ -1,7 +1,7 @@
 asset: timeline.gif
 title: Split, trim and undo on the VibeCut timeline
 author: Blender Foundation; VibeCut contributors
-source: Big Buck Bunny (2008, Blender Foundation), (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1; captured by apps/vibecut/examples/ui_audit.rs --readme timeline at f8f2d6474d293bfb98ee046c8984362e487bcc2e
+source: Big Buck Bunny (2008, Blender Foundation), (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1; captured by apps/vibecut/examples/ui_audit.rs --readme timeline at 752c05dc81c92de2b7be65fb88710a1b932b7195
 license: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)
 license-file: ../../licenses/CC-BY-3.0.txt
 added: p0-core/22
