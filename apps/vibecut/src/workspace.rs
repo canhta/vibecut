@@ -1143,7 +1143,7 @@ impl EditorWindow {
             translation: [0; 32],
         })?;
         let worker_input = input.clone();
-        let submitted = self.runner.borrow_mut().submit(
+        let submitted = self.runner.borrow_mut().submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -1882,7 +1882,7 @@ mod tests {
                 let (id, cancel) = window
                     .runner
                     .borrow_mut()
-                    .submit(
+                    .submit::<engine::EditError>(
                         JobSpec {
                             kind: JobKind::Persist,
                             class: ResourceClass::Cpu,

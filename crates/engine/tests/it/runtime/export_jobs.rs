@@ -355,10 +355,9 @@ fn panic_during_production_export_cleans_stage_and_reports_worker_failure() {
         complete(&mut runner, id)
             .error
             .as_deref()
-            .and_then(
-                |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
-            ),
-        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+            .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::RuntimeError>()),
+        Some(engine::RuntimeError::WorkerPanicked)
     ));
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -410,7 +409,7 @@ fn cancellation_before_publication_refuses_and_after_commit_point_completes() {
         let stored = Arc::new(std::sync::Mutex::new(None::<CancelToken>));
         let token = stored.clone();
         let (id, cancel) = runner
-            .submit(
+            .submit::<engine::EditError>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,
@@ -857,8 +856,8 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
                     .error
                     .as_deref()
                     .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                        .downcast_ref::<EditError>()),
-                Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+                        .downcast_ref::<engine::RuntimeError>()),
+                Some(engine::RuntimeError::WorkerPanicked)
             ));
         }
         assert_eq!(clock.calls.load(Ordering::SeqCst), 3);

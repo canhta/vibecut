@@ -147,7 +147,7 @@ impl ModelTransfers {
         let slot = self.cache.clone();
         let http = self.transport.clone();
         let io = self.io.clone();
-        runner.submit(
+        runner.submit::<crate::EditError>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,

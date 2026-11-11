@@ -138,7 +138,7 @@ pub fn submit_export_with_sources(
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
 ) -> Result<(JobId, CancelToken), EditError> {
     super::loudness_admission::admit(&project)?;
-    runner.submit(
+    runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -215,7 +215,7 @@ pub fn submit_scene_exports_with_sources(
             sources,
         );
     }
-    runner.submit(
+    runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -337,7 +337,7 @@ pub fn submit_export_publication(
     protected: Vec<PathBuf>,
     fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 ) -> Result<(JobId, CancelToken), EditError> {
-    runner.submit(
+    runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::Cpu,
