@@ -583,6 +583,23 @@ mod exit_codes {
                 "local model test-model is not installed; run `vibecut-cli model download test-model`"
             );
         }
+        for composed in [false, true] {
+            let subtitles =
+                engine::subtitles::Error::Runtime(engine::RuntimeError::Failed(Arc::new(
+                    engine::subtitles::Error::Providers(P::ModelMissing("test-model")),
+                )));
+            let raw: Arc<dyn engine::Failure> = if composed {
+                Arc::new(E::Subtitles(subtitles))
+            } else {
+                Arc::new(subtitles)
+            };
+            let diagnostic = CliError::Job(raw);
+            assert_eq!(diagnostic.code(), ("setup", 4));
+            assert_eq!(
+                diagnostic.value()["message"],
+                "local model test-model is not installed; run `vibecut-cli model download test-model`"
+            );
+        }
         let raw_provider = CliError::Job(Arc::new(P::ModelMissing("test-model")));
         assert_eq!(raw_provider.code(), ("setup", 4));
         assert_eq!(

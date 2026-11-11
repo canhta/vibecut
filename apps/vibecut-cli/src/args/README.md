@@ -9,3 +9,7 @@ through `Error::Edit`; static diagnostics and lower source chains stay with that
 Transcript translation results retain their lower causes. The existing failed-cause diagnostic
 also accepts explicit raw or engine-composed Transcript Runtime Failed, keeping the inner
 static message and provider setup hint without changing scheduling policy.
+
+Subtitle pipeline and ASS import failures compose through the Subtitles owner. Explicit raw
+or engine Subtitles causes retain Transcript/provider hints and the existing Runtime Failed
+message presentation; optional setup preserves its retained source.

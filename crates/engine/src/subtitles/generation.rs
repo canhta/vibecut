@@ -1,8 +1,9 @@
 //! Submits source-asset transcription as one bounded workflow job.
 use super::{CaptionAccess, outputs::MAX_RESULT_BYTES};
+use super::{Error as SubtitleError, Result as SubtitleResult};
 use crate::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::transcript::{Cancellation, Progress, Stage};
-use crate::{Error as EngineError, Result, Session, session::wire::CaptionsResult};
+use crate::{Session, session::wire::CaptionsResult};
 use captions::LanguageTag;
 use time::{SourceRange, Tick};
 
@@ -14,7 +15,7 @@ pub(crate) fn generate(
     range: Option<SourceRange>,
     language: Option<LanguageTag>,
     input: crate::cache::CacheKey,
-) -> Result<JobId> {
+) -> SubtitleResult<JobId> {
     let asset = session
         .project()
         .data()
@@ -22,11 +23,13 @@ pub(crate) fn generate(
         .iter()
         .find(|a| a.id() == asset)
         .cloned()
-        .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset)))?;
+        .ok_or(SubtitleError::Edit(crate::session::EditError::NoAsset(
+            asset,
+        )))?;
     let duration = crate::transcript::media_duration(&asset)?;
     let range = range.unwrap_or(SourceRange::new(Tick::ZERO, duration)?);
     if range.start() < Tick::ZERO || range.end() > duration {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "transcription range outside asset",
         )));
     }
@@ -86,21 +89,21 @@ pub(crate) fn generate(
                 model: config.model().clone(),
             };
             if result.cues.len() > super::outputs::MAX_CUES {
-                return Err(EngineError::Control(
+                return Err(SubtitleError::from(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
-                .map_err(crate::Error::from)
+                .map_err(SubtitleError::from)
         },
     )?;
     Ok(id)
 }
 
-pub(crate) fn validate_source(asset: &media::SourceAsset) -> Result<()> {
+pub(crate) fn validate_source(asset: &media::SourceAsset) -> SubtitleResult<()> {
     let current = media::SourceAsset::import(asset.id(), asset.path().to_owned())?;
     if current.content_hash() != asset.content_hash() || current.probe() != asset.probe() {
-        return Err(EngineError::Session(crate::SessionError::StaleResult));
+        return Err(SubtitleError::from(crate::SessionError::StaleResult));
     }
     Ok(())
 }

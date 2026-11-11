@@ -509,7 +509,7 @@ fn blocking_generation_refuses_shared_budget_pressure_before_asr_and_releases_ad
         );
         assert!(matches!(
             result,
-            Err(engine::Error::Runtime(
+            Err(engine::subtitles::Error::Runtime(
                 engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge
             ))
         ));
@@ -612,7 +612,7 @@ fn remote_upload_is_refused_without_consent() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Transcript(engine::transcript::Error::Providers(
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Providers(
             engine::providers::Error::ConsentRequired
         ))
     ));
@@ -663,7 +663,7 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::Error::Transcript(
+        Err(engine::subtitles::Error::Transcript(
             engine::transcript::Error::Providers(engine::providers::Error::ConsentRequired)
         ))
     ));
@@ -707,9 +707,11 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::Error::Transcript(engine::transcript::Error::Edit(
-            engine::EditError::Invalid("cached recognition is malformed")
-        )))
+        Err(engine::subtitles::Error::Transcript(
+            engine::transcript::Error::Edit(engine::EditError::Invalid(
+                "cached recognition is malformed"
+            ))
+        ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(std::fs::read(&path).unwrap(), envelope);
@@ -728,7 +730,9 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &cancel
         ),
-        Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
+        Err(engine::subtitles::Error::Runtime(
+            engine::RuntimeError::Cancelled
+        ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(cache.clear().unwrap(), 0);
@@ -990,7 +994,7 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Transcript(engine::transcript::Error::Ai(ai::Error::Inference))
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Ai(ai::Error::Inference))
     ));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     let outcome = subtitles::run(
@@ -1211,7 +1215,7 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::Error::Transcript(engine::transcript::Error::Runtime(
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
             engine::RuntimeError::Cancelled
         ))
     ));
@@ -1261,7 +1265,7 @@ fn cancellation_before_export_preserves_the_existing_output() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Runtime(engine::RuntimeError::Cancelled)
+        engine::subtitles::Error::Runtime(engine::RuntimeError::Cancelled)
     ));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep this file");
 }
@@ -1354,7 +1358,7 @@ fn operation_cancellation_stops_a_running_translation_job() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::Error::Transcript(engine::transcript::Error::Runtime(
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
             engine::RuntimeError::Cancelled
         ))
     ));
@@ -1400,7 +1404,7 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Transcript(engine::transcript::Error::Runtime(
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
             engine::RuntimeError::Cancelled
         ))
     ));
@@ -1530,10 +1534,11 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
         assert_eq!(snapshot.state, engine::jobs::JobState::Failed);
         let cause = snapshot.error.as_ref().unwrap();
         assert!(matches!(
-            (cause.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
-            Some(engine::Error::Providers(engine::providers::Error::Ai(
-                Error::Cost
-            ))) | Some(engine::Error::Transcript(
+            (cause.as_ref() as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::subtitles::Error>(),
+            Some(engine::subtitles::Error::Providers(
+                engine::providers::Error::Ai(Error::Cost)
+            )) | Some(engine::subtitles::Error::Transcript(
                 engine::transcript::Error::Providers(engine::providers::Error::Ai(Error::Cost))
             ))
         ));
@@ -1990,6 +1995,47 @@ fn registry_caption_admission_refuses_missing_access_setup_bad_ranges_grants_tra
         ),
         ErrorCode::Setup,
     );
+    // Optional setup retains one typed source across access clones and real
+    // caption refusals, without admitting a job or disabling ordinary edits.
+    let engine::RuntimeError::Failed(original) = unavailable.cache().err().unwrap() else {
+        panic!("missing setup envelope")
+    };
+    let cloned = unavailable.clone();
+    let engine::RuntimeError::Failed(reused) = cloned.cache().err().unwrap() else {
+        panic!("missing cloned setup envelope")
+    };
+    assert!(Arc::ptr_eq(&original, &reused));
+    assert!(matches!(
+        (original.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<subtitles::Error>(),
+        Some(subtitles::Error::Providers(
+            engine::providers::Error::ModelMissing("whisper-large-v3-turbo")
+        ))
+    ));
+    assert_eq!(
+        original.to_string(),
+        "local model whisper-large-v3-turbo is not installed"
+    );
+    assert_eq!(original.code(), ErrorCode::Setup);
+    assert!(original.source().is_none());
+    assert!(!original.transient());
+    assert!(!original.job_policy().terminal_cancelled);
+    assert_eq!(original.job_policy().retry_after_seconds, None);
+    let counts = r.counts();
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &cloned,
+            "captions.generate",
+            json!({"asset":1}),
+            "setup-clone",
+        ),
+        ErrorCode::Setup,
+    );
+    assert_eq!(r.counts(), counts);
+    assert!(Arc::ptr_eq(s.project(), &before));
+    assert_eq!(s.history_len(), history);
     s.begin_gesture().unwrap();
     for (id, params) in [
         ("captions.generate", json!({"asset":1})),
@@ -2196,6 +2242,44 @@ fn registry_failed_and_cancelled_windows_preserve_checkpoints_without_partial_re
                 JobState::Cancelled
             }
         );
+        let snapshot = r.snapshot(job).unwrap();
+        let raw = snapshot.error.as_ref().unwrap();
+        if behavior_value == 1 {
+            let Some(subtitles::Error::Transcript(engine::transcript::Error::Ai(
+                source @ Error::Inference,
+            ))) = (raw.as_ref() as &(dyn std::error::Error + 'static))
+                .downcast_ref::<subtitles::Error>()
+            else {
+                panic!("caption producer changed")
+            };
+            assert!(std::ptr::eq(
+                source,
+                raw.source().unwrap().downcast_ref::<Error>().unwrap()
+            ));
+            assert_eq!(raw.to_string(), "AI execution failed");
+            assert_eq!(raw.code(), engine::control::ErrorCode::Ai);
+            assert_eq!(snapshot.attempts, 1);
+        } else {
+            assert!(matches!(
+                (raw.as_ref() as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<engine::RuntimeError>(),
+                Some(engine::RuntimeError::Cancelled)
+            ));
+        }
+        assert!(!raw.transient());
+        assert_eq!(raw.job_policy().retry_after_seconds, None);
+        let listed = r.snapshots().into_iter().find(|row| row.id == job).unwrap();
+        assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+        let event = r
+            .drain_events()
+            .into_iter()
+            .find(|row| row.id == job)
+            .unwrap();
+        assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+        let resync = s.snapshot_and_subscribe(&r).unwrap();
+        assert!(resync.jobs.iter().any(|row| row.id == job
+            && row.error == Some(raw.code())
+            && row.state == snapshot.state));
         assert!(r.output_bytes(job).is_none());
         assert_eq!(s.project(), &before);
         assert_eq!(s.revision(), rev);

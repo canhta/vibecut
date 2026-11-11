@@ -2,8 +2,9 @@
 use super::persistence::{
     burn_subtitles, caption_track_id, ensure_distinct, export_subtitles, resolve_path,
 };
+use super::{Error as SubtitleError, Result as SubtitleResult};
 use super::{SubtitleOutcome, SubtitleRequest};
-use crate::Error as EngineError;
+
 use crate::cache::ArtifactCache;
 use crate::jobs::JobRunner;
 use crate::providers::{ConsentPrompt, Cost, Providers, normalize_target};
@@ -25,11 +26,11 @@ pub fn run(
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<SubtitleOutcome, EngineError> {
+) -> SubtitleResult<SubtitleOutcome> {
     let started = Instant::now();
     cancel.checkpoint()?;
     if request.srt.is_none() && request.burn.is_none() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "no subtitle output requested",
         )));
     }
@@ -39,7 +40,7 @@ pub fn run(
         .duration
         .is_none_or(|value| value <= Tick::ZERO)
     {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "media duration is unknown",
         )));
     }
@@ -50,7 +51,7 @@ pub fn run(
             .iter()
             .any(|stream| stream.kind == media::StreamKind::Video)
     {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "burn-in requires a video stream",
         )));
     }
@@ -70,18 +71,18 @@ pub fn run(
     };
     let target_language = normalize_target(&request.target_language)?;
     if request.bilingual && source_language == target_language {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "bilingual output requires two distinct languages",
         )));
     }
     let need_translation = source_language != target_language;
     if need_translation && providers.translator().is_none() {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "translation provider is required",
         )));
     }
     if !need_translation && request.bilingual {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "bilingual output requires a translation target",
         )));
     }
@@ -133,7 +134,7 @@ pub fn run(
     if let (Some(srt), Some(burn)) = (&request.srt, &request.burn)
         && resolve_path(srt)? == resolve_path(burn)?
     {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "subtitle outputs must differ",
         )));
     }

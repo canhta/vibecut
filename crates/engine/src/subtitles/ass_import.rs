@@ -1,6 +1,7 @@
 //! Prepares ASS caption imports for headless callers.
+use super::{Error as SubtitleError, Result as SubtitleResult};
 
-use crate::{Command, Error as EngineError, NfcText};
+use crate::{Command, NfcText};
 use captions::{AssWarning, LanguageTag, parse_ass};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use std::io::Read;
@@ -35,11 +36,11 @@ pub struct AssImportReport {
 /// Read at most [`captions::ass::MAX_ASS_BYTES`] and build the import command.
 /// No project mutation happens here, so a parse failure leaves the caller's
 /// session untouched.
-pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport, EngineError> {
+pub fn prepare_ass_import(request: &AssImportRequest) -> SubtitleResult<AssImportReport> {
     let bytes = read_bounded(&request.path)?;
     let import = parse_ass(&bytes)?;
     if import.cues.is_empty() {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "no captions in ASS file",
         )));
     }
@@ -48,7 +49,7 @@ pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport,
         .iter()
         .map(|cue| cue.range.end())
         .max()
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(SubtitleError::Edit(crate::session::EditError::Unsupported(
             "no captions in ASS file",
         )))?;
     let path = std::fs::canonicalize(&request.path)?;
@@ -83,15 +84,15 @@ pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport,
     })
 }
 
-fn read_bounded(path: &Path) -> Result<Vec<u8>, EngineError> {
+fn read_bounded(path: &Path) -> SubtitleResult<Vec<u8>> {
     let limit = u64::try_from(captions::ass::MAX_ASS_BYTES)
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| SubtitleError::from(crate::session::wire::ControlError::Limit))?;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)?;
     if bytes.len() > captions::ass::MAX_ASS_BYTES {
-        return Err(EngineError::Control(
+        return Err(SubtitleError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }

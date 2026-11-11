@@ -54,3 +54,7 @@ keep the existing stale-result presentation.
 Translation failures retain the Transcript owner through staging. The existing explicit
 failed-cause presentation also accepts Transcript Runtime Failed, preserving the original
 inner cause and setup labels; Transcript Edit Session stale keeps the stale-result category.
+
+Registered subtitle failures are borrowed from raw Subtitles or engine Subtitles composition,
+then their explicit Transcript, Providers, Runtime or Edit cause. Existing failure presentation
+and stale/setup/cancellation labels keep the original typed causes and scheduling opacity.

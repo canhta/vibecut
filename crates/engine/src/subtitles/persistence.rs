@@ -1,14 +1,15 @@
 //! Publishes subtitle workflow output.
+use super::{Error as SubtitleError, Result as SubtitleResult};
 use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::JobRunner;
 use crate::transcript::{Cancellation, Progress, wait_for_job};
-use crate::{Command, Error as EngineError, Session};
+use crate::{Command, Session};
 use captions::LanguageTag;
 use media::SourceAsset;
 use project::{ItemParams, TrackId};
 use std::path::{Path, PathBuf};
 use time::{Tick, TimeRange};
-pub(super) fn caption_track_id(session: &Session) -> Result<TrackId, EngineError> {
+pub(super) fn caption_track_id(session: &Session) -> crate::session::Result<TrackId> {
     session
         .project()
         .data()
@@ -22,9 +23,7 @@ pub(super) fn caption_track_id(session: &Session) -> Result<TrackId, EngineError
                 .any(|item| matches!(item.content, ItemParams::Caption(_)))
         })
         .map(|track| track.id)
-        .ok_or(EngineError::Edit(crate::EditError::Invalid(
-            "missing caption track",
-        )))
+        .ok_or(crate::session::EditError::Invalid("missing caption track"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -38,7 +37,7 @@ pub(super) fn export_subtitles(
     path: &Path,
     overwrite: bool,
     cancel: &Cancellation,
-) -> Result<(), EngineError> {
+) -> SubtitleResult<()> {
     cancel.checkpoint()?;
     let key = export_key(asset, "srt")?;
     let (id, token) = session.submit_export_command(
@@ -68,7 +67,7 @@ pub(super) fn burn_subtitles(
     portrait: Option<bool>,
     overwrite: bool,
     cancel: &Cancellation,
-) -> Result<(), EngineError> {
+) -> SubtitleResult<()> {
     cancel.checkpoint()?;
     let key = export_key(asset, "burn")?;
     let range = TimeRange::new(Tick::ZERO, duration)?;
@@ -88,7 +87,7 @@ pub(super) fn burn_subtitles(
     Ok(())
 }
 
-fn export_key(asset: &SourceAsset, label: &str) -> Result<CacheKey, EngineError> {
+fn export_key(asset: &SourceAsset, label: &str) -> crate::runtime::Result<CacheKey> {
     let settings = format!("subtitle-cli-v1:{label}");
     CacheKey::new(KeyInputs {
         kind: ArtifactKind::Preview,
@@ -102,26 +101,25 @@ fn export_key(asset: &SourceAsset, label: &str) -> Result<CacheKey, EngineError>
         clip_range: [0; 32],
         translation: [0; 32],
     })
-    .map_err(EngineError::from)
 }
 
-pub(super) fn ensure_distinct(input: &Path, output: &Path) -> Result<(), EngineError> {
+pub(super) fn ensure_distinct(input: &Path, output: &Path) -> SubtitleResult<()> {
     if resolve_path(input)? == resolve_path(output)? {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "output must not replace the input media",
         )));
     }
     Ok(())
 }
-pub(super) fn resolve_path(path: &Path) -> Result<PathBuf, EngineError> {
+pub(super) fn resolve_path(path: &Path) -> SubtitleResult<PathBuf> {
     match std::fs::canonicalize(path) {
         Ok(value) => Ok(value),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let name = path
-                .file_name()
-                .ok_or(EngineError::Edit(crate::EditError::Invalid(
-                    "output path has no file name",
-                )))?;
+            let name =
+                path.file_name()
+                    .ok_or(SubtitleError::Edit(crate::session::EditError::Invalid(
+                        "output path has no file name",
+                    )))?;
             let parent = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())

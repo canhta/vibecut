@@ -47,7 +47,7 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
         cache::{ArtifactCache, CacheRoot},
         providers::{Credentials, DenyUploads, Providers},
     };
-    let open = || -> engine::Result<engine::subtitles::CaptionAccess> {
+    let open = || -> engine::subtitles::Result<engine::subtitles::CaptionAccess> {
         let root = CacheRoot::discover()?.models();
         let (mut cache, _) = ArtifactCache::open(&root, budget, 128)?;
         let providers = Providers::open(

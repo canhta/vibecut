@@ -3,6 +3,7 @@ use super::{
     CaptionAccess,
     outputs::{MAX_CUES, MAX_RESULT_BYTES},
 };
+use super::{Error as SubtitleError, Result as SubtitleResult};
 use crate::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::providers::{CatalogOperation, Cost, UploadRequest, approve_upload, estimate_money};
 use crate::session::wire::{
@@ -13,7 +14,7 @@ use crate::transcript::{
     translation::{TranslationRun, TranslationTarget, window},
     translation_reference,
 };
-use crate::{Command, Error as EngineError, Result, Session, session::wire::TranslationsResult};
+use crate::{Command, Session, session::wire::TranslationsResult};
 use captions::{LanguageTag, NfcText};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -33,7 +34,7 @@ pub(crate) fn translate(
     target: LanguageTag,
     force: bool,
     input: crate::cache::CacheKey,
-) -> Result<JobId> {
+) -> SubtitleResult<JobId> {
     let caption = session
         .project()
         .data()
@@ -42,20 +43,20 @@ pub(crate) fn translate(
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
-        .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+        .ok_or(SubtitleError::Edit(crate::session::EditError::NoItem(item)))?;
     let project::ItemParams::Caption(params) = &caption.content else {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "translation requires caption item",
         )));
     };
     let ids = ids.unwrap_or_else(|| params.cues.cues.iter().map(|c| c.id.clone()).collect());
     if ids.is_empty() || ids.len() > MAX_CUES {
-        return Err(EngineError::Control(
+        return Err(SubtitleError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
     if ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "duplicate translation selection",
         )));
     }
@@ -63,7 +64,7 @@ pub(crate) fn translate(
         .iter()
         .any(|id| !params.cues.cues.iter().any(|c| &c.id == id))
     {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "missing selected cue",
         )));
     }
@@ -79,7 +80,7 @@ pub(crate) fn translate(
         })
         .collect();
     if eligible.is_empty() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(SubtitleError::Edit(crate::session::EditError::Invalid(
             "no unprotected translation selection",
         )));
     }
@@ -98,16 +99,15 @@ pub(crate) fn translate(
         })
         .collect::<crate::transcript::Result<Vec<_>>>()?;
     let (providers, consent) = access.share()?;
-    let translator =
-        providers
-            .translator
-            .clone()
-            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
-                "missing translator",
-            )))?;
-    let mode = providers.translation_mode.clone().ok_or(EngineError::Edit(
-        crate::EditError::Unsupported("missing translation mode"),
+    let translator = providers.translator.clone().ok_or(SubtitleError::Edit(
+        crate::session::EditError::Unsupported("missing translator"),
     ))?;
+    let mode = providers
+        .translation_mode
+        .clone()
+        .ok_or(SubtitleError::Edit(crate::session::EditError::Unsupported(
+            "missing translation mode",
+        )))?;
     let project = session.project().as_ref().clone();
     let session_id = session.session_id().to_owned();
     let revision = session.revision();
@@ -177,7 +177,7 @@ pub(crate) fn translate(
                     .add(&estimate);
                 let bytes = run.run(hooks)?;
                 let translated: ai::Translation = serde_json::from_slice(&bytes).map_err(|_| {
-                    EngineError::Edit(crate::EditError::Invalid(
+                    SubtitleError::Edit(crate::session::EditError::Invalid(
                         "translation response is malformed",
                     ))
                 })?;
@@ -223,9 +223,9 @@ pub(crate) fn translate(
             crate::session::budget(&apply.params)?;
             let frame = crate::session::wire::bounded_json(&apply, MAX_FRAME_BYTES)?;
             parse_frame(&frame)
-                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| SubtitleError::from(crate::session::wire::ControlError::Limit))?;
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
-                .map_err(crate::Error::from)
+                .map_err(SubtitleError::from)
         },
     )?;
     Ok(id)

@@ -625,15 +625,25 @@ impl Subtitles {
         self.error = Some(error.clone());
         let cause: &(dyn std::error::Error + 'static) = error.as_ref();
         let root = cause.downcast_ref::<engine::Error>();
-        let transcript = match root {
-            Some(engine::Error::Transcript(transcript)) => Some(transcript),
-            _ => cause.downcast_ref::<engine::transcript::Error>(),
+        let subtitles = match root {
+            Some(engine::Error::Subtitles(subtitles)) => Some(subtitles),
+            _ => cause.downcast_ref::<engine::subtitles::Error>(),
         };
-        let runtime = match transcript {
-            Some(engine::transcript::Error::Runtime(error)) => Some(error),
+        let transcript = match subtitles {
+            Some(engine::subtitles::Error::Transcript(transcript)) => Some(transcript),
             _ => match root {
-                Some(engine::Error::Runtime(error)) => Some(error),
-                _ => cause.downcast_ref::<engine::RuntimeError>(),
+                Some(engine::Error::Transcript(transcript)) => Some(transcript),
+                _ => cause.downcast_ref::<engine::transcript::Error>(),
+            },
+        };
+        let runtime = match subtitles {
+            Some(engine::subtitles::Error::Runtime(error)) => Some(error),
+            _ => match transcript {
+                Some(engine::transcript::Error::Runtime(error)) => Some(error),
+                _ => match root {
+                    Some(engine::Error::Runtime(error)) => Some(error),
+                    _ => cause.downcast_ref::<engine::RuntimeError>(),
+                },
             },
         };
         if let Some(engine::RuntimeError::Failed(inner)) = runtime {
@@ -645,6 +655,11 @@ impl Subtitles {
             return;
         }
         if matches!(
+            subtitles,
+            Some(engine::subtitles::Error::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            )))
+        ) || matches!(
             transcript,
             Some(engine::transcript::Error::Edit(engine::EditError::Session(
                 engine::SessionError::StaleResult
@@ -678,11 +693,14 @@ impl Subtitles {
             }
             _ => {}
         }
-        let provider = match transcript {
-            Some(engine::transcript::Error::Providers(provider)) => Some(provider),
-            _ => match root {
-                Some(engine::Error::Providers(provider)) => Some(provider),
-                _ => cause.downcast_ref::<engine::providers::Error>(),
+        let provider = match subtitles {
+            Some(engine::subtitles::Error::Providers(provider)) => Some(provider),
+            _ => match transcript {
+                Some(engine::transcript::Error::Providers(provider)) => Some(provider),
+                _ => match root {
+                    Some(engine::Error::Providers(provider)) => Some(provider),
+                    _ => cause.downcast_ref::<engine::providers::Error>(),
+                },
             },
         };
         if let Some(provider) = provider {
