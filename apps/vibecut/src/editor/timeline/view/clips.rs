@@ -1106,7 +1106,10 @@ pub(in crate::editor::timeline) fn item_label(
                 },
             )
             .to_owned(),
-            Some(params.appearance().0.0),
+            Some({
+                let [r, g, b, _] = params.appearance().0.0;
+                [r, g, b, if dark { 90 } else { 60 }]
+            }),
         ),
         ItemParams::Overlay(params) => {
             let [r, g, b, _] = params.color.0;
