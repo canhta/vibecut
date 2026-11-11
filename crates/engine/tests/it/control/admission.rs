@@ -996,10 +996,18 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::EmptyProject, EmptyProject, false),
         row!(E::Invalid("input"), Refused, false),
         row!(E::Unsupported("capability"), Refused, false),
-        row!(E::Panicked, Failed, false),
-        row!(E::TransactionActive, TransactionActive, false),
-        row!(E::NoGesture, TransactionActive, false),
-        row!(E::NoHistory, Refused, false),
+        row!(E::Session(engine::SessionError::Panicked), Failed, false),
+        row!(
+            E::Session(engine::SessionError::TransactionActive),
+            TransactionActive,
+            false
+        ),
+        row!(
+            E::Session(engine::SessionError::NoGesture),
+            TransactionActive,
+            false
+        ),
+        row!(E::Session(engine::SessionError::NoHistory), Refused, false),
         row!(E::IdExhausted, Refused, false),
         row!(E::Runtime(B::IdExhausted), Refused, false),
         row!(E::Project(project::Error::Busy), Busy, false),

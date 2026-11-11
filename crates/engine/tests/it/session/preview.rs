@@ -360,11 +360,17 @@ fn timeline_preview_reversal_preserves_redo_and_retires_created_tracks() {
         }],
     };
     s.apply(preview(4)).unwrap();
-    assert!(matches!(s.saved(), Err(EditError::TransactionActive)));
-    assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
+    assert!(matches!(
+        s.saved(),
+        Err(EditError::Session(engine::SessionError::TransactionActive))
+    ));
+    assert!(matches!(
+        s.undo(),
+        Err(EditError::Session(engine::SessionError::TransactionActive))
+    ));
     assert!(matches!(
         s.begin_gesture(),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     assert!(s.set_selection([ItemId(10)].into()).is_err());
     s.apply(preview(0)).unwrap();

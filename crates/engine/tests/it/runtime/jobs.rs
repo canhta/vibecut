@@ -869,7 +869,7 @@ fn stale_result_rejected_after_edit_undo_save_or_session_switch() {
     ));
     assert!(matches!(
         s.apply_job_result(&current, command()),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     assert_eq!(
         (

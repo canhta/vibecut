@@ -1,16 +1,16 @@
 //! Executes the commands declared `SessionControl`.
 use super::{Session, Snapshot};
-use crate::session::{edit, wire};
+use crate::session::{SessionError, edit, wire};
 use crate::{Command, EditError, Outcome, Result};
 use project::Project;
 use std::sync::Arc;
 
-fn outcome(changed: bool) -> Result<Outcome> {
-    Ok(Outcome {
+fn outcome(changed: bool) -> Outcome {
+    Outcome {
         changed,
         created: Vec::new(),
         placements: Vec::new(),
-    })
+    }
 }
 
 impl Session {
@@ -25,7 +25,9 @@ impl Session {
         match command {
             Command::CopyKeyframes { keys } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 if let Some(payload) = crate::session::clipboard::KeyframeClipboard::capture(
                     self.project().data(),
@@ -43,7 +45,7 @@ impl Session {
                         self.invalidate_revision(false)?;
                     }
                 }
-                outcome(false)
+                Ok(outcome(false))
             }
             Command::TimelineSetRipple { enabled } => self.set_ripple(enabled),
             Command::TimelinePreview { commands } => self.preview(commands, wire, ripple),
@@ -64,7 +66,7 @@ impl Session {
                 if wire {
                     wire::validate_wire(self.project().data())?;
                 }
-                self.start_gesture()
+                Ok(self.start_gesture()?)
             }
             Command::CommitGesture {} | Command::TimelineCommitPreview {} => {
                 if wire {
@@ -88,14 +90,16 @@ impl Session {
 
     fn set_ripple(&mut self, enabled: bool) -> Result<Outcome> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         let changed = self.ripple != enabled;
         self.ripple = enabled;
         if changed {
             self.invalidate_revision(false)?;
         }
-        outcome(changed)
+        Ok(outcome(changed))
     }
 
     /// Replace the staged preview with `commands` applied to the gesture entry.
@@ -107,13 +111,19 @@ impl Session {
                 // The UI may promote its empty pointer gesture, but a
                 // replacement cannot discard an earlier incremental edit.
                 if before.project != self.state.project {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
             } else {
                 self.start_gesture()?;
             }
         }
-        let before = self.gesture.as_ref().ok_or(EditError::NoGesture)?.clone();
+        let before = self
+            .gesture
+            .as_ref()
+            .ok_or(EditError::Session(crate::session::SessionError::NoGesture))?
+            .clone();
         self.state.rewind(before);
         let outcome = self.commit(batch, None, wire, ripple)?;
         self.timeline_preview = true;
@@ -122,7 +132,9 @@ impl Session {
 
     fn switch_scene(&mut self, scene: project::SceneId, wire: bool) -> Result<Outcome> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         if self.project().data().scenes.get(scene).is_none() {
             return Err(EditError::Invalid("scene not found"));
@@ -143,12 +155,14 @@ impl Session {
             self.end_merge();
             self.state.change = Some(self.state.project.clone());
         }
-        outcome(changed)
+        Ok(outcome(changed))
     }
 
     fn set_view_state(&mut self, view: project::ViewState, wire: bool) -> Result<Outcome> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         if wire {
             wire::validate_wire(self.project().data())?;
@@ -159,37 +173,45 @@ impl Session {
         if changed {
             self.invalidate_revision(false)?;
         }
-        outcome(changed)
+        Ok(outcome(changed))
     }
 
-    fn start_gesture(&mut self) -> Result<Outcome> {
+    fn start_gesture(&mut self) -> std::result::Result<Outcome, SessionError> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(SessionError::TransactionActive);
         }
         self.end_merge();
         self.gesture = Some(self.state.clone());
-        outcome(false)
+        Ok(outcome(false))
     }
 
     fn finish_gesture(&mut self) -> Result<Outcome> {
-        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        let before = self
+            .gesture
+            .take()
+            .ok_or(EditError::Session(crate::session::SessionError::NoGesture))?;
         self.timeline_preview = false;
         self.squash(before)
     }
 
     fn revert_gesture(&mut self) -> Result<Outcome> {
-        let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        let before = self
+            .gesture
+            .take()
+            .ok_or(EditError::Session(crate::session::SessionError::NoGesture))?;
         self.timeline_preview = false;
         let changed = *self.state.project != *before.project;
         self.state.rewind(before);
         self.end_merge();
         self.invalidate_revision(false)?;
-        outcome(changed)
+        Ok(outcome(changed))
     }
 
     fn history(&mut self, redo: bool, wire: bool) -> Result<Outcome> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         if wire {
             let candidate = if redo {
@@ -197,7 +219,7 @@ impl Session {
             } else {
                 self.state.undo.back()
             }
-            .ok_or(EditError::NoHistory)?;
+            .ok_or(EditError::Session(crate::session::SessionError::NoHistory))?;
             wire::validate_wire(candidate.project.data())?;
         }
         let mut snapshot = if redo {
@@ -205,7 +227,7 @@ impl Session {
         } else {
             self.state.undo.pop_back()
         }
-        .ok_or(EditError::NoHistory)?;
+        .ok_or(EditError::Session(crate::session::SessionError::NoHistory))?;
         let id = self.project().data().id;
         let current = self.project().data().current_scene_id;
         if snapshot.project.data().id != id
@@ -238,6 +260,6 @@ impl Session {
         }
         self.end_merge();
         self.state.change = Some(self.state.project.clone());
-        outcome(true)
+        Ok(outcome(true))
     }
 }

@@ -51,7 +51,9 @@ impl State {
         blocked: bool,
     ) -> Result<()> {
         if blocked {
-            return Err(Error::Engine(engine::EditError::TransactionActive));
+            return Err(Error::Engine(engine::EditError::Session(
+                engine::SessionError::TransactionActive,
+            )));
         }
         let dialog = self
             .dialog
@@ -63,7 +65,9 @@ impl State {
     /// Retry the failed attempt, propagating a refusal for the caller to report.
     pub(in crate::editor) fn retry(&mut self, project: Arc<Project>, blocked: bool) -> Result<()> {
         if blocked {
-            return Err(Error::Engine(engine::EditError::TransactionActive));
+            return Err(Error::Engine(engine::EditError::Session(
+                engine::SessionError::TransactionActive,
+            )));
         }
         let dialog = self
             .dialog

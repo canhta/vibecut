@@ -139,8 +139,12 @@ mod exit_codes {
                 2
             ),
             row!(E::EmptyProject, "rejected", 5),
-            row!(E::Panicked, "rejected", 5),
-            row!(E::TransactionActive, "rejected", 5),
+            row!(E::Session(engine::SessionError::Panicked), "rejected", 5),
+            row!(
+                E::Session(engine::SessionError::TransactionActive),
+                "rejected",
+                5
+            ),
             row!(E::Project(project::Error::Busy), "busy", 3),
             row!(E::Sounds(S::Auth), "auth", 4),
             row!(E::Sounds(S::Quota), "quota", 4),

@@ -641,7 +641,10 @@ impl ProjectLibrary {
         self.undo_cancellable(&|| false)
     }
     fn undo_cancellable(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        let step = self.undo.back().ok_or(EditError::NoHistory)?;
+        let step = self
+            .undo
+            .back()
+            .ok_or(EditError::Session(crate::session::SessionError::NoHistory))?;
         self.apply_history(step, false, cancelled)?;
         if let Some(step) = self.undo.pop_back() {
             self.redo.push(step);
@@ -652,7 +655,10 @@ impl ProjectLibrary {
         self.redo_cancellable(&|| false)
     }
     fn redo_cancellable(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        let step = self.redo.last().ok_or(EditError::NoHistory)?;
+        let step = self
+            .redo
+            .last()
+            .ok_or(EditError::Session(crate::session::SessionError::NoHistory))?;
         self.apply_history(step, true, cancelled)?;
         if let Some(step) = self.redo.pop() {
             self.undo.push_back(step);

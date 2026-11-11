@@ -261,7 +261,7 @@ fn switch_flushes_pending_and_gestures_cannot_cross_a_boundary() {
     a.session_mut().begin_gesture().unwrap();
     assert!(matches!(
         a.switch(session(2)),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     a.session_mut().cancel_gesture().unwrap();
     a.switch(session(2)).unwrap();

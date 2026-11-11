@@ -32,7 +32,9 @@ pub(crate) fn preview(
     runner: &mut JobRunner,
 ) -> Result<ControlResult> {
     if session.transaction_active() {
-        return Err(EditError::TransactionActive);
+        return Err(EditError::Session(
+            crate::session::SessionError::TransactionActive,
+        ));
     }
     if frames.is_empty() || frames.len() > MAX_PREVIEW_FRAMES {
         return Err(EditError::Control(

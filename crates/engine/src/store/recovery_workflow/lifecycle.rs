@@ -36,7 +36,9 @@ impl Autosave {
             return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.pending_save = Some(path);
         self.tick()
@@ -105,7 +107,9 @@ impl Autosave {
     }
     fn refresh_thumbnail(&mut self) -> crate::Result<()> {
         if self.session.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.flush()?;
         let mut metadata = self.session.metadata().clone();
@@ -158,7 +162,9 @@ impl Autosave {
     /// Failure refuses the boundary; Drop alone never claims to have flushed.
     pub fn flush(&mut self) -> crate::Result<u64> {
         if self.session.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.tick()?;
         while self.flight.is_some() {
