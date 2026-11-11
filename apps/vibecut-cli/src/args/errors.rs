@@ -138,9 +138,12 @@ fn edit_message(error: &(dyn Failure + 'static)) -> String {
     if let Some(providers::Error::ModelMissing(id)) = providers {
         return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
     }
-    let runtime = match root {
-        Some(EngineError::Runtime(error)) => Some(error),
-        _ => cause.downcast_ref::<engine::RuntimeError>(),
+    let runtime = match transcript {
+        Some(engine::transcript::Error::Runtime(error)) => Some(error),
+        _ => match root {
+            Some(EngineError::Runtime(error)) => Some(error),
+            _ => cause.downcast_ref::<engine::RuntimeError>(),
+        },
     };
     match runtime {
         Some(engine::RuntimeError::Failed(inner)) => edit_message(inner.as_ref()),

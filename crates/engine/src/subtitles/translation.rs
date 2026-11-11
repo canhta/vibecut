@@ -96,7 +96,7 @@ pub(crate) fn translate(
                 force,
             )
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<crate::transcript::Result<Vec<_>>>()?;
     let (providers, consent) = access.share()?;
     let translator =
         providers

@@ -1,11 +1,11 @@
-//! Failures of speech acquisition after provider selection.
+//! Failures of source-timed cue acquisition and translation.
 use crate::runtime::Error as RuntimeError;
 use crate::session::{
     EditError,
     wire::{ControlError, ErrorCode, Failure, JobFailurePolicy},
 };
 
-/// Acquisition failures retain their original lower execution and validation causes.
+/// Cue workflows retain their original lower execution and validation causes.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -66,6 +66,12 @@ impl From<time::TimeError> for Error {
 }
 impl From<ControlError> for Error {
     fn from(error: ControlError) -> Self {
+        Self::Edit(error.into())
+    }
+}
+
+impl From<crate::session::SessionError> for Error {
+    fn from(error: crate::session::SessionError) -> Self {
         Self::Edit(error.into())
     }
 }

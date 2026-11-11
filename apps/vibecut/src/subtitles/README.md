@@ -50,3 +50,7 @@ causes are not searched; mixed translation and Session failures keep their origi
 Completed-output application exposes Kernel Edit failures directly; the blocking waiter
 composes missing/stale results through Runtime Edit. Both explicit Session stale shapes
 keep the existing stale-result presentation.
+
+Translation failures retain the Transcript owner through staging. The existing explicit
+failed-cause presentation also accepts Transcript Runtime Failed, preserving the original
+inner cause and setup labels; Transcript Edit Session stale keeps the stale-result category.

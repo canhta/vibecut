@@ -1,6 +1,7 @@
 //! Translates a cue set through the chosen translation provider.
 use super::checkpoints::wait_for_job;
 use super::cues::{build_session, caption_item_id};
+use super::error::{Error as TranscriptError, Result as TranscriptResult};
 use super::operation::{Cancellation, Progress, Stage};
 use super::translation::{TranslationRun, TranslationTarget, window};
 use super::translation_reference;
@@ -9,7 +10,7 @@ use crate::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, TranslationProvider,
     UploadRequest, approve_upload, build_translator, estimate_money,
 };
-use crate::{Command, Error as EngineError, Session};
+use crate::{Command, Session};
 use ai::Money;
 use captions::LanguageTag;
 use captions::{Cue, CueTrack, NfcText};
@@ -44,7 +45,7 @@ pub(crate) fn translate_cues(
     _fingerprint: &NfcText,
     item: project::ItemId,
     cost: &mut Cost,
-) -> Result<(), EngineError> {
+) -> TranscriptResult<()> {
     let ids: Vec<NfcText> = {
         let project = session.project();
         let item = project
@@ -54,21 +55,26 @@ pub(crate) fn translate_cues(
             .iter()
             .flat_map(|track| &track.items)
             .find(|value| value.id == item)
-            .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+            .ok_or(TranscriptError::Edit(crate::session::EditError::NoItem(
+                item,
+            )))?;
         let ItemParams::Caption(params) = &item.content else {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(TranscriptError::Edit(crate::session::EditError::Invalid(
                 "translation requires caption item",
             )));
         };
         params.cues.cues.iter().map(|cue| cue.id.clone()).collect()
     };
     let adapter = SubtitleTranslator {
-        translator: providers.translator.clone().ok_or(EngineError::Edit(
-            crate::EditError::Unsupported("missing translator"),
+        translator: providers.translator.clone().ok_or(TranscriptError::Edit(
+            crate::session::EditError::Unsupported("missing translator"),
         ))?,
-        mode: providers.translation_mode.clone().ok_or(EngineError::Edit(
-            crate::EditError::Unsupported("missing translation mode"),
-        ))?,
+        mode: providers
+            .translation_mode
+            .clone()
+            .ok_or(TranscriptError::Edit(
+                crate::session::EditError::Unsupported("missing translation mode"),
+            ))?,
     };
     translate_selected(
         session,
@@ -91,7 +97,7 @@ impl SubtitleTranslator {
     pub fn open(
         provider: &TranslationProvider,
         credentials: &Credentials,
-    ) -> Result<Self, EngineError> {
+    ) -> TranscriptResult<Self> {
         let (translator, mode) = build_translator(provider, credentials)?;
         Ok(Self { translator, mode })
     }
@@ -116,7 +122,7 @@ pub fn translate_selected(
     cancel: &Cancellation,
     selection: &TranslationSelection,
     cost: &mut Cost,
-) -> Result<(), EngineError> {
+) -> TranscriptResult<()> {
     let item = selection.item;
     if selection.ids.is_empty()
         || selection.ids.len() > crate::session::wire::MAX_TRANSLATION_CUES
@@ -127,7 +133,7 @@ pub fn translate_selected(
             .len()
             != selection.ids.len()
     {
-        return Err(EngineError::Control(
+        return Err(TranscriptError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -188,7 +194,7 @@ pub fn translate_selected(
         cancel.checkpoint()?;
         let translation: ai::Translation =
             serde_json::from_slice(output.bytes()).map_err(|_| {
-                EngineError::Edit(crate::EditError::Invalid(
+                TranscriptError::Edit(crate::session::EditError::Invalid(
                     "translation response is malformed",
                 ))
             })?;
@@ -224,11 +230,11 @@ pub fn translate_track(
     target: &LanguageTag,
     fingerprint: &NfcText,
     cost: &mut Cost,
-) -> Result<CueTrack, EngineError> {
+) -> TranscriptResult<CueTrack> {
     if providers.translator().is_none() {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
-            "translation provider is required",
-        )));
+        return Err(TranscriptError::Edit(
+            crate::session::EditError::Unsupported("translation provider is required"),
+        ));
     }
     let mut session = build_session(asset, cues, duration, false, None)?;
     let item = caption_item_id(&session)?;
@@ -257,7 +263,7 @@ pub fn translate_track(
             ItemParams::Caption(params) => Some(params.cues.clone()),
             _ => None,
         })
-        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+        .ok_or(TranscriptError::Edit(crate::session::EditError::Invalid(
             "missing translated cues",
         )))
 }

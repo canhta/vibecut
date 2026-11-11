@@ -22,7 +22,7 @@ use serde_json::json;
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -112,10 +112,14 @@ fn cues(s: &Session) -> &[Cue] {
 struct Transport {
     calls: AtomicUsize,
     fail_count: usize,
+    cancelled: AtomicBool,
 }
 impl HttpTransport for Transport {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
+        if self.cancelled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
         let wire: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
         let w: TranslationWindow = serde_json::from_str(wire["input"].as_str().unwrap()).unwrap();
         let entries = if call < self.fail_count {
@@ -136,7 +140,7 @@ fn try_run(
     fail_count: usize,
     max_attempts: u8,
     budget: u64,
-) -> Result<(Arc<TranslationRun>, Arc<Transport>), EngineError> {
+) -> engine::transcript::Result<(Arc<TranslationRun>, Arc<Transport>)> {
     let config = OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope =
         Scope::translation(config.clone(), TRANSLATION_MODE.into(), &w, "test".into()).unwrap();
@@ -144,6 +148,7 @@ fn try_run(
     let transport = Arc::new(Transport {
         calls: AtomicUsize::new(0),
         fail_count,
+        cancelled: AtomicBool::new(false),
     });
     let p = Arc::new(
         OpenAiTranslator::new(config, ApiKey::new("test").unwrap(), transport.clone()).unwrap(),
@@ -330,6 +335,7 @@ fn maximum_model_ids_submit_translation_with_exact_consent_and_distinct_cache_ke
             inner: Transport {
                 calls: AtomicUsize::new(0),
                 fail_count: 0,
+                cancelled: AtomicBool::new(false),
             },
         });
         let provider = Arc::new(
@@ -357,7 +363,7 @@ fn maximum_model_ids_submit_translation_with_exact_consent_and_distinct_cache_ke
                 1,
                 None,
             ),
-            Err(EngineError::Ai(Error::Cost))
+            Err(engine::transcript::Error::Ai(Error::Cost))
         ));
         assert_eq!(transport.inner.calls.load(Ordering::Relaxed), 0);
         if let Some(previous) = &previous_acknowledgement {
@@ -413,6 +419,60 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
     assert_eq!(done.state, JobState::Failed);
     assert_eq!(t.calls.load(Ordering::Relaxed), 1);
     assert!(r.take_output(id).is_none());
+    // Translation keeps ordinary AI cancellation opaque, unlike acquisition's
+    // explicit execution bridge. The waiter must retain this natural producer.
+    let (cancelled_run, cancelled_transport) = self::run(&s, selected(&s, false), 0, 1, 1_000_000);
+    cancelled_transport.cancelled.store(true, Ordering::Relaxed);
+    let (cancelled_id, token) = cancelled_run.submit(&mut r, &s).unwrap();
+    let cancelled = pump(&mut r, cancelled_id);
+    assert_eq!((cancelled.state, cancelled.attempts), (JobState::Failed, 1));
+    let raw = cancelled.error.as_ref().unwrap();
+    let Some(engine::transcript::Error::Ai(source @ Error::Cancelled)) = (raw.as_ref()
+        as &(dyn std::error::Error + 'static))
+        .downcast_ref::<engine::transcript::Error>()
+    else {
+        panic!("translation cause changed")
+    };
+    assert!(std::ptr::eq(
+        source,
+        raw.source().unwrap().downcast_ref::<Error>().unwrap()
+    ));
+    assert_eq!(raw.to_string(), "AI execution failed");
+    assert_eq!(raw.code(), engine::control::ErrorCode::Ai);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.job_policy().retry_after_seconds, None);
+    let listed = r
+        .snapshots()
+        .into_iter()
+        .find(|row| row.id == cancelled_id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+    let event = r
+        .drain_events()
+        .into_iter()
+        .find(|row| row.id == cancelled_id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    let resync = s.snapshot_and_subscribe(&r).unwrap();
+    assert!(resync.jobs.iter().any(|row| row.id == cancelled_id
+        && row.error == Some(engine::control::ErrorCode::Ai)
+        && row.state == JobState::Failed));
+    let waited = engine::transcript::wait_for_job(
+        &mut r,
+        cancelled_id,
+        &token,
+        &engine::transcript::SilentProgress,
+        &engine::transcript::Cancellation::new(),
+    )
+    .err()
+    .unwrap();
+    let engine::RuntimeError::Failed(retained) = waited else {
+        panic!("waiter cause changed")
+    };
+    assert!(Arc::ptr_eq(raw, &retained));
+    assert!(r.take_output(cancelled_id).is_none());
+    assert_eq!(cancelled_transport.calls.load(Ordering::Relaxed), 1);
     let (run, _) = self::run(&s, selected(&s, false), 0, 1, 1_000_000);
     let (id, _) = run.submit(&mut r, &s).unwrap();
     s.apply(Command::AddTrack {
@@ -446,11 +506,13 @@ fn operation_budget_covers_all_attempts_before_any_translation_starts() {
     let s = session();
     assert!(matches!(
         try_run(&s, selected(&s, false), 0, 2, 344064),
-        Err(EngineError::Ai(Error::Cost))
+        Err(engine::transcript::Error::Ai(Error::Cost))
     ));
     assert!(matches!(
         try_run(&s, selected(&s, false), 0, 0, 1_000_000),
-        Err(EngineError::Control(engine::control::ControlError::Limit))
+        Err(engine::transcript::Error::Edit(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        )))
     ));
 }
 
@@ -461,7 +523,9 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     stale.segments.first_mut().unwrap().text = "old source".into();
     assert!(matches!(
         try_run(&s, stale, 0, 1, 1_000_000),
-        Err(EngineError::Session(engine::SessionError::StaleResult))
+        Err(engine::transcript::Error::Edit(engine::EditError::Session(
+            engine::SessionError::StaleResult
+        )))
     ));
     let (run, transport) = run(&s, selected(&s, false), 0, 1, 1_000_000);
     s.apply(Command::AddTrack {
@@ -472,7 +536,9 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     .unwrap();
     assert!(matches!(
         run.submit(&mut runner(), &s),
-        Err(EngineError::Session(engine::SessionError::StaleResult))
+        Err(engine::transcript::Error::Edit(engine::EditError::Session(
+            engine::SessionError::StaleResult
+        )))
     ));
     assert_eq!(transport.calls.load(Ordering::Relaxed), 0);
 }
