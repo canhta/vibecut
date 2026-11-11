@@ -33,7 +33,7 @@ their existing storage, budget and cleanup policy.
 Cache location discovery, artifact keys/storage, native model leases/state and maintenance
 return `runtime::Result` directly. `CacheMaintenanceReport::cause` retains the original
 `RuntimeError`, including partial work and cancellation; mixed workflows compose through
-`engine::Error::Runtime` only at their own boundary. Resource IO/Limit/Invalid and cache
+`engine::control::Error::Runtime` only at their own boundary. Resource IO/Limit/Invalid and cache
 failures use their direct Runtime variants. Project atomic-write and unsupported capability
 failures preserve their lower Kernel cause through transparent `RuntimeError::Edit`.
 Native model metadata validation and SHA verification retain `ai::Error` in the consumed
@@ -62,7 +62,7 @@ failures, cache ownership contention and unusable cached artifacts; `RuntimeErro
 `CacheBusy` owns cache writer-lock, native model pin/lease and active-transfer contention:
 its original static diagnostic is `cache is in use`, with code `Refused`, no source and no
 transience. Cache, provider and sound-download callers compose it through the one transparent
-`engine::Error::Runtime` wrapper. It does not authorize automatic retry, reclaim or fallback;
+`engine::control::Error::Runtime` wrapper. It does not authorize automatic retry, reclaim or fallback;
 explicit `Failed` wrappers keep the refusal code and remain nontransient.
 `CacheCorrupt` is source-free, nontransient and classified as `Job`; its static
 message does not authorize fallback. Each artifact consumer owns whether corruption
@@ -70,7 +70,7 @@ means recompute, a failed display or refusal; explicit `Failed` wrappers do not
 change that policy. `QueueFull` owns pending admission refusal
 and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Higher feature, job and Session operations
-compose it through transparent `engine::Error::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
+compose it through transparent `engine::control::Error::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
 transport failures: static message `transient network failure`, `Job`, source-free
 and transient only as a direct runtime variant. All other runtime variants remain
 nontransient. `ModelResponse` owns unusable model-transfer representations and
@@ -82,7 +82,7 @@ without inheriting transience or adding a source-chain link. Only `BudgetFull` p
 Task closures return their declared `Failure` owner through generic `submit` and
 `submit_for_session`. The task adapter erases each returned error once into its actual
 `Arc<dyn Failure>`; execution, retained snapshots and coalesced events share that Arc.
-Existing higher workflows declare their composed `engine::Error`; runtime-generated
+Existing higher workflows declare their composed `engine::control::Error`; runtime-generated
 cancellation, unwind and reservation failures remain direct runtime errors.
 Snapshots retain the raw
 `Arc<dyn Failure>` after typed cancellation/retry decisions; only explicit failed-workflow
@@ -121,7 +121,7 @@ allocation ceilings, not an allocator sandbox or RSS measurement; captured task 
 caller-owned and must be bounded. The preferences owner supplies the aggregate limit.
 
 Scheduler configuration, submission, tick, cancellation and JobContext progress return
-`runtime::Result` directly. Higher feature/control/app boundaries compose their engine result
+`runtime::Result` directly. Higher feature/control/app boundaries compose their Control result
 through ordinary From. `JobNotRetained` owns absent/evicted jobs and missing completed data,
 with the original static diagnostic, its existing wire code, no source or transience.
 `IdExhausted` owns only the checked runtime job counter and classifies as Refused; edit/domain
@@ -131,7 +131,7 @@ progress-lock failures; the synchronous publish callback's own error passes thro
 
 `RunnerConfig` admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000 pending jobs,
 1..=10,000 terminal results and 1..=10 network attempts. Admission checks the sum of declared
-work and maximum result bytes against the aggregate, and a full queue returns `RuntimeError::QueueFull` through the composed engine result.
+work and maximum result bytes against the aggregate, and a full queue returns `RuntimeError::QueueFull` through the composed Control result.
 Resource- or byte-blocked tasks stay queued while other classes run. Result memory is reserved
 before execution and the returned `Vec` capacity must fit that reservation; terminal results keep
 their reservation until taken, dropped or evicted oldest-first, and consumers must handle an
@@ -146,7 +146,7 @@ block workers.
 
 `Cancelled` owns the source-free, nontransient `job cancelled` diagnostic and
 `Cancelled` wire code. `JobContext::check_cancelled` and `begin_publication` return
-the runtime result; ordinary engine callbacks compose it through `engine::Error::Runtime`.
+the runtime result; ordinary engine callbacks compose it through `engine::control::Error::Runtime`.
 Direct runtime cancellation and its transparent root composition publish terminal
 cancellation through the local `Failure::job_policy`. Explicit
 `Failed` and recovery persistence wrappers retain their original causes and remain

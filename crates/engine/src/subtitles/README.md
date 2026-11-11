@@ -8,7 +8,7 @@ Interface: `run`, `prepare_ass_import`, `SubtitleRequest`, `SubtitleOutcome`, `A
 
 The complete subtitle workflows and registered caption jobs return this owner's `Error` and
 `Result`, retaining only consumed Kernel Edit, Runtime, Transcript, Providers, Media, AI and IO
-causes. Higher workflows compose them through `engine::Error::Subtitles`; lower owners never
+causes. Higher workflows compose them through `engine::control::Error::Subtitles`; lower owners never
 name this feature. Foreign AI/Media classification is borrowed from their existing execution
 owners. Direct Runtime policy delegates; semantic Failed envelopes remain opaque.
 

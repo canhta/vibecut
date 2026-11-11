@@ -241,7 +241,7 @@ struct ThumbnailDisk {
     epoch: u64,
 }
 impl ThumbnailDisk {
-    fn take(store: Arc<Mutex<ThumbnailStore>>) -> engine::Result<Self> {
+    fn take(store: Arc<Mutex<ThumbnailStore>>) -> engine::control::Result<Self> {
         let (cache, epoch) = {
             let mut memo = store.lock().map_err(|_| engine::RuntimeError::Poisoned)?;
             (memo.cache.take(), memo.epoch)
@@ -542,7 +542,7 @@ impl ImportQueue {
                                     );
                                 }
                             }
-                            next = next.checked_add(1).ok_or(engine::Error::Control(
+                            next = next.checked_add(1).ok_or(engine::control::Error::Control(
                                 engine::control::ControlError::Limit,
                             ))?;
                             if send.send(ImportEvent::Imported(imported)).is_err() {
@@ -683,7 +683,7 @@ impl ImportQueue {
     }
     /// Thumbnails run as a second registered job after probing, so the library
     /// can show `probing` badges before decode starts.
-    fn start_thumbnails(&mut self) -> std::result::Result<(), engine::Error> {
+    fn start_thumbnails(&mut self) -> std::result::Result<(), engine::control::Error> {
         let assets = std::mem::take(&mut self.pending);
         let total = assets.len();
         self.phase = Phase::Thumbnail;
@@ -782,7 +782,7 @@ pub fn needs_thumbnail(imported: &ImportedSource) -> bool {
 fn job_key(
     kind: ArtifactKind,
     model: &'static str,
-) -> std::result::Result<CacheKey, engine::Error> {
+) -> std::result::Result<CacheKey, engine::control::Error> {
     CacheKey::new(KeyInputs {
         kind,
         source: [0; 32],
@@ -795,16 +795,18 @@ fn job_key(
         clip_range: [0; 32],
         translation: [0; 32],
     })
-    .map_err(engine::Error::from)
+    .map_err(engine::control::Error::from)
 }
 
 fn finish(
     send: &mpsc::SyncSender<ImportEvent>,
     cancelled: bool,
     error: Option<Arc<dyn engine::Failure + 'static>>,
-) -> std::result::Result<Vec<u8>, engine::Error> {
+) -> std::result::Result<Vec<u8>, engine::control::Error> {
     if send.send(ImportEvent::Done { cancelled, error }).is_err() {
-        return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
+        return Err(engine::control::Error::Runtime(
+            engine::RuntimeError::Cancelled,
+        ));
     }
     Ok(Vec::new())
 }

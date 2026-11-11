@@ -121,7 +121,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     };
     let human = document
         .to_text()
-        .map_err(|error| CliError::Engine(engine::Error::Ai(error)))?;
+        .map_err(|error| CliError::Engine(engine::control::Error::Ai(error)))?;
     let value = response_json(&project_path, &access, &document, sidecars.as_ref())?;
     Ok(Output::new(value, human, false, 0))
 }

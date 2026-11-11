@@ -22,7 +22,7 @@ use crate::example_store;
 
 struct Allow;
 impl Policy for Allow {
-    fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
+    fn authorize(&self, _: &Command, _: &Project) -> engine::control::Result<()> {
         Ok(())
     }
 }
@@ -353,12 +353,12 @@ fn sound_commands_return_typed_results_and_never_edit_the_project() {
             .into_control(query.commercial_only))
     };
     let save =
-        |entry: &engine::control::SoundEntry| -> engine::Result<engine::control::SavedSoundEntry> {
+        |entry: &engine::control::SoundEntry| -> engine::control::Result<engine::control::SavedSoundEntry> {
             Ok(library
                 .save(&libraries::sounds::SoundResult::from(entry))?
                 .into())
         };
-    let unsave = |id: u64| -> engine::Result<bool> { Ok(library.unsave(id)?) };
+    let unsave = |id: u64| -> engine::control::Result<bool> { Ok(library.unsave(id)?) };
     let sounds = SoundAccess::new(&search, &save, &unsave);
     let mut s = session();
     let mut r = runner();

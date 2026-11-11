@@ -136,7 +136,7 @@ impl Editor {
             .iter()
             .any(|candidate| candidate.id() == asset && !candidate.ephemeral())
         {
-            return Err(Error::Engine(engine::Error::Edit(
+            return Err(Error::Engine(engine::control::Error::Edit(
                 engine::EditError::NoAsset(asset),
             )));
         }

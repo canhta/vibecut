@@ -2,7 +2,7 @@
 use ai::transport::{
     DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport,
 };
-use engine::{Command, Error as EngineError, Placement, Session};
+use engine::{Command, Placement, Session, control::Error as EngineError};
 use libraries::sounds::{
     PreviewClip, PreviewSink, SearchRequest, SoundClient, SoundDownloads, SoundLibrary,
     SoundPreview, SoundResult, Token, add_saved,
@@ -917,7 +917,7 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| -> Result<Vec<u8>, engine::Error> { panic!("cancelled filler ran") },
+                |_| -> Result<Vec<u8>, engine::control::Error> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(token);

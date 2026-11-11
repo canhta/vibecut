@@ -496,7 +496,7 @@ mod tests {
         use crate::control::{self, Caller, Payload, Policy, ResponseValue};
         struct Allow;
         impl Policy for Allow {
-            fn authorize(&self, _: &crate::Command, _: &Project) -> crate::Result<()> {
+            fn authorize(&self, _: &crate::Command, _: &Project) -> crate::control::Result<()> {
                 Ok(())
             }
         }

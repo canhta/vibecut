@@ -17,33 +17,32 @@ pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Resu
     inbox.poll_projects(|target, inbox, value| {
         let id = target
             .or(workspace.focused_project())
-            .ok_or(engine::Error::Control(
+            .ok_or(engine::control::Error::Control(
                 engine::control::ControlError::SessionGone,
             ))?;
         let window = workspace
             .windows
             .get_mut(&id)
-            .ok_or(engine::Error::Control(
+            .ok_or(engine::control::Error::Control(
                 engine::control::ControlError::SessionGone,
             ))?;
-        let editor =
-            window
-                .editor
-                .as_deref_mut()
-                .ok_or(engine::Error::Edit(engine::EditError::Invalid(
-                    "editor activation",
-                )))?;
+        let editor = window
+            .editor
+            .as_deref_mut()
+            .ok_or(engine::control::Error::Edit(engine::EditError::Invalid(
+                "editor activation",
+            )))?;
         editor
             .activate_with(None, |editor| {
                 Ok(inbox.execute_project(&mut editor.session, value, |_, _| {
-                    Err(engine::Error::Control(
+                    Err(engine::control::Error::Control(
                         engine::control::ControlError::Permission,
                     ))
                 })?)
             })
             .map_err(|error| match error {
                 Error::Engine(error) => error,
-                _ => engine::Error::Edit(engine::EditError::Invalid("editor activation")),
+                _ => engine::control::Error::Edit(engine::EditError::Invalid("editor activation")),
             })
     })?;
     for window in workspace.windows.values_mut() {

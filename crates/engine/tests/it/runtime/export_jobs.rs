@@ -409,7 +409,7 @@ fn cancellation_before_publication_refuses_and_after_commit_point_completes() {
         let stored = Arc::new(std::sync::Mutex::new(None::<CancelToken>));
         let token = stored.clone();
         let (id, cancel) = runner
-            .submit::<engine::Error>(
+            .submit::<engine::control::Error>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,

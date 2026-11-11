@@ -238,7 +238,7 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
         };
         let (id, _) = if composed {
             runner.submit(spec, move |context| {
-                task(context).map_err(engine::Error::from)
+                task(context).map_err(engine::control::Error::from)
             })
         } else {
             runner.submit(spec, task)
@@ -254,8 +254,8 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
         let typed = raw.as_ref() as &(dyn std::error::Error + 'static);
         if composed {
             assert!(matches!(
-                typed.downcast_ref::<engine::Error>(),
-                Some(engine::Error::Library(LibraryError::Runtime(
+                typed.downcast_ref::<engine::control::Error>(),
+                Some(engine::control::Error::Library(LibraryError::Runtime(
                     engine::RuntimeError::Cancelled
                 )))
             ));

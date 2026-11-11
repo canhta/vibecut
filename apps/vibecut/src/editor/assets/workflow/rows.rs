@@ -8,7 +8,7 @@ use crate::i18n;
 
 pub(in crate::editor::assets) fn asset_kind(
     asset: &SourceAsset,
-) -> std::result::Result<TrackKind, engine::Error> {
+) -> std::result::Result<TrackKind, engine::control::Error> {
     if asset
         .probe()
         .streams
@@ -24,9 +24,9 @@ pub(in crate::editor::assets) fn asset_kind(
     {
         Ok(TrackKind::Audio)
     } else {
-        Err(engine::Error::Edit(engine::EditError::Unsupported(
-            "media has no video or audio stream",
-        )))
+        Err(engine::control::Error::Edit(
+            engine::EditError::Unsupported("media has no video or audio stream"),
+        ))
     }
 }
 pub(in crate::editor::assets) fn asset_state_color(state: AssetState, dark: bool) -> Color32 {

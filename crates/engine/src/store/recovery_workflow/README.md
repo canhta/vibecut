@@ -14,7 +14,7 @@ failures. Autosave lifecycle/checkpoint operations and their persistence jobs re
 `recovery::Result`, composing genuine lower Kernel Edit and Runtime causes. Discovery, candidate
 discard and protected export paths retain their direct Recovery Project/IO wrappers; Autosave
 writer operations preserve Project failures through Kernel Edit. Candidate recovery itself
-returns the narrower Kernel edit result. Higher mixed consumers compose `engine::Error::Recovery`;
+returns the narrower Kernel edit result. Higher mixed consumers compose `engine::control::Error::Recovery`;
 no recovery operation imports that aggregate. Direct Runtime policy delegates, while owned
 refusals/Project/IO and sticky persistence envelopes retain ordinary opaque policy. A sticky failure shares an `Arc<dyn Failure>` retaining the original typed cause;
 borrowed standard Error downcasts remain available, and repeated diagnostics share the same

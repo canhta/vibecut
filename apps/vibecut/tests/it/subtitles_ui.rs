@@ -1336,7 +1336,7 @@ impl Workflow for TranslateWorkflow {
         budget: ByteBudget,
         events: &TaskEvents,
         cancel: &Cancellation,
-    ) -> engine::Result<Command> {
+    ) -> engine::control::Result<Command> {
         let Work::Translate {
             project,
             item,
@@ -1786,7 +1786,7 @@ impl Workflow for GenerateWorkflow {
         budget: ByteBudget,
         events: &TaskEvents,
         cancel: &Cancellation,
-    ) -> engine::Result<Command> {
+    ) -> engine::control::Result<Command> {
         let Work::Generate {
             asset,
             range,
@@ -1839,7 +1839,9 @@ impl Workflow for GenerateWorkflow {
             )?;
         }
         if cancel.cancelled() {
-            return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
+            return Err(engine::control::Error::Runtime(
+                engine::RuntimeError::Cancelled,
+            ));
         }
         Ok(Command::InsertItem {
             placement: engine::Placement::Auto,
@@ -1922,7 +1924,7 @@ fn generation_admits_work_with_its_existing_result_lease_before_entering_the_wor
             budget: ByteBudget,
             _: &TaskEvents,
             _: &Cancellation,
-        ) -> engine::Result<Command> {
+        ) -> engine::control::Result<Command> {
             self.0.fetch_add(1, Ordering::Relaxed);
             self.1.store(
                 budget.snapshot().unwrap().limited_used() as usize,

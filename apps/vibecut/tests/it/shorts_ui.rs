@@ -507,7 +507,7 @@ impl Generator for ApprovalGenerator {
         _: ByteBudget,
         events: &TaskEvents,
         _: &Cancellation,
-    ) -> engine::Result<ReviewSource> {
+    ) -> engine::control::Result<ReviewSource> {
         self.entered.lock().unwrap().send(()).unwrap();
         let request = UploadRequest {
             config: ai::ProviderConfig::new(

@@ -1,5 +1,5 @@
 //! Maps typed CLI refusals to stable process diagnostics.
-use engine::{Error as EngineError, Failure, control::ErrorCode, providers};
+use engine::{Failure, control::Error as EngineError, control::ErrorCode, providers};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;

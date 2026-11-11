@@ -9,7 +9,7 @@ guard compares original epoch and revision Arc pointers only. `apply_job_result`
 identity before refusing an active transaction and applying a command. Translation submission,
 recovery adoption and retained Runtime output validation consume the same guard, retaining
 their own transaction/no-output/consent checks and ordering. Higher APIs compose the error
-through `EditError::Session` inside pure editing or `engine::Error::Session` at a mixed
+through `EditError::Session` inside pure editing or `engine::control::Error::Session` at a mixed
 workflow boundary; this is not a new wire tag.
 
 The Session owner fills identity entropy through one crate-visible operation returning
@@ -33,7 +33,7 @@ checkpoint rollback are not bypassed to narrow their signatures.
 
 Pure Kernel methods return `Result<T, EditError>`; the local Result names that one
 owner, never the engine aggregate. EditError has no Runtime/recovery/provider/render/AI
-variant. Higher workflows compose genuine edit errors with `engine::Error::Edit`.
+variant. Higher workflows compose genuine edit errors with `engine::control::Error::Edit`.
 
 `transaction` accepts a caller error `E: From<EditError>` and returns that same E.
 Callback refusal is returned unchanged after rollback; only Kernel admission, squash,

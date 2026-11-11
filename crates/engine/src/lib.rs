@@ -3,7 +3,6 @@
 pub mod control;
 mod session;
 pub(crate) use session::transitions;
-use session::wire::ErrorCode;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{AssetUsage, EditError, FontError, JobTarget, Session, SessionError, SoundError};
 pub use session::{
@@ -59,126 +58,8 @@ pub use ai::clips::{
 pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
 pub use providers::models;
 
-pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
-/// Safe diagnostic categories: never include parameter values or user text.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    Models(#[from] models::Error),
-    #[error(transparent)]
-    Lut(#[from] luts::Error),
-    #[error(transparent)]
-    Library(#[from] library::Error),
-    #[error(transparent)]
-    Edit(#[from] EditError),
-    #[error(transparent)]
-    Control(#[from] control::ControlError),
-
-    #[error(transparent)]
-    Recovery(#[from] recovery::Error),
-    #[error(transparent)]
-    Runtime(#[from] RuntimeError),
-    #[error(transparent)]
-    Session(#[from] SessionError),
-    #[error("render execution failed")]
-    Render(#[from] render::Error),
-    #[error("media operation failed")]
-    Media(#[from] media::MediaError),
-    #[error("AI execution failed")]
-    Ai(#[from] ai::Error),
-    #[error("sound library failed: {0}")]
-    Sounds(#[from] SoundError),
-    #[error("font catalog operation failed")]
-    Font(#[from] FontError),
-    #[error(transparent)]
-    Providers(#[from] providers::Error),
-    #[error(transparent)]
-    Transcript(#[from] transcript::Error),
-    #[error(transparent)]
-    Subtitles(#[from] subtitles::Error),
-    #[error("job/cache IO failed")]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Artifacts(#[from] ArtifactError),
-    #[error(transparent)]
-    Analysis(#[from] AnalysisError),
-}
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub use runtime::{default_file_name, sanitize_file_name};
-
-impl Error {
-    fn classification(&self) -> (ErrorCode, bool) {
-        use ErrorCode as C;
-        let code = match self {
-            Self::Models(inner) => return (inner.code(), inner.transient()),
-            Self::Lut(inner) => return (inner.code(), inner.transient()),
-            Self::Library(inner) => return (inner.code(), inner.transient()),
-            Self::Artifacts(inner) => return (inner.code(), inner.transient()),
-            Self::Analysis(inner) => return (inner.code(), inner.transient()),
-            Self::Runtime(inner) => return (inner.code(), inner.transient()),
-            Self::Session(inner) => return (inner.code(), inner.transient()),
-            Self::Control(inner) => return (inner.code(), inner.transient()),
-            Self::Recovery(inner) => return (inner.code(), inner.transient()),
-            Self::Sounds(inner) => inner.code(),
-            Self::Font(inner) => inner.code(),
-            Self::Providers(inner) => return (inner.code(), inner.transient()),
-            Self::Transcript(inner) => return (inner.code(), inner.transient()),
-            Self::Subtitles(inner) => return (inner.code(), inner.transient()),
-            Self::Render(inner) => inner.code(),
-            Self::Media(error) => error.code(),
-            Self::Ai(inner) => return (inner.code(), inner.transient()),
-            Self::Io(_) => C::Io,
-            Self::Edit(inner) => return (inner.code(), inner.transient()),
-        };
-        (code, false)
-    }
-}
-impl Failure for Error {
-    fn job_policy(&self) -> JobFailurePolicy {
-        match self {
-            Self::Transcript(error) => error.job_policy(),
-            Self::Subtitles(error) => error.job_policy(),
-            Self::Artifacts(error) => error.job_policy(),
-            Self::Analysis(error) => error.job_policy(),
-            Self::Recovery(error) => error.job_policy(),
-            Self::Providers(error) => error.job_policy(),
-            Self::Models(error) => error.job_policy(),
-            Self::Lut(error) => error.job_policy(),
-            Self::Library(error) => error.job_policy(),
-            Self::Edit(error) => error.job_policy(),
-            Self::Runtime(error) => error.job_policy(),
-            Self::Session(error) => error.job_policy(),
-            Self::Control(error) => error.job_policy(),
-            Self::Ai(error) => error.job_policy(),
-            _ => JobFailurePolicy::default(),
-        }
-    }
-    fn code(&self) -> ErrorCode {
-        self.classification().0
-    }
-    fn transient(&self) -> bool {
-        self.classification().1
-    }
-}
-
-impl From<project::Error> for Error {
-    fn from(error: project::Error) -> Self {
-        Self::Edit(error.into())
-    }
-}
-
-impl From<time::TimeError> for Error {
-    fn from(error: time::TimeError) -> Self {
-        Self::Edit(error.into())
-    }
-}
-
-impl From<captions::Error> for Error {
-    fn from(error: captions::Error) -> Self {
-        Self::Edit(error.into())
-    }
-}
+pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 
 pub use artifacts::Error as ArtifactError;
 

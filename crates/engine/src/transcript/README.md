@@ -45,7 +45,7 @@ recognized word carries confidence and their mean is below the fixed floor, `tra
 confidence data never produce this refusal. Both are `transcript::Error`: the acquisition stage
 constructs them, so they are not provider-selection failures. `AutoLanguageUnsupported` stays a
 `providers::Error` composed through Transcript because it refuses a provider capability. Mixed
-callers compose the acquisition result through `engine::Error::Transcript`.
+callers compose the acquisition result through `engine::control::Error::Transcript`.
 
 The desktop consumes `SubtitleTranslator` without opening an ASR adapter or model lease.
 `translate_selected` composes the translation window, request disclosure, `TranslationRun`

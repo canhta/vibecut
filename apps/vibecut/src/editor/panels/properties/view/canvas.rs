@@ -174,7 +174,7 @@ impl Panel<'_, '_> {
         }
         let cause = cache.cause.as_deref();
         let runtime = match cause {
-            Some(engine::Error::Runtime(error)) => Some(error),
+            Some(engine::control::Error::Runtime(error)) => Some(error),
             Some(_) => None,
             None => cache
                 .report
@@ -198,7 +198,9 @@ impl Panel<'_, '_> {
                     }
                     _ if matches!(
                         cause,
-                        Some(engine::Error::Edit(engine::EditError::Unsupported(_)))
+                        Some(engine::control::Error::Edit(
+                            engine::EditError::Unsupported(_)
+                        ))
                     ) =>
                     {
                         Text::CacheUnavailable

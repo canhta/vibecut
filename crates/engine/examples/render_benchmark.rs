@@ -3,7 +3,7 @@ use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, Error as EngineError};
+use engine::{ByteBudget, control::Error as EngineError};
 use std::{
     path::PathBuf,
     sync::Arc,

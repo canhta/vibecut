@@ -10,8 +10,8 @@ record validation returns Kernel EditError. Store-owned open/quota/import/reuse/
 publication consume `luts::Error` / `luts::Result`: transparent Edit/Runtime lower causes,
 owned IO (`job/cache IO failed`) and render (`render execution failed`) sources. Only direct
 Runtime composition forwards transience and scheduling policy; foreign render cancellation
-and explicit Failed stay opaque. Higher workflows compose through `engine::Error::Lut`.
-The artifact import callback also bounds JSON and keeps its real mixed engine result;
+and explicit Failed stay opaque. Higher workflows compose through `engine::control::Error::Lut`.
+The artifact import callback also bounds JSON and keeps its real mixed Control result;
 repair/reuse matches actual direct helper errors without peeling wrappers.
 
 `luts::LutStore` owns durable copied user resources under the process media root's `luts/<ProjectId>/<LutId>` directory. Ordinary artifact eviction never removes them. One store lease and per-content publication leases serialize publishers; quota admission uses no mutex across IO. Admission counts at most 4096 filesystem entries, 1024 bundles and 256 MiB of retained plus pending bytes. Staging conservatively reserves a complete 40 MiB-plus-metadata bundle, releases on every failure/cancel/unwind, and may retain a complete unregistered resource after a stale/evicted result. There is no destructive automatic garbage collector.
@@ -27,7 +27,7 @@ refusals compose transparently through Edit, runtime resource failures through R
 direct IO/media keep their safe static wrapper diagnostics and original source. Classification
 delegates to the declaration owner; only direct Runtime composition forwards its transience
 and scheduling policy. Failed or foreign media cancellation remains opaque. Higher workflows
-compose through `engine::Error::Library` at their own mixed boundary.
+compose through `engine::control::Error::Library` at their own mixed boundary.
 
 `library::ProjectLibrary::open(root, budget)` uses an explicit application-supplied native
 directory, independent of external-file open and save. It holds one exclusive catalog lease;

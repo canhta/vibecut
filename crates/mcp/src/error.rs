@@ -1,5 +1,5 @@
 //! States adapter refusals and the engine or transport failures around them.
-use engine::Error as EngineError;
+use engine::control::Error as EngineError;
 use std::io;
 
 #[derive(Debug, thiserror::Error)]

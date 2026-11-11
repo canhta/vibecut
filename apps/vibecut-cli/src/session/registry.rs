@@ -20,7 +20,7 @@ pub(crate) struct Lent<'a> {
 /// The adapter is the trusted composition root of its own one-shot session.
 struct Trusted;
 impl Policy for Trusted {
-    fn authorize(&self, _: &Command, _: &project::Project) -> engine::Result<()> {
+    fn authorize(&self, _: &Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())
     }
 }

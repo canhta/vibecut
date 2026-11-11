@@ -12,7 +12,7 @@
 `FontStore::native()` takes its named font path from
 [engine runtime's `CacheRoot`](../../../engine/src/runtime/README.md#default-cache-location),
 without reading, creating or fetching anything at construction. Unavailable cache discovery
-returns kernel `engine::EditError::Unsupported` composed through `engine::Error::Edit`; explicit `FontStore::new` roots remain caller-owned.
+returns kernel `engine::EditError::Unsupported` composed through `engine::control::Error::Edit`; explicit `FontStore::new` roots remain caller-owned.
 
 `list(query)` returns one entry per family name, `query` matched case-insensitively as a substring, prefix matches first, then alphabetical. Precedence for a name that appears more than once: bundled, verified custom import, cached download, system install, download not cached yet. `load(family)` registers the family's faces with `text::register` and returns a typed `FontLoad` state (`loaded`, `not_downloaded`, `cache_invalid`, `unknown`) with the `effective_family` layout will use: the resolved family name when loaded, otherwise Inter. Unknown and not-downloaded families are states, not errors, so a project that names a missing font still opens and renders deterministically in Inter; IO failures are errors, and a family whose faces are all unreadable fails. Registration is append-only per process and bounded (256 faces, 32 MiB per file, 256 MiB total); a second file under the same family and style keeps the first.
 

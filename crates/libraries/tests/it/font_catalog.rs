@@ -10,7 +10,8 @@ use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::FontError;
 use engine::control::{FontEntry, FontLoadState, FontOrigin, FontState};
 use engine::{
-    ByteBudget, Error as EngineError,
+    ByteBudget,
+    control::Error as EngineError,
     jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::fonts::{
@@ -517,7 +518,7 @@ fn custom_import_cancels_during_source_read_and_preserves_foreign_store_entries(
             _: &Path,
             _: u64,
             ctx: &engine::jobs::JobContext,
-        ) -> engine::Result<Vec<u8>> {
+        ) -> engine::control::Result<Vec<u8>> {
             self.started.send(()).unwrap();
             self.release
                 .lock()
@@ -1050,7 +1051,7 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| -> Result<Vec<u8>, engine::Error> { panic!("cancelled filler ran") },
+                |_| -> Result<Vec<u8>, engine::control::Error> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(cancel);

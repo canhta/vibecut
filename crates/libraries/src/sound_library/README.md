@@ -13,7 +13,7 @@ Credentials are bring-your-own: `Token::from_env` reads `FREESOUND_API_KEY` in t
 `SoundDownloads` streams through the runner (`JobKind::SoundDownload`, network retries) with HTTPS-only bounded redirects, content-length checks, cancellation before every read and write, and atomic publication; no credential is sent to preview CDN URLs. One download owns the library
 through queue and backoff; another submission composes engine's
 [`RuntimeError::CacheBusy`](../../../engine/src/runtime/README.md#background-jobs-and-byte-policy)
-through `engine::Error::Runtime`. Cancelling or finishing the job releases that ownership.
+through `engine::control::Error::Runtime`. Cancelling or finishing the job releases that ownership.
 
 `sounds.add_to_timeline` takes an asset already in project-owned media and commits it plus the audio item in one undo step; the item stores `sourceType=library` metadata. The `sounds::add_to_timeline`/`add_saved` helpers first copy the cached preview into the caller's project media directory under its content hash (staged, hash-verified, then published through project's destination-admitting atomic writer; reused when present), so unsave, clear-all and URL invalidation only remove cache entries, never a file a project references. The CLI uses `<project file>.media/`; managed projects pass their own `media` directory.
 

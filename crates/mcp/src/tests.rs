@@ -3,7 +3,8 @@
 use super::*;
 use engine::providers::TextAccess;
 use engine::{
-    ByteBudget, Command, Error as EngineError, Session,
+    ByteBudget, Command, Session,
+    control::Error as EngineError,
     control::{self, Policy},
 };
 use rmcp::ServiceExt;

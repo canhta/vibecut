@@ -3,7 +3,8 @@ use super::{Grants, Handler};
 use crate::Error;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
-    ByteBudget, Error as EngineError, Session,
+    ByteBudget, Session,
+    control::Error as EngineError,
     control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
     providers::TextAccess,
@@ -108,8 +109,8 @@ impl Inbox {
     pub fn poll(
         &mut self,
         session: &mut Session,
-        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
-    ) -> engine::Result<()> {
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
+    ) -> engine::control::Result<()> {
         self.runner.tick()?;
         session.observe_jobs(&self.runner);
         let Ok(pending) = self.receive.try_recv() else {
@@ -133,8 +134,12 @@ impl Inbox {
     /// Headless `poll` retains its single-session contract.
     pub fn poll_projects(
         &mut self,
-        dispatch: impl FnOnce(Option<project::ProjectId>, &mut Self, Value) -> engine::Result<Value>,
-    ) -> engine::Result<()> {
+        dispatch: impl FnOnce(
+            Option<project::ProjectId>,
+            &mut Self,
+            Value,
+        ) -> engine::control::Result<Value>,
+    ) -> engine::control::Result<()> {
         self.runner.tick()?;
         for runner in self.projects.values_mut() {
             runner.tick()?;
@@ -181,7 +186,7 @@ impl Inbox {
         &mut self,
         id: project::ProjectId,
         budget: ByteBudget,
-    ) -> engine::Result<()> {
+    ) -> engine::control::Result<()> {
         if let std::collections::btree_map::Entry::Vacant(entry) = self.projects.entry(id) {
             entry.insert(JobRunner::new(
                 RunnerConfig {
@@ -205,8 +210,8 @@ impl Inbox {
         &mut self,
         session: &mut Session,
         value: Value,
-        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
-    ) -> engine::Result<Value> {
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
+    ) -> engine::control::Result<Value> {
         let id = session.project().data().id;
         if !self.projects.contains_key(&id) {
             self.register_project(id, self.budget.child(512 << 20)?)?;
@@ -239,8 +244,8 @@ impl Inbox {
         &mut self,
         session: &mut Session,
         value: Value,
-        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
-    ) -> engine::Result<Value> {
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
+    ) -> engine::control::Result<Value> {
         let Self {
             runner,
             media,
@@ -268,8 +273,8 @@ impl Inbox {
         captions: Option<&engine::subtitles::CaptionAccess>,
         session: &mut Session,
         value: Value,
-        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
-    ) -> engine::Result<Value> {
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
+    ) -> engine::control::Result<Value> {
         let request = control::build_request(session, value)?;
         let caller = Caller {
             principal: "local-mcp",

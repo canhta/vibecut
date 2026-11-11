@@ -6,7 +6,9 @@ use crate::session::wire::{
     API_VERSION, ControlResult, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload, Request,
     Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
 };
-use crate::{Command, Effect, Error as EngineError, Lifecycle, Outcome, Result, Session};
+use crate::{
+    Command, Effect, Lifecycle, Outcome, Session, control::Error as EngineError, control::Result,
+};
 
 impl Session {
     /// Parse a bounded UTF-8 frame, rejecting duplicate keys before dispatch.

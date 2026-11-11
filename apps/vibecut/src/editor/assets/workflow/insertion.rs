@@ -41,18 +41,18 @@ impl Editor {
             let mut audio_at = at;
             for asset in &selected {
                 if unsupported.contains(&asset.id()) {
-                    return Err(engine::Error::Edit(engine::EditError::Unsupported(
-                        "media codec is unsupported in this build",
-                    )));
+                    return Err(engine::control::Error::Edit(
+                        engine::EditError::Unsupported("media codec is unsupported in this build"),
+                    ));
                 }
                 let kind = asset_kind(asset)?;
                 let duration = asset
                     .probe()
                     .duration
                     .filter(|duration| *duration > Tick::ZERO)
-                    .ok_or(engine::Error::Edit(engine::EditError::Unsupported(
-                        "media duration is unavailable",
-                    )))?;
+                    .ok_or(engine::control::Error::Edit(
+                        engine::EditError::Unsupported("media duration is unavailable"),
+                    ))?;
                 let item = NewItem {
                     retime: Default::default(),
                     animations: Default::default(),
@@ -83,9 +83,12 @@ impl Editor {
                     placement: engine::Placement::Auto,
                     item,
                 })?;
-                let placed = outcome.placements.first().ok_or(engine::Error::Edit(
-                    engine::EditError::Invalid("item placement"),
-                ))?;
+                let placed = outcome
+                    .placements
+                    .first()
+                    .ok_or(engine::control::Error::Edit(engine::EditError::Invalid(
+                        "item placement",
+                    )))?;
                 let end = session
                     .project()
                     .data()
@@ -94,7 +97,9 @@ impl Editor {
                     .iter()
                     .find(|track| track.id == placed.track)
                     .and_then(|track| track.items.iter().find(|item| item.id == placed.item))
-                    .ok_or(engine::Error::Edit(engine::EditError::NoItem(placed.item)))?
+                    .ok_or(engine::control::Error::Edit(engine::EditError::NoItem(
+                        placed.item,
+                    )))?
                     .end()?;
                 if kind == TrackKind::Video {
                     video_at = end;
@@ -192,9 +197,9 @@ impl Editor {
                     CreatedId::Item(item) => Some(item),
                     _ => None,
                 })
-                .ok_or(engine::Error::Edit(engine::EditError::Unsupported(
-                    "text item allocation",
-                )))
+                .ok_or(engine::control::Error::Edit(
+                    engine::EditError::Unsupported("text item allocation"),
+                ))
         });
         match result {
             Ok(item) => {

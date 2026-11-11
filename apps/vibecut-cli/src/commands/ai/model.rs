@@ -104,7 +104,7 @@ fn model_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     )?;
     // The CLI's `--yes-download` is the affirmative action that grants the consent token.
     let model = models::catalog_model(&id)?;
-    let consent = models::DownloadConsent::grant(&model).map_err(engine::Error::Ai)?;
+    let consent = models::DownloadConsent::grant(&model).map_err(engine::control::Error::Ai)?;
     let (id, _cancel) = transfers.submit(&mut runner, model, Some(consent))?;
     wait_for_job(&mut runner, id)?;
     runner.shutdown();

@@ -7,7 +7,8 @@ use crate::{Error, Result};
 use ai::transport::HttpTransport;
 use engine::SoundError;
 use engine::{
-    ByteBudget, Error as EngineError,
+    ByteBudget,
+    control::Error as EngineError,
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::sounds::{

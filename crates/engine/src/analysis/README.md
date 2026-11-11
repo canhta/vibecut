@@ -6,7 +6,7 @@ Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapte
 Every workflow here measures source media, never mutates a project, and returns a typed
 `AnalysisError` (re-exported at the engine door). Its `Edit`, `Runtime`, `Providers`,
 `Media`, `Render` and `Ai` causes retain their typed source and existing failure policy;
-higher mixed workflows compose `engine::Error::Analysis`. Kernel-only validation and
+higher mixed workflows compose `engine::control::Error::Analysis`. Kernel-only validation and
 reviewed edits return `EditError`, while cache/key operations and cache-only display
 failures retain `RuntimeError`. Failed-job finishers retain the original shared cause in
 opaque `RuntimeError::Failed` without inheriting cancellation, retry or advisory policy.

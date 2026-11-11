@@ -45,7 +45,7 @@ impl FontStore {
         })?;
         let root = self.root.clone();
         let transport = self.transport.clone();
-        Ok(runner.submit::<engine::Error>(
+        Ok(runner.submit::<engine::control::Error>(
             JobSpec {
                 kind: JobKind::DownloadFont,
                 class: ResourceClass::Network,

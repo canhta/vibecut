@@ -64,7 +64,7 @@ pub enum Error {
     #[error("invalid desktop input: {0}")]
     Invalid(&'static str),
     #[error("engine operation failed")]
-    Engine(#[from] engine::Error),
+    Engine(#[from] engine::control::Error),
     #[error(transparent)]
     Shorts(#[from] ::shorts::Error),
     #[error("AI operation failed")]

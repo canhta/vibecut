@@ -11,8 +11,8 @@ use ai::clips::{
 };
 use ai::{CostEstimate, Money, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
-use engine::Error as EngineError;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+use engine::control::Error as EngineError;
 use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
 use engine::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,

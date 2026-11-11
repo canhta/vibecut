@@ -4,7 +4,7 @@ use engine::control::{
     ResponseValue, registry_hash,
 };
 use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
-use engine::{ByteBudget, Error as EngineError, Session};
+use engine::{ByteBudget, Session, control::Error as EngineError};
 use std::sync::Arc;
 use std::time::Duration;
 pub type FontChoice =
@@ -201,7 +201,7 @@ impl Backend for EngineBackend {
 }
 struct Allow;
 impl Policy for Allow {
-    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::Result<()> {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())
     }
 }

@@ -12,7 +12,7 @@ use engine::control::{
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, Command, Error as EngineError, Session};
+use engine::{ByteBudget, Command, Session, control::Error as EngineError};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
@@ -22,13 +22,13 @@ use time::{FrameRate, SourceRange, Tick};
 
 pub(crate) struct Allow;
 impl Policy for Allow {
-    fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
+    fn authorize(&self, _: &Command, _: &Project) -> engine::control::Result<()> {
         Ok(())
     }
 }
 pub(crate) struct Deny;
 impl Policy for Deny {
-    fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
+    fn authorize(&self, _: &Command, _: &Project) -> engine::control::Result<()> {
         Err(EngineError::Control(
             engine::control::ControlError::Permission,
         ))
@@ -647,7 +647,7 @@ pub(crate) fn key() -> engine::cache::CacheKey {
     .unwrap()
 }
 pub(crate) fn submit(r: &mut JobRunner) -> engine::jobs::JobId {
-    r.submit::<engine::Error>(
+    r.submit::<engine::control::Error>(
         JobSpec {
             kind: JobKind::Import,
             class: ResourceClass::Cpu,
@@ -659,7 +659,9 @@ pub(crate) fn submit(r: &mut JobRunner) -> engine::jobs::JobId {
     .unwrap()
     .0
 }
-pub(crate) fn fake_fonts_list(_: Option<&str>) -> engine::Result<Vec<engine::control::FontEntry>> {
+pub(crate) fn fake_fonts_list(
+    _: Option<&str>,
+) -> engine::control::Result<Vec<engine::control::FontEntry>> {
     Ok(vec![engine::control::FontEntry {
         family: "Inter".into(),
         origin: engine::control::FontOrigin::Bundled,
@@ -670,7 +672,7 @@ pub(crate) fn fake_fonts_list(_: Option<&str>) -> engine::Result<Vec<engine::con
         download_bytes: None,
     }])
 }
-pub(crate) fn fake_fonts_load(family: &str) -> engine::Result<engine::control::FontLoad> {
+pub(crate) fn fake_fonts_load(family: &str) -> engine::control::Result<engine::control::FontLoad> {
     Ok(engine::control::FontLoad {
         family: family.into(),
         state: engine::control::FontLoadState::Loaded,
@@ -683,7 +685,7 @@ pub(crate) fn fake_fonts_download(
     runner: &mut JobRunner,
     _: &str,
     accepted: bool,
-) -> engine::Result<engine::jobs::JobId> {
+) -> engine::control::Result<engine::jobs::JobId> {
     if !accepted {
         return Err(engine::providers::Error::ConsentRequired.into());
     }
@@ -702,9 +704,9 @@ fn fake_fonts_import(
     runner: &mut JobRunner,
     _: &std::path::Path,
     accepted: bool,
-) -> engine::Result<engine::jobs::JobId> {
+) -> engine::control::Result<engine::jobs::JobId> {
     if !accepted {
-        return Err(engine::Error::Control(
+        return Err(engine::control::Error::Control(
             engine::control::ControlError::Permission,
         ));
     }
@@ -712,7 +714,7 @@ fn fake_fonts_import(
 }
 pub(crate) fn fake_sound_search(
     query: &engine::control::SoundQuery,
-) -> engine::Result<engine::control::SoundPage> {
+) -> engine::control::Result<engine::control::SoundPage> {
     Ok(engine::control::SoundPage {
         source: engine::control::SoundSource::Local,
         count: 0,
@@ -725,7 +727,7 @@ pub(crate) fn fake_sound_search(
 }
 pub(crate) fn fake_sound_save(
     sound: &engine::control::SoundEntry,
-) -> engine::Result<engine::control::SavedSoundEntry> {
+) -> engine::control::Result<engine::control::SavedSoundEntry> {
     Ok(engine::control::SavedSoundEntry {
         id: sound.id,
         saved_at_unix_ms: 0,
@@ -733,7 +735,7 @@ pub(crate) fn fake_sound_save(
         licence: sound.licence.clone(),
     })
 }
-pub(crate) fn fake_sound_unsave(_: u64) -> engine::Result<bool> {
+pub(crate) fn fake_sound_unsave(_: u64) -> engine::control::Result<bool> {
     Ok(true)
 }
 /// Synthetic capability for registry dispatch; real-library coverage lives in `libraries`.

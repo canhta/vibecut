@@ -9,7 +9,7 @@ use engine::control::{
     Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
 };
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::{Command, Error as EngineError, Session, control};
+use engine::{Command, Session, control, control::Error as EngineError};
 use project::{Project, WriterLease};
 use serde_json::{Value, json};
 use std::io;
@@ -28,7 +28,7 @@ impl Policy for ControlPolicy {
         self.allow_overwrite
     }
 
-    fn authorize(&self, command: &Command, _: &Project) -> engine::Result<()> {
+    fn authorize(&self, command: &Command, _: &Project) -> engine::control::Result<()> {
         if !self.allow_overwrite
             && command
                 .published_path()

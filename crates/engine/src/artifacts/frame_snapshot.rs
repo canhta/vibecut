@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         let cause: std::sync::Arc<dyn crate::Failure> =
-            std::sync::Arc::new(crate::Error::Ai(ai::Error::RateLimit {
+            std::sync::Arc::new(crate::control::Error::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3),
             }));
         for unwinds in [false, true] {
@@ -313,7 +313,7 @@ mod tests {
                     project::atomic::Overwrite::Replace,
                     64,
                     &project::atomic::Fs,
-                    |writer| -> crate::Result<()> {
+                    |writer| -> crate::control::Result<()> {
                         writer.write_all(b"partial callback bytes")?;
                         if unwinds {
                             panic!("injected mixed writer unwind");
@@ -331,8 +331,9 @@ mod tests {
                 assert!(!error.transient());
                 assert!(!error.job_policy().terminal_cancelled);
                 assert_eq!(error.job_policy().retry_after_seconds, None);
-                let crate::Error::Recovery(crate::recovery::Error::PersistenceFailed(original)) =
-                    error
+                let crate::control::Error::Recovery(crate::recovery::Error::PersistenceFailed(
+                    original,
+                )) = error
                 else {
                     panic!("writer error was normalized")
                 };

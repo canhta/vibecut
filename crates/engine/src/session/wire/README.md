@@ -16,11 +16,11 @@ parameters and command limits, as well as schema/session/revision, permission, r
 and resynchronization failures. JSON budgeting, wire-integer validation, frame parsing,
 bounded serialization and command-reference generation return this narrow owner error;
 command decoding retains its mixed result because edit-budget checks also refuse domain
-operations. `control` re-exports it; the root error composes it transparently.
+operations. `control` re-exports it; the top Control error composes it transparently.
 This Rust boundary does not change serialized error codes or the catalog.
 
 Pure editing declares `EditError` at the Kernel edit owner, including lower project/time/
-caption classification and static source wrappers. Mixed `engine::Error::Edit` delegates;
+caption classification and static source wrappers. Mixed `engine::control::Error::Edit` delegates;
 wire categories and schemas do not encode either Rust enum namespace.
 
 `Failure` states code and retry eligibility at the error's declaration owner.

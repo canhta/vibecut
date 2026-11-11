@@ -3,7 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
 use crate::session::{Context, Edit, History, WritePolicy, run_leased};
-use engine::{CreatedId, Error as EngineError};
+use engine::{CreatedId, control::Error as EngineError};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;

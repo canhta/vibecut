@@ -23,7 +23,7 @@ Engine owns the command registry, control admission, revisions, receipts, job po
 ## Entry points
 
 Control refusals, strict frame parsing and bounded response serialization use
-`engine::control::ControlError`, composed through `engine::Error` where the adapter
+`engine::control::ControlError`, composed through `engine::control::Error` where the adapter
 also handles IO or other owner failures. Pure Session errors compose through its `Edit` variant. Output destination roles
 and pre-resolution spelling admission belong to [MCP control](../../docs/product/agent-control/mcp.md).
 

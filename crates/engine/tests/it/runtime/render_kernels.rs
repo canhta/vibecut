@@ -3,7 +3,7 @@ use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, Error as EngineError};
+use engine::{ByteBudget, control::Error as EngineError};
 use render::ExecutionHooks;
 use std::{
     sync::{
@@ -45,7 +45,7 @@ fn execute(
     })
     .unwrap();
     let (id, _) = runner
-        .submit::<engine::Error>(
+        .submit::<engine::control::Error>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,

@@ -33,7 +33,7 @@ pub enum Error {
     #[error(transparent)]
     Ai(#[from] ai::Error),
     #[error(transparent)]
-    Engine(#[from] engine::Error),
+    Engine(#[from] engine::control::Error),
     #[error("invalid options: {0}")]
     Options(String),
     #[error("missing transcript: {0}")]

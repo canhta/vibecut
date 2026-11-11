@@ -408,7 +408,7 @@ impl Editor {
                         .iter()
                         .any(|t| t.items.iter().any(|i| i.id == item))
                     {
-                        return Err(Error::Engine(engine::Error::Edit(
+                        return Err(Error::Engine(engine::control::Error::Edit(
                             engine::EditError::NoItem(item),
                         )));
                     }

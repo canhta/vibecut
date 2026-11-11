@@ -2,7 +2,7 @@
 use crate::error::{BoundaryFailure, Error, Result as ShortsResult};
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, Transcript};
-use engine::{Error as EngineError, Result};
+use engine::{control::Error as EngineError, control::Result};
 use media::SpeechEnergyWindow;
 use serde::Serialize;
 use time::{FrameRate, SourceRange, Tick};

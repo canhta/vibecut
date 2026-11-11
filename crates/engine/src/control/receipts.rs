@@ -1,14 +1,16 @@
 //! Retains idempotent control outcomes.
+use crate::Session;
 use crate::session::wire::{
     ControlError, MAX_RECEIPT_BYTES, MAX_RECEIPTS, RECEIPT_RESERVATION, Receipt, Request, Response,
 };
-use crate::{Error as EngineError, Result, Session};
 use serde_json::json;
-pub(super) fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
+pub(super) fn control_fingerprint(
+    request: &Request,
+) -> std::result::Result<blake3::Hash, ControlError> {
     Ok(blake3::hash(
         &serde_json::to_vec(&json!({"command":request.command,"params":request.params,
             "base_rev":request.base_rev,"api_version":request.api_version,"registry_hash":request.registry_hash,"session_id":request.session_id}))
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?,
+        .map_err(|_| ControlError::InvalidParams)?,
     ))
 }
 
@@ -53,9 +55,9 @@ impl Session {
         key: (String, String),
         fingerprint: blake3::Hash,
         response: &Response,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), ControlError> {
         let bytes = serde_json::to_vec(response)
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?
+            .map_err(|_| ControlError::InvalidParams)?
             .len()
             + key.0.len()
             + key.1.len()

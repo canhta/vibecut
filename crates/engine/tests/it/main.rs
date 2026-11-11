@@ -16,7 +16,9 @@ mod transcript;
 pub(crate) mod wire {
     use engine::control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue};
     use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-    use engine::{ByteBudget, Command, Error as EngineError, Outcome, Result, Session};
+    use engine::{
+        ByteBudget, Command, Outcome, Session, control::Error as EngineError, control::Result,
+    };
     use serde_json::Value;
     use std::sync::{
         Arc,

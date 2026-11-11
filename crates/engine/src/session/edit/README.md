@@ -78,7 +78,7 @@ and its shifts publish as one undo step ([`close_vacated_tails`](clips.rs),
 and the crate. Its Result covers pure editing: safe-ID/static refusals and actual lower
 ControlError, SessionError, project, time and caption sources. Project IO/busy/conflict/media
 refinements are classified here, as are the static Project/Time/Captions wrapper diagnostics;
-higher engine workflows delegate through `engine::Error::Edit`. Commands perform no IO or retries.
+higher engine workflows delegate through `engine::control::Error::Edit`. Commands perform no IO or retries.
 
 ## Text animation
 

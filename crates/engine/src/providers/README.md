@@ -9,11 +9,11 @@ Interface: `Providers`, `Credentials`, `Error`, `Result`, `ConsentPrompt`, `Text
 missing provider credential, auto-detection on a provider that is not local whisper.cpp, and a
 remote upload without consent. Display states the fact only, never a command to run: the CLI adds
 its `vibecut-cli model download <id>` hint and the desktop renders its own text from the variant.
-Callers that still return the engine aggregate wrap it as `engine::Error::Providers`; the wire maps consent
+Callers that still return the engine aggregate wrap it as `engine::control::Error::Providers`; the wire maps consent
 to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-language to `Refused`.
 
 Selection, credentials, catalog/adapters, scopes, disclosures, consent and text access consume
-this owner’s Result. Mixed workflows compose through transparent `engine::Error::Providers`;
+this owner’s Result. Mixed workflows compose through transparent `engine::control::Error::Providers`;
 model transfers retain their separate `models::Error`. Kernel Edit (including consumed
 caption/Control validation), Runtime resource failures and direct AI failures retain their
 original sources and safe messages. Runtime and direct AI delegate their existing transience
@@ -77,11 +77,11 @@ fingerprint and result validation.
 
 `models::ModelTransfers` composes JobRunner, ArtifactCache and ai's shared streaming transport.
 `open_default` uses [runtime's `CacheRoot::models()`](../runtime/README.md#default-cache-location);
-unavailable discovery returns kernel `engine::EditError::Unsupported` composed through `engine::Error::Edit`. `new` accepts an already owned cache and injected
+unavailable discovery returns kernel `engine::EditError::Unsupported` composed through `engine::control::Error::Edit`. `new` accepts an already owned cache and injected
 `ModelIo`. The runner must share that cache's ByteBudget. There is one active transfer per cache,
 including queue and backoff; another submission or removal during that ownership returns
 [`RuntimeError::CacheBusy`](../runtime/README.md#background-jobs-and-byte-policy) through
-`engine::Error::Runtime`, as does removal while a native model lease is live. State mutexes cover
+`engine::control::Error::Runtime`, as does removal while a native model lease is live. State mutexes cover
 ownership changes only, never network, file IO or verification.
 
 `submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt, and reports
@@ -118,7 +118,7 @@ return their model-transfer error, preserving consent, retry and publication pol
 The `models` door exposes the ModelTransfers-owned Error/Result, separate from provider
 selection errors and catalog lookup. Open, verified lookup, submit, remove and their owned
 work consume that result; model jobs retain their actual producer through one erasure.
-Mixed higher workflows compose through transparent `engine::Error::Models`. Kernel Edit,
+Mixed higher workflows compose through transparent `engine::control::Error::Models`. Kernel Edit,
 Runtime cache/transfer/native Model failures, direct AI consent/integrity and owned IO keep
 their typed sources, safe diagnostics and existing classification. Only explicit Runtime
 and direct AI compositions delegate their existing transience/job policy; Runtime Transfer,

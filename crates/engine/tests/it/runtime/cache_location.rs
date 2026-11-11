@@ -1,8 +1,9 @@
 //! Default cache discovery through the public runtime and consumer boundaries.
 use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::{
-    ByteBudget, Error as EngineError,
+    ByteBudget,
     cache::{ArtifactCache, CacheRoot},
+    control::Error as EngineError,
     control::MediaAccess,
     models::ModelTransfers,
 };
@@ -141,7 +142,7 @@ impl DownloadTransport for Offline {
     }
 }
 
-fn unsupported<T>(result: engine::Result<T>) {
+fn unsupported<T>(result: engine::control::Result<T>) {
     assert!(matches!(
         result,
         Err(EngineError::Runtime(engine::RuntimeError::Edit(
@@ -172,7 +173,7 @@ fn cache_location_child() {
         unsupported(CacheRoot::discover().map_err(EngineError::from));
         unsupported(
             ModelTransfers::open_default(budget.clone(), 8, offline.clone())
-                .map_err(engine::Error::from),
+                .map_err(engine::control::Error::from),
         );
         unsupported(MediaAccess::open(budget));
     } else {
