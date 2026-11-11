@@ -1000,7 +1000,7 @@ fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
             let outward = if start { 1020 } else { 1080 };
             let mut direct = Session::new(caption_project(), 10).unwrap();
             direct.apply(caption_trim(start, outward)).unwrap();
-            let drag = |s: &mut Session| -> engine::Result<()> {
+            let drag = |s: &mut Session| -> engine::control::Result<()> {
                 for at in [inward, outward] {
                     if mode == "merged" {
                         s.apply_merged(caption_trim(start, at), Some("trim"))?;
@@ -1058,7 +1058,7 @@ fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
 fn explicit_caption_edits_replace_retained_gesture_content_and_refusals_roll_back() {
     for group in [false, true] {
         let mut s = Session::new(caption_project(), 10).unwrap();
-        let run = |s: &mut Session| -> engine::Result<()> {
+        let run = |s: &mut Session| -> engine::control::Result<()> {
             s.apply(caption_trim(false, 1050))?;
             let mut content = get(s, 1).content.clone();
             let ItemParams::Caption(params) = &mut content else {

@@ -117,7 +117,7 @@ impl State {
             }))
             .is_err()
             {
-                let _ = failure.send(Event::Failed(engine::Error::Runtime(
+                let _ = failure.send(Event::Failed(engine::control::Error::Runtime(
                     engine::RuntimeError::WorkerPanicked,
                 )));
             }

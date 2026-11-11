@@ -334,9 +334,9 @@ impl ExportDialog {
                 self.cancelling = false;
                 let unavailable = failure.as_deref().and_then(|error| {
                     let raw = error as &(dyn std::error::Error + 'static);
-                    match raw.downcast_ref::<engine::Error>() {
-                        Some(engine::Error::Render(render::Error::Unavailable(items)))
-                        | Some(engine::Error::Runtime(engine::RuntimeError::Render(
+                    match raw.downcast_ref::<engine::control::Error>() {
+                        Some(engine::control::Error::Render(render::Error::Unavailable(items)))
+                        | Some(engine::control::Error::Runtime(engine::RuntimeError::Render(
                             render::Error::Unavailable(items),
                         ))) => Some(items),
                         _ => match raw.downcast_ref::<engine::RuntimeError>() {
@@ -923,7 +923,7 @@ fn unavailable_details(
 }
 
 fn export_failure(error: &(dyn engine::Failure + 'static)) -> Text {
-    use engine::{Error as E, RuntimeError as B};
+    use engine::{RuntimeError as B, control::Error as E};
     use render::Error as R;
     let cause: &(dyn std::error::Error + 'static) = error;
     let root = cause.downcast_ref::<E>();

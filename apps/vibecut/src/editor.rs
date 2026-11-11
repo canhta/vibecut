@@ -501,7 +501,7 @@ impl Editor {
         options: dialogs::export::ExportOptions,
     ) -> Result<()> {
         if self.session.transaction_active() {
-            return Err(Error::Engine(engine::Error::Session(
+            return Err(Error::Engine(engine::control::Error::Session(
                 engine::SessionError::TransactionActive,
             )));
         }
@@ -631,9 +631,9 @@ impl Editor {
         let at = self.playback.position()?;
         if let Err(error) = crate::services::preview::copy(&self.session, at, ctx) {
             self.player.snapshot.error = Some(match &error {
-                Error::Engine(engine::Error::Artifacts(engine::ArtifactError::EmptyProject)) => {
-                    engine::control::ErrorCode::EmptyProject
-                }
+                Error::Engine(engine::control::Error::Artifacts(
+                    engine::ArtifactError::EmptyProject,
+                )) => engine::control::ErrorCode::EmptyProject,
                 _ => engine::control::ErrorCode::Failed,
             });
             self.desk().fail(error.to_string());

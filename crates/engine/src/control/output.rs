@@ -1,7 +1,7 @@
 //! Decodes the data a completed job returns through `job_status`.
 use crate::jobs::JobKind;
 use crate::session::wire::JobOutput;
-use crate::{Error as EngineError, Result};
+use crate::{control::Error as EngineError, control::Result};
 
 /// The output of a completed `kind` from the runner's retained bytes. The match names
 /// every [`JobKind`], so a new kind does not compile until it states what it returns.

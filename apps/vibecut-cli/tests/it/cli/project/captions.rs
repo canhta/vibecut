@@ -284,11 +284,15 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
 
     struct CancelOnly;
     impl Policy for CancelOnly {
-        fn authorize(&self, command: &engine::Command, _: &project::Project) -> engine::Result<()> {
+        fn authorize(
+            &self,
+            command: &engine::Command,
+            _: &project::Project,
+        ) -> engine::control::Result<()> {
             if matches!(command, engine::Command::JobCancel { .. }) {
                 Ok(())
             } else {
-                Err(engine::Error::Control(
+                Err(engine::control::Error::Control(
                     engine::control::ControlError::Permission,
                 ))
             }

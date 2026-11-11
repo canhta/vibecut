@@ -668,7 +668,9 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
     // A second owner would have to refuse: the desktop keeps the only open.
     assert!(matches!(
         engine::control::MediaAccess::open_in(cache.path(), budget.clone()),
-        Err(engine::Error::Runtime(engine::RuntimeError::CacheBusy))
+        Err(engine::control::Error::Runtime(
+            engine::RuntimeError::CacheBusy
+        ))
     ));
     let history = session.history_len();
     let source_bytes = std::fs::read(asset.path()).unwrap();
@@ -687,7 +689,9 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
     assert_eq!(requests.len(), 1, "one automatic corruption recovery");
     assert!(matches!(
         media.cache_ui().cause.as_deref(),
-        Some(engine::Error::Runtime(engine::RuntimeError::CacheCorrupt))
+        Some(engine::control::Error::Runtime(
+            engine::RuntimeError::CacheCorrupt
+        ))
     ));
     for request in requests {
         media.generate(&mut session, request).unwrap();
@@ -1448,7 +1452,9 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         .request_cache(CacheAction::Refresh);
     assert!(matches!(
         harness.state().media.cache_ui().cause.as_deref(),
-        Some(engine::Error::Runtime(engine::RuntimeError::CacheBusy))
+        Some(engine::control::Error::Runtime(
+            engine::RuntimeError::CacheBusy
+        ))
     ));
     assert_eq!(
         harness.state().media.cache_ui().report.unwrap().disk_bytes,
@@ -1483,7 +1489,9 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
     detached.request_cache(CacheAction::Refresh);
     assert!(matches!(
         detached.cache_ui().cause.as_deref(),
-        Some(engine::Error::Edit(engine::EditError::Unsupported(_)))
+        Some(engine::control::Error::Edit(
+            engine::EditError::Unsupported(_)
+        ))
     ));
 }
 
@@ -1584,9 +1592,9 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
             );
             assert!(matches!(
                 media.cache_ui().cause.as_deref(),
-                Some(engine::Error::Artifacts(engine::ArtifactError::Runtime(
-                    engine::RuntimeError::CacheCorrupt
-                )))
+                Some(engine::control::Error::Artifacts(
+                    engine::ArtifactError::Runtime(engine::RuntimeError::CacheCorrupt)
+                ))
             ));
         }
         if commit {

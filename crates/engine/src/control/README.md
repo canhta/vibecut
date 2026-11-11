@@ -7,6 +7,19 @@ Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control
 `Caller.sounds` lend the process asset libraries and `Caller.chapters` lends the process
 `TextAccess`; `Caller.captions` lends [caption workflow resources](../subtitles/README.md#caption-workflow-commands).
 
+`Error` and `Result` belong to this top composition owner; the engine root only wires
+lower interfaces and exposes no aggregate error facade. The aggregate retains each existing
+owned cause, safe diagnostic, source and delegated policy. Lower Kernel/Runtime/features
+never depend on it; natural jobs retain their own producer types. Heterogeneous publication,
+font/sound callbacks and trusted Policy callbacks use this mixed result. The access-presence
+guards themselves return the existing FontError or Kernel EditError.
+
+`MediaAccess` setup composes Runtime caches and the durable LUT store; maintenance composes
+Runtime resources with the protocol entry bound. Waveform and scene generation/display return
+Analysis results, and thumbnail generation/display return Artifact results. Its finisher
+composes those features. `snapshot_and_subscribe` returns only Kernel `SessionError`; its
+transaction refusal precedes observation and leaves state and runner events unchanged.
+
 ## Control admission, revisions and receipts
 
 `control::{Request, Caller, Policy, Response}` is the transport-neutral boundary; the envelopes,
@@ -18,8 +31,9 @@ version; catalog reads need no digest.
 
 `ControlError` is the kernel wire owner's typed refusal, re-exported here.
 `build_request`, `Session::check_receipt_capacity`, `replay_receipt` and `events` return it directly;
-workflows with mixed failures compose it through the transparent root error.
-`Policy::authorize` retains its heterogeneous engine result so trusted policies can
+`control_fingerprint` and `store_receipt` also return it directly. Mixed workflows
+compose it through this owner’s transparent `control::Error::Control`.
+`Policy::authorize` retains its heterogeneous `control::Result` so trusted policies can
 report their actual owner failures.
 
 Effectful requests require `base_rev`; a revision that is not current refuses with
@@ -31,7 +45,7 @@ a project change; its refusal receipt can be replayed.
 `Session::control_typed` is the in-process adapter entry: the same bounds, admission, receipts
 and events as `control_request`, but an execution refusal keeps its typed cause so the adapter
 can map the exit codes its own transport documents. These mixed methods use
-`engine::Error`; pure Session command failures compose through its `Edit` variant,
+`control::Error` / `control::Result`; pure Session command failures compose through its `Edit` variant,
 while direct control/runtime/provider refusals keep their actual owner composition. Wire callers use `control_request` and see
 only the closed `ErrorCode`.
 

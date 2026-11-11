@@ -30,7 +30,7 @@ mod exit_codes {
     }
     #[test]
     fn engine_and_sound_diagnostics_keep_exact_labels_and_exits() {
-        use engine::{Error as E, SoundError as S, providers::Error as P};
+        use engine::{SoundError as S, control::Error as E, providers::Error as P};
         use std::sync::Arc;
         type Case = (fn() -> E, (&'static str, u8));
         macro_rules! row {

@@ -165,12 +165,12 @@ impl Generator for Once {
         _: ByteBudget,
         _: &TaskEvents,
         _: &Cancellation,
-    ) -> engine::Result<ReviewSource> {
+    ) -> engine::control::Result<ReviewSource> {
         self.0
             .lock()
             .unwrap()
             .take()
-            .ok_or(engine::Error::Edit(engine::EditError::Invalid(
+            .ok_or(engine::control::Error::Edit(engine::EditError::Invalid(
                 "fixture already consumed",
             )))
     }

@@ -1005,7 +1005,7 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
         .unwrap_err();
     assert!(matches!(
         error,
-        vibecut::Error::Engine(engine::Error::Edit(engine::EditError::Invalid(
+        vibecut::Error::Engine(engine::control::Error::Edit(engine::EditError::Invalid(
             "snapshot write failed"
         )))
     ));

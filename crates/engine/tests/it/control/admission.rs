@@ -10,7 +10,7 @@ use crate::support::control::{
 };
 use engine::control::{self, Caller, ControlResult, ErrorCode, Payload, ResponseValue};
 use engine::jobs::JobRunner;
-use engine::{Command, Error as EngineError, Session, registry};
+use engine::{Command, Session, control::Error as EngineError, registry};
 use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
 use serde_json::{Value, json};
 use time::{SourceRange, Tick};
@@ -811,10 +811,10 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
 fn owner_failures_classify_publication_receipts_and_events() {
     use ErrorCode as C;
     use engine::recovery::Error as R;
-    use engine::{Error as E, RuntimeError as B};
     use engine::{
         Failure, FontError as F, SoundError as S, providers::Error as P, transcript::Error as T,
     };
+    use engine::{RuntimeError as B, control::Error as E};
     use std::{io, sync::Arc};
     macro_rules! row {
         ($e:expr, $c:ident, $t:expr) => {

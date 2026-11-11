@@ -10,7 +10,7 @@ Artifact result, preserving the actual typed cause. It returns at most 16 KiB of
 
 Mixed artifact operations and their jobs return the Artifact result with only consumed
 Kernel Edit, Runtime, Render, Media, AI, IO and Lut causes. Higher workflows compose it through
-`engine::Error::Artifacts`; lower owners never name this feature. Foreign execution classifiers
+`engine::control::Error::Artifacts`; lower owners never name this feature. Foreign execution classifiers
 are borrowed from their existing owners. Direct Runtime/Lut/AI policy delegates; foreign
 render/media cancellation and semantic Failed envelopes remain ordinary opaque failures.
 

@@ -25,11 +25,13 @@ impl vibecut::shorts::Generator for Hold {
         _budget: ByteBudget,
         _events: &vibecut::shorts::TaskEvents,
         cancel: &engine::transcript::Cancellation,
-    ) -> engine::Result<vibecut::shorts::ReviewSource> {
+    ) -> engine::control::Result<vibecut::shorts::ReviewSource> {
         while !cancel.cancelled() {
             std::thread::sleep(Duration::from_millis(20));
         }
-        Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
+        Err(engine::control::Error::Runtime(
+            engine::RuntimeError::Cancelled,
+        ))
     }
 }
 

@@ -41,9 +41,10 @@ Entry points: use [Session commands](src/session/README.md#public-entry-points) 
 
 Pure Session editing returns the Kernel's `EditError`, declared with `AssetUsage` in
 `session/edit.rs` and re-exported publicly. It knows only edit refusals and lower
-Control/Session/project/time/caption failures. `engine::Error` is the mixed workflow
-aggregate; `engine::Result<T>` uses that aggregate and composes edit failures through
-`Error::Edit`. Specific project/time/caption conversions follow the same edit owner,
+Control/Session/project/time/caption failures. The top [Control owner](src/control/README.md) declares the mixed workflow
+`engine::control::Error`; `engine::control::Result<T>` uses that aggregate and composes edit failures through
+`control::Error::Edit`. The root has no aggregate Error/Result declaration or re-export.
+Specific project/time/caption conversions follow the same edit owner,
 so classification and source wrappers are declared once.
 
 Both errors retain typed sources and implement the wire's

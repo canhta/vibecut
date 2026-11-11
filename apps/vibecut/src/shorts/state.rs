@@ -97,7 +97,7 @@ pub trait Generator: Send + Sync + 'static {
         budget: ByteBudget,
         events: &TaskEvents,
         cancel: &Cancellation,
-    ) -> engine::Result<ReviewSource>;
+    ) -> engine::control::Result<ReviewSource>;
 }
 pub use crate::services::ai_task::TaskEvents;
 pub(super) struct Generating {
@@ -517,7 +517,9 @@ impl State {
             move |ctx| {
                 ctx.check_cancelled()?;
                 if worker_cancel.cancelled() {
-                    return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
+                    return Err(engine::control::Error::Runtime(
+                        engine::RuntimeError::Cancelled,
+                    ));
                 }
                 match generator.run(
                     request.clone(),
@@ -526,15 +528,19 @@ impl State {
                     &worker_cancel,
                 ) {
                     Ok(source) => {
-                        send.send(Ok(source))
-                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
+                        send.send(Ok(source)).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(Error::Worker(error.clone())))
-                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
-                        Err(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
+                        send.send(Err(Error::Worker(error.clone()))).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
+                        Err(engine::control::Error::Runtime(
+                            engine::RuntimeError::Failed(error),
+                        ))
                     }
                 }
             },
@@ -779,7 +785,7 @@ impl State {
             .ok_or(Error::Invalid("segment index"))?
             .range = SourceRange::new(start, end)?;
         let profile = captions::LanguageRegistry::standard()
-            .map_err(engine::Error::from)?
+            .map_err(engine::control::Error::from)?
             .profile(&source.transcript.source_lang)
             .clone();
         let snapped = snap_clip_boundaries(
@@ -1056,15 +1062,15 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
 
 pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
     let cause = error as &(dyn std::error::Error + 'static);
-    let root = cause.downcast_ref::<engine::Error>();
+    let root = cause.downcast_ref::<engine::control::Error>();
     let transcript = match root {
-        Some(engine::Error::Transcript(transcript)) => Some(transcript),
+        Some(engine::control::Error::Transcript(transcript)) => Some(transcript),
         _ => cause.downcast_ref::<engine::transcript::Error>(),
     };
     let provider = match transcript {
         Some(engine::transcript::Error::Providers(provider)) => Some(provider),
         _ => match root {
-            Some(engine::Error::Providers(provider)) => Some(provider),
+            Some(engine::control::Error::Providers(provider)) => Some(provider),
             _ => cause.downcast_ref::<engine::providers::Error>(),
         },
     };
@@ -1085,7 +1091,7 @@ pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
         _ => match provider {
             Some(engine::providers::Error::Runtime(runtime)) => Some(runtime),
             _ => match root {
-                Some(engine::Error::Runtime(runtime)) => Some(runtime),
+                Some(engine::control::Error::Runtime(runtime)) => Some(runtime),
                 _ => cause.downcast_ref::<engine::RuntimeError>(),
             },
         },
@@ -1105,13 +1111,15 @@ pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
         return Text::ShortsError;
     };
     match error {
-        engine::Error::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
-        engine::Error::Render(render::Error::Unavailable(_)) => Text::ShortsSourceUnavailable,
-        engine::Error::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        engine::control::Error::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
+        engine::control::Error::Render(render::Error::Unavailable(_)) => {
+            Text::ShortsSourceUnavailable
+        }
+        engine::control::Error::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             Text::ShortsOutputExists
         }
-        engine::Error::Edit(engine::EditError::Project(project::Error::Io(e)))
-        | engine::Error::Render(
+        engine::control::Error::Edit(engine::EditError::Project(project::Error::Io(e)))
+        | engine::control::Error::Render(
             render::Error::Io(e) | render::Error::Project(project::Error::Io(e)),
         ) if e.kind() == std::io::ErrorKind::AlreadyExists => Text::ShortsOutputExists,
         _ => Text::ShortsError,

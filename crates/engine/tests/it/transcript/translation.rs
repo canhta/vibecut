@@ -11,7 +11,8 @@ use ai::{
 };
 use captions::{Cue, CueText, CueTrack, LanguageTag};
 use engine::{
-    ByteBudget, Command, Error as EngineError, Session,
+    ByteBudget, Command, Session,
+    control::Error as EngineError,
     jobs::*,
     translation::{self, TranslationRun, TranslationTarget},
 };

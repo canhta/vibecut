@@ -23,7 +23,7 @@ impl render::ExecutionHooks for Hooks {
 
 struct Allow;
 impl Policy for Allow {
-    fn authorize(&self, _: &Command, _: &Project) -> engine::Result<()> {
+    fn authorize(&self, _: &Command, _: &Project) -> engine::control::Result<()> {
         Ok(())
     }
 }

@@ -1177,7 +1177,7 @@ fn labelled_preview_preserves_production_picture_outside_the_label_band() {
     let mut r = runner();
     let project = s.project().clone();
     let (reference, _) = r
-        .submit::<engine::Error>(
+        .submit::<engine::control::Error>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,
@@ -1321,7 +1321,7 @@ fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
         calls.set(calls.get() + 1);
         Ok(Vec::new())
     };
-    let load = |_: &str| -> engine::Result<engine::control::FontLoad> {
+    let load = |_: &str| -> engine::control::Result<engine::control::FontLoad> {
         calls.set(calls.get() + 1);
         Err(engine::FontError::Catalog.into())
     };

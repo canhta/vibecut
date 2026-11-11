@@ -34,7 +34,7 @@ pub(crate) enum CachePhase {
 pub(crate) struct CacheUi {
     pub(crate) phase: CachePhase,
     pub(crate) report: Option<std::sync::Arc<engine::cache::CacheMaintenanceReport>>,
-    pub(crate) cause: Option<std::sync::Arc<engine::Error>>,
+    pub(crate) cause: Option<std::sync::Arc<engine::control::Error>>,
     pub(crate) checked: Option<std::time::Instant>,
 }
 impl Default for CacheUi {
@@ -261,7 +261,7 @@ impl<'a> Desk<'a> {
     /// The transaction entry for callers that propagate the failure.
     pub(in crate::editor) fn transaction_result<T>(
         &mut self,
-        run: impl FnOnce(&mut engine::Session) -> engine::Result<T>,
+        run: impl FnOnce(&mut engine::Session) -> engine::control::Result<T>,
     ) -> crate::Result<T> {
         if !self.select() {
             return Err(crate::Error::Invalid("selection"));

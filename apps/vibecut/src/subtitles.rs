@@ -151,14 +151,14 @@ pub trait Workflow: Send + Sync + 'static {
         budget: ByteBudget,
         events: &TaskEvents,
         cancel: &Cancellation,
-    ) -> engine::Result<Command>;
+    ) -> engine::control::Result<Command>;
 }
 struct Active {
     id: JobId,
     token: CancelToken,
     cancel: Cancellation,
     events: Arc<TaskEvents>,
-    receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::Error>>>,
+    receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::control::Error>>>,
 }
 #[derive(Clone, Debug)]
 pub struct Inspection {
@@ -421,15 +421,19 @@ impl Subtitles {
                     worker.run(work.clone(), budget.clone(), &worker_events, &worker_cancel);
                 match result {
                     Ok(command) => {
-                        send.send(Ok(command))
-                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
+                        send.send(Ok(command)).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(error.clone()))
-                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
-                        Err(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
+                        send.send(Err(error.clone())).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
+                        Err(engine::control::Error::Runtime(
+                            engine::RuntimeError::Failed(error),
+                        ))
                     }
                 }
             },
@@ -566,9 +570,9 @@ impl Subtitles {
                 self.problem = Some(Text::ShortsJobCancelled);
             } else {
                 let result = active.receive.try_recv().unwrap_or_else(|_| {
-                    Err(Arc::new(engine::Error::Edit(engine::EditError::Invalid(
-                        "subtitle worker terminated",
-                    ))))
+                    Err(Arc::new(engine::control::Error::Edit(
+                        engine::EditError::Invalid("subtitle worker terminated"),
+                    )))
                 });
                 match result {
                     Ok(command) => {
@@ -624,15 +628,15 @@ impl Subtitles {
     fn fail(&mut self, error: Arc<dyn engine::Failure + 'static>) {
         self.error = Some(error.clone());
         let cause: &(dyn std::error::Error + 'static) = error.as_ref();
-        let root = cause.downcast_ref::<engine::Error>();
+        let root = cause.downcast_ref::<engine::control::Error>();
         let subtitles = match root {
-            Some(engine::Error::Subtitles(subtitles)) => Some(subtitles),
+            Some(engine::control::Error::Subtitles(subtitles)) => Some(subtitles),
             _ => cause.downcast_ref::<engine::subtitles::Error>(),
         };
         let transcript = match subtitles {
             Some(engine::subtitles::Error::Transcript(transcript)) => Some(transcript),
             _ => match root {
-                Some(engine::Error::Transcript(transcript)) => Some(transcript),
+                Some(engine::control::Error::Transcript(transcript)) => Some(transcript),
                 _ => cause.downcast_ref::<engine::transcript::Error>(),
             },
         };
@@ -641,7 +645,7 @@ impl Subtitles {
             _ => match transcript {
                 Some(engine::transcript::Error::Runtime(error)) => Some(error),
                 _ => match root {
-                    Some(engine::Error::Runtime(error)) => Some(error),
+                    Some(engine::control::Error::Runtime(error)) => Some(error),
                     _ => cause.downcast_ref::<engine::RuntimeError>(),
                 },
             },
@@ -698,7 +702,7 @@ impl Subtitles {
             _ => match transcript {
                 Some(engine::transcript::Error::Providers(provider)) => Some(provider),
                 _ => match root {
-                    Some(engine::Error::Providers(provider)) => Some(provider),
+                    Some(engine::control::Error::Providers(provider)) => Some(provider),
                     _ => cause.downcast_ref::<engine::providers::Error>(),
                 },
             },
@@ -720,11 +724,11 @@ impl Subtitles {
             return;
         }
         self.problem = Some(match root {
-            Some(engine::Error::Session(engine::SessionError::StaleResult))
-            | Some(engine::Error::Edit(engine::EditError::Session(
+            Some(engine::control::Error::Session(engine::SessionError::StaleResult))
+            | Some(engine::control::Error::Edit(engine::EditError::Session(
                 engine::SessionError::StaleResult,
             ))) => Text::SubStale,
-            Some(engine::Error::Runtime(engine::RuntimeError::Cancelled)) => {
+            Some(engine::control::Error::Runtime(engine::RuntimeError::Cancelled)) => {
                 Text::ShortsJobCancelled
             }
             _ => Text::SubFailed,
@@ -829,7 +833,7 @@ fn terminal(state: JobState) -> bool {
         JobState::Completed | JobState::Cancelled | JobState::Failed
     )
 }
-fn key() -> engine::Result<CacheKey> {
+fn key() -> engine::control::Result<CacheKey> {
     CacheKey::new(KeyInputs {
         kind: ArtifactKind::Cues,
         source: [0; 32],
@@ -842,7 +846,7 @@ fn key() -> engine::Result<CacheKey> {
         clip_range: [0; 32],
         translation: [0; 32],
     })
-    .map_err(engine::Error::from)
+    .map_err(engine::control::Error::from)
 }
 
 fn draft_text<'a>(

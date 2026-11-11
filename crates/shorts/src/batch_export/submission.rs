@@ -169,7 +169,7 @@ fn submit_clip(
     let published = clip.published.clone();
     let sources = clip.sources.clone();
     let range = TimeRange::new(Tick::ZERO, clip.duration)?;
-    Ok(runner.submit::<engine::Error>(
+    Ok(runner.submit::<engine::control::Error>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,

@@ -7,7 +7,7 @@
 )]
 use crate::support::control::{Allow, add, caller, error, ok, request, run, runner, session};
 use engine::control::{self, ControlResult, ErrorCode, Payload, Request};
-use engine::{Command, Error as EngineError, Session};
+use engine::{Command, Session, control::Error as EngineError};
 use project::ProjectId;
 use serde_json::{Value, json};
 
@@ -61,7 +61,7 @@ fn revision_and_job_target_share_ui_save_preview_undo_and_rollback_boundaries() 
     s.transaction(|_| Ok::<(), engine::EditError>(())).unwrap();
     assert_ne!(s.revision(), before);
     let before = s.revision();
-    let result: engine::Result<()> = s.transaction(|s| {
+    let result: engine::control::Result<()> = s.transaction(|s| {
         s.apply(Command::RenameProject {
             name: "preview".into(),
         })?;

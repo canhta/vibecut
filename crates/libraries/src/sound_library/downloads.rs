@@ -40,7 +40,7 @@ impl SoundDownloads {
         &self,
         runner: &mut JobRunner,
         source: &str,
-    ) -> engine::Result<(JobId, CancelToken)> {
+    ) -> engine::control::Result<(JobId, CancelToken)> {
         if !url(source) {
             return Err(Error::Invalid("sound URL").into());
         }

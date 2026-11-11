@@ -1,6 +1,6 @@
 //! Holds the trusted command-line grants that bound every MCP client request.
 use crate::Error;
-use engine::{Command, Error as EngineError, GrantClass, control::Policy};
+use engine::{Command, GrantClass, control::Error as EngineError, control::Policy};
 use std::path::{Path, PathBuf};
 
 /// Trusted command-line grants. A client request can never broaden them.
@@ -37,7 +37,7 @@ impl Grants {
         overwrite: bool,
         directory: bool,
         project: &project::Project,
-    ) -> engine::Result<()> {
+    ) -> engine::control::Result<()> {
         let root = self.output.as_ref().ok_or(EngineError::Control(
             engine::control::ControlError::Permission,
         ))?;
@@ -100,7 +100,11 @@ impl Policy for Grants {
     /// The class comes from the command's declaration; this adapter only maps each
     /// class to its trusted grant. Source paths stay human-established capabilities:
     /// a caller-provided SourceAsset would otherwise be a file-read primitive.
-    fn authorize(&self, command: &Command, project: &project::Project) -> engine::Result<()> {
+    fn authorize(
+        &self,
+        command: &Command,
+        project: &project::Project,
+    ) -> engine::control::Result<()> {
         match command.grant() {
             Some(GrantClass::Agent) => Ok(()),
             Some(GrantClass::Output) => {

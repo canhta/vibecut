@@ -6,7 +6,8 @@
 use super::playback::Frame;
 use crate::{Error, Result, egui};
 use engine::{
-    ByteBudget, Error as EngineError, Session,
+    ByteBudget, Session,
+    control::Error as EngineError,
     control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
 };
@@ -211,7 +212,7 @@ impl Policy for Allow {
         true
     }
 
-    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::Result<()> {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())
     }
 }

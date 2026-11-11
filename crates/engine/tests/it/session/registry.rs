@@ -142,7 +142,9 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     }
     assert!(matches!(
         crate::wire::run(&mut s, "batch", nested),
-        Err(engine::Error::Control(engine::control::ControlError::Limit))
+        Err(engine::control::Error::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     let command = Command::Batch {
         commands: vec![Command::Delete { items: vec![] }; 1025],

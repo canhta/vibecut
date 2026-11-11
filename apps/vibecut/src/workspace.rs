@@ -11,8 +11,9 @@ use crate::{
     services::playback::{Files, Playback},
 };
 use engine::{
-    ByteBudget, Command, Error as EngineError, Session,
+    ByteBudget, Command, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
+    control::Error as EngineError,
     jobs::{
         JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
         SystemClock,
@@ -1165,7 +1166,7 @@ impl EditorWindow {
             translation: [0; 32],
         })?;
         let worker_input = input.clone();
-        let submitted = self.runner.borrow_mut().submit::<engine::Error>(
+        let submitted = self.runner.borrow_mut().submit::<engine::control::Error>(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -1909,7 +1910,7 @@ mod tests {
                 let (id, cancel) = window
                     .runner
                     .borrow_mut()
-                    .submit::<engine::Error>(
+                    .submit::<engine::control::Error>(
                         JobSpec {
                             kind: JobKind::Persist,
                             class: ResourceClass::Cpu,

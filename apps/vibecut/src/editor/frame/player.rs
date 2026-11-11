@@ -118,7 +118,7 @@ impl Editor {
     pub(in crate::editor) fn open_snapshot_dialog(&mut self) -> Result<()> {
         if self.session.project().duration() == Tick::ZERO {
             self.player.snapshot.error = Some(engine::control::ErrorCode::EmptyProject);
-            return Err(Error::Engine(engine::Error::Artifacts(
+            return Err(Error::Engine(engine::control::Error::Artifacts(
                 engine::ArtifactError::EmptyProject,
             )));
         }

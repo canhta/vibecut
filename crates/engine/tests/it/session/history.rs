@@ -452,17 +452,22 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
     let mut s = Session::new(project(), 1).unwrap();
     let before = s.project().clone();
     let history = s.history_len();
-    let cause: Arc<dyn engine::Failure> = Arc::new(engine::Error::Ai(ai::Error::RateLimit {
-        retry_after_seconds: Some(3),
-    }));
+    let cause: Arc<dyn engine::Failure> =
+        Arc::new(engine::control::Error::Ai(ai::Error::RateLimit {
+            retry_after_seconds: Some(3),
+        }));
     let expected = cause.clone();
-    let result: engine::Result<()> = s.transaction(move |group| {
+    let result: engine::control::Result<()> = s.transaction(move |group| {
         group.apply(Command::RenameProject {
             name: "discarded".into(),
         })?;
-        Err(engine::Error::Runtime(engine::RuntimeError::Failed(cause)))
+        Err(engine::control::Error::Runtime(
+            engine::RuntimeError::Failed(cause),
+        ))
     });
-    let engine::Error::Runtime(engine::RuntimeError::Failed(returned)) = result.unwrap_err() else {
+    let engine::control::Error::Runtime(engine::RuntimeError::Failed(returned)) =
+        result.unwrap_err()
+    else {
         panic!("mixed callback cause changed")
     };
     assert!(Arc::ptr_eq(&returned, &expected));

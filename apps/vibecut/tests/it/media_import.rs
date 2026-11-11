@@ -477,7 +477,7 @@ fn import_batches_are_capped_and_require_shared_budget_admission() {
     let mut tiny_queue = ImportQueue::new(tiny.clone()).unwrap();
     assert!(matches!(
         tiny_queue.start(vec!["/tmp/review-1.mp4".into()], 1),
-        Err(Error::Engine(engine::Error::Runtime(
+        Err(Error::Engine(engine::control::Error::Runtime(
             engine::RuntimeError::ArtifactTooLarge
         )))
     ));

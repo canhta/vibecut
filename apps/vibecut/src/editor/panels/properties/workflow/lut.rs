@@ -27,7 +27,7 @@ struct Capture {
 }
 struct Human;
 impl engine::control::Policy for Human {
-    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::Result<()> {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())
     }
 }
@@ -250,7 +250,9 @@ impl State {
             JobState::Failed | JobState::Cancelled => {
                 self.lut.capture = None;
                 return Err(snapshot.error.map_or(Error::Cancelled, |error| {
-                    Error::Engine(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
+                    Error::Engine(engine::control::Error::Runtime(
+                        engine::RuntimeError::Failed(error),
+                    ))
                 }));
             }
             _ => {}

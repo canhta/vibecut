@@ -8,8 +8,9 @@ use ai::{
     transport::{DownloadTransport, HttpStreamResponse},
 };
 use engine::{
-    ByteBudget, ByteOwner, Error as EngineError,
+    ByteBudget, ByteOwner,
     cache::ArtifactCache,
+    control::Error as EngineError,
     jobs::*,
     models::{Error as ModelsError, ModelIo, ModelTransfers, SystemModelIo},
 };
@@ -823,7 +824,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
     let mut fillers = Vec::new();
     for _ in 0..2 {
         let (_, token) = runner
-            .submit::<engine::Error>(
+            .submit::<engine::control::Error>(
                 JobSpec {
                     kind: JobKind::DownloadModel,
                     class: ResourceClass::Network,
@@ -903,7 +904,7 @@ fn publication_seal_prevents_a_cancelled_job_from_claiming_success_after_promoti
     let token_slot = Arc::new(Mutex::new(None::<CancelToken>));
     let slot = token_slot.clone();
     let (id, token) = r
-        .submit::<engine::Error>(
+        .submit::<engine::control::Error>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,

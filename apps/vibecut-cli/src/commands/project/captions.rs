@@ -3,7 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::{Output, json_path};
 use crate::session::{Context, Edit, History, WritePolicy, run_leased};
-use engine::{Error as EngineError, NfcText};
+use engine::{NfcText, control::Error as EngineError};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;

@@ -132,7 +132,7 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
         Err(error) => {
             let text = if matches!(
                 &error,
-                crate::Error::Engine(engine::Error::Edit(engine::EditError::Project(
+                crate::Error::Engine(engine::control::Error::Edit(engine::EditError::Project(
                     project::Error::TooLarge(_)
                 )))
             ) {

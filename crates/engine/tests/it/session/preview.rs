@@ -498,14 +498,16 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
     )
     .unwrap();
     let mut target = None;
-    let result: engine::Result<()> = session.transaction(|s| {
+    let result: engine::control::Result<()> = session.transaction(|s| {
         s.apply(engine::Command::AddTrack {
             placement: engine::TrackPlacement::Auto,
             name: "".into(),
             kind: project::TrackKind::Video,
         })?;
         target = Some(s.job_target());
-        Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
+        Err(engine::control::Error::Runtime(
+            engine::RuntimeError::Cancelled,
+        ))
     });
     assert!(result.is_err());
     assert!(

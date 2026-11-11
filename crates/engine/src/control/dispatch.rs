@@ -5,7 +5,7 @@ use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
     ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
 };
-use crate::{Command, Error as EngineError, Result, Session, registry};
+use crate::{Command, Session, control::Error as EngineError, control::Result, registry};
 
 impl From<ProviderOption> for ProviderView {
     fn from(p: ProviderOption) -> Self {
@@ -27,14 +27,17 @@ impl From<ProviderOption> for ProviderView {
         }
     }
 }
-fn font_access<'a>(caller: &Caller<'a>) -> Result<&'a super::FontAccess<'a>> {
-    caller.fonts.ok_or(crate::FontError::Unavailable.into())
+fn font_access<'a>(
+    caller: &Caller<'a>,
+) -> std::result::Result<&'a super::FontAccess<'a>, crate::FontError> {
+    caller.fonts.ok_or(crate::FontError::Unavailable)
 }
-fn sound_access<'a>(caller: &Caller<'a>) -> Result<&'a super::SoundAccess<'a>> {
-    caller
-        .sounds
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported("sound library unavailable")).into())
+fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::SoundAccess<'a>> {
+    caller.sounds.ok_or(crate::session::EditError::Unsupported(
+        "sound library unavailable",
+    ))
 }
+
 impl Session {
     pub(super) fn run_control(
         &mut self,

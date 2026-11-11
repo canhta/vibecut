@@ -2,8 +2,9 @@
 use super::{TaskEvents, Work, Workflow};
 use captions::{CueTrack, Format};
 use engine::{
-    ByteBudget, Command, Error as EngineError, NewItem, Session,
+    ByteBudget, Command, NewItem, Session,
     cache::ArtifactCache,
+    control::Error as EngineError,
     jobs::{JobRunner, RunnerConfig, SystemClock},
     transcript::{Cancellation, Progress, Stage},
 };
@@ -18,7 +19,7 @@ impl Workflow for LocalWorkflow {
         budget: ByteBudget,
         events: &TaskEvents,
         cancel: &Cancellation,
-    ) -> engine::Result<Command> {
+    ) -> engine::control::Result<Command> {
         if cancel.cancelled() {
             return Err(EngineError::Runtime(engine::RuntimeError::Cancelled));
         }
@@ -205,7 +206,7 @@ impl Workflow for LocalWorkflow {
         }
     }
 }
-fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
+fn runner(budget: ByteBudget) -> engine::control::Result<JobRunner> {
     Ok(JobRunner::new(
         RunnerConfig {
             concurrency: [2, 1, 1],
@@ -224,7 +225,7 @@ fn insert(
     asset: Option<media::AssetId>,
     range: SourceRange,
     start: Tick,
-) -> engine::Result<Command> {
+) -> engine::control::Result<Command> {
     if cues.cues.is_empty() || cues.cues.len() > 10_000 {
         return Err(EngineError::Control(engine::control::ControlError::Limit));
     }

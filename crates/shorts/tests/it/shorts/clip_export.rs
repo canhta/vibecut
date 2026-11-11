@@ -7,7 +7,7 @@
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{Cue, CueText, CueTrack, Format, LanguageTag};
 use engine::jobs::{JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock};
-use engine::{ByteBudget, Error as EngineError};
+use engine::{ByteBudget, control::Error as EngineError};
 use media::{AssetData, AssetId, SourceAsset, SourceStream, StreamKind, TimeBase};
 use project::{Project, ProjectId};
 use shorts::{ClipBatch, ClipBatchRequest, ClipShort};
@@ -451,7 +451,7 @@ fn reserved(stem: &str) -> bool {
 
 #[test]
 fn refuses_hostile_batches_at_the_short_or_request_level() {
-    use engine::Error as EngineError;
+    use engine::control::Error as EngineError;
     let dir = tempfile::tempdir().unwrap();
     let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
     let one = |segments| ClipShort::new("Short", segments);

@@ -22,12 +22,12 @@ pub enum Error {
     #[error("clip export refused at short {short}: {reason}")]
     ClipExport { short: usize, reason: &'static str },
     #[error(transparent)]
-    Engine(#[from] engine::Error),
+    Engine(#[from] engine::control::Error),
 }
 
 impl Error {
     /// Wrap a failure from a domain crate through the engine aggregate.
-    pub(crate) fn engine(error: impl Into<engine::Error>) -> Self {
+    pub(crate) fn engine(error: impl Into<engine::control::Error>) -> Self {
         Self::Engine(error.into())
     }
 }

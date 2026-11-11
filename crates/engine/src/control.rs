@@ -1,6 +1,6 @@
 //! Admits transport-neutral commands and runs control-only commands, the top engine layer.
 use crate::jobs::{JobId, JobRunner};
-use crate::{Command, Result, Session};
+use crate::{Command, Session};
 
 pub use crate::session::wire::{
     API_VERSION, CaptionsResult, ControlError, ControlResult, CostView, Cursor, ErrorCode, Event,
@@ -14,6 +14,129 @@ pub use crate::session::wire::{
     SoundEntry, SoundPage, SoundSource, TranslationsResult, bounded_json, contract_schema,
     parse_frame, reference_markdown, registry_hash,
 };
+
+use crate::{
+    AnalysisError, ArtifactError, EditError, FontError, JobFailurePolicy, RuntimeError,
+    SessionError, SoundError, library, luts, models, providers, recovery, subtitles, transcript,
+};
+
+/// Safe diagnostic categories: never include parameter values or user text.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Models(#[from] models::Error),
+    #[error(transparent)]
+    Lut(#[from] luts::Error),
+    #[error(transparent)]
+    Library(#[from] library::Error),
+    #[error(transparent)]
+    Edit(#[from] EditError),
+    #[error(transparent)]
+    Control(#[from] ControlError),
+
+    #[error(transparent)]
+    Recovery(#[from] recovery::Error),
+    #[error(transparent)]
+    Runtime(#[from] RuntimeError),
+    #[error(transparent)]
+    Session(#[from] SessionError),
+    #[error("render execution failed")]
+    Render(#[from] render::Error),
+    #[error("media operation failed")]
+    Media(#[from] ::media::MediaError),
+    #[error("AI execution failed")]
+    Ai(#[from] ai::Error),
+    #[error("sound library failed: {0}")]
+    Sounds(#[from] SoundError),
+    #[error("font catalog operation failed")]
+    Font(#[from] FontError),
+    #[error(transparent)]
+    Providers(#[from] providers::Error),
+    #[error(transparent)]
+    Transcript(#[from] transcript::Error),
+    #[error(transparent)]
+    Subtitles(#[from] subtitles::Error),
+    #[error("job/cache IO failed")]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Artifacts(#[from] ArtifactError),
+    #[error(transparent)]
+    Analysis(#[from] AnalysisError),
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    fn classification(&self) -> (ErrorCode, bool) {
+        use ErrorCode as C;
+        let code = match self {
+            Self::Models(inner) => return (inner.code(), inner.transient()),
+            Self::Lut(inner) => return (inner.code(), inner.transient()),
+            Self::Library(inner) => return (inner.code(), inner.transient()),
+            Self::Artifacts(inner) => return (inner.code(), inner.transient()),
+            Self::Analysis(inner) => return (inner.code(), inner.transient()),
+            Self::Runtime(inner) => return (inner.code(), inner.transient()),
+            Self::Session(inner) => return (inner.code(), inner.transient()),
+            Self::Control(inner) => return (inner.code(), inner.transient()),
+            Self::Recovery(inner) => return (inner.code(), inner.transient()),
+            Self::Sounds(inner) => inner.code(),
+            Self::Font(inner) => inner.code(),
+            Self::Providers(inner) => return (inner.code(), inner.transient()),
+            Self::Transcript(inner) => return (inner.code(), inner.transient()),
+            Self::Subtitles(inner) => return (inner.code(), inner.transient()),
+            Self::Render(inner) => inner.code(),
+            Self::Media(error) => error.code(),
+            Self::Ai(inner) => return (inner.code(), inner.transient()),
+            Self::Io(_) => C::Io,
+            Self::Edit(inner) => return (inner.code(), inner.transient()),
+        };
+        (code, false)
+    }
+}
+impl Failure for Error {
+    fn job_policy(&self) -> JobFailurePolicy {
+        match self {
+            Self::Transcript(error) => error.job_policy(),
+            Self::Subtitles(error) => error.job_policy(),
+            Self::Artifacts(error) => error.job_policy(),
+            Self::Analysis(error) => error.job_policy(),
+            Self::Recovery(error) => error.job_policy(),
+            Self::Providers(error) => error.job_policy(),
+            Self::Models(error) => error.job_policy(),
+            Self::Lut(error) => error.job_policy(),
+            Self::Library(error) => error.job_policy(),
+            Self::Edit(error) => error.job_policy(),
+            Self::Runtime(error) => error.job_policy(),
+            Self::Session(error) => error.job_policy(),
+            Self::Control(error) => error.job_policy(),
+            Self::Ai(error) => error.job_policy(),
+            _ => JobFailurePolicy::default(),
+        }
+    }
+    fn code(&self) -> ErrorCode {
+        self.classification().0
+    }
+    fn transient(&self) -> bool {
+        self.classification().1
+    }
+}
+
+impl From<project::Error> for Error {
+    fn from(error: project::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
+
+impl From<time::TimeError> for Error {
+    fn from(error: time::TimeError) -> Self {
+        Self::Edit(error.into())
+    }
+}
+
+impl From<captions::Error> for Error {
+    fn from(error: captions::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
 
 mod admission;
 mod dispatch;

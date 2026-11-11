@@ -37,7 +37,7 @@ impl Default for Context {
 }
 impl Context {
     pub(crate) fn budget(&self) -> Result<ByteBudget, CliError> {
-        Ok(ByteBudget::new(self.memory_limit).map_err(engine::Error::from)?)
+        Ok(ByteBudget::new(self.memory_limit).map_err(engine::control::Error::from)?)
     }
 }
 #[cfg(test)]

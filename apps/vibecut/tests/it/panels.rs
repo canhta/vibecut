@@ -2932,7 +2932,7 @@ fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
             _: &std::path::Path,
             _: u64,
             _: &engine::jobs::JobContext,
-        ) -> engine::Result<Vec<u8>> {
+        ) -> engine::control::Result<Vec<u8>> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(b"corrupt font".to_vec())
         }
@@ -3023,7 +3023,7 @@ fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() 
             _: &std::path::Path,
             _: u64,
             context: &engine::jobs::JobContext,
-        ) -> engine::Result<Vec<u8>> {
+        ) -> engine::control::Result<Vec<u8>> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             self.started.send(()).unwrap();
             let receiver = self.release.lock().unwrap();
@@ -3036,7 +3036,7 @@ fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() 
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(_) => {
-                        return Err(engine::Error::Edit(engine::EditError::Invalid(
+                        return Err(engine::control::Error::Edit(engine::EditError::Invalid(
                             "source gate closed",
                         )));
                     }

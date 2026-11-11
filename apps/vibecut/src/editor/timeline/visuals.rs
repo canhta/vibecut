@@ -48,7 +48,7 @@ const MAX_TEXTURES: usize = 512;
 /// Loopback policy for the editor's own registered commands.
 struct EditorPolicy;
 impl engine::control::Policy for EditorPolicy {
-    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::Result<()> {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())
     }
 }
@@ -74,7 +74,7 @@ pub(in crate::editor) struct Media {
     request_id: u64,
     /// False reserves bounded recovery metadata; true means a job was admitted.
     recovery: RefCell<BTreeMap<VisualKey, bool>>,
-    visual_cause: RefCell<Option<Arc<engine::Error>>>,
+    visual_cause: RefCell<Option<Arc<engine::control::Error>>>,
     cache: CacheUi,
     cache_worker: Option<CacheWorker>,
     cache_operation: CacheOperation,
@@ -138,19 +138,18 @@ impl Media {
             CacheAction::Retry if self.cache.phase == CachePhase::Failed => self.cache_operation,
             _ => CacheOperation::Inspect,
         };
-        let snapshots =
-            (|| {
-                let access = self.access.as_ref().ok_or(engine::Error::Edit(
-                    engine::EditError::Unsupported("media cache unavailable"),
-                ))?;
-                let access = access.try_lock().map_err(|error| match error {
-                    std::sync::TryLockError::WouldBlock => {
-                        engine::Error::Runtime(engine::RuntimeError::CacheBusy)
-                    }
-                    std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
-                })?;
-                access.cache_maintenance()
-            })();
+        let snapshots = (|| {
+            let access = self.access.as_ref().ok_or(engine::control::Error::Edit(
+                engine::EditError::Unsupported("media cache unavailable"),
+            ))?;
+            let access = access.try_lock().map_err(|error| match error {
+                std::sync::TryLockError::WouldBlock => {
+                    engine::control::Error::Runtime(engine::RuntimeError::CacheBusy)
+                }
+                std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
+            })?;
+            access.cache_maintenance()
+        })();
         let snapshots = match snapshots {
             Ok(snapshots) => snapshots,
             Err(error) => {
@@ -180,7 +179,7 @@ impl Media {
             Err(error) => self.fail_cache(error.into()),
         }
     }
-    fn fail_cache(&mut self, error: engine::Error) {
+    fn fail_cache(&mut self, error: engine::control::Error) {
         // Keep the last measured size/age; a failed admission measured no zero.
         self.cache.phase = CachePhase::Failed;
         self.cache.cause = Some(Arc::new(error));
@@ -196,11 +195,11 @@ impl Media {
         self.cache.checked = Some(std::time::Instant::now());
     }
     /// Only an actual typed corruption permits one regeneration per visual key.
-    fn display_failed(&self, error: engine::Error, request: VisualRequest) -> bool {
+    fn display_failed(&self, error: engine::control::Error, request: VisualRequest) -> bool {
         let corrupt = matches!(
             error,
-            engine::Error::Runtime(engine::RuntimeError::CacheCorrupt)
-                | engine::Error::Artifacts(engine::ArtifactError::Runtime(
+            engine::control::Error::Runtime(engine::RuntimeError::CacheCorrupt)
+                | engine::control::Error::Artifacts(engine::ArtifactError::Runtime(
                     engine::RuntimeError::CacheCorrupt
                 ))
         );
@@ -485,7 +484,7 @@ impl VisualQuery for Media {
                 return StripState::Pending;
             }
             Ok(engine::thumbnail_strip::ThumbnailStripState::Failed(error)) => error.into(),
-            Err(error) => error,
+            Err(error) => error.into(),
             Ok(engine::thumbnail_strip::ThumbnailStripState::Unsupported) => {
                 return StripState::Unsupported;
             }
@@ -539,7 +538,7 @@ impl VisualQuery for Media {
                 return WaveState::Pending;
             }
             Ok(engine::waveform::WaveformState::Failed(error)) => error.into(),
-            Err(error) => error,
+            Err(error) => error.into(),
             Ok(engine::waveform::WaveformState::Unsupported) => return WaveState::Unsupported,
         };
         if self.display_failed(error, VisualRequest::Waveform { asset: asset.id() }) {

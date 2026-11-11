@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use super::{Context, export_project_with};
 use crate::CliError;
-use engine::Error as EngineError;
+use engine::control::Error as EngineError;
 use engine::jobs::{JobBytes, JobContext, JobKind, JobSpec, ResourceClass};
 use std::path::Path;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ fn export_refuses_when_a_source_disappears_mid_job() {
         true,
         move |runner, input_key, project, range, mut settings, path| {
             settings.mode = render::ExportMode::Encode;
-            Ok(runner.submit::<engine::Error>(
+            Ok(runner.submit::<engine::control::Error>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,

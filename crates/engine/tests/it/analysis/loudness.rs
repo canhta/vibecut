@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::jobs::*;
 use engine::loudness::{LoudnessResult, admit, decode, submit_loudness};
-use engine::{ByteBudget, Error as EngineError, Session};
+use engine::{ByteBudget, Session, control::Error as EngineError};
 use std::{
     sync::{
         Arc,

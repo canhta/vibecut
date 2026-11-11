@@ -53,7 +53,7 @@ pub(crate) fn with_sounds<T>(
 ) -> Result<T, CliError> {
     let library = SoundLibrary::open(root)?;
     let search =
-        |query: &engine::control::SoundQuery| -> engine::Result<engine::control::SoundPage> {
+        |query: &engine::control::SoundQuery| -> engine::control::Result<engine::control::SoundPage> {
             let request = SearchRequest {
                 query: query.query.clone(),
                 page: query.page,
@@ -67,10 +67,10 @@ pub(crate) fn with_sounds<T>(
             Ok(page.into_control(query.commercial_only))
         };
     let save =
-        |sound: &engine::control::SoundEntry| -> engine::Result<engine::control::SavedSoundEntry> {
+        |sound: &engine::control::SoundEntry| -> engine::control::Result<engine::control::SavedSoundEntry> {
             Ok(library.save(&LibrarySound::from(sound))?.into())
         };
-    let unsave = |id: u64| -> engine::Result<bool> { Ok(library.unsave(id)?) };
+    let unsave = |id: u64| -> engine::control::Result<bool> { Ok(library.unsave(id)?) };
     let access = SoundAccess::new(&search, &save, &unsave);
     serve(&access)
 }

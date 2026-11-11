@@ -10,7 +10,8 @@ use crate::{
 };
 use ai::models::{DownloadConsent, Model};
 use engine::{
-    ByteBudget, Error as EngineError,
+    ByteBudget,
+    control::Error as EngineError,
     jobs::{
         CancelToken, JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock,
     },

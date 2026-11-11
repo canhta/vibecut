@@ -1,6 +1,6 @@
 //! Observes engine jobs through stderr progress.
 use crate::args::CliError;
-use engine::Error as EngineError;
+use engine::control::Error as EngineError;
 use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState};
 use engine::transcript::{Progress, Stage};
 use std::io;
