@@ -87,7 +87,7 @@ impl Workflow for LocalWorkflow {
                 options,
             } => {
                 events.stage(Stage::Extract);
-                let credentials = credentials()?;
+                let credentials = engine::providers::Credentials::from_env();
                 let root = engine::cache::CacheRoot::discover()?.models();
                 let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
                 let provider = engine::providers::choose_transcription(
@@ -157,7 +157,7 @@ impl Workflow for LocalWorkflow {
                         &options.translation,
                         Some(&options.translation_model),
                     )?,
-                    &credentials()?,
+                    &engine::providers::Credentials::from_env(),
                 )?;
                 let mut staging = Session::new((*project).clone(), 1)?;
                 let mut runner = runner(budget)?;
@@ -195,9 +195,6 @@ impl Workflow for LocalWorkflow {
             }
         }
     }
-}
-fn credentials() -> engine::Result<engine::providers::Credentials> {
-    engine::providers::Credentials::from_env()
 }
 fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
     JobRunner::new(

@@ -82,7 +82,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ));
     }
     let provider = choose_filler(&provider, model.as_deref())?;
-    let credentials = Credentials::from_env()?;
+    let credentials = Credentials::from_env();
     let access = TextAccess::open(
         provider,
         &credentials,

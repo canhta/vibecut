@@ -405,7 +405,7 @@ fn make_provider(options: &Options) -> Result<(Box<dyn ClipSuggester>, String)> 
             if !options.live {
                 return Err(Error::LiveRequired);
             }
-            let key = Credentials::from_env()?.openai()?.clone();
+            let key = Credentials::from_env().openai()?;
             let config = OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL)?;
             let provider = OpenAiClipSuggester::new(config, key, Arc::new(UreqTransport::new()))?;
             Ok((Box::new(provider), "gpt-6-luna".into()))

@@ -51,7 +51,7 @@ pub fn prepare(
     budget: &mut Budget,
 ) -> Result<Prepared> {
     let started = Instant::now();
-    let key = Credentials::from_env()?.elevenlabs()?.clone();
+    let key = Credentials::from_env().elevenlabs()?;
     let config = ElevenLabsTranscriber::provider_config(MODEL)?;
     let transcriber = ElevenLabsTranscriber::new(config, key, Arc::new(UreqTransport::new()))?;
     let asset = SourceAsset::import(AssetId(1), source.to_path_buf())?;

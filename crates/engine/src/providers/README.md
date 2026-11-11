@@ -19,6 +19,9 @@ ai::Translator>`; it never names an adapter after `open`. Operation scopes come 
 constructors (`Scope::transcription`, `alignment`, `translation`, `clip_suggestion`, `chapters`,
 `fillers`), so no caller fills `Scope` fields. `Credentials::from_env` is the one place that reads
 the API-key environment variables; every desktop and CLI composition root calls it.
+Credential capture is infallible. Only the chosen provider's accessor validates its key and
+returns an owned, redacting `ApiKey`: a missing key is `CredentialMissing`, and an invalid key
+retains AI's typed refusal. Malformed values belonging to other providers never block a run.
 
 `UploadRequest::for_scope` builds transcription, translation and transcript-text consent from the adapter's neutral
 `ai::UploadDisclosure` for the exact scope. An adapter without a disclosure that has a local

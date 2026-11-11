@@ -642,7 +642,7 @@ fn missing_remote_credentials_are_typed() {
         },
         None,
         &mut cache,
-        &Credentials::new(None, None, None).unwrap(),
+        &Credentials::new(None, None, None),
         &Runtime::default(),
     )
     .err()

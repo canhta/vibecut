@@ -14,9 +14,9 @@ use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct Credentials {
-    openai: Option<ApiKey>,
-    elevenlabs: Option<ApiKey>,
-    anthropic: Option<ApiKey>,
+    openai: Option<String>,
+    elevenlabs: Option<String>,
+    anthropic: Option<String>,
 }
 /// Local execution choices. The runner is the shipped Gipformer helper, never a model.
 #[derive(Clone, Debug)]
@@ -39,22 +39,22 @@ pub struct Providers {
     _leases: Vec<ModelLease>,
 }
 impl Credentials {
-    /// Secrets are resolved by the composition root; they never enter logs or errors.
+    /// Capture private values without validating providers the operation may not use.
+    /// Only the selected credential accessor validates; values never enter logs or errors.
     pub fn new(
         openai: Option<String>,
         elevenlabs: Option<String>,
         anthropic: Option<String>,
-    ) -> Result<Self, EditError> {
-        let key = |value: Option<String>| value.map(ApiKey::new).transpose();
-        Ok(Self {
-            openai: key(openai)?,
-            elevenlabs: key(elevenlabs)?,
-            anthropic: key(anthropic)?,
-        })
+    ) -> Self {
+        Self {
+            openai,
+            elevenlabs,
+            anthropic,
+        }
     }
     /// The composition roots' one source of secrets: the process environment.
     /// An unset variable is an absent credential; the selected adapter refuses it.
-    pub fn from_env() -> Result<Self, EditError> {
+    pub fn from_env() -> Self {
         let var = |name| std::env::var(name).ok();
         Self::new(
             var("OPENAI_API_KEY"),
@@ -62,26 +62,32 @@ impl Credentials {
             var("ANTHROPIC_API_KEY"),
         )
     }
-    /// Resolve the configured OpenAI credential for a selected adapter or refuse.
-    pub fn openai(&self) -> Result<&ApiKey, EditError> {
-        Ok(self
-            .openai
-            .as_ref()
-            .ok_or(Error::CredentialMissing("OPENAI_API_KEY"))?)
+    /// Validate the selected OpenAI key, returning typed missing or invalid refusals.
+    pub fn openai(&self) -> Result<ApiKey, EditError> {
+        Ok(ApiKey::new(
+            self.openai
+                .as_ref()
+                .ok_or(Error::CredentialMissing("OPENAI_API_KEY"))?
+                .clone(),
+        )?)
     }
-    /// Resolve the configured ElevenLabs credential for a selected adapter or refuse.
-    pub fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
-        Ok(self
-            .elevenlabs
-            .as_ref()
-            .ok_or(Error::CredentialMissing("ELEVENLABS_API_KEY"))?)
+    /// Validate the selected ElevenLabs key, returning typed missing or invalid refusals.
+    pub fn elevenlabs(&self) -> Result<ApiKey, EditError> {
+        Ok(ApiKey::new(
+            self.elevenlabs
+                .as_ref()
+                .ok_or(Error::CredentialMissing("ELEVENLABS_API_KEY"))?
+                .clone(),
+        )?)
     }
-    /// Resolve the configured Anthropic credential for a selected adapter or refuse.
-    pub fn anthropic(&self) -> Result<&ApiKey, EditError> {
-        Ok(self
-            .anthropic
-            .as_ref()
-            .ok_or(Error::CredentialMissing("ANTHROPIC_API_KEY"))?)
+    /// Validate the selected Anthropic key, returning typed missing or invalid refusals.
+    pub fn anthropic(&self) -> Result<ApiKey, EditError> {
+        Ok(ApiKey::new(
+            self.anthropic
+                .as_ref()
+                .ok_or(Error::CredentialMissing("ANTHROPIC_API_KEY"))?
+                .clone(),
+        )?)
     }
 }
 impl Default for Runtime {
@@ -167,7 +173,7 @@ impl Providers {
             TranscriptionProvider::OpenAi { model } => {
                 let value = ai::openai::OpenAiTranscriber::new(
                     ai::openai::OpenAiTranscriber::provider_config(model)?,
-                    credentials.openai()?.clone(),
+                    credentials.openai()?,
                     Arc::new(UreqTransport::new()),
                 )?;
                 (
@@ -179,7 +185,7 @@ impl Providers {
             TranscriptionProvider::ElevenLabs { model } => {
                 let value = ai::elevenlabs::ElevenLabsTranscriber::new(
                     ai::elevenlabs::ElevenLabsTranscriber::provider_config(model)?,
-                    credentials.elevenlabs()?.clone(),
+                    credentials.elevenlabs()?,
                     Arc::new(UreqTransport::new()),
                 )?;
                 (
@@ -315,7 +321,7 @@ pub(crate) fn build_translator(
         TranslationProvider::OpenAi { model } => {
             let value = ai::openai::OpenAiTranslator::new(
                 ai::openai::OpenAiTranslator::provider_config(model)?,
-                credentials.openai()?.clone(),
+                credentials.openai()?,
                 Arc::new(UreqTransport::new()),
             )?;
             Ok((Arc::new(value), ai::openai::TRANSLATION_MODE.into()))
@@ -323,7 +329,7 @@ pub(crate) fn build_translator(
         TranslationProvider::Anthropic { model } => {
             let value = ai::anthropic::AnthropicTranslator::new(
                 ai::anthropic::AnthropicTranslator::provider_config(model)?,
-                credentials.anthropic()?.clone(),
+                credentials.anthropic()?,
                 Arc::new(UreqTransport::new()),
             )?;
             Ok((Arc::new(value), ai::anthropic::TRANSLATION_MODE.into()))
@@ -339,13 +345,13 @@ pub(crate) fn open_chapter(
     Ok(match chapter {
         TextProvider::OpenAi { model } => Arc::new(ai::chapters::OpenAiChapterGenerator::new(
             ai::chapters::OpenAiChapterGenerator::provider_config(model)?,
-            credentials.openai()?.clone(),
+            credentials.openai()?,
             Arc::new(UreqTransport::new()),
         )?),
         TextProvider::Anthropic { model } => {
             Arc::new(ai::chapters::AnthropicChapterGenerator::new(
                 ai::chapters::AnthropicChapterGenerator::provider_config(model)?,
-                credentials.anthropic()?.clone(),
+                credentials.anthropic()?,
                 Arc::new(UreqTransport::new()),
             )?)
         }
@@ -360,12 +366,12 @@ pub(crate) fn open_filler(
     Ok(match filler {
         TextProvider::OpenAi { model } => Arc::new(ai::fillers::OpenAiFillerClassifier::new(
             ai::fillers::OpenAiFillerClassifier::provider_config(model)?,
-            credentials.openai()?.clone(),
+            credentials.openai()?,
             Arc::new(UreqTransport::new()),
         )?),
         TextProvider::Anthropic { model } => Arc::new(ai::fillers::AnthropicFillerClassifier::new(
             ai::fillers::AnthropicFillerClassifier::provider_config(model)?,
-            credentials.anthropic()?.clone(),
+            credentials.anthropic()?,
             Arc::new(UreqTransport::new()),
         )?),
     })

@@ -174,7 +174,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ));
     }
     let transcription = engine::providers::choose_transcription(&provider, model.as_deref())?;
-    let credentials = engine::providers::Credentials::from_env()?;
+    let credentials = engine::providers::Credentials::from_env();
     let runtime = cli_runtime()?;
     let budget = context.budget()?;
     let root = engine::cache::CacheRoot::discover()?.models();

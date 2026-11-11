@@ -261,7 +261,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let suggestion = clip_suggest::choose_suggestion(&provider, model.as_deref())?;
     let transcription =
         engine::providers::choose_transcription(&asr_provider, asr_model.as_deref())?;
-    let credentials = engine::providers::Credentials::from_env()?;
+    let credentials = engine::providers::Credentials::from_env();
     clip_suggest::check_suggestion_credentials(&suggestion, &credentials)?;
     let runtime = cli_runtime()?;
     let budget = context.budget()?;

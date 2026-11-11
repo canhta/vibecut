@@ -41,7 +41,7 @@ impl Generator for LocalVideoWorkflow {
             Some(&request.suggestion_model),
         )
         .map_err(engine_error)?;
-        let credentials = engine::providers::Credentials::from_env()?;
+        let credentials = engine::providers::Credentials::from_env();
         clip_suggest::check_suggestion_credentials(&provider, &credentials)
             .map_err(engine_error)?;
         let root = engine::cache::CacheRoot::discover()?.models();

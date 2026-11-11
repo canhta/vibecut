@@ -1,4 +1,5 @@
 //! Upload consent shows each provider's own disclosure, field by field.
+#![allow(clippy::unwrap_used, reason = "offline consent fixtures")]
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
 use ai::{
     Location, ProviderConfig, SampleRange, Scope, Transcriber, TranslationSegment,

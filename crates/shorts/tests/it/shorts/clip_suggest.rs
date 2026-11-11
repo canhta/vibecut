@@ -285,7 +285,7 @@ fn suggest(
     let (mut cache, _) =
         engine::cache::ArtifactCache::open(root.path(), ByteBudget::new(1 << 30).unwrap(), 8)
             .unwrap();
-    let credentials = Credentials::new(None, None, None).unwrap();
+    let credentials = Credentials::new(None, None, None);
     clip_suggest::suggest(
         &request(input),
         &credentials,
@@ -564,7 +564,7 @@ fn provider_choice_never_falls_back() {
             "{provider}/{model:?}"
         );
     }
-    let credentials = Credentials::new(None, None, None).unwrap();
+    let credentials = Credentials::new(None, None, None);
     assert!(
         clip_suggest::check_suggestion_credentials(&SuggestionProvider::Heuristic, &credentials)
             .is_ok()

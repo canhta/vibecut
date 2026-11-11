@@ -100,14 +100,14 @@ pub(super) fn build_suggester(
         SuggestionProvider::OpenAi { model } => {
             Ok(BuiltSuggester::OpenAi(OpenAiClipSuggester::new(
                 OpenAiClipSuggester::provider_config(model)?,
-                credentials.openai()?.clone(),
+                credentials.openai()?,
                 Arc::new(ai::transport::UreqTransport::new()),
             )?))
         }
         SuggestionProvider::Anthropic { model } => {
             Ok(BuiltSuggester::Anthropic(AnthropicClipSuggester::new(
                 AnthropicClipSuggester::provider_config(model)?,
-                credentials.anthropic()?.clone(),
+                credentials.anthropic()?,
                 Arc::new(ai::transport::UreqTransport::new()),
             )?))
         }
