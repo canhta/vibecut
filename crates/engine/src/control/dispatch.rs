@@ -98,6 +98,17 @@ impl Session {
                 .collect();
                 Ok(ControlResult::Fillers { candidates })
             }
+            Command::FontsImport {
+                path,
+                accept_license,
+            } => {
+                let job = (font_access(caller)?.import)(runner, &path, accept_license)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
             Command::FontsDownload {
                 family,
                 accept_license,

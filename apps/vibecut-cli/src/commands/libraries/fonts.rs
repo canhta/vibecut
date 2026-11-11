@@ -11,7 +11,7 @@ use std::io;
 use std::io::Write as _;
 
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
-    const USAGE: &str = "usage: vibecut-cli fonts list [--query <text>] | resolve <family> | download <family> --accept-license";
+    const USAGE: &str = "usage: vibecut-cli fonts list [--query <text>] | resolve <family> | download <family> --accept-license | import <file> --accept-license";
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| CliError::Usage(USAGE.into()))?;
     let action = utf8(&action, "fonts action")?.to_owned();
@@ -80,8 +80,33 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             ))
         }
         "download" => fonts_download(context, rest),
+        "import" => {
+            let mut args = rest.into_iter();
+            let path = args.next().ok_or_else(|| {
+                CliError::Usage("usage: vibecut-cli fonts import <file> --accept-license".into())
+            })?;
+            let mut accepted = false;
+            for flag in args {
+                if flag == "--accept-license" {
+                    accepted = true;
+                } else {
+                    return Err(CliError::Usage("unknown font import flag".into()));
+                }
+            }
+            fonts_job(
+                context,
+                "fonts.import",
+                json!({"path":std::path::PathBuf::from(path),"accept_license":accepted}),
+            )?;
+            Ok(Output::new(
+                json!({"status":"imported"}),
+                "imported custom font".into(),
+                false,
+                0,
+            ))
+        }
         other => Err(CliError::Usage(format!(
-            "unknown fonts action: {other}; expected list, resolve or download"
+            "unknown fonts action: {other}; expected list, resolve, download or import"
         ))),
     }
 }
@@ -130,7 +155,11 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             "font download requires --accept-license after reviewing licence and source",
         ));
     }
-    fonts_download_job(context, &entry.family, accepted)?;
+    fonts_job(
+        context,
+        "fonts.download",
+        json!({"family":entry.family,"accept_license":accepted}),
+    )?;
     Ok(Output::new(
         json!({"family": entry.family, "status": "downloaded"}),
         format!("downloaded {}", entry.family),
@@ -139,9 +168,9 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     ))
 }
 
-/// Submit the download on a standalone runner and wait on that same runner so the
+/// Submit font work on a standalone runner and wait on that same runner so the
 /// job's publication fence survives to completion.
-fn fonts_download_job(context: &Context, family: &str, accepted: bool) -> Result<(), CliError> {
+fn fonts_job(context: &Context, command: &str, params: Value) -> Result<(), CliError> {
     let mut session = standalone_session()?;
     let mut runner = cli_runner(context.budget()?)?;
     let result = with_fonts(|fonts| {
@@ -152,15 +181,15 @@ fn fonts_download_job(context: &Context, family: &str, accepted: bool) -> Result
                 fonts,
                 ..Lent::default()
             },
-            "fonts.download",
-            json!({"family": family, "accept_license": accepted}),
+            command,
+            params,
             true,
         )? {
             ControlResult::JobAccepted { job, .. } => {
                 wait_for_job(&mut runner, job)?;
                 Ok(())
             }
-            _ => Err(CliError::Rejected("fonts.download did not start a job")),
+            _ => Err(CliError::Rejected("font operation did not start a job")),
         }
     });
     runner.shutdown();

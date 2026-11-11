@@ -44,19 +44,22 @@ pub struct FontAccess<'a> {
     list: &'a dyn Fn(Option<&str>) -> Result<Vec<FontEntry>>,
     load: &'a dyn Fn(&str) -> Result<FontLoad>,
     download: &'a dyn Fn(&mut JobRunner, &str, bool) -> Result<JobId>,
+    import: &'a dyn Fn(&mut JobRunner, &std::path::Path, bool) -> Result<JobId>,
 }
 impl<'a> FontAccess<'a> {
-    /// `list` serves `fonts.list`, `load` serves `fonts.load`, and `download` submits onto the
+    /// `list` and `load` serve reads; `download` and `import` submit onto the
     /// supplied runner and returns only the accepted job; cancellation addresses the runner by id.
     pub fn new(
         list: &'a dyn Fn(Option<&str>) -> Result<Vec<FontEntry>>,
         load: &'a dyn Fn(&str) -> Result<FontLoad>,
         download: &'a dyn Fn(&mut JobRunner, &str, bool) -> Result<JobId>,
+        import: &'a dyn Fn(&mut JobRunner, &std::path::Path, bool) -> Result<JobId>,
     ) -> Self {
         Self {
             list,
             load,
             download,
+            import,
         }
     }
 }

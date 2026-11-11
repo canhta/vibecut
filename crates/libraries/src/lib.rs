@@ -3,8 +3,8 @@ mod font_catalog;
 pub mod fonts {
     //! Resolves font assets for project rendering.
     pub use super::font_catalog::{
-        FontStore, GoogleFamily, GoogleFile, MAX_SCANNED_FACES, ScannedFace,
-        curated_google_families, scan_directory, scan_system,
+        FontFile, FontStore, GoogleFamily, GoogleFile, LocalFontFile, MAX_SCANNED_FACES,
+        ScannedFace, curated_google_families, scan_directory, scan_system,
     };
 }
 mod sound_library;

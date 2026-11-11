@@ -16,6 +16,8 @@ pub enum FontOrigin {
     System,
     /// Curated Google Fonts family, downloadable on explicit request.
     Google,
+    /// A validated font explicitly copied into the user's font store.
+    Custom,
 }
 
 /// Whether a family can render now.
@@ -35,9 +37,9 @@ pub struct FontEntry {
     /// Style names such as `Regular` or `Bold Italic`, sorted by weight.
     pub styles: Vec<String>,
     pub state: FontState,
-    /// SPDX licence id of bundled and Google families.
+    /// SPDX licence id for bundled/catalog families, or a user-supplied rights acknowledgement.
     pub license: Option<String>,
-    /// Upstream source URL of bundled and Google families.
+    /// Upstream URL, or a local content hash for a custom font; never a source path.
     pub source: Option<String>,
     /// Bytes `fonts.download` would fetch, for families that are not downloaded.
     pub download_bytes: Option<u64>,

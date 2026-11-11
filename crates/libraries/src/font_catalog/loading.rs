@@ -1,9 +1,49 @@
 //! Loads verified font faces into the text catalog.
 use super::{
     Cache, Digest, EditError, FontError, FontLoad, FontLoadState, FontOrigin, FontStore,
-    GoogleFamily, LICENSE_FILE, Path, Result, Sha256, fs, hex, io, sidecar,
+    GoogleFamily, LICENSE_FILE, Path, Read, Result, Sha256, fs, hex, io, sidecar,
 };
 impl FontStore {
+    /// Register only imported families requested by this snapshot before rendering.
+    /// Missing cached families retain text's deterministic bundled fallback; no
+    /// system scan, download or project mutation is implied by opening a project.
+    pub fn load_project(&self, project: &project::Project) -> Result<()> {
+        let imported: std::collections::BTreeSet<_> = self
+            .imported()?
+            .into_iter()
+            .map(|entry| entry.family.to_lowercase())
+            .collect();
+        if imported.is_empty() {
+            return Ok(());
+        }
+        let mut requested = std::collections::BTreeSet::new();
+        for scene in project.data().scenes.iter() {
+            for item in scene.timeline.iter().flat_map(|track| &track.items) {
+                match &item.content {
+                    project::ItemParams::Text(text) => {
+                        requested.insert(text.font.as_str().to_owned());
+                    }
+                    project::ItemParams::Caption(caption) => {
+                        requested.extend(
+                            caption
+                                .cues
+                                .styles
+                                .iter()
+                                .map(|style| style.font_family.as_str().to_owned()),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for family in requested {
+            if imported.contains(&family.to_lowercase()) {
+                self.load(&family)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Register the family's faces with `text` so layout resolves it, reading font files lazily
     /// and only now. Network is never used. Unknown and not-downloaded families are load
     /// states, not errors: layout then falls back to the default family deterministically.
@@ -31,6 +71,36 @@ impl FontStore {
                 FontLoadState::Loaded,
                 Some(FontOrigin::Bundled),
                 &name,
+                styles,
+            ));
+        }
+        let custom: Vec<_> = self
+            .imported()?
+            .into_iter()
+            .filter(|record| record.family.to_lowercase() == family.to_lowercase())
+            .collect();
+        if let Some(first) = custom.first() {
+            let mut faces = Vec::new();
+            for record in &custom {
+                let Some(bytes) = self.imported_bytes(record)? else {
+                    return Ok(state(
+                        FontLoadState::CacheInvalid,
+                        Some(FontOrigin::Custom),
+                        text::DEFAULT_FAMILY,
+                        Vec::new(),
+                    ));
+                };
+                faces.push(record.font_data(bytes)?);
+            }
+            let mut styles = Vec::new();
+            for face in faces {
+                styles.push(face.style.clone());
+                text::register(face).map_err(FontError::Face)?;
+            }
+            return Ok(state(
+                FontLoadState::Loaded,
+                Some(FontOrigin::Custom),
+                &first.family,
                 styles,
             ));
         }
@@ -184,7 +254,7 @@ fn read_font(path: &Path) -> Result<Option<Vec<u8>>> {
 }
 
 /// The file's bytes when it is a regular file of exactly `size` bytes with this SHA-256.
-fn read_verified(path: &Path, size: u64, sha256: &str) -> Result<Option<Vec<u8>>> {
+pub(super) fn read_verified(path: &Path, size: u64, sha256: &str) -> Result<Option<Vec<u8>>> {
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -193,6 +263,10 @@ fn read_verified(path: &Path, size: u64, sha256: &str) -> Result<Option<Vec<u8>>
     if !meta.is_file() || meta.len() != size {
         return Ok(None);
     }
-    let bytes = fs::read(path)?;
+    // Bound a file that grows between metadata and read, including custom entries.
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(size.saturating_add(1))
+        .read_to_end(&mut bytes)?;
     Ok((bytes.len() as u64 == size && hex(&Sha256::digest(&bytes)) == sha256).then_some(bytes))
 }

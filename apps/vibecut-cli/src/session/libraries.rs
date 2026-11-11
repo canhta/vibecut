@@ -8,7 +8,12 @@ use libraries::sounds::{
 };
 use std::path::Path;
 
-/// Build the three font operations from the per-user store and serve them. A host
+pub(crate) fn prepare_project_fonts(project: &project::Project) -> Result<(), CliError> {
+    FontStore::native()?.load_project(project)?;
+    Ok(())
+}
+
+/// Build the font operations from the per-user store and serve them. A host
 /// without a user cache lends `None`; `fonts.*` then refuses unavailable.
 pub(crate) fn with_fonts<T>(serve: impl FnOnce(Option<&FontAccess<'_>>) -> T) -> T {
     let store = FontStore::native().ok();
@@ -26,9 +31,15 @@ pub(crate) fn with_fonts<T>(serve: impl FnOnce(Option<&FontAccess<'_>>) -> T) ->
             .map(|(job, _)| job),
         None => Err(engine::FontError::Unavailable.into()),
     };
+    let import = |runner: &mut JobRunner, path: &Path, accepted: bool| match &store {
+        Some(store) => store
+            .submit_import(runner, path.to_owned(), accepted)
+            .map(|(job, _)| job),
+        None => Err(engine::FontError::Unavailable.into()),
+    };
     let fonts = store
         .as_ref()
-        .map(|_| FontAccess::new(&list, &load, &download));
+        .map(|_| FontAccess::new(&list, &load, &download, &import));
     serve(fonts.as_ref())
 }
 

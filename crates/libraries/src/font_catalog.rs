@@ -98,6 +98,7 @@ pub struct FontStore {
     system: OnceLock<Vec<ScannedFace>>,
     transport: Arc<dyn DownloadTransport>,
     active: Arc<Mutex<BTreeSet<String>>>,
+    file: Arc<dyn FontFile>,
 }
 
 enum Cache {
@@ -122,6 +123,9 @@ mod catalog;
 mod loading;
 
 mod downloads;
+mod formats;
+pub use imports::{FontFile, LocalFontFile};
+mod imports;
 
 pub use catalog::{curated_google_families, scan_directory, scan_system};
 
