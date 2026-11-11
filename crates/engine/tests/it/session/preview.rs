@@ -521,7 +521,7 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
                     kind: project::TrackKind::Video
                 }
             ),
-            Err(EditError::StaleResult)
+            Err(EditError::Session(engine::SessionError::StaleResult))
         ),
         "discarded preview target was accepted against rolled-back content"
     );

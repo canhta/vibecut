@@ -83,7 +83,8 @@ impl ByteBudget {
     pub fn child(&self, limit: u64) -> Result<Self> {
         Self::with_parent(limit, Some(self.clone()))
     }
-    pub(crate) fn same_policy(&self, other: &Self) -> bool {
+    /// Whether both handles retain the same accounting policy, including its child scope.
+    pub fn same_policy(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
     pub fn snapshot(&self) -> Result<BudgetSnapshot> {

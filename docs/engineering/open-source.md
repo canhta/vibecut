@@ -28,6 +28,11 @@ Weights are never bundled: the user starts every download from the model manager
 
 Local-first by default. Remote AI runs only after explicit consent that shows what is sent, to which provider (linking its own policy page) and estimated cost; the provider and model are the user's choice, so we do not restate their terms. Logs follow [standards](standards.md#logging). Keys and every other non-public project file (private datasets, recordings, account notes) live in git-ignored `.privates/` (keys in `.privates/.env`); their contents stay out of reports, logs and commits. Report vulnerabilities [privately](../../SECURITY.md).
 
+Human-imported fonts stay in the existing per-user font store, with original/decoded
+hashes, embedded licence provenance and explicit usage-rights acknowledgement in
+the [font catalog record](../../crates/libraries/src/font_catalog/README.md#custom-import).
+Import does not assert an SPDX licence or redistribute the font as bundled content.
+
 Remote model discovery is an explicit **Refresh models** action: one authenticated
 provider model-list GET sends only the selected key, with no project, transcript,
 audio or other user content. Opening settings never requests the list. Offline or

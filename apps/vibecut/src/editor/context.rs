@@ -101,6 +101,7 @@ impl Context<'_> {
 
 /// Read-only view a workflow reads the editor through while it holds the desk.
 pub(in crate::editor) struct View<'a> {
+    pub(in crate::editor) budget: &'a engine::ByteBudget,
     pub(in crate::editor) session: &'a engine::Session,
     pub(in crate::editor) selection: &'a std::collections::BTreeSet<project::ItemId>,
     pub(in crate::editor) preferences: &'a crate::preferences::Preferences,
@@ -366,6 +367,7 @@ impl<'a> Desk<'a> {
     /// Lend the read view for one workflow step.
     pub(in crate::editor) fn view(&self) -> View<'_> {
         View {
+            budget: self.editor.playback.budget(),
             session: &self.editor.session,
             selection: &self.editor.selection,
             preferences: &self.editor.preferences,

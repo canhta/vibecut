@@ -1215,40 +1215,59 @@ fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
             Ok(engine::jobs::JobId(1))
         }
     };
-    let access = engine::control::FontAccess::new(&list, &load, &download);
+    let import = |_: &mut JobRunner, _: &std::path::Path, _: bool| {
+        calls.set(calls.get() + 1);
+        if fail.get() {
+            Err(engine::FontError::InvalidImport.into())
+        } else {
+            Ok(engine::jobs::JobId(2))
+        }
+    };
+    let access = engine::control::FontAccess::new(&list, &load, &download, &import);
     let lent = |policy| Caller {
         fonts: Some(&access),
         sounds: None,
         ..caller(policy)
     };
-    let mut s = session();
-    let mut r = runner();
-    let params = json!({"family":"Lobster","accept_license":true});
+    for (command, params) in [
+        (
+            "fonts.download",
+            json!({"family":"Lobster","accept_license":true}),
+        ),
+        (
+            "fonts.import",
+            json!({"path":"ungranted-private.ttf","accept_license":true}),
+        ),
+    ] {
+        calls.set(0);
+        let mut s = session();
+        let mut r = runner();
 
-    // Denied by policy: no operation runs.
-    let req = request(&s, "fonts.download", params.clone(), "denied");
-    error(
-        s.control_request(req, lent(&Deny), &mut r).unwrap(),
-        ErrorCode::Permission,
-    );
-    assert_eq!(calls.get(), 0);
+        // Denied by policy: no operation runs.
+        let req = request(&s, command, params.clone(), "denied");
+        error(
+            s.control_request(req, lent(&Deny), &mut r).unwrap(),
+            ErrorCode::Permission,
+        );
+        assert_eq!(calls.get(), 0);
 
-    // An operation failure is a typed refusal, and the first accepted call runs it once.
-    fail.set(true);
-    let req = request(&s, "fonts.download", params.clone(), "failing");
-    error(
-        s.control_request(req, lent(&Allow), &mut r).unwrap(),
-        ErrorCode::Refused,
-    );
-    assert_eq!(calls.get(), 1);
-    fail.set(false);
-    let req = request(&s, "fonts.download", params.clone(), "once");
-    ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
-    assert_eq!(calls.get(), 2);
-    // Replaying the same idempotency key returns the receipt without a second invocation.
-    let req = request(&s, "fonts.download", params, "once");
-    ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
-    assert_eq!(calls.get(), 2);
+        // An operation failure is a typed refusal, and the first accepted call runs it once.
+        fail.set(true);
+        let req = request(&s, command, params.clone(), "failing");
+        error(
+            s.control_request(req, lent(&Allow), &mut r).unwrap(),
+            ErrorCode::Refused,
+        );
+        assert_eq!(calls.get(), 1);
+        fail.set(false);
+        let req = request(&s, command, params.clone(), "once");
+        ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
+        assert_eq!(calls.get(), 2);
+        // Replaying the same idempotency key returns the receipt without a second invocation.
+        let req = request(&s, command, params, "once");
+        ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
+        assert_eq!(calls.get(), 2);
+    }
 }
 /// Pause candidates are one analysis job whose spans surface through job_status.
 #[test]

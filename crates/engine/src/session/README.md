@@ -3,6 +3,14 @@
 Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `CueId`,
 `WordId`, `wire`.
 
+`SessionError::StaleResult` owns stale job-target refusal: the original static diagnostic,
+StaleResult code, no source or transience, and ordinary job policy. The one typed identity
+guard compares original epoch and revision Arc pointers only. `apply_job_result` validates
+identity before refusing an active transaction and applying a command. Translation submission,
+recovery adoption and retained Runtime output validation consume the same guard, retaining
+their own transaction/no-output/consent checks and ordering. Higher APIs compose the error
+through transparent `EditError::Session`; this is not a new wire tag.
+
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps. `project()` exposes

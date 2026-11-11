@@ -2,6 +2,20 @@
 
 use super::wire::{ErrorCode, Failure};
 
+/// Refusals owned by Session identity and revision custody.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("job result is stale")]
+    StaleResult,
+}
+impl Failure for SessionError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::StaleResult => ErrorCode::StaleResult,
+        }
+    }
+}
+
 /// Font catalog failures that are not a load state.
 #[derive(Debug, thiserror::Error)]
 pub enum FontError {
@@ -11,7 +25,7 @@ pub enum FontError {
     NotDownloadable,
     #[error("a download for this family is already running")]
     DownloadActive,
-    #[error("downloaded bytes do not match the catalog size or SHA-256")]
+    #[error("stored font bytes or metadata failed verification")]
     Integrity,
     #[error("font server did not answer with a complete file")]
     Response,
@@ -19,6 +33,12 @@ pub enum FontError {
     Face(#[from] text::FontError),
     #[error("font catalog entry is invalid")]
     Catalog,
+    #[error("font input is corrupt or unsupported")]
+    InvalidImport,
+    #[error("different font bytes already own this family and style")]
+    Conflict,
+    #[error("a font import is already running")]
+    ImportActive,
 }
 
 /// Sound library failures.
@@ -85,7 +105,10 @@ impl Failure for FontError {
             | Self::Integrity
             | Self::Response
             | Self::Face(_)
-            | Self::Catalog => ErrorCode::Refused,
+            | Self::Catalog
+            | Self::InvalidImport
+            | Self::Conflict
+            | Self::ImportActive => ErrorCode::Refused,
         }
     }
 }

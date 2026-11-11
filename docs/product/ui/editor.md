@@ -92,7 +92,7 @@ Video and image items carry a `Remove BG` cell in their Basic sub-tab bar (deskt
 
 ## Font picker
 
-The text Font row opens a 320 px popover below the field, clamped inside the window: a search field, the source tabs All fonts, My fonts and Favorites, and inside All fonts a System/Google filter plus a disabled Custom category. Category chips use the app selected-chip roles: accent fill with on-accent ink for the chosen chip, field fill with text ink otherwise. Rows use fixed star, name, state and action columns, all left-aligned, and only informative rows carry state text on the row's centre line. No capture exists; the 320 px width, 288 px list ceiling and row spacing are [proposed]. Tabs, filters and download states: [font picker](../../../apps/vibecut/src/editor/panels/properties/font_picker/README.md).
+The text Font row opens a 320 px popover below the field, clamped inside the window: a search field, the source tabs All fonts, My fonts and Favorites, and inside All fonts System/Google/Custom categories plus an Import font action. Category chips use the app selected-chip roles: accent fill with on-accent ink for the chosen chip, field fill with text ink otherwise. Rows use fixed star, name, state and action columns, all left-aligned, and only informative rows carry state text on the row's centre line. No capture exists; the 320 px width, 288 px list ceiling and row spacing are [proposed]. Tabs, filters and download states: [font picker](../../../apps/vibecut/src/editor/panels/properties/font_picker/README.md).
 
 ## Canvas settings
 

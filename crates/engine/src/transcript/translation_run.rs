@@ -162,7 +162,7 @@ impl TranslationRun {
                         .is_some_and(|text| text.text == segment.text)
             })
         }) {
-            return Err(EditError::StaleResult);
+            return Err(EditError::Session(crate::SessionError::StaleResult));
         }
         let payload = window.consent_text()?;
         if scope.texts != [payload]
@@ -226,9 +226,7 @@ impl TranslationRun {
         runner: &mut JobRunner,
         session: &Session,
     ) -> crate::Result<(JobId, CancelToken)> {
-        if !session.matches_target(&self.target) {
-            return Err(EditError::StaleResult);
-        }
+        session.validate_job_target(&self.target)?;
         let text = self.window.consent_text()?;
         let source = *blake3::hash(text.as_str().as_bytes()).as_bytes();
         let config = self.provider.config();

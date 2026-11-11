@@ -49,7 +49,7 @@ Existing higher workflows declare their composed `EditError`; runtime-generated
 cancellation, unwind and reservation failures remain direct runtime errors.
 Snapshots retain the raw
 `Arc<dyn Failure>` after typed cancellation/retry decisions; only explicit failed-workflow
-propagation adds a `RuntimeError::Failed` envelope. This does not make callbacks generic.
+propagation adds a `RuntimeError::Failed` envelope.
 
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.
 `submit(spec, task)` returns a `JobId` and `CancelToken`; `tick()` joins finished workers,
@@ -60,7 +60,7 @@ reserve before invoking adapters and retain leases for their allocation lifetime
 progress functions through their own hooks. Engine disables ai's default native feature:
 composing an adapter is an app choice.
 
-The task closure returns complete bytes or a typed `EditError` with retained AI/IO sources. It
+The task closure returns complete bytes or its declared typed failure with retained sources. It
 must not apply commands or publish partial files. Independently complete ASR chunks may be
 committed as checkpoints inside a task. Executing closures run inside `catch_unwind`; OS thread
 creation failures are returned. `shutdown` and Drop cancel and join all active workers.

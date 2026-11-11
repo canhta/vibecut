@@ -213,6 +213,31 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
+    let (id, _) = r
+        .submit(spec(ResourceClass::Network), |_| {
+            Err(engine::SessionError::StaleResult)
+        })
+        .unwrap();
+    let snapshot = pump(&mut r, id);
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_ref().unwrap();
+    assert!(matches!(
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::SessionError>(),
+        Some(engine::SessionError::StaleResult)
+    ));
+    assert_eq!(raw.code(), engine::control::ErrorCode::StaleResult);
+    assert!(!raw.transient());
+    assert!(raw.source().is_none());
+    assert_eq!(raw.to_string(), "job result is stale");
+    let listed = r.snapshots().into_iter().find(|row| row.id == id).unwrap();
+    let event = r
+        .drain_events()
+        .into_iter()
+        .find(|row| row.id == id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+    assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    assert!(r.take_output(id).is_none());
     for direct in [true, false] {
         let (id, _) = r
             .submit(spec(ResourceClass::Network), move |context| {
@@ -816,19 +841,46 @@ fn stale_result_rejected_after_edit_undo_save_or_session_switch() {
     s.undo().unwrap();
     assert!(matches!(
         s.apply_job_result(&before, command()),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     let before = s.job_target();
     s.saved().unwrap();
     assert!(matches!(
         s.apply_job_result(&before, command()),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     let other = Session::new(p, 10).unwrap();
     assert!(matches!(
         s.apply_job_result(&other.job_target(), command()),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
+    s.begin_gesture().unwrap();
+    let current = s.job_target();
+    let before = (
+        s.project().clone(),
+        s.revision(),
+        s.history_len(),
+        s.selection().clone(),
+    );
+    // Identity wins even when the transaction would independently refuse application.
+    assert!(matches!(
+        s.apply_job_result(&other.job_target(), command()),
+        Err(EditError::Session(engine::SessionError::StaleResult))
+    ));
+    assert!(matches!(
+        s.apply_job_result(&current, command()),
+        Err(EditError::TransactionActive)
+    ));
+    assert_eq!(
+        (
+            s.project().clone(),
+            s.revision(),
+            s.history_len(),
+            s.selection().clone()
+        ),
+        before
+    );
+    s.cancel_gesture().unwrap();
     assert!(s.apply_job_result(&s.job_target(), command()).is_ok());
 }
 #[test]
@@ -1162,7 +1214,7 @@ fn submitted_output_carries_original_session_revision_through_completion() {
     let output = r.take_output(id).unwrap();
     assert!(matches!(
         output.apply(&mut session, command()),
-        Err(EditError::StaleResult)
+        Err(EditError::Session(engine::SessionError::StaleResult))
     ));
     let (id, _) = r
         .submit_for_session::<engine::EditError>(&session, spec(ResourceClass::Cpu), |_| {
@@ -1254,13 +1306,13 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         }
         assert!(matches!(
             session.apply_job_result(&target.unwrap(), add()),
-            Err(EditError::StaleResult)
+            Err(EditError::Session(engine::SessionError::StaleResult))
         ));
         let id = job.unwrap();
         assert_eq!(pump(&mut r, id).state, JobState::Completed);
         assert!(matches!(
             r.take_output(id).unwrap().apply(&mut session, add()),
-            Err(EditError::StaleResult)
+            Err(EditError::Session(engine::SessionError::StaleResult))
         ));
         assert!(
             session
@@ -1299,7 +1351,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
                     kind: project::TrackKind::Video
                 }
             ),
-            Err(EditError::StaleResult)
+            Err(EditError::Session(engine::SessionError::StaleResult))
         ));
     }
 }
@@ -1667,6 +1719,25 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (
+            || E::Session(engine::SessionError::StaleResult),
+            C::StaleResult,
+            false,
+        ),
+        (
+            || E::Runtime(B::Failed(Arc::new(engine::SessionError::StaleResult))),
+            C::StaleResult,
+            false,
+        ),
+        (
+            || {
+                E::Runtime(B::Failed(Arc::new(E::Runtime(B::Failed(Arc::new(
+                    E::Session(engine::SessionError::StaleResult),
+                ))))))
+            },
+            C::StaleResult,
+            false,
+        ),
         (|| E::Runtime(B::JobNotRetained), C::JobNotRetained, false),
         (
             || E::Runtime(B::Failed(Arc::new(B::JobNotRetained))),
@@ -1798,7 +1869,11 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             false,
         ),
         (
-            || E::Runtime(engine::RuntimeError::Failed(Arc::new(E::StaleResult))),
+            || {
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Session(
+                    engine::SessionError::StaleResult,
+                ))))
+            },
             C::StaleResult,
             false,
         ),
@@ -1879,6 +1954,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             .downcast_ref::<E>()
             .unwrap();
         let message = match typed {
+            E::Session(engine::SessionError::StaleResult) => Some("job result is stale"),
             E::Runtime(B::JobNotRetained) => Some("job is absent or no longer retained"),
             E::Runtime(B::IdExhausted) => Some("identifier space exhausted"),
             E::Runtime(B::CacheBusy) => Some("cache is in use"),

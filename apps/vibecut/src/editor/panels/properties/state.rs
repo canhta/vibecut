@@ -150,6 +150,7 @@ impl State {
             && self.picker.is_none()
             && self.reorder.is_none()
             && !self.font_picker.open
+            && self.font_import.is_none()
     }
 
     pub(in crate::editor) fn animation_target(

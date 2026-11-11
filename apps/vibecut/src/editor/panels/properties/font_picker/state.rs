@@ -5,8 +5,16 @@ use engine::control::{FontEntry, FontState};
 use engine::jobs::JobId;
 use std::collections::BTreeSet;
 
-/// Which family group All fonts shows. System/Google is our filter, not a
-/// source tab; Custom waits for font import (80).
+pub(in crate::editor) struct PendingImport {
+    pub snapshot: std::sync::Arc<project::Project>,
+    pub selection: BTreeSet<project::ItemId>,
+    pub at: time::Tick,
+    pub lifetime: u64,
+    pub choice: Option<super::FontChoice>,
+    pub job: Option<JobId>,
+}
+
+/// Which family group All fonts shows within its source tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Category {
     #[default]
@@ -50,6 +58,9 @@ pub struct Download {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     pub open: bool,
+    pub(crate) lifetime: u64,
+    pub(crate) importing: bool,
+    pub(crate) import_failed: bool,
     pub anchor: Option<egui::Pos2>,
     pub query: String,
     pub category: Category,
@@ -58,7 +69,7 @@ pub struct State {
     pub loaded: bool,
     /// A `fonts.list` request has been emitted and no answer is in yet.
     pub request_sent: bool,
-    /// Imported families become a My fonts source once 80 lands.
+    /// The current catalog includes verified imported families.
     pub has_imports: bool,
     pub current: Option<String>,
     pub download: Option<Download>,
@@ -68,11 +79,11 @@ pub struct State {
     pub preview_pending: BTreeSet<String>,
 }
 impl State {
-    /// The source tab set: All fonts, My fonts and Favorites always show; the
-    /// imported families and Custom upload are enabled by 80.
+    /// The source tab set; My fonts filters verified imported families.
     pub const TABS: [FontTab; 3] = [FontTab::All, FontTab::MyFonts, FontTab::Favorites];
 
     pub fn open(&mut self, anchor: egui::Pos2, current: Option<String>) {
+        self.lifetime = self.lifetime.wrapping_add(1);
         self.open = true;
         self.anchor = Some(anchor);
         self.query.clear();
@@ -84,6 +95,7 @@ impl State {
         }
     }
     pub fn close(&mut self) {
+        self.lifetime = self.lifetime.wrapping_add(1);
         self.open = false;
     }
     pub fn tabs(&self) -> [FontTab; 3] {
@@ -103,14 +115,13 @@ impl State {
                     Category::All => true,
                     Category::System => entry.origin == engine::control::FontOrigin::System,
                     Category::Google => entry.origin == engine::control::FontOrigin::Google,
-                    Category::Custom => false,
+                    Category::Custom => entry.origin == engine::control::FontOrigin::Custom,
                 },
                 FontTab::Favorites => preferences
                     .favorites
                     .iter()
                     .any(|family| family == &entry.family),
-                // Imported families arrive with 80; until then the tab is empty.
-                FontTab::MyFonts => false,
+                FontTab::MyFonts => entry.origin == engine::control::FontOrigin::Custom,
             })
             .filter(|entry| query.is_empty() || entry.family.to_lowercase().contains(&query))
             .collect()

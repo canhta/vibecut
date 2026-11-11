@@ -11,3 +11,7 @@
 The CJK face is a 2.1 MB subset covering GB2312, Big5 level 1, ASCII, CJK punctuation and fullwidth forms (9,804 characters). Characters outside the subset resolve deterministically to the preferred face and render as a missing glyph. Every asset has a licence and attribution sidecar under `assets/fonts/`. The [CJK attribution](../../../../assets/fonts/VibeCutSansCJK-Regular.otf.attribution) owns the external regeneration procedure; verify its pinned hashes before replacing the committed font. Regeneration is outside the repository build.
 
 Fallback is deterministic. The preferred face wins when it covers the character. Otherwise the profile chain is searched in order, then the bundled table order. Whitespace and control characters stay on the preferred face.
+
+Family identity uses Unicode lowercase consistently with the font catalog, so
+accented upper/lowercase requests share resolution, deduplication and conflicts.
+Style names retain ASCII-insensitive matching.

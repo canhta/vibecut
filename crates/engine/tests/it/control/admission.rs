@@ -911,7 +911,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Job,
             true
         ),
-        row!(E::StaleResult, StaleResult, false),
+        row!(
+            E::Session(engine::SessionError::StaleResult),
+            StaleResult,
+            false
+        ),
         row!(E::Runtime(B::LoudnessStale), Refused, false),
         row!(
             E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
@@ -1056,7 +1060,10 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::QueueFull), C::QueueFull),
         (E::Runtime(B::WorkerPanicked), C::WorkerFailure),
         (E::Limit, C::Limit),
-        (E::StaleResult, C::StaleResult),
+        (
+            E::Session(engine::SessionError::StaleResult),
+            C::StaleResult,
+        ),
         (E::Io(io::Error::other("disk")), C::Io),
         (
             E::Render(render::Error::Unavailable(Vec::new())),
@@ -1088,7 +1095,10 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         (E::Runtime(B::Poisoned), C::Job),
         (E::Runtime(engine::RuntimeError::Cancelled), C::Cancelled),
-        (E::StaleResult, C::StaleResult),
+        (
+            E::Session(engine::SessionError::StaleResult),
+            C::StaleResult,
+        ),
         (E::Runtime(engine::RuntimeError::NetworkTransient), C::Job),
     ] {
         let failure = R::PersistenceFailed(Arc::new(cause));
@@ -1112,6 +1122,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
     cases.push((
         E::Runtime(B::Failed(Arc::new(B::Cancelled))),
         C::Cancelled,
+        false,
+    ));
+    cases.push((
+        E::Runtime(B::Failed(Arc::new(engine::SessionError::StaleResult))),
+        C::StaleResult,
         false,
     ));
     let message = E::Providers(P::ModelMissing("test-model")).to_string();

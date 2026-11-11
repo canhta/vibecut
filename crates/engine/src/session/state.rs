@@ -212,16 +212,21 @@ impl Session {
         self.invalidate_revision(false)?;
         Ok(())
     }
-    pub(crate) fn matches_target(&self, target: &JobTarget) -> bool {
-        Arc::ptr_eq(&self.identity, &target.session)
+    /// Validate only the original Session epoch and revision pointer identity.
+    pub(crate) fn validate_job_target(
+        &self,
+        target: &JobTarget,
+    ) -> std::result::Result<(), super::SessionError> {
+        if Arc::ptr_eq(&self.identity, &target.session)
             && Arc::ptr_eq(&self.revision, &target.revision)
+        {
+            Ok(())
+        } else {
+            Err(super::SessionError::StaleResult)
+        }
     }
     pub fn apply_job_result(&mut self, target: &JobTarget, command: Command) -> Result<Outcome> {
-        if !Arc::ptr_eq(&self.identity, &target.session)
-            || !Arc::ptr_eq(&self.revision, &target.revision)
-        {
-            return Err(EditError::StaleResult);
-        }
+        self.validate_job_target(target)?;
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }

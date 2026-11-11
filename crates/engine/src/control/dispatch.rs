@@ -141,6 +141,17 @@ impl Session {
                 .collect();
                 Ok(ControlResult::Fillers { candidates })
             }
+            Command::FontsImport {
+                path,
+                accept_license,
+            } => {
+                let job = (font_access(caller)?.import)(runner, &path, accept_license)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
             Command::FontsDownload {
                 family,
                 accept_license,
@@ -439,7 +450,7 @@ impl Session {
                     return Err(EditError::Invalid("job is not a transcription"));
                 }
                 if snapshot.state != JobState::Completed {
-                    return Err(EditError::StaleResult);
+                    return Err(EditError::Session(crate::SessionError::StaleResult));
                 }
                 runner.validate_output_target(job, self)?;
                 let result = crate::subtitles::decode_captions(
@@ -460,7 +471,7 @@ impl Session {
                         .duration
                         .is_none_or(|d| result.range.end() > d)
                 {
-                    return Err(EditError::StaleResult);
+                    return Err(EditError::Session(crate::SessionError::StaleResult));
                 }
                 crate::subtitles::validate_source(asset)?;
                 let insert =

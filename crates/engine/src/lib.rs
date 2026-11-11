@@ -12,7 +12,7 @@ pub use session::{
     Move, NewItem, Outcome, Placement, TextAnimationPreset, TrackPlacement, TranscriptCue,
     TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
 };
-pub use session::{FontError, JobTarget, Session, SoundError};
+pub use session::{FontError, JobTarget, Session, SessionError, SoundError};
 mod runtime;
 pub use runtime::cache;
 pub use runtime::jobs;
@@ -92,8 +92,8 @@ pub enum EditError {
     Recovery(#[from] recovery::Error),
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
-    #[error("job result is stale")]
-    StaleResult,
+    #[error(transparent)]
+    Session(#[from] SessionError),
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -183,7 +183,7 @@ impl EditError {
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
-            Self::StaleResult => C::StaleResult,
+            Self::Session(inner) => return (inner.code(), inner.transient()),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
@@ -233,6 +233,7 @@ impl Failure for EditError {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
             Self::Runtime(error) => error.job_policy(),
+            Self::Session(error) => error.job_policy(),
             Self::Ai(ai::Error::RateLimit {
                 retry_after_seconds,
             }) => JobFailurePolicy {

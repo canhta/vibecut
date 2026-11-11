@@ -305,7 +305,7 @@ pub fn register(data: FontData) -> Result<FaceId, FontError> {
     }
     if BUNDLED
         .iter()
-        .any(|face| face.family.eq_ignore_ascii_case(&data.family))
+        .any(|face| same_family(face.family, &data.family))
     {
         return Err(FontError::BundledFamily);
     }
@@ -314,8 +314,7 @@ pub fn register(data: FontData) -> Result<FaceId, FontError> {
     }
     let mut registered = registry().write().unwrap_or_else(PoisonError::into_inner);
     if let Some(existing) = registered.faces.iter().find(|face| {
-        face.family.eq_ignore_ascii_case(&data.family)
-            && face.style.eq_ignore_ascii_case(&data.style)
+        same_family(face.family, &data.family) && face.style.eq_ignore_ascii_case(&data.style)
     }) {
         return if existing.bytes == data.bytes.as_slice() && existing.index == data.index {
             Ok(existing.id)
@@ -345,11 +344,23 @@ pub fn register(data: FontData) -> Result<FaceId, FontError> {
     Ok(id)
 }
 
+// Match the catalog's Unicode-lowercase family identity without allocating in
+// the resolver. ASCII fonts keep the existing fast comparison.
+fn same_family(left: &str, right: &str) -> bool {
+    if left.is_ascii() && right.is_ascii() {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left.chars()
+            .flat_map(char::to_lowercase)
+            .eq(right.chars().flat_map(char::to_lowercase))
+    }
+}
+
 /// Whether a family is registered or bundled (case-insensitive).
 pub fn is_available(family: &str) -> bool {
     all_faces()
         .iter()
-        .any(|face| face.family.eq_ignore_ascii_case(family))
+        .any(|face| same_family(face.family, family))
 }
 
 /// Bundled faces followed by registered faces, in identifier order.
@@ -459,14 +470,14 @@ pub fn resolve(family: &str, style: &str) -> Resolved {
         synth_italic: false,
         missing: true,
     });
-    resolved.missing = !family.is_empty() && !family.eq_ignore_ascii_case(DEFAULT_FAMILY);
+    resolved.missing = !family.is_empty() && !same_family(family, DEFAULT_FAMILY);
     resolved
 }
 
 fn resolve_in(family: &str, style: &str) -> Option<Resolved> {
     let members: Vec<&Face> = all_faces()
         .into_iter()
-        .filter(|face| face.family.eq_ignore_ascii_case(family))
+        .filter(|face| same_family(face.family, family))
         .collect();
     if members.is_empty() {
         return None;

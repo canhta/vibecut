@@ -245,6 +245,7 @@ impl FontStore {
         google: Vec<GoogleFamily>,
         scan: impl Fn() -> Vec<ScannedFace> + Send + Sync + 'static,
         transport: Arc<dyn DownloadTransport>,
+        file: Arc<dyn super::FontFile>,
     ) -> Result<Self> {
         if !google.iter().all(GoogleFamily::validate)
             || google
@@ -269,6 +270,7 @@ impl FontStore {
             system: OnceLock::new(),
             transport,
             active: Arc::new(Mutex::new(BTreeSet::new())),
+            file,
         })
     }
 }
@@ -287,6 +289,7 @@ impl FontStore {
             curated_google_families(),
             scan_system,
             Arc::new(ai::transport::UreqTransport::new()),
+            Arc::new(super::LocalFontFile),
         )
     }
 }
@@ -351,6 +354,21 @@ impl FontStore {
                     download_bytes: None,
                 },
             );
+        }
+        let mut custom: BTreeMap<String, FontEntry> = BTreeMap::new();
+        for record in self.imported()? {
+            if self.imported_bytes(&record)?.is_none() {
+                continue;
+            }
+            let entry = custom
+                .entry(record.family.to_lowercase())
+                .or_insert_with(|| record.entry());
+            if !entry.styles.contains(&record.style) {
+                entry.styles.push(record.style.clone());
+            }
+        }
+        for (_, entry) in custom {
+            offer(1, entry);
         }
         for g in &self.google {
             let cached = matches!(self.cache(g)?, Cache::Valid(_));

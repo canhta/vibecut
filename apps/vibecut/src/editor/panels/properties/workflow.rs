@@ -189,6 +189,8 @@ impl State {
         tab: &'static str,
     ) -> Result<()> {
         desk.arm_key_color_pick(None);
+        self.cancel_font_import(desk);
+        self.font_picker.close();
         self.chroma_staged = None;
         let mut next = desk.view().preferences.properties_tabs.clone();
         next.insert(kind.to_owned(), tab.to_owned());

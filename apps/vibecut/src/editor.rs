@@ -120,10 +120,6 @@ impl Editor {
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
         self.properties.set_font_backend(backend);
     }
-    /// Wire the My fonts tab once font import (80) supplies imported families.
-    pub fn set_font_imports_available(&mut self, available: bool) {
-        self.properties.set_font_imports_available(available);
-    }
     /// Open the shared colour picker on a target the workspace owns.
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
         let actions = self
@@ -168,7 +164,9 @@ impl Editor {
     }
     /// Poll the active font download; the frame ticks it once per frame.
     pub(in crate::editor) fn poll_fonts(&mut self) {
-        self.properties.poll_fonts();
+        let mut state = std::mem::take(&mut self.properties);
+        state.poll_fonts(&mut self.desk());
+        self.properties = state;
     }
     /// End the properties scrub gesture, if one is open.
     pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
@@ -219,6 +217,10 @@ impl Editor {
         playback: Playback,
         preferences: Preferences,
     ) -> Self {
+        let font_error = libraries::fonts::FontStore::native()
+            .and_then(|store| store.load_project(session.project()))
+            .err()
+            .map(|_| i18n::text(preferences.locale, Text::FontsLoadFailed).to_owned());
         let view = session.metadata().view;
         let zoom = (f64::from(DEFAULT_ZOOM) * view.zoom)
             .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM)) as f32;
@@ -257,7 +259,7 @@ impl Editor {
                 state
             },
             media,
-            error: None,
+            error: font_error,
             persistence_error: None,
             configured: false,
             lifecycle_action: None,
