@@ -88,7 +88,7 @@ verified-complete marker permits a `ModelLease`, so partial checkpoints stay una
 loaders. Models and checkpoints are pinned against LRU and generic clear; only an explicit
 `remove` deletes them, and live leases refuse removal. Uncheckpointed tails are reclaimed before
 append or restart and credited during a free-disk preflight; a disk-full write still returns
-`engine::Error::Runtime(RuntimeError::StorageFull)` when availability changes after the
+`models::Error::Runtime(RuntimeError::StorageFull)` when availability changes after the
 advisory check. Malformed transfer representations compose `RuntimeError::ModelResponse`;
 both are source-free, nontransient `Refused` failures owned by [Runtime](../runtime/README.md).
 Other IO and foreign AI integrity/storage errors keep their existing types. Unknown directories and
@@ -103,4 +103,14 @@ bounds redirects and has finite timeouts. Weights are never Git or installer con
 Native cache metadata and installed-file verification failures arrive through
 `RuntimeError::Model` with the original AI source; this opaque resource failure does not
 turn AI verification cancellation into direct scheduler cancellation. Transfer callbacks
-retain their declared mixed engine error, consent, retry and publication policy.
+return their model-transfer error, preserving consent, retry and publication policy.
+
+The `models` door exposes the ModelTransfers-owned Error/Result, separate from provider
+selection errors and catalog lookup. Open, verified lookup, submit, remove and their owned
+work consume that result; model jobs retain their actual producer through one erasure.
+Mixed higher workflows compose through transparent `engine::Error::Models`. Kernel Edit,
+Runtime cache/transfer/native Model failures, direct AI consent/integrity and owned IO keep
+their typed sources, safe diagnostics and existing classification. Only explicit Runtime
+and direct AI compositions delegate their existing transience/job policy; Runtime Transfer,
+Model and Failed remain opaque. AI cancellation is not direct Runtime cancellation. ModelIo
+remains an IO boundary, and storage-full mapping retains its specific Runtime refusal.

@@ -1771,6 +1771,34 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
         (
+            || E::Models(engine::models::Error::Runtime(B::NetworkTransient)),
+            C::Job,
+            true,
+        ),
+        (
+            || {
+                E::Models(engine::models::Error::Runtime(B::Failed(Arc::new(
+                    B::Cancelled,
+                ))))
+            },
+            C::Cancelled,
+            false,
+        ),
+        (
+            || E::Models(engine::models::Error::Ai(ai::Error::Cancelled)),
+            C::Ai,
+            false,
+        ),
+        (
+            || {
+                E::Models(engine::models::Error::Ai(ai::Error::Chapters(
+                    ai::chapters::ChapterRefusal::EmptyTranscript,
+                )))
+            },
+            C::Refused,
+            false,
+        ),
+        (
             || E::Session(engine::SessionError::StaleResult),
             C::StaleResult,
             false,

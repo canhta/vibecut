@@ -21,6 +21,6 @@ mod model_transfers;
 pub mod models {
     //! Transfers explicitly requested model bundles.
     pub use super::catalog_model;
-    pub use super::model_transfers::{ModelIo, ModelTransfers, SystemModelIo};
+    pub use super::model_transfers::{Error, ModelIo, ModelTransfers, Result, SystemModelIo};
     pub use ai::models::{DownloadConsent, Model};
 }

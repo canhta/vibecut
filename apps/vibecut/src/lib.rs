@@ -109,3 +109,9 @@ impl From<engine::EditError> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::models::Error> for Error {
+    fn from(error: engine::models::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

@@ -214,6 +214,25 @@ mod exit_codes {
                 "ai",
                 4
             ),
+            row!(
+                E::Models(engine::models::Error::Ai(ai::Error::ConsentRequired)),
+                "ai",
+                4
+            ),
+            row!(
+                E::Models(engine::models::Error::Runtime(
+                    engine::RuntimeError::StorageFull
+                )),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Models(engine::models::Error::Runtime(
+                    engine::RuntimeError::Failed(Arc::new(engine::RuntimeError::NetworkTransient))
+                )),
+                "job",
+                7
+            ),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
             row!(
