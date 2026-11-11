@@ -18,10 +18,10 @@
 | Why a decision was made | [ADRs](adr/README.md) | owner docs |
 | Domain model, glossary and ADR conventions | [Domain docs](agents/domain.md) | - |
 | Domain term | [Glossary](../GLOSSARY.md) | - |
-| Agent roles, tiers, dispatch, review, merge, cleanup | [Orchestration](agents/orchestration.md) | - |
+| Agent roles, routing, dispatch, review, merge, cleanup | [Orchestration](agents/orchestration.md) | - |
 | Ticket files, header, queries | [Issue tracker](agents/issue-tracker.md) | - |
 | Build and provisioning detail | [xtask](../xtask/README.md) | workflows.md beyond its summary and link |
-| Hosts, Orca, relay, tiers' track record, ticket state | `.scratch/` and the private workspace | any tracked file |
+| Hosts, Orca, relay, agent track record, ticket state | `.scratch/` and the private workspace | any tracked file |
 
 Owner docs state current contracts only, in short sentences. Change a fact at its owner and link to it elsewhere. No history, test inventories or restated code; rationale belongs in ADRs.
 

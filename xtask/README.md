@@ -2,13 +2,13 @@
 
 Workspace checks, native-media provisioning and development build admission. This binary is tooling, outside the product dependency graph.
 
-Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the launcher in `target/xtask`, independently of the checkout's product target. Product compilation on shared macOS and Windows developer machines uses `cargo xtask build -- <command...>`. The wrapper applies `ffmpeg::environment`, so every admitted command finds and loads the provisioned LGPL SDK at build and run time. Hosted CI runners run Cargo directly. Nested xtask commands keep the same native runpath flags and library paths, so direct and aggregate checks share Cargo fingerprints.
+Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the launcher in `target/xtask`, independently of the checkout's product target. Product compilation on developer hosts uses `cargo xtask build -- <command...>`. The wrapper applies `ffmpeg::environment`, so every admitted command finds and loads the provisioned SDK at build and run time. Hosted CI runners run Cargo directly. Nested xtask commands keep the same native runpath flags and library paths, so direct and aggregate checks share Cargo fingerprints.
 
 | Command | Behaviour |
 |---|---|
-| `build -- COMMAND [ARGS...]` | FIFO admission and command exit status on macOS and Windows; OS-native arguments, inherited standard streams |
+| `build -- COMMAND [ARGS...]` | FIFO build admission and command exit status; OS-native arguments, inherited standard streams |
 | `prune [--make-room] [--dry-run]` | Remove verified targets whose checkout is gone and prune above-capacity idle targets; `--make-room` explicitly evicts at most one oldest idle verified target to admit another; `--dry-run` prints the plan |
-| `build-cap --json` | Host checkout-target capacity, current directory count, disk budget and candidates in pruning order, for dispatchers |
+| `build-cap --json` | Host product-target capacity, current directory count, disk budget and candidates in pruning order; not a worker limit |
 | `checks`, `docs`, `i18n`, `layers`, `assets` | Repository policy; one forbidden-name scan covers tracked files and branch commit messages before `docs`, which includes the docs index, README module maps, tracker-free Markdown, relative links and anchors that resolve, and no reference-checkout source paths, against only-shrinking `xtask/docs-baseline.txt`; `i18n` rejects the first catalog key that breaks ascending order inside its `// <area>` section; `checks` also checks formatting and the integration-test entry point |
 | `modules` | Module structure gate: no `mod.rs`, responsibility docs, banned names (tests included), folder width, intra-crate layer direction from `xtask/modules.toml` (crate and `[[crate.folder]]` tables), and one sorted `support::control` import per line in the control catalog test, with only-shrinking `xtask/modules-baseline.txt` |
 | `catalog` | Regenerate `crates/engine/catalog.digest` and `docs/product/agent-control/commands.md` from the registry (the engine `control_catalog` example); declarations must be in ascending command-id order, and the example names the first out-of-order id before writing |
@@ -18,6 +18,8 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the lau
 | `new-crate NAME` | Scaffold a core library already admitted in the architecture table |
 
 ## Build slots
+
+These limits govern product targets and running compiler commands. [Orchestration](../docs/agents/orchestration.md#placement-and-builds) owns worker scheduling: independent source work can start in an isolated checkout before a product target is available, with checks waiting for build admission. The reported target capacity and compiler-slot ceiling are not agent, source-task or checkout ceilings.
 
 The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). Each checkout has `target/wt-<first 32 hex digits of SHA-256 of its canonical absolute root>`, independent of admission slot number. The short name stays within Windows native build path limits; an existing target with a different or unreadable owner is refused. Workspace outputs, incremental sessions and Cargo fingerprints survive builds in other checkouts; admission never touches source timestamps or removes workspace artifacts. Cargo alone detects edits within that checkout. A per-checkout OS lock serializes commands using the same target before they enter the admission queue; it follows the same descendant lifetime as the slot lock.
 
