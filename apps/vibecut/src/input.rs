@@ -8,7 +8,9 @@ mod keybindings;
 mod keymap;
 
 pub use chord::{Chord, ChordError, Mods, Platform};
+pub(crate) use dispatch::cancel_text_paste;
 pub use dispatch::{BlockedReason, Dispatch, DispatchContext};
+pub use dispatch::{TextPasteRequest, complete_text_paste, take_text_paste, text_clipboard};
 #[cfg(test)]
 pub(crate) use keybindings::valid_action_id;
 pub use keybindings::{

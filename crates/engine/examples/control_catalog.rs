@@ -16,10 +16,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parent) = artifact.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(
-        artifact,
-        engine::control::bounded_json(engine::registry(), engine::control::MAX_RESPONSE_BYTES)?,
-    )?;
+    // This local artifact aggregates every page; transport caps still apply to
+    // each wire response, not to the generated file containing the whole catalog.
+    let mut artifact = std::io::BufWriter::new(std::fs::File::create(artifact)?);
+    serde_json::to_writer(&mut artifact, engine::registry())?;
+    std::io::Write::flush(&mut artifact)?;
     std::fs::write(
         root.join("../../docs/product/agent-control/commands.md"),
         engine::control::reference_markdown()?,

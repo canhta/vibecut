@@ -177,14 +177,19 @@ impl State {
 
     pub(super) fn cancel_opacity(&mut self) -> Vec<Action> {
         self.opacity_edit = None;
-        self.drafts.remove("opacity");
-        if self.focus.as_deref() == Some("opacity") {
+        self.drafts
+            .retain(|key, _| key != "opacity" && !key.starts_with("params."));
+        if self
+            .focus
+            .as_deref()
+            .is_some_and(|f| f == "opacity" || f.starts_with("params."))
+        {
             self.focus = None;
         }
         if self
             .scrub
             .as_ref()
-            .is_some_and(|s| s.target == ScrubTarget::Item("opacity"))
+            .is_some_and(|s| matches!(s.target, ScrubTarget::Item(field) if field == "opacity" || field.starts_with("params.")))
         {
             return self.end_scrub(false);
         }
@@ -356,7 +361,7 @@ pub(in crate::editor) fn element_kind(
         (_, TrackKind::Sticker) => ElementKind::Sticker,
         (_, TrackKind::Effect) => ElementKind::Effect,
         (_, TrackKind::Filter | TrackKind::Adjustment) => ElementKind::Graphic,
-        (ItemParams::Overlay(_), _) => ElementKind::Graphic,
+        (ItemParams::Overlay(_) | ItemParams::Graphic(_), _) => ElementKind::Graphic,
         (ItemParams::Video(_), _) => {
             let Some(asset) = item
                 .source_asset

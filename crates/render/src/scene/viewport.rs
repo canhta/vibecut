@@ -275,6 +275,12 @@ impl Renderer<'_> {
             .ok_or(Error::Invalid("item time"))?;
         match &item.content {
             ItemParams::Audio(_) => return Ok(None),
+            ItemParams::Graphic(_) => {
+                let (fill, stroke, width, _, _) = super::draw::graphic_appearance(item, local)?;
+                if fill[3] == 0. && (stroke[3] == 0. || width == 0.) {
+                    return Ok(None);
+                }
+            }
             ItemParams::Overlay(p) if p.color.0[3] == 0 => {
                 let stroke = crate::color::at(
                     &item.animations,

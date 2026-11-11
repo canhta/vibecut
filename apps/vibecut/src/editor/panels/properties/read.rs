@@ -25,6 +25,11 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         return transform.value_at(&item.animations, Tick::ZERO).ok();
     }
     match (field, &item.content) {
+        ("params.strokeWidth", ItemParams::Graphic(p)) => Some(p.appearance().2),
+        (
+            "params.cornerRadius",
+            ItemParams::Graphic(project::GraphicParams::Rectangle { corner_radius, .. }),
+        ) => Some(*corner_radius),
         ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
         ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),
         ("text_line_height", ItemParams::Text(params)) => Some(f64::from(params.line_height)),
@@ -60,6 +65,22 @@ pub(super) fn item_value_at(
         .find(|f| f.builtin().as_str() == field)
     {
         return transform.value_at(&item.animations, at).ok();
+    }
+    if field.starts_with("params.") && matches!(item.content, ItemParams::Graphic(_)) {
+        let max = if field == "params.strokeWidth" {
+            64.
+        } else {
+            50.
+        };
+        return match item
+            .animations
+            .value_at(&project::AnimationPath::new(field).ok()?, at)
+            .ok()
+            .flatten()
+        {
+            Some(project::ParamValue::Scalar(v)) => Some(v.clamp(0., max)),
+            _ => item_value(project, item.id, field),
+        };
     }
     let builtin = if field == "audio_gain" {
         Some(project::BuiltinPath::Volume)

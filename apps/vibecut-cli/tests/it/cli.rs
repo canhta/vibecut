@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod ai;
 mod catalog;
-mod fixtures;
+pub(crate) mod fixtures;
 mod libraries;
 mod media;
 mod process;

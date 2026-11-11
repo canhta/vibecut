@@ -112,8 +112,69 @@ async fn hung_calls_expire_and_cancelled_queued_mutations_never_execute() {
         100,
     )
     .unwrap();
+    let path = project::BuiltinPath::Opacity.into();
+    let mut animations = project::Animations::default();
+    animations
+        .set(
+            path,
+            project::Param::Value(
+                project::Channel::new(
+                    project::ParamValue::Scalar(0.7),
+                    vec![
+                        project::Keyframe::new(time::Tick(0), project::ParamValue::Scalar(0.25)),
+                        project::Keyframe::new(time::Tick(12), project::ParamValue::Scalar(0.75)),
+                    ],
+                    project::Extrapolation::Hold,
+                    project::Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    let inserted = session
+        .apply(engine::Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                animations,
+                source_asset: None,
+                source_range: time::SourceRange::new(
+                    time::Tick::ZERO,
+                    time::Tick(time::TICKS_PER_SECOND),
+                )
+                .unwrap(),
+                start: time::Tick::ZERO,
+                retime: Default::default(),
+                content: project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([255; 4]),
+                }),
+            },
+        })
+        .unwrap();
+    let item = inserted
+        .created
+        .iter()
+        .find_map(|i| {
+            if let engine::CreatedId::Item(i) = i {
+                Some(*i)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    session
+        .apply(engine::Command::CopyKeyframes {
+            keys: vec![engine::KeyframeRef {
+                item,
+                path: project::BuiltinPath::Opacity.into(),
+                component: None,
+                time: time::Tick::ZERO,
+            }],
+        })
+        .unwrap();
+    let before = session.project().clone();
+    let history = session.history_len();
     let initial = session.revision();
-    let request = json!({"command":"project.rename","params":{"name":"must not execute"},"base_rev":initial,"idempotency_key":"queued","request_id":"q"});
+    let request = json!({"command":"clipboard.copy_keyframes","params":{"keys":[{"item":item,"path":"opacity","time":12}]},"base_rev":initial,"idempotency_key":"queued","request_id":"q"});
     send(&mut write, json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"command_run","arguments":request}})).await;
     // Poll until queued, without allowing the engine owner to process it.
     while inbox.receive.is_empty() {
@@ -128,7 +189,7 @@ async fn hung_calls_expire_and_cancelled_queued_mutations_never_execute() {
     inbox.poll(&mut session, |_, _| Ok(())).unwrap();
     assert_eq!(session.revision(), initial);
 
-    let request = json!({"command":"project.rename","params":{"name":"must not execute"},"base_rev":initial,"idempotency_key":"cancelled","request_id":"c"});
+    let request = json!({"command":"clipboard.paste_keyframes","params":{"item":item,"at":40,"source":{"kind":"stored"}},"base_rev":initial,"idempotency_key":"cancelled","request_id":"c"});
     send(&mut write, json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"command_run","arguments":request}})).await;
     while inbox.receive.is_empty() {
         tokio::task::yield_now().await;
@@ -142,6 +203,19 @@ async fn hung_calls_expire_and_cancelled_queued_mutations_never_execute() {
         tokio::task::yield_now().await;
     }
     inbox.poll(&mut session, |_, _| Ok(())).unwrap();
+    assert_eq!(session.revision(), initial);
+    assert_eq!(session.project(), &before);
+    assert_eq!(session.history_len(), history);
+    session
+        .apply(engine::Command::CopyKeyframes {
+            keys: vec![engine::KeyframeRef {
+                item,
+                path: project::BuiltinPath::Opacity.into(),
+                component: None,
+                time: time::Tick::ZERO,
+            }],
+        })
+        .unwrap();
     assert_eq!(session.revision(), initial);
     task.abort();
 }
@@ -255,6 +329,14 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.save_preset", Effect::Edit, true, true),
         ("captions.rename_preset", Effect::Edit, true, true),
         ("captions.delete_preset", Effect::Edit, true, true),
+        (
+            "clipboard.copy_keyframes",
+            Effect::SessionControl,
+            true,
+            true,
+        ),
+        ("clipboard.paste_keyframes", Effect::Edit, true, true),
+        ("clipboard.read", Effect::Read, true, true),
         ("text.apply_animation", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
@@ -491,6 +573,100 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
     }
     assert_eq!(first.project().data().name.as_str(), "edit-1");
     assert_eq!(second.project().data().name.as_str(), "edit-0");
+    // A desktop typed Copy is visible through the same routed Session's inbox.
+    let mut animations = project::Animations::default();
+    let mut opacity = project::Param::new(project::ParamValue::Scalar(0.7)).unwrap();
+    opacity
+        .channel_mut(None)
+        .unwrap()
+        .put(project::Keyframe::new(
+            time::Tick(-3),
+            project::ParamValue::Scalar(0.25),
+        ))
+        .unwrap();
+    animations
+        .set(project::BuiltinPath::Opacity.into(), opacity)
+        .unwrap();
+    let added = first
+        .apply(engine::Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                animations,
+                source_asset: None,
+                source_range: time::SourceRange::new(
+                    time::Tick::ZERO,
+                    time::Tick(time::TICKS_PER_SECOND),
+                )
+                .unwrap(),
+                start: time::Tick::ZERO,
+                retime: Default::default(),
+                content: project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([255; 4]),
+                }),
+            },
+        })
+        .unwrap();
+    let item = added
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    first
+        .apply(engine::Command::CopyKeyframes {
+            keys: vec![engine::KeyframeRef {
+                item,
+                path: project::BuiltinPath::Opacity.into(),
+                component: None,
+                time: time::Tick(-3),
+            }],
+        })
+        .unwrap();
+    for (project, nonempty) in [(Some("1"), true), (Some("2"), false), (None, true)] {
+        let mut value =
+            json!({"command":"clipboard.read","request_id":"clipboard-route","params":{}});
+        if let Some(project) = project {
+            value["project_id"] = json!(project);
+        }
+        let (reply, receive) = oneshot::channel();
+        handler
+            .send
+            .send(Pending {
+                value,
+                expires: Instant::now() + DEADLINE,
+                reply,
+            })
+            .await
+            .unwrap();
+        inbox
+            .poll_projects(|target, inbox, value| {
+                let session = if target.unwrap_or(project::ProjectId(1)) == project::ProjectId(1) {
+                    &mut first
+                } else {
+                    &mut second
+                };
+                inbox.execute_project(session, value, |_, _| Err(EditError::Permission))
+            })
+            .unwrap();
+        let response = receive.await.unwrap().unwrap();
+        assert_eq!(
+            response.pointer("/value/value/kind"),
+            Some(&json!("clipboard"))
+        );
+        if nonempty {
+            assert_eq!(
+                response.pointer("/value/value/payload/origin"),
+                Some(&json!(-3))
+            );
+        } else {
+            assert_eq!(response.pointer("/value/value/payload"), Some(&Value::Null));
+        }
+    }
     inbox.retain_projects(|id| id == project::ProjectId(2));
     assert!(!inbox.projects.contains_key(&project::ProjectId(1)));
     assert!(inbox.projects.contains_key(&project::ProjectId(2)));

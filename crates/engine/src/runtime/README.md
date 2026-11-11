@@ -21,7 +21,12 @@ their existing storage, budget and cleanup policy.
 ## Background jobs and byte policy
 
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
-failures and unusable cached artifacts; `RuntimeError` is the engine re-export.
+failures, cache ownership contention and unusable cached artifacts; `RuntimeError` is the engine re-export.
+`CacheBusy` owns cache writer-lock, native model pin/lease and active-transfer contention:
+its original static diagnostic is `cache is in use`, with code `Refused`, no source and no
+transience. Cache, provider and sound-download callers compose it through the one transparent
+`EditError::Runtime` wrapper. It does not authorize automatic retry, reclaim or fallback;
+explicit `Failed` wrappers keep the refusal code and remain nontransient.
 `CacheCorrupt` is source-free, nontransient and classified as `Job`; its static
 message does not authorize fallback. Each artifact consumer owns whether corruption
 means recompute, a failed display or refusal; explicit `Failed` wrappers do not
@@ -115,6 +120,11 @@ during a transaction and invalidates pre-save targets. Opening another Session g
 identity; a valid old artifact may stay cached without being applied.
 
 ## Render execution
+
+`admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or
+mismatched measured gains with code `Refused`, no source and no transience. Export
+submission composes this error before admitting any single- or multi-scene job;
+no target needs no measurement. The content key excludes the master fader.
 
 `submit_export` submits an immutable Project snapshot to the runner's export resource class.
 `JobContext` implements render's `ExecutionHooks`, leasing actual buffers from the shared

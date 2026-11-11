@@ -2643,25 +2643,31 @@ fn spatial_sample(pixels: &[[f64; 4]], [w, h]: [u32; 2], x: f64, y: f64) -> [f64
     }
     out
 }
-fn streak_expected(pixels: &[[f64; 4]], size: [u32; 2], [dx, dy]: [f64; 2]) -> Vec<[f64; 4]> {
-    let span = dx.hypot(dy);
-    if span < 0.5 {
+// Counts are analytical table data: ceil(hypot(rounded components)) can add a
+// spurious tap at an integer span (e.g. 3*sqrt(2) on each axis has span exactly 6).
+fn streak_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    [dx, dy]: [f64; 2],
+    taps: usize,
+) -> Vec<[f64; 4]> {
+    if taps == 0 {
         return pixels.to_vec();
     }
-    let n = span.ceil().clamp(2.0, 64.0) as usize;
+    assert!((2..=64).contains(&taps));
+    // The pass boundary carries f32 uniforms and texel-index coordinates. Round
+    // these explicitly; corner weights and accumulation stay independent f64.
+    let [dx, dy] = [dx, dy].map(|v| v as f32);
     (0..size[0] * size[1])
         .map(|i| {
             let mut out = [0.0; 4];
-            for tap in 0..n {
-                let fraction = tap as f64 / (n - 1) as f64 - 0.5;
-                let p = spatial_sample(
-                    pixels,
-                    size,
-                    f64::from(i % size[0]) + dx * fraction,
-                    f64::from(i / size[0]) + dy * fraction,
-                );
+            for tap in 0..taps {
+                let fraction = tap as f32 / (taps - 1) as f32 - 0.5;
+                let x = (i % size[0]) as f32 + dx * fraction;
+                let y = (i / size[0]) as f32 + dy * fraction;
+                let p = spatial_sample(pixels, size, f64::from(x), f64::from(y));
                 for k in 0..4 {
-                    out[k] += p[k] / n as f64;
+                    out[k] += p[k] / taps as f64;
                 }
             }
             out
@@ -2701,17 +2707,17 @@ fn streak_taps_match_independent_impulse_checker_alpha_constants_and_boundaries(
                 &hooks,
             )
             .unwrap();
-            for (length, angle, gains) in [
-                (0.0, 0.0, [1.0, 1.0]),
-                (0.2499, 0.0, [1.0, 1.0]),
-                (0.25, 0.0, [1.0, 1.0]),
-                (1.0, 90.0, [1.0, 1.0]),
-                (2.0, 45.0, [0.75, 1.5]),
-                (3.0, -360.0, [0.5, 0.5]),
-                (3.0, 360.0, [0.25, 0.25]),
-                (31.5, 0.0, [1.0, 1.0]),
-                (32.1, 90.0, [1.0, 1.0]),
-                (1000.0, 45.0, [1.0, 1.0]),
+            for (length, angle, gains, taps) in [
+                (0.0, 0.0, [1.0, 1.0], 0),
+                (0.2499, 0.0, [1.0, 1.0], 0),
+                (0.25, 0.0, [1.0, 1.0], 2),
+                (1.0, 90.0, [1.0, 1.0], 2),
+                (2.0, 45.0, [0.75, 1.5], 5),
+                (3.0, -360.0, [0.5, 0.5], 3),
+                (3.0, 360.0, [0.25, 0.25], 2),
+                (31.5, 0.0, [1.0, 1.0], 63),
+                (32.1, 90.0, [1.0, 1.0], 64),
+                (1000.0, 45.0, [1.0, 1.0], 64),
             ] {
                 let mut outputs = Vec::new();
                 for fine in [true, false] {
@@ -2745,6 +2751,7 @@ fn streak_taps_match_independent_impulse_checker_alpha_constants_and_boundaries(
                             2.0 * length * a.sin() * gains[0],
                             -2.0 * length * a.cos() * gains[1],
                         ],
+                        taps,
                     );
                     for (actual, expected) in out.pixels().iter().zip(expected) {
                         assert_working_pixel(*actual, expected, "Streak taps");
@@ -2904,13 +2911,14 @@ impl SourceProvider for SpatialSource {
 fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units() {
     use project::*;
     // Probe is4x4; actual decoded raster400x200 must win, and only one decode occurs.
-    for (size, fit, crop, destination, gains) in [
+    for (size, fit, crop, destination, gains, taps) in [
         (
             [300, 300],
             Fit::Cover,
             Crop::default(),
             Rect::default(),
             [1.5, 1.5],
+            6,
         ),
         (
             [300, 300],
@@ -2918,6 +2926,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             Crop::default(),
             Rect::default(),
             [0.75, 0.75],
+            3,
         ),
         (
             [300, 300],
@@ -2925,6 +2934,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             Crop::default(),
             Rect::default(),
             [0.75, 1.5],
+            5,
         ),
         (
             [300, 300],
@@ -2937,6 +2947,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             },
             Rect::default(),
             [1.5, 1.5],
+            6,
         ),
         (
             [37, 61],
@@ -2949,6 +2960,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
                 height: 0.6,
             },
             [37.0 * 0.8 / 400.0, 61.0 * 0.6 / 200.0],
+            2,
         ),
     ] {
         let mut data = content_scene(vec![]).into_data();
@@ -2985,7 +2997,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             2.0_f64.sqrt() * 2.0 * gains[0],
             -2.0_f64.sqrt() * 2.0 * gains[1],
         ];
-        let expected = streak_expected(&input, size, displacement);
+        let expected = streak_expected(&input, size, displacement, taps);
         for preview in [false, true] {
             src.calls = 0;
             let mut renderer = Renderer::new(&effected, settings.clone()).unwrap();
@@ -2996,6 +3008,47 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             }
             .unwrap();
             assert_eq!(src.calls, 1);
+            if matches!(fit, Fit::Cover) {
+                // At (146,0), five taps have red .5; the last is at
+                // x=146+3*sqrt(2)/2. Placed texels 148 and 149 have red
+                // .5 and 5/12, so red=.5-(3*sqrt(2)/2-2)/72 for six taps.
+                // Seven taps would give .4985557101957185, outside 3e-6.
+                // Alpha is 1-red and green is alpha/2 in this source region.
+                assert_working_pixel(
+                    out.pixels()[146],
+                    [
+                        0.4983149952283383,
+                        0.2508425023858309,
+                        0.0,
+                        0.5016850047716617,
+                    ],
+                    "Streak analytical six-tap Cover edge",
+                );
+            } else if matches!(fit, Fit::Contain) {
+                // At (148,100), two taps have red .5; the last interpolates
+                // between placed texels 149 (.5) and 150 (0). Thus
+                // red=.5-(3*sqrt(2)/4-1)/6 with span exactly 3, not four taps.
+                assert_working_pixel(
+                    out.pixels()[100 * 300 + 148],
+                    [
+                        0.4898899713700298,
+                        0.2550550143149851,
+                        0.0,
+                        0.5101100286299702,
+                    ],
+                    "Streak analytical three-tap Contain edge",
+                );
+                // At (151,223), the first f32 tap is (149.9393463134765625,
+                // 224.0606536865234375), giving q=3975/65536. Its four
+                // corner alphas are .5,1,0,0; the other two taps have alpha 1.
+                // Thus red=q*(1-q)/6 and alpha=1-q/2+q*q/6, independently
+                // of production interpolation and accumulation rounding.
+                assert_working_pixel(
+                    out.pixels()[223 * 300 + 151],
+                    [0.009495802805759013, 0.0, 0.0, 0.9702863016864285],
+                    "Streak analytical f32-coordinate Contain corner",
+                );
+            }
             for (a, b) in out.pixels().iter().zip(&expected) {
                 assert_working_pixel(*a, *b, "Streak scene geometry");
             }
@@ -3116,9 +3169,9 @@ fn streak_animated_crop_and_length_keep_real_time_before_later_transform() {
             ..Default::default()
         },
     );
-    for (at, displacement) in [
-        (tick(1, 10), [0.0, 0.0]),
-        (tick(4, 5), [5.6568542495, -2.8284271247]),
+    for (at, displacement, taps) in [
+        (tick(1, 10), [0.0, 0.0], 0),
+        (tick(4, 5), [5.6568542495, -2.8284271247], 7),
     ] {
         let input = Renderer::new(&plain, settings.clone())
             .unwrap()
@@ -3132,6 +3185,7 @@ fn streak_animated_crop_and_length_keep_real_time_before_later_transform() {
                 .collect::<Vec<_>>(),
             [40, 20],
             displacement,
+            taps,
         );
         let out = Renderer::new(&effected, settings.clone())
             .unwrap()

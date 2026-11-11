@@ -69,3 +69,10 @@ Sources: [Claude Code](https://code.claude.com/docs/en/mcp), [Codex](https://lea
 in request JSON never grants an agent permission to read arbitrary files. Existing
 font listing and loading grants are unchanged; font store custody and format bounds
 are owned by the [font catalog](../../../crates/libraries/src/font_catalog/README.md#custom-import).
+
+The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
+`clipboard.paste_keyframes` run through `command_run` (and their generated all-tools
+names). Read returns the bounded payload in structuredContent. Attached UI and MCP
+share the selected Editor's Session store; other editors and headless processes start
+empty. No keyframe data is written to the system clipboard. Transfer and lifetime:
+[clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).

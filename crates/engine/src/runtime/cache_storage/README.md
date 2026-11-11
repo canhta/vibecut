@@ -22,7 +22,8 @@ additional identity:
 
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded metadata after
 restart. Application placement chooses the directory and an OS file lock enforces one live
-writer (`CacheBusy` on contention). Cache writers and native model leases share the lock; the last
+writer (contention composes [`RuntimeError::CacheBusy`](../README.md#background-jobs-and-byte-policy)
+through `EditError::Runtime`). Cache writers and native model leases share the lock; the last
 logical owner explicitly unlocks it, so inherited or duplicated OS descriptors cannot keep a
 dropped cache busy. Open removes atomic staging debris and malformed canonical entries with a
 diagnostic count. Unrecognized files are skipped, never deleted, and sit outside cache
@@ -69,5 +70,9 @@ charges on failed unlink. Reports preserve prior removals, survivors and the fir
 on partial failure or cancellation; a missing pinned file has zero disk bytes but keeps its
 charge and immutable read bytes until release and a later pass. Generation can repopulate a
 snapshot. Root/lock identity checks refuse settled deletion or replacement, including writes
-through a stale owner, without recreating it. These checks do **not** prevent hostile concurrent
+through a stale owner, without recreating it. Windows compares volume serial numbers and
+128-bit file IDs through the safe `file-id` adapter, retaining the original directory and lock
+handles for their ownership lifetime so IDs cannot recycle. Creation times are not identities;
+unavailable or zero file IDs refuse with IO rather than falling back to timestamps or narrower
+IDs. Unix keeps device/inode checks. These checks do **not** prevent hostile concurrent
 ancestor replacement; directory-relative filesystem custody is outside this contract.

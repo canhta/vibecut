@@ -1,4 +1,6 @@
 //! Owns editable session state through atomic commands.
+mod clipboard;
+pub use clipboard::{KeyframeClipboard, KeyframePasteSource};
 mod failures;
 mod revision;
 mod state;

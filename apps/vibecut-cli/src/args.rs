@@ -39,12 +39,18 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(E::Runtime(engine::RuntimeError::CacheBusy), "rejected", 5),
             row!(
                 E::Runtime(engine::RuntimeError::ModelResponse),
                 "rejected",
                 5
             ),
             row!(E::Runtime(engine::RuntimeError::StorageFull), "rejected", 5),
+            row!(
+                E::Runtime(engine::RuntimeError::LoudnessStale),
+                "rejected",
+                5
+            ),
             row!(E::Runtime(engine::RuntimeError::NetworkTransient), "job", 7),
             row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
             row!(E::SchemaMismatch, "rejected", 5),
@@ -185,7 +191,12 @@ mod exit_codes {
                 assert_eq!(error.code(), ("job", 7));
             }
         }
-        let refusals: [(fn() -> engine::RuntimeError, &str); 2] = [
+        let refusals: [(fn() -> engine::RuntimeError, &str); 4] = [
+            (|| engine::RuntimeError::CacheBusy, "cache is in use"),
+            (
+                || engine::RuntimeError::LoudnessStale,
+                "loudness gains are missing or measured for different audio; measure again",
+            ),
             (
                 || engine::RuntimeError::ModelResponse,
                 "model transfer response does not match the requested representation",

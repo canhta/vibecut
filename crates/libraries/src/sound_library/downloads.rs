@@ -46,7 +46,7 @@ impl SoundDownloads {
         }
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| EditError::CacheBusy)?;
+            .map_err(|_| EditError::Runtime(engine::RuntimeError::CacheBusy))?;
         let guard = Busy(self.busy.clone());
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::SoundAudio,

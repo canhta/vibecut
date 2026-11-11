@@ -1,4 +1,5 @@
 //! Headless project commands with bounded execution resources.
+#![recursion_limit = "256"]
 pub mod control;
 mod session;
 pub(crate) use session::transitions;
@@ -7,9 +8,9 @@ pub use session::wire::Failure;
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
-    ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
-    TextAnimationPreset, TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge,
-    WordId, declaration_order_error, lifecycle, registry,
+    ItemParamPatch, ItemPlacement, KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle,
+    Move, NewItem, Outcome, Placement, TextAnimationPreset, TrackPlacement, TranscriptCue,
+    TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
@@ -88,9 +89,6 @@ pub enum EditError {
     #[error("control identity unavailable")]
     ControlIdentity,
 
-    #[error("cache is in use")]
-    CacheBusy,
-
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
     #[error(transparent)]
@@ -99,8 +97,6 @@ pub enum EditError {
     Cancelled,
     #[error("job result is stale")]
     StaleResult,
-    #[error("loudness gains are missing or measured for different audio; measure again")]
-    LoudnessStale,
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -216,8 +212,6 @@ impl EditError {
             Self::Project(project::Error::Conflict) => C::Conflict,
             Self::Project(project::Error::Media(_)) => C::Media,
             Self::ControlIdentity
-            | Self::CacheBusy
-            | Self::LoudnessStale
             | Self::NoTrack(_)
             | Self::NoAsset(_)
             | Self::AssetsInUse(_)

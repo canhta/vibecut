@@ -884,7 +884,7 @@ fn loudness_job_returns_gains_and_only_an_edit_at_the_started_revision_applies_t
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
     assert!(matches!(
         engine::loudness::admit(s.project()),
-        Err(engine::EditError::LoudnessStale)
+        Err(engine::RuntimeError::LoudnessStale)
     ));
 
     // An edit after the job started makes the started revision stale.

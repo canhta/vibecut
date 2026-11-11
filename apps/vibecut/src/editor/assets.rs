@@ -28,6 +28,8 @@ struct Model {
     effects: Vec<EffectRow>,
     transition_refusal: Option<Text>,
     transition_drag_enabled: bool,
+    graphic_insertion_ready: bool,
+    graphic_previews: [Option<egui::TextureHandle>; 2],
     importing: bool,
     selection: BTreeSet<AssetId>,
     reveal: Option<AssetId>,

@@ -14,9 +14,9 @@ mod settings;
 mod track;
 
 pub use item::{
-    AudioParams, AudioSource, CaptionParams, Item, ItemId, ItemParams, LibrarySound, OverlayParams,
-    TextAlign, TextBackground, TextDecoration, TextParams, TextPosition, VideoParams, WordSpan,
-    valid_volume,
+    AudioParams, AudioSource, CaptionParams, GraphicParams, Item, ItemId, ItemParams, LibrarySound,
+    OverlayParams, TextAlign, TextBackground, TextDecoration, TextParams, TextPosition,
+    VideoParams, WordSpan, valid_volume,
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, Project, ProjectData, ProjectId, SavedCaptionPreset,

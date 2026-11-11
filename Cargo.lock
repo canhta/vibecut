@@ -1743,6 +1743,7 @@ dependencies = [
  "ai",
  "blake3",
  "captions",
+ "file-id",
  "fs4",
  "getrandom 0.4.3",
  "image",
@@ -6526,6 +6527,7 @@ name = "vibecut"
 version = "0.1.0"
 dependencies = [
  "ai",
+ "arboard",
  "captions",
  "cpal",
  "eframe",
