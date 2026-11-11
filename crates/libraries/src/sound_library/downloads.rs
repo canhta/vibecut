@@ -84,7 +84,9 @@ impl SoundDownloads {
                     ctx.progress(JobStage::Download, fraction).ok();
                 }) {
                     Ok(_) => Ok(Vec::new()),
-                    Err(Error::Network) => Err(EditError::NetworkTransient),
+                    Err(Error::Network) => {
+                        Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                    }
                     Err(error) => Err(error.into()),
                 }
             },

@@ -28,8 +28,10 @@ means recompute, a failed display or refusal; explicit `Failed` wrappers do not
 change that policy. `QueueFull` owns pending admission refusal
 and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and source-free. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Upper cache, job and Session operations
-compose it through transparent `EditError::Runtime`. IO keeps its owned source; runtime
-variants are nontransient. `Failed` shares a typed erased cause and delegates its code,
+compose it through transparent `EditError::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
+transport failures: static message `transient network failure`, `Job`, source-free
+and transient only as a direct runtime variant. All other runtime variants remain
+nontransient. `Failed` shares a typed erased cause and delegates its code,
 without inheriting transience or adding a source-chain link. Only `BudgetFull` permits reclaim or queued waiting;
 `ArtifactTooLarge` is immediate refusal even though both publish the `budget` wire code.
 Task closures still return the current composed `EditError`. Snapshots retain the raw
@@ -89,7 +91,7 @@ publication error is not retried. The closure must do its final cancellation-awa
 before sealing, and failure never yields a `JobOutput`.
 
 `Transcribe`, `Translate`, `SuggestClips`, `GenerateChapters`, `ClassifyFillers`,
-`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry `NetworkTransient` or an
+`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry direct `RuntimeError::NetworkTransient` composed through `EditError::Runtime` or an
 `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured
 schema failure). An `ai` rate limit carrying
 `Retry-After` raises that attempt's backoff, capped at five minutes. Auth, quota, payload,

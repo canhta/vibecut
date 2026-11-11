@@ -793,7 +793,7 @@ fn problem_for(error: &EditError) -> ModelProblem {
             | ai::Error::Server
             | ai::Error::RateLimit { .. },
         )
-        | EditError::NetworkTransient => ModelProblem::Network,
+        | EditError::Runtime(engine::RuntimeError::NetworkTransient) => ModelProblem::Network,
         EditError::CacheBusy => ModelProblem::Busy,
         EditError::Runtime(engine::RuntimeError::CacheCorrupt) => ModelProblem::Corrupt,
         EditError::Cancelled => ModelProblem::Cancelled,

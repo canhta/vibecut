@@ -67,6 +67,7 @@ pub fn family(name: &str, slug: &str, payload: &[u8]) -> GoogleFamily {
 pub struct Server {
     pub bodies: Mutex<BTreeMap<String, Vec<u8>>>,
     pub status: Mutex<BTreeMap<String, u16>>,
+    interrupted: Mutex<BTreeMap<String, bool>>,
     pub calls: AtomicUsize,
     /// When set, bodies yield one byte, announce it, then wait for the release.
     pub gate: Mutex<Option<Arc<Gate>>>,
@@ -92,12 +93,19 @@ impl Server {
     }
 }
 struct Body {
+    interrupted: bool,
     data: io::Cursor<Vec<u8>>,
     gate: Option<Arc<Gate>>,
     first: bool,
 }
 impl Read for Body {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.interrupted && self.data.position() > 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "interrupted",
+            ));
+        }
         if let Some(gate) = &self.gate {
             if self.first {
                 self.first = false;
@@ -129,6 +137,13 @@ impl DownloadTransport for Server {
             status,
             headers: Vec::new(),
             body: Box::new(Body {
+                interrupted: self
+                    .interrupted
+                    .lock()
+                    .unwrap()
+                    .get(url)
+                    .copied()
+                    .unwrap_or(false),
                 data: io::Cursor::new(data),
                 gate: self.gate.lock().unwrap().clone(),
                 first: true,
@@ -640,7 +655,16 @@ fn failed_or_cancelled_downloads_leave_no_cache_entry() {
         bytes
     };
     type Rig = Box<dyn Fn(&GoogleFamily, &Server)>;
-    let cases: [(&str, Rig); 6] = [
+    let cases: [(&str, Rig); 7] = [
+        (
+            "interrupted font",
+            Box::new(|g, s| {
+                s.interrupted
+                    .lock()
+                    .unwrap()
+                    .insert(g.files[0].url.clone(), true);
+            }),
+        ),
         (
             "wrong font bytes",
             Box::new(move |g, s| {
@@ -697,11 +721,36 @@ fn failed_or_cancelled_downloads_leave_no_cache_entry() {
         let catalog = family("Failure Sample", "failuresample", FIXTURE);
         let server = Server::serving(&catalog, FIXTURE);
         rig(&catalog, &server);
-        let store = store(root.path(), vec![catalog], Vec::new(), server);
+        let store = store(root.path(), vec![catalog], Vec::new(), server.clone());
+        let mut runner = runner();
+        let (id, _) = store
+            .submit_download(&mut runner, "Failure Sample", true)
+            .unwrap();
+        assert_eq!(finish(&mut runner, id), JobState::Failed, "{label}");
+        assert_eq!(runner.snapshot(id).unwrap().attempts, 1);
+        assert!(runner.take_output(id).is_none());
+        let snapshot = runner.snapshot(id).unwrap();
+        let raw = snapshot.error.as_deref().unwrap();
+        let network = matches!(label, "unreachable licence" | "interrupted font");
+        assert_eq!(raw.transient(), network, "{label}");
+        if network {
+            assert!(matches!(
+                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
+                Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+            ));
+            assert_eq!(raw.code(), engine::control::ErrorCode::Job);
+            assert!(raw.source().is_none());
+        }
         assert_eq!(
-            download(&store, "Failure Sample"),
-            JobState::Failed,
-            "{label}"
+            server.calls.load(Ordering::SeqCst),
+            if matches!(
+                label,
+                "unreachable licence" | "licence fails after the font was written"
+            ) {
+                2
+            } else {
+                1
+            }
         );
         assert!(entries_below(root.path()).is_empty(), "{label}");
         assert_eq!(

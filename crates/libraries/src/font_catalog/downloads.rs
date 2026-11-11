@@ -210,7 +210,7 @@ pub(super) fn fetch(
         ctx.check_cancelled()?;
         let read = body
             .read(&mut buffer)
-            .map_err(|_| EditError::NetworkTransient)?;
+            .map_err(|_| EditError::Runtime(engine::RuntimeError::NetworkTransient))?;
         if read == 0 {
             break;
         }

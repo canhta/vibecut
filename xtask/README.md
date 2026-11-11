@@ -56,6 +56,12 @@ Windows `ci` and `test` link and run ai's standalone `whisper` and `gipformer` l
 
 Linux builds the GPL FFmpeg with libx264 and admits only `linux-x86_64`/`linux-aarch64`. It needs Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`), CMake, Ninja, NASM on x86_64, and the app's desktop dependencies: `libasound2-dev`, `libxkbcommon-dev`, `libwayland-dev`, `libudev-dev`, `libx11-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxi-dev`, `libxinerama-dev`, `libgl1-mesa-dev` and `libegl1-mesa-dev`. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`.
 
+Offscreen desktop rendering tests also require a Vulkan loader and a software adapter
+on Linux (`libvulkan1` and `mesa-vulkan-drivers` on Ubuntu). The test harness prefers
+software rendering and fails when no adapter is available; Mesa llvmpipe receipts
+prove offscreen rendering only, not physical GPU acceptance. The Linux CI setup
+installs these prerequisites even when native-media caches hit.
+
 Windows needs architecture-matched MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash, Make, Perl (libvpx configure), CMake, Ninja, pkg-config, NASM and Clang/LLVM; Rust uses MSVC. Native xtask caches under `USERPROFILE`, resolves Bash/Make/cygpath to absolute MSYS2 `usr/bin` paths on `PATH` and logs them. Incomplete installations are refused; Windows/WSL/Git Bash are never substituted. Static Opus/libvpx builds request static pkg-config metadata, including private pthread links.
 
 Windows excludes FFmpeg's `gfxcapture` screen filter through configuration; case-insensitive builds resolve libc++'s `<version>` to the archive's `VERSION`. For workspace checks xtask merges general, underscore-target and hyphen-target `BINDGEN_EXTRA_CLANG_ARGS` in that order, then appends AMX include guards and an explicit native MSVC Clang target in the hyphen-target variable. The target applies to FFmpeg and Whisper because MSYS2 libclang's GNU default has unsigned enums that disagree with whisper-rs's MSVC representation. The AMX headers are excluded together until upstream bindings handle vector layouts. Workspace Cargo children receive MSVC/SDK header paths in `INCLUDE`, discovered through `cc`'s Windows registry support or inherited from a configured developer shell; only `INCLUDE` is forwarded from that environment, to preserve the FFmpeg DLL search path. Missing MSVC tools or SDK paths fail with setup guidance.

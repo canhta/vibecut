@@ -32,7 +32,7 @@ pub fn response(
         ctx.check_cancelled()?;
         let reply = http.get(&url, headers).map_err(|error| {
             if error.is_transient() {
-                EditError::NetworkTransient
+                EditError::Runtime(crate::RuntimeError::NetworkTransient)
             } else {
                 EditError::Ai(error)
             }

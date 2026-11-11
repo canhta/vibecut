@@ -39,6 +39,7 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(E::Runtime(engine::RuntimeError::NetworkTransient), "job", 7),
             row!(E::Runtime(engine::RuntimeError::CacheCorrupt), "job", 7),
             row!(E::SchemaMismatch, "rejected", 5),
             row!(E::SessionGone, "rejected", 5),
@@ -149,7 +150,11 @@ mod exit_codes {
             ))));
             assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
         }
-        let messages: [(fn() -> E, &str); 3] = [
+        let messages: [(fn() -> E, &str); 4] = [
+            (
+                || E::Runtime(engine::RuntimeError::NetworkTransient),
+                "transient network failure",
+            ),
             (
                 || E::Runtime(engine::RuntimeError::CacheCorrupt),
                 "corrupt cache entry skipped",
@@ -196,6 +201,14 @@ mod exit_codes {
         let concrete = CliError::Job(Arc::new(engine::RuntimeError::Failed(Arc::new(
             E::Providers(P::ModelMissing("test-model")),
         ))));
+        let network = CliError::Job(Arc::new(engine::RuntimeError::NetworkTransient));
+        assert_eq!(network.code(), ("job", 7));
+        assert_eq!(network.value()["message"], "transient network failure");
+        let wrapped = CliError::Job(Arc::new(engine::RuntimeError::Failed(Arc::new(
+            engine::RuntimeError::NetworkTransient,
+        ))));
+        assert_eq!(wrapped.code(), ("job", 7));
+        assert_eq!(wrapped.value()["message"], "transient network failure");
         let cache = CliError::Job(Arc::new(engine::RuntimeError::CacheCorrupt));
         assert_eq!(cache.code(), ("job", 7));
         assert_eq!(cache.value()["message"], "corrupt cache entry skipped");

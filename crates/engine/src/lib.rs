@@ -101,8 +101,6 @@ pub enum EditError {
     Runtime(#[from] RuntimeError),
     #[error("job cancelled")]
     Cancelled,
-    #[error("transient network failure")]
-    NetworkTransient,
     #[error("job result is stale")]
     StaleResult,
     #[error("loudness gains are missing or measured for different audio; measure again")]
@@ -199,7 +197,6 @@ impl EditError {
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::StaleResult => C::StaleResult,
-            Self::NetworkTransient => return (C::Job, true),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
