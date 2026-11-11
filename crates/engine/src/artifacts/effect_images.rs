@@ -100,7 +100,7 @@ impl EffectThumbnails {
             translation: [0; 32],
         })?;
         let cache = self.clone();
-        runner.submit(
+        Ok(runner.submit(
             JobSpec {
                 kind: JobKind::EffectThumbnail,
                 class: ResourceClass::GpuEncoder,
@@ -176,6 +176,6 @@ impl EffectThumbnails {
                     Ok(output)
                 })
             },
-        )
+        )?)
     }
 }

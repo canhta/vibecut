@@ -149,7 +149,9 @@ impl ChapterJob {
     /// Validate and decode complete output; typed terminal failures and
     /// cancellation propagate.
     pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<ChapterDocument>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -158,11 +160,11 @@ impl ChapterJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let document = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(document))
             }
             _ => Ok(None),

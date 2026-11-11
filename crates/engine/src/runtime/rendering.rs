@@ -101,7 +101,7 @@ impl render::ExecutionHooks for JobContext {
             fraction,
         )
         .map_err(|e| {
-            if matches!(e, EditError::Runtime(crate::RuntimeError::Cancelled)) {
+            if matches!(e, super::Error::Cancelled) {
                 render::Error::Cancelled
             } else {
                 render::Error::Invalid("job progress")
@@ -138,7 +138,7 @@ pub fn submit_export_with_sources(
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
 ) -> Result<(JobId, CancelToken), EditError> {
     super::loudness_admission::admit(&project)?;
-    runner.submit::<crate::EditError>(
+    Ok(runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -156,7 +156,7 @@ pub fn submit_export_with_sources(
             )?;
             Ok(Vec::new())
         },
-    )
+    )?)
 }
 
 /// One cancellable job finalizes every scene privately before publication.
@@ -215,7 +215,7 @@ pub fn submit_scene_exports_with_sources(
             sources,
         );
     }
-    runner.submit::<crate::EditError>(
+    Ok(runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -304,7 +304,7 @@ pub fn submit_scene_exports_with_sources(
             }
             Ok(Vec::new())
         },
-    )
+    )?)
 }
 
 struct SceneExportStaging(PathBuf);
@@ -337,7 +337,7 @@ pub fn submit_export_publication(
     protected: Vec<PathBuf>,
     fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 ) -> Result<(JobId, CancelToken), EditError> {
-    runner.submit::<crate::EditError>(
+    Ok(runner.submit::<crate::EditError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::Cpu,
@@ -388,7 +388,7 @@ pub fn submit_export_publication(
             )?;
             Ok(Vec::new())
         },
-    )
+    )?)
 }
 
 impl crate::Session {
@@ -496,7 +496,7 @@ impl crate::Session {
                     .checked_mul(16)
                     .and_then(|n| n.checked_add(4096))
                     .ok_or(EditError::Limit)?;
-                runner.submit(
+                Ok(runner.submit(
                     JobSpec {
                         kind: JobKind::Export,
                         class: ResourceClass::Cpu,
@@ -536,7 +536,7 @@ impl crate::Session {
                         finalized.publish()?;
                         Ok(Vec::new())
                     },
-                )
+                )?)
             }
             _ => Err(EditError::Invalid("command is not an export command")),
         }

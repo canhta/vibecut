@@ -275,7 +275,9 @@ impl ThumbnailStripJob {
         runner: &mut JobRunner,
         cache: &mut ThumbnailCache,
     ) -> Result<Option<ThumbnailStrip>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -284,14 +286,14 @@ impl ThumbnailStripJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let samples = self.request.decode(bytes)?;
                 for (at, image) in &samples {
                     cache.put(&self.request.asset, *at, self.request.max_edge, image)?;
                 }
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(ThumbnailStrip {
                     positions: self.request.positions.clone(),
                 }))
