@@ -987,6 +987,14 @@ catalog! {
     FadeOut { key: "fade_out", en: "Fade out", vi: "Mờ dần ra" },
     FadeSharp { key: "fade_sharp", en: "Sharp", vi: "Nhọn" },
     FadeSmooth { key: "fade_smooth", en: "Smooth", vi: "Mượt" },
+
+    // Caption preset bank.
+    ActionSubtitlesBankManage { key: "action_subtitles_bank_manage", en: "Manage caption styles", vi: "Quản lý kiểu phụ đề" },
+    ActionSubtitlesBankSave { key: "action_subtitles_bank_save", en: "Save caption style", vi: "Lưu kiểu phụ đề" },
+    SubBankManage { key: "sub_bank_manage", en: "Manage saved styles", vi: "Quản lý kiểu đã lưu" },
+    SubBankRename { key: "sub_bank_rename", en: "Rename", vi: "Đổi tên" },
+    SubBankSave { key: "sub_bank_save", en: "Save current style", vi: "Lưu kiểu hiện tại" },
+    SubBankSaved { key: "sub_bank_saved", en: "Saved in project · applies a copy", vi: "Đã lưu trong dự án · áp dụng bản sao" },
 }
 
 /// The message for `key` in `locale`.

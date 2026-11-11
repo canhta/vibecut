@@ -151,7 +151,7 @@ async fn partial_frames_survive_receive_cancellation_and_hostile_framing_closes(
     use rmcp::transport::Transport as _;
     for hostile in [
         b"{\"jsonrpc\":\"2.0\",\"id\":1,\"id\":2,\"method\":\"ping\"}\n".to_vec(),
-        vec![b'x'; control::MAX_FRAME_BYTES + 1],
+        vec![b'x'; (16 << 20) + 1],
     ] {
         let (server, mut client) = tokio::io::duplex(control::MAX_FRAME_BYTES + 4096);
         let (read, write) = tokio::io::split(server);
@@ -252,6 +252,9 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("sounds.unsave", Effect::Read, false, false),
         ("captions.import", Effect::Edit, false, false),
         ("captions.apply_style", Effect::Edit, true, true),
+        ("captions.save_preset", Effect::Edit, true, true),
+        ("captions.rename_preset", Effect::Edit, true, true),
+        ("captions.delete_preset", Effect::Edit, true, true),
         ("text.apply_animation", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),

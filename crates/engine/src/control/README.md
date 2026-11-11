@@ -51,7 +51,7 @@ eviction until Session end; new effects reserve 128 KiB of available capacity be
 Mutation results have at most 1024 created IDs; returned publication paths are capped at 4096
 encoded bytes. Request IDs and principals are 1..=128 bytes. Refusals before reservation do not
 occupy a key; accepted execution errors do. A new Session refuses the old epoch rather than
-rerunning an uncertain mutation. Inspection and catalog responses are capped at 8 MiB; oversize
+rerunning an uncertain mutation. Inspection and catalog responses are capped at 16 MiB; oversize
 reads refuse instead of truncating or mixing revisions.
 
 Commands that need process state declare it. `fonts.*` needs the attached font store, the media

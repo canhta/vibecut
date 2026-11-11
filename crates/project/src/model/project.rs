@@ -10,6 +10,33 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::Tick;
 
+id!(CaptionPresetId);
+
+/// Maximum number of named caption values in one project.
+pub const MAX_CAPTION_PRESETS: usize = 64;
+
+/// A reusable value; application copies the style into ordinary cue styles.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedCaptionPreset {
+    pub id: CaptionPresetId,
+    pub name: NfcText,
+    pub style: captions::CueStyle,
+}
+impl SavedCaptionPreset {
+    /// Names contain 1..=64 extended graphemes, at most 256 UTF-8 bytes,
+    /// no controls, and no leading or trailing whitespace. Input is never trimmed.
+    pub fn valid_name(name: &NfcText) -> bool {
+        let name = name.as_str();
+        !name.is_empty()
+            && name.len() <= 256
+            && name.trim() == name
+            && !name.chars().any(char::is_control)
+            && captions::NormalizedText::new(name)
+                .is_ok_and(|text| (1..=64).contains(&text.spans().len()))
+    }
+}
+
 /// Decimal-string identity, including on disk, so control clients retain every bit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, schemars::JsonSchema)]
 #[schemars(with = "String")]
@@ -49,6 +76,7 @@ pub struct ProjectData {
     pub scenes: Scenes,
     pub current_scene_id: SceneId,
     pub settings: Settings,
+    pub caption_presets: Vec<SavedCaptionPreset>,
 }
 impl ProjectData {
     /// Candidates with an invalid current ID read main; validation still refuses them.
@@ -93,6 +121,7 @@ impl Project {
             scenes: Scenes::default(),
             current_scene_id: SceneId(0),
             settings: Settings::default(),
+            caption_presets: Vec::new(),
         })
     }
     pub fn data(&self) -> &ProjectData {
@@ -155,6 +184,20 @@ pub(super) fn text(value: &NfcText) -> Result<()> {
 }
 fn validate(data: &ProjectData) -> Result<()> {
     text(&data.name)?;
+    if data.caption_presets.len() > MAX_CAPTION_PRESETS {
+        return Err(Error::TooLarge("caption presets"));
+    }
+    let mut preset_ids = BTreeSet::new();
+    let mut preset_names = BTreeSet::new();
+    for preset in &data.caption_presets {
+        if !SavedCaptionPreset::valid_name(&preset.name)
+            || !preset.style.is_valid()
+            || !preset_ids.insert(preset.id)
+            || !preset_names.insert(&preset.name)
+        {
+            return Err(Error::Invalid("caption preset"));
+        }
+    }
     let c = &data.canvas;
     let canvas_size = CanvasSize {
         width: c.width,

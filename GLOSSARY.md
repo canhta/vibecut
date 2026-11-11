@@ -61,3 +61,5 @@ Language for the editor's privacy and execution boundaries.
 - **Area**: An editor module that owns one panel's or dialog's state and returns the actions it wants; its interface is `State` and `show`.
 - **Kit**: The shared UI foundation of tokens, icons and widgets used by all three windows; it knows nothing about the engine.
 - **Automation id**: A stable identifier on an interactive widget that survives locale and layout changes, through which agents and tests address input.
+
+- **Saved caption preset**: A named project-owned `CueStyle` value with a stable `CaptionPresetId`. Apply copies it into cue styles; rename/delete never changes an applied copy. This ID differs from a cue table's `CueStyleId`.

@@ -35,6 +35,18 @@ pub enum PreviewZoom {
 }
 
 impl Editor {
+    pub(in crate::editor) fn caption_bank_ready(&self) -> bool {
+        self.preferences.assets_tab == crate::panels::AssetsTab::Captions
+            && self.properties.input_ready(&self.session)
+            && !self.player.transform.text_edit_open()
+            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !self.importing()
+            && self.lifecycle_action.is_none()
+            && !self.overlay_open
+            && !self.dialogs.export.is_open()
+            && !self.dialogs.models.is_open()
+    }
+
     pub(in crate::editor) fn text_animation_available(
         &self,
         state: &crate::editor::properties::State,
@@ -230,10 +242,16 @@ impl Editor {
             ActionTarget::Ui {
                 action: UiAction::Subtitles,
                 ..
-            } if id.starts_with("subtitles.style.") => self
-                .subtitles
-                .as_ref()
-                .is_some_and(|panel| panel.style_available(&self.session)),
+            } if id.starts_with("subtitles.style.") => {
+                self.subtitles.as_ref().is_some_and(|panel| {
+                    if matches!(id, "subtitles.style.save" | "subtitles.style.manage") {
+                        self.caption_bank_ready()
+                            && panel.bank_available(&self.session, id == "subtitles.style.save")
+                    } else {
+                        panel.style_available(&self.session)
+                    }
+                })
+            }
             ActionTarget::Pending { .. } => false,
             ActionTarget::Engine(route) => {
                 route

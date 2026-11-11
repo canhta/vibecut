@@ -108,6 +108,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             serde_json::from_value(json!({"command":spec.id,"params":params})).unwrap();
         assert_eq!(typed.id(), spec.id);
         match spec.example.fixture {
+            Fixture::CaptionPresetBank => s = crate::support::control::with_caption_presets(&s),
             Fixture::Text => s = crate::support::control::with_text(&s),
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
@@ -330,6 +331,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             &[
                 "burn_subtitles",
                 "captions.apply_style",
+                "captions.save_preset",
                 "export_subtitles",
                 "fillers.classify",
                 "timeline.filler_candidates",
@@ -340,7 +342,12 @@ fn deterministic_catalog_and_schema_document_receipts() {
         ),
         (
             Availability::NoTransaction,
-            &["begin_gesture", "timeline.set_ripple"],
+            &[
+                "begin_gesture",
+                "captions.delete_preset",
+                "captions.rename_preset",
+                "timeline.set_ripple",
+            ],
         ),
         (
             Availability::GestureActive,
@@ -537,4 +544,72 @@ fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() 
     ok(s.control_request(req, caller(&Allow), &mut r).unwrap());
     assert_eq!(s.project(), &applied);
     assert_eq!(s.history_len(), (1, 0));
+}
+
+#[test]
+fn caption_bank_fixture_executes_saved_copy_and_refuses_the_previous_digest() {
+    let seed = seed();
+    let mut s = crate::support::control::with_caption_presets(&seed);
+    assert!(seed.project().data().caption_presets.is_empty());
+    assert_eq!(s.project().data().caption_presets[0].id.0, 100);
+    let mut r = runner();
+    let mut req = request(
+        &s,
+        "captions.save_preset",
+        json!({"item":4,"name":"New"}),
+        "old-bank",
+    );
+    req.registry_hash =
+        Some("fb424f0eaed23ba96c479dfe6274278a54f1c7df1eca07227e5fbaca49bc02da".into());
+    error(
+        s.control_request(req, caller(&Allow), &mut r).unwrap(),
+        control::ErrorCode::SchemaMismatch,
+    );
+    let before = s.project().clone();
+    s.execute(
+        "captions.apply_style",
+        json!({"item":4,"style":{"kind":"saved","preset":100}}),
+    )
+    .unwrap();
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+    let out = s
+        .execute("captions.save_preset", json!({"item":4,"name":"New"}))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(out.created).unwrap(),
+        json!([{"caption_preset":101}])
+    );
+    s.execute(
+        "captions.rename_preset",
+        json!({"preset":101,"name":"Renamed"}),
+    )
+    .unwrap();
+    s.execute("captions.delete_preset", json!({"preset":101}))
+        .unwrap();
+    assert_eq!(s.project(), &before);
+}
+
+#[test]
+fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
+    let registry = control::bounded_json(registry(), 16 << 20).unwrap();
+    assert!(registry.len() > 8 << 20 && registry.len() < 16 << 20);
+    let edge = "x".repeat((16 << 20) - 2);
+    assert_eq!(
+        control::bounded_json(&edge, 16 << 20).unwrap().len(),
+        16 << 20
+    );
+    assert!(matches!(
+        control::bounded_json(&(edge + "x"), 16 << 20),
+        Err(engine::EditError::Limit)
+    ));
+    let mut frame = vec![b' '; 16 << 20];
+    frame[0] = b'{';
+    frame[1] = b'}';
+    assert_eq!(control::parse_frame(&frame).unwrap(), json!({}));
+    frame.push(b' ');
+    assert!(matches!(
+        control::parse_frame(&frame),
+        Err(engine::EditError::Limit)
+    ));
 }

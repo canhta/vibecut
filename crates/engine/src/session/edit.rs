@@ -167,6 +167,15 @@ pub(crate) fn apply(
         }
     };
     match command {
+        EditCommand::SaveCaptionPreset { item, name } => {
+            data = text::save_caption_preset(data, item, name, sources, next, created)?;
+        }
+        EditCommand::RenameCaptionPreset { preset, name } => {
+            data = text::rename_caption_preset(data, preset, name)?;
+        }
+        EditCommand::DeleteCaptionPreset { preset } => {
+            data = text::delete_caption_preset(data, preset)?;
+        }
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;
         }

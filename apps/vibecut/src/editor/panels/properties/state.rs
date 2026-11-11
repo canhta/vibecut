@@ -132,20 +132,23 @@ pub(in crate::editor) enum Action {
 }
 
 impl State {
+    pub(in crate::editor) fn input_ready(&self, session: &engine::Session) -> bool {
+        !session.transaction_active()
+            && session.preview_project().is_none()
+            && !self.editing()
+            && self.drafts.is_empty()
+            && self.scrub.is_none()
+            && self.picker.is_none()
+            && self.reorder.is_none()
+            && !self.font_picker.open
+    }
+
     pub(in crate::editor) fn animation_target(
         &self,
         session: &engine::Session,
         selection: &std::collections::BTreeSet<ItemId>,
     ) -> Option<ItemId> {
-        if session.transaction_active()
-            || session.preview_project().is_some()
-            || self.editing()
-            || !self.drafts.is_empty()
-            || self.scrub.is_some()
-            || self.picker.is_some()
-            || self.reorder.is_some()
-            || self.font_picker.open
-        {
+        if !self.input_ready(session) {
             return None;
         }
         let id = crate::editor::context::single(selection)?;

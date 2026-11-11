@@ -266,6 +266,7 @@ fn prepare_clip(
         .map_err(Error::kernel)?,
         current_scene_id: project::SceneId(0),
         settings: source.data().settings.clone(),
+        caption_presets: source.data().caption_presets.clone(),
     })
     .map_err(Error::kernel)?;
     let mut settings = render::ExportSettings::from_project(&project);

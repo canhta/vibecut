@@ -92,6 +92,7 @@ impl Session {
                     )
                     .chain(s.bookmarks.iter().map(|b| b.id.0))
             })
+            .chain(data.caption_presets.iter().map(|preset| preset.id.0))
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
         let mut entropy = [0u8; 32];

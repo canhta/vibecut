@@ -232,8 +232,13 @@ impl Subtitles {
         at: Tick,
         locale: Locale,
         dark: bool,
+        bank_ready: bool,
     ) -> Vec<(String, egui::Response)> {
         self.refresh(session);
+        let frame = ui.ctx().cumulative_frame_nr();
+        let continuous = self.bank_frame.is_none_or(|previous| frame <= previous + 1);
+        self.reconcile_bank(session, at, bank_ready, continuous);
+        self.bank_frame = Some(frame);
         // The spoken-language choice belongs to the project, not the window.
         // A project without an entry starts from Auto; the first render after
         // construction keeps an explicit caller choice for compatibility.
@@ -473,6 +478,7 @@ impl Subtitles {
                 if self.item.is_none() {
                     self.text_focus = None;
                     ui.label(controls.tr(Text::SubEmpty));
+                    self.style_ui(ui, session, options, at, bank_ready, &mut controls);
                     return;
                 }
                 let items: Vec<_> = session
@@ -518,9 +524,9 @@ impl Subtitles {
                         self.ui_result(result);
                     }
                 }
-                self.style_ui(ui, session, options, at, &mut controls);
+                self.style_ui(ui, session, options, at, bank_ready, &mut controls);
                 self.text_focus = None;
-                ui.add_enabled_ui(!busy, |ui| {
+                ui.add_enabled_ui(!busy && self.bank.is_none(), |ui| {
                     ui.horizontal_wrapped(|ui| {
                         if controls.icon_button(
                             ui,
@@ -583,6 +589,7 @@ impl Subtitles {
                     self.cues_ui(ui, session, options, &mut controls, dark);
                 });
             });
+        self.bank_ui(ui, session, at, &mut controls);
         controls.widgets
     }
     pub(crate) fn dialogs(
@@ -689,8 +696,32 @@ impl Subtitles {
         session: &mut Session,
         options: &mut Options,
         at: Tick,
+        bank_ready: bool,
         c: &mut Controls,
     ) {
+        ui.horizontal_wrapped(|ui| {
+            for (id, text, save) in [
+                ("subtitles.style.save", Text::SubBankSave, true),
+                ("subtitles.style.manage", Text::SubBankManage, false),
+            ] {
+                if save && self.caption(session).is_none() {
+                    continue;
+                }
+                if !save && session.project().data().caption_presets.is_empty() {
+                    continue;
+                }
+                let r = ui.add_enabled(
+                    bank_ready && self.bank_available(session, save),
+                    egui::Button::new(egui::RichText::new(c.tr(text)).size(theme::type_size::BODY))
+                        .min_size(egui::vec2(0.0, theme::size::FIELD)),
+                );
+                c.remember(id, &r);
+                if r.clicked() {
+                    let result = self.activate(session, options, None, at, id);
+                    self.ui_result(result);
+                }
+            }
+        });
         let Some((item, params)) = self.caption(session) else {
             return;
         };
@@ -720,6 +751,7 @@ impl Subtitles {
         let snapshot = session.project().clone();
         let enabled = self.style_available(session);
         let mut chosen = None;
+        let mut saved = None;
         ui.add_enabled_ui(enabled, |ui| {
             ui.horizontal(|ui| {
                 let caption = ui
@@ -745,6 +777,22 @@ impl Subtitles {
                             ui.close();
                         }
                     }
+                    if !snapshot.data().caption_presets.is_empty() {
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(c.tr(Text::SubBankSaved))
+                                .size(theme::type_size::BODY),
+                        );
+                        for preset in &snapshot.data().caption_presets {
+                            let r =
+                                ui.add_enabled(bank_ready, egui::Button::new(preset.name.as_str()));
+                            c.remember(format!("subtitles.style.saved.{}", preset.id.0), &r);
+                            if r.clicked() {
+                                saved = Some(preset.id);
+                                ui.close();
+                            }
+                        }
+                    }
                 })
                 .response
                 .labelled_by(caption.id);
@@ -756,6 +804,150 @@ impl Subtitles {
             && Arc::ptr_eq(&snapshot, session.project())
         {
             let result = self.activate(session, options, None, at, id);
+            self.ui_result(result);
+        }
+        if let Some(preset) = saved
+            && self.item == Some(item)
+            && Arc::ptr_eq(&snapshot, session.project())
+            && bank_ready
+            && self.style_available(session)
+        {
+            let result = session
+                .apply(Command::ApplyCaptionStyle {
+                    item,
+                    style: engine::CaptionStyleApply::Saved { preset },
+                })
+                .map(|_| ())
+                .map_err(Error::from);
+            self.ui_result(result);
+        }
+    }
+
+    fn bank_ui(&mut self, parent: &egui::Ui, session: &mut Session, at: Tick, c: &mut Controls) {
+        let Some(edit) = &mut self.bank else {
+            return;
+        };
+        let mut confirm = std::mem::take(&mut edit.confirm_pending);
+        let mut delete = false;
+        let mut cancel = false;
+        let mut blur = false;
+        let popup = egui::Area::new(egui::Id::unique("subtitles.bank.editor"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(parent.min_rect().min + egui::vec2(8.0, 56.0))
+            .show(parent.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .inner_margin(theme::space::SM)
+                    .show(ui, |ui| {
+                        ui.set_width(228.0);
+                        ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                        ui.label(
+                            egui::RichText::new(c.tr(if edit.save {
+                                Text::SubBankSave
+                            } else {
+                                Text::SubBankManage
+                            }))
+                            .size(theme::type_size::BODY),
+                        );
+                        if !edit.save {
+                            let previous = edit.preset;
+                            let label = session
+                                .project()
+                                .data()
+                                .caption_presets
+                                .iter()
+                                .find(|p| Some(p.id) == edit.preset)
+                                .map_or("", |p| p.name.as_str());
+                            let r = egui::ComboBox::from_id_salt(egui::Id::unique(
+                                "subtitles.bank.choice",
+                            ))
+                            .selected_text(label)
+                            .show_ui(ui, |ui| {
+                                for preset in &session.project().data().caption_presets {
+                                    let r = ui.selectable_value(
+                                        &mut edit.preset,
+                                        Some(preset.id),
+                                        preset.name.as_str(),
+                                    );
+                                    c.remember(format!("subtitles.bank.entry.{}", preset.id.0), &r);
+                                }
+                            })
+                            .response;
+                            c.remember("subtitles.bank.choice", &r);
+                            if edit.preset != previous {
+                                edit.name = session
+                                    .project()
+                                    .data()
+                                    .caption_presets
+                                    .iter()
+                                    .find(|p| Some(p.id) == edit.preset)
+                                    .map_or(String::new(), |p| p.name.as_str().into());
+                            }
+                        }
+                        let r = ui.add_sized(
+                            egui::vec2(216.0, theme::size::FIELD),
+                            egui::TextEdit::singleline(&mut edit.name)
+                                .id(egui::Id::unique("subtitles.bank.name"))
+                                .font(egui::FontId::proportional(theme::type_size::BODY))
+                                .desired_width(216.0),
+                        );
+                        c.remember("subtitles.bank.name", &r);
+                        if !edit.focused {
+                            r.request_focus();
+                            edit.focused = true;
+                        }
+                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                        blur = r.lost_focus();
+                        confirm |= !cancel && r.has_focus() && enter;
+                        ui.horizontal(|ui| {
+                            for (id, text, intent) in [
+                                (
+                                    "subtitles.bank.confirm",
+                                    if edit.save {
+                                        Text::Save
+                                    } else {
+                                        Text::SubBankRename
+                                    },
+                                    0,
+                                ),
+                                ("subtitles.bank.delete", Text::Delete, 1),
+                                ("subtitles.bank.cancel", Text::Cancel, 2),
+                            ] {
+                                if edit.save && intent == 1 {
+                                    continue;
+                                }
+                                let r = ui.button(
+                                    egui::RichText::new(c.tr(text)).size(theme::type_size::BODY),
+                                );
+                                c.remember(id, &r);
+                                if r.clicked() {
+                                    match intent {
+                                        0 => confirm = true,
+                                        1 => delete = true,
+                                        _ => cancel = true,
+                                    }
+                                }
+                            }
+                        });
+                    });
+            });
+        if blur
+            && parent.input(|i| {
+                !i.pointer.primary_pressed()
+                    || i.pointer
+                        .interact_pos()
+                        .is_none_or(|p| !popup.response.rect.contains(p))
+            })
+        {
+            // Reconcile after the other panels process this blur before publishing it.
+            if let Some(edit) = &mut self.bank {
+                edit.confirm_pending = true;
+            }
+        }
+        if cancel {
+            self.bank = None;
+        } else if confirm || delete {
+            let result = self.confirm_bank(session, at, delete);
             self.ui_result(result);
         }
     }

@@ -89,6 +89,142 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             ]);
             assert_eq!(code(&applied), 0, "{:?}", applied);
         }
+        let named = format!("{preset} saved");
+        let args = serde_json::json!({"item":item.id,"name":named}).to_string();
+        let saved_preset = cli(&[
+            os("exec"),
+            project.as_os_str(),
+            os("captions.save_preset"),
+            os(&args),
+        ]);
+        assert_eq!(code(&saved_preset), 0, "{:?}", saved_preset);
+        let bank = project::load(&project)
+            .unwrap()
+            .project
+            .data()
+            .caption_presets
+            .clone();
+        let id = bank.last().unwrap().id;
+        assert!(
+            String::from_utf8(saved_preset.stdout)
+                .unwrap()
+                .contains(&format!("created caption preset {}", id.0))
+        );
+        for (command, args) in [
+            (
+                "captions.rename_preset",
+                serde_json::json!({"preset":id,"name":format!("{preset} renamed")}),
+            ),
+            (
+                "captions.apply_style",
+                serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":if preset=="box" {"outline"}else{"box"}}}),
+            ),
+            (
+                "captions.apply_style",
+                serde_json::json!({"item":item.id,"style":{"kind":"saved","preset":id}}),
+            ),
+        ] {
+            let args = args.to_string();
+            let out = cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os(command),
+                os(&args),
+                os("--json"),
+            ]);
+            assert_eq!(code(&out), 0, "{:?}", out);
+        }
+        let bytes = fs::read(&project).unwrap();
+        let mut control = super::control::ControlSession::start(&project, &[os("--no-save")]);
+        let initial = control
+            .send(serde_json::json!({"request_id":"bank-inspect","command":"inspect","params":{}}));
+        let request = serde_json::json!({"request_id":"bank-save","command":"captions.save_preset","params":{"item":item.id,"name":"Control copy"},"base_rev":initial["rev_after"],"idempotency_key":"bank-save"});
+        let accepted = control.send(request.clone());
+        assert_eq!(accepted["exit_code"], 0, "{accepted}");
+        assert_eq!(control.send(request.clone()), accepted);
+        let mut stale = request;
+        stale["idempotency_key"] = serde_json::json!("bank-stale");
+        assert_eq!(control.send(stale)["exit_code"], 3);
+        let undone=control.send(serde_json::json!({"request_id":"bank-undo","command":"undo","params":{},"base_rev":accepted["rev_after"],"idempotency_key":"bank-undo"}));
+        assert_eq!(undone["exit_code"], 0, "{undone}");
+        let before = control
+            .send(serde_json::json!({"request_id":"before-frame","command":"inspect","params":{}}));
+        let refused = control.send(serde_json::json!({"payload":"x".repeat(16<<20)}));
+        assert_eq!(refused["error"]["code"], "limit");
+        let after = control
+            .send(serde_json::json!({"request_id":"after-frame","command":"inspect","params":{}}));
+        assert_eq!(
+            before["value"], after["value"],
+            "oversize drain preserves project and bank"
+        );
+        if preset == "box" && crate::media_fixture::tools() {
+            let protected = dir.path().join("protected.mp4");
+            fs::write(&protected, b"existing destination").unwrap();
+            let settings = render::OutputOptions::default();
+            let refused=control.send(serde_json::json!({"request_id":"protected","command":"export","params":{"settings":settings,"path":protected,"overwrite":false},"base_rev":after["rev_after"],"idempotency_key":"protected"}));
+            assert_eq!(
+                refused["exit_code"], 0,
+                "export accepts a job before publication admission"
+            );
+            let refused_job = refused["value"]["value"]["job"].clone();
+            let mut refused_state = String::new();
+            for n in 0..200 {
+                let status=control.send(serde_json::json!({"request_id":format!("refusal-status-{n}"),"command":"job_status","params":{"job":refused_job}}));
+                refused_state = status["value"]["value"]["snapshot"]["state"]
+                    .as_str()
+                    .unwrap()
+                    .into();
+                if refused_state == "failed" {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert_eq!(refused_state, "failed");
+            assert_eq!(fs::read(&protected).unwrap(), b"existing destination");
+            let mut last = serde_json::Value::Null;
+            let mut destination = dir.path().join("cancel-0.mp4");
+            for n in 0..8 {
+                destination = dir.path().join(format!("cancel-{n}.mp4"));
+                let out=control.send(serde_json::json!({"request_id":format!("export-{n}"),"command":"export","params":{"settings":settings,"path":destination,"overwrite":false},"base_rev":after["rev_after"],"idempotency_key":format!("export-{n}")}));
+                assert_eq!(out["exit_code"], 0, "{out}");
+                last = out["value"]["value"]["job"].clone();
+            }
+            let cancel=control.send(serde_json::json!({"request_id":"cancel-bank-export","command":"job_cancel","params":{"job":last},"base_rev":after["rev_after"],"idempotency_key":"cancel-bank-export"}));
+            assert_eq!(cancel["exit_code"], 0, "{cancel}");
+            let mut state = String::new();
+            for n in 0..200 {
+                let status=control.send(serde_json::json!({"request_id":format!("cancel-status-{n}"),"command":"job_status","params":{"job":last}}));
+                state = status["value"]["value"]["snapshot"]["state"]
+                    .as_str()
+                    .unwrap()
+                    .into();
+                if state == "cancelled" {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert_eq!(state, "cancelled");
+            assert!(!destination.exists());
+            assert_eq!(fs::read(&project).unwrap(), bytes);
+        }
+        assert_eq!(control.finish().0, 0);
+        assert_eq!(fs::read(&project).unwrap(), bytes);
+        let copied = project::load(&project).unwrap().project;
+        let args = serde_json::json!({"preset":id}).to_string();
+        assert_eq!(
+            code(&cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os("captions.delete_preset"),
+                os(&args),
+                os("--json")
+            ])),
+            0
+        );
+        assert_eq!(
+            project::load(&project).unwrap().project.data().scenes,
+            copied.data().scenes
+        );
         let saved = project::load(&project).unwrap().project;
         let found = saved
             .data()
@@ -135,6 +271,28 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 frames[1].iter().any(|value| *value > 100),
                 "captions survive encoding"
             );
+            let mut settings = render::RenderSettings::from_project(&saved);
+            settings.width = 360;
+            settings.height = 640;
+            let budget = engine::ByteBudget::new(128 << 20).unwrap();
+            let hooks = engine::ByteBudgetHooks::new(&budget, None);
+            let expected = render::Renderer::new(&saved, settings)
+                .unwrap()
+                .render_frame(
+                    time::FrameRate::FPS_30.tick_of(1).unwrap(),
+                    &mut render::FileSources::default(),
+                    &hooks,
+                )
+                .unwrap()
+                .video_rgba8(1, &hooks)
+                .unwrap();
+            let mse = frames[1]
+                .iter()
+                .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                .sum::<f64>()
+                / frames[1].len() as f64;
+            assert!(mse < 150.0, "caption-bank CLI encoded MSE {mse}");
         }
     }
 }
