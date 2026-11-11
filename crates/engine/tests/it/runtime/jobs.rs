@@ -1875,7 +1875,12 @@ fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
         let budget = ByteBudget::new(8192).unwrap();
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 8).unwrap();
         cache.put(key(1), b"original").unwrap();
+        // Windows refuses this directory rename while its lock file is held.
+        // Keep that lock held outside it during the move, then restore its path.
+        let held_lock = dir.path().join(".cache.lock");
+        std::fs::rename(root.join(".cache.lock"), &held_lock).unwrap();
         std::fs::rename(&root, &moved).unwrap();
+        std::fs::rename(&held_lock, moved.join(".cache.lock")).unwrap();
         if fault == 1 {
             std::fs::create_dir(&root).unwrap();
             std::fs::write(root.join(".cache.lock"), b"").unwrap();
