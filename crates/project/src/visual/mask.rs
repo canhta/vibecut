@@ -43,7 +43,9 @@ impl Default for MaskStroke {
         }
     }
 }
-/// Positions/tangent offsets in normalized item coordinates (0..1 spans the item).
+/// Positions in normalized mask-box coordinates; 0..1 spans its evaluated
+/// width and height. Tangents are offsets from the anchor in the same
+/// coordinates.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MaskVertex {
