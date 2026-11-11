@@ -92,7 +92,20 @@ fn providers(state: &mut State, ui: &mut egui::Ui) {
         .selected_text(text)
         .show_ui(ui, |ui| {
             for option in &transcription {
-                for model in &option.models {
+                for model in &if option.local {
+                    option
+                        .models
+                        .iter()
+                        .map(|model| model.to_string())
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![
+                        state
+                            .models
+                            .model(option.id, ai::Operation::Transcribe)
+                            .into(),
+                    ]
+                } {
                     let label = provider_label(locale, option.id, model);
                     let selected = option.id == state.request.transcription_provider
                         && model == &state.request.transcription_model;
@@ -130,19 +143,32 @@ fn providers(state: &mut State, ui: &mut egui::Ui) {
         .selected_text(label)
         .show_ui(ui, |ui| {
             for option in &options {
-                for model in &option.models {
+                for model in &if option.local {
+                    option
+                        .models
+                        .iter()
+                        .map(|model| model.to_string())
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![
+                        state
+                            .models
+                            .model(option.id, ai::Operation::SuggestClips)
+                            .into(),
+                    ]
+                } {
                     let label = if option.local {
                         local.to_owned()
                     } else {
                         provider_label(locale, option.id, model)
                     };
                     let selected = option.id == state.request.suggestion_provider
-                        && *model == state.request.suggestion_model;
+                        && model == &state.request.suggestion_model;
                     let r = ui.selectable_label(selected, label);
                     super::author(&r, &format!("shorts.suggester.{}.{}", option.id, model));
                     if r.clicked() {
                         state.request.suggestion_provider = option.id.into();
-                        state.request.suggestion_model = (*model).into();
+                        state.request.suggestion_model = model.clone();
                     }
                 }
             }

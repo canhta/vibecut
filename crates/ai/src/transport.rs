@@ -6,14 +6,14 @@ use std::fmt;
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-pub(crate) use text_model::{MAX_OUTPUT, OPENAI_MODEL, TextModel, TextRequest};
+pub(crate) use text_model::{MAX_OUTPUT, TextModel, TextRequest};
 
 /// Response bodies are transcripts or error envelopes; cap hostile responses.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// In-memory API key injected by the composition root. Never serialized or logged.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ApiKey(String);
 impl ApiKey {
     /// Validates a printable ASCII key of at most 4096 bytes; Debug always redacts it.

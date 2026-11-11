@@ -115,7 +115,10 @@ impl PreferenceStore {
         {
             return Err(Error::Unsupported("preferences version"));
         }
-        Ok(serde_json::from_value(value)?)
+        let mut preferences: Preferences = serde_json::from_value(value)?;
+        preferences.ai_models.validate()?;
+        preferences.resolve_models();
+        Ok(preferences)
     }
     pub fn save(&self, value: &Preferences) -> Result<()> {
         value.validate()?;
@@ -144,7 +147,7 @@ mod tests {
         (PREVIEW_MIN..=PREVIEW_MAX).contains(&(1.0 - panels[0] - panels[1]))
     }
 
-    /// A complete version-7 document as the app writes it, including the font
+    /// A complete version-8 document as the app writes it, including the font
     /// picker section and the preview axis toggle.
     #[test]
     fn default_is_deterministic_and_system_preferences_follow_the_os() {
@@ -522,6 +525,9 @@ mod tests {
                 .windows
                 .insert(format!("{index:064}"), WindowGeometry::default());
         }
+        preferences
+            .timeline_lanes
+            .insert(project::ProjectId(1), (0..4096).collect());
         assert!(store.save(&preferences).is_err());
         assert_eq!(store.load().unwrap(), Preferences::default());
     }
@@ -544,5 +550,69 @@ mod tests {
                 .is_err()
         );
         assert_eq!(preferences, before);
+    }
+}
+
+#[cfg(test)]
+mod model_tests {
+    #![allow(clippy::unwrap_used)]
+    #[test]
+    fn custom_remote_models_round_trip_and_resolve_into_caption_and_shorts_requests() {
+        let mut settings = crate::preferences::AiPreferences::default();
+        for row in ai::defaults::DEFAULTS
+            .iter()
+            .filter(|row| row.shipped_default)
+        {
+            settings
+                .select(row.provider, row.feature, "fixture-5")
+                .unwrap();
+        }
+        let mut preferences = crate::preferences::Preferences::default();
+        preferences.subtitles.transcription = "openai".into();
+        preferences
+            .set("ai_models", serde_json::to_value(&settings).unwrap())
+            .unwrap();
+        assert_eq!(preferences.subtitles.transcription_model, "fixture-5");
+        assert_eq!(preferences.subtitles.translation_model, "fixture-5");
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::preferences::PreferenceStore::new(dir.path().join("prefs.json"));
+        store.save(&preferences).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.ai_models, settings);
+        assert_eq!(loaded.subtitles.transcription_model, "fixture-5");
+        assert_eq!(
+            loaded.subtitles.local_transcription_model,
+            "whisper-large-v3-turbo"
+        );
+        let mut shorts = crate::shorts::State::new(
+            Default::default(),
+            engine::ByteBudget::new(64 << 20).unwrap(),
+        )
+        .unwrap();
+        shorts.request.suggestion_provider = "anthropic".into();
+        shorts.request.transcription_provider = "elevenlabs".into();
+        shorts.apply_model_preferences(&loaded.ai_models);
+        assert_eq!(shorts.request.suggestion_model, "fixture-5");
+        assert_eq!(shorts.request.transcription_model, "fixture-5");
+        for row in ai::defaults::DEFAULTS
+            .iter()
+            .filter(|row| row.shipped_default)
+        {
+            for index in 0..crate::services::remote_models::MAX_RECENT_MODELS {
+                let model = format!("{index}{}", "x".repeat(ai::defaults::MAX_MODEL_BYTES - 1));
+                preferences
+                    .ai_models
+                    .select(row.provider, row.feature, &model)
+                    .unwrap();
+            }
+        }
+        preferences.resolve_models();
+        store.save(&preferences).unwrap();
+        let restored = store.load().unwrap();
+        assert_eq!(restored.ai_models, preferences.ai_models);
+        assert_eq!(
+            restored.subtitles.transcription_model,
+            preferences.subtitles.transcription_model
+        );
     }
 }

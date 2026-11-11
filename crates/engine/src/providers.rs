@@ -14,7 +14,7 @@ pub use catalog::{
     normalize_target_tag, parse_language, provider_options, provider_options_for,
 };
 pub(crate) use consent::estimate_money;
-pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest};
+pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest, approve_upload};
 pub use error::Error;
 pub use text::{StoredConsent, TextAccess};
 mod model_transfers;

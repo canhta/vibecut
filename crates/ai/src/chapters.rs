@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{TICKS_PER_SECOND, Tick};
 
-pub use remote::{AnthropicChapterGenerator, OPENAI_MODEL, OpenAiChapterGenerator};
+pub use remote::{AnthropicChapterGenerator, OpenAiChapterGenerator};
 
 pub const MODE: &str = "transcript-chapters";
 impl Scope {

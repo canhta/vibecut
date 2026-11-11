@@ -39,7 +39,7 @@ preserves the existing destination. The CLI has no signal-driven cancel, so proc
 has crash semantics.
 
 Remote uploads are prompted through `ConsentPrompt` before every request; `UploadRequest` carries
-provider and model, languages, audio seconds, payload bytes, cost ceiling and the adapter's
+provider and model, languages, audio seconds, payload bytes, cost estimate and the adapter's
 policy links. The workflow never uploads without prompt approval and never downloads weights;
 model download belongs to `models::ModelTransfers` under `DownloadConsent`.
 
@@ -55,6 +55,9 @@ recognition, alignment, assembly and segmentation run on that worker without nes
 handle. Composition roots open the models cache once; every window locks it only for get/put.
 Completed raw windows keep the existing source/sample/language/provider/model/settings identity,
 including after failure or cancellation. Uncached remote windows ask the prompt before upload.
+Generation and translation use the [shared approval boundary](../providers/README.md#adapters-scopes-and-consent),
+including its separate exact-model unknown-price acknowledgement. The lent providers resolve
+the selected model; control requests cannot replace that identity or grant consent.
 Absent access refuses `Permission`; optional resource failures retain their setup category while
 unrelated commands remain usable. The CLI control and headless MCP roots lend local speech
 resources with `DenyUploads`, with no implicit download or client consent parameter.

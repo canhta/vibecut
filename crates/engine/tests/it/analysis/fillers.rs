@@ -87,7 +87,7 @@ fn project() -> Arc<Project> {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::fillers::OpenAiFillerClassifier::provider_config(ai::fillers::OPENAI_MODEL).unwrap()
+    ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
 }
 
 struct Fillers {

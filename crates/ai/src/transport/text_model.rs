@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The approved OpenAI text model shared by transcript-text operations.
-pub(crate) const OPENAI_MODEL: &str = "gpt-6-luna";
 pub(crate) const MAX_OUTPUT: u64 = 8192;
 /// Wire ceiling shared by the transcript-text operations.
 pub(crate) const MAX_WIRE: u64 = 131_072;
@@ -36,7 +35,6 @@ impl TextModel {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
         anthropic: bool,
-        model: &str,
         settings: &str,
     ) -> Result<Self, Error> {
         let (backend, base) = if anthropic {
@@ -44,7 +42,7 @@ impl TextModel {
         } else {
             (crate::openai::BACKEND, crate::openai::BASE_URL)
         };
-        remote::admit(&config, &[model], Some(settings), backend, base, None)?;
+        remote::admit(&config, Some(settings), backend, base, None)?;
         let client = if anthropic {
             Client::Anthropic(crate::anthropic::MessagesClient::new(key, transport))
         } else {
@@ -103,6 +101,7 @@ impl TextModel {
             })?,
             Client::Anthropic(client) => client.send(body)?,
         };
+        remote::check_model_response(&response, &self.config)?;
         checkpoint(hooks, stage)?;
         match self.client {
             Client::OpenAi { .. } => decode_openai(&response),

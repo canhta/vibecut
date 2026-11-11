@@ -52,26 +52,34 @@ fn clips_validation_refuses_before_media_or_network_work() {
 fn clips_missing_suggestion_credential_refuses_before_media_work() {
     let root = tempfile::tempdir().unwrap();
     let missing = root.path().join("missing.mp4");
-    let output = Command::new(bin())
-        .env_remove("OPENAI_API_KEY")
-        .args([
-            os("clips"),
-            missing.as_os_str(),
-            os("--provider"),
-            os("openai"),
-            os("--yes-upload"),
-            os("--json"),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(code(&output), 4);
-    let error = error_json(&output);
-    assert_eq!(error["error"]["code"], "setup");
-    assert!(
-        error["error"]["message"]
-            .as_str()
-            .is_some_and(|value| value.contains("OPENAI_API_KEY"))
-    );
+    for (model, expected_exit, expected_kind) in [("fixture-cli-custom", 4, "setup"), ("", 4, "ai")]
+    {
+        let output = Command::new(bin())
+            .env_remove("OPENAI_API_KEY")
+            .args([
+                os("clips"),
+                missing.as_os_str(),
+                os("--provider"),
+                os("openai"),
+                os("--model"),
+                os(model),
+                os("--accept-unknown-price"),
+                os("--yes-upload"),
+                os("--json"),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(code(&output), expected_exit);
+        let error = error_json(&output);
+        assert_eq!(error["error"]["code"], expected_kind);
+        if expected_kind == "setup" {
+            assert!(
+                error["error"]["message"]
+                    .as_str()
+                    .is_some_and(|value| value.contains("OPENAI_API_KEY"))
+            );
+        }
+    }
 }
 
 #[test]

@@ -580,6 +580,7 @@ impl Workspace {
                     .builder()
                     .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
+                    shorts.apply_model_preferences(&self.preferences.ai_models);
                     self.text_clipboard.bridge(
                         ui.ctx(),
                         egui::Id::unique((

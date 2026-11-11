@@ -2,8 +2,8 @@
 use super::{
     Arc, ArtifactCache, ArtifactKind, BoundaryFailure, CacheKey, Cancellation,
     ClipBoundarySettings, ClipCandidate, ClipInput, ClipRequest, ClipSegment, ClipSettings,
-    ClipSuggestion, ClipSuggestionOutcome, Consent, ConsentPrompt, Cost, CostEstimate, Credentials,
-    Cue, EditError, Error, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec, KeyInputs,
+    ClipSuggestion, ClipSuggestionOutcome, ConsentPrompt, Cost, CostEstimate, Credentials, Cue,
+    EditError, Error, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec, KeyInputs,
     LanguageTag, Money, NfcText, Progress, Providers, RejectedClip, ResourceClass, Scope,
     SnapSettings, SourceAsset, SourceRange, Stage, Tick, Transcription, build_session,
     build_suggester, snap_clip_boundaries, transcribe, upload_request, wait_for_job,
@@ -184,13 +184,12 @@ pub fn suggest(
             let disclosure = provider
                 .disclosure(&scope)?
                 .ok_or(EditError::Invalid("clip consent scope"))?;
-            consent.approve(&upload_request(&scope, &disclosure, &source_language)?)?;
-            let money = match &estimate {
-                CostEstimate::Free => Money::new("USD", 0).map_err(Error::kernel)?,
-                CostEstimate::UpperBound(money) => money.clone(),
-                CostEstimate::Unknown => return Err(Error::kernel(ai::Error::Cost)),
-            };
-            Some(Consent::grant(scope.clone(), money).map_err(Error::kernel)?)
+            Some(engine::providers::approve_upload(
+                consent,
+                &upload_request(&scope, &disclosure, &source_language)?,
+                &scope,
+                &estimate,
+            )?)
         } else {
             None
         };

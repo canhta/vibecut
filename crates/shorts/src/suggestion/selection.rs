@@ -1,9 +1,8 @@
 //! Resolves the selected clip suggestion provider.
 use super::{
     AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation, ClipSuggester, Cost,
-    Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, OPENAI_LUNA_MODEL,
-    OPENAI_POLICY_URL, OpenAiClipSuggester, Scope, SuggestionOption, SuggestionProvider,
-    UploadRequest,
+    Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, OPENAI_POLICY_URL,
+    OpenAiClipSuggester, Scope, SuggestionOption, SuggestionProvider, UploadRequest,
 };
 impl SuggestionProvider {
     pub fn id(&self) -> &'static str {
@@ -36,14 +35,17 @@ pub fn suggestion_options() -> Vec<SuggestionOption> {
             id: "openai",
             label: "OpenAI (remote)",
             local: false,
-            models: vec![OPENAI_LUNA_MODEL, ai::openai::TRANSLATION_MODEL],
+            models: vec![
+                ai::defaults::model("openai", ai::Operation::SuggestClips),
+                ai::defaults::model("openai", ai::Operation::Translate),
+            ],
             policy_url: Some(OPENAI_POLICY_URL),
         },
         SuggestionOption {
             id: "anthropic",
             label: "Anthropic (remote)",
             local: false,
-            models: vec![ai::anthropic::MODEL],
+            models: vec![ai::defaults::model("anthropic", ai::Operation::Translate)],
             policy_url: Some(ai::anthropic::POLICY_URL),
         },
     ]
@@ -57,10 +59,13 @@ pub fn choose_suggestion(provider: &str, model: Option<&str>) -> Result<Suggesti
     let model = model
         .or_else(|| option.models.first().copied())
         .ok_or(EditError::Unsupported("missing clip suggestion model"))?;
-    if !option.models.contains(&model) {
+    if option.local && !option.models.contains(&model) {
         return Err(
             EditError::Unsupported("unsupported model for clip suggestion provider").into(),
         );
+    }
+    if !option.local {
+        ai::defaults::validate_model(model).map_err(EditError::from)?;
     }
     match option.id {
         "heuristic" => Ok(SuggestionProvider::Heuristic),

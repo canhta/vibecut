@@ -27,6 +27,7 @@ Each module's contract is its README.
 | `editor/dialogs/` | [Editor dialogs](src/editor/dialogs/README.md) |
 | `editor/dialogs/export/` | [Export dialog](src/editor/dialogs/export/README.md) |
 | `editor/dialogs/models/` | [Model manager](src/editor/dialogs/models/README.md) |
+| `editor/dialogs/preferences/` | [AI preferences dialog](src/editor/dialogs/preferences/README.md) |
 | `editor/frame/` | [Editor frame](src/editor/frame/README.md) |
 | `editor/frame/input/` | [Keybindings](src/editor/frame/input/README.md) |
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |
@@ -58,6 +59,7 @@ Each module's contract is its README.
 | `selection.rs` | [Selection](src/selection/README.md) |
 | `services.rs` / `services/` | [Services](src/services/README.md) |
 | `services/color_picker/` | [Colour picker](src/services/color_picker/README.md) |
+| `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
 | `snapping.rs` | [Snapping](src/snapping/README.md) |

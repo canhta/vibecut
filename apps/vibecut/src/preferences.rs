@@ -7,6 +7,7 @@ mod font_picker;
 mod geometry;
 mod store;
 
+pub use crate::services::remote_models::{AiPreferences, MAX_RECENT_MODELS, ModelChoice};
 pub use aggregate::{
     DEFAULT_PANELS, MAX_PREFERENCES_BYTES, MAX_SECTIONS, MAX_TIMELINE_LANES, PANEL_MAX, PANEL_MIN,
     PREFERENCE_KEYS, PREFERENCES_VERSION, PREVIEW_MAX, PREVIEW_MIN, Preferences, TIMELINE_MAX,

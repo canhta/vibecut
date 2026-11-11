@@ -70,6 +70,11 @@ force=true, including through JSON. Source-language text cannot be replaced by a
 successful command is one undo step with translation provenance; locked items and stale Session
 outputs are refused.
 
+Both translation compositions generate a 76-byte opaque `translation:` reference from
+the BLAKE3 of the canonical JSON tuple `("caption-translation-v1", ProviderConfig)`.
+This binds complete provider/model/settings provenance within the existing 256-byte
+application field, including maximum-length model IDs; no model or reference is truncated.
+
 During retained trim gestures, groups, batches and merged edits, selected translations update
 the authoritative cue track before remapping the visible range. Hidden unselected content,
 source timings and all other language metadata survive inward and outward reversal; protected

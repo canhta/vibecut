@@ -2,7 +2,7 @@
 use ai::{
     Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope, Translation,
     TranslationWindow, Translator,
-    openai::{OpenAiTranslator, TRANSLATION_MODE, TRANSLATION_MODEL},
+    openai::{OpenAiTranslator, TRANSLATION_MODE},
     transport::{ApiKey, UreqTransport},
 };
 use std::{io::Read, path::PathBuf, sync::Arc};
@@ -38,7 +38,8 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
         return Err("evaluation admits 1..=8 windows".into());
     }
     let budget: u64 = std::env::var("VIBECUT_TRANSLATE_EVAL_BUDGET_MICROS")?.parse()?;
-    let config = OpenAiTranslator::provider_config(TRANSLATION_MODEL)?;
+    let config =
+        OpenAiTranslator::provider_config(ai::defaults::model("openai", ai::Operation::Translate))?;
     let provider = OpenAiTranslator::new(
         config.clone(),
         ApiKey::new(std::env::var("OPENAI_API_KEY").map_err(|_| "missing OPENAI_API_KEY")?)?,

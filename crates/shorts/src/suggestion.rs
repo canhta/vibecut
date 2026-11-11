@@ -7,9 +7,9 @@ use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
     AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
     ClipSourceSegment, ClipSuggester, ClipSuggestion, DroppedClip, HeuristicClipSuggester,
-    OPENAI_LUNA_MODEL, OpenAiClipSuggester,
+    OpenAiClipSuggester,
 };
-use ai::{Consent, CostEstimate, Money, Scope};
+use ai::{CostEstimate, Money, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
 use engine::EditError;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};

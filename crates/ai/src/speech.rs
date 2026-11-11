@@ -144,11 +144,13 @@ pub enum SynthesisEstimate {
     Unknown,
 }
 impl SynthesisEstimate {
-    fn covers(&self, cost: &Money) -> bool {
+    fn covers(&self, cost: &Option<Money>) -> bool {
         match self {
-            Self::Free => cost.micros() == 0,
-            Self::Exact(bound) | Self::UpperBound(bound) => covers(bound, cost),
-            Self::Unknown => false,
+            Self::Free => cost.as_ref().is_some_and(|cost| cost.micros() == 0),
+            Self::Exact(bound) | Self::UpperBound(bound) => {
+                cost.as_ref().is_some_and(|cost| covers(bound, cost))
+            }
+            Self::Unknown => true,
         }
     }
 }
@@ -162,7 +164,7 @@ pub struct SynthesisConsent {
     request: SpeechRequest,
     capabilities: SpeechCapabilities,
     estimate: SynthesisEstimate,
-    budget: Money,
+    budget: Option<Money>,
 }
 impl SynthesisConsent {
     /// Call only after affirmative approval of the exact payload and disclosure.
@@ -174,23 +176,39 @@ impl SynthesisConsent {
         budget: Money,
     ) -> Result<Self, Error> {
         capabilities.check(request)?;
-        check_budget(&estimate, &budget)?;
+        check_budget(&estimate, &Some(budget.clone()))?;
         Ok(Self {
             request: request.clone(),
             capabilities: capabilities.clone(),
             estimate,
-            budget,
+            budget: Some(budget),
+        })
+    }
+    /// Grant exact synthesis consent after explicit acknowledgement of this model's unknown price.
+    pub fn grant_unknown_price(
+        request: &SpeechRequest,
+        capabilities: &SpeechCapabilities,
+        acknowledgement: &crate::UnknownPriceAcknowledgement,
+    ) -> Result<Self, Error> {
+        capabilities.check(request)?;
+        acknowledgement.check(request.provider(), Operation::Synthesize)?;
+        Ok(Self {
+            request: request.clone(),
+            capabilities: capabilities.clone(),
+            estimate: SynthesisEstimate::Unknown,
+            budget: None,
         })
     }
 }
-fn check_budget(estimate: &SynthesisEstimate, budget: &Money) -> Result<(), Error> {
+fn check_budget(estimate: &SynthesisEstimate, budget: &Option<Money>) -> Result<(), Error> {
     match estimate {
         SynthesisEstimate::Free => Ok(()),
         SynthesisEstimate::Exact(cost) | SynthesisEstimate::UpperBound(cost)
-            if covers(budget, cost) =>
+            if budget.as_ref().is_some_and(|budget| covers(budget, cost)) =>
         {
             Ok(())
         }
+        SynthesisEstimate::Unknown if budget.is_none() => Ok(()),
         _ => Err(Error::Cost),
     }
 }
@@ -246,7 +264,8 @@ pub struct SpeechUsage {
     pub billable_characters: Option<u64>,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
-    pub actual_cost: Money,
+    /// Absent when the chosen model's price is unknown; never a fabricated zero.
+    pub actual_cost: Option<Money>,
 }
 /// Adapter transport record. The execution seam validates this before delivery.
 /// Adapters must bound decoding/allocation by MAX_PCM_BYTES and request duration.

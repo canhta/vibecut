@@ -32,3 +32,9 @@ Human-imported fonts stay in the existing per-user font store, with original/dec
 hashes, embedded licence provenance and explicit usage-rights acknowledgement in
 the [font catalog record](../../crates/libraries/src/font_catalog/README.md#custom-import).
 Import does not assert an SPDX licence or redistribute the font as bundled content.
+
+Remote model discovery is an explicit **Refresh models** action: one authenticated
+provider model-list GET sends only the selected key, with no project, transcript,
+audio or other user content. Opening settings never requests the list. Offline or
+without a valid key, defaults, recent IDs and custom entry remain usable. Model-list
+responses are bounded and transient; keys, bodies and approvals are never preferences.

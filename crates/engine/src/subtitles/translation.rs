@@ -4,13 +4,14 @@ use super::{
     outputs::{MAX_CUES, MAX_RESULT_BYTES},
 };
 use crate::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
-use crate::providers::{CatalogOperation, Cost, UploadRequest, estimate_money};
+use crate::providers::{CatalogOperation, Cost, UploadRequest, approve_upload, estimate_money};
 use crate::session::wire::{
     API_VERSION, MAX_FRAME_BYTES, MAX_KEY_BYTES, Request, parse_frame, registry_hash,
 };
 use crate::transcript::{
     TRANSLATE_ATTEMPTS,
     translation::{TranslationRun, TranslationTarget, window},
+    translation_reference,
 };
 use crate::{Command, EditError, Result, Session, session::wire::TranslationsResult};
 use captions::{LanguageTag, NfcText};
@@ -141,9 +142,12 @@ pub(crate) fn translate(
                     &estimate,
                     &scope,
                 )?;
-                consent.approve(&request)?;
-                let money = estimate_money(&estimate)?;
-                let token = ai::Consent::grant(scope.clone(), money.clone())?;
+                let token = approve_upload(consent.as_ref(), &request, &scope, &estimate)?;
+                let budget = if matches!(estimate, ai::CostEstimate::Unknown) {
+                    None
+                } else {
+                    Some(estimate_money(&estimate)?)
+                };
                 let run = TranslationRun::new(
                     TranslationTarget {
                         session: &staging,
@@ -154,7 +158,7 @@ pub(crate) fn translate(
                     scope,
                     Some(token),
                     1,
-                    money,
+                    budget,
                 )?;
                 cost.lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?
@@ -166,12 +170,7 @@ pub(crate) fn translate(
                     item,
                     target_language: target.clone(),
                     texts: translated.texts.clone(),
-                    translation_ref: format!(
-                        "{}/{}",
-                        translator.config().id().as_str(),
-                        translator.config().model().as_str()
-                    )
-                    .into(),
+                    translation_ref: translation_reference(translator.config())?,
                     force,
                 })?;
                 texts.extend(translated.texts);
@@ -182,8 +181,7 @@ pub(crate) fn translate(
                 item,
                 target_language: target.clone(),
                 texts,
-                translation_ref: format!("{}/{}", config.id().as_str(), config.model().as_str())
-                    .into(),
+                translation_ref: translation_reference(config)?,
                 cost: (&*cost.lock().map_err(|_| crate::RuntimeError::Poisoned)?).into(),
                 provider: config.id().clone(),
                 model: config.model().clone(),

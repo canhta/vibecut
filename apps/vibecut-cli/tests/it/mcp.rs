@@ -985,6 +985,7 @@ fn caption_jobs_generate_apply_and_export_over_mcp_and_deny_unapproved_uploads()
             TranscriptionProvider::ElevenLabs {
                 model: "offline-model".into(),
             },
+            "transcribe".into(),
             Arc::new(CaptionAsr {
                 config,
                 calls: calls.clone(),

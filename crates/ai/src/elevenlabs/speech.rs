@@ -16,16 +16,8 @@ use std::sync::Arc;
 
 const BACKEND: &str = "elevenlabs";
 const BASE_URL: &str = "https://api.elevenlabs.io/v1";
-pub const MULTILINGUAL_MODEL: &str = "eleven_multilingual_v2";
-pub const FLASH_MODEL: &str = "eleven_flash_v2_5";
 pub const OUTPUT_FORMAT: &str = "pcm_24000";
 pub const SAMPLE_RATE: u32 = 24_000;
-/// Source-documented model limits.
-pub const MULTILINGUAL_MAX_CHARACTERS: u64 = 10_000;
-pub const FLASH_MAX_CHARACTERS: u64 = 40_000;
-/// List prices in integer micro-USD per input character.
-pub const MULTILINGUAL_MICROS_PER_CHARACTER: u64 = 80;
-pub const FLASH_MICROS_PER_CHARACTER: u64 = 40;
 /// Bound explicit voice allowlists; each ID is a URL path segment.
 pub const MAX_VOICES: usize = 1_000;
 /// Continuity context sent to the provider; it is never synthesized.
@@ -117,7 +109,7 @@ pub struct ElevenLabsSpeech {
     key: ApiKey,
     transport: Arc<dyn HttpTransport>,
     settings: ElevenLabsSpeechSettings,
-    model: Model,
+    model: SpeechProfile,
     voices: Vec<SpeechVoice>,
     languages: Vec<SpeechLanguage>,
 }
@@ -128,7 +120,6 @@ impl ElevenLabsSpeech {
         settings: &ElevenLabsSpeechSettings,
     ) -> Result<ProviderConfig, Error> {
         remote::provider_config(
-            &[MULTILINGUAL_MODEL, FLASH_MODEL],
             model,
             &settings.settings_fingerprint(),
             BACKEND,
@@ -149,10 +140,9 @@ impl ElevenLabsSpeech {
         settings: ElevenLabsSpeechSettings,
         voices: Vec<SpeechVoice>,
     ) -> Result<Self, Error> {
-        let model = Model::parse(config.model().as_str()).ok_or(Error::Unsupported)?;
+        let model = SpeechProfile::for_config(&config);
         remote::admit(
             &config,
-            &[MULTILINGUAL_MODEL, FLASH_MODEL],
             Some(&settings.settings_fingerprint()),
             BACKEND,
             BASE_URL,
@@ -172,66 +162,58 @@ impl ElevenLabsSpeech {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Model {
-    MultilingualV2,
-    FlashV25,
+#[derive(Clone, Copy, Debug)]
+struct SpeechProfile {
+    max_characters: u64,
+    micros_per_character: Option<u64>,
+    language_code: bool,
+    vietnamese: bool,
 }
-impl Model {
-    fn parse(id: &str) -> Option<Self> {
-        match id {
-            MULTILINGUAL_MODEL => Some(Self::MultilingualV2),
-            FLASH_MODEL => Some(Self::FlashV25),
-            _ => None,
-        }
-    }
-    fn id(self) -> &'static str {
-        match self {
-            Self::MultilingualV2 => MULTILINGUAL_MODEL,
-            Self::FlashV25 => FLASH_MODEL,
+impl SpeechProfile {
+    fn for_config(config: &ProviderConfig) -> Self {
+        if let Some(crate::defaults::Price::Character {
+            micros,
+            max_characters,
+            language_code,
+            vietnamese,
+        }) = crate::defaults::price(config, Operation::Synthesize)
+        {
+            Self {
+                max_characters,
+                micros_per_character: Some(micros),
+                language_code,
+                vietnamese,
+            }
+        } else {
+            Self {
+                max_characters: 10_000,
+                micros_per_character: None,
+                language_code: false,
+                vietnamese: true,
+            }
         }
     }
     fn max_characters(self) -> u64 {
-        match self {
-            Self::MultilingualV2 => MULTILINGUAL_MAX_CHARACTERS,
-            Self::FlashV25 => FLASH_MAX_CHARACTERS,
-        }
+        self.max_characters
     }
-    fn micros_per_character(self) -> u64 {
-        match self {
-            Self::MultilingualV2 => MULTILINGUAL_MICROS_PER_CHARACTER,
-            Self::FlashV25 => FLASH_MICROS_PER_CHARACTER,
-        }
-    }
-    fn cost_model(self) -> &'static str {
-        match self {
-            Self::MultilingualV2 => {
-                "USD 0.00008 per input character (80 micro-USD), minimum 1 character per request"
-            }
-            Self::FlashV25 => {
-                "USD 0.00004 per input character (40 micro-USD), minimum 1 character per request"
-            }
-        }
-    }
-    /// `language_code` is documented for Flash v2.5 but not for Multilingual v2.
-    /// Sending it to a model that ignores it would make the fingerprint dishonest.
     fn sends_language_code(self) -> bool {
-        matches!(self, Self::FlashV25)
+        self.language_code
     }
     fn languages(self) -> Result<Vec<SpeechLanguage>, Error> {
-        let mut languages = vec![language("en", "Latn")?];
-        languages.push(language("zh", "Hans")?);
-        languages.push(language("zh", "Hant")?);
-        // Accept the script-qualified tags callers already use for captions while
-        // keeping the provider's ISO 639-1 code for the wire request.
-        languages.push(language("zh-Hans", "Hans")?);
-        languages.push(language("zh-Hant", "Hant")?);
-        if matches!(self, Self::FlashV25) {
+        let mut languages = vec![
+            language("en", "Latn")?,
+            language("zh", "Hans")?,
+            language("zh", "Hant")?,
+            language("zh-Hans", "Hans")?,
+            language("zh-Hant", "Hant")?,
+        ];
+        if self.vietnamese {
             languages.push(language("vi", "Latn")?);
         }
         Ok(languages)
     }
 }
+
 fn language(tag: &str, script: &str) -> Result<SpeechLanguage, Error> {
     Ok(SpeechLanguage {
         language: LanguageTag::parse(tag)?,
@@ -295,7 +277,11 @@ impl ElevenLabsSpeech {
             return SynthesisEstimate::Unknown;
         }
         let (characters, exact) = billable_count(request.text().as_str());
-        let Some(micros) = characters.checked_mul(self.model.micros_per_character()) else {
+        let Some(micros) = self
+            .model
+            .micros_per_character
+            .and_then(|rate| characters.checked_mul(rate))
+        else {
             return SynthesisEstimate::Unknown;
         };
         let Ok(cost) = Money::new("USD", micros) else {
@@ -345,7 +331,11 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
             streaming: Support::Unsupported,
             max_concurrency: None,
             requests_per_minute: None,
-            cost_model: NfcText::from(self.model.cost_model()),
+            cost_model: NfcText::from(if self.model.micros_per_character.is_some() {
+                "documented per-character price"
+            } else {
+                "price unknown"
+            }),
             policy: self.policy(),
         }
     }
@@ -419,6 +409,7 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
             let outbound = build_http(request, &self.key, self.settings, body)?;
             checked(hooks)?;
             let response = self.transport.send_bounded(outbound, cap)?;
+            remote::check_model_response(&response, &self.config)?;
             checked(hooks)?;
             let remaining = max_samples.saturating_sub(samples.len());
             if (200..=299).contains(&response.status) && response.body.len() / 2 > remaining {
@@ -451,12 +442,13 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
         // a unit per input character), so it is recorded, not multiplied by the
         // per-character list price. Actual cost follows the documented input-text
         // character rate; otherwise Flash would be underreported by half.
-        let Some(actual_micros) = characters
-            .max(1)
-            .checked_mul(self.model.micros_per_character())
-        else {
-            return Err(Error::Cost);
-        };
+        let actual_cost = self
+            .model
+            .micros_per_character
+            .map(|rate| characters.max(1).checked_mul(rate).ok_or(Error::Cost))
+            .transpose()?
+            .map(|micros| Money::new("USD", micros))
+            .transpose()?;
         let audio = SpeechAudio {
             samples,
             sample_rate: SAMPLE_RATE,
@@ -466,7 +458,7 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
                 billable_characters: provider_cost,
                 input_tokens: None,
                 output_tokens: None,
-                actual_cost: Money::new("USD", actual_micros)?,
+                actual_cost,
             },
             transcript: None,
         };
@@ -563,7 +555,7 @@ struct VoiceSettings {
 
 fn build_body(
     text: &str,
-    model: Model,
+    model: SpeechProfile,
     request: &SpeechRequest,
     previous: Option<&str>,
     next: Option<&str>,
@@ -577,7 +569,7 @@ fn build_body(
     let voice_settings = settings.speed_value().map(|speed| VoiceSettings { speed });
     let body = Body {
         text,
-        model_id: model.id(),
+        model_id: request.provider().model().as_str(),
         language_code,
         voice_settings,
         apply_text_normalization: NORMALIZATION,
