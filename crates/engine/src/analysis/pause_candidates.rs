@@ -185,9 +185,9 @@ impl PauseCandidatesJob {
         let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Cancelled),
-            JobState::Failed => Err(EditError::JobFailure(
+            JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
                 snapshot.error.ok_or(EditError::StaleResult)?,
-            )),
+            ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)

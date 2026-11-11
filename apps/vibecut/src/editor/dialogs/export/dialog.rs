@@ -333,8 +333,9 @@ impl ExportDialog {
                 }
                 self.cancelling = false;
                 if let Some(error) = &failure
-                    && let engine::EditError::Render(render::Error::Unavailable(items)) =
-                        error.as_ref()
+                    && let Some(engine::EditError::Render(render::Error::Unavailable(items))) =
+                        (error.as_ref() as &(dyn std::error::Error + 'static))
+                            .downcast_ref::<engine::EditError>()
                     && self.unavailable != *items
                 {
                     self.consent = false;
@@ -342,7 +343,7 @@ impl ExportDialog {
                 }
                 self.diagnostics = failure
                     .as_ref()
-                    .map(|error| diagnostics(error, &self.unavailable));
+                    .map(|error| diagnostics(error.as_ref(), &self.unavailable));
             }
             Some(JobState::Cancelled) => {
                 if self.publishing.is_none() {
@@ -548,7 +549,10 @@ fn temp_output(extension: &str) -> PathBuf {
         std::process::id()
     ))
 }
-fn diagnostics(error: &engine::EditError, unavailable: &[render::Unavailable]) -> String {
+fn diagnostics(
+    error: &(dyn std::error::Error + 'static),
+    unavailable: &[render::Unavailable],
+) -> String {
     let mut text = format!("{error:?}");
     for item in unavailable {
         text.push_str(&format!(
@@ -728,6 +732,10 @@ impl ExportDialog {
                             .snapshot
                             .as_ref()
                             .and_then(|snapshot| snapshot.error.as_deref())
+                            .and_then(|error| {
+                                (error as &(dyn std::error::Error + 'static))
+                                    .downcast_ref::<engine::EditError>()
+                            })
                             .map_or(Text::ExportFailure, export_failure);
                         ui.colored_label(theme::error_text(dark), tr(label));
                     }

@@ -23,10 +23,13 @@ their existing storage, budget and cleanup policy.
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
 failures; `RuntimeError` is the engine re-export. `ByteBudget`, artifact pin/evict and the
 runner's private reservation return this closed result. Upper cache, job and Session operations
-compose it through transparent `EditError::Runtime`. IO keeps its owned source; all six runtime
-variants are nontransient. Only `BudgetFull` permits reclaim or queued waiting;
+compose it through transparent `EditError::Runtime`. IO keeps its owned source; runtime
+variants are nontransient. `Failed` shares a typed erased cause and delegates its code,
+without inheriting transience or adding a source-chain link. Only `BudgetFull` permits reclaim or queued waiting;
 `ArtifactTooLarge` is immediate refusal even though both publish the `budget` wire code.
-Task closures and snapshots still own `EditError`; this does not erase generic job failures.
+Task closures still return the current composed `EditError`. Snapshots retain the raw
+`Arc<dyn Failure>` after typed cancellation/retry decisions; only explicit failed-workflow
+propagation adds a `RuntimeError::Failed` envelope. This does not make callbacks generic.
 
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.
 `submit(spec, task)` returns a `JobId` and `CancelToken`; `tick()` joins finished workers,

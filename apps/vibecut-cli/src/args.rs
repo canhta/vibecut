@@ -66,7 +66,11 @@ mod exit_codes {
             row!(E::WorkerPanicked, "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
-            row!(E::JobFailure(Arc::new(E::Limit)), "usage", 2),
+            row!(
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
+                "usage",
+                2
+            ),
             row!(E::Render(render::Error::Cancelled), "render", 6),
             row!(E::Media(media::MediaError::Cancelled), "media", 6),
             row!(E::Ai(ai::Error::Auth), "ai", 4),
@@ -139,12 +143,35 @@ mod exit_codes {
             assert_eq!(CliError::Sounds(error).code(), expected);
         }
         for (make, expected) in cases {
-            let inner = E::JobFailure(Arc::new(E::JobFailure(Arc::new(make()))));
+            let inner = E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
+                engine::RuntimeError::Failed(Arc::new(make())),
+            ))));
             assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
         }
-        let model = E::JobFailure(Arc::new(E::Providers(P::ModelMissing("test-model"))));
+        let model = E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Providers(
+            P::ModelMissing("test-model"),
+        ))));
         assert_eq!(
             CliError::Engine(model).value()["message"],
+            "local model test-model is not installed; run `vibecut-cli model download test-model`"
+        );
+        for depth in 0..=2 {
+            let mut model = E::Providers(P::ModelMissing("test-model"));
+            for _ in 0..depth {
+                model = E::Runtime(engine::RuntimeError::Failed(Arc::new(model)));
+            }
+            let error = CliError::Job(Arc::new(model));
+            assert_eq!(error.code(), ("setup", 4));
+            assert_eq!(
+                error.value()["message"],
+                "local model test-model is not installed; run `vibecut-cli model download test-model`"
+            );
+        }
+        let concrete = CliError::Job(Arc::new(engine::RuntimeError::Failed(Arc::new(
+            E::Providers(P::ModelMissing("test-model")),
+        ))));
+        assert_eq!(
+            concrete.value()["message"],
             "local model test-model is not installed; run `vibecut-cli model download test-model`"
         );
         let persistence = CliError::Engine(

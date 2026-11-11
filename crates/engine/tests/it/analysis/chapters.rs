@@ -467,7 +467,7 @@ fn provider_failures_are_typed_job_failures() {
     assert_eq!(wait(&mut runner, &job), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner),
-        Err(EditError::JobFailure(error)) if matches!(error.as_ref(), EditError::Ai(ai::Error::Auth))
+        Err(EditError::Runtime(engine::RuntimeError::Failed(error))) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Ai(ai::Error::Auth)))
     ));
     runner.shutdown();
 }

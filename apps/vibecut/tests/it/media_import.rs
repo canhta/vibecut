@@ -745,7 +745,11 @@ fn worker_panic_is_a_typed_failure_not_complete() {
     assert_eq!(inspection.import_failures.len(), 0);
     assert_eq!(inspection.import_unfinished, 1);
     assert!(matches!(
-        inspection.import_error.as_deref(),
+        inspection
+            .import_error
+            .as_deref()
+            .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::EditError>()),
         Some(engine::EditError::WorkerPanicked)
     ));
     assert!(

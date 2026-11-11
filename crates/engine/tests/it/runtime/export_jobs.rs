@@ -296,7 +296,12 @@ fn panic_during_production_export_cleans_stage_and_reports_worker_failure() {
     )
     .unwrap();
     assert!(matches!(
-        complete(&mut runner, id).error.as_deref(),
+        complete(&mut runner, id)
+            .error
+            .as_deref()
+            .and_then(
+                |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            ),
         Some(EditError::WorkerPanicked)
     ));
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
@@ -415,7 +420,9 @@ fn oversized_export_fails_with_requested_bytes_before_frame_allocation() {
     .unwrap();
     let s = complete(&mut runner, id);
     assert!(matches!(
-        s.error.as_deref(),
+        s.error.as_deref().and_then(
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+        ),
         Some(EditError::Render(render::Error::Budget {
             requested: 4362076160,
             ..
@@ -649,7 +656,9 @@ fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly()
         .unwrap();
     let result = complete(&mut r, id);
     assert!(matches!(
-        result.error.as_deref(),
+        result.error.as_deref().and_then(
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+        ),
         Some(EditError::Render(render::Error::Invalid(
             "output aliases a source"
         )))
@@ -723,7 +732,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         .unwrap();
     let result = complete(&mut r, id);
     assert!(
-        matches!(result.error.as_deref(), Some(EditError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
+        matches!(result.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()), Some(EditError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -788,7 +797,11 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
         );
         if panic {
             assert!(matches!(
-                result.error.as_deref(),
+                result
+                    .error
+                    .as_deref()
+                    .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                        .downcast_ref::<EditError>()),
                 Some(EditError::WorkerPanicked)
             ));
         }
@@ -868,7 +881,9 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     let result = complete(&mut runner, id);
     assert_eq!(result.state, JobState::Failed);
     assert!(matches!(
-        result.error.as_deref(),
+        result.error.as_deref().and_then(
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+        ),
         Some(EditError::Project(project::Error::Io(_)))
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");

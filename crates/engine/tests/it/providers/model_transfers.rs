@@ -526,7 +526,11 @@ fn disk_preflight_and_mid_write_storage_full_are_typed_and_resumable() {
         let (id, _) = submit(&store, &mut runner, &model);
         let result = terminal(&mut runner, id, &clock);
         assert!(matches!(
-            result.error.as_deref(),
+            result
+                .error
+                .as_deref()
+                .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<EditError>()),
             Some(EditError::StorageFull)
         ));
         assert!(store.installed(&model, &NoHooks).unwrap().is_none());

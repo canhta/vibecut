@@ -829,7 +829,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::NetworkTransient, Job, true),
         row!(E::StaleResult, StaleResult, false),
         row!(E::LoudnessStale, Refused, false),
-        row!(E::JobFailure(Arc::new(E::Limit)), Limit, false),
+        row!(
+            E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
+            Limit,
+            false
+        ),
         row!(E::CacheCorrupt, Job, false),
         row!(E::Render(render::Error::Cancelled), Render, false),
         row!(E::Media(media::MediaError::Cancelled), Media, false),
@@ -964,7 +968,9 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
     ] {
         cases.push((
-            E::JobFailure(Arc::new(E::JobFailure(Arc::new(inner)))),
+            E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
+                engine::RuntimeError::Failed(Arc::new(inner)),
+            )))),
             code,
             false,
         ));

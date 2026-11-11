@@ -214,7 +214,7 @@ struct Output {
 }
 enum Workers {
     Running,
-    Failed(Arc<engine::EditError>),
+    Failed(Arc<dyn engine::Failure + 'static>),
     Restarting,
 }
 pub struct Playback {

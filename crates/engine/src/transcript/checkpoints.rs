@@ -252,7 +252,7 @@ pub fn wait_for_job(
             JobState::Completed => return runner.take_output(id).ok_or(EditError::StaleResult),
             JobState::Failed => {
                 return Err(match snapshot.error {
-                    Some(error) => EditError::JobFailure(error),
+                    Some(error) => EditError::Runtime(crate::RuntimeError::Failed(error)),
                     None => EditError::Invalid("job failed without diagnostics"),
                 });
             }

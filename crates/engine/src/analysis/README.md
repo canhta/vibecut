@@ -19,7 +19,8 @@ ordering only ([`LoudnessTarget`](../../../project/src/model/settings.rs)).
 `audio.measure_loudness {}` (`loudness::submit_loudness(runner, project, sources)`) queues one CPU
 `MeasureLoudness` job that runs render's two-pass planner over the production mix graph for the
 configured targets and refuses `Invalid` when none is set. It reports `Mix` progress, honours
-cancellation and surfaces failures as typed `JobFailure`. It takes no cache and never edits the
+cancellation and retains the raw typed failure in the job snapshot. Workflow finishers
+that propagate a failed job compose `RuntimeError::Failed` upward. It takes no cache and never edits the
 project: `job_status` returns `output.kind = "loudness"` (the gains plus the measured numbers per
 clip and master, via `loudness::decode`) and the caller sends `audio.apply_loudness` with those
 gains. The gains' key is `loudness::content_key`: a hash of the active

@@ -327,11 +327,9 @@ fn unknown_duplicate_and_disallowed_marker_ids_are_typed_refusals() {
         assert_eq!(wait(&mut runner, &job), JobState::Failed);
         assert!(matches!(
             job.finish(&mut runner),
-            Err(EditError::JobFailure(error))
-                if matches!(
-                    error.as_ref(),
-                    EditError::Ai(ai::Error::Fillers(ai::fillers::FillerRefusal::InvalidSegments))
-                )
+            Err(EditError::Runtime(engine::RuntimeError::Failed(error)))
+                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Ai(ai::Error::Fillers(ai::fillers::FillerRefusal::InvalidSegments))
+                ))
         ));
     }
 }

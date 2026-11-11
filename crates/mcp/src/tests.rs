@@ -672,8 +672,8 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
         }
         inbox
             .poll_projects(|_, _, _| {
-                Err(EditError::JobFailure(Arc::new(EditError::JobFailure(
-                    Arc::new(inner),
+                Err(EditError::Runtime(engine::RuntimeError::Failed(Arc::new(
+                    EditError::Runtime(engine::RuntimeError::Failed(Arc::new(inner))),
                 ))))
             })
             .unwrap();

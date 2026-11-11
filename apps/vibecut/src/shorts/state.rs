@@ -504,7 +504,9 @@ impl State {
                         let error = Arc::new(error);
                         send.send(Err(Error::Worker(error.clone())))
                             .map_err(|_| engine::EditError::Cancelled)?;
-                        Err(engine::EditError::JobFailure(error))
+                        Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
+                            error,
+                        )))
                     }
                 }
             },
@@ -668,7 +670,7 @@ impl State {
         self.error_text = if matches!(text, Text::ShortsError) {
             match &error {
                 Error::Engine(e) => failure_text(e),
-                Error::Worker(e) => failure_text(e),
+                Error::Worker(e) => failure_text(e.as_ref()),
                 Error::Shorts(shorts::Error::Engine(e)) => failure_text(e),
                 _ => text,
             }
@@ -1032,7 +1034,12 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
     Ok(Tick((value * TICKS_PER_SECOND as f64).round() as i64))
 }
 
-pub(super) fn failure_text(error: &engine::EditError) -> Text {
+pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
+    let Some(error) =
+        (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::EditError>()
+    else {
+        return Text::ShortsError;
+    };
     match error {
         engine::EditError::Providers(
             engine::providers::Error::ModelMissing(_) | engine::providers::Error::RunnerMissing,

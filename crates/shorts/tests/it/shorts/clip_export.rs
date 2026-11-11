@@ -612,7 +612,9 @@ fn missing_source_fails_each_short_with_typed_diagnostics_and_allows_retry() {
     let snapshots = wait(&batch, &mut runner);
     for (index, snapshot) in snapshots.iter().enumerate() {
         assert_eq!(snapshot.state, JobState::Failed);
-        match snapshot.error.as_deref() {
+        match snapshot.error.as_deref().and_then(|error| {
+            (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+        }) {
             Some(EditError::Render(render::Error::Unavailable(details))) => {
                 assert_eq!(details.len(), 2);
                 for detail in details {
@@ -697,7 +699,9 @@ fn storage_ceiling_refuses_before_publishing_and_preserves_previous_files() {
     let snapshots = wait(&batch, &mut runner);
     assert_eq!(snapshots[0].state, JobState::Failed);
     assert!(matches!(
-        snapshots[0].error.as_deref(),
+        snapshots[0].error.as_deref().and_then(|error| (error
+            as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EditError>()),
         Some(EditError::Io(_) | EditError::Project(_))
     ));
     assert_eq!(std::fs::read(&video).unwrap(), b"previous video");
@@ -991,7 +995,11 @@ fn video_storage_ceiling_preserves_previous_output() {
     assert_eq!(snapshots[0].state, JobState::Failed);
     assert!(
         matches!(
-            snapshots[0].error.as_deref(),
+            snapshots[0]
+                .error
+                .as_deref()
+                .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<EditError>()),
             Some(
                 EditError::Io(_)
                     | EditError::Project(_)
@@ -1055,7 +1063,11 @@ fn source_sidecar_alias_is_refused_before_publication() {
     assert_eq!(snapshots[0].state, JobState::Failed);
     assert!(
         matches!(
-            snapshots[0].error.as_deref(),
+            snapshots[0]
+                .error
+                .as_deref()
+                .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<EditError>()),
             Some(EditError::Render(render::Error::Invalid(
                 "output aliases a source"
             )))
@@ -1098,7 +1110,11 @@ fn source_video_alias_is_refused_even_with_overwrite() {
     assert_eq!(snapshots[0].state, JobState::Failed);
     assert!(
         matches!(
-            snapshots[0].error.as_deref(),
+            snapshots[0]
+                .error
+                .as_deref()
+                .and_then(|error| (error as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<EditError>()),
             Some(EditError::Render(render::Error::Invalid(
                 "output aliases a source"
             )))

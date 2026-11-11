@@ -646,6 +646,10 @@ impl Sounds {
                     self.cache_problem = Some(
                         error
                             .as_deref()
+                            .and_then(|error| {
+                                (error as &(dyn std::error::Error + 'static))
+                                    .downcast_ref::<EditError>()
+                            })
                             .map(SoundsProblem::from_edit)
                             .filter(|problem| !matches!(problem, SoundsProblem::Cancelled))
                             .unwrap_or(SoundsProblem::CacheFailed),

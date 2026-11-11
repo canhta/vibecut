@@ -1,7 +1,7 @@
 //! Executes bounded background work over shared resources.
 use crate::session::wire::{ErrorCode, Failure};
 
-/// Reservation failures retain typed IO without exposing allocation or file contents.
+/// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("aggregate byte budget is full")]
@@ -16,6 +16,8 @@ pub enum Error {
     Limit,
     #[error("invalid edit: {0}")]
     Invalid(&'static str),
+    #[error("background job failed: {0}")]
+    Failed(std::sync::Arc<dyn Failure + 'static>),
 }
 impl Failure for Error {
     fn code(&self) -> ErrorCode {
@@ -25,6 +27,7 @@ impl Failure for Error {
             Self::Io(_) => ErrorCode::Io,
             Self::Limit => ErrorCode::Limit,
             Self::Invalid(_) => ErrorCode::Refused,
+            Self::Failed(cause) => cause.code(),
         }
     }
 }

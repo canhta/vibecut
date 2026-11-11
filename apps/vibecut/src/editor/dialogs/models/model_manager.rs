@@ -106,7 +106,7 @@ pub struct ModelManager {
     resumable: BTreeSet<String>,
     problem: Option<ModelProblem>,
     problem_model: Option<String>,
-    problem_error: Option<Arc<EditError>>,
+    problem_error: Option<Arc<dyn engine::Failure + 'static>>,
 }
 pub(crate) struct ModelUi {
     pub(crate) widgets: Vec<(String, egui::Response)>,
@@ -331,6 +331,9 @@ impl ModelManager {
                 let problem = snapshot
                     .error
                     .as_deref()
+                    .and_then(|error| {
+                        (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+                    })
                     .map_or(ModelProblem::Failed, problem_for);
                 if problem == ModelProblem::Network {
                     self.resumable.insert(model.clone());

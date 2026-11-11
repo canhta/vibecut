@@ -110,8 +110,6 @@ pub enum EditError {
     StaleResult,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
-    #[error("background job failed: {0}")]
-    JobFailure(std::sync::Arc<EditError>),
     #[error("corrupt cache entry skipped")]
     CacheCorrupt,
     #[error("render execution failed")]
@@ -210,7 +208,6 @@ impl EditError {
             Self::WorkerPanicked => C::WorkerFailure,
             Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
-            Self::JobFailure(inner) => inner.code(),
             Self::Recovery(inner) => inner.code(),
             Self::Sounds(inner) => inner.code(),
             Self::Font(inner) => inner.code(),

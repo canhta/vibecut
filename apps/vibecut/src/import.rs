@@ -166,12 +166,12 @@ pub enum ImportEvent {
         cancelled: bool,
         /// Typed terminal runner failure, e.g. worker unwind. File-level media
         /// refusals arrive as `Failed` and do not close the batch.
-        error: Option<Arc<engine::EditError>>,
+        error: Option<Arc<dyn engine::Failure + 'static>>,
     },
 }
 
 impl ImportEvent {
-    fn done(&self) -> Option<(bool, Option<Arc<engine::EditError>>)> {
+    fn done(&self) -> Option<(bool, Option<Arc<dyn engine::Failure + 'static>>)> {
         match self {
             Self::Done { cancelled, error } => Some((*cancelled, error.clone())),
             _ => None,
@@ -604,7 +604,9 @@ impl ImportQueue {
     }
     /// Drain completed events. A worker panic or terminal runner state still
     /// closes the batch with one typed `Done`, so the UI cannot stay busy.
-    pub fn poll(&mut self) -> std::result::Result<Vec<ImportEvent>, Arc<engine::EditError>> {
+    pub fn poll(
+        &mut self,
+    ) -> std::result::Result<Vec<ImportEvent>, Arc<dyn engine::Failure + 'static>> {
         if let Err(error) = self.runner.tick() {
             if let Some(job) = self.job.take() {
                 let _ = self.runner.take_output(job.id);
@@ -796,7 +798,7 @@ fn job_key(
 fn finish(
     send: &mpsc::SyncSender<ImportEvent>,
     cancelled: bool,
-    error: Option<Arc<engine::EditError>>,
+    error: Option<Arc<dyn engine::Failure + 'static>>,
 ) -> std::result::Result<Vec<u8>, engine::EditError> {
     if send.send(ImportEvent::Done { cancelled, error }).is_err() {
         return Err(engine::EditError::Cancelled);
