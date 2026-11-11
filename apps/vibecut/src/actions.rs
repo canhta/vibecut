@@ -102,10 +102,18 @@ pub(crate) fn bookmark_target_in(
     }
 }
 
+/// Available generated shapes; unavailable catalog variants have no action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphicShape {
+    Rectangle,
+    Ellipse,
+}
+
 /// Executable app workflows. Engine mutations inside a workflow still use the
 /// engine owner; opening a dialog never advertises its later mutation as a target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiAction {
+    InsertGraphic(GraphicShape),
     MediaView,
     MediaSort,
     MediaSortBy(crate::media_panel::MediaSortKey),

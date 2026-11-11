@@ -1326,3 +1326,115 @@ fn text_background_channels_survive_trim_retime_and_the_file() {
     s.undo().unwrap();
     assert_eq!(s.project(), &original);
 }
+
+#[test]
+fn graphic_appearance_keys_follow_trim_split_move_and_time_scaling_without_media_speed() {
+    let mut data = Project::empty(ProjectId(397), "Graphic keys".into())
+        .unwrap()
+        .into_data();
+    let path = AnimationPath::new("params.strokeWidth").unwrap();
+    let mut animations = Animations::default();
+    animations
+        .set(
+            path.clone(),
+            Param::Value(
+                Channel::new(
+                    ParamValue::Scalar(2.),
+                    vec![
+                        Keyframe::new(Tick(0), ParamValue::Scalar(0.)),
+                        Keyframe::new(Tick(80), ParamValue::Scalar(64.)),
+                    ],
+                    Extrapolation::Hold,
+                    Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    data.scene_mut().timeline.main.items.push(Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        masks: vec![],
+        effects: vec![],
+        animations,
+        id: ItemId(397),
+        source_asset: None,
+        source_range: SourceRange::new(Tick(30), Tick(130)).unwrap(),
+        start: Tick(20),
+        retime: Default::default(),
+        content: ItemParams::Graphic(GraphicParams::rectangle()),
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    s.apply(Command::TrimStart {
+        item: ItemId(397),
+        at: Tick(30),
+    })
+    .unwrap();
+    let times = |s: &Session, id| {
+        item(s, id)
+            .animations
+            .get(&path)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .iter()
+            .map(|k| k.time.0)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(times(&s, ItemId(397)), vec![-10, 70]);
+    let out = s
+        .apply(Command::SplitAt {
+            item: ItemId(397),
+            at: Tick(60),
+        })
+        .unwrap();
+    let right = out
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(times(&s, right), vec![-40, 40]);
+    s.apply(Command::ScaleKeyframeTime {
+        item: right,
+        numerator: 2,
+        denominator: 1,
+    })
+    .unwrap();
+    assert_eq!(times(&s, right), vec![-80, 80]);
+    s.apply(Command::TimelineMoveItems {
+        items: vec![right],
+        delta: Tick(10),
+        placement: None,
+    })
+    .unwrap();
+    assert_eq!(times(&s, right), vec![-80, 80]);
+    let copied = s
+        .apply(Command::DuplicateItems { items: vec![right] })
+        .unwrap();
+    let duplicate = copied
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(times(&s, duplicate), vec![-80, 80]);
+    assert_eq!(
+        item(&s, duplicate)
+            .animations
+            .value_at(&path, Tick(0))
+            .unwrap(),
+        Some(ParamValue::Scalar(32.))
+    );
+}

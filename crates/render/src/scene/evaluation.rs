@@ -90,6 +90,21 @@ impl<'a> Renderer<'a> {
                         fit: Fit::Stretch,
                         ..Default::default()
                     }
+                } else if matches!(item.content, ItemParams::Graphic(_)) {
+                    let canvas = &self.project.data().canvas;
+                    let side = 512_u32.min(canvas.width).min(canvas.height);
+                    let width = f64::from(side) / f64::from(canvas.width);
+                    let height = f64::from(side) / f64::from(canvas.height);
+                    Placement {
+                        destination: Rect {
+                            x: (1. - width) / 2.,
+                            y: (1. - height) / 2.,
+                            width,
+                            height,
+                        },
+                        fit: Fit::Stretch,
+                        ..Default::default()
+                    }
                 } else {
                     Placement::default()
                 }
@@ -300,14 +315,17 @@ impl<'a> Renderer<'a> {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let has_passes = runs.iter().any(|run| !run.is_empty());
-                let final_opacity = if masked || blended || has_passes || transform.active() {
-                    let opacity = placement.opacity;
-                    placement.opacity = 1.;
-                    opacity
-                } else {
-                    1.
-                };
-                let below = if !has_passes && !masked && !blended && !transform.active() {
+                let graphic = matches!(item.content, ItemParams::Graphic(_));
+                let final_opacity =
+                    if graphic || masked || blended || has_passes || transform.active() {
+                        let opacity = placement.opacity;
+                        placement.opacity = 1.;
+                        opacity
+                    } else {
+                        1.
+                    };
+                let below = if !graphic && !has_passes && !masked && !blended && !transform.active()
+                {
                     None
                 } else {
                     let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
@@ -318,6 +336,9 @@ impl<'a> Renderer<'a> {
                         if let Some(image) = video {
                             draw(&mut out, &image, placement, hooks)?;
                         }
+                    }
+                    ItemParams::Graphic(_) => {
+                        super::draw::draw_graphic(&mut out, item, local, placement, hooks)?
                     }
                     ItemParams::Overlay(p) => {
                         let c = color(p.color.0);

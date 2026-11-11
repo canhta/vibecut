@@ -123,6 +123,46 @@ impl Editor {
             }
         }
     }
+    pub(in crate::editor) fn insert_graphic(&mut self, shape: crate::actions::GraphicShape) {
+        let result = (|| -> crate::Result<project::ItemId> {
+            let start = self.playback.position()?;
+            let content = match shape {
+                crate::actions::GraphicShape::Rectangle => project::GraphicParams::rectangle(),
+                crate::actions::GraphicShape::Ellipse => project::GraphicParams::ellipse(),
+            };
+            let outcome = self.session.apply(Command::InsertItem {
+                placement: engine::Placement::Auto,
+                item: NewItem {
+                    retime: Default::default(),
+                    animations: Default::default(),
+                    source_asset: None,
+                    source_range: SourceRange::new(Tick::ZERO, Tick(5 * TICKS_PER_SECOND))?,
+                    start,
+                    content: ItemParams::Graphic(content),
+                },
+            })?;
+            outcome
+                .created
+                .into_iter()
+                .find_map(|id| match id {
+                    CreatedId::Item(item) => Some(item),
+                    _ => None,
+                })
+                .ok_or(crate::Error::Invalid("graphic allocation"))
+        })();
+        match result {
+            Ok(item) => {
+                self.selection = [item].into_iter().collect();
+                self.selection_scopes = SelectionScopes::default();
+                self.properties.clear_drafts();
+                self.session.end_merge();
+            }
+            Err(error) => {
+                self.import_notice = Some(error_detail(&error));
+                self.set_toast(self.tr(Text::InsertFailed), None);
+            }
+        }
+    }
     pub(in crate::editor) fn insert_text(&mut self) {
         let at = match self.playback.position() {
             Ok(at) => at,

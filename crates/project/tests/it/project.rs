@@ -123,7 +123,7 @@ fn caption_bank_validates_every_entry_names_closed_fields_and_schema() {
             "{case}"
         );
     }
-    for (version, old) in [(22, true), (24, false)] {
+    for (version, old) in [(SCHEMA_VERSION - 1, true), (SCHEMA_VERSION + 1, false)] {
         let mut value = encoded.clone();
         value["schema_version"] = version.into();
         value["project"] = serde_json::Value::Null;
@@ -1023,4 +1023,107 @@ fn encoding_limit_failure_never_replaces_saved_project_or_rotates_snapshots() {
     assert_eq!(load(&path).unwrap().project, initial);
     assert_eq!(autosave::list(&path).unwrap(), vec![recovery]);
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
+}
+
+#[test]
+fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_channels() {
+    let root = testkit::fixture::dir("graphic-project");
+    let path = root.join("Hình.vibecut");
+    for graphic in [GraphicParams::rectangle(), GraphicParams::ellipse()] {
+        let mut data = empty().into_data();
+        let mut graphic_item = item(70, 5);
+        graphic_item.masks.clear();
+        graphic_item.content = ItemParams::Graphic(graphic.clone());
+        graphic_item
+            .animations
+            .set(
+                AnimationPath::new("params.fill").unwrap(),
+                Param::new(ParamValue::Color([0.1, 0.2, 0.3, 0.4])).unwrap(),
+            )
+            .unwrap();
+        data.scene_mut().timeline.main.items.push(graphic_item);
+        let p = Project::new(data.clone()).unwrap();
+        save_fixture(&path, &p).unwrap();
+        assert_eq!(load(&path).unwrap().project, p);
+        let value = serde_json::to_value(&graphic).unwrap();
+        for field in value["params"].as_object().unwrap().keys() {
+            let mut bad = value.clone();
+            bad["params"].as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<GraphicParams>(bad).is_err(),
+                "missing {field}"
+            );
+        }
+        for (key, value) in [
+            ("unknown", serde_json::json!(0)),
+            ("strokeAlign", serde_json::json!("diagonal")),
+            ("fill", serde_json::json!([0, 0, 0])),
+        ] {
+            let mut bad = serde_json::to_value(&graphic).unwrap();
+            bad["params"][key] = value;
+            assert!(
+                serde_json::from_value::<GraphicParams>(bad).is_err(),
+                "{key}"
+            );
+        }
+        assert!(serde_json::from_str::<GraphicParams>(r#"{"definitionId":"rectangle","params":{"fill":[0,0,0,0],"fill":[255,255,255,255],"stroke":[0,0,0,255],"strokeWidth":0,"strokeAlign":"center","cornerRadius":0}}"#).is_err());
+        for (name, param) in [
+            (
+                "params.strokeWidth",
+                Param::new(ParamValue::Scalar(64.01)).unwrap(),
+            ),
+            (
+                "params.strokeWidth",
+                Param::new(ParamValue::Text("2".into())).unwrap(),
+            ),
+            (
+                "params.fill",
+                Param::new(ParamValue::Text("#fff".into())).unwrap(),
+            ),
+            (
+                "params.strokeAlign",
+                Param::new(ParamValue::Text("diagonal".into())).unwrap(),
+            ),
+            (
+                "params.unknown",
+                Param::new(ParamValue::Scalar(0.)).unwrap(),
+            ),
+        ] {
+            let mut bad = data.clone();
+            bad.scene_mut().timeline.main.items[0]
+                .animations
+                .set(AnimationPath::new(name).unwrap(), param)
+                .unwrap();
+            assert!(Project::new(bad).is_err(), "{name}");
+        }
+        let mut bad = data.clone();
+        bad.scene_mut().timeline.main.items[0].source_asset = Some(media::AssetId(99));
+        assert!(Project::new(bad).is_err());
+        for width in [-1., 64.001, f64::INFINITY, f64::NAN] {
+            let mut bad = data.clone();
+            if let ItemParams::Graphic(
+                GraphicParams::Rectangle { stroke_width, .. }
+                | GraphicParams::Ellipse { stroke_width, .. },
+            ) = &mut bad.scene_mut().timeline.main.items[0].content
+            {
+                *stroke_width = width;
+            }
+            assert!(Project::new(bad).is_err());
+        }
+        let bytes = encode(&p, false).unwrap();
+        let mut envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        envelope["schema_version"] = serde_json::json!(SCHEMA_VERSION - 1);
+        envelope["project"] = serde_json::json!({"hostile":"body"});
+        assert!(matches!(
+            decode(&serde_json::to_vec(&envelope).unwrap()),
+            Err(Error::TooOld { .. })
+        ));
+        envelope["schema_version"] = serde_json::json!(SCHEMA_VERSION + 1);
+        assert!(matches!(
+            decode(&serde_json::to_vec(&envelope).unwrap()),
+            Err(Error::TooNew { .. })
+        ));
+    }
+    let ellipse = serde_json::json!({"definitionId":"ellipse","params":{"fill":[255,255,255,255],"stroke":[0,0,0,255],"strokeWidth":0,"strokeAlign":"center","cornerRadius":0}});
+    assert!(serde_json::from_value::<GraphicParams>(ellipse).is_err());
 }

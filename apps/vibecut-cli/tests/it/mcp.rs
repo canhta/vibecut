@@ -844,3 +844,113 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         [0, 76_204_800_000, 177_811_200_000, 254_016_000_000]
     );
 }
+
+#[test]
+fn graphic_tools_publish_typed_shapes_keys_masks_effects_undo_and_persistence() {
+    let root = tempfile::tempdir().unwrap();
+    let path = fixture(root.path(), "graphics.vibecut");
+    let mut client = Client::start(&[
+        "mcp".as_ref(),
+        path.as_os_str(),
+        "--no-save".as_ref(),
+        "--all-tools".as_ref(),
+    ]);
+    let mut cursor = 0;
+    let mut insert_schema = None;
+    loop {
+        let page = client.rpc(
+            397,
+            "tools/call",
+            json!({"name":"command_list","arguments":{"cursor":cursor,"limit":16}}),
+        );
+        let page = &page["result"]["structuredContent"];
+        for entry in page["entries"].as_array().unwrap() {
+            if entry["id"] == "timeline.insert" {
+                insert_schema = Some(entry["params_schema"].clone());
+            }
+        }
+        if page["next_cursor"].is_null() {
+            break;
+        }
+        cursor = page["next_cursor"].as_u64().unwrap();
+    }
+    assert_eq!(
+        insert_schema.unwrap()["$defs"]["GraphicParams"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let mut rev = client.call("inspect", json!({}), None, None)["rev_after"].clone();
+    for (n, graphic) in [
+        project::GraphicParams::rectangle(),
+        project::GraphicParams::ellipse(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let insertion_base = rev.clone();
+        let params = json!({"placement":{"mode":"auto"},"item":{"source_asset":null,"source_range":{"start":0,"end":time::TICKS_PER_SECOND},"start":n as i64*time::TICKS_PER_SECOND,"animations":{},"content":project::ItemParams::Graphic(graphic)}});
+        let inserted = client.call(
+            "timeline.insert",
+            params.clone(),
+            Some(&insertion_base),
+            Some(&format!("graphic{n}")),
+        );
+        assert_eq!(inserted["value"]["status"], "result", "{inserted}");
+        rev = inserted["rev_after"].clone();
+        let item = inserted["value"]["value"]["outcome"]["placements"][0]["item"].clone();
+        assert!(item.is_u64());
+        for (step,(command,params)) in [
+            ("timeline.set_item_param",json!({"item":item,"patch":{"field":"graphic_stroke_width","value":12.}})),
+            ("keyframes.set_param",json!({"item":item,"path":"params.fill","param":project::Param::new(project::ParamValue::Color([0.25,0.5,1.,0.5])).unwrap()})),
+            ("keyframes.add",json!({"item":item,"path":"params.fill","component":"a","key":project::Keyframe::new(time::Tick(0),project::ParamValue::Scalar(0.25))})),
+            ("masks.add",json!({"item":item,"mask":project::Mask::new("graphic-mask",project::MaskShape::Ellipse)})),
+            ("effects.add",json!({"item":item,"effect":project::effect_definition("blur").unwrap().instance("graphic-effect")})),
+        ].into_iter().enumerate() {
+            let response=client.call(command,params,Some(&rev),Some(&format!("graphic{n}-{step}")));
+            assert_eq!(response["value"]["status"],"result","{response}"); rev=response["rev_after"].clone();
+        }
+        assert_eq!(
+            client.call(
+                "timeline.insert",
+                params.clone(),
+                Some(&insertion_base),
+                Some(&format!("graphic{n}"))
+            ),
+            inserted
+        );
+        let stale = client.call(
+            "timeline.insert",
+            params,
+            Some(&insertion_base),
+            Some(&format!("stale-graphic{n}")),
+        );
+        assert_eq!(stale["value"]["value"], "stale_revision");
+        let undo = client.call("undo", json!({}), Some(&rev), Some(&format!("undo{n}")));
+        assert_eq!(undo["value"]["status"], "result");
+        rev = undo["rev_after"].clone();
+        let redo = client.call("redo", json!({}), Some(&rev), Some(&format!("redo{n}")));
+        assert_eq!(redo["value"]["status"], "result");
+        rev = redo["rev_after"].clone();
+    }
+    let saved = client.call("project.save", json!({}), Some(&rev), Some("graphics-save"));
+    assert_eq!(saved["value"]["status"], "result", "{saved}");
+    let p = project::load(&path).unwrap().project;
+    let items = &p.data().scene().timeline.main.items;
+    assert_eq!(items.len(), 2);
+    for item in items {
+        assert!(matches!(item.content, project::ItemParams::Graphic(_)));
+        assert_eq!(item.masks.len(), 1);
+        assert_eq!(item.effects.len(), 1);
+        assert_eq!(
+            item.animations
+                .value_at(
+                    &project::AnimationPath::new("params.fill").unwrap(),
+                    time::Tick(0)
+                )
+                .unwrap(),
+            Some(project::ParamValue::Color([0.25, 0.5, 1., 0.25]))
+        );
+    }
+}

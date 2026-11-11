@@ -23,3 +23,7 @@ A card or its plus applies to two adjacent selected video clips, or to the cut u
 
 Media rows, import feedback and marquee selection: [assets workflow](workflow/README.md).
 Sounds rows: [sounds](sounds/README.md).
+
+## Shapes
+
+The persisted Stickers tab exposes only locally generated Rectangle and Ellipse cards, using their real silhouettes and existing kit controls. `graphic.insert.rectangle` and `graphic.insert.ellipse` insert five seconds at the playhead through ordinary engine placement and select the returned item. The prepared readiness projection, direct activation and preflush admission share the same predicate, including drafts, transactions and modal work. No unavailable shape variants or network source exist.

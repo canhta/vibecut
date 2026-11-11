@@ -255,6 +255,120 @@ pub struct CaptionParams {
 pub struct OverlayParams {
     pub color: Color,
 }
+/// Generated geometry in a 512-pixel author square. Saved appearance is explicit.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(
+    tag = "definitionId",
+    content = "params",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum GraphicParams {
+    Rectangle {
+        fill: Color,
+        stroke: Color,
+        #[serde(rename = "strokeWidth")]
+        stroke_width: f64,
+        #[serde(rename = "strokeAlign")]
+        stroke_align: crate::StrokeAlign,
+        #[serde(rename = "cornerRadius")]
+        corner_radius: f64,
+    },
+    Ellipse {
+        fill: Color,
+        stroke: Color,
+        #[serde(rename = "strokeWidth")]
+        stroke_width: f64,
+        #[serde(rename = "strokeAlign")]
+        stroke_align: crate::StrokeAlign,
+    },
+}
+impl GraphicParams {
+    pub fn rectangle() -> Self {
+        Self::Rectangle {
+            fill: Color([255; 4]),
+            stroke: Color([0, 0, 0, 255]),
+            stroke_width: 0.,
+            stroke_align: crate::StrokeAlign::Center,
+            corner_radius: 0.,
+        }
+    }
+    pub fn ellipse() -> Self {
+        Self::Ellipse {
+            fill: Color([255; 4]),
+            stroke: Color([0, 0, 0, 255]),
+            stroke_width: 0.,
+            stroke_align: crate::StrokeAlign::Center,
+        }
+    }
+    /// Stored fallbacks; present animation parameters remain authoritative, even without keys.
+    pub fn appearance(&self) -> (Color, Color, f64, crate::StrokeAlign, f64) {
+        match *self {
+            Self::Rectangle {
+                fill,
+                stroke,
+                stroke_width,
+                stroke_align,
+                corner_radius,
+            } => (fill, stroke, stroke_width, stroke_align, corner_radius),
+            Self::Ellipse {
+                fill,
+                stroke,
+                stroke_width,
+                stroke_align,
+            } => (fill, stroke, stroke_width, stroke_align, 0.),
+        }
+    }
+    pub(crate) fn validate(&self, animations: &crate::Animations) -> Result<()> {
+        let (_, _, width, _, radius) = self.appearance();
+        if !width.is_finite()
+            || !(0. ..=64.).contains(&width)
+            || !radius.is_finite()
+            || !(0. ..=50.).contains(&radius)
+        {
+            return Err(Error::Invalid("graphic appearance"));
+        }
+        for (path, param) in animations.iter() {
+            let Some(name) = path.as_str().strip_prefix("params.") else {
+                continue;
+            };
+            match (name, param) {
+                ("fill" | "stroke", crate::Param::Color(_)) => {}
+                ("strokeWidth" | "cornerRadius" | "strokeAlign", crate::Param::Value(channel)) => {
+                    if name == "cornerRadius" && !matches!(self, Self::Rectangle { .. }) {
+                        return Err(Error::Invalid("ellipse corner radius"));
+                    }
+                    let valid = |v: &crate::ParamValue| match (name, v) {
+                        ("strokeWidth", crate::ParamValue::Scalar(v)) => {
+                            v.is_finite() && (0. ..=64.).contains(v)
+                        }
+                        ("cornerRadius", crate::ParamValue::Scalar(v)) => {
+                            v.is_finite() && (0. ..=50.).contains(v)
+                        }
+                        ("strokeAlign", crate::ParamValue::Text(v)) => {
+                            matches!(v.as_str(), "inside" | "center" | "outside")
+                        }
+                        _ => false,
+                    };
+                    if !valid(channel.base())
+                        || channel.keys().iter().any(|key| !valid(&key.value))
+                        || (name == "strokeAlign"
+                            && (channel.extrapolation()
+                                != (crate::Extrapolation::Hold, crate::Extrapolation::Hold)
+                                || channel
+                                    .keys()
+                                    .iter()
+                                    .any(|key| key.segment != crate::Segment::Step)))
+                    {
+                        return Err(Error::Invalid("graphic animation"));
+                    }
+                }
+                _ => return Err(Error::Invalid("graphic animation path or type")),
+            }
+        }
+        Ok(())
+    }
+}
 /// Typed parameters determine item kind; no unvalidated arbitrary parameter bag.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
@@ -269,6 +383,7 @@ pub enum ItemParams {
     Text(TextParams),
     Caption(CaptionParams),
     Overlay(OverlayParams),
+    Graphic(GraphicParams),
 }
 impl ItemParams {
     pub fn kind(&self) -> TrackKind {
@@ -277,7 +392,7 @@ impl ItemParams {
             Self::Audio(_) => TrackKind::Audio,
             Self::Text(_) => TrackKind::Text,
             Self::Caption(_) => TrackKind::Text,
-            Self::Overlay(_) => TrackKind::Video,
+            Self::Overlay(_) | Self::Graphic(_) => TrackKind::Video,
         }
     }
 }

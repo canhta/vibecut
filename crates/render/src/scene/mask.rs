@@ -254,6 +254,26 @@ pub fn prepare_builtin(
     geometry: Geometry,
     hooks: &dyn ExecutionHooks,
 ) -> Result<PreparedMask> {
+    prepare_contour(kind, geometry, 0., hooks)
+}
+/// Rounded rectangle using the same bounded contour and distance raster as masks.
+/// `rounding` is the corner radius divided by the smaller author half-axis.
+pub fn prepare_rounded_rectangle(
+    geometry: Geometry,
+    rounding: f32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<PreparedMask> {
+    if !rounding.is_finite() || !(0. ..=1.).contains(&rounding) {
+        return Err(Error::Invalid("rectangle rounding"));
+    }
+    prepare_contour("rounded-rectangle", geometry, rounding, hooks)
+}
+fn prepare_contour(
+    kind: &str,
+    geometry: Geometry,
+    rounding: f32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<PreparedMask> {
     check(hooks)?;
     if geometry
         .center
@@ -270,13 +290,13 @@ pub fn prepare_builtin(
     let vertex_bound = match kind {
         "rectangle" | "cinematic-bars" | "diamond" => 4,
         "star" => 10,
-        "ellipse" | "heart" => {
-            let segments = if kind == "ellipse" { 4 } else { 2 };
+        "ellipse" | "heart" | "rounded-rectangle" => {
+            let segments = if kind == "heart" { 2 } else { 4 };
             segments
-                * (75.0 * geometry.size[0].max(geometry.size[1]))
+                * (1 + (75.0 * geometry.size[0].max(geometry.size[1]))
                     .sqrt()
                     .ceil()
-                    .max(1.0) as usize
+                    .max(1.0) as usize)
         }
         _ => return Err(Error::Unsupported("mask contour")),
     };
@@ -309,7 +329,7 @@ pub fn prepare_builtin(
         if steps > 65_536 {
             return Err(Error::Invalid("mask flattening bound"));
         }
-        for n in 0..steps {
+        for n in 0..=steps {
             let t = n as f32 / steps as f32;
             let u = 1. - t;
             push([
@@ -333,6 +353,38 @@ pub fn prepare_builtin(
                 [[0., 1.], [-k, 1.], [-1., k], [-1., 0.]],
                 [[-1., 0.], [-1., -k], [-k, -1.], [0., -1.]],
                 [[0., -1.], [k, -1.], [1., -k], [1., 0.]],
+            ] {
+                curve(p)?;
+            }
+        }
+        "rounded-rectangle" => {
+            let r = rounding;
+            let k = 0.552_284_8;
+            for p in [
+                [
+                    [1. - r, -1.],
+                    [1. - r + k * r, -1.],
+                    [1., -1. + r - k * r],
+                    [1., -1. + r],
+                ],
+                [
+                    [1., 1. - r],
+                    [1., 1. - r + k * r],
+                    [1. - r + k * r, 1.],
+                    [1. - r, 1.],
+                ],
+                [
+                    [-1. + r, 1.],
+                    [-1. + r - k * r, 1.],
+                    [-1., 1. - r + k * r],
+                    [-1., 1. - r],
+                ],
+                [
+                    [-1., -1. + r],
+                    [-1., -1. + r - k * r],
+                    [-1. + r - k * r, -1.],
+                    [-1. + r, -1.],
+                ],
             ] {
                 curve(p)?;
             }

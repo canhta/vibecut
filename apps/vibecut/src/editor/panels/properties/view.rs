@@ -73,6 +73,14 @@ pub(in crate::editor) fn show(
     ui.set_clip_rect(area);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     if let Some((snapshot, item, at)) = &panel.state.opacity_edit {
+        let graphic_edit = panel
+            .state
+            .focus
+            .as_deref()
+            .is_some_and(|f| f.starts_with("params."))
+            || panel.state.scrub.as_ref().is_some_and(
+                |s| matches!(s.target, super::ScrubTarget::Item(f) if f.starts_with("params.")),
+            );
         let visible = element_kind(panel.cx.session.project(), *item).is_some_and(|(kind, _)| {
             panel
                 .cx
@@ -80,7 +88,8 @@ pub(in crate::editor) fn show(
                 .properties_tabs
                 .get(kind.id())
                 .map(String::as_str)
-                == Some("blending")
+                .unwrap_or(kind.default_tab().id())
+                == if graphic_edit { "graphic" } else { "blending" }
         });
         if !std::sync::Arc::ptr_eq(snapshot, panel.cx.session.project())
             || single(panel.cx.selection) != Some(*item)
@@ -109,6 +118,28 @@ pub(in crate::editor) fn show(
             panel.state.focus = None;
             panel.state.spatial_edit = None;
         }
+    }
+    let stale_graphic_picker = panel.state.picker.as_ref().is_some_and(|draft| {
+        if let ColorTarget::GraphicColor { item, time, .. } = draft.target {
+            single(panel.cx.selection) != Some(item)
+                || read::item_locked(panel.cx.session.project(), item)
+                || read::item(panel.cx.session.project(), item)
+                    .is_none_or(|i| panel.cx.playhead.saturating_sub(i.start) != time)
+                || panel
+                    .cx
+                    .preferences
+                    .properties_tabs
+                    .get("graphic")
+                    .map(String::as_str)
+                    .unwrap_or("graphic")
+                    != "graphic"
+                || panel.state.details
+        } else {
+            false
+        }
+    });
+    if stale_graphic_picker {
+        panel.actions.extend(panel.state.close_picker());
     }
     panel.area(&mut ui, area);
     if let Some((_, ref id, _)) = panel.state.spatial_edit.clone()
@@ -166,6 +197,180 @@ impl<'a, 'c> Panel<'a, 'c> {
         }
     }
 
+    fn graphic_command(&mut self, command: engine::Command) {
+        if let engine::Command::SetAnimatedParam { item, path, param } = command {
+            self.actions
+                .push(Action::SetAnimatedParam { item, path, param });
+        }
+    }
+    fn graphic_color_row(&mut self, ui: &mut egui::Ui, item: ItemId, stroke: bool) {
+        let Some((start, _)) = read::range_of(self.cx.session.project(), item) else {
+            return;
+        };
+        let time = self.cx.playhead.saturating_sub(start);
+        let target = ColorTarget::GraphicColor { item, stroke, time };
+        let name = if stroke { "stroke" } else { "fill" };
+        let id = format!("inspector.graphic.{name}");
+        let pos = ui.next_widget_position();
+        self.color_row(
+            ui,
+            &id,
+            if stroke {
+                Text::GraphicStroke
+            } else {
+                Text::GraphicFill
+            },
+            target.clone(),
+        );
+        let rect = Rect::from_min_size(
+            pos + Vec2::new(VALUE_COLUMN - theme::size::CONTROL - 4., 8.),
+            Vec2::splat(theme::size::CONTROL),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+        let enabled = target.inside(self.cx.session.project());
+        let response = child
+            .add_enabled_ui(enabled, |ui| {
+                kit::icon_button(
+                    ui,
+                    &format!("{id}.key"),
+                    crate::kit::Icon::Diamond,
+                    self.tr(Text::AddKeyframe),
+                    target.rgb_keys(self.cx.session.project(), true),
+                )
+            })
+            .inner;
+        self.remember(format!("{id}.key"), &response);
+        if response.clicked() {
+            match target.toggle_rgb(self.cx.session.project()) {
+                Ok(command) => self.graphic_command(command),
+                Err(e) => self.fail(e),
+            }
+        }
+    }
+    fn graphic_align(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(target) = read::item(self.cx.session.project(), item) else {
+            return;
+        };
+        let project::ItemParams::Graphic(p) = &target.content else {
+            return;
+        };
+        let align = match p.appearance().3 {
+            project::StrokeAlign::Inside => "inside",
+            project::StrokeAlign::Center => "center",
+            project::StrokeAlign::Outside => "outside",
+        };
+        let Ok(path) = project::AnimationPath::new("params.strokeAlign") else {
+            return;
+        };
+        let Ok(mut param) = target
+            .animations
+            .get(&path)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| project::Param::new(project::ParamValue::Text(align.into())))
+        else {
+            return;
+        };
+        let time = self.cx.playhead.saturating_sub(target.start);
+        let inside = self.cx.playhead >= target.start
+            && target.end().is_ok_and(|end| self.cx.playhead < end);
+        let Ok(project::ParamValue::Text(current)) = param.value_at(time) else {
+            return;
+        };
+        let Ok(channel) = param.channel(None) else {
+            return;
+        };
+        let keyed = !channel.keys().is_empty();
+        let exists = channel.keys().iter().any(|k| k.time == time);
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::GraphicAlign));
+        let mut selected = None;
+        let response = value_ui
+            .add_enabled_ui(!keyed || inside, |ui| {
+                ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                egui::ComboBox::from_id_salt(super::Id::unique(format!(
+                    "inspector.graphic.strokeAlign.{}.{}.{:p}",
+                    item.0,
+                    self.cx.playhead.0,
+                    std::sync::Arc::as_ptr(self.cx.session.project())
+                )))
+                .selected_text(self.tr(match current.as_str() {
+                    "inside" => Text::GraphicInside,
+                    "outside" => Text::GraphicOutside,
+                    _ => Text::AlignCenter,
+                }))
+                .width(150.)
+                .show_ui(ui, |ui| {
+                    for (value, label) in [
+                        ("inside", Text::GraphicInside),
+                        ("center", Text::AlignCenter),
+                        ("outside", Text::GraphicOutside),
+                    ] {
+                        let response =
+                            ui.selectable_label(current.as_str() == value, self.tr(label));
+                        self.remember(format!("inspector.graphic.strokeAlign.{value}"), &response);
+                        if response.clicked() {
+                            selected = Some(value);
+                            ui.close();
+                        }
+                    }
+                })
+                .response
+            })
+            .inner;
+        self.remember("inspector.graphic.strokeAlign", &response);
+        let rect = Rect::from_min_size(
+            row.min + Vec2::new(VALUE_COLUMN - theme::size::CONTROL - 4., 8.),
+            Vec2::splat(theme::size::CONTROL),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+        let response = child
+            .add_enabled_ui(inside, |ui| {
+                kit::icon_button(
+                    ui,
+                    "inspector.graphic.strokeAlign.key",
+                    crate::kit::Icon::Diamond,
+                    self.tr(Text::AddKeyframe),
+                    exists,
+                )
+            })
+            .inner;
+        self.remember("inspector.graphic.strokeAlign.key", &response);
+        if selected.is_none() && !response.clicked() {
+            return;
+        }
+        let Ok(channel) = param.channel_mut(None) else {
+            return;
+        };
+        let result = if let Some(selected) = selected {
+            let value = project::ParamValue::Text(selected.into());
+            if keyed {
+                let mut key = channel
+                    .keys()
+                    .iter()
+                    .find(|k| k.time == time)
+                    .cloned()
+                    .unwrap_or_else(|| project::Keyframe::new(time, value.clone()));
+                key.value = value;
+                key.segment = project::Segment::Step;
+                channel.put(key)
+            } else {
+                project::Param::new(value).map(|v| param = v)
+            }
+        } else if exists {
+            channel.remove(time)
+        } else {
+            let mut key = project::Keyframe::new(time, project::ParamValue::Text(current));
+            key.segment = project::Segment::Step;
+            channel.put(key)
+        };
+        match result {
+            Ok(()) => self
+                .actions
+                .push(Action::SetAnimatedParam { item, path, param }),
+            Err(e) => self.fail(e),
+        }
+    }
     fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.cx.locale, key)
     }
@@ -272,6 +477,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             .copied()
             .filter(|spec| {
                 spec.field == "audio_gain"
+                    || spec.field.starts_with("params.")
                     || matches!(
                         project::BuiltinPath::parse(spec.field),
                         Some(
@@ -292,7 +498,8 @@ impl<'a, 'c> Panel<'a, 'c> {
             return;
         };
         let at = self.cx.playhead;
-        let inside = start <= at && at <= end;
+        let inside = start <= at
+            && (at < end || (!specs.iter().any(|s| s.field.starts_with("params.")) && at == end));
         let relative = at.saturating_sub(start);
         // CapCut shows one diamond for a position or scale pair.
         let mut groups: Vec<(&str, Vec<ScrubSpec>)> = Vec::new();
@@ -318,7 +525,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             let Some(lead) = group.first().map(|spec| spec.field) else {
                 continue;
             };
-            let id = format!("inspector.keyframe.{lead}");
+            let id = format!("inspector.keyframe.{}", lead.replace("params.", "graphic."));
             let exists = group.iter().all(|spec| {
                 super::read::has_key_at(self.cx.session.project(), item, spec.field, relative)
             });
@@ -701,18 +908,62 @@ impl<'a, 'c> Panel<'a, 'c> {
                     true,
                     false,
                     |panel, ui| {
-                        panel.color_row(
-                            ui,
-                            "inspector.graphic_fill",
-                            Text::GraphicFill,
-                            ColorTarget::GraphicFill(item),
-                        );
-                        panel.color_row(
-                            ui,
-                            "inspector.graphic_stroke",
-                            Text::GraphicStroke,
-                            ColorTarget::GraphicStroke(item),
-                        );
+                        if matches!(
+                            read::item(panel.cx.session.project(), item).map(|i| &i.content),
+                            Some(project::ItemParams::Graphic(_))
+                        ) {
+                            panel.graphic_color_row(ui, item, false);
+                            panel.graphic_color_row(ui, item, true);
+                            panel.scrub_field(
+                                ui,
+                                item,
+                                ScrubSpec {
+                                    field: "params.strokeWidth",
+                                    label: Text::GraphicWidth,
+                                    min: 0.,
+                                    max: 64.,
+                                    step: 1.,
+                                    pixels_per_step: 2.,
+                                    decimals: 0,
+                                    suffix: "",
+                                },
+                            );
+                            panel.graphic_align(ui, item);
+                            if matches!(
+                                read::item(panel.cx.session.project(), item).map(|i| &i.content),
+                                Some(project::ItemParams::Graphic(
+                                    project::GraphicParams::Rectangle { .. }
+                                ))
+                            ) {
+                                panel.scrub_field(
+                                    ui,
+                                    item,
+                                    ScrubSpec {
+                                        field: "params.cornerRadius",
+                                        label: Text::BackgroundRadius,
+                                        min: 0.,
+                                        max: 50.,
+                                        step: 1.,
+                                        pixels_per_step: 2.,
+                                        decimals: 0,
+                                        suffix: "%",
+                                    },
+                                );
+                            }
+                        } else {
+                            panel.color_row(
+                                ui,
+                                "inspector.graphic_fill",
+                                Text::GraphicFill,
+                                ColorTarget::GraphicFill(item),
+                            );
+                            panel.color_row(
+                                ui,
+                                "inspector.graphic_stroke",
+                                Text::GraphicStroke,
+                                ColorTarget::GraphicStroke(item),
+                            );
+                        }
                     },
                 );
             }

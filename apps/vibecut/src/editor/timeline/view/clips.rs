@@ -1096,6 +1096,21 @@ pub(in crate::editor::timeline) fn item_label(
             }
         }
         ItemParams::Caption(_) => (i18n::text(locale, Text::Caption).to_owned(), None),
+        ItemParams::Graphic(params) => (
+            i18n::text(
+                locale,
+                if matches!(params, project::GraphicParams::Rectangle { .. }) {
+                    Text::GraphicRectangle
+                } else {
+                    Text::GraphicEllipse
+                },
+            )
+            .to_owned(),
+            Some({
+                let [r, g, b, _] = params.appearance().0.0;
+                [r, g, b, if dark { 90 } else { 60 }]
+            }),
+        ),
         ItemParams::Overlay(params) => {
             let [r, g, b, _] = params.color.0;
             let color = if dark { [r, g, b, 90] } else { [r, g, b, 60] };
