@@ -80,7 +80,7 @@ fn settings(p: &project::Project) -> RenderSettings {
 }
 
 fn preset_scene(texts: &[(&str, &str)], boxed: bool) -> project::Project {
-    with_cue_style(
+    let styled = with_cue_style(
         scene(texts),
         vec![captions::CueStyle {
             font_family: "Inter".into(),
@@ -99,7 +99,27 @@ fn preset_scene(texts: &[(&str, &str)], boxed: bool) -> project::Project {
             strikeout: false,
         }],
         Some(captions::CueStyleId(0)),
-    )
+    );
+    let mut data = styled.into_data();
+    let style = data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find_map(|item| {
+            if let project::ItemParams::Caption(p) = &item.content {
+                p.cues.styles.first().cloned()
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    data.caption_presets.push(project::SavedCaptionPreset {
+        id: project::CaptionPresetId(100),
+        name: "Project look".into(),
+        style,
+    });
+    project::Project::new(data).unwrap()
 }
 
 #[test]
@@ -121,6 +141,23 @@ fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
                 .collect();
             let mut r = Renderer::new(&p, settings.clone()).unwrap();
             let frame = r.preview_frame(tick(1, 2), &mut Empty, &h).unwrap();
+            for remove in [false, true] {
+                let mut data = p.data().clone();
+                if remove {
+                    data.caption_presets.clear();
+                } else {
+                    data.caption_presets[0].name = "Renamed".into();
+                }
+                let changed = project::Project::new(data).unwrap();
+                assert_eq!(
+                    frame.pixels(),
+                    Renderer::new(&changed, settings.clone())
+                        .unwrap()
+                        .render_frame(tick(1, 2), &mut Empty, &h)
+                        .unwrap()
+                        .pixels()
+                );
+            }
             assert_eq!(
                 frame.pixels(),
                 r.render_frame(tick(1, 2), &mut Empty, &h).unwrap().pixels()

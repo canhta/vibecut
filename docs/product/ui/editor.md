@@ -121,3 +121,5 @@ and input lifetime belong to [Properties](../../../apps/vibecut/src/editor/panel
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.
 - Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
+
+The Captions Style chooser lists Saved in project as explicit copy actions, retaining Outline/Box/Custom/Mixed as value summaries. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.

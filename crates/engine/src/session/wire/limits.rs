@@ -1,8 +1,8 @@
 //! States the admission budgets that travel with the catalog.
 use serde::Serialize;
 
-pub const MAX_FRAME_BYTES: usize = 8 << 20;
-pub const MAX_RESPONSE_BYTES: usize = 8 << 20;
+pub const MAX_FRAME_BYTES: usize = 16 << 20;
+pub const MAX_RESPONSE_BYTES: usize = 16 << 20;
 pub const MAX_RECEIPTS: usize = 4096;
 pub const MAX_RECEIPT_BYTES: usize = 32 << 20;
 pub const RECEIPT_RESERVATION: usize = 128 << 10;

@@ -18,7 +18,9 @@ pub use item::{
     TextAlign, TextBackground, TextDecoration, TextParams, TextPosition, VideoParams, WordSpan,
     valid_volume,
 };
-pub use project::{Project, ProjectData, ProjectId};
+pub use project::{
+    CaptionPresetId, MAX_CAPTION_PRESETS, Project, ProjectData, ProjectId, SavedCaptionPreset,
+};
 pub use scene::{Bookmark, BookmarkId, Scene, SceneId, SceneScope, Scenes};
 pub use settings::{
     AspectPreset, Canvas, CanvasSize, Color, Loudness, LoudnessGains, LoudnessScope,

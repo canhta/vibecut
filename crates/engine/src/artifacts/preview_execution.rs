@@ -1,12 +1,14 @@
 //! Produces bounded labelled control previews.
 use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::session::wire::{
-    ControlResult, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RESPONSE_BYTES,
-    MAX_SAFE_INTEGER, PREVIEW_QUALITY, PreviewFrame, PreviewResult, bounded_json,
+    ControlResult, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_SAFE_INTEGER,
+    PREVIEW_QUALITY, PreviewFrame, PreviewResult, bounded_json,
 };
 use crate::{EditError, Result, Session};
 use std::io::Write;
 use time::{SourceRange, Tick};
+
+const MAX_PREVIEW_RESULT_BYTES: usize = 4 << 20;
 
 /// Cache key shared by every control command that submits a job, scoped by the
 /// request fingerprint.
@@ -56,7 +58,7 @@ pub(crate) fn preview(
             class: ResourceClass::Cpu,
             input: key,
             bytes: JobBytes {
-                result: (MAX_RESPONSE_BYTES / 2) as u64,
+                result: MAX_PREVIEW_RESULT_BYTES as u64,
                 ..JobBytes::default()
             },
         },
@@ -235,7 +237,7 @@ pub(crate) fn preview(
                     revision: revision.clone(),
                     frames: output,
                 },
-                MAX_RESPONSE_BYTES / 2,
+                MAX_PREVIEW_RESULT_BYTES,
             )
         },
     )?;

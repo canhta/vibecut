@@ -39,3 +39,7 @@ Audio items carry `AudioParams::source`. The default `upload` references a proje
 ## Settings
 
 The default canvas is 1920×1080 at 30 fps, black background, 16:9 preset, 1920×1080 last-custom size, 48 kHz output audio. Canvas frames must have exact positive frame ticks. `Settings` owns output sample rate, master volume and mute, the clip and master loudness targets and the last measured gains. Presentation preferences stay in the app.
+
+## Saved caption values
+
+`ProjectData.caption_presets` is a required project-wide bank of at most 64 `SavedCaptionPreset` values with stable `CaptionPresetId` identities. Every entry must have a valid complete `CueStyle` and a unique ID and name, even without captions. Names are NFC, case-sensitive, 1..=64 extended graphemes and at most 256 UTF-8 bytes, without controls or leading/trailing whitespace; invalid input is refused, never trimmed. Equal styles under different names are valid. Forks and scene snapshots retain the whole bank. Applying copies values into ordinary cue styles; no selected preset reference or override map is saved.

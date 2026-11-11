@@ -62,13 +62,21 @@ impl CaptionPreset {
 pub enum CaptionStyleApply {
     Preset { preset: CaptionPreset },
     Custom { style: captions::CueStyle },
+    Saved { preset: project::CaptionPresetId },
 }
 impl CaptionStyleApply {
-    pub(super) fn into_style(self) -> captions::CueStyle {
-        match self {
+    pub(super) fn resolve(self, data: &project::ProjectData) -> crate::Result<captions::CueStyle> {
+        Ok(match self {
             Self::Preset { preset } => preset.style(),
             Self::Custom { style } => style,
-        }
+            Self::Saved { preset } => data
+                .caption_presets
+                .iter()
+                .find(|value| value.id == preset)
+                .ok_or(crate::EditError::Invalid("caption preset not found"))?
+                .style
+                .clone(),
+        })
     }
 }
 
@@ -319,6 +327,8 @@ pub struct CommandSpec {
 #[derive(Clone, Copy, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fixture {
+    /// Uniform saved styles on caption item 4 and named bank entry 100.
+    CaptionPresetBank,
     /// Timeline with Text item 3 on the copied empty Text track 3.
     Text,
     TransitionCut,
@@ -395,6 +405,15 @@ macro_rules! edit_commands {
                 match self { $($arms)* }
             }
         }
+    };
+    (@collect [$($variants:tt)*] [$($arms:tt)*];
+        $first:ident Edit { $($a:ident: $at:ty),* };
+        $second:ident Edit { $($b:ident: $bt:ty),* }; $($rest:tt)*) => {
+        edit_commands!(@collect
+            [$($variants)* $first { $($a: $at),* }, $second { $($b: $bt),* },]
+            [$($arms)* Self::$first { $($a),* } => Ok(EditCommand::$first { $($a),* }),
+                Self::$second { $($b),* } => Ok(EditCommand::$second { $($b),* }),];
+            $($rest)*);
     };
     (@collect [$($variants:tt)*] [$($arms:tt)*];
         $variant:ident Edit { $($field:ident: $ty:ty),* }; $($rest:tt)*) => {
@@ -530,7 +549,10 @@ commands! {
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false}), available = CaptionItem;
     CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     ApplyCaptionStyle, "captions.apply_style", "Apply caption style", Edit { item: ItemId, style: CaptionStyleApply } => Timeline, serde_json::json!({"item":4,"style":{"kind":"preset","preset":"outline"}}), available = CaptionItem, grant = Agent;
+    DeleteCaptionPreset, "captions.delete_preset", "Delete caption preset", Edit { preset: project::CaptionPresetId } => CaptionPresetBank, serde_json::json!({"preset":100}), available = NoTransaction, grant = Agent;
     ImportCaptions, "captions.import", "Import ASS captions", Edit { asset: SourceAsset, language: captions::LanguageTag, start: Tick, #[serde(default)] track: Option<TrackId>, #[serde(default)] name: Option<NfcText>, styles: Vec<captions::CueStyle>, cues: Vec<captions::AssCue> } => Timeline, serde_json::json!({"asset":{"ephemeral":true,"id":99,"path":"$output/captions.ass","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"ass","duration":254016000000_i64,"streams":[]}},"language":"en","start":0,"track":null,"name":"Captions","styles":[{"font_family":"Arial","font_size_ratio":0.0555,"primary_color":[255,255,255,255],"outline_color":[0,0,0,255],"background_color":[0,0,0,0],"border_style":1,"alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},"margin_left_ratio":0.0,"margin_right_ratio":0.0,"margin_vertical_ratio":0.0,"bold":true,"italic":false,"underline":false,"strikeout":false}],"cues":[{"range":{"start":0,"end":254016000000_i64},"text":"Hello","style":0}]}), grant = Human;
+    RenameCaptionPreset, "captions.rename_preset", "Rename caption preset", Edit { preset: project::CaptionPresetId, name: NfcText } => CaptionPresetBank, serde_json::json!({"preset":100,"name":"Renamed look"}), available = NoTransaction, grant = Agent;
+    SaveCaptionPreset, "captions.save_preset", "Save caption preset", Edit { item: ItemId, name: NfcText } => CaptionPresetBank, serde_json::json!({"item":4,"name":"Saved look"}), available = CaptionItem, grant = Agent;
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ChaptersExportSidecars, "chapters.export_sidecars", "Export chapter sidecars", FilePublish { dir: std::path::PathBuf, document: ai::chapters::ChapterDocument } => Words, serde_json::json!({"dir":"$output","document":{"schema_version":1,"language":"en","duration":254016000000_i64,"title":"Opening","description":"A conversation about the work.","chapters":[{"start":0,"segment_id":"4:cue-1","title":"Opening"}]}});
     ChaptersGenerate, "chapters.generate", "Generate chapters", JobControl { language: captions::LanguageTag, max_chapters: usize } => Words, serde_json::json!({"language":"en","max_chapters":10}), grant = Agent;
@@ -801,6 +823,7 @@ pub struct Move {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CreatedId {
+    CaptionPreset(project::CaptionPresetId),
     Transition(project::TransitionId),
     Scene(project::SceneId),
     Track(TrackId),

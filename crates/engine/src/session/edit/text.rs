@@ -11,6 +11,7 @@ pub(super) fn execute_apply_caption_style(
     style: crate::CaptionStyleApply,
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
+    let resolved = style.resolve(&data);
     if item_in_other_scene(&data, id) {
         return Err(EditError::SceneBoundary);
     }
@@ -18,7 +19,7 @@ pub(super) fn execute_apply_caption_style(
     let ItemParams::Caption(params) = &mut item.content else {
         return Err(EditError::Invalid("style requires caption item"));
     };
-    let style = style.into_style();
+    let style = resolved?;
     if !style.is_valid() {
         return Err(EditError::Invalid("caption style"));
     }
@@ -42,6 +43,91 @@ pub(super) fn execute_apply_caption_style(
         cue.style = Some(captions::CueStyleId(0));
     }
     set_range(item, item.source_range, Tick::ZERO, sources)?;
+    Ok(data)
+}
+
+pub(super) fn save_caption_preset(
+    mut data: ProjectData,
+    id: ItemId,
+    name: captions::NfcText,
+    sources: &TrimSources,
+    next: &mut Option<u64>,
+    created: &mut Vec<CreatedId>,
+) -> Result<ProjectData> {
+    if item_in_other_scene(&data, id) {
+        return Err(EditError::SceneBoundary);
+    }
+    let target = item(&mut data, id)?;
+    let ItemParams::Caption(params) = &target.content else {
+        return Err(EditError::Invalid("preset requires caption item"));
+    };
+    let source = sources.get(&id).map_or(&params.cues, AsRef::as_ref);
+    let style = source
+        .cues
+        .first()
+        .and_then(|cue| source.style_of(cue))
+        .filter(|style| {
+            source
+                .cues
+                .iter()
+                .all(|cue| source.style_of(cue) == Some(*style))
+        })
+        .ok_or(EditError::Invalid(
+            "preset requires uniform saved caption style",
+        ))?
+        .clone();
+    check_preset_name(&data, &name, None)?;
+    if data.caption_presets.len() >= project::MAX_CAPTION_PRESETS {
+        return Err(EditError::Limit);
+    }
+    let id = project::CaptionPresetId(super::alloc(next)?);
+    data.caption_presets
+        .push(project::SavedCaptionPreset { id, name, style });
+    created.push(CreatedId::CaptionPreset(id));
+    Ok(data)
+}
+
+fn check_preset_name(
+    data: &ProjectData,
+    name: &captions::NfcText,
+    except: Option<project::CaptionPresetId>,
+) -> Result<()> {
+    if !project::SavedCaptionPreset::valid_name(name)
+        || data
+            .caption_presets
+            .iter()
+            .any(|p| Some(p.id) != except && p.name == *name)
+    {
+        return Err(EditError::Invalid("caption preset name"));
+    }
+    Ok(())
+}
+
+pub(super) fn rename_caption_preset(
+    mut data: ProjectData,
+    id: project::CaptionPresetId,
+    name: captions::NfcText,
+) -> Result<ProjectData> {
+    check_preset_name(&data, &name, Some(id))?;
+    let preset = data
+        .caption_presets
+        .iter_mut()
+        .find(|preset| preset.id == id)
+        .ok_or(EditError::Invalid("caption preset not found"))?;
+    preset.name = name;
+    Ok(data)
+}
+
+pub(super) fn delete_caption_preset(
+    mut data: ProjectData,
+    id: project::CaptionPresetId,
+) -> Result<ProjectData> {
+    let index = data
+        .caption_presets
+        .iter()
+        .position(|preset| preset.id == id)
+        .ok_or(EditError::Invalid("caption preset not found"))?;
+    data.caption_presets.remove(index);
     Ok(data)
 }
 

@@ -432,6 +432,87 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
         panic!("caption")
     };
     assert_eq!(p.cues.styles, vec![style]);
+    let saved = client.call(
+        "captions.save_preset",
+        json!({"item":item,"name":"Project style"}),
+        Some(&custom["rev_after"]),
+        Some("bank-save"),
+    );
+    assert_eq!(
+        saved["value"]["value"]["outcome"]["changed"], true,
+        "{saved}"
+    );
+    let id = saved["value"]["value"]["outcome"]["created"][0]["caption_preset"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(
+        client.call(
+            "captions.save_preset",
+            json!({"item":item,"name":"Project style"}),
+            Some(&custom["rev_after"]),
+            Some("bank-save")
+        ),
+        saved
+    );
+    let inspected = client.call("inspect", json!({}), None, None);
+    let bank = &inspected["value"]["value"]["project"]["caption_presets"];
+    assert_eq!(bank[0]["id"], id);
+    assert_eq!(bank[0]["name"], "Project style");
+    assert_eq!(bank[0]["style"]["primary_color"], json!([20, 240, 60, 255]));
+    let renamed = client.call(
+        "captions.rename_preset",
+        json!({"preset":id,"name":"Renamed"}),
+        Some(&saved["rev_after"]),
+        Some("bank-rename"),
+    );
+    assert_eq!(
+        renamed["value"]["value"]["outcome"]["changed"], true,
+        "{renamed}"
+    );
+    let copied = client.call(
+        "captions.apply_style",
+        json!({"item":item,"style":{"kind":"saved","preset":id}}),
+        Some(&renamed["rev_after"]),
+        Some("bank-copy"),
+    );
+    assert_eq!(
+        copied["value"]["value"]["outcome"]["changed"], false,
+        "{copied}"
+    );
+    assert_eq!(
+        client.call(
+            "captions.delete_preset",
+            json!({"preset":id}),
+            Some(&custom["rev_after"]),
+            Some("bank-stale")
+        )["value"]["value"],
+        "stale_revision"
+    );
+    let deleted = client.call(
+        "captions.delete_preset",
+        json!({"preset":id}),
+        Some(&copied["rev_after"]),
+        Some("bank-delete"),
+    );
+    assert_eq!(
+        deleted["value"]["value"]["outcome"]["changed"], true,
+        "{deleted}"
+    );
+    let undone = client.call(
+        "undo",
+        json!({}),
+        Some(&deleted["rev_after"]),
+        Some("bank-undo"),
+    );
+    assert_eq!(
+        undone["value"]["value"]["outcome"]["changed"], true,
+        "{undone}"
+    );
+    let inspected = client.call("inspect", json!({}), None, None);
+    assert_eq!(
+        inspected["value"]["value"]["project"]["caption_presets"][0]["name"],
+        "Renamed"
+    );
 }
 
 #[test]
@@ -669,6 +750,21 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         json!(entries),
         serde_json::to_value(engine::registry()).unwrap()
     );
+    for id in [
+        "captions.save_preset",
+        "captions.rename_preset",
+        "captions.delete_preset",
+    ] {
+        let spec = entries.iter().find(|e| e["id"] == id).unwrap();
+        assert_eq!(spec["effect"], "edit");
+        assert!(spec.get("curated").is_none());
+        assert_eq!(spec["params_schema"]["additionalProperties"], false);
+        assert!(
+            spec["output_schema"]["$defs"]["ProjectData"]["properties"]
+                .get("caption_presets")
+                .is_some()
+        );
+    }
     let fade = entries
         .iter()
         .find(|e| e["id"] == "text.apply_animation")

@@ -5,9 +5,108 @@ use captions::{CueText, CueTrack, NormalizedText};
 use captions::{LanguageTag, NfcText};
 use engine::{Command, Session};
 use project::{ItemId, ItemParams};
+use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 impl Subtitles {
+    pub(crate) fn bank_available(&self, session: &Session, save: bool) -> bool {
+        if !self.edit_ready(session) {
+            return false;
+        }
+        if !save {
+            return !session.project().data().caption_presets.is_empty();
+        }
+        self.style_available(session)
+            && session.project().data().caption_presets.len() < project::MAX_CAPTION_PRESETS
+            && self.caption(session).is_some_and(|(_, p)| {
+                let first = p.cues.cues.first().and_then(|cue| p.cues.style_of(cue));
+                first.is_some() && p.cues.cues.iter().all(|cue| p.cues.style_of(cue) == first)
+            })
+    }
+
+    fn open_bank(&mut self, session: &Session, at: Tick, save: bool) -> Result<()> {
+        if !self.bank_available(session, save) {
+            return Err(Error::Invalid("caption preset unavailable"));
+        }
+        let preset = (!save)
+            .then(|| session.project().data().caption_presets.first())
+            .flatten();
+        self.bank = Some(super::BankEdit {
+            confirm_pending: false,
+            snapshot: session.project().clone(),
+            item: self.item,
+            at,
+            save,
+            preset: preset.map(|p| p.id),
+            name: preset.map_or(String::new(), |p| p.name.as_str().into()),
+            focused: false,
+        });
+        Ok(())
+    }
+
+    pub(super) fn reconcile_bank(
+        &mut self,
+        session: &Session,
+        at: Tick,
+        ready: bool,
+        continuous: bool,
+    ) {
+        if let Some(edit) = self.bank.take()
+            && ready
+            && continuous
+            && self.edit_ready(session)
+            && Arc::ptr_eq(&edit.snapshot, session.project())
+            && edit.at == at
+            && edit.item == self.item
+        {
+            self.bank = Some(edit);
+        }
+    }
+
+    pub(super) fn confirm_bank(
+        &mut self,
+        session: &mut Session,
+        at: Tick,
+        delete: bool,
+    ) -> Result<()> {
+        let edit = self
+            .bank
+            .take()
+            .ok_or(Error::Invalid("caption preset editor"))?;
+        if !self.edit_ready(session)
+            || !Arc::ptr_eq(&edit.snapshot, session.project())
+            || edit.at != at
+            || edit.item != self.item
+        {
+            return Err(Error::Invalid("caption preset changed"));
+        }
+        let command = if edit.save {
+            Command::SaveCaptionPreset {
+                item: edit.item.ok_or(Error::Invalid("caption item"))?,
+                name: edit.name.as_str().into(),
+            }
+        } else if delete {
+            Command::DeleteCaptionPreset {
+                preset: edit.preset.ok_or(Error::Invalid("caption preset"))?,
+            }
+        } else {
+            Command::RenameCaptionPreset {
+                preset: edit.preset.ok_or(Error::Invalid("caption preset"))?,
+                name: edit.name.as_str().into(),
+            }
+        };
+        match session.apply(command) {
+            Ok(_) => {
+                self.refresh(session);
+                Ok(())
+            }
+            Err(error) => {
+                self.bank = Some(edit);
+                Err(error.into())
+            }
+        }
+    }
+
     /// Style actions never implicitly commit a focused or changed caption draft.
     pub(crate) fn style_available(&self, session: &Session) -> bool {
         self.edit_ready(session)
@@ -28,6 +127,7 @@ impl Subtitles {
     /// Unrelated edits must refuse before activation flushes a caption draft.
     pub(crate) fn edit_ready(&self, session: &Session) -> bool {
         !self.busy()
+            && self.bank.is_none()
             && !session.transaction_active()
             && self.text_focus.is_none()
             && !self.drafts.iter().any(|((cue, language), draft)| {
@@ -92,6 +192,9 @@ impl Subtitles {
         id: &str,
     ) -> Result<()> {
         match id {
+            "subtitles.style.save" | "subtitles.style.manage" => {
+                self.open_bank(session, at, id == "subtitles.style.save")?;
+            }
             "subtitles.style.outline" | "subtitles.style.box" => {
                 if !self.style_available(session) {
                     return Err(Error::Invalid("caption style unavailable"));
