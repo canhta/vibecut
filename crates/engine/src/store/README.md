@@ -36,7 +36,9 @@ checks the caller's predicate before commands, between copy chunks and before pu
 Calls block and belong off the UI thread. Noncooperating filesystem replacement races and
 physical power-loss durability are outside this contract.
 
-Library-local history keeps 32 rename and duplicate steps for the handle lifetime. Undoing a
+Library-local history keeps 32 rename and duplicate steps for the handle lifetime.
+An empty undo/redo queue composes the kernel's `SessionError::NoHistory` before changing
+history or touching disk; [Session](../session/README.md) owns its refusal category. Undoing a
 duplicate moves its complete directory into hidden history storage; redo restores those same
 bytes and copied media. Closing the handle or running a new command discards abandoned redo
 copies. Unexpected project content changes refuse undo, and open-project writer leases refuse

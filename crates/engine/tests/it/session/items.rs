@@ -583,7 +583,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
     s.begin_gesture().unwrap();
     assert!(matches!(
         s.set_selection(BTreeSet::new()),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     s.apply(Command::SetItemParamMany {
         items: vec![ItemId(10)],

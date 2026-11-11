@@ -401,7 +401,9 @@ impl crate::Session {
         command: crate::Command,
     ) -> Result<(JobId, CancelToken), EditError> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         match command {
             crate::Command::BurnSubtitles {

@@ -251,9 +251,12 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     assert!(!s.can_undo());
     assert!(matches!(
         s.begin_gesture(),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
-    assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
+    assert!(matches!(
+        s.undo(),
+        Err(EditError::Session(engine::SessionError::TransactionActive))
+    ));
     for start in 1..10 {
         s.apply(Command::MoveItem {
             item: ItemId(10),
@@ -300,8 +303,14 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     assert!(Arc::ptr_eq(&s.take_change().unwrap(), &final_preview));
     s.undo().unwrap();
     assert!(Arc::ptr_eq(&committed, s.project()));
-    assert!(matches!(s.cancel_gesture(), Err(EditError::NoGesture)));
-    assert!(matches!(s.commit_gesture(), Err(EditError::NoGesture)));
+    assert!(matches!(
+        s.cancel_gesture(),
+        Err(EditError::Session(engine::SessionError::NoGesture))
+    ));
+    assert!(matches!(
+        s.commit_gesture(),
+        Err(EditError::Session(engine::SessionError::NoGesture))
+    ));
 }
 #[test]
 fn failed_batch_at_every_position_preserves_redo_and_pending_event() {
@@ -399,13 +408,16 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
         let result: engine::Result<()> = s.transaction(|group| {
             assert!(matches!(
                 group.transaction(|_| Ok(())),
-                Err(EditError::TransactionActive)
+                Err(EditError::Session(engine::SessionError::TransactionActive))
             ));
             assert!(matches!(
                 group.begin_gesture(),
-                Err(EditError::TransactionActive)
+                Err(EditError::Session(engine::SessionError::TransactionActive))
             ));
-            assert!(matches!(group.redo(), Err(EditError::TransactionActive)));
+            assert!(matches!(
+                group.redo(),
+                Err(EditError::Session(engine::SessionError::TransactionActive))
+            ));
             for _ in 0..10 {
                 group.apply(Command::BookmarkAdd {
                     start: Tick(0),
@@ -422,7 +434,10 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
             Err(EditError::Invalid("injected group failure"))
         });
         if unwind {
-            assert!(matches!(result, Err(EditError::Panicked)));
+            assert!(matches!(
+                result,
+                Err(EditError::Session(engine::SessionError::Panicked))
+            ));
         } else {
             assert!(matches!(result, Err(EditError::Invalid(_))));
         }

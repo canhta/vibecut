@@ -59,7 +59,9 @@ impl Session {
     /// ownership. Preview state is deliberately not presented as committed state.
     pub fn snapshot_and_subscribe(&mut self, runner: &JobRunner) -> Result<Snapshot> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.observe_jobs(runner);
         Ok(Snapshot {

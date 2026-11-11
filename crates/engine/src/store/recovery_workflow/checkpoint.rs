@@ -271,7 +271,9 @@ impl Autosave {
             return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         let snapshot = self.session.project().clone();
         let mut metadata = self.session.metadata().clone();

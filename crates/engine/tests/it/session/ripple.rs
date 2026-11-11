@@ -131,7 +131,7 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
     assert!(matches!(
         s.apply(Command::TimelineSetRipple { enabled: false }),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     s.apply_with_ripple(preview(60), true).unwrap();
     assert_eq!(s.preview_project().unwrap().as_ref(), s.project().as_ref());
@@ -162,7 +162,7 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     let staged = s.project().clone();
     assert!(matches!(
         s.apply_with_ripple(preview(60), true),
-        Err(EditError::TransactionActive)
+        Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     assert_eq!(s.project(), &staged);
     s.cancel_gesture().unwrap();

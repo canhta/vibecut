@@ -46,7 +46,9 @@ impl Session {
         match command {
             Command::ReadClipboard {} => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 Ok(ControlResult::Clipboard {
                     payload: self.clipboard_payload(),
@@ -59,7 +61,9 @@ impl Session {
                 expected_hash,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let expected = expected_hash
                     .map(|id| {
@@ -97,7 +101,9 @@ impl Session {
             }
             Command::Inspect {} => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 validate_wire(self.project().data())?;
                 Ok(ControlResult::Inspection {
@@ -129,7 +135,9 @@ impl Session {
                 include_markers,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let candidates = crate::session::filler::scene_candidates(
                     self.project().data(),
@@ -210,7 +218,9 @@ impl Session {
             }
             Command::GenerateWaveform { asset } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let asset = self
                     .project()
@@ -239,7 +249,9 @@ impl Session {
                 pixels_per_second,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let data = self.project().data();
                 let clip = data
@@ -274,7 +286,9 @@ impl Session {
             }
             Command::DetectScenes { asset, settings } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let asset = self
                     .project()
@@ -299,7 +313,9 @@ impl Session {
             }
             Command::MeasureLoudness {} => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let job = crate::loudness::submit_loudness(runner, self.project().clone(), || {
                     Box::new(render::FileSources::default())
@@ -316,7 +332,9 @@ impl Session {
                 crossfade_ms,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let settings = crate::pause_candidates::PauseSettings {
                     min_pause_ms,
@@ -339,7 +357,9 @@ impl Session {
                 max_chapters,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let access = caller
                     .chapters
@@ -358,7 +378,9 @@ impl Session {
                 include_markers,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let access = caller
                     .chapters
@@ -374,7 +396,9 @@ impl Session {
             }
             Command::ChaptersExportSidecars { dir, document } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let protected = self.protected_paths().to_vec();
                 let paths = crate::chapter_sidecars::write_to_directory(
@@ -391,7 +415,9 @@ impl Session {
                 source_language,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let access = caller
                     .captions
@@ -418,7 +444,9 @@ impl Session {
                 force,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let access = caller
                     .captions
@@ -441,7 +469,9 @@ impl Session {
             }
             Command::CaptionsApply { job, start } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let snapshot = runner
                     .snapshot(job)
@@ -486,7 +516,9 @@ impl Session {
             Command::Preview { frames } => crate::control_preview::preview(self, frames, runner),
             Command::Snapshot { time, path } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let protected = self.protected_paths().to_vec();
                 let snapshot = crate::snapshot::save_with_overwrite(
@@ -509,7 +541,9 @@ impl Session {
                 overwrite,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::TransactionActive);
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
                 }
                 let mut settings = render::ExportSettings::from_project(self.project());
                 settings.container = path

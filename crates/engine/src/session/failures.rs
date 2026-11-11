@@ -2,9 +2,17 @@
 
 use super::wire::{ErrorCode, Failure};
 
-/// Refusals owned by Session identity and revision custody.
+/// Refusals owned by Session identity, command lifetime and history custody.
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
+    #[error("a gesture or transaction is active")]
+    TransactionActive,
+    #[error("no gesture is active")]
+    NoGesture,
+    #[error("no history step available")]
+    NoHistory,
+    #[error("command unwound; transaction rolled back")]
+    Panicked,
     #[error("control identity unavailable")]
     ControlIdentity,
     #[error("job result is stale")]
@@ -13,6 +21,9 @@ pub enum SessionError {
 impl Failure for SessionError {
     fn code(&self) -> ErrorCode {
         match self {
+            Self::TransactionActive | Self::NoGesture => ErrorCode::TransactionActive,
+            Self::NoHistory => ErrorCode::Refused,
+            Self::Panicked => ErrorCode::Failed,
             Self::StaleResult => ErrorCode::StaleResult,
             Self::ControlIdentity => ErrorCode::Refused,
         }

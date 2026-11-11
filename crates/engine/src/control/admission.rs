@@ -182,7 +182,9 @@ impl Session {
                 ));
             }
             if self.transaction_active() && caller.external {
-                return Err(EditError::TransactionActive);
+                return Err(EditError::Session(
+                    crate::session::SessionError::TransactionActive,
+                ));
             }
             Some(key)
         } else {
@@ -340,7 +342,9 @@ impl Session {
             ));
         }
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         let before = self.revision();
         let mut metadata = self.metadata().clone();

@@ -197,7 +197,9 @@ impl Session {
     /// Load optional sidecar presentation state, outside project history.
     pub fn restore_metadata(&mut self, metadata: project::Metadata) -> Result<()> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         metadata.validate()?;
         self.metadata = metadata;
@@ -214,7 +216,9 @@ impl Session {
     /// Call at a successful save boundary; processing started before it is stale.
     pub fn saved(&mut self) -> Result<()> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.generation.checked_add(1).ok_or(EditError::Control(
             crate::session::wire::ControlError::Limit,
@@ -239,7 +243,9 @@ impl Session {
     pub fn apply_job_result(&mut self, target: &JobTarget, command: Command) -> Result<Outcome> {
         self.validate_job_target(target)?;
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.apply(command)
     }
@@ -279,7 +285,9 @@ impl Session {
             return Ok(());
         }
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         if selection.len() > super::wire::MAX_COLLECTION {
             return Err(EditError::Control(
@@ -364,7 +372,9 @@ impl Session {
     /// Successful child IDs remain retired even if the outer group rolls back.
     pub fn transaction<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         if self.transaction_active() {
-            return Err(EditError::TransactionActive);
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
         }
         self.generation.checked_add(1).ok_or(EditError::Control(
             crate::session::wire::ControlError::Limit,
@@ -385,7 +395,7 @@ impl Session {
                 self.state.rewind(before);
                 match failed {
                     Ok(Err(error)) => Err(error),
-                    _ => Err(EditError::Panicked),
+                    _ => Err(EditError::Session(crate::session::SessionError::Panicked)),
                 }
             }
         }
@@ -466,7 +476,7 @@ impl Session {
                 }
             }
             Ok(Err(error)) => Err(error),
-            Err(_) => Err(EditError::Panicked),
+            Err(_) => Err(EditError::Session(crate::session::SessionError::Panicked)),
         };
         if result.is_err() {
             checkpoint.restore(self);
@@ -831,7 +841,13 @@ mod tests {
             });
             match exit {
                 Exit::Refusal => assert!(matches!(result, Err(EditError::Invalid(_))), "{exit:?}"),
-                Exit::Unwind => assert!(matches!(result, Err(EditError::Panicked)), "{exit:?}"),
+                Exit::Unwind => assert!(
+                    matches!(
+                        result,
+                        Err(EditError::Session(crate::session::SessionError::Panicked))
+                    ),
+                    "{exit:?}"
+                ),
                 Exit::RevisionExhausted => {
                     assert!(
                         matches!(

@@ -335,7 +335,7 @@ impl SnapshotDialog {
 fn error_for(code: ErrorCode) -> EditError {
     match code {
         ErrorCode::EmptyProject => EditError::EmptyProject,
-        ErrorCode::TransactionActive => EditError::TransactionActive,
+        ErrorCode::TransactionActive => EditError::Session(engine::SessionError::TransactionActive),
         ErrorCode::Permission => EditError::Control(engine::control::ControlError::Permission),
         ErrorCode::Limit | ErrorCode::Budget => {
             EditError::Control(engine::control::ControlError::Limit)

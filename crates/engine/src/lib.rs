@@ -124,14 +124,6 @@ pub enum EditError {
     Invalid(&'static str),
     #[error("unsupported edit: {0}")]
     Unsupported(&'static str),
-    #[error("command unwound; transaction rolled back")]
-    Panicked,
-    #[error("a gesture or transaction is active")]
-    TransactionActive,
-    #[error("no gesture is active")]
-    NoGesture,
-    #[error("no history step available")]
-    NoHistory,
     #[error("identifier space exhausted")]
     IdExhausted,
     #[error("project candidate rejected")]
@@ -149,9 +141,7 @@ impl EditError {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
-            Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
-            Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::Session(inner) => return (inner.code(), inner.transient()),
             Self::Control(inner) => return (inner.code(), inner.transient()),
@@ -190,7 +180,6 @@ impl EditError {
             | Self::Overlap(_)
             | Self::Invalid(_)
             | Self::Unsupported(_)
-            | Self::NoHistory
             | Self::IdExhausted
             | Self::Project(_)
             | Self::Time(_)

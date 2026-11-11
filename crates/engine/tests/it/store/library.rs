@@ -78,7 +78,10 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     assert_eq!(lib.list_trash().unwrap().len(), 1);
     assert_eq!(unrelated_writer.load().unwrap().project, source);
     drop(unrelated_writer);
-    assert!(matches!(lib.undo(), Err(EditError::NoHistory)));
+    assert!(matches!(
+        lib.undo(),
+        Err(EditError::Session(engine::SessionError::NoHistory))
+    ));
     drop(lib);
     let reopened = library(root.path());
     assert_eq!(reopened.list().unwrap().len(), 1);

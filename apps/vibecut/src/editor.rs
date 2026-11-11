@@ -501,7 +501,9 @@ impl Editor {
         options: dialogs::export::ExportOptions,
     ) -> Result<()> {
         if self.session.transaction_active() {
-            return Err(Error::Engine(engine::EditError::TransactionActive));
+            return Err(Error::Engine(engine::EditError::Session(
+                engine::SessionError::TransactionActive,
+            )));
         }
         let project = self.session.project().clone();
         let budget = self.playback.budget().clone();

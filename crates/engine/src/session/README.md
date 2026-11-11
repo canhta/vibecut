@@ -18,6 +18,17 @@ nontransient and source-free. Session construction validates history before fill
 Both retain their BLAKE3 encoding. This operation neither allocates ProjectIds nor falls back
 when entropy is unavailable.
 
+Session lifetime and history refusals belong to the same `SessionError` owner:
+active transaction/gesture, absent gesture/history and command unwind. Their diagnostics
+and categories remain source-free, nontransient and ordinary job policy. Command unwind
+is distinct from Runtime worker panic. Higher workflows compose these causes through
+`EditError::Session`, including catalog-local undo/redo with no retained history.
+
+The internal gesture start returns only `SessionError`, consumed by BeginGesture and
+TimelinePreview. Public begin/commit/cancel, undo/redo and guarded transactions still run
+through the mixed command boundary: generation reservation, wire/project validation and
+checkpoint rollback are not bypassed to narrow their signatures.
+
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps. `project()` exposes
