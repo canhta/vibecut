@@ -939,10 +939,38 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
         result.error.as_deref().and_then(
             |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         ),
-        Some(EngineError::Edit(engine::EditError::Project(
-            project::Error::Io(_)
+        Some(EngineError::Runtime(engine::RuntimeError::Edit(
+            engine::EditError::Project(project::Error::Io(_))
         )))
     ));
+    let raw = result.error.as_ref().unwrap();
+    assert_eq!(raw.code(), engine::control::ErrorCode::Io);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.to_string(), "project candidate rejected");
+    assert!(Arc::ptr_eq(
+        raw,
+        runner
+            .snapshots()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        raw,
+        runner
+            .drain_events()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(runner.take_output(id).is_none());
     assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
     assert_eq!(std::fs::read(&destination).unwrap(), b"prior movie");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);

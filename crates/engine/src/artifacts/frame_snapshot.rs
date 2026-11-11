@@ -85,7 +85,7 @@ pub(crate) fn save_with_overwrite(
         u64::try_from(image.png.len())
             .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         &project::atomic::Fs,
-        |writer| {
+        |writer| -> crate::runtime::Result<()> {
             writer.write_all(&image.png)?;
             Ok(())
         },
@@ -290,10 +290,58 @@ mod tests {
         let error = publish(&path, b"new png", &project(), &[], &hooks(), &FullDisk).unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
+                project::Error::Io(_)
+            )))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        let cause: std::sync::Arc<dyn crate::Failure> =
+            std::sync::Arc::new(EngineError::Ai(ai::Error::RateLimit {
+                retry_after_seconds: Some(3),
+            }));
+        for unwinds in [false, true] {
+            let project = project();
+            let hooks = hooks();
+            let returned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::publication::Publication {
+                    project: &project,
+                    path: &path,
+                    protected: &[],
+                    hooks: &hooks,
+                }
+                .write(
+                    project::atomic::Overwrite::Replace,
+                    64,
+                    &project::atomic::Fs,
+                    |writer| -> Result<()> {
+                        writer.write_all(b"partial callback bytes")?;
+                        if unwinds {
+                            panic!("injected mixed writer unwind");
+                        }
+                        Err(crate::recovery::Error::PersistenceFailed(cause.clone()).into())
+                    },
+                )
+            }));
+            if unwinds {
+                assert!(returned.is_err());
+            } else {
+                let error = returned.unwrap().unwrap_err();
+                use crate::Failure;
+                assert_eq!(error.code(), crate::control::ErrorCode::Ai);
+                assert!(!error.transient());
+                assert!(!error.job_policy().terminal_cancelled);
+                assert_eq!(error.job_policy().retry_after_seconds, None);
+                let EngineError::Recovery(crate::recovery::Error::PersistenceFailed(original)) =
+                    error
+                else {
+                    panic!("writer error was normalized")
+                };
+                assert!(std::sync::Arc::ptr_eq(&original, &cause));
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), b"previous");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
     }
 
     #[test]
@@ -305,7 +353,9 @@ mod tests {
             publish(&path, b"new png", &project(), &[], &hooks(), &FailPublish).unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
+                project::Error::Io(_)
+            )))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -344,7 +394,7 @@ mod tests {
                 protected: &[],
                 hooks: &hooks,
             }
-            .write(overwrite, 7, fs, |writer| {
+            .write(overwrite, 7, fs, |writer| -> crate::runtime::Result<()> {
                 writer.write_all(b"new png")?;
                 Ok(())
             });

@@ -332,10 +332,22 @@ impl ExportDialog {
                     let _ = std::fs::remove_file(path);
                 }
                 self.cancelling = false;
-                if let Some(error) = &failure
-                    && let Some(engine::Error::Render(render::Error::Unavailable(items))) =
-                        (error.as_ref() as &(dyn std::error::Error + 'static))
-                            .downcast_ref::<engine::Error>()
+                let unavailable = failure.as_deref().and_then(|error| {
+                    let raw = error as &(dyn std::error::Error + 'static);
+                    match raw.downcast_ref::<engine::Error>() {
+                        Some(engine::Error::Render(render::Error::Unavailable(items)))
+                        | Some(engine::Error::Runtime(engine::RuntimeError::Render(
+                            render::Error::Unavailable(items),
+                        ))) => Some(items),
+                        _ => match raw.downcast_ref::<engine::RuntimeError>() {
+                            Some(engine::RuntimeError::Render(render::Error::Unavailable(
+                                items,
+                            ))) => Some(items),
+                            _ => None,
+                        },
+                    }
+                });
+                if let Some(items) = unavailable
                     && self.unavailable != *items
                 {
                     self.consent = false;
@@ -911,31 +923,31 @@ fn unavailable_details(
 }
 
 fn export_failure(error: &(dyn engine::Failure + 'static)) -> Text {
-    let cause: &(dyn std::error::Error + 'static) = error;
-    if let Some(runtime) = cause.downcast_ref::<engine::RuntimeError>() {
-        return match runtime {
-            engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge => {
-                Text::ExportMemory
-            }
-            engine::RuntimeError::Io(_) => Text::ExportStorage,
-            _ => Text::ExportFailure,
-        };
-    }
-    let Some(error) = cause.downcast_ref::<engine::Error>() else {
-        return Text::ExportFailure;
-    };
     use engine::{Error as E, RuntimeError as B};
     use render::Error as R;
-    match error {
-        E::Runtime(B::BudgetFull | B::ArtifactTooLarge)
-        | E::Render(R::Budget { .. } | R::Allocation(_)) => Text::ExportMemory,
-        E::Render(R::AudioOverload { .. }) => Text::ExportOverload,
-        E::Render(R::Unavailable(_)) => Text::ExportBlocked,
-        E::Io(_)
-        | E::Runtime(B::Io(_))
-        | E::Render(R::Io(_) | R::Project(project::Error::Io(_))) => Text::ExportStorage,
-        E::Render(R::Media(_) | R::Unsupported(_)) => Text::ExportCapability,
-        E::Render(R::Text(_) | R::Raster(_)) => Text::ExportTextFailure,
+    let cause: &(dyn std::error::Error + 'static) = error;
+    let root = cause.downcast_ref::<E>();
+    let runtime = match root {
+        Some(E::Runtime(runtime)) => Some(runtime),
+        _ => cause.downcast_ref::<B>(),
+    };
+    let rendered = match root {
+        Some(E::Render(rendered)) => Some(rendered),
+        _ => match runtime {
+            Some(B::Render(rendered)) => Some(rendered),
+            _ => None,
+        },
+    };
+    match (root, runtime, rendered) {
+        (_, Some(B::BudgetFull | B::ArtifactTooLarge), _)
+        | (_, _, Some(R::Budget { .. } | R::Allocation(_))) => Text::ExportMemory,
+        (_, _, Some(R::AudioOverload { .. })) => Text::ExportOverload,
+        (_, _, Some(R::Unavailable(_))) => Text::ExportBlocked,
+        (Some(E::Io(_)), _, _)
+        | (_, Some(B::Io(_)), _)
+        | (_, _, Some(R::Io(_) | R::Project(project::Error::Io(_)))) => Text::ExportStorage,
+        (_, _, Some(R::Media(_) | R::Unsupported(_))) => Text::ExportCapability,
+        (_, _, Some(R::Text(_) | R::Raster(_))) => Text::ExportTextFailure,
         _ => Text::ExportFailure,
     }
 }

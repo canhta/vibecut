@@ -133,7 +133,7 @@ fn write_with_fs(
         u64::try_from(text.len())
             .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
-        |writer| {
+        |writer| -> Result<()> {
             writer.write_all(text.as_bytes())?;
             Ok(())
         },
@@ -143,7 +143,7 @@ fn write_with_fs(
         u64::try_from(json.len())
             .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
-        |writer| {
+        |writer| -> Result<()> {
             writer.write_all(&json)?;
             Ok(())
         },
@@ -248,7 +248,9 @@ mod tests {
             .unwrap_err();
             assert!(matches!(
                 error,
-                EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+                EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
+                    project::Error::Io(_)
+                )))
             ));
             assert_eq!(std::fs::read(&paths.text).unwrap(), b"previous text");
             assert_eq!(std::fs::read(&paths.json).unwrap(), b"previous json");
@@ -274,7 +276,9 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Edit(crate::EditError::Project(project::Error::Io(_)))
+            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
+                project::Error::Io(_)
+            )))
         ));
         assert!(
             std::fs::read(&paths.text)

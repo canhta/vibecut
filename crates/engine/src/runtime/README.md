@@ -162,7 +162,9 @@ identity; a valid old artifact may stay cached without being applied.
 The Runtime rendering composition implements the local Failure contract for `render::Error`:
 Unavailable maps to the existing Unavailable code, every other variant to Render, with ordinary
 nontransient/default scheduling policy. This is the one foreign render projection consumed by
-both the engine aggregate and durable LUT store; Kernel has no Render dependency.
+both the engine aggregate and durable LUT store/publication guards. The same execution
+owner implements the Media projection once (`Media`, ordinary defaults), consumed by root,
+managed Library and Runtime. Kernel learns neither foreign execution projection.
 
 
 `admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or

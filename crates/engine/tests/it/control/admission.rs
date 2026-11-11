@@ -823,6 +823,21 @@ fn owner_failures_classify_publication_receipts_and_events() {
     }
     let mut cases = vec![
         row!(
+            E::Runtime(B::Render(render::Error::Unavailable(Vec::new()))),
+            Unavailable,
+            false
+        ),
+        row!(
+            E::Runtime(B::Render(render::Error::Cancelled)),
+            Render,
+            false
+        ),
+        row!(
+            E::Runtime(B::Media(media::MediaError::Cancelled)),
+            Media,
+            false
+        ),
+        row!(
             E::Lut(engine::luts::Error::Render(render::Error::Unavailable(
                 Vec::new()
             ))),

@@ -117,7 +117,7 @@ impl Error {
             Self::Providers(inner) => inner.code(),
             Self::Transcript(inner) => inner.code(),
             Self::Render(inner) => inner.code(),
-            Self::Media(_) => C::Media,
+            Self::Media(error) => error.code(),
             Self::Ai(inner) => {
                 return (
                     if matches!(inner, ai::Error::Chapters(_)) {
