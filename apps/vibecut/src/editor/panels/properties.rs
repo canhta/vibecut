@@ -56,6 +56,7 @@ pub(in crate::editor) struct State {
     font_picker: font_picker::State,
     /// Catalog commands for the font picker; opened lazily on first use.
     font_backend: Option<Box<dyn font_picker::Backend>>,
+    font_import: Option<font_picker::PendingImport>,
     /// Mask row's shape and field sub-panel.
     mask: mask_picker::State,
     /// Clip whose Chroma key is switched on before any colour is picked; the
@@ -96,11 +97,6 @@ impl State {
     /// Set the catalog backend the facade injects.
     pub(in crate::editor) fn set_font_backend(&mut self, backend: Box<dyn font_picker::Backend>) {
         self.font_backend = Some(backend);
-    }
-
-    /// Wire the My fonts tab once font import (80) supplies imported families.
-    pub(in crate::editor) fn set_font_imports_available(&mut self, available: bool) {
-        self.font_picker.has_imports = available;
     }
 
     /// Font picker state for the automation read.
@@ -153,6 +149,7 @@ impl Default for State {
             color_base: None,
             font_picker: font_picker::State::default(),
             font_backend: None,
+            font_import: None,
             mask: mask_picker::State::default(),
             chroma_staged: None,
             area: None,

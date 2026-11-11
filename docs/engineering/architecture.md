@@ -16,7 +16,7 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, testkit |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, testkit |
 | mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time |
-| libraries | crates/libraries | External project assets: font catalog with verified download cache, licensed sound search, saved library and previews | engine, ai, media, project, text, time |
+| libraries | crates/libraries | External project assets: font catalog with verified download/import cache, licensed sound search, saved library and previews | engine, ai, media, project, text, time |
 | shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, testkit |

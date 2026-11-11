@@ -20,6 +20,10 @@ fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
+skrifa.workspace = true
+unicode-normalization.workspace = true
+wuff = { version = "0.2.10", default-features = false, features = ["brotli"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+brotli = "9.1.1"

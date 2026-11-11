@@ -64,3 +64,8 @@ OpenCode v2 `opencode.json`:
 ```
 
 Sources: [Claude Code](https://code.claude.com/docs/en/mcp), [Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [OpenCode v2](https://github.com/anomalyco/opencode/blob/dev/services/www/src/docs/content/mcp-servers.mdx) and its [config schema](https://opencode.ai/config.json), [MCP stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), [rmcp](https://docs.rs/rmcp/3.8.0/rmcp/), [local sockets](https://docs.rs/interprocess/2.4.7/interprocess/local_socket/), [Windows security capture](https://docs.rs/win-authorization-sys/0.1.0/win_authorization_sys/).
+
+`fonts.import` is a human-granted source-file operation: accepting font usage rights
+in request JSON never grants an agent permission to read arbitrary files. Existing
+font listing and loading grants are unchanged; font store custody and format bounds
+are owned by the [font catalog](../../../crates/libraries/src/font_catalog/README.md#custom-import).

@@ -158,7 +158,16 @@ pub fn example_store() -> Arc<FontStore> {
     let catalog = family("Lobster", "lobster", FIXTURE);
     let server = Server::serving(&catalog, FIXTURE);
     let root = tempfile::tempdir().unwrap().keep();
-    Arc::new(FontStore::new(root, vec![catalog], Vec::new, server).unwrap())
+    Arc::new(
+        FontStore::new(
+            root,
+            vec![catalog],
+            Vec::new,
+            server,
+            Arc::new(libraries::fonts::LocalFontFile),
+        )
+        .unwrap(),
+    )
 }
 
 fn runner() -> JobRunner {
@@ -215,6 +224,7 @@ fn store(
         google,
         move || system.clone(),
         transport,
+        Arc::new(libraries::fonts::LocalFontFile),
     )
     .unwrap()
 }
@@ -254,6 +264,337 @@ fn laid_out_faces(family: &str) -> (bool, Vec<usize>) {
 }
 fn offline() -> Arc<Server> {
     Arc::new(Server::default())
+}
+
+// Test-only WOFF2 container with null table transforms, encoded from our admitted
+// fixture bytes. Brotli is an independent encoder; production only decodes.
+fn woff2(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let tables = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
+    let mut directory = Vec::new();
+    let mut body = Vec::new();
+    for table in bytes[12..12 + tables * 16].chunks_exact(16) {
+        let tag = &table[..4];
+        directory.push(if tag == b"glyf" || tag == b"loca" {
+            255
+        } else {
+            63
+        });
+        directory.extend_from_slice(tag);
+        let offset = u32::from_be_bytes(table[8..12].try_into().unwrap()) as usize;
+        let length = u32::from_be_bytes(table[12..16].try_into().unwrap()) as usize;
+        let mut encoded = vec![(length & 127) as u8];
+        let mut n = length >> 7;
+        while n != 0 {
+            encoded.push((n as u8 & 127) | 128);
+            n >>= 7;
+        }
+        directory.extend(encoded.into_iter().rev());
+        body.extend_from_slice(&bytes[offset..offset + length]);
+    }
+    let mut compressed = Vec::new();
+    {
+        let mut encoder = brotli::CompressorWriter::new(&mut compressed, 4096, 5, 20);
+        encoder.write_all(&body).unwrap();
+    }
+    let mut out = b"wOF2".to_vec();
+    out.extend_from_slice(&bytes[..4]);
+    out.extend_from_slice(&((48 + directory.len() + compressed.len()) as u32).to_be_bytes());
+    out.extend_from_slice(&(tables as u16).to_be_bytes());
+    out.extend_from_slice(&0u16.to_be_bytes());
+    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    out.extend_from_slice(&(compressed.len() as u32).to_be_bytes());
+    out.resize(48, 0);
+    out.extend(directory);
+    out.extend(compressed);
+    out.resize((out.len() + 3) & !3, 0);
+    let size = out.len() as u32;
+    out[8..12].copy_from_slice(&size.to_be_bytes());
+    out
+}
+
+fn renamed(bytes: &[u8], from: &str, to: &str) -> Vec<u8> {
+    let from: Vec<u8> = from.encode_utf16().flat_map(u16::to_be_bytes).collect();
+    let to: Vec<u8> = to.encode_utf16().flat_map(u16::to_be_bytes).collect();
+    assert_eq!(from.len(), to.len());
+    let mut out = bytes.to_vec();
+    let mut replaced = 0;
+    for offset in 0..=out.len() - from.len() {
+        if out[offset..offset + from.len()] == from {
+            out[offset..offset + from.len()].copy_from_slice(&to);
+            replaced += 1;
+        }
+    }
+    assert!(replaced != 0);
+    out
+}
+
+#[test]
+fn custom_import_copies_valid_formats_and_deduplicates_without_source_dependency() {
+    let cjk = include_bytes!("../../../../assets/fonts/VibeCutSansCJK-Regular.otf");
+    let otf = renamed(cjk, "VibeCut Sans CJK", "Custom  Sans CJK");
+    let compressed = woff2(&renamed(
+        FIXTURE,
+        "VibeCut Fixture Sans",
+        "WibeCut Fixture Sans",
+    ));
+    for (format, bytes, family) in [
+        ("ttf", FIXTURE.to_vec(), "VibeCut Fixture Sans"),
+        ("otf", otf, "Custom  Sans CJK"),
+        ("woff2", compressed, "WibeCut Fixture Sans"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join(format!("original.{format}"));
+        fs::write(&input, &bytes).unwrap();
+        let root = dir.path().join("fonts");
+        let store = store(&root, vec![], vec![], offline());
+        let mut runner = runner();
+        assert!(matches!(
+            store.submit_import(&mut runner, input.clone(), false),
+            Err(EditError::Permission)
+        ));
+        let (job, _) = store
+            .submit_import(&mut runner, input.clone(), true)
+            .unwrap();
+        assert_eq!(
+            finish(&mut runner, job),
+            JobState::Completed,
+            "{format}: {:?}",
+            runner.snapshot(job).unwrap().error
+        );
+        let before = entries_below(&root);
+        let (job, _) = store
+            .submit_import(&mut runner, input.clone(), true)
+            .unwrap();
+        assert_eq!(finish(&mut runner, job), JobState::Completed);
+        assert_eq!(entries_below(&root), before);
+        fs::rename(&input, dir.path().join("moved-original")).unwrap();
+        let reopened = super::font_catalog::store(&root, vec![], vec![], offline());
+        let entries = reopened.list(Some(family)).unwrap();
+        let entry = entries.iter().find(|entry| entry.family == family).unwrap();
+        assert_eq!(entry.origin, FontOrigin::Custom);
+        assert!(entry.source.as_ref().unwrap().starts_with("local:sha256:"));
+        assert_eq!(reopened.load(family).unwrap().state, FontLoadState::Loaded);
+        let resolved = text::resolve(family, "Regular");
+        assert!(!resolved.missing);
+        assert_eq!(text::face(resolved.face).family, family);
+        if format != "otf" {
+            // Independent fixture table values: head.unitsPerEm=2048,
+            // cmap('H')=3, hmtx[3].advanceWidth=1522, empty kerning tables.
+            let layout = text::layout(
+                "HH",
+                &text::LayoutOptions {
+                    family,
+                    size: 64.0,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                layout
+                    .glyphs
+                    .iter()
+                    .map(|glyph| glyph.id)
+                    .collect::<Vec<_>>(),
+                [3, 3]
+            );
+            assert!((layout.glyphs[1].x - 47.5625).abs() < 0.001);
+            assert!((layout.lines[0].width - 95.125).abs() < 0.001);
+            assert_eq!(text::fallback_for('H', resolved.face, &[]), resolved.face);
+            assert_eq!(
+                text::face(text::fallback_for('ữ', resolved.face, &[])).family,
+                "Inter"
+            );
+        }
+        // Once damaged on disk, a new store cannot advertise or load the copy.
+        let published = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.is_dir())
+            .unwrap();
+        fs::write(published.join("font.sfnt"), b"tampered").unwrap();
+        assert!(
+            !reopened
+                .list(Some(family))
+                .unwrap()
+                .iter()
+                .any(|entry| entry.origin == FontOrigin::Custom)
+        );
+        assert_eq!(
+            reopened.load(family).unwrap().state,
+            FontLoadState::CacheInvalid
+        );
+        runner.shutdown();
+    }
+}
+
+#[test]
+fn custom_import_refuses_hostile_data_conflicts_and_cancel_without_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("fonts");
+    let store = store(&root, vec![], vec![], offline());
+    let mut runner = runner();
+    for bytes in [
+        Vec::new(),
+        b"not a font".to_vec(),
+        b"wOFFunsupported".to_vec(),
+        b"wOF2".to_vec(),
+        FIXTURE[..FIXTURE.len() / 2].to_vec(),
+        {
+            let mut bytes = FIXTURE.to_vec();
+            bytes[20..24].copy_from_slice(&u32::MAX.to_be_bytes());
+            bytes
+        },
+        {
+            let mut bytes = woff2(FIXTURE);
+            bytes[16..20].copy_from_slice(&u32::MAX.to_be_bytes());
+            bytes
+        },
+        {
+            let mut bytes = woff2(FIXTURE);
+            // Lie about the header's size, then demand an oversized first table.
+            bytes[16..20].copy_from_slice(&1024u32.to_be_bytes());
+            bytes[53..58].copy_from_slice(&[0x8f, 0xff, 0xff, 0xff, 0x7f]);
+            bytes
+        },
+    ] {
+        let input = dir.path().join("bad.ttf");
+        fs::write(&input, bytes).unwrap();
+        let (job, _) = store.submit_import(&mut runner, input, true).unwrap();
+        assert_eq!(finish(&mut runner, job), JobState::Failed);
+        assert!(entries_below(&root).is_empty());
+    }
+    for (label, size) in [
+        ("missing", None),
+        ("oversize", Some(text::MAX_FONT_BYTES as u64 + 1)),
+    ] {
+        let input = dir.path().join(label);
+        if let Some(size) = size {
+            fs::File::create(&input).unwrap().set_len(size).unwrap();
+        }
+        let (job, _) = store.submit_import(&mut runner, input, true).unwrap();
+        assert_eq!(finish(&mut runner, job), JobState::Failed, "{label}");
+        assert!(entries_below(&root).is_empty());
+    }
+    let input = dir.path().join("valid.ttf");
+    fs::write(&input, FIXTURE).unwrap();
+    let (job, token) = store
+        .submit_import(&mut runner, input.clone(), true)
+        .unwrap();
+    token.cancel();
+    assert_eq!(finish(&mut runner, job), JobState::Cancelled);
+    assert!(entries_below(&root).is_empty());
+    let (job, _) = store
+        .submit_import(&mut runner, input.clone(), true)
+        .unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Completed);
+    let before = entries_below(&root);
+    let mut changed = FIXTURE.to_vec();
+    changed.push(0);
+    fs::write(&input, changed).unwrap();
+    let (job, _) = store.submit_import(&mut runner, input, true).unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Failed);
+    assert_eq!(entries_below(&root), before);
+    let error = runner.snapshot(job).unwrap().error.unwrap();
+    assert!(matches!(
+        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EditError>(),
+        Some(EditError::Font(FontError::Conflict))
+    ));
+    runner.shutdown();
+}
+
+#[test]
+fn custom_import_cancels_during_source_read_and_preserves_foreign_store_entries() {
+    struct Gated {
+        started: std::sync::mpsc::SyncSender<()>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl libraries::fonts::FontFile for Gated {
+        fn read(
+            &self,
+            _: &Path,
+            _: u64,
+            ctx: &engine::jobs::JobContext,
+        ) -> engine::Result<Vec<u8>> {
+            self.started.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+            ctx.check_cancelled()?;
+            Ok(FIXTURE.to_vec())
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let foreign = dir.path().join("unrelated.bin");
+    fs::write(&foreign, b"foreign bytes").unwrap();
+    let (started, started_rx) = std::sync::mpsc::sync_channel(1);
+    let (release, release_rx) = std::sync::mpsc::channel();
+    let store = FontStore::new(
+        dir.path().to_owned(),
+        vec![],
+        Vec::new,
+        offline(),
+        Arc::new(Gated {
+            started,
+            release: Mutex::new(release_rx),
+        }),
+    )
+    .unwrap();
+    let mut runner = runner();
+    let (job, token) = store
+        .submit_import(&mut runner, PathBuf::from("injected.ttf"), true)
+        .unwrap();
+    wait_started(&mut runner, &started_rx);
+    assert!(matches!(
+        store.submit_import(&mut runner, PathBuf::from("second.ttf"), true),
+        Err(EditError::Font(FontError::ImportActive))
+    ));
+    token.cancel();
+    release.send(()).unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Cancelled);
+    assert_eq!(entries_below(dir.path()), ["unrelated.bin"]);
+    assert_eq!(fs::read(foreign).unwrap(), b"foreign bytes");
+    runner.shutdown();
+}
+
+#[test]
+fn custom_import_accented_family_conflicts_and_resolution_share_one_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("fonts");
+    let input = directory.path().join("accented.ttf");
+    let store = store(&root, vec![], vec![], offline());
+    let mut runner = runner();
+    fs::write(
+        &input,
+        renamed(FIXTURE, "VibeCut Fixture Sans", "ÉibeCut Fixture Sans"),
+    )
+    .unwrap();
+    let (job, _) = store
+        .submit_import(&mut runner, input.clone(), true)
+        .unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Completed);
+    let before = entries_below(&root);
+    fs::write(
+        &input,
+        renamed(FIXTURE, "VibeCut Fixture Sans", "éibeCut Fixture Sans"),
+    )
+    .unwrap();
+    let (job, _) = store.submit_import(&mut runner, input, true).unwrap();
+    assert_eq!(finish(&mut runner, job), JobState::Failed);
+    let error = runner.snapshot(job).unwrap().error.unwrap();
+    assert!(matches!(
+        (error.as_ref() as &dyn std::error::Error).downcast_ref::<EditError>(),
+        Some(EditError::Font(FontError::Conflict))
+    ));
+    assert_eq!(entries_below(&root), before);
+    assert_eq!(
+        store.load("éIBECUT FIXTURE SANS").unwrap().state,
+        FontLoadState::Loaded
+    );
+    assert!(!text::resolve("éIBECUT FIXTURE SANS", "Regular").missing);
+    runner.shutdown();
 }
 
 #[test]
@@ -369,6 +710,7 @@ fn system_fonts_load_lazily_and_unknown_families_fall_back_deterministically() {
             scan_directory(&scan_dir)
         },
         offline(),
+        Arc::new(libraries::fonts::LocalFontFile),
     )
     .unwrap();
     assert_eq!(scans.load(Ordering::SeqCst), 0, "no scan before first use");
@@ -829,7 +1171,16 @@ fn curated_catalog_pins_licensed_files_and_is_accepted_by_the_store() {
         vec![bad_slug],
         duplicate,
     ] {
-        assert!(FontStore::new(root.path().to_path_buf(), bad, Vec::new, offline()).is_err());
+        assert!(
+            FontStore::new(
+                root.path().to_path_buf(),
+                bad,
+                Vec::new,
+                offline(),
+                Arc::new(libraries::fonts::LocalFontFile)
+            )
+            .is_err()
+        );
     }
 }
 

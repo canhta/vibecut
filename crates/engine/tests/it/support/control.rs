@@ -684,7 +684,22 @@ pub(crate) fn fake_fonts_download(
 }
 /// Synthetic capability for registry dispatch; real-store coverage lives in `libraries`.
 pub(crate) fn font_access() -> engine::control::FontAccess<'static> {
-    engine::control::FontAccess::new(&fake_fonts_list, &fake_fonts_load, &fake_fonts_download)
+    engine::control::FontAccess::new(
+        &fake_fonts_list,
+        &fake_fonts_load,
+        &fake_fonts_download,
+        &fake_fonts_import,
+    )
+}
+fn fake_fonts_import(
+    runner: &mut JobRunner,
+    _: &std::path::Path,
+    accepted: bool,
+) -> engine::Result<engine::jobs::JobId> {
+    if !accepted {
+        return Err(engine::EditError::Permission);
+    }
+    Ok(submit(runner))
 }
 pub(crate) fn fake_sound_search(
     query: &engine::control::SoundQuery,

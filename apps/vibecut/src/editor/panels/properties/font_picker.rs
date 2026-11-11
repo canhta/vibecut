@@ -4,6 +4,7 @@ mod backend;
 mod state;
 mod view;
 
-pub use backend::{Backend, EngineBackend};
+pub use backend::{Backend, EngineBackend, FontChoice};
+pub(in crate::editor) use state::PendingImport;
 pub use state::{Category, Download, Inspection, State, Status};
 pub(in crate::editor) use view::{Action, show};

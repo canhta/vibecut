@@ -315,6 +315,22 @@ fn stdio_catalog_edits_receipts_and_file_permission_share_engine_admission() {
         Some("file"),
     );
     assert_eq!(denied["value"]["value"], "permission");
+    let font_path = root.path().join("human-only.ttf");
+    let font_bytes = include_bytes!(
+        "../../../../crates/libraries/tests/fixtures/fonts/VibeCutFixtureSans-Regular.ttf"
+    );
+    std::fs::write(&font_path, font_bytes).unwrap();
+    let denied = client.call(
+        "fonts.import",
+        json!({"path":font_path,"accept_license":true}),
+        Some(&applied["rev_after"]),
+        Some("font-import"),
+    );
+    assert_eq!(
+        denied["value"]["value"], "permission",
+        "accept_license cannot self-grant a source read"
+    );
+    assert_eq!(std::fs::read(font_path).unwrap(), font_bytes);
     let denied = client.rpc(4, "tools/call", json!({"name":"batch","arguments":{"request_id":"batch-file","params":{"commands":[{"command":"project.rename","params":{"name":"must not apply"}},{"command":"import.add_asset","params":asset}]},"base_rev":applied["rev_after"],"idempotency_key":"batch-file"}}));
     assert_eq!(
         denied.pointer("/result/structuredContent/value/value"),

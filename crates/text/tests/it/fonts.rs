@@ -52,6 +52,23 @@ fn registered_family_resolves_and_never_changes_bundled_resolution() {
 }
 
 #[test]
+fn unicode_family_lookup_and_conflict_share_catalog_identity() {
+    let id = register(data("Đèn Sans", "Regular", SERIF)).expect("register");
+    assert!(text::is_available("đÈN sANS"));
+    assert_eq!(resolve("đÈN sANS", "Regular").face, id);
+    assert!(!resolve("đÈN sANS", "Regular").missing);
+    assert_eq!(register(data("đÈN sANS", "Regular", SERIF)), Ok(id));
+    assert_eq!(
+        register(data(
+            "đÈN sANS",
+            "Regular",
+            include_bytes!("../../../../assets/fonts/Inter-Regular.ttf")
+        )),
+        Err(FontError::Conflict)
+    );
+}
+
+#[test]
 fn registration_refuses_hostile_input() {
     let cases: [(FontData, FontError); 7] = [
         (data("", "Regular", SERIF), FontError::InvalidName),

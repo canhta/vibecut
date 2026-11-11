@@ -31,6 +31,8 @@ pub enum Action {
     Select(String),
     /// Start one explicit catalog download through `fonts.download`.
     Download(String),
+    Import,
+    CancelImport,
     Cancel,
 }
 
@@ -120,7 +122,7 @@ pub fn show(
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::space::XS;
                 for category in Category::ALL {
-                    let enabled = category != Category::Custom;
+                    let enabled = true;
                     let id = format!("fonts.category.{}", category.id());
                     let label = tr(category_label(category));
                     let selected = state.category == category;
@@ -206,11 +208,45 @@ pub fn show(
         }
         ui.separator();
         let upload = ui.add_enabled(
-            false,
-            egui::Button::new(tr(Text::FontUpload)).min_size(Vec2::new(0.0, theme::size::FIELD)),
+            !state.importing,
+            egui::Button::image_and_text(
+                theme::tinted(
+                    theme::Icon::UploadSimple,
+                    theme::icon::DENSE,
+                    theme::text(dark),
+                ),
+                tr(Text::FontUpload),
+            )
+            .min_size(Vec2::new(0.0, theme::size::FIELD)),
         );
         upload.clone().on_hover_text(tr(Text::FontUploadHint));
+        if upload.clicked() {
+            event.actions.push(Action::Import);
+        }
         record(&mut event.widgets, "fonts.upload", upload);
+        if state.importing {
+            ctx.request_repaint_after(std::time::Duration::from_millis(40));
+            ui.horizontal(|ui| {
+                ui.spinner();
+                let label = ui.label(tr(Text::FontImporting));
+                record(&mut event.widgets, "fonts.importing", label);
+                let cancel = theme::icon_button(
+                    ui,
+                    "fonts.import.cancel",
+                    theme::Icon::X,
+                    tr(Text::Cancel),
+                    false,
+                );
+                record(&mut event.widgets, "fonts.import.cancel", cancel.clone());
+                if cancel.clicked() {
+                    event.actions.push(Action::CancelImport);
+                }
+            });
+        }
+        if state.import_failed {
+            let label = ui.colored_label(theme::error_text(dark), tr(Text::FontImportFailed));
+            record(&mut event.widgets, "fonts.import.failed", label);
+        }
     });
     event
 }

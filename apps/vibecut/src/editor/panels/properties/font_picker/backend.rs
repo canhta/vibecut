@@ -7,11 +7,15 @@ use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
 use engine::{ByteBudget, EditError, Session};
 use std::sync::Arc;
 use std::time::Duration;
+pub type FontChoice =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Option<std::path::PathBuf>> + Send>>;
 
-/// The three catalog operations the picker consumes plus job progress and
+/// The catalog operations the picker consumes plus job progress and
 /// cancellation. A second adapter is the test host; production uses
 /// [`EngineBackend`].
 pub trait Backend: Send {
+    fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice;
+    fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId>;
     fn list(&mut self, session: &mut Session, query: Option<&str>)
     -> crate::Result<Vec<FontEntry>>;
     fn load(&mut self, session: &mut Session, family: &str) -> crate::Result<FontLoad>;
@@ -26,13 +30,23 @@ pub struct EngineBackend {
     store: Arc<libraries::fonts::FontStore>,
     runner: JobRunner,
     sequence: u64,
+    choose: Box<dyn FnMut(crate::i18n::Locale) -> FontChoice + Send>,
 }
 impl EngineBackend {
     pub fn native() -> crate::Result<Self> {
         let store = Arc::new(libraries::fonts::FontStore::native()?);
-        Self::with_store(store)
+        Self::with_store(store, |locale| {
+            let title = crate::i18n::text(locale, crate::i18n::Text::FontUpload);
+            let dialog = rfd::AsyncFileDialog::new()
+                .set_title(title)
+                .add_filter(title, &["ttf", "otf", "woff2"]);
+            Box::pin(async move { dialog.pick_file().await.map(|file| file.path().to_owned()) })
+        })
     }
-    pub fn with_store(store: Arc<libraries::fonts::FontStore>) -> crate::Result<Self> {
+    pub fn with_store(
+        store: Arc<libraries::fonts::FontStore>,
+        choose: impl FnMut(crate::i18n::Locale) -> FontChoice + Send + 'static,
+    ) -> crate::Result<Self> {
         let runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
@@ -42,13 +56,14 @@ impl EngineBackend {
                 backoff: Duration::from_millis(250),
                 progress_interval: Duration::from_millis(40),
             },
-            ByteBudget::new(64 << 20)?,
+            ByteBudget::new(512 << 20)?,
             Arc::new(SystemClock::default()),
         )?;
         Ok(Self {
             store,
             runner,
             sequence: 0,
+            choose: Box::new(choose),
         })
     }
     fn request(
@@ -66,7 +81,12 @@ impl EngineBackend {
                 .submit_download(runner, family, accepted)
                 .map(|(id, _)| id)
         };
-        let access = FontAccess::new(&list, &load, &download);
+        let import = |runner: &mut JobRunner, path: &std::path::Path, accepted: bool| {
+            store
+                .submit_import(runner, path.to_owned(), accepted)
+                .map(|(id, _)| id)
+        };
+        let access = FontAccess::new(&list, &load, &download, &import);
         let sequence = self.sequence;
         self.sequence = self.sequence.wrapping_add(1);
         let request_id = format!("vibecut-font-{}-{sequence}", std::process::id());
@@ -106,6 +126,19 @@ impl EngineBackend {
     }
 }
 impl Backend for EngineBackend {
+    fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice {
+        (self.choose)(locale)
+    }
+    fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId> {
+        match self.request(
+            session,
+            "fonts.import",
+            serde_json::json!({"path":path,"accept_license":true}),
+        )? {
+            ControlResult::JobAccepted { job, .. } => Ok(job),
+            _ => Err(crate::Error::Invalid("fonts.import result")),
+        }
+    }
     fn list(
         &mut self,
         session: &mut Session,
@@ -137,6 +170,7 @@ impl Backend for EngineBackend {
         }
     }
     fn job(&mut self, job: JobId) -> Option<JobView> {
+        self.runner.tick().ok()?;
         self.runner.snapshot(job).map(JobView::from)
     }
     fn cancel(&mut self, session: &mut Session, job: JobId) -> crate::Result<()> {

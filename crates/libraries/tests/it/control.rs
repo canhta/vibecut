@@ -14,6 +14,7 @@ use engine::jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, Command, Session};
 use project::{Project, ProjectId};
 use serde_json::{Value, json};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -146,7 +147,12 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
             .submit_download(runner, family, accepted)
             .map(|(job, _)| job)
     };
-    let fonts = FontAccess::new(&list, &load, &download);
+    let import = |runner: &mut JobRunner, path: &Path, accepted: bool| {
+        store
+            .submit_import(runner, path.to_owned(), accepted)
+            .map(|(id, _)| id)
+    };
+    let fonts = FontAccess::new(&list, &load, &download, &import);
     let mut s = session();
     let mut r = runner();
     let revision = s.revision();
@@ -237,18 +243,72 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
     };
     assert_eq!(font.state, engine::control::FontLoadState::Loaded);
 
+    let source = tempfile::tempdir().unwrap();
+    let path = source.path().join("font.ttf");
+    std::fs::write(&path, crate::font_catalog::FIXTURE).unwrap();
+    error(
+        control(
+            &mut s,
+            &mut r,
+            Some(&fonts),
+            "fonts.import",
+            json!({"path":path,"accept_license":false}),
+            "import-denied",
+        ),
+        ErrorCode::Permission,
+    );
+    let params = json!({"path":path,"accept_license":true});
+    let accepted = control(
+        &mut s,
+        &mut r,
+        Some(&fonts),
+        "fonts.import",
+        params.clone(),
+        "import-once",
+    );
+    let replay = control(
+        &mut s,
+        &mut r,
+        Some(&fonts),
+        "fonts.import",
+        params,
+        "import-once",
+    );
+    assert_eq!(
+        serde_json::to_value(&accepted).unwrap(),
+        serde_json::to_value(&replay).unwrap()
+    );
+    let ControlResult::JobAccepted { job, paths, .. } = ok(accepted) else {
+        panic!("import job");
+    };
+    assert!(paths.is_empty());
+    finish(&mut r, job);
+    let ControlResult::Font { font } = ok(control(
+        &mut s,
+        &mut r,
+        Some(&fonts),
+        "fonts.load",
+        json!({"family":"VibeCut Fixture Sans"}),
+        "imported-load",
+    )) else {
+        panic!("loaded import");
+    };
+    assert_eq!(font.origin, Some(engine::control::FontOrigin::Custom));
+    assert_eq!(font.state, engine::control::FontLoadState::Loaded);
+
     // A session without a store refuses every font command; none is a project edit.
     let mut bare = session();
     for (id, params) in [
         ("fonts.list", json!({})),
         ("fonts.load", json!({"family":"Inter"})),
+        ("fonts.import", json!({"path":path,"accept_license":true})),
         (
             "fonts.download",
             json!({"family":"Lobster","accept_license":true}),
         ),
     ] {
         error(
-            control(&mut bare, &mut r, None, id, params, "h"),
+            control(&mut bare, &mut r, None, id, params, id),
             ErrorCode::Refused,
         );
     }
