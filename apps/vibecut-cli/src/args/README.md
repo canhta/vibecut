@@ -13,3 +13,7 @@ static message and provider setup hint without changing scheduling policy.
 Subtitle pipeline and ASS import failures compose through the Subtitles owner. Explicit raw
 or engine Subtitles causes retain Transcript/provider hints and the existing Runtime Failed
 message presentation; optional setup preserves its retained source.
+
+Artifact causes retain their direct Render/Runtime/Lut unavailable details and existing
+explicit Runtime Failed message presentation. Empty snapshots keep the existing rejected
+category through the artifact owner.

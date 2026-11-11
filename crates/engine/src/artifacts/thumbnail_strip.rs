@@ -1,11 +1,8 @@
 //! Samples a clip's visible source range into cached thumbnail tiles.
 use super::frame_thumbnails::{RetainedThumbnail, ThumbnailCache, ThumbnailLookup, thumbnail_key};
-use crate::{
-    Error as EngineError,
-    jobs::{
-        CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState,
-        ResourceClass,
-    },
+use super::{Error as ArtifactError, Result as ArtifactResult};
+use crate::jobs::{
+    CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState, ResourceClass,
 };
 use media::{SourceAsset, StreamKind, THUMBNAIL_MAX_EDGE, Thumbnail};
 use std::collections::BTreeMap;
@@ -27,19 +24,19 @@ const DECODE_BYTES: u64 = 32 << 20;
 
 /// Output ticks between two strip tiles: one 16:9 tile whose height is
 /// `strip_height_px`, on a timeline drawn at `pixels_per_second`.
-pub fn tile_interval(strip_height_px: u32, pixels_per_second: f64) -> Result<Tick, EngineError> {
+pub fn tile_interval(strip_height_px: u32, pixels_per_second: f64) -> crate::session::Result<Tick> {
     if strip_height_px == 0 || !pixels_per_second.is_finite() || pixels_per_second <= 0.0 {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(crate::session::EditError::Invalid(
             "thumbnail strip interval",
-        )));
+        ));
     }
     let ticks =
         TICKS_PER_SECOND as f64 * f64::from(strip_height_px) * f64::from(TILE_ASPECT_RATIO.0)
             / (f64::from(TILE_ASPECT_RATIO.1) * pixels_per_second);
     if !(1.0..=i64::MAX as f64).contains(&ticks) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(crate::session::EditError::Invalid(
             "thumbnail strip interval",
-        )));
+        ));
     }
     Ok(Tick(ticks.round() as i64))
 }
@@ -80,17 +77,17 @@ impl ThumbnailStripRequest {
         range: SourceRange,
         interval: Tick,
         max_edge: u32,
-    ) -> Result<Self, EngineError> {
+    ) -> crate::session::Result<Self> {
         admit_grid(interval, max_edge)?;
         if range.start() < Tick::ZERO {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(crate::session::EditError::Invalid(
                 "thumbnail strip source range",
-            )));
+            ));
         }
         if !has_video(&asset) {
-            return Err(EngineError::Edit(crate::EditError::Unsupported(
+            return Err(crate::session::EditError::Unsupported(
                 "thumbnail strip requires video",
-            )));
+            ));
         }
         // A still image has one decodable frame; the strip repeats it.
         let positions = if asset.is_image() {
@@ -121,59 +118,55 @@ impl ThumbnailStripRequest {
         visible: TimeRange,
         pixels_per_second: f64,
         max_edge: u32,
-    ) -> Result<Self, EngineError> {
+    ) -> crate::session::Result<Self> {
         let interval = tile_interval(STRIP_HEIGHT_PX, pixels_per_second)?;
         admit_grid(interval, max_edge)?;
         if item.source_asset != Some(asset.id()) {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(crate::session::EditError::Invalid(
                 "thumbnail strip display asset",
-            )));
+            ));
         }
         if !has_video(&asset) {
-            return Err(EngineError::Edit(crate::EditError::Unsupported(
+            return Err(crate::session::EditError::Unsupported(
                 "thumbnail strip requires video",
-            )));
+            ));
         }
         let clip = TimeRange::new(item.start, item.end()?)?;
         let span = visible
             .intersect(clip)
-            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            .ok_or(crate::session::EditError::Invalid(
                 "thumbnail strip display outside clip",
-            )))?;
+            ))?;
         let positions = if asset.is_image() {
             vec![Tick::ZERO]
         } else {
             let count = tile_count(span.duration(), interval)?;
-            let source_end =
-                item.source_range
-                    .end()
-                    .checked_sub(Tick(1))
-                    .ok_or(EngineError::Control(
-                        crate::session::wire::ControlError::Limit,
-                    ))?;
+            let source_end = item.source_range.end().checked_sub(Tick(1)).ok_or(
+                crate::session::EditError::from(crate::session::wire::ControlError::Limit),
+            )?;
             let first = clip_position(item, span.start(), source_end, interval)?;
             let offset = i64::try_from(count - 1)
-                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?
+                .map_err(|_| {
+                    crate::session::EditError::from(crate::session::wire::ControlError::Limit)
+                })?
                 .checked_mul(interval.0)
-                .ok_or(EngineError::Control(
+                .ok_or(crate::session::EditError::from(
                     crate::session::wire::ControlError::Limit,
                 ))?;
-            let last = clip_position(
-                item,
-                Tick(
-                    span.start()
-                        .0
-                        .checked_add(offset)
-                        .ok_or(EngineError::Control(
-                            crate::session::wire::ControlError::Limit,
-                        ))?,
-                ),
-                source_end,
-                interval,
-            )?;
-            let end = last.checked_add(interval).ok_or(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ))?;
+            let last =
+                clip_position(
+                    item,
+                    Tick(span.start().0.checked_add(offset).ok_or(
+                        crate::session::EditError::from(crate::session::wire::ControlError::Limit),
+                    )?),
+                    source_end,
+                    interval,
+                )?;
+            let end = last
+                .checked_add(interval)
+                .ok_or(crate::session::EditError::from(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
             sample_positions(SourceRange::new(first, end)?, interval)?
         };
         Ok(Self {
@@ -189,7 +182,7 @@ impl ThumbnailStripRequest {
         &self,
         runner: &mut JobRunner,
         cache: &mut ThumbnailCache,
-    ) -> Result<ThumbnailStripJob, EngineError> {
+    ) -> ArtifactResult<ThumbnailStripJob> {
         let mut pending = Vec::new();
         for at in &self.positions {
             match cache.lookup(&self.asset, *at, self.max_edge) {
@@ -215,7 +208,7 @@ impl ThumbnailStripRequest {
             },
         };
         let total = pending.len().max(1) as f32;
-        let (id, cancel) = runner.submit(spec, move |context| {
+        let (id, cancel) = runner.submit(spec, move |context| -> ArtifactResult<Vec<u8>> {
             context.check_cancelled()?;
             let mut samples = Vec::with_capacity(pending.len());
             if !pending.is_empty() {
@@ -237,7 +230,7 @@ impl ThumbnailStripRequest {
             }
             context.check_cancelled()?;
             context.progress(JobStage::Thumbnail, 1.0)?;
-            encode(&samples)
+            Ok(encode(&samples)?)
         })?;
         Ok(ThumbnailStripJob {
             id,
@@ -246,15 +239,14 @@ impl ThumbnailStripRequest {
         })
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<Vec<(Tick, Thumbnail)>, EngineError> {
+    fn decode(&self, bytes: &[u8]) -> crate::runtime::Result<Vec<(Tick, Thumbnail)>> {
         if bytes.len() > MAX_BYTES || bytes.get(..8) != Some(MAGIC) {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         let count = read_u32(bytes, 8)?;
-        let count = usize::try_from(count)
-            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        let count = usize::try_from(count).map_err(|_| crate::RuntimeError::CacheCorrupt)?;
         if count > self.positions.len() {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         let mut samples = Vec::with_capacity(count);
         let mut offset = 12_usize;
@@ -262,33 +254,32 @@ impl ThumbnailStripRequest {
             let at = Tick(read_i64(bytes, offset)?);
             offset = offset
                 .checked_add(8)
-                .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                .ok_or(crate::RuntimeError::CacheCorrupt)?;
             let length = read_u32(bytes, offset)?;
             offset = offset
                 .checked_add(4)
-                .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                .ok_or(crate::RuntimeError::CacheCorrupt)?;
             let end = offset
                 .checked_add(
-                    usize::try_from(length)
-                        .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?,
+                    usize::try_from(length).map_err(|_| crate::RuntimeError::CacheCorrupt)?,
                 )
-                .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                .ok_or(crate::RuntimeError::CacheCorrupt)?;
             let payload = bytes
                 .get(offset..end)
-                .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                .ok_or(crate::RuntimeError::CacheCorrupt)?;
             offset = end;
-            let image = Thumbnail::decode(payload)
-                .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+            let image =
+                Thumbnail::decode(payload).map_err(|_| crate::RuntimeError::CacheCorrupt)?;
             if image.width > self.max_edge
                 || image.height > self.max_edge
                 || self.positions.binary_search(&at).is_err()
             {
-                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(crate::RuntimeError::CacheCorrupt);
             }
             samples.push((at, image));
         }
         if offset != bytes.len() {
-            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(crate::RuntimeError::CacheCorrupt);
         }
         Ok(samples)
     }
@@ -301,28 +292,28 @@ impl ThumbnailStripJob {
         &self,
         runner: &mut JobRunner,
         cache: &mut ThumbnailCache,
-    ) -> Result<Option<ThumbnailStrip>, EngineError> {
+    ) -> ArtifactResult<Option<ThumbnailStrip>> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(ArtifactError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
+            JobState::Cancelled => Err(ArtifactError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(ArtifactError::Runtime(crate::RuntimeError::Failed(
                 snapshot
                     .error
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
+                    .ok_or(ArtifactError::from(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(ArtifactError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let samples = self.request.decode(bytes)?;
                 for (at, image) in &samples {
                     cache.put(&self.request.asset, *at, self.request.max_edge, image)?;
                 }
                 runner
                     .take_output(self.id)
-                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(ArtifactError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(ThumbnailStrip {
                     positions: self.request.positions.clone(),
                 }))
@@ -366,7 +357,7 @@ pub enum ThumbnailStripState {
     /// At least one tile's frame has not been generated yet.
     Pending,
     /// A cached frame cannot be decoded and must be regenerated.
-    Failed(EngineError),
+    Failed(ArtifactError),
     /// The source has no video stream to sample.
     Unsupported,
 }
@@ -386,11 +377,11 @@ pub fn display(
     pixels_per_second: f64,
     max_edge: u32,
     cache: &mut ThumbnailCache,
-) -> Result<ThumbnailStripState, EngineError> {
+) -> ArtifactResult<ThumbnailStripState> {
     let interval = tile_interval(STRIP_HEIGHT_PX, pixels_per_second)?;
     admit_grid(interval, max_edge)?;
     if item.source_asset != Some(asset.id()) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
             "thumbnail strip display asset",
         )));
     }
@@ -398,38 +389,39 @@ pub fn display(
         return Ok(ThumbnailStripState::Unsupported);
     }
     let clip = TimeRange::new(item.start, item.end()?)?;
-    let span = visible
-        .intersect(clip)
-        .ok_or(EngineError::Edit(crate::EditError::Invalid(
-            "thumbnail strip display outside clip",
-        )))?;
+    let span =
+        visible
+            .intersect(clip)
+            .ok_or(ArtifactError::Edit(crate::session::EditError::Invalid(
+                "thumbnail strip display outside clip",
+            )))?;
     let count = tile_count(span.duration(), interval)?;
     let source_end = item
         .source_range
         .end()
         .checked_sub(Tick(1))
-        .ok_or(EngineError::Control(
+        .ok_or(ArtifactError::from(
             crate::session::wire::ControlError::Limit,
         ))?;
     let mut tiles = Vec::with_capacity(count);
     let mut fetched: BTreeMap<Tick, RetainedThumbnail> = BTreeMap::new();
     for index in 0..count {
         let offset = i64::try_from(index)
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?
+            .map_err(|_| ArtifactError::from(crate::session::wire::ControlError::Limit))?
             .checked_mul(interval.0)
-            .ok_or(EngineError::Control(
+            .ok_or(ArtifactError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
         let start = Tick(
             span.start()
                 .0
                 .checked_add(offset)
-                .ok_or(EngineError::Control(
+                .ok_or(ArtifactError::from(
                     crate::session::wire::ControlError::Limit,
                 ))?,
         );
         let end = Tick(span.end().0.min(start.0.checked_add(interval.0).ok_or(
-            EngineError::Control(crate::session::wire::ControlError::Limit),
+            ArtifactError::from(crate::session::wire::ControlError::Limit),
         )?));
         let output = TimeRange::new(start, end)?;
         let at = if asset.is_image() {
@@ -446,7 +438,7 @@ pub fn display(
                 }
                 ThumbnailLookup::Missing => return Ok(ThumbnailStripState::Pending),
                 ThumbnailLookup::Corrupt => {
-                    return Ok(ThumbnailStripState::Failed(EngineError::Runtime(
+                    return Ok(ThumbnailStripState::Failed(ArtifactError::Runtime(
                         crate::RuntimeError::CacheCorrupt,
                     )));
                 }
@@ -457,16 +449,14 @@ pub fn display(
     Ok(ThumbnailStripState::Ready(ThumbnailStripDisplay { tiles }))
 }
 
-fn admit_grid(interval: Tick, max_edge: u32) -> Result<(), EngineError> {
+fn admit_grid(interval: Tick, max_edge: u32) -> crate::session::Result<()> {
     if interval <= Tick::ZERO {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(crate::session::EditError::Invalid(
             "thumbnail strip interval",
-        )));
+        ));
     }
     if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "thumbnail max edge",
-        )));
+        return Err(crate::session::EditError::Invalid("thumbnail max edge"));
     }
     Ok(())
 }
@@ -485,7 +475,7 @@ fn clip_position(
     output: Tick,
     source_end: Tick,
     interval: Tick,
-) -> Result<Tick, EngineError> {
+) -> crate::session::Result<Tick> {
     let source = item
         .source_time_at(output)?
         .max(item.source_range.start())
@@ -493,11 +483,11 @@ fn clip_position(
     floor(source, interval)
 }
 
-fn sample_positions(range: SourceRange, interval: Tick) -> Result<Vec<Tick>, EngineError> {
+fn sample_positions(range: SourceRange, interval: Tick) -> crate::session::Result<Vec<Tick>> {
     let last = range
         .end()
         .checked_sub(Tick(1))
-        .ok_or(EngineError::Control(
+        .ok_or(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ))?;
     let first = floor(range.start(), interval)?;
@@ -505,83 +495,82 @@ fn sample_positions(range: SourceRange, interval: Tick) -> Result<Vec<Tick>, Eng
     let count = last
         .0
         .checked_sub(first.0)
-        .ok_or(EngineError::Control(
+        .ok_or(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ))?
         .checked_div(interval.0)
-        .ok_or(EngineError::Control(
+        .ok_or(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ))?
         .checked_add(1)
-        .ok_or(EngineError::Control(
+        .ok_or(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         ))?;
     let count = usize::try_from(count)
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| crate::session::EditError::from(crate::session::wire::ControlError::Limit))?;
     if count == 0 || count > MAX_TILES {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "thumbnail strip tiles",
-        )));
+        return Err(crate::session::EditError::Invalid("thumbnail strip tiles"));
     }
     let mut positions = Vec::with_capacity(count);
     let mut at = first;
     for _ in 0..count {
         positions.push(at);
-        at = at.checked_add(interval).ok_or(EngineError::Control(
-            crate::session::wire::ControlError::Limit,
-        ))?;
+        at = at
+            .checked_add(interval)
+            .ok_or(crate::session::EditError::from(
+                crate::session::wire::ControlError::Limit,
+            ))?;
     }
     Ok(positions)
 }
 
-fn tile_count(duration: Tick, interval: Tick) -> Result<usize, EngineError> {
+fn tile_count(duration: Tick, interval: Tick) -> crate::session::Result<usize> {
     if duration <= Tick::ZERO || interval <= Tick::ZERO {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "thumbnail strip tiles",
-        )));
+        return Err(crate::session::EditError::Invalid("thumbnail strip tiles"));
     }
     let count = duration.0.saturating_sub(1) / interval.0 + 1;
     let count = usize::try_from(count)
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| crate::session::EditError::from(crate::session::wire::ControlError::Limit))?;
     if count == 0 || count > MAX_TILES {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "thumbnail strip tiles",
-        )));
+        return Err(crate::session::EditError::Invalid("thumbnail strip tiles"));
     }
     Ok(count)
 }
 
 /// Nearest sample position at or before `at` on the source-origin grid.
-fn floor(at: Tick, interval: Tick) -> Result<Tick, EngineError> {
+fn floor(at: Tick, interval: Tick) -> crate::session::Result<Tick> {
     let step = i128::from(interval.0);
     let value = i128::from(at.0).div_euclid(step);
-    let floored = value.checked_mul(step).ok_or(EngineError::Control(
-        crate::session::wire::ControlError::Limit,
-    ))?;
+    let floored = value
+        .checked_mul(step)
+        .ok_or(crate::session::EditError::from(
+            crate::session::wire::ControlError::Limit,
+        ))?;
     Ok(Tick(i64::try_from(floored).map_err(|_| {
-        EngineError::Control(crate::session::wire::ControlError::Limit)
+        crate::session::EditError::from(crate::session::wire::ControlError::Limit)
     })?))
 }
 
-fn encode(samples: &[(Tick, Thumbnail)]) -> Result<Vec<u8>, EngineError> {
+fn encode(samples: &[(Tick, Thumbnail)]) -> crate::session::Result<Vec<u8>> {
     let count = u32::try_from(samples.len())
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| crate::session::EditError::from(crate::session::wire::ControlError::Limit))?;
     let mut bytes = Vec::new();
     bytes.extend_from_slice(MAGIC);
     bytes.extend_from_slice(&count.to_le_bytes());
     for (at, image) in samples {
         let payload = image.encode();
-        let length = u32::try_from(payload.len())
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
+        let length = u32::try_from(payload.len()).map_err(|_| {
+            crate::session::EditError::from(crate::session::wire::ControlError::Limit)
+        })?;
         let next = bytes
             .len()
             .checked_add(16)
             .and_then(|value| value.checked_add(payload.len()))
-            .ok_or(EngineError::Control(
+            .ok_or(crate::session::EditError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
         if next > MAX_BYTES {
-            return Err(EngineError::Control(
+            return Err(crate::session::EditError::from(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -592,25 +581,21 @@ fn encode(samples: &[(Tick, Thumbnail)]) -> Result<Vec<u8>, EngineError> {
     Ok(bytes)
 }
 
-fn read_u32(bytes: &[u8], at: usize) -> Result<u32, EngineError> {
-    let end = at
-        .checked_add(4)
-        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+fn read_u32(bytes: &[u8], at: usize) -> crate::runtime::Result<u32> {
+    let end = at.checked_add(4).ok_or(crate::RuntimeError::CacheCorrupt)?;
     let value = bytes
         .get(at..end)
-        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .ok_or(crate::RuntimeError::CacheCorrupt)?;
     let mut buffer = [0u8; 4];
     buffer.copy_from_slice(value);
     Ok(u32::from_le_bytes(buffer))
 }
 
-fn read_i64(bytes: &[u8], at: usize) -> Result<i64, EngineError> {
-    let end = at
-        .checked_add(8)
-        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+fn read_i64(bytes: &[u8], at: usize) -> crate::runtime::Result<i64> {
+    let end = at.checked_add(8).ok_or(crate::RuntimeError::CacheCorrupt)?;
     let value = bytes
         .get(at..end)
-        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .ok_or(crate::RuntimeError::CacheCorrupt)?;
     let mut buffer = [0u8; 8];
     buffer.copy_from_slice(value);
     Ok(i64::from_le_bytes(buffer))
@@ -801,7 +786,7 @@ mod tests {
 
         assert!(matches!(
             request.decode(b"short"),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
         let mut wrong_magic = bytes.clone();
         if let Some(byte) = wrong_magic.get_mut(0) {
@@ -809,7 +794,7 @@ mod tests {
         }
         assert!(matches!(
             request.decode(&wrong_magic),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
         let mut oversized = bytes.clone();
         if let Some(slot) = oversized.get_mut(8..12) {
@@ -817,25 +802,25 @@ mod tests {
         }
         assert!(matches!(
             request.decode(&oversized),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
         let mut truncated = bytes.clone();
         truncated.truncate(bytes.len() - 1);
         assert!(matches!(
             request.decode(&truncated),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
         let mut trailing = bytes.clone();
         trailing.push(0);
         assert!(matches!(
             request.decode(&trailing),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
         let unknown = vec![(Tick(1), sample(1))];
         let unknown = encode(&unknown).unwrap();
         assert!(matches!(
             request.decode(&unknown),
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))
+            Err(crate::RuntimeError::CacheCorrupt)
         ));
     }
 }

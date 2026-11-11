@@ -117,6 +117,7 @@ impl MediaAccess {
             THUMBNAIL_MAX_EDGE,
             &mut self.thumbnails,
         )
+        .map_err(EngineError::from)
     }
 
     /// Submit one source's peak summary. A warm entry completes without opening

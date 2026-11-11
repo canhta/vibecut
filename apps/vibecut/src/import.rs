@@ -293,7 +293,7 @@ impl ThumbnailDisk {
                 Ok(Some(image))
             }
             Ok(None) => Ok(None),
-            Err(engine::Error::Runtime(
+            Err(engine::ArtifactError::Runtime(
                 engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge,
             )) => Err(MediaError::TooLarge("retained thumbnail budget")),
             Err(error) => {

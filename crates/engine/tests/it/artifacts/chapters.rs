@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use ai::chapters::{Chapter, ChapterDocument};
 use captions::{LanguageTag, NfcText};
-use engine::{Error as EngineError, chapter_sidecars};
+use engine::{ArtifactError, chapter_sidecars};
 use project::{Project, ProjectId};
 use std::path::PathBuf;
 use time::{TICKS_PER_SECOND, Tick};
@@ -118,8 +118,8 @@ fn project_metadata_and_source_aliases_publish_neither_file() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Runtime(engine::RuntimeError::Render(render::Error::Invalid(_)))
-            | EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
+        ArtifactError::Runtime(engine::RuntimeError::Render(render::Error::Invalid(_)))
+            | ArtifactError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"source bytes");
     assert!(!dir.path().join("Nguồn tiếng Việt.json").exists());
@@ -137,7 +137,7 @@ fn project_metadata_and_source_aliases_publish_neither_file() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
+        ArtifactError::Runtime(engine::RuntimeError::Edit(engine::EditError::Invalid(_)))
     ));
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
@@ -160,7 +160,7 @@ fn directory_export_derives_the_project_name_and_refuses_existing_files() {
     let again = chapter_sidecars::write_to_directory(&project, &[], dir.path(), &document());
     assert!(matches!(
         again,
-        Err(EngineError::Edit(engine::EditError::Invalid(_)))
+        Err(ArtifactError::Edit(engine::EditError::Invalid(_)))
     ));
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
 
@@ -171,7 +171,7 @@ fn directory_export_derives_the_project_name_and_refuses_existing_files() {
     let refused = chapter_sidecars::write_to_directory(&project, &[], dir.path(), &document());
     assert!(matches!(
         refused,
-        Err(EngineError::Edit(engine::EditError::Invalid(_)))
+        Err(ArtifactError::Edit(engine::EditError::Invalid(_)))
     ));
     assert!(!dir.path().join("Mục lục.txt").exists());
     assert_eq!(std::fs::read(&existing).unwrap(), b"previous json");
@@ -179,7 +179,7 @@ fn directory_export_derives_the_project_name_and_refuses_existing_files() {
     let missing = dir.path().join("missing");
     assert!(matches!(
         chapter_sidecars::write_to_directory(&project, &[], &missing, &document()),
-        Err(EngineError::Edit(engine::EditError::Invalid(_)))
+        Err(ArtifactError::Edit(engine::EditError::Invalid(_)))
     ));
 }
 
@@ -201,7 +201,7 @@ fn existing_sidecars_are_preserved_without_overwrite_authorization() {
     .unwrap_err();
     assert!(matches!(
         error,
-        EngineError::Runtime(engine::RuntimeError::Edit(engine::EditError::Project(
+        ArtifactError::Runtime(engine::RuntimeError::Edit(engine::EditError::Project(
             project::Error::Io(_)
         )))
     ));

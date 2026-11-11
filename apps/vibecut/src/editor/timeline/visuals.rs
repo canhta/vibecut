@@ -200,6 +200,9 @@ impl Media {
         let corrupt = matches!(
             error,
             engine::Error::Runtime(engine::RuntimeError::CacheCorrupt)
+                | engine::Error::Artifacts(engine::ArtifactError::Runtime(
+                    engine::RuntimeError::CacheCorrupt
+                ))
         );
         self.visual_cause
             .borrow_mut()
@@ -460,42 +463,44 @@ impl VisualQuery for Media {
         }) else {
             return StripState::Pending;
         };
-        match state {
-            Ok(engine::thumbnail_strip::ThumbnailStripState::Ready(display)) => StripState::Ready(
-                display
-                    .tiles()
-                    .iter()
-                    .map(|tile| StripTile {
-                        output: tile.output,
-                        texture: self.texture(ctx, asset, tile.at, &tile.image),
-                    })
-                    .collect(),
-            ),
+        let error = match state {
+            Ok(engine::thumbnail_strip::ThumbnailStripState::Ready(display)) => {
+                return StripState::Ready(
+                    display
+                        .tiles()
+                        .iter()
+                        .map(|tile| StripTile {
+                            output: tile.output,
+                            texture: self.texture(ctx, asset, tile.at, &tile.image),
+                        })
+                        .collect(),
+                );
+            }
             Ok(engine::thumbnail_strip::ThumbnailStripState::Pending) => {
                 self.enqueue(VisualRequest::Thumbnails {
                     item: item.id,
                     visible,
                     pixels_per_second,
                 });
-                StripState::Pending
+                return StripState::Pending;
             }
-            Ok(engine::thumbnail_strip::ThumbnailStripState::Failed(error)) | Err(error) => {
-                if self.display_failed(
-                    error,
-                    VisualRequest::Thumbnails {
-                        item: item.id,
-                        visible,
-                        pixels_per_second,
-                    },
-                ) {
-                    StripState::Pending
-                } else {
-                    StripState::Failed
-                }
-            }
+            Ok(engine::thumbnail_strip::ThumbnailStripState::Failed(error)) => error.into(),
+            Err(error) => error,
             Ok(engine::thumbnail_strip::ThumbnailStripState::Unsupported) => {
-                StripState::Unsupported
+                return StripState::Unsupported;
             }
+        };
+        if self.display_failed(
+            error,
+            VisualRequest::Thumbnails {
+                item: item.id,
+                visible,
+                pixels_per_second,
+            },
+        ) {
+            StripState::Pending
+        } else {
+            StripState::Failed
         }
     }
 

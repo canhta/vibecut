@@ -1,6 +1,6 @@
 //! Executes user-selected LUT imports.
+use super::{Error as ArtifactError, Result as ArtifactResult};
 use crate::{
-    Result,
     jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
     store::luts::LutStore,
 };
@@ -13,7 +13,7 @@ pub(crate) fn submit(
     licence: Option<captions::NfcText>,
     expected: Option<project::LutRecord>,
     fingerprint: blake3::Hash,
-) -> Result<JobId> {
+) -> ArtifactResult<JobId> {
     let input = crate::cache::CacheKey::lut_request(fingerprint);
     let (id, _) = runner.submit(
         JobSpec {
@@ -25,7 +25,7 @@ pub(crate) fn submit(
                 ..Default::default()
             },
         },
-        move |context| -> Result<Vec<u8>> {
+        move |context| -> ArtifactResult<Vec<u8>> {
             let record = store.import(
                 project,
                 &path,
@@ -34,7 +34,7 @@ pub(crate) fn submit(
                 expected.clone(),
                 context,
             )?;
-            crate::session::wire::bounded_json(&record, 16384).map_err(crate::Error::from)
+            crate::session::wire::bounded_json(&record, 16384).map_err(ArtifactError::from)
         },
     )?;
     Ok(id)

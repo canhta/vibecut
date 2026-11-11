@@ -127,3 +127,9 @@ impl From<engine::transcript::Error> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::ArtifactError> for Error {
+    fn from(error: engine::ArtifactError) -> Self {
+        Self::Engine(error.into())
+    }
+}

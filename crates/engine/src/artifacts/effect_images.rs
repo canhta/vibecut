@@ -1,7 +1,8 @@
 //! Device-injected offscreen effect thumbnails, scheduled by the engine.
+use super::{Error as ArtifactError, Result as ArtifactResult};
 use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
-use crate::{ByteBudget, ByteLease, ByteOwner, Error as EngineError, Result};
+use crate::{ByteBudget, ByteLease, ByteOwner};
 use project::{Animations, EffectInstance};
 use render::effects::{EffectCompositor, EffectGeometry, apply_effect};
 use std::collections::VecDeque;
@@ -61,20 +62,20 @@ impl EffectThumbnails {
         effect: EffectInstance,
         animations: Animations,
         local: time::Tick,
-    ) -> Result<(JobId, CancelToken)> {
+    ) -> ArtifactResult<(JobId, CancelToken)> {
         if local < time::Tick::ZERO {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
                 "thumbnail local time",
             )));
         }
         if geometry.working_size() != [source.width(), source.height()] {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
                 "thumbnail source geometry",
             )));
         }
         effect.validate()?;
         if source.width().max(source.height()) > MAX_THUMBNAIL_EDGE {
-            return Err(EngineError::Control(
+            return Err(ArtifactError::from(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -91,7 +92,7 @@ impl EffectThumbnails {
             identity.update(&gain.to_bits().to_le_bytes());
         }
         serde_json::to_writer(Identity(&mut identity), &(&effect, &animations, local))
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?;
+            .map_err(|_| ArtifactError::from(crate::session::wire::ControlError::InvalidParams))?;
         let settings = identity.finalize();
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
@@ -119,7 +120,7 @@ impl EffectThumbnails {
             move |context| {
                 context.check_cancelled()?;
                 if !cache.budget.same_policy(context.memory_budget()) {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                    return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
                         "thumbnail byte policy",
                     )));
                 }
@@ -131,7 +132,7 @@ impl EffectThumbnails {
                     if let Some(index) = entries.iter().position(|e| e.key == key) {
                         let entry = entries
                             .remove(index)
-                            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                            .ok_or(ArtifactError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                         let result = entry.bytes.clone();
                         entries.push_back(entry);
                         return Ok(result);
@@ -153,7 +154,7 @@ impl EffectThumbnails {
                 )?;
                 let image = apply_effect(owned, &passes, &source, cache.adapter.as_ref(), context)?;
                 if image.width() != source.width() || image.height() != source.height() {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                    return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
                         "thumbnail output dimensions",
                     )));
                 }

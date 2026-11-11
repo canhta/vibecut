@@ -531,7 +531,9 @@ impl Session {
                 runner.cancel_job(job)?;
                 Ok(ControlResult::CancelRequested { job })
             }
-            Command::Preview { frames } => crate::control_preview::preview(self, frames, runner),
+            Command::Preview { frames } => {
+                Ok(crate::control_preview::preview(self, frames, runner)?)
+            }
             Command::Snapshot { time, path } => {
                 if self.transaction_active() {
                     return Err(EngineError::Session(

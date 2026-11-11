@@ -277,7 +277,11 @@ mod exit_codes {
                 "usage",
                 2
             ),
-            row!(E::EmptyProject, "rejected", 5),
+            row!(
+                E::Artifacts(engine::ArtifactError::EmptyProject),
+                "rejected",
+                5
+            ),
             row!(E::Session(engine::SessionError::Panicked), "rejected", 5),
             row!(
                 E::Session(engine::SessionError::TransactionActive),
@@ -625,6 +629,28 @@ mod exit_codes {
         )));
         assert_eq!(library.code(), ("rejected", 5));
         assert_eq!(library.value()["message"], "no history step available");
+        for composed in [false, true] {
+            let artifact = engine::ArtifactError::Render(render::Error::Unavailable(Vec::new()));
+            let raw: Arc<dyn engine::Failure> = if composed {
+                Arc::new(E::Artifacts(artifact))
+            } else {
+                Arc::new(artifact)
+            };
+            let unavailable = CliError::Job(raw);
+            assert_eq!(unavailable.code(), ("unavailable", 4));
+            assert_eq!(unavailable.value()["unavailable"], serde_json::json!([]));
+            let artifact = engine::ArtifactError::Runtime(engine::RuntimeError::Failed(Arc::new(
+                engine::ArtifactError::Media(media::MediaError::Cancelled),
+            )));
+            let raw: Arc<dyn engine::Failure> = if composed {
+                Arc::new(E::Artifacts(artifact))
+            } else {
+                Arc::new(artifact)
+            };
+            let failed = CliError::Job(raw);
+            assert_eq!(failed.code(), ("media", 6));
+            assert_eq!(failed.value()["message"], "media operation failed");
+        }
         let cache = CliError::Job(Arc::new(engine::RuntimeError::CacheCorrupt));
         assert_eq!(cache.code(), ("job", 7));
         assert_eq!(cache.value()["message"], "corrupt cache entry skipped");

@@ -1,10 +1,25 @@
 # Artifacts
 
-Interface: `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`.
+Interface: `Error` (re-exported as `engine::ArtifactError`), `Result`, `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`.
 
 The private LUT job consumes the [durable copied-resource owner](../store/README.md#imported-lut-bundles), with a request fingerprint distinct from canonical content identity. The store returns its
 LUT-owned result; this callback composes it with its own bounded JSON failure through the
-engine aggregate, preserving the actual typed cause. It returns at most 16 KiB of descriptor data through `JobOutput::Lut`; queue refusal retains no capture, CPU jobs run once and job output never changes the project. Cancellation/publication use the existing runner seal. Inspector grades are not library preview tiles; thumbnail requests carrying unresolved LUT references fail explicitly.
+Artifact result, preserving the actual typed cause. It returns at most 16 KiB of descriptor data through `JobOutput::Lut`; queue refusal retains no capture, CPU jobs run once and job output never changes the project. Cancellation/publication use the existing runner seal. Inspector grades are not library preview tiles; thumbnail requests carrying unresolved LUT references fail explicitly.
+
+## Failures
+
+Mixed artifact operations and their jobs return the Artifact result with only consumed
+Kernel Edit, Runtime, Render, Media, AI, IO and Lut causes. Higher workflows compose it through
+`engine::Error::Artifacts`; lower owners never name this feature. Foreign execution classifiers
+are borrowed from their existing owners. Direct Runtime/Lut/AI policy delegates; foreign
+render/media cancellation and semantic Failed envelopes remain ordinary opaque failures.
+
+`EmptyProject` owns the snapshot-only `Project is empty` refusal and existing wire category,
+with no source, transience or scheduling advice. Empty duration is checked before negative time.
+Pure validation, grid/encoding and naming pieces return Kernel Edit results; pure cache
+maintenance/open/key and manifest corruption readers return Runtime results. Publication
+writers keep their actual caller error; an unrelated mixed callback is never normalized into
+Artifact merely for submission.
 
 ## Import jobs and thumbnails
 

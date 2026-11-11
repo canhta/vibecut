@@ -4,8 +4,9 @@
 //! shared publication owner: a private same-directory temporary file is synced and
 //! renamed only after project/source alias admission. Each file is atomic; a failure
 //! before its fence preserves the previous destination and removes staging.
+use super::{Error as ArtifactError, Result as ArtifactResult};
 pub use crate::ChapterSidecars;
-use crate::{Error as EngineError, Result};
+
 use ai::chapters::ChapterDocument;
 use project::Project;
 use std::{
@@ -14,11 +15,9 @@ use std::{
 };
 
 /// `<stem>.txt` and `<stem>.json`, preserving a native file name exactly.
-pub fn sidecar_paths(stem: &Path) -> Result<ChapterSidecars> {
+pub fn sidecar_paths(stem: &Path) -> crate::session::Result<ChapterSidecars> {
     if stem.file_name().is_none_or(|name| name.is_empty()) {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
-            "chapter sidecar stem",
-        )));
+        return Err(crate::session::EditError::Invalid("chapter sidecar stem"));
     }
     let append = |suffix: &str| {
         let mut name = stem.as_os_str().to_owned();
@@ -39,7 +38,7 @@ pub fn write(
     stem: &Path,
     document: &ChapterDocument,
     overwrite: project::atomic::Overwrite,
-) -> Result<ChapterSidecars> {
+) -> ArtifactResult<ChapterSidecars> {
     write_with_fs(
         project,
         protected,
@@ -59,9 +58,9 @@ pub fn write_to_directory(
     protected: &[PathBuf],
     directory: &Path,
     document: &ChapterDocument,
-) -> Result<ChapterSidecars> {
+) -> ArtifactResult<ChapterSidecars> {
     if !directory.is_dir() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
             "chapter sidecar directory",
         )));
     }
@@ -69,7 +68,7 @@ pub fn write_to_directory(
     let stem = directory.join(name.trim_end_matches(".json"));
     let paths = sidecar_paths(&stem)?;
     if paths.text.exists() || paths.json.exists() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
             "chapter sidecar destination exists",
         )));
     }
@@ -108,10 +107,10 @@ fn write_with_fs(
     document: &ChapterDocument,
     overwrite: project::atomic::Overwrite,
     fs: &dyn project::atomic::AtomicFs,
-) -> Result<ChapterSidecars> {
+) -> ArtifactResult<ChapterSidecars> {
     let paths = sidecar_paths(stem)?;
-    let text = document.to_text().map_err(EngineError::Ai)?;
-    let json = document.to_json().map_err(EngineError::Ai)?;
+    let text = document.to_text().map_err(ArtifactError::Ai)?;
+    let json = document.to_json().map_err(ArtifactError::Ai)?;
     let text_publication = crate::publication::Publication {
         project,
         path: &paths.text,
@@ -131,9 +130,9 @@ fn write_with_fs(
     text_publication.write(
         overwrite,
         u64::try_from(text.len())
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| ArtifactError::from(crate::session::wire::ControlError::Limit))?,
         fs,
-        |writer| -> Result<()> {
+        |writer| -> ArtifactResult<()> {
             writer.write_all(text.as_bytes())?;
             Ok(())
         },
@@ -141,9 +140,9 @@ fn write_with_fs(
     json_publication.write(
         overwrite,
         u64::try_from(json.len())
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| ArtifactError::from(crate::session::wire::ControlError::Limit))?,
         fs,
-        |writer| -> Result<()> {
+        |writer| -> ArtifactResult<()> {
             writer.write_all(&json)?;
             Ok(())
         },
@@ -248,9 +247,9 @@ mod tests {
             .unwrap_err();
             assert!(matches!(
                 error,
-                EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
-                    project::Error::Io(_)
-                )))
+                ArtifactError::Runtime(crate::RuntimeError::Edit(
+                    crate::session::EditError::Project(project::Error::Io(_))
+                ))
             ));
             assert_eq!(std::fs::read(&paths.text).unwrap(), b"previous text");
             assert_eq!(std::fs::read(&paths.json).unwrap(), b"previous json");
@@ -276,9 +275,9 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
-                project::Error::Io(_)
-            )))
+            ArtifactError::Runtime(crate::RuntimeError::Edit(
+                crate::session::EditError::Project(project::Error::Io(_))
+            ))
         ));
         assert!(
             std::fs::read(&paths.text)

@@ -1,10 +1,11 @@
 //! Produces bounded labelled control previews.
+use super::{Error as ArtifactError, Result as ArtifactResult};
+use crate::Session;
 use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::session::wire::{
     ControlResult, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_SAFE_INTEGER,
     PREVIEW_QUALITY, PreviewFrame, PreviewResult, bounded_json,
 };
-use crate::{Error as EngineError, Result, Session};
 use std::io::Write;
 use time::{SourceRange, Tick};
 
@@ -12,7 +13,9 @@ const MAX_PREVIEW_RESULT_BYTES: usize = 4 << 20;
 
 /// Cache key shared by every control command that submits a job, scoped by the
 /// request fingerprint.
-pub(crate) fn control_key(fingerprint: blake3::Hash) -> Result<crate::cache::CacheKey> {
+pub(crate) fn control_key(
+    fingerprint: blake3::Hash,
+) -> crate::runtime::Result<crate::cache::CacheKey> {
     crate::cache::CacheKey::new(crate::cache::KeyInputs {
         kind: crate::cache::ArtifactKind::Preview,
         source: [0; 32],
@@ -25,20 +28,19 @@ pub(crate) fn control_key(fingerprint: blake3::Hash) -> Result<crate::cache::Cac
         clip_range: [0; 32],
         translation: [0; 32],
     })
-    .map_err(EngineError::from)
 }
 pub(crate) fn preview(
     session: &Session,
     frames: Vec<i64>,
     runner: &mut JobRunner,
-) -> Result<ControlResult> {
+) -> ArtifactResult<ControlResult> {
     if session.transaction_active() {
-        return Err(EngineError::Session(
+        return Err(ArtifactError::from(
             crate::session::SessionError::TransactionActive,
         ));
     }
     if frames.is_empty() || frames.len() > MAX_PREVIEW_FRAMES {
-        return Err(EngineError::Control(
+        return Err(ArtifactError::from(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -47,7 +49,7 @@ pub(crate) fn preview(
     for frame in &frames {
         let at = fps.tick_of(*frame)?;
         if *frame < 0 || at.0 > MAX_SAFE_INTEGER || (at >= project.duration() && at != Tick::ZERO) {
-            return Err(EngineError::Control(
+            return Err(ArtifactError::from(
                 crate::session::wire::ControlError::InvalidParams,
             ));
         }
@@ -80,7 +82,7 @@ pub(crate) fn preview(
                     .timeline
                     .rendered_items(
                         at,
-                        at.checked_add(Tick(1)).ok_or(EngineError::Control(
+                        at.checked_add(Tick(1)).ok_or(ArtifactError::from(
                             crate::session::wire::ControlError::InvalidParams,
                         ))?,
                     )
@@ -88,12 +90,12 @@ pub(crate) fn preview(
                     .map(|i| i.id)
                     .collect();
                 if clips.iter().any(|id| id.0 > MAX_SAFE_INTEGER as u64) {
-                    return Err(EngineError::Control(
+                    return Err(ArtifactError::from(
                         crate::session::wire::ControlError::InvalidParams,
                     ));
                 }
                 if clips.len() > MAX_PREVIEW_CLIPS {
-                    return Err(EngineError::Control(
+                    return Err(ArtifactError::from(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -119,16 +121,16 @@ pub(crate) fn preview(
                     .max()
                     .unwrap_or(0)
                     .checked_add(1)
-                    .ok_or(EngineError::Session(
+                    .ok_or(ArtifactError::from(
                         crate::session::SessionError::IdExhausted,
                     ))?;
                 let background_id = project::ItemId(next.checked_add(1).ok_or(
-                    EngineError::Session(crate::session::SessionError::IdExhausted),
+                    ArtifactError::from(crate::session::SessionError::IdExhausted),
                 )?);
                 let label_track = project::TrackId(next.checked_add(2).ok_or(
-                    EngineError::Session(crate::session::SessionError::IdExhausted),
+                    ArtifactError::from(crate::session::SessionError::IdExhausted),
                 )?);
-                let label_id = project::ItemId(next.checked_add(3).ok_or(EngineError::Session(
+                let label_id = project::ItemId(next.checked_add(3).ok_or(ArtifactError::from(
                     crate::session::SessionError::IdExhausted,
                 ))?);
                 let label = format!(
@@ -147,7 +149,7 @@ pub(crate) fn preview(
                     || columns < 8
                     || band > settings.height as usize / 2
                 {
-                    return Err(EngineError::Control(
+                    return Err(ArtifactError::from(
                         crate::session::wire::ControlError::Limit,
                     ));
                 }
@@ -247,7 +249,7 @@ pub(crate) fn preview(
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, PREVIEW_QUALITY)
                     .encode(&rgb, width, height, image::ExtendedColorType::Rgb8)
                     .map_err(|_| {
-                        EngineError::Edit(crate::EditError::Invalid("preview encoding"))
+                        ArtifactError::Edit(crate::session::EditError::Invalid("preview encoding"))
                     })?;
                 output.push(PreviewFrame {
                     frame: *frame,
@@ -265,7 +267,7 @@ pub(crate) fn preview(
                 },
                 MAX_PREVIEW_RESULT_BYTES,
             )
-            .map_err(EngineError::from)
+            .map_err(ArtifactError::from)
         },
     )?;
     Ok(ControlResult::JobAccepted {
