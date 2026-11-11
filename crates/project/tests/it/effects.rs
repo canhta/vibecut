@@ -152,6 +152,16 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
         ("extract", "black", 0.0, (0.0, 255.0), (0.0, 255.0)),
         ("extract", "white", 255.0, (0.0, 255.0), (0.0, 255.0)),
         ("extract", "softness", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("find_edges", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
+        ("color_emboss", "relief", 1.0, (0.0, 10.0), (0.0, 10.0)),
+        (
+            "color_emboss",
+            "contrast",
+            100.0,
+            (0.0, 500.0),
+            (0.0, 500.0),
+        ),
+        ("color_emboss", "blend", 0.0, (0.0, 100.0), (0.0, 100.0)),
         ("gamma_correction", "gamma", 10.0, (1.0, 28.0), (1.0, 28.0)),
         (
             "directional_blur",
@@ -215,6 +225,7 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
         ("color_pass", "reverse", EffectValue::Bool(false)),
         ("color_replace", "solid", EffectValue::Bool(false)),
         ("extract", "invert", EffectValue::Bool(false)),
+        ("find_edges", "invert", EffectValue::Bool(false)),
         ("invert", "channel", EffectValue::Choice(0)),
         (
             "color_pass",
@@ -255,6 +266,30 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
         }
     );
     assert!(effect_definition("black_white").unwrap().params.is_empty());
+    let relief = effect_definition("color_emboss").unwrap();
+    let direction = relief.param("direction").unwrap();
+    assert_eq!(
+        direction.default,
+        EffectValue::Scalar(45.0),
+        "Relief default direction"
+    );
+    assert_eq!(direction.kind, EffectParamKind::Angle);
+    assert!(direction.animatable);
+    for (id, value) in [("relief", 0.0), ("relief", 10.0), ("contrast", 500.0)] {
+        relief
+            .instance("one")
+            .with(id, EffectValue::Scalar(value))
+            .unwrap();
+    }
+    for (id, value) in [("relief", -0.01), ("relief", 10.01), ("contrast", 500.01)] {
+        assert!(
+            relief
+                .instance("one")
+                .with(id, EffectValue::Scalar(value))
+                .is_err(),
+            "Relief {id} {value}"
+        );
+    }
 }
 
 #[test]

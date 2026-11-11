@@ -102,10 +102,11 @@ read-only.
 
 Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).
 
-Streak Blur uses a54x22 field with visible degree/pixel units. Its length drag spans
-0..20 at1px per2 pointer pixels; typed values admit0..1000 and display authored
-precision. Out-of-range input refuses. Direction admits+/-360 degrees. Zero-key
-bases stay authoritative; keyed edits affect real-local keys. Time, selection,
-lock, effect or panel changes cancel pending edits. A queued row removal cancels
-drafts and scrubs before removal, so blur cannot recreate the removed effect.
-Other controls retain behavior.
+Streak Blur, Edge Lines and Colour Relief share the54x22 precise spatial field. Its
+drag uses the catalogue soft range but typed values admit the hard range and display
+authored precision; out-of-range and non-finite input refuses. Units are degrees for
+direction, pixels for length/relief and percent for contrast/blend. Zero-key bases
+stay authoritative; keyed edits affect real-local keys. Time, selection, lock,
+effect or panel changes cancel pending edits. A queued row removal cancels drafts
+and scrubs before removal, so a removed effect cannot be recreated. Other controls
+retain behavior.

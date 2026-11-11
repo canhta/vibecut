@@ -641,6 +641,30 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| inspector_video_tab(theme, scale, "effects-streak-vi"),
     },
     Scene {
+        name: "inspector-effects-edge-lines",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-edge-lines"),
+    },
+    Scene {
+        name: "inspector-effects-edge-lines-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-edge-lines-vi"),
+    },
+    Scene {
+        name: "inspector-effects-relief",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-relief"),
+    },
+    Scene {
+        name: "inspector-effects-relief-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-relief-vi"),
+    },
+    Scene {
         name: "inspector-effects",
         reference_dark: None,
         reference_light: None,
@@ -1896,12 +1920,19 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     )?;
     capture_columns(&mut editor)?;
     let tab = tab.strip_suffix("-vi").unwrap_or(tab);
-    let kinds_streak = tab == "effects-streak";
+    let kinds_spatial = matches!(
+        tab,
+        "effects-streak" | "effects-edge-lines" | "effects-relief"
+    );
     let colour_picker = tab == "effects-colours-picker";
     let mixer_bottom = tab == "effects-mixer-bottom";
     let tab = if tab.starts_with("effects") {
         let kinds: &[&str] = if tab == "effects-streak" {
             &["directional_blur"]
+        } else if tab == "effects-edge-lines" {
+            &["find_edges"]
+        } else if tab == "effects-relief" {
+            &["color_emboss"]
         } else if tab == "effects-threshold" {
             &["extract"]
         } else if tab.starts_with("effects-mixer") {
@@ -1934,7 +1965,7 @@ fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness
     editor
         .preferences
         .set("properties_tabs", serde_json::json!({"video": tab}))?;
-    let size = if kinds_streak {
+    let size = if kinds_spatial {
         [1727.0, 1029.0]
     } else {
         CAPTURE_WINDOW

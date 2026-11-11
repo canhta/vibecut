@@ -3244,6 +3244,454 @@ fn measure_streak_1080p() {
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
 }
 
+// Independent hand-indexed Sobel/Relief oracles; no production sampler or evaluator
+// supplies expected pixels.
+fn edge_luma(pixel: [f64; 4]) -> f64 {
+    0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2]
+}
+fn colour_luma(rgb: [f64; 3]) -> f64 {
+    0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+}
+fn edge_lines_expected(
+    pixels: &[[f64; 4]],
+    [w, h]: [u32; 2],
+    invert: bool,
+    blend: f64,
+) -> Vec<[f64; 4]> {
+    let at = |x: i64, y: i64| {
+        let x = x.clamp(0, i64::from(w) - 1) as u32;
+        let y = y.clamp(0, i64::from(h) - 1) as u32;
+        pixels[(y * w + x) as usize]
+    };
+    let l = |x: i64, y: i64| edge_luma(at(x, y));
+    (0..w * h)
+        .map(|i| {
+            let (x, y) = ((i % w) as i64, (i / w) as i64);
+            let gx = l(x + 1, y - 1) + 2.0 * l(x + 1, y) + l(x + 1, y + 1)
+                - l(x - 1, y - 1)
+                - 2.0 * l(x - 1, y)
+                - l(x - 1, y + 1);
+            let gy = l(x - 1, y + 1) + 2.0 * l(x, y + 1) + l(x + 1, y + 1)
+                - l(x - 1, y - 1)
+                - 2.0 * l(x, y - 1)
+                - l(x + 1, y - 1);
+            let m0 = gx.hypot(gy).min(1.0);
+            let m = if invert { m0 } else { 1.0 - m0 };
+            let c = at(x, y);
+            let level = m * c[3] * (1.0 - blend);
+            [
+                level + c[0] * blend,
+                level + c[1] * blend,
+                level + c[2] * blend,
+                c[3],
+            ]
+        })
+        .collect()
+}
+fn relief_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    (direction, relief, contrast, blend): (f64, f64, f64, f64),
+    gains: [f64; 2],
+) -> Vec<[f64; 4]> {
+    let angle = direction.to_radians();
+    let dx = angle.cos() * relief * gains[0].max(0.25);
+    let dy = -angle.sin() * relief * gains[1].max(0.25);
+    let straight = |p: [f64; 4]| {
+        if p[3] <= 1e-6 {
+            [0.0; 3]
+        } else {
+            [p[0] / p[3], p[1] / p[3], p[2] / p[3]]
+        }
+    };
+    (0..size[0] * size[1])
+        .map(|i| {
+            let pixel = pixels[i as usize];
+            let alpha = pixel[3];
+            if alpha <= 1e-6 {
+                return pixel;
+            }
+            let (x, y) = ((i % size[0]) as f64, (i / size[0]) as f64);
+            let difference = colour_luma(straight(spatial_sample(pixels, size, x + dx, y + dy)))
+                - colour_luma(straight(spatial_sample(pixels, size, x - dx, y - dy)));
+            let encoded = [0, 1, 2].map(|k| oracle_encode((pixel[k] / alpha).clamp(0.0, 1.0)));
+            let relief =
+                encoded.map(|v| (v + 2.0 * (contrast / 100.0) * difference).clamp(0.0, 1.0));
+            let mixed = [0, 1, 2].map(|k| relief[k] + (encoded[k] - relief[k]) * (blend / 100.0));
+            let out = [0, 1, 2].map(|k| oracle_decode(mixed[k]) * alpha);
+            [out[0], out[1], out[2], alpha]
+        })
+        .collect()
+}
+fn edge_lines(invert: bool, blend: f64) -> project::EffectInstance {
+    project::effect_definition("find_edges")
+        .unwrap()
+        .instance("edges")
+        .with("invert", EffectValue::Bool(invert))
+        .unwrap()
+        .with("blend", EffectValue::Scalar(blend))
+        .unwrap()
+}
+fn colour_relief(
+    direction: f64,
+    relief: f64,
+    contrast: f64,
+    blend: f64,
+) -> project::EffectInstance {
+    project::effect_definition("color_emboss")
+        .unwrap()
+        .instance("relief")
+        .with("direction", EffectValue::Scalar(direction))
+        .unwrap()
+        .with("relief", EffectValue::Scalar(relief))
+        .unwrap()
+        .with("contrast", EffectValue::Scalar(contrast))
+        .unwrap()
+        .with("blend", EffectValue::Scalar(blend))
+        .unwrap()
+}
+fn spatial_output(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    gains: [f64; 2],
+    effect: &project::EffectInstance,
+    fine: bool,
+) -> (Vec<[f32; 4]>, usize) {
+    let hooks = Hooks::default();
+    let source = || {
+        Image::from_working_pixels(
+            size[0],
+            size[1],
+            pixels.iter().copied().map(|p| p.map(|v| v as f32)),
+            &hooks,
+        )
+        .unwrap()
+    };
+    let image = source();
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        effect,
+        time::Tick::ZERO,
+        EffectGeometry::new(size, gains).unwrap(),
+        fine,
+    )
+    .unwrap();
+    for pass in &passes {
+        validate_pass(pass, size[0], size[1]).unwrap();
+    }
+    let out = apply_effect(source(), &passes, &image, &CpuEffects, &hooks).unwrap();
+    (out.pixels().to_vec(), passes.len())
+}
+
+#[test]
+fn edge_lines_matches_independent_sobel_blend_and_invert_on_clamped_borders() {
+    for size in [[5, 5], [1, 1], [1, 7], [7, 1], [8, 5]] {
+        for pattern in 0..6 {
+            let n = (size[0] * size[1]) as usize;
+            let pixels: Vec<[f64; 4]> = (0..n)
+                .map(|i| match pattern {
+                    0 => [0.4, 0.4, 0.4, 1.0],
+                    1 => {
+                        let v = if (i as u32 % size[0]) < size[0] / 2 {
+                            0.0
+                        } else {
+                            1.0
+                        };
+                        [v, v, v, 1.0]
+                    }
+                    2 if i == n / 2 => [1.0, 0.0, 0.0, 1.0],
+                    2 => [0.0; 4],
+                    3 if i % 2 == 0 => [0.75, 0.25, 0.1, 1.0],
+                    3 => [0.1, 0.4, 0.7, 1.0],
+                    4 => {
+                        let a = [0.25, 0.5, 1.0][i % 3];
+                        [0.9 * a, 0.4 * a, 0.2 * a, a]
+                    }
+                    _ if i == n / 2 => [0.0; 4],
+                    _ => [0.2, 0.4, 0.6, 1.0],
+                })
+                .collect();
+            for invert in [false, true] {
+                for blend in [0.0, 50.0, 100.0] {
+                    let (actual, passes) =
+                        spatial_output(&pixels, size, [1.0, 1.0], &edge_lines(invert, blend), true);
+                    assert_eq!(
+                        passes,
+                        usize::from(blend < 100.0),
+                        "Edge Lines pass count {size:?} {pattern} {invert} {blend}"
+                    );
+                    let expected = edge_lines_expected(&pixels, size, invert, blend / 100.0);
+                    for (actual, expected) in actual.iter().zip(expected) {
+                        assert_working_pixel(*actual, expected, "Edge Lines");
+                    }
+                    if blend == 100.0 {
+                        let input: Vec<[f32; 4]> =
+                            pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+                        assert_eq!(actual, input, "Edge Lines blend100 exact identity");
+                    }
+                }
+            }
+            if size != [1, 1] {
+                let (inverted, _) =
+                    spatial_output(&pixels, size, [1.0, 1.0], &edge_lines(true, 0.0), true);
+                let (plain, _) =
+                    spatial_output(&pixels, size, [1.0, 1.0], &edge_lines(false, 0.0), true);
+                assert_ne!(
+                    inverted, plain,
+                    "invert changes the picture {size:?} {pattern}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn colour_relief_matches_independent_straight_luma_transfer_and_axis_gains() {
+    let rows: &[(f64, f64, f64, f64, [f64; 2], bool)] = &[
+        (45.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (0.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (90.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (-90.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (360.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (-360.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
+        (45.0, 0.0, 100.0, 0.0, [1.0, 1.0], true),
+        (45.0, 1.0, 0.0, 0.0, [1.0, 1.0], true),
+        (45.0, 1.0, 100.0, 100.0, [1.0, 1.0], true),
+        (45.0, 0.5, 100.0, 0.0, [1.0, 1.0], false),
+        (45.0, 10.0, 100.0, 0.0, [1.0, 1.0], false),
+        (45.0, 1.0, 500.0, 0.0, [1.0, 1.0], false),
+        (45.0, 1.0, 100.0, 50.0, [1.0, 1.0], false),
+        (45.0, 1.0, 100.0, 0.0, [0.5, 0.5], false),
+        (45.0, 1.0, 100.0, 0.0, [0.25, 0.25], false),
+        (45.0, 1.0, 100.0, 0.0, [0.1, 1.0], false),
+        (45.0, 1.0, 100.0, 0.0, [0.75, 1.5], false),
+    ];
+    for size in [[5, 5], [8, 5], [1, 1], [1, 7], [7, 1]] {
+        let n = (size[0] * size[1]) as usize;
+        for pattern in 0..3 {
+            let pixels: Vec<[f64; 4]> = (0..n)
+                .map(|i| match pattern {
+                    0 if i % 2 == 0 => [0.75, 0.25, 0.1, 1.0],
+                    0 => [0.1, 0.4, 0.7, 1.0],
+                    1 => {
+                        let a = [0.25, 0.5, 1.0][i % 3];
+                        [0.8 * a, 0.3 * a, 0.6 * a, a]
+                    }
+                    _ if i == n / 2 => [1.0, 0.5, 0.0, 1.0],
+                    _ => [0.0; 4],
+                })
+                .collect();
+            for &(direction, relief, contrast, blend, gains, identity) in rows {
+                let effect = colour_relief(direction, relief, contrast, blend);
+                let (actual, passes) = spatial_output(&pixels, size, gains, &effect, true);
+                assert_eq!(
+                    passes,
+                    usize::from(!identity),
+                    "Relief identity row {direction} {relief} {contrast} {blend} {gains:?}"
+                );
+                let expected =
+                    relief_expected(&pixels, size, (direction, relief, contrast, blend), gains);
+                for (actual, expected) in actual.iter().zip(expected) {
+                    assert_working_pixel(*actual, expected, "Colour Relief");
+                }
+                if identity {
+                    let input: Vec<[f32; 4]> = pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+                    assert_eq!(actual, input, "Relief identity exact");
+                }
+                let (coarse, _) = spatial_output(&pixels, size, gains, &effect, false);
+                assert_eq!(actual, coarse, "Relief fine/coarse share one effort");
+            }
+        }
+    }
+    // The added luma difference shifts every encoded channel, so a red step also
+    // raises green/blue by decode(2 * 0.2126); equal straight luma leaves the centre.
+    let shifted = oracle_decode(2.0 * 0.2126);
+    for (pixels, expected_center) in [
+        (
+            vec![
+                [0.5, 0.0, 0.0, 0.5],
+                [0.5, 0.0, 0.0, 1.0],
+                [0.25, 0.0, 0.0, 0.25],
+            ],
+            [0.5, 0.0, 0.0, 1.0],
+        ),
+        (
+            vec![
+                [0.0, 0.0, 0.0, 1.0],
+                [0.5, 0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 1.0],
+            ],
+            [1.0, shifted, shifted, 1.0],
+        ),
+        (
+            vec![[1e-6, 0.0, 0.0, 1e-6], [0.5, 0.0, 0.0, 1.0], [0.0; 4]],
+            [0.5, 0.0, 0.0, 1.0],
+        ),
+    ] {
+        let effect = colour_relief(0.0, 1.0, 100.0, 0.0);
+        let (actual, _) = spatial_output(&pixels, [3, 1], [1.0, 1.0], &effect, true);
+        assert_working_pixel(actual[1], expected_center, "Relief straight luma centre");
+    }
+}
+
+#[test]
+fn edge_relief_raw_extent_budget_cancel_and_drop_refuse_without_leaks() {
+    let hooks = Hooks::default();
+    let image = Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap();
+    let tiny = Hooks {
+        limit: 0,
+        ..Default::default()
+    };
+    let malformed: &[(&str, &[f32])] = &[
+        ("edge_lines", &[0.0]),
+        ("edge_lines", &[0.0, 1.5]),
+        ("edge_lines", &[f32::NAN, 0.0]),
+        ("edge_lines", &[2.0, 0.0]),
+        ("colour_relief", &[0.0, 0.0, 0.5]),
+        ("colour_relief", &[0.0, 0.0, 5.5, 0.0]),
+        ("colour_relief", &[f32::INFINITY, 0.0, 1.0, 0.0]),
+        ("colour_relief", &[0.0, 0.0, 1.0, 1.5]),
+    ];
+    for (entry_point, values) in malformed {
+        let pass = EffectPass::Sample {
+            entry_point,
+            uniforms: values.iter().copied().map(Uniform::Float).collect(),
+        };
+        assert!(matches!(
+            apply_effect(
+                Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+                &[pass],
+                &image,
+                &CpuEffects,
+                &tiny
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(tiny.requested.load(Ordering::SeqCst), 0, "{entry_point}");
+    }
+    assert!(matches!(
+        evaluate_effect(
+            &project::Animations::default(),
+            &colour_relief(0.0, 10.0, 100.0, 0.0),
+            time::Tick::ZERO,
+            EffectGeometry::new([8, 4], [f64::MAX, 1.0]).unwrap(),
+            true
+        ),
+        Err(Error::Invalid("effect spatial extent"))
+    ));
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &colour_relief(45.0, 10.0, 500.0, 0.0),
+        time::Tick::ZERO,
+        EffectGeometry::new([8, 4], [0.75, 1.5]).unwrap(),
+        true,
+    )
+    .unwrap();
+    assert!(matches!(
+        apply_effect(
+            Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+            &passes,
+            &image,
+            &CpuEffects,
+            &tiny
+        ),
+        Err(Error::Budget { .. })
+    ));
+    hooks.state.store(1, Ordering::SeqCst);
+    assert!(matches!(
+        CpuEffects.apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                below: &image,
+                coverage: None
+            },
+            &hooks
+        ),
+        Err(Error::Cancelled)
+    ));
+    hooks.state.store(0, Ordering::SeqCst);
+    drop(image);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+#[ignore = "manual bounded Edge Lines/Colour Relief CPU cost at1080p"]
+fn measure_edge_relief_1080p() {
+    let hooks = Hooks::default();
+    let input = Image::from_working_pixels(
+        1920,
+        1080,
+        (0..1920 * 1080).map(|i| [if i % 32 < 16 { 0.5 } else { 0.0 }, 0.0, 0.0, 0.5]),
+        &hooks,
+    )
+    .unwrap();
+    for (label, effect) in [
+        ("EdgeLines-identity", edge_lines(false, 100.0)),
+        ("EdgeLines-typical", edge_lines(false, 0.0)),
+        ("EdgeLines-hard", edge_lines(true, 0.0)),
+        ("Relief-identity", colour_relief(45.0, 0.0, 100.0, 0.0)),
+        ("Relief-typical", colour_relief(45.0, 1.0, 100.0, 0.0)),
+        ("Relief-hard", colour_relief(45.0, 10.0, 500.0, 0.0)),
+    ] {
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &effect,
+            time::Tick::ZERO,
+            EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
+            true,
+        )
+        .unwrap();
+        let run = || {
+            CpuEffects
+                .apply(
+                    &input,
+                    &passes,
+                    EffectInputs {
+                        input: &input,
+                        below: &input,
+                        coverage: None,
+                    },
+                    &hooks,
+                )
+                .unwrap()
+        };
+        let start = std::time::Instant::now();
+        drop(run());
+        let cold = start.elapsed();
+        let start = std::time::Instant::now();
+        for _ in 0..2 {
+            drop(run());
+        }
+        let seconds = start.elapsed().as_secs_f64() / 2.0;
+        eprintln!(
+            "EDGE_RELIEF {label} 1920x1080 gains1 cold_s={} warm_mean_s={seconds} repetitions=2 mpix_per_s={} peak_charged_bytes={}",
+            cold.as_secs_f64(),
+            2.0736 / seconds,
+            hooks.peak.load(Ordering::SeqCst)
+        );
+    }
+    #[cfg(windows)]
+    {
+        let rss = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!("(Get-Process -Id {}).PeakWorkingSet64", std::process::id()),
+            ])
+            .output()
+            .unwrap();
+        eprintln!(
+            "EDGE_RELIEF peak_process_working_set_bytes={}",
+            String::from_utf8(rss.stdout).unwrap().trim()
+        );
+    }
+    drop(input);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}
+
 #[test]
 fn streak_cancels_inside_sample_rows_and_releases_partial_images() {
     use std::sync::atomic::AtomicUsize;

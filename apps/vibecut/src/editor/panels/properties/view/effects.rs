@@ -5,6 +5,12 @@ use crate::editor::properties::{
     Text, Tick, Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
+/// Effects whose numeric text keeps authored hard-bound precision and whose
+/// pending edits invalidate through the shared spatial draft path.
+fn spatial_effect(kind: &str) -> bool {
+    matches!(kind, "directional_blur" | "find_edges" | "color_emboss")
+}
+
 impl Panel<'_, '_> {
     /// The item-relative playhead for a value read, or the clip start outside it.
     pub(super) fn effect_time(&self, item: ItemId) -> Tick {
@@ -160,6 +166,7 @@ impl Panel<'_, '_> {
                     });
                     if let Ok(definition) = effect.definition() {
                         let at = self.effect_time(item);
+                        let spatial = spatial_effect(definition.id);
                         for parameter in definition.params {
                             match parameter.kind {
                                 project::EffectParamKind::Float { .. }
@@ -182,8 +189,7 @@ impl Panel<'_, '_> {
                                                     start <= self.cx.playhead
                                                         && self.cx.playhead <= end
                                                 });
-                                        let enabled =
-                                            definition.id != "directional_blur" || !keyed || inside;
+                                        let enabled = !spatial || !keyed || inside;
                                         ui.add_enabled_ui(enabled, |ui| {
                                             self.effect_scrub_field(
                                                 ui,
@@ -191,7 +197,7 @@ impl Panel<'_, '_> {
                                                 &effect.id,
                                                 definition.id,
                                                 parameter,
-                                                if definition.id == "directional_blur" {
+                                                if spatial {
                                                     let (lo, hi) = parameter
                                                         .scalar_range()
                                                         .unwrap_or((0.0, 0.0));
@@ -455,7 +461,7 @@ impl Panel<'_, '_> {
         current: f64,
     ) {
         let spec = effect_scrub_spec(parameter);
-        let spatial = kind == "directional_blur";
+        let spatial = spatial_effect(kind);
         if spatial
             && self.actions.iter().any(|a| {
                 matches!(a, Action::SetTab { .. } | Action::Activate(_))
@@ -472,10 +478,13 @@ impl Panel<'_, '_> {
         }
         let unit = if !spatial {
             ""
-        } else if parameter.id == "direction" {
-            "\u{b0}"
         } else {
-            "px"
+            match parameter.id {
+                "direction" => "\u{b0}",
+                "length" | "relief" => "px",
+                "contrast" | "blend" => "%",
+                _ => "",
+            }
         };
         ui.add_space(theme::space::MD);
         let label = crate::i18n::effect_label(kind, Some(parameter.id))
@@ -629,7 +638,7 @@ impl Panel<'_, '_> {
         if target.is_some_and(|i| {
             i.effects
                 .iter()
-                .any(|e| e.id == effect && e.kind == "directional_blur")
+                .any(|e| e.id == effect && spatial_effect(&e.kind))
         }) && let Ok(animation_path) = project::AnimationPath::new(&path)
             && let Some(project::Param::Value(channel)) =
                 target.and_then(|i| i.animations.get(&animation_path))

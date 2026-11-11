@@ -61,3 +61,14 @@ transform; thumbnail callers supply author geometry. `evaluate_effect` consumes 
 content remaps do not. Streak gathers2..64 Clamp taps in premultiplied RGBA and is
 identity below a .5-pixel span. Fine/coarse use equal effort. Unrepresentable extents
 are Invalid, malformed raw uniforms Unsupported; Blur keeps its own normalization.
+
+Edge Lines is one fixed output-pixel 3x3 Sobel over premultiplied linear luma with
+clamped integer borders; geometry gains deliberately do not scale it. Its invert flag
+selects `m` or `1-m`, and blend mixes the original picture back. Colour Relief samples
+the current image twice at `+/-` (`cos(a)*relief*max(gx,.25)`,
+`-sin(a)*relief*max(gy,.25)`) with Clamp in texel-index coordinates. Neighbour luma is
+straight linear (transparent alpha zeroes it), added twice the contrast fraction to the
+encoded centre RGB before the original-picture blend; the result decodes and
+re-premultiplies centre alpha. Both emit no pass at their stated identities
+(Edge Lines blend100; Colour Relief relief0/contrast0/blend100) and reject
+unrepresentable extents before execution copies.

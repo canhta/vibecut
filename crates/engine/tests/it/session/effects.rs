@@ -444,6 +444,121 @@ fn thumbnail_runner(budget: &engine::ByteBudget, clock: Arc<dyn Clock>) -> JobRu
 }
 
 #[test]
+fn edge_and_relief_thumbnail_jobs_fallback_cache_hit_and_independent_pixels() {
+    use engine::effect_thumbnails::EffectThumbnails;
+    fn encode(v: f64) -> f64 {
+        if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    }
+    fn decode(v: f64) -> f64 {
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    let source = Arc::new(
+        render::Image::from_working_pixels(
+            5,
+            1,
+            (0..5).map(|x| {
+                if x == 2 {
+                    [1.0, 0.0, 0.0, 1.0]
+                } else {
+                    [0.0, 0.0, 0.0, 1.0]
+                }
+            }),
+            &Hooks,
+        )
+        .unwrap(),
+    );
+    let m = 1.0 - 4.0 * 0.2126;
+    let edge_value = (encode(m) * 255.0).round() as u8;
+    let edge_expected = [
+        [255, 255, 255, 255],
+        [edge_value, edge_value, edge_value, 255],
+        [255, 255, 255, 255],
+        [edge_value, edge_value, edge_value, 255],
+        [255, 255, 255, 255],
+    ];
+    let shifted = decode(2.0 * 0.2126);
+    let shifted = (encode(shifted) * 255.0).round() as u8;
+    let relief_expected = [
+        [0, 0, 0, 255],
+        [shifted, shifted, shifted, 255],
+        [255, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+    ];
+    let edge = effect_definition("find_edges")
+        .unwrap()
+        .instance("edges")
+        .with("blend", EffectValue::Scalar(0.0))
+        .unwrap();
+    let relief = effect_definition("color_emboss")
+        .unwrap()
+        .instance("relief")
+        .with("direction", EffectValue::Scalar(0.0))
+        .unwrap()
+        .with("relief", EffectValue::Scalar(1.0))
+        .unwrap()
+        .with("contrast", EffectValue::Scalar(100.0))
+        .unwrap()
+        .with("blend", EffectValue::Scalar(0.0))
+        .unwrap();
+    for unsupported in [None, Some(false), Some(true)] {
+        let budget = engine::ByteBudget::new(16 << 20).unwrap();
+        let adapter = Arc::new(CountingEffects {
+            unsupported,
+            ..Default::default()
+        });
+        let cache = EffectThumbnails::new(adapter.clone(), budget.clone());
+        let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+        let geometry = EffectGeometry::new([5, 1], [1.0, 1.0]).unwrap();
+        for (effect, expected) in [(&edge, edge_expected), (&relief, relief_expected)] {
+            let misses = adapter.queries.load(Ordering::SeqCst);
+            for _ in 0..2 {
+                let (id, _) = cache
+                    .submit(
+                        &mut runner,
+                        geometry,
+                        source.clone(),
+                        (*effect).clone(),
+                        Animations::default(),
+                        Tick::ZERO,
+                    )
+                    .unwrap();
+                assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+                let output = runner.take_output(id).unwrap();
+                for (pixel, expected) in output.bytes().chunks_exact(4).zip(expected) {
+                    for (actual, expected) in pixel.iter().zip(expected) {
+                        assert!(
+                            i32::from(*actual).abs_diff(i32::from(expected)) <= 1,
+                            "{pixel:?} != {expected:?}"
+                        );
+                    }
+                }
+                assert_eq!(
+                    adapter.queries.load(Ordering::SeqCst),
+                    misses + 1,
+                    "one admission per kind, repeat cache hit keeps it"
+                );
+            }
+        }
+        assert_eq!(
+            adapter.calls.load(Ordering::SeqCst),
+            if unsupported == Some(false) { 0 } else { 2 }
+        );
+        drop(cache);
+        drop(runner);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
 fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache_hits() {
     use engine::effect_thumbnails::EffectThumbnails;
     let budget = engine::ByteBudget::new(16 << 20).unwrap();

@@ -817,7 +817,7 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 2] = [
+static SAMPLE_OPS: [SampleOp; 4] = [
     SampleOp {
         entry_point: "mirror",
         len: 4,
@@ -833,7 +833,98 @@ static SAMPLE_OPS: [SampleOp; 2] = [
         },
         apply: streak_sample,
     },
+    SampleOp {
+        entry_point: "edge_lines",
+        len: 2,
+        valid: |v, _, _| {
+            v.get(0).is_some_and(|invert| (0.0..=1.0).contains(invert))
+                && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
+        },
+        apply: edge_lines_sample,
+    },
+    SampleOp {
+        entry_point: "colour_relief",
+        len: 4,
+        valid: |v, _, _| {
+            v.get(2)
+                .is_some_and(|contrast| (0.0..=5.0).contains(contrast))
+                && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
+        },
+        apply: colour_relief_sample,
+    },
 ];
+/// Premultiplied linear luma of a sample near the current texel.
+fn sample_luma(pixel: [f32; 4]) -> f32 {
+    luma([pixel[0], pixel[1], pixel[2]])
+}
+/// One fixed output-pixel Sobel over the current image with clamped borders.
+fn edge_lines_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[invert, blend]) = values.first_chunk::<2>() else {
+        return inputs.texel_current(x, y);
+    };
+    let (w, h) = (inputs.current.width(), inputs.current.height());
+    let l = |dx: i64, dy: i64| {
+        let sx = (x as i64 + dx).clamp(0, w as i64 - 1) as u32;
+        let sy = (y as i64 + dy).clamp(0, h as i64 - 1) as u32;
+        sample_luma(inputs.texel_current(sx, sy))
+    };
+    let gx = l(1, -1) + 2.0 * l(1, 0) + l(1, 1) - l(-1, -1) - 2.0 * l(-1, 0) - l(-1, 1);
+    let gy = l(-1, 1) + 2.0 * l(0, 1) + l(1, 1) - l(-1, -1) - 2.0 * l(0, -1) - l(1, -1);
+    let mut m = gx.hypot(gy).min(1.0);
+    if invert <= 0.5 {
+        m = 1.0 - m;
+    }
+    let centre = inputs.texel_current(x, y);
+    let alpha = centre[3];
+    let blend = blend.clamp(0.0, 1.0);
+    let level = m * alpha * (1.0 - blend);
+    [
+        level + centre[0] * blend,
+        level + centre[1] * blend,
+        level + centre[2] * blend,
+        alpha,
+    ]
+}
+/// Straight linear RGB of one sample; transparent neighbours contribute zero.
+fn straight_sample(pixel: [f32; 4]) -> [f32; 3] {
+    if pixel[3] <= 1e-6 {
+        [0.0; 3]
+    } else {
+        [
+            pixel[0] / pixel[3],
+            pixel[1] / pixel[3],
+            pixel[2] / pixel[3],
+        ]
+    }
+}
+/// Colour-preserving relief: two clamped straight-luma neighbours shift the
+/// encoded centre colour, then the encoded result mixes back toward the original.
+fn colour_relief_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[dx, dy, contrast, blend]) = values.first_chunk::<4>() else {
+        return inputs.texel_current(x, y);
+    };
+    let centre = inputs.texel_current(x, y);
+    let alpha = centre[3];
+    if alpha <= 1e-6 {
+        return centre;
+    }
+    let (w, h) = (inputs.current.width(), inputs.current.height());
+    let plus = inputs.sample_current(
+        (x as f32 + dx).clamp(0.0, (w - 1) as f32),
+        (y as f32 + dy).clamp(0.0, (h - 1) as f32),
+        image_ops::Edge::Clamp,
+    );
+    let minus = inputs.sample_current(
+        (x as f32 - dx).clamp(0.0, (w - 1) as f32),
+        (y as f32 - dy).clamp(0.0, (h - 1) as f32),
+        image_ops::Edge::Clamp,
+    );
+    let difference = luma(straight_sample(plus)) - luma(straight_sample(minus));
+    let encoded = encoded_color([centre[0] / alpha, centre[1] / alpha, centre[2] / alpha]);
+    let relief = encoded.map(|v| (v + 2.0 * contrast * difference).clamp(0.0, 1.0));
+    let mixed = [0, 1, 2].map(|k| relief[k] + (encoded[k] - relief[k]) * blend.clamp(0.0, 1.0));
+    premultiply(decoded_color(mixed), alpha)
+}
 /// Clamp coordinates while still floating point, before the sampler's integer lookup.
 fn streak_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
     let Some(&[dx, dy, steps]) = values.first_chunk::<3>() else {
@@ -873,6 +964,50 @@ fn streak_blur(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
             Uniform::Float(dx as f32),
             Uniform::Float(dy as f32),
             Uniform::Float(span.ceil().clamp(2.0, 64.0) as f32),
+        ],
+    }])
+}
+/// Find Edges is a fixed output-pixel Sobel: geometry gains deliberately do not
+/// scale it. Blend 100 returns the original picture and emits no pass.
+fn edge_lines(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    let blend = frame.scalar("blend")?;
+    if blend >= 100.0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![EffectPass::Sample {
+        entry_point: "edge_lines",
+        uniforms: vec![
+            Uniform::Float(if frame.flag("invert")? { 1.0 } else { 0.0 }),
+            Uniform::Float((blend / 100.0) as f32),
+        ],
+    }])
+}
+/// Colour Relief offsets each axis by its own gain floored at .25; the source's
+/// uniform scale is the uniform-gain case of this admitted nonuniform extension.
+fn colour_relief(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    if geometry.working_size() != [frame.width, frame.height] {
+        return Err(Error::Invalid("effect spatial geometry"));
+    }
+    let relief = frame.scalar("relief")?;
+    let contrast = frame.scalar("contrast")?;
+    let blend = frame.scalar("blend")?;
+    if relief == 0.0 || contrast == 0.0 || blend >= 100.0 {
+        return Ok(Vec::new());
+    }
+    let angle = frame.scalar("direction")?.to_radians();
+    let [gx, gy] = geometry.clip_pixel_scale();
+    let dx = angle.cos() * relief * gx.max(0.25);
+    let dy = -angle.sin() * relief * gy.max(0.25);
+    if !dx.is_finite() || !dy.is_finite() || !((dx as f32).is_finite() && (dy as f32).is_finite()) {
+        return Err(Error::Invalid("effect spatial extent"));
+    }
+    Ok(vec![EffectPass::Sample {
+        entry_point: "colour_relief",
+        uniforms: vec![
+            Uniform::Float(dx as f32),
+            Uniform::Float(dy as f32),
+            Uniform::Float((contrast / 100.0) as f32),
+            Uniform::Float((blend / 100.0) as f32),
         ],
     }])
 }
@@ -1287,6 +1422,8 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "color_pass" => color_pass,
         "color_replace" => color_replace,
         "extract" => extract,
+        "find_edges" => edge_lines,
+        "color_emboss" => colour_relief,
         "gamma_correction" => gamma_correction,
         "invert" => invert,
         "levels" => levels,

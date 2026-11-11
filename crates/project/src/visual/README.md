@@ -48,6 +48,11 @@ shape or serialized meaning changes.
 Streak Blur animates direction (degrees) and length (full-resolution clip pixels).
 [The catalogue](effects_catalog.rs) owns ranges/defaults/shelf; render owns crop/fit axis conversion before transform.
 
+Edge Lines is Stylize with an invert flag and an animatable 0–100 blend percent.
+Colour Relief is Stylize with an animatable direction (degrees), relief (full-resolution
+clip pixels, 0–10), contrast (percent, 0–500) and blend percent. The static invert flag
+has no animation; every numeric control uses the existing scalar/enum shape.
+
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector`; it is off in every production build.
 
 ## Video transitions

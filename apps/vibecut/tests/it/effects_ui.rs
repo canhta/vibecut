@@ -67,6 +67,23 @@ fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_loca
                 ("length", "Length", "Độ dài"),
             ],
         ),
+        (
+            "find_edges",
+            "Edge Lines",
+            "Đường viền",
+            &[("blend", "Blend with original", "Trộn với gốc")],
+        ),
+        (
+            "color_emboss",
+            "Colour Relief",
+            "Phù điêu màu",
+            &[
+                ("direction", "Direction", "Hướng"),
+                ("relief", "Relief", "Độ nổi"),
+                ("contrast", "Contrast", "Độ tương phản"),
+                ("blend", "Blend with original", "Trộn với gốc"),
+            ],
+        ),
         ("black_white", "Black & white", "Đen trắng", &[]),
         (
             "channel_mix",
@@ -554,7 +571,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
             .settle_previews(std::time::Duration::from_secs(10))
             .unwrap();
         h.run_steps(1);
-        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 13);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 15);
         assert!(
             h.state()
                 .inspect()
@@ -1336,7 +1353,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
         .iter()
         .filter(|definition| definition.shelf.in_library())
         .collect();
-    assert_eq!(definitions.len(), 13);
+    assert_eq!(definitions.len(), 15);
     // Five is the smallest request set that exceeds the real four-entry queue.
     for count in [5, definitions.len()] {
         let mut previews = EffectPreviews::cpu().unwrap();
@@ -1438,7 +1455,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                 .values()
                 .filter(|s| **s == EffectPreviewStatus::Pending)
                 .count(),
-            13
+            15
         );
         if retry {
             let replacement = blur
@@ -1454,7 +1471,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             previews.ensure("blur", &replacement, &project::Animations::default());
             gate.release();
             previews.settle(std::time::Duration::from_secs(10)).unwrap();
-            assert_eq!(previews.statuses().len(), 13);
+            assert_eq!(previews.statuses().len(), 15);
             assert!(
                 previews
                     .statuses()
@@ -1762,7 +1779,7 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
         .settle_previews(std::time::Duration::from_secs(10))
         .unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert_eq!(statuses.len(), 13);
+    assert_eq!(statuses.len(), 15);
     assert!(
         statuses
             .values()
@@ -3321,6 +3338,248 @@ fn streak_hard_entry_soft_drag_keys_units_and_cancel_use_real_commands() {
     assert_eq!(keys.len(), 1);
     let node = h.get(By::new().predicate(|n| n.author_id() == Some(field)));
     assert!(node.accesskit_node().is_disabled());
+}
+
+fn effect_of(harness: &Harness<Editor>, item: ItemId, kind: &str) -> project::EffectInstance {
+    effects(harness, item)
+        .into_iter()
+        .find(|effect| effect.kind == kind)
+        .unwrap_or_else(|| panic!("missing effect {kind}"))
+}
+
+/// Actual production pass execution on a small working image, independent of UI.
+fn effect_picture(instance: &project::EffectInstance) -> Vec<[f32; 4]> {
+    let budget = ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let (w, h) = (7u32, 5u32);
+    let pixels: Vec<[f32; 4]> = (0..w * h)
+        .map(|i| {
+            let a = [0.25f32, 0.5, 1.0][(i % 3) as usize];
+            let v = (i % w) as f32 / (w - 1) as f32;
+            [v * a, (1.0 - v) * a, 0.5 * a, a]
+        })
+        .collect();
+    let source =
+        || render::Image::from_working_pixels(w, h, pixels.iter().copied(), &hooks).unwrap();
+    let image = source();
+    let passes = render::effects::evaluate_effect(
+        &project::Animations::default(),
+        instance,
+        Tick::ZERO,
+        EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
+        true,
+    )
+    .unwrap();
+    render::effects::apply_effect(
+        source(),
+        &passes,
+        &image,
+        &render::effects::CpuEffects,
+        &hooks,
+    )
+    .unwrap()
+    .pixels()
+    .to_vec()
+}
+
+#[test]
+fn edge_relief_tile_presets_change_the_actual_demo_picture() {
+    use vibecut::effect_previews::EffectPreviews;
+    let f = fixture();
+    let uploads: Uploads = Default::default();
+    let mut h = crate::gpu::builder()
+        .renderer(PreviewUploads {
+            inner: Default::default(),
+            seen: uploads.clone(),
+        })
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+    h.run_steps(3);
+    click(&mut h, "assets.tab.effects");
+    h.state_mut()
+        .settle_previews(std::time::Duration::from_secs(10))
+        .unwrap();
+    let mut captured = std::collections::BTreeMap::new();
+    for _ in 0..12 {
+        h.run_steps(1);
+        for (id, image) in uploads.lock().unwrap().iter() {
+            captured.insert(*id, image.clone());
+        }
+    }
+    // A zero-intensity Blur is the exact demo source through the same job path.
+    let mut base = EffectPreviews::cpu().unwrap();
+    let plain = project::effect_definition("blur")
+        .unwrap()
+        .instance("blur")
+        .with("intensity", EffectValue::Scalar(0.0))
+        .unwrap();
+    base.ensure("blur", &plain, &project::Animations::default());
+    base.settle(std::time::Duration::from_secs(10)).unwrap();
+    let plain = base.image("blur").unwrap();
+    let mut tiles = Vec::new();
+    for kind in ["find_edges", "color_emboss"] {
+        let image = captured
+            .get(&tile_texture(&h, kind))
+            .cloned()
+            .unwrap_or_else(|| panic!("no upload for {kind}"));
+        assert_ne!(image, plain, "{kind} tile must not be the untouched demo");
+        tiles.push(image);
+    }
+    assert_ne!(tiles[0], tiles[1], "the two effects read differently");
+}
+
+#[test]
+fn edge_relief_categories_units_pictures_keys_and_pending_removal_use_real_commands() {
+    let f = fixture();
+    let video = f.video;
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 1800.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    click(&mut h, "effects.category.stylize");
+    assert!(has_widget(&h, "effects.tile.find_edges"));
+    assert!(has_widget(&h, "effects.tile.color_emboss"));
+    click(&mut h, "effects.category.colour");
+    assert!(!has_widget(&h, "effects.tile.find_edges"));
+    click(&mut h, "effects.category.stylize");
+
+    click(&mut h, "effects.add.find_edges");
+    let edge = effect_of(&h, video, "find_edges");
+    assert_eq!(edge.value("invert"), Some(&EffectValue::Bool(false)));
+    assert_eq!(edge.value("blend"), Some(&EffectValue::Scalar(0.0)));
+    let plain = effect_picture(&edge);
+    let history = h.state().session.history_len();
+    click(&mut h, "effects.find_edges.param.invert");
+    let inverted = effect_of(&h, video, "find_edges");
+    assert_eq!(inverted.value("invert"), Some(&EffectValue::Bool(true)));
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    assert_ne!(
+        effect_picture(&inverted),
+        plain,
+        "invert changes the picture"
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        effect_of(&h, video, "find_edges").value("invert"),
+        Some(&EffectValue::Bool(false))
+    );
+    assert_eq!(effect_picture(&effect_of(&h, video, "find_edges")), plain);
+    let blend = "effects.find_edges.param.blend";
+    type_value(&mut h, blend, "50");
+    assert_eq!(
+        effect_of(&h, video, "find_edges").value("blend"),
+        Some(&EffectValue::Scalar(50.0))
+    );
+    assert!(paints_text(&h, "%", egui::Rect::EVERYTHING));
+    for bad in ["100.1", "-0.1", "NaN", "inf"] {
+        type_value(&mut h, blend, bad);
+        assert_eq!(
+            effect_of(&h, video, "find_edges").value("blend"),
+            Some(&EffectValue::Scalar(50.0)),
+            "{bad}"
+        );
+    }
+
+    click(&mut h, "effects.add.color_emboss");
+    let relief = "effects.color_emboss.param.relief";
+    let direction = "effects.color_emboss.param.direction";
+    let contrast = "effects.color_emboss.param.contrast";
+    let effect_blend = "effects.color_emboss.param.blend";
+    let value =
+        |h: &Harness<Editor>, id: &str| effect_of(h, video, "color_emboss").value(id).cloned();
+    assert_eq!(value(&h, "direction"), Some(EffectValue::Scalar(45.0)));
+    assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(1.0)));
+    assert_eq!(value(&h, "contrast"), Some(EffectValue::Scalar(100.0)));
+    assert_eq!(value(&h, "blend"), Some(EffectValue::Scalar(0.0)));
+    type_value(&mut h, direction, "-360");
+    assert_eq!(value(&h, "direction"), Some(EffectValue::Scalar(-360.0)));
+    type_value(&mut h, direction, "360.1");
+    assert_eq!(value(&h, "direction"), Some(EffectValue::Scalar(-360.0)));
+    type_value(&mut h, relief, "2.5");
+    assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(2.5)));
+    assert!(paints_text(&h, "px", egui::Rect::EVERYTHING));
+    for bad in ["10.1", "-0.1", "NaN", "inf"] {
+        type_value(&mut h, relief, bad);
+        assert_eq!(
+            value(&h, "relief"),
+            Some(EffectValue::Scalar(2.5)),
+            "Relief {bad}"
+        );
+    }
+    type_value(&mut h, contrast, "499.5");
+    assert_eq!(value(&h, "contrast"), Some(EffectValue::Scalar(499.5)));
+    assert!(paints_text(&h, "%", egui::Rect::EVERYTHING));
+    type_value(&mut h, effect_blend, "37.5");
+    assert_eq!(value(&h, "blend"), Some(EffectValue::Scalar(37.5)));
+    assert!(paints_text(&h, "\u{b0}", egui::Rect::EVERYTHING));
+
+    let path = project::AnimationPath::new("effects.color_emboss.params.relief").unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: video,
+            path: path.clone(),
+            param: project::Param::new(project::ParamValue::Scalar(3.0)).unwrap(),
+        })
+        .unwrap();
+    h.run_steps(3);
+    type_value(&mut h, relief, "4.25");
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(4.25))
+    );
+    assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(2.5)));
+    click(&mut h, &format!("{relief}.keyframe"));
+    type_value(&mut h, relief, "6.5");
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(6.5))
+    );
+    assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(2.5)));
+    click(&mut h, &format!("{relief}.keyframe"));
+    type_value(&mut h, relief, "7.25");
+    assert_eq!(
+        item(&h, video)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(7.25))
+    );
+    assert!(
+        item(&h, video)
+            .animations
+            .get(&path)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .is_empty(),
+        "last key removal keeps the authoritative base"
+    );
+
+    let before_remove = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, relief);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("9.5".into()));
+    h.run_steps(2);
+    click(&mut h, "effects.remove.color_emboss");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert!(effects(&h, video).iter().all(|e| e.kind != "color_emboss"));
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before_remove);
+    assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(2.5)));
 }
 
 #[test]

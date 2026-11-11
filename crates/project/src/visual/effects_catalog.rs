@@ -279,6 +279,32 @@ static DEFINITIONS: &[EffectDefinition] = &[
             slider("amount", "Amount", (0.0, 100.0), 100.0, true),
         ],
     },
+    EffectDefinition {
+        id: "find_edges",
+        name: "Edge Lines",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            flag("invert", "Invert", false),
+            slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "color_emboss",
+        name: "Colour Relief",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            EffectParamDefinition {
+                id: "direction",
+                name: "Direction",
+                kind: EffectParamKind::Angle,
+                default: EffectValue::Scalar(45.0),
+                animatable: true,
+            },
+            slider("relief", "Relief", (0.0, 10.0), 1.0, true),
+            slider("contrast", "Contrast", (0.0, 500.0), 100.0, true),
+            slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
 ];
 
 pub fn effect_definitions() -> &'static [EffectDefinition] {
