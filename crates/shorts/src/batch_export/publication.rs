@@ -12,7 +12,9 @@ pub(super) fn reconcile_published(
     paths: &ClipPaths,
 ) -> Result<(bool, Vec<bool>), EditError> {
     let (video, mut subtitles) = {
-        let state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+        let state = published
+            .lock()
+            .map_err(|_| engine::RuntimeError::Poisoned)?;
         (state.video, state.subtitles.clone())
     };
     let video = video && artifact_present(&paths.video);
@@ -25,7 +27,9 @@ pub(super) fn reconcile_published(
         }
     }
     {
-        let mut state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+        let mut state = published
+            .lock()
+            .map_err(|_| engine::RuntimeError::Poisoned)?;
         state.video = video;
         state.subtitles.clone_from(&subtitles);
     }
@@ -33,12 +37,17 @@ pub(super) fn reconcile_published(
 }
 
 pub(super) fn mark_video(published: &Mutex<Published>) -> Result<(), EditError> {
-    published.lock().map_err(|_| EditError::JobPoisoned)?.video = true;
+    published
+        .lock()
+        .map_err(|_| engine::RuntimeError::Poisoned)?
+        .video = true;
     Ok(())
 }
 
 pub(super) fn mark_subtitle(published: &Mutex<Published>, index: usize) -> Result<(), EditError> {
-    let mut state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+    let mut state = published
+        .lock()
+        .map_err(|_| engine::RuntimeError::Poisoned)?;
     let done = state
         .subtitles
         .get_mut(index)

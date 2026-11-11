@@ -717,7 +717,7 @@ fn cache_pressure_keeps_complete_output_for_finish_retry() {
         .unwrap();
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::BudgetFull)
+        Err(EditError::Runtime(engine::RuntimeError::BudgetFull))
     ));
     assert!(runner.output_bytes(job.id).is_some());
     assert!(cache.is_empty());

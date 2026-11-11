@@ -938,12 +938,15 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
     fn too_large(error: &(dyn std::error::Error + 'static)) -> bool {
         if let Some(error) = error.downcast_ref::<EditError>() {
             return match error {
-                EditError::ArtifactTooLarge => true,
+                EditError::Runtime(error) => too_large(error),
                 EditError::Recovery(error) => too_large(error),
                 _ => false,
             };
         }
-        matches!(error.downcast_ref::<RecoveryError>(), Some(RecoveryError::PersistenceFailed(error)) if too_large(error.as_ref()))
+        matches!(
+            error.downcast_ref::<engine::RuntimeError>(),
+            Some(engine::RuntimeError::ArtifactTooLarge)
+        ) || matches!(error.downcast_ref::<RecoveryError>(), Some(RecoveryError::PersistenceFailed(error)) if too_large(error.as_ref()))
     }
     assert!(too_large(&error));
     assert_eq!(error.code(), engine::control::ErrorCode::Budget);

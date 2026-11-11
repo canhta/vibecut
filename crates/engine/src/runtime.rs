@@ -1,4 +1,35 @@
 //! Executes bounded background work over shared resources.
+use crate::session::wire::{ErrorCode, Failure};
+
+/// Reservation failures retain typed IO without exposing allocation or file contents.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("aggregate byte budget is full")]
+    BudgetFull,
+    #[error("artifact exceeds aggregate budget")]
+    ArtifactTooLarge,
+    #[error("job state lock poisoned")]
+    Poisoned,
+    #[error("job/cache IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("command limit exceeded")]
+    Limit,
+    #[error("invalid edit: {0}")]
+    Invalid(&'static str),
+}
+impl Failure for Error {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::BudgetFull | Self::ArtifactTooLarge => ErrorCode::Budget,
+            Self::Poisoned => ErrorCode::Job,
+            Self::Io(_) => ErrorCode::Io,
+            Self::Limit => ErrorCode::Limit,
+            Self::Invalid(_) => ErrorCode::Refused,
+        }
+    }
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
 mod budget;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner};
 mod cache_location;

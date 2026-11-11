@@ -644,6 +644,12 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     for (index, (inner, code)) in [
         (EditError::Limit, "limit"),
         (EditError::StaleResult, "stale_result"),
+        (engine::RuntimeError::BudgetFull.into(), "budget"),
+        (engine::RuntimeError::Poisoned.into(), "job"),
+        (
+            engine::RuntimeError::Io(std::io::Error::other("eviction")).into(),
+            "io",
+        ),
         (EditError::Io(std::io::Error::other("disk")), "io"),
         (
             engine::recovery::Error::PersistenceFailed(Arc::new(EditError::Io(

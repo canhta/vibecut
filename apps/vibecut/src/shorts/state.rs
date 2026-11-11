@@ -1043,11 +1043,12 @@ pub(super) fn failure_text(error: &engine::EditError) -> Text {
         engine::EditError::Providers(engine::providers::Error::ConsentRequired) => {
             Text::ShortsConsentRequired
         }
-        engine::EditError::BudgetFull | engine::EditError::Render(render::Error::Budget { .. }) => {
-            Text::ShortsMemory
-        }
+        engine::EditError::Runtime(engine::RuntimeError::BudgetFull)
+        | engine::EditError::Render(render::Error::Budget { .. }) => Text::ShortsMemory,
         engine::EditError::Render(render::Error::Unavailable(_)) => Text::ShortsSourceUnavailable,
-        engine::EditError::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        engine::EditError::Io(e) | engine::EditError::Runtime(engine::RuntimeError::Io(e))
+            if e.kind() == std::io::ErrorKind::AlreadyExists =>
+        {
             Text::ShortsOutputExists
         }
         engine::EditError::Project(project::Error::Io(e))

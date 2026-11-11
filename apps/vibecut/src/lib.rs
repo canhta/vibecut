@@ -97,3 +97,9 @@ impl From<engine::recovery::Error> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::RuntimeError> for Error {
+    fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}

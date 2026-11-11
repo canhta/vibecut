@@ -243,7 +243,7 @@ struct ThumbnailDisk {
 impl ThumbnailDisk {
     fn take(store: Arc<Mutex<ThumbnailStore>>) -> engine::Result<Self> {
         let (cache, epoch) = {
-            let mut memo = store.lock().map_err(|_| engine::EditError::JobPoisoned)?;
+            let mut memo = store.lock().map_err(|_| engine::RuntimeError::Poisoned)?;
             (memo.cache.take(), memo.epoch)
         };
         Ok(Self {
@@ -293,9 +293,9 @@ impl ThumbnailDisk {
                 Ok(Some(image))
             }
             Ok(None) => Ok(None),
-            Err(engine::EditError::BudgetFull | engine::EditError::ArtifactTooLarge) => {
-                Err(MediaError::TooLarge("retained thumbnail budget"))
-            }
+            Err(engine::EditError::Runtime(
+                engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge,
+            )) => Err(MediaError::TooLarge("retained thumbnail budget")),
             Err(error) => {
                 tracing::warn!(category = "thumbnail_cache_read", error = %error,"thumbnail cache miss");
                 Ok(None)

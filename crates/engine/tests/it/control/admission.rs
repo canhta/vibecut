@@ -752,8 +752,8 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
 #[test]
 fn owner_failures_classify_publication_receipts_and_events() {
     use ErrorCode as C;
-    use engine::EditError as E;
     use engine::recovery::Error as R;
+    use engine::{EditError as E, RuntimeError as B};
     use engine::{
         Failure, FontError as F, SoundError as S, providers::Error as P, transcript::Error as T,
     };
@@ -814,11 +814,18 @@ fn owner_failures_classify_publication_receipts_and_events() {
             false
         ),
         row!(E::QueueFull, QueueFull, false),
-        row!(E::BudgetFull, Budget, false),
-        row!(E::ArtifactTooLarge, Budget, false),
+        row!(E::Runtime(B::BudgetFull), Budget, false),
+        row!(E::Runtime(B::ArtifactTooLarge), Budget, false),
         row!(E::Cancelled, Cancelled, false),
         row!(E::WorkerPanicked, WorkerFailure, false),
-        row!(E::JobPoisoned, Job, false),
+        row!(E::Runtime(B::Poisoned), Job, false),
+        row!(E::Runtime(B::Io(io::Error::other("eviction"))), Io, false),
+        row!(E::Runtime(B::Limit), Limit, false),
+        row!(
+            E::Runtime(B::Invalid("model accounting owner")),
+            Refused,
+            false
+        ),
         row!(E::NetworkTransient, Job, true),
         row!(E::StaleResult, StaleResult, false),
         row!(E::LoudnessStale, Refused, false),
@@ -964,9 +971,9 @@ fn owner_failures_classify_publication_receipts_and_events() {
     }
     for (cause, code) in [
         (E::Limit, C::Limit),
-        (E::BudgetFull, C::Budget),
+        (E::Runtime(B::BudgetFull), C::Budget),
         (E::WorkerPanicked, C::WorkerFailure),
-        (E::JobPoisoned, C::Job),
+        (E::Runtime(B::Poisoned), C::Job),
         (E::Cancelled, C::Cancelled),
         (E::StaleResult, C::StaleResult),
         (E::NetworkTransient, C::Job),

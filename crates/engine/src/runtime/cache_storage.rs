@@ -1,5 +1,6 @@
 //! Retains content-addressed execution artifacts.
 mod native;
+use super::{Error as RuntimeError, Result as RuntimeResult};
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError};
 pub use native::ModelLease;
 pub(crate) use native::{NativeEdit, strong_etag};
@@ -129,14 +130,14 @@ impl StoredArtifact {
     fn pinned(&self) -> bool {
         self.native || self.pins.load(Ordering::Acquire) != 0
     }
-    fn pin(self: &Arc<Self>) -> Result<Option<ArtifactPin>, EditError> {
+    fn pin(self: &Arc<Self>) -> RuntimeResult<Option<ArtifactPin>> {
         let mut pins = self.pins.load(Ordering::Acquire);
         loop {
             if pins == REMOVED {
                 return Ok(None);
             }
             if pins >= REMOVED - 1 {
-                return Err(EditError::BudgetFull);
+                return Err(RuntimeError::BudgetFull);
             }
             match self.pins.compare_exchange_weak(
                 pins,
@@ -151,10 +152,10 @@ impl StoredArtifact {
     }
     /// Only the successful 0 -> EVICTING owner performs IO and releases accounting.
     /// A concurrent read/reclaim sees temporary pressure, never a missing live pin.
-    pub(crate) fn evict(&self) -> Result<bool, EditError> {
+    pub(crate) fn evict(&self) -> RuntimeResult<bool> {
         self.evict_inner(false)
     }
-    fn evict_inner(&self, explicit: bool) -> Result<bool, EditError> {
+    fn evict_inner(&self, explicit: bool) -> RuntimeResult<bool> {
         if self.native && !explicit {
             return Ok(false);
         }
@@ -181,7 +182,7 @@ impl StoredArtifact {
         let charge = {
             self.charge
                 .lock()
-                .map_err(|_| EditError::JobPoisoned)?
+                .map_err(|_| RuntimeError::Poisoned)?
                 .take()
         };
         self.pins.store(REMOVED, Ordering::Release);
@@ -328,11 +329,11 @@ impl ArtifactCache {
             }
             let charge = match cache.budget.reserve(ByteOwner::PersistentCache, len) {
                 Ok(charge) => charge,
-                Err(EditError::ArtifactTooLarge | EditError::BudgetFull) => {
+                Err(RuntimeError::ArtifactTooLarge | RuntimeError::BudgetFull) => {
                     fs::remove_file(file.path())?;
                     continue;
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.into()),
             };
             cache.insert(key, charge, len)?;
         }
@@ -372,7 +373,7 @@ impl ArtifactCache {
             && !entry.removed()
             && !entry.evict()?
         {
-            return Err(EditError::BudgetFull);
+            return Err(EditError::Runtime(RuntimeError::BudgetFull));
         }
         self.entries.remove(&key);
         Ok(())
@@ -385,7 +386,7 @@ impl ArtifactCache {
             .filter(|(_, e)| !e.pinned())
             .min_by_key(|(_, e)| e.stamp())
             .map(|(key, _)| *key)
-            .ok_or(EditError::BudgetFull)?;
+            .ok_or(EditError::Runtime(RuntimeError::BudgetFull))?;
         self.remove(key)
     }
     /// Commit only a complete artifact. Jobs call this only after successful finish;
@@ -394,15 +395,15 @@ impl ArtifactCache {
         let len = bytes
             .len()
             .checked_add(HEADER)
-            .ok_or(EditError::ArtifactTooLarge)? as u64;
+            .ok_or(EditError::Runtime(RuntimeError::ArtifactTooLarge))? as u64;
         // Charge staging memory before building the envelope. Admission may evict disk.
         if len > self.budget.snapshot()?.limit / 2 {
-            return Err(EditError::ArtifactTooLarge);
+            return Err(EditError::Runtime(RuntimeError::ArtifactTooLarge));
         }
         self.prune();
         if let Some(entry) = self.entries.get(&key) {
             if entry.pinned() {
-                return Err(EditError::BudgetFull);
+                return Err(EditError::Runtime(RuntimeError::BudgetFull));
             }
             self.remove(key)?;
         }
@@ -411,8 +412,9 @@ impl ArtifactCache {
         }
         let disk = self.budget.reserve(ByteOwner::PersistentCache, len)?;
         let _staging = self.budget.reserve(ByteOwner::CacheReads, len)?;
-        let mut envelope =
-            Vec::with_capacity(usize::try_from(len).map_err(|_| EditError::ArtifactTooLarge)?);
+        let mut envelope = Vec::with_capacity(
+            usize::try_from(len).map_err(|_| EditError::Runtime(RuntimeError::ArtifactTooLarge))?,
+        );
         envelope.extend_from_slice(b"VCACHE01");
         envelope.extend_from_slice(&key.0);
         envelope.extend_from_slice(blake3::hash(bytes).as_bytes());
@@ -442,7 +444,8 @@ impl ArtifactCache {
                 return Err(EditError::CacheCorrupt);
             }
             let _charge = self.budget.reserve(ByteOwner::CacheReads, meta.len())?;
-            let len = usize::try_from(meta.len()).map_err(|_| EditError::ArtifactTooLarge)?;
+            let len = usize::try_from(meta.len())
+                .map_err(|_| EditError::Runtime(RuntimeError::ArtifactTooLarge))?;
             let mut bytes = vec![0; len];
             let mut file = fs::File::open(&path)?;
             if let Err(e) = file.read_exact(&mut bytes) {
@@ -485,7 +488,7 @@ impl ArtifactCache {
                 // Existing reader pins retain their immutable bytes. Reclaim the
                 // corrupt file after their release; preserve the corruption diagnostic.
                 match self.remove(key) {
-                    Ok(()) | Err(EditError::BudgetFull) => {}
+                    Ok(()) | Err(EditError::Runtime(RuntimeError::BudgetFull)) => {}
                     Err(e) => return Err(e),
                 }
                 Err(EditError::CacheCorrupt)

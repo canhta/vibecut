@@ -16,7 +16,9 @@ pub use runtime::cache;
 pub use runtime::jobs;
 pub(crate) use runtime::publication;
 pub use runtime::transfer;
-pub use runtime::{BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner};
+pub use runtime::{
+    BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, Error as RuntimeError,
+};
 pub use runtime::{
     submit_export, submit_export_publication, submit_export_with_sources,
     submit_scene_exports_with_sources, subtitle_file,
@@ -96,16 +98,12 @@ pub enum EditError {
     Recovery(#[from] recovery::Error),
     #[error("job queue is full")]
     QueueFull,
-    #[error("aggregate byte budget is full")]
-    BudgetFull,
-    #[error("artifact exceeds aggregate budget")]
-    ArtifactTooLarge,
+    #[error(transparent)]
+    Runtime(#[from] RuntimeError),
     #[error("job cancelled")]
     Cancelled,
     #[error("job worker unwound")]
     WorkerPanicked,
-    #[error("job state lock poisoned")]
-    JobPoisoned,
     #[error("transient network failure")]
     NetworkTransient,
     #[error("job result is stale")]
@@ -207,10 +205,10 @@ impl EditError {
             Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,
-            Self::BudgetFull | Self::ArtifactTooLarge => C::Budget,
+            Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::StaleResult => C::StaleResult,
             Self::WorkerPanicked => C::WorkerFailure,
-            Self::JobPoisoned | Self::CacheCorrupt => C::Job,
+            Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
             Self::JobFailure(inner) => inner.code(),
             Self::Recovery(inner) => inner.code(),

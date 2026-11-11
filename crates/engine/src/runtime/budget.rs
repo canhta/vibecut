@@ -1,5 +1,5 @@
 //! Shared accounting policy; storage remains with its domain owner.
-use crate::EditError;
+use super::{Error, Result};
 use crate::cache::StoredArtifact;
 use std::sync::{
     Arc, Mutex, Weak,
@@ -60,12 +60,12 @@ struct BudgetState {
     clock: AtomicU64,
 }
 impl ByteBudget {
-    pub fn new(limit: u64) -> Result<Self, EditError> {
+    pub fn new(limit: u64) -> Result<Self> {
         Self::with_parent(limit, None)
     }
-    fn with_parent(limit: u64, parent: Option<Self>) -> Result<Self, EditError> {
+    fn with_parent(limit: u64, parent: Option<Self>) -> Result<Self> {
         if limit == 0 {
-            return Err(EditError::Limit);
+            return Err(Error::Limit);
         }
         Ok(Self(Arc::new(BudgetState {
             parent,
@@ -80,18 +80,18 @@ impl ByteBudget {
     }
     /// Per-project admission with aggregate app accounting. Every child lease
     /// also retains a parent lease; refusal rolls back both reservations.
-    pub fn child(&self, limit: u64) -> Result<Self, EditError> {
+    pub fn child(&self, limit: u64) -> Result<Self> {
         Self::with_parent(limit, Some(self.clone()))
     }
     pub(crate) fn same_policy(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
-    pub fn snapshot(&self) -> Result<BudgetSnapshot, EditError> {
+    pub fn snapshot(&self) -> Result<BudgetSnapshot> {
         Ok(self
             .0
             .accounting
             .lock()
-            .map_err(|_| EditError::JobPoisoned)?
+            .map_err(|_| Error::Poisoned)?
             .clone())
     }
     pub(crate) fn stamp(&self) -> u64 {
@@ -112,12 +112,8 @@ impl ByteBudget {
         }
     }
 
-    pub(crate) fn register(&self, artifact: &Arc<StoredArtifact>) -> Result<(), EditError> {
-        let mut artifacts = self
-            .0
-            .artifacts
-            .lock()
-            .map_err(|_| EditError::JobPoisoned)?;
+    pub(crate) fn register(&self, artifact: &Arc<StoredArtifact>) -> Result<()> {
+        let mut artifacts = self.0.artifacts.lock().map_err(|_| Error::Poisoned)?;
         artifacts.retain(|entry| entry.upgrade().is_some_and(|a| !a.removed()));
         artifacts.push(Arc::downgrade(artifact));
         drop(artifacts);
@@ -129,17 +125,13 @@ impl ByteBudget {
     /// Reserve before allocation. On pressure, reclaim unpinned persistent
     /// artifacts in aggregate LRU order. No accounting/registry lock spans IO.
     /// Active pins/work can still yield BudgetFull; IO failures retain their source.
-    pub fn reserve(&self, owner: ByteOwner, bytes: u64) -> Result<ByteLease, EditError> {
+    pub fn reserve(&self, owner: ByteOwner, bytes: u64) -> Result<ByteLease> {
         match self.try_reserve(owner, bytes) {
-            Err(EditError::BudgetFull) => {}
+            Err(Error::BudgetFull) => {}
             result => return result,
         }
         let mut candidates: Vec<_> = {
-            let mut artifacts = self
-                .0
-                .artifacts
-                .lock()
-                .map_err(|_| EditError::JobPoisoned)?;
+            let mut artifacts = self.0.artifacts.lock().map_err(|_| Error::Poisoned)?;
             artifacts.retain(|entry| entry.upgrade().is_some_and(|a| !a.removed()));
             artifacts
                 .iter()
@@ -152,40 +144,33 @@ impl ByteBudget {
         for (_, artifact) in candidates {
             if artifact.evict()? {
                 match self.try_reserve(owner, bytes) {
-                    Err(EditError::BudgetFull) => {}
+                    Err(Error::BudgetFull) => {}
                     result => return result,
                 }
             }
         }
-        Err(EditError::BudgetFull)
+        Err(Error::BudgetFull)
     }
-    fn try_reserve(&self, owner: ByteOwner, bytes: u64) -> Result<ByteLease, EditError> {
+    fn try_reserve(&self, owner: ByteOwner, bytes: u64) -> Result<ByteLease> {
         let parent = self
             .0
             .parent
             .as_ref()
             .map(|p| p.reserve(owner, bytes).map(Box::new))
             .transpose()?;
-        let mut state = self
-            .0
-            .accounting
-            .lock()
-            .map_err(|_| EditError::JobPoisoned)?;
+        let mut state = self.0.accounting.lock().map_err(|_| Error::Poisoned)?;
         if owner != ByteOwner::ModelWeights && bytes > state.limit {
-            return Err(EditError::ArtifactTooLarge);
+            return Err(Error::ArtifactTooLarge);
         }
-        let next = state.used.checked_add(bytes).ok_or(EditError::BudgetFull)?;
+        let next = state.used.checked_add(bytes).ok_or(Error::BudgetFull)?;
         let memory = state.limited_used();
         if owner != ByteOwner::ModelWeights
             && memory.checked_add(bytes).is_none_or(|v| v > state.limit)
         {
-            return Err(EditError::BudgetFull);
+            return Err(Error::BudgetFull);
         }
-        let count = state
-            .owners
-            .get_mut(owner.index())
-            .ok_or(EditError::Limit)?;
-        *count = count.checked_add(bytes).ok_or(EditError::BudgetFull)?;
+        let count = state.owners.get_mut(owner.index()).ok_or(Error::Limit)?;
+        *count = count.checked_add(bytes).ok_or(Error::BudgetFull)?;
         state.used = next;
         Ok(ByteLease {
             parent,
@@ -203,29 +188,29 @@ pub struct ByteLease {
     bytes: u64,
 }
 impl ByteLease {
-    pub(crate) fn resize_models(&mut self, bytes: u64) -> Result<(), EditError> {
+    pub(crate) fn resize_models(&mut self, bytes: u64) -> Result<()> {
         if self.owner != ByteOwner::ModelWeights {
-            return Err(EditError::Invalid("model accounting owner"));
+            return Err(Error::Invalid("model accounting owner"));
         }
         let mut state = self
             .budget
             .0
             .accounting
             .lock()
-            .map_err(|_| EditError::JobPoisoned)?;
+            .map_err(|_| Error::Poisoned)?;
         let next = state
             .used
             .checked_sub(self.bytes)
             .and_then(|n| n.checked_add(bytes))
-            .ok_or(EditError::BudgetFull)?;
+            .ok_or(Error::BudgetFull)?;
         let count = state
             .owners
             .get_mut(self.owner.index())
-            .ok_or(EditError::Limit)?;
+            .ok_or(Error::Limit)?;
         let next_count = count
             .checked_sub(self.bytes)
             .and_then(|n| n.checked_add(bytes))
-            .ok_or(EditError::BudgetFull)?;
+            .ok_or(Error::BudgetFull)?;
         if let Some(parent) = &mut self.parent {
             parent.resize_models(bytes)?;
         }
@@ -305,7 +290,7 @@ impl render::ExecutionHooks for ByteBudgetHooks<'_> {
             .reserve(owner, bytes)
             .map(|lease| Box::new(lease) as Box<dyn render::Reservation>)
             .map_err(|error| match error {
-                EditError::Io(source) => render::Error::Io(source),
+                Error::Io(source) => render::Error::Io(source),
                 _ => render::Error::Budget {
                     requested: bytes,
                     limit: self
@@ -396,5 +381,252 @@ mod tests {
             hooks.reserve(render::MemoryKind::Decoded, 16),
             Err(render::Error::Cancelled)
         ));
+    }
+
+    #[test]
+    fn poisoned_accounting_and_registry_refuse_without_leaking_parent_reservations() {
+        for registry in [false, true] {
+            let parent = ByteBudget::new(2000).unwrap();
+            let child = parent.child(1000).unwrap();
+            let held = child.reserve(ByteOwner::Export, 1000).unwrap();
+            let poisoned = child.clone();
+            assert!(
+                std::thread::spawn(move || {
+                    if registry {
+                        let _guard = poisoned.0.artifacts.lock().unwrap();
+                        panic!("injected artifact registry poison");
+                    } else {
+                        let _guard = poisoned.0.accounting.lock().unwrap();
+                        panic!("injected accounting poison");
+                    }
+                })
+                .join()
+                .is_err()
+            );
+            assert!(matches!(
+                child.reserve(ByteOwner::DecodedFrames, 1),
+                Err(Error::Poisoned)
+            ));
+            assert_eq!(parent.snapshot().unwrap().used, 1000);
+            if registry {
+                assert_eq!(child.snapshot().unwrap().used, 1000);
+            } else {
+                assert!(matches!(child.snapshot(), Err(Error::Poisoned)));
+            }
+            drop(held);
+            assert_eq!(parent.snapshot().unwrap().used, 0);
+            if registry {
+                assert_eq!(child.snapshot().unwrap().used, 0);
+            } else {
+                assert!(matches!(child.snapshot(), Err(Error::Poisoned)));
+            }
+        }
+    }
+
+    struct CheckpointAsr {
+        config: ai::ProviderConfig,
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+        poison: Option<ByteBudget>,
+    }
+    impl ai::Transcriber for CheckpointAsr {
+        fn config(&self) -> &ai::ProviderConfig {
+            &self.config
+        }
+        fn capabilities(&self, _: &ai::Scope) -> ai::Capabilities {
+            ai::Capabilities {
+                model: self.config.model().clone(),
+                mode: "transcribe".into(),
+                operation: ai::Operation::Transcribe,
+                languages: vec![captions::LanguageTag::parse("en").unwrap()],
+                target_languages: vec![],
+                timing: std::collections::BTreeSet::from([ai::TimingUnit::Segment]),
+                diarization: ai::Support::Unsupported,
+                live_audio_input: ai::Support::Unsupported,
+                file_result_stream: ai::Support::Unsupported,
+                max_upload_bytes: None,
+                max_duration_micros: None,
+                evidence: ai::Evidence::FixtureVerified,
+                revision: "fixture-1".into(),
+            }
+        }
+        fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+            ai::CostEstimate::Free
+        }
+        fn transcribe(
+            &self,
+            audio: ai::AudioWindow<'_>,
+            _: &ai::Request<'_>,
+            _: &dyn ai::ExecutionHooks,
+        ) -> std::result::Result<Vec<ai::RecognitionSegment>, ai::Error> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(budget) = self.poison.clone() {
+                assert!(
+                    std::thread::spawn(move || {
+                        let _guard = budget.0.accounting.lock().unwrap();
+                        panic!("checkpoint accounting poison after cache miss");
+                    })
+                    .join()
+                    .is_err()
+                );
+            }
+            Ok(vec![ai::RecognitionSegment {
+                id: format!("fixture:{}", audio.range.start()).into(),
+                text: "hello".into(),
+                range: Some(audio.range),
+                timing: vec![],
+                raw_tokens: vec![],
+            }])
+        }
+    }
+
+    #[test]
+    fn real_transcription_checkpoint_tolerates_only_pressure_not_io_or_poison() {
+        use crate::{
+            cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs},
+            jobs::{JobRunner, RunnerConfig, SystemClock},
+            providers::{AllowAll, Providers, TranscriptionProvider},
+            transcript::{Cancellation, SilentProgress},
+        };
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("engine"),
+            "runtime checkpoint",
+            "runtime-checkpoint-2s.mp4",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=320x240:r=10:d=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ],
+        ) else {
+            return;
+        };
+        let duration = time::Tick(2 * time::TICKS_PER_SECOND);
+        let asset = testkit::source::asset(1, path)
+            .duration(duration)
+            .stream(testkit::source::audio().build())
+            .build();
+        // 0: oversized checkpoint, 1: active-work pressure, 2: unlink IO, 3: poison.
+        for case in 0..4 {
+            let parent = ByteBudget::new(256 << 20).unwrap();
+            let budget = parent.child(if case == 0 { 1 } else { 1 << 20 }).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+            let victim = CacheKey::new(KeyInputs {
+                kind: ArtifactKind::Preview,
+                source: [0; 32],
+                provider: "fixture",
+                model: "fixture",
+                version: "1",
+                settings: b"{}",
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })
+            .unwrap();
+            let mut held = None;
+            let mut repair = None;
+            if case == 1 {
+                held = Some(budget.reserve(ByteOwner::Export, 1 << 20).unwrap());
+            } else if case == 2 {
+                cache.put(victim, &[0; 328]).unwrap();
+                held = Some(budget.reserve(ByteOwner::Export, (1 << 20) - 400).unwrap());
+                let path = dir.path().join(victim.filename());
+                let bytes = std::fs::read(&path).unwrap();
+                std::fs::remove_file(&path).unwrap();
+                std::fs::create_dir(&path).unwrap();
+                repair = Some((path, bytes));
+            }
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let provider = CheckpointAsr {
+                config: ai::ProviderConfig::new(
+                    "fixture".into(),
+                    "fixture".into(),
+                    "fixture-1".into(),
+                    ai::Location::Local {
+                        backend: "fixture".into(),
+                        model_ref: "fixture".into(),
+                    },
+                )
+                .unwrap(),
+                calls: calls.clone(),
+                poison: (case == 3).then(|| budget.clone()),
+            };
+            let providers = Providers::from_parts(
+                TranscriptionProvider::Whisper {
+                    model: "fixture".into(),
+                },
+                Arc::new(provider),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let mut runner = JobRunner::new(
+                RunnerConfig {
+                    concurrency: [1, 1, 1],
+                    queue: 2,
+                    retained: 2,
+                    network_attempts: 3,
+                    backoff: std::time::Duration::from_millis(100),
+                    progress_interval: std::time::Duration::from_millis(10),
+                },
+                parent.clone(),
+                Arc::new(SystemClock::default()),
+            )
+            .unwrap();
+            let result = crate::transcript::transcribe(
+                &asset,
+                duration,
+                &captions::LanguageTag::parse("en").unwrap(),
+                &providers,
+                &mut runner,
+                &mut cache,
+                &AllowAll,
+                &SilentProgress,
+                &Cancellation::new(),
+            );
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                1,
+                "must exercise the real checkpoint write"
+            );
+            match case {
+                0 | 1 => assert!(!result.unwrap().cues.is_empty()),
+                2 => {
+                    assert!(matches!(
+                        result,
+                        Err(crate::EditError::Runtime(Error::Io(_)))
+                    ));
+                    assert_eq!(budget.snapshot().unwrap().used, 1 << 20);
+                }
+                3 => {
+                    assert!(matches!(
+                        result,
+                        Err(crate::EditError::Runtime(Error::Poisoned))
+                    ));
+                    assert!(matches!(budget.snapshot(), Err(Error::Poisoned)));
+                }
+                _ => unreachable!(),
+            }
+            if let Some((path, bytes)) = repair {
+                std::fs::remove_dir(&path).unwrap();
+                std::fs::write(&path, bytes).unwrap();
+            }
+            drop(held);
+            drop(cache);
+            assert_eq!(parent.snapshot().unwrap().used, 0);
+        }
     }
 }

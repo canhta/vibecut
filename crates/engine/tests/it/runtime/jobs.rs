@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::*;
-use engine::{ByteBudget, ByteOwner, Command, EditError, Session};
+use engine::{ByteBudget, ByteOwner, Command, EditError, Failure, RuntimeError as B, Session};
 use std::{
     sync::{
         Arc,
@@ -115,7 +115,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         .unwrap();
     assert!(matches!(
         pump(&mut r, id).error.as_deref(),
-        Some(EditError::ArtifactTooLarge)
+        Some(EditError::Runtime(B::ArtifactTooLarge))
     ));
     let (id, token) = r
         .submit(spec(ResourceClass::Cpu), |_| {
@@ -125,6 +125,34 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     token.cancel();
     assert_eq!(pump(&mut r, id).state, JobState::Cancelled);
     assert_eq!(budget.snapshot().unwrap().used, 0);
+    for wrapped in [false, true] {
+        let (id, _) = r
+            .submit(spec(ResourceClass::Network), move |_| {
+                Err(if wrapped {
+                    EditError::JobFailure(Arc::new(EditError::Cancelled))
+                } else {
+                    EditError::Cancelled
+                })
+            })
+            .unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (
+                if wrapped {
+                    JobState::Failed
+                } else {
+                    JobState::Cancelled
+                },
+                1
+            )
+        );
+        let cause = snapshot.error.as_deref().unwrap();
+        assert_eq!(cause.code(), engine::control::ErrorCode::Cancelled);
+        assert_eq!(matches!(cause, EditError::JobFailure(_)), wrapped);
+        assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
 }
 #[test]
 fn retries_use_real_submission_and_deterministic_backoff_local_never_retries() {
@@ -398,7 +426,7 @@ fn byte_eviction_pins_clear_in_use_oversize_and_accounting() {
     assert_eq!(pinned.bytes(), [1; 28]);
     assert!(matches!(
         cache.put(key(4), &[0; 500]),
-        Err(EditError::ArtifactTooLarge)
+        Err(EditError::Runtime(B::ArtifactTooLarge))
     ));
     drop(pinned);
     assert_eq!(cache.clear().unwrap(), 0);
@@ -556,7 +584,7 @@ fn fully_pinned_cache_refuses_pressure_and_repeated_inserts_remain_bounded() {
     let b = cache.get(key(2)).unwrap().unwrap();
     assert!(matches!(
         cache.put(key(3), &[3; 28]),
-        Err(EditError::BudgetFull)
+        Err(EditError::Runtime(B::BudgetFull))
     ));
     assert_eq!(cache.clear().unwrap(), 2);
     assert_eq!(budget.snapshot().unwrap().used, 400);
@@ -676,7 +704,7 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
     assert_eq!(budget.snapshot().unwrap().used, 900);
     assert!(matches!(
         budget.reserve(ByteOwner::Export, 1001),
-        Err(EditError::ArtifactTooLarge)
+        Err(B::ArtifactTooLarge)
     ));
     assert_eq!(budget.snapshot().unwrap().used, 900);
     let pinned = cache.get(key(0)).unwrap().unwrap(); // 1000, request itself cannot be evicted
@@ -698,7 +726,7 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
     request.bytes.compositor = 1001;
     assert!(matches!(
         r.submit(request, |_| Ok(vec![])),
-        Err(EditError::ArtifactTooLarge)
+        Err(EditError::Runtime(B::ArtifactTooLarge))
     ));
     drop(cache); // Release the exclusive root writer before reopening.
     let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
@@ -755,7 +783,10 @@ fn read_reclaims_other_caches_by_global_recency_and_refuses_all_pinned_pressure(
         a.put(key(1), &[1; 328]).unwrap();
         b.put(key(2), &[2; 128]).unwrap();
         let other = b.get(key(2)).unwrap().unwrap(); // 600 disk + 200 pin: only 200 free
-        assert!(matches!(a.get(key(1)), Err(EditError::BudgetFull)));
+        assert!(matches!(
+            a.get(key(1)),
+            Err(EditError::Runtime(B::BudgetFull))
+        ));
         assert_eq!(other.bytes(), [2; 128]);
         drop(other);
         assert_eq!(a.get(key(1)).unwrap().unwrap().bytes(), [1; 328]);
@@ -789,7 +820,7 @@ fn concurrent_reclaimers_preserve_live_pins_and_accounting() {
                         result
                             .as_ref()
                             .map(|_| ())
-                            .map_err(|e| matches!(e, EditError::BudgetFull)),
+                            .map_err(|e| matches!(e, B::BudgetFull)),
                     )
                     .unwrap();
                     release.wait();
@@ -826,10 +857,45 @@ fn reclaim_io_failure_preserves_charge_and_can_retry_after_repair() {
     let bytes = std::fs::read(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
-    assert!(matches!(
-        budget.reserve(ByteOwner::Export, 700),
-        Err(EditError::Io(_))
-    ));
+    let kind = match budget.reserve(ByteOwner::Export, 700) {
+        Err(B::Io(error)) => error.kind(),
+        _ => panic!("unlink failure must retain its typed runtime IO"),
+    };
+    assert_eq!(budget.snapshot().unwrap().used, 400);
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    assert!(
+        matches!(render::ExecutionHooks::reserve(&hooks, render::MemoryKind::Export, 700),
+        Err(render::Error::Io(error)) if error.kind() == kind)
+    );
+    assert_eq!(budget.snapshot().unwrap().used, 400);
+    let (mut r, _) = runner(&budget);
+    let mut session = crate::support::control::session();
+    let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
+    let mut request = spec(ResourceClass::Network);
+    request.bytes = JobBytes {
+        compositor: 700,
+        ..Default::default()
+    };
+    let (id, _) = r
+        .submit(request, |_| panic!("failed admission must not run"))
+        .unwrap();
+    let failed = pump(&mut r, id);
+    assert_eq!((failed.state, failed.attempts), (JobState::Failed, 0));
+    assert!(
+        matches!(failed.error.as_deref(), Some(EditError::Runtime(B::Io(error))) if error.kind() == kind)
+    );
+    assert!(r.take_output(id).is_none());
+    let state = session.snapshot_and_subscribe(&r).unwrap();
+    assert_eq!(state.jobs[0].error, Some(engine::control::ErrorCode::Io));
+    assert!(
+        session
+            .events(&mut cursor)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+        &event.payload, engine::control::Payload::JobChanged { snapshot }
+        if snapshot.id == id && snapshot.error == Some(engine::control::ErrorCode::Io)))
+    );
     assert_eq!(budget.snapshot().unwrap().used, 400);
     std::fs::remove_dir(&path).unwrap();
     std::fs::write(&path, bytes).unwrap();
@@ -887,7 +953,7 @@ fn project_budget_children_account_globally_and_roll_back_refused_reservations()
     let a = first.reserve(ByteOwner::Export, 600).unwrap();
     assert!(matches!(
         first.reserve(ByteOwner::DecodedFrames, 1),
-        Err(EditError::BudgetFull)
+        Err(B::BudgetFull)
     ));
     assert_eq!(
         app.snapshot().unwrap().used,
@@ -897,7 +963,7 @@ fn project_budget_children_account_globally_and_roll_back_refused_reservations()
     assert_eq!(first.snapshot().unwrap().used, 600);
     assert!(matches!(
         second.reserve(ByteOwner::Export, 401),
-        Err(EditError::BudgetFull)
+        Err(B::BudgetFull)
     ));
     assert_eq!(second.snapshot().unwrap().used, 0);
     let b = second.reserve(ByteOwner::Export, 400).unwrap();

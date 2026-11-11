@@ -313,7 +313,7 @@ fn reserve(budget: &ByteBudget, owner: ByteOwner, bytes: usize) -> Sound<ByteLea
     budget
         .reserve(owner, u64::try_from(bytes).map_err(|_| SoundError::Limit)?)
         .map_err(|e| match e {
-            engine::EditError::Io(e) => SoundError::Io(e),
+            engine::RuntimeError::Io(e) => SoundError::Io(e),
             _ => SoundError::Limit,
         })
 }
@@ -759,6 +759,46 @@ mod tests {
             assert!(rx.try_recv().is_err());
             assert_eq!(budget.snapshot().unwrap().used, 0);
         }
+        // A real shared-cache unlink failure must survive the sound adapter,
+        // before the fake device or decoder acquires any output buffers.
+        let (sink, rx, budget) = sink(16 << 20);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut cache, _) =
+            engine::cache::ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+        let key = engine::cache::CacheKey::new(engine::cache::KeyInputs {
+            kind: engine::cache::ArtifactKind::Preview,
+            source: [0; 32],
+            provider: "fixture",
+            model: "fixture",
+            version: "1",
+            settings: b"{}",
+            transcript: [0; 32],
+            cues: [0; 32],
+            clip_range: [0; 32],
+            translation: [0; 32],
+        })
+        .unwrap();
+        cache.put(key, &[0; 328]).unwrap();
+        let held = budget
+            .reserve(engine::ByteOwner::Export, (16 << 20) - 400)
+            .unwrap();
+        let path = dir.path().join(key.filename());
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let kind = match budget.reserve(engine::ByteOwner::Export, 1) {
+            Err(engine::RuntimeError::Io(error)) => error.kind(),
+            _ => panic!("shared cache must fail unlink"),
+        };
+        assert!(matches!(play(sink, wav(80)).join().unwrap(),
+            Err(SoundError::Io(error)) if error.kind() == kind));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(budget.snapshot().unwrap().used, 16 << 20);
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, bytes).unwrap();
+        drop(held);
+        drop(cache);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
         for panic in [false, true] {
             let budget = ByteBudget::new(16 << 20).unwrap();
             let mut sink = OutputSink::new(budget.clone());
