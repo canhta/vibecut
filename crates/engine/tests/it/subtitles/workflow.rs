@@ -612,7 +612,9 @@ fn remote_upload_is_refused_without_consent() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Providers(engine::providers::Error::ConsentRequired)
+        engine::Error::Transcript(engine::transcript::Error::Providers(
+            engine::providers::Error::ConsentRequired
+        ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
 }
@@ -661,8 +663,8 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::Error::Providers(
-            engine::providers::Error::ConsentRequired
+        Err(engine::Error::Transcript(
+            engine::transcript::Error::Providers(engine::providers::Error::ConsentRequired)
         ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
@@ -705,8 +707,8 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::Error::Edit(engine::EditError::Invalid(
-            "cached recognition is malformed"
+        Err(engine::Error::Transcript(engine::transcript::Error::Edit(
+            engine::EditError::Invalid("cached recognition is malformed")
         )))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
@@ -986,7 +988,10 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
         &Cancellation::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, engine::Error::Ai(ai::Error::Inference)));
+    assert!(matches!(
+        error,
+        engine::Error::Transcript(engine::transcript::Error::Ai(ai::Error::Inference))
+    ));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     let outcome = subtitles::run(
         &request,
@@ -1000,6 +1005,118 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
     .unwrap();
     assert!(outcome.srt.is_some());
     assert_eq!(outcome.checkpoints, 1);
+    assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(align_calls.load(Ordering::Relaxed), 2);
+    // The acquisition-only task keeps its Transcript producer; the mixed pipeline above keeps Engine.
+    let asr_calls = Arc::new(AtomicUsize::new(0));
+    let align_calls = Arc::new(AtomicUsize::new(0));
+    let providers = Arc::new(text_only_providers(
+        TranscriptionProvider::OpenAi {
+            model: "fake-asr-model".into(),
+        },
+        asr_calls.clone(),
+        Arc::new(ProbeAligner::failing_once(align_calls.clone())),
+    ));
+    let (mut jobs, budget) = self::runner();
+    let (cache, _) =
+        engine::cache::ArtifactCache::open(&directory.path().join("natural-cache"), budget, 16)
+            .unwrap();
+    let cache = Arc::new(std::sync::Mutex::new(cache));
+    let asset = media::SourceAsset::import(media::AssetId(1), input).unwrap();
+    let duration = asset.probe().duration.unwrap();
+    let mut session = crate::support::control::session();
+    let mut cursor = session.snapshot_and_subscribe(&jobs).unwrap().cursor;
+    for attempt in 0..2 {
+        let providers = providers.clone();
+        let cache = cache.clone();
+        let asset = asset.clone();
+        let (id, _) = jobs
+            .submit(
+                engine::jobs::JobSpec {
+                    kind: engine::jobs::JobKind::Transcribe,
+                    class: engine::jobs::ResourceClass::Cpu,
+                    input: crate::support::control::key(),
+                    bytes: engine::jobs::JobBytes {
+                        compositor: engine::transcript::WORK_BYTES,
+                        result: engine::transcript::RESULT_BYTES,
+                        ..Default::default()
+                    },
+                },
+                move |hooks| {
+                    engine::transcript::transcribe(
+                        &asset,
+                        duration,
+                        &lang("en"),
+                        &providers,
+                        None,
+                        cache.as_ref(),
+                        &AllowAll,
+                        hooks,
+                        &Cancellation::new(),
+                        hooks,
+                    )
+                    .map(|output| output.checkpoints.to_le_bytes().to_vec())
+                },
+            )
+            .unwrap();
+        crate::support::control::finish(&mut jobs, id);
+        let snapshot = jobs.snapshot(id).unwrap();
+        if attempt == 0 {
+            assert_eq!(
+                (snapshot.state, snapshot.attempts),
+                (engine::jobs::JobState::Failed, 1)
+            );
+            assert!(jobs.take_output(id).is_none());
+            let raw = snapshot.error.as_ref().unwrap();
+            let Some(engine::transcript::Error::Ai(source @ ai::Error::Inference)) = (raw.as_ref()
+                as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::transcript::Error>()
+            else {
+                panic!("acquisition cause lost")
+            };
+            assert!(std::ptr::eq(
+                source,
+                raw.source().unwrap().downcast_ref::<ai::Error>().unwrap()
+            ));
+            assert_eq!(raw.to_string(), "AI execution failed");
+            assert_eq!(raw.code(), engine::control::ErrorCode::Ai);
+            assert!(!raw.transient());
+            assert!(!raw.job_policy().terminal_cancelled);
+            assert_eq!(raw.job_policy().retry_after_seconds, None);
+            assert!(Arc::ptr_eq(
+                raw,
+                jobs.snapshots()
+                    .iter()
+                    .find(|row| row.id == id)
+                    .unwrap()
+                    .error
+                    .as_ref()
+                    .unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                raw,
+                jobs.drain_events()
+                    .iter()
+                    .find(|row| row.id == id)
+                    .unwrap()
+                    .error
+                    .as_ref()
+                    .unwrap()
+            ));
+            assert!(
+                session
+                    .snapshot_and_subscribe(&jobs)
+                    .unwrap()
+                    .jobs
+                    .iter()
+                    .any(|row| row.id == id && row.error == Some(engine::control::ErrorCode::Ai))
+            );
+            assert!(session.events(&mut cursor).unwrap().iter().any(|event| matches!(&event.payload, engine::control::Payload::JobChanged { snapshot } if snapshot.id == id && snapshot.error == Some(engine::control::ErrorCode::Ai))));
+        } else {
+            assert_eq!(snapshot.state, engine::jobs::JobState::Completed);
+            assert_eq!(jobs.take_output(id).unwrap().bytes(), 1usize.to_le_bytes());
+        }
+    }
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     assert_eq!(align_calls.load(Ordering::Relaxed), 2);
 }
@@ -1094,7 +1211,9 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::Error::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Transcript(engine::transcript::Error::Runtime(
+            engine::RuntimeError::Cancelled
+        ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!request.srt.unwrap().exists());
@@ -1279,7 +1398,9 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::Error::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Transcript(engine::transcript::Error::Runtime(
+            engine::RuntimeError::Cancelled
+        ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert!(!request.srt.unwrap().exists());
@@ -1410,7 +1531,9 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
             (cause.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
             Some(engine::Error::Providers(engine::providers::Error::Ai(
                 Error::Cost
-            )))
+            ))) | Some(engine::Error::Transcript(
+                engine::transcript::Error::Providers(engine::providers::Error::Ai(Error::Cost))
+            ))
         ));
     }
     let input = fixture().expect("synthetic media oracle must be available");

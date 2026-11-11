@@ -15,7 +15,7 @@ pub use cue_translation::{
 };
 pub use cues::build_session;
 pub(crate) use cues::caption_item_id;
-pub use error::Error;
+pub use error::{Error, Result};
 pub use operation::{Cancellation, Progress, SilentProgress, Stage, Transcription};
 pub(crate) use speech::media_duration;
 pub use speech::{RESULT_BYTES, WORK_BYTES, transcribe};

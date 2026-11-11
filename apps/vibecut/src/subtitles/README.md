@@ -42,3 +42,7 @@ values through the shared overlay. Named project styles save the complete unifor
 Provider setup/refusal and direct Runtime cancellation are borrowed from the provider result
 or its explicit engine composition. Missing-model setup retains its existing download action;
 opaque provider failures stay failed, without source-chain or Failed-envelope searching.
+
+Acquisition problems are borrowed from raw Transcript or engine Transcript composition for
+NoSpeech, LowConfidence, direct cancellation and provider setup/refusal labels. Opaque Runtime
+causes are not searched; mixed translation and Session failures keep their original roles.

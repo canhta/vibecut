@@ -45,3 +45,9 @@ impl From<engine::providers::Error> for Error {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::transcript::Error> for Error {
+    fn from(error: engine::transcript::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

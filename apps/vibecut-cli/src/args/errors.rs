@@ -124,9 +124,16 @@ impl CliError {
 fn edit_message(error: &(dyn Failure + 'static)) -> String {
     let cause: &(dyn std::error::Error + 'static) = error;
     let root = cause.downcast_ref::<EngineError>();
-    let providers = match root {
-        Some(EngineError::Providers(providers)) => Some(providers),
-        _ => cause.downcast_ref::<providers::Error>(),
+    let transcript = match root {
+        Some(EngineError::Transcript(transcript)) => Some(transcript),
+        _ => cause.downcast_ref::<engine::transcript::Error>(),
+    };
+    let providers = match transcript {
+        Some(engine::transcript::Error::Providers(providers)) => Some(providers),
+        _ => match root {
+            Some(EngineError::Providers(providers)) => Some(providers),
+            _ => cause.downcast_ref::<providers::Error>(),
+        },
     };
     if let Some(providers::Error::ModelMissing(id)) = providers {
         return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
@@ -220,6 +227,12 @@ impl From<engine::models::Error> for CliError {
 
 impl From<engine::providers::Error> for CliError {
     fn from(error: engine::providers::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}
+
+impl From<engine::transcript::Error> for CliError {
+    fn from(error: engine::transcript::Error) -> Self {
         Self::Engine(error.into())
     }
 }

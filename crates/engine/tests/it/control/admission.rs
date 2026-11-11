@@ -822,6 +822,30 @@ fn owner_failures_classify_publication_receipts_and_events() {
         };
     }
     let mut cases = vec![
+        row!(E::Transcript(T::Runtime(B::NetworkTransient)), Job, true),
+        row!(
+            E::Transcript(T::Runtime(B::Failed(Arc::new(B::Cancelled)))),
+            Cancelled,
+            false
+        ),
+        row!(
+            E::Transcript(T::Providers(P::ConsentRequired)),
+            Permission,
+            false
+        ),
+        row!(E::Transcript(T::Ai(ai::Error::ConsentRequired)), Ai, false),
+        row!(
+            E::Transcript(T::Ai(ai::Error::RateLimit {
+                retry_after_seconds: Some(3)
+            })),
+            Ai,
+            true
+        ),
+        row!(
+            E::Transcript(T::Media(media::MediaError::Cancelled)),
+            Media,
+            false
+        ),
         row!(E::Providers(P::Runtime(B::NetworkTransient)), Job, true),
         row!(
             E::Providers(P::Runtime(B::Failed(Arc::new(B::Cancelled)))),
