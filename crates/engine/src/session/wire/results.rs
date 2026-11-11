@@ -114,6 +114,8 @@ pub struct JobView {
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JobOutput {
+    Captions(Box<super::CaptionsResult>),
+    Translations(Box<super::TranslationsResult>),
     /// Inline JPEG frames of a `preview` job.
     Preview(PreviewResult),
     /// Reviewed-span candidates of `timeline.pause_candidates`.
@@ -121,7 +123,9 @@ pub enum JobOutput {
     /// The chapter document of `chapters.generate`.
     Chapters(Box<ai::chapters::ChapterDocument>),
     /// Classified occurrences of `fillers.classify`.
-    Fillers { candidates: Vec<FillerCandidate> },
+    Fillers {
+        candidates: Vec<FillerCandidate>,
+    },
     /// Measured values and the gains `audio.apply_loudness` takes.
     Loudness(super::LoudnessResult),
     /// Source-time candidates of `media.detect_scenes`.

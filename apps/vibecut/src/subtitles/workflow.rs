@@ -105,7 +105,6 @@ impl Workflow for LocalWorkflow {
                     &credentials,
                     &runtime,
                 )?;
-                let mut runner = runner(budget)?;
                 let duration = asset
                     .probe()
                     .duration
@@ -126,10 +125,11 @@ impl Workflow for LocalWorkflow {
                     duration,
                     &language,
                     &providers,
-                    &mut runner,
-                    &mut cache,
+                    Some(range),
+                    &std::sync::Mutex::new(&mut cache),
                     events,
                     events,
+                    cancel,
                     cancel,
                 )?;
                 let cues = captions::clip_track(

@@ -41,6 +41,7 @@ fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -65,6 +66,7 @@ fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
                 sounds: None,
                 media: None,
                 chapters: Some(&text),
+                captions: None,
             },
             &mut r,
         )
@@ -85,6 +87,7 @@ fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
                 sounds: None,
                 media: None,
                 chapters: Some(&text),
+                captions: None,
             },
             &mut r,
         )
@@ -129,6 +132,7 @@ fn fillers_classify_uses_the_lent_consent_and_feeds_remove_fillers() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )

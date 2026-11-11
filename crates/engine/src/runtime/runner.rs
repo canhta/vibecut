@@ -666,6 +666,26 @@ impl JobRunner {
             .as_ref()
             .map(JobOutput::bytes)
     }
+    pub(crate) fn validate_output_target(
+        &self,
+        id: JobId,
+        session: &Session,
+    ) -> Result<(), EditError> {
+        let output = self
+            .finished
+            .iter()
+            .find(|f| f.snapshot.id == id)
+            .and_then(|f| f.output.as_ref())
+            .ok_or(EditError::JobNotRetained)?;
+        if output
+            .target
+            .as_ref()
+            .is_none_or(|target| !session.matches_target(target))
+        {
+            return Err(EditError::StaleResult);
+        }
+        Ok(())
+    }
     pub fn take_output(&mut self, id: JobId) -> Option<JobOutput> {
         self.finished
             .iter_mut()

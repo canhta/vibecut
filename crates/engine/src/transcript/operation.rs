@@ -71,3 +71,32 @@ impl Cancellation {
 impl Progress for SilentProgress {
     fn stage(&self, _: Stage) {}
 }
+
+impl ai::ExecutionHooks for Cancellation {
+    fn cancelled(&self) -> bool {
+        self.cancelled()
+    }
+    fn stage(&self, _: ai::Stage) {}
+}
+impl Cancellation {
+    pub(crate) fn from_flag(flag: Arc<AtomicBool>) -> Self {
+        Self { flag }
+    }
+}
+impl Progress for crate::jobs::JobContext {
+    fn stage(&self, stage: Stage) {
+        use crate::jobs::JobStage;
+        let stage = match stage {
+            Stage::Extract => JobStage::Extract,
+            Stage::Transcribe => JobStage::Transcribe,
+            Stage::Align => JobStage::Align,
+            Stage::Assemble => JobStage::Assemble,
+            Stage::Segment => JobStage::Segment,
+            Stage::Translate => JobStage::Translate,
+            Stage::SuggestClips => JobStage::SuggestClips,
+            Stage::Snap => JobStage::Process,
+            Stage::ExportSrt | Stage::ExportBurn => JobStage::Render,
+        };
+        self.progress(stage, 0.0).ok();
+    }
+}

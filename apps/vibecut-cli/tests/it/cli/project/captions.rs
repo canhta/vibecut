@@ -381,6 +381,7 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
             sounds: None,
             media: None,
             chapters: None,
+            captions: None,
         },
         &mut runner,
     );

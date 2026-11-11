@@ -227,7 +227,7 @@ impl Translator for FakeTranslator {
     }
 }
 
-fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool) -> Providers {
+pub(crate) fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool) -> Providers {
     let mut asr = FakeAsr::new(calls);
     if remote {
         asr.config = remote_config("fake-asr", "fake-asr-model");
@@ -853,10 +853,7 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
         &Cancellation::new(),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        engine::EditError::Runtime(engine::RuntimeError::Failed(_))
-    ));
+    assert!(matches!(error, engine::EditError::Ai(ai::Error::Inference)));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     let outcome = subtitles::run(
         &request,
@@ -1145,4 +1142,1113 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
 fn progress_is_presentation_only_and_optional() {
     // SilentProgress is the documented no-op implementation for non-interactive use.
     SilentProgress.stage(engine::transcript::Stage::Extract);
+}
+
+fn registry_session(input: &Path) -> engine::Session {
+    let mut s = crate::support::control::session();
+    s.apply(engine::Command::AddAsset {
+        asset: media::SourceAsset::import(media::AssetId(1), input.to_owned()).unwrap(),
+    })
+    .unwrap();
+    s
+}
+fn caption_access(
+    root: &Path,
+    providers: Providers,
+    consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>,
+) -> engine::subtitles::CaptionAccess {
+    let (cache, _) =
+        engine::cache::ArtifactCache::open(root, ByteBudget::new(512 << 20).unwrap(), 32).unwrap();
+    engine::subtitles::CaptionAccess::new(
+        Arc::new(providers),
+        consent,
+        Arc::new(std::sync::Mutex::new(cache)),
+    )
+}
+fn caption_command(
+    s: &mut engine::Session,
+    r: &mut JobRunner,
+    access: &engine::subtitles::CaptionAccess,
+    id: &str,
+    params: serde_json::Value,
+    key: &str,
+) -> engine::control::Response {
+    let req = crate::support::control::request(s, id, params, key);
+    let mut caller = crate::support::control::caller(&crate::support::control::Allow);
+    caller.captions = Some(access);
+    s.control_request(req, caller, r).unwrap()
+}
+fn caption_submit(
+    s: &mut engine::Session,
+    r: &mut JobRunner,
+    access: &engine::subtitles::CaptionAccess,
+    id: &str,
+    params: serde_json::Value,
+    key: &str,
+) -> engine::jobs::JobId {
+    let engine::control::ControlResult::JobAccepted { job, .. } =
+        crate::support::control::ok(caption_command(s, r, access, id, params, key))
+    else {
+        panic!("expected job");
+    };
+    job
+}
+#[test]
+fn registry_generation_applies_range_at_start_as_one_edit_and_refuses_foreign_stale_and_reused_results()
+ {
+    use crate::support::control::{Allow, caller, error, finish, ok, request};
+    use engine::control::ErrorCode;
+    use serde_json::json;
+    use time::{SourceRange, TICKS_PER_SECOND, Tick};
+    let Some(input) = fixture() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let access = caption_access(
+        &dir.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, true),
+        Arc::new(AllowAll),
+    );
+    let mut s = registry_session(&input);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    let (mut r, _) = runner();
+    let range = SourceRange::new(Tick(TICKS_PER_SECOND), Tick(2 * TICKS_PER_SECOND)).unwrap();
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en","range":range}),
+        "generate",
+    );
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "pending",
+        ),
+        ErrorCode::StaleResult,
+    );
+    finish(&mut r, job);
+    assert_eq!(
+        r.snapshot(job).unwrap().state,
+        engine::jobs::JobState::Completed
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    let result = subtitles::decode_captions(r.output_bytes(job).unwrap()).unwrap();
+    assert_eq!(result.range, range);
+    assert_eq!(result.source_language, lang("en"));
+    assert!(
+        result
+            .cues
+            .iter()
+            .all(|c| c.range.start() >= range.start() && c.range.end() <= range.end())
+    );
+    let mut foreign = engine::Session::new(before.as_ref().clone(), 10).unwrap();
+    error(
+        caption_command(
+            &mut foreign,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "foreign",
+        ),
+        ErrorCode::StaleResult,
+    );
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job,"start":-1}),
+            "negative-start",
+        ),
+        ErrorCode::Refused,
+    );
+    let req = request(
+        &s,
+        "captions.apply",
+        json!({"job":job,"start":3*TICKS_PER_SECOND}),
+        "apply",
+    );
+    let response = s
+        .control_request(req.clone(), caller(&Allow), &mut r)
+        .unwrap();
+    ok(response.clone());
+    assert_ne!(s.revision(), rev);
+    assert_eq!(s.history_len().0, history.0 + 1);
+    let applied = s.project().clone();
+    let item = applied
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| matches!(i.content, project::ItemParams::Caption(_)))
+        .unwrap();
+    assert_eq!(item.start, Tick(3 * TICKS_PER_SECOND));
+    assert_eq!(item.source_range, range);
+    assert_eq!(item.source_asset, Some(media::AssetId(1)));
+    let replay = s.control_request(req, caller(&Allow), &mut r).unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap(),
+        serde_json::to_value(replay).unwrap()
+    );
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "reused",
+        ),
+        ErrorCode::StaleResult,
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &applied);
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        "stale-job",
+    );
+    finish(&mut r, job);
+    s.apply(engine::Command::RenameProject {
+        name: "later".into(),
+    })
+    .unwrap();
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "stale",
+        ),
+        ErrorCode::StaleResult,
+    );
+    let wrong = crate::support::control::submit(&mut r);
+    finish(&mut r, wrong);
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":wrong}),
+            "wrong-kind",
+        ),
+        ErrorCode::Refused,
+    );
+    for _ in 0..9 {
+        let id = crate::support::control::submit(&mut r);
+        finish(&mut r, id);
+    }
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "evicted",
+        ),
+        ErrorCode::JobNotRetained,
+    );
+}
+
+#[test]
+fn registry_caption_admission_refuses_missing_access_setup_bad_ranges_grants_transactions_and_client_consent()
+ {
+    use crate::support::control::{Allow, Deny, caller, error, finish, request};
+    use engine::control::ErrorCode;
+    use serde_json::json;
+    let Some(input) = fixture() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let access = caption_access(
+        &dir.path().join("cache"),
+        providers(calls.clone(), true, true),
+        Arc::new(DenyUploads),
+    );
+    let mut s = registry_session(&input);
+    let (mut r, _) = runner();
+    let before = s.project().clone();
+    let history = s.history_len();
+    for (index, (id, params, expected)) in [
+        ("captions.generate", json!({"asset":999,"source_language":"en"}), ErrorCode::Refused),
+        ("captions.generate", json!({"asset":1,"range":{"start":-1,"end":1},"source_language":"en"}), ErrorCode::Refused),
+        ("captions.generate", json!({"asset":1,"range":{"start":0,"end":3*time::TICKS_PER_SECOND},"source_language":"en"}), ErrorCode::Refused),
+        ("captions.generate", json!({"asset":1,"source_language":"en","consent":true}), ErrorCode::InvalidParams),
+        ("captions.translate", json!({"item":999,"target_language":"vi"}), ErrorCode::Refused),
+        ("captions.apply", json!({"job":999}), ErrorCode::JobNotRetained),
+    ].into_iter().enumerate() { error(caption_command(&mut s, &mut r, &access, id, params, &format!("refusal-{index}")), expected); }
+    for policy in [&Allow as &dyn engine::control::Policy, &Deny] {
+        let req = request(
+            &s,
+            "captions.generate",
+            json!({"asset":1,"source_language":"en"}),
+            "not-lent",
+        );
+        error(
+            s.control_request(req, caller(policy), &mut r).unwrap(),
+            ErrorCode::Permission,
+        );
+    }
+    let unavailable = engine::subtitles::CaptionAccess::unavailable(
+        engine::providers::Error::ModelMissing("whisper-large-v3-turbo").into(),
+    );
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &unavailable,
+            "captions.generate",
+            json!({"asset":1}),
+            "setup",
+        ),
+        ErrorCode::Setup,
+    );
+    s.begin_gesture().unwrap();
+    for (id, params) in [
+        ("captions.generate", json!({"asset":1})),
+        (
+            "captions.translate",
+            json!({"item":4,"target_language":"vi"}),
+        ),
+        ("captions.apply", json!({"job":0})),
+    ] {
+        error(
+            caption_command(&mut s, &mut r, &access, id, params, id),
+            ErrorCode::TransactionActive,
+        );
+    }
+    s.cancel_gesture().unwrap();
+    let rev = s.revision();
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        "deny-upload",
+    );
+    finish(&mut r, job);
+    assert_eq!(
+        r.snapshot(job).unwrap().state,
+        engine::jobs::JobState::Failed
+    );
+    assert_eq!(
+        r.snapshot(job).unwrap().error.unwrap().code(),
+        ErrorCode::Permission
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+}
+
+#[test]
+fn registry_generation_reuses_the_existing_subtitle_checkpoint_without_an_upload() {
+    use crate::support::control::finish;
+    use serde_json::json;
+    let Some(input) = fixture() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let providers = Arc::new(providers(calls.clone(), true, false));
+    let (mut r, budget) = runner();
+    let (mut cache, _) =
+        engine::cache::ArtifactCache::open(&dir.path().join("cache"), budget, 16).unwrap();
+    let req = request(&input, "en", "en", dir.path(), false);
+    subtitles::run(
+        &req,
+        &providers,
+        &mut r,
+        &mut cache,
+        &AllowAll,
+        &SilentProgress,
+        &Cancellation::new(),
+    )
+    .unwrap();
+    let access = engine::subtitles::CaptionAccess::new(
+        providers,
+        Arc::new(DenyUploads),
+        Arc::new(std::sync::Mutex::new(cache)),
+    );
+    let mut s = registry_session(&input);
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        "reuse",
+    );
+    finish(&mut r, job);
+    let result = subtitles::decode_captions(r.output_bytes(job).unwrap()).unwrap();
+    assert_eq!(result.checkpoints, 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+}
+
+struct WindowGate {
+    config: ProviderConfig,
+    calls: Arc<AtomicUsize>,
+    behavior: Arc<AtomicUsize>,
+    cache: Arc<std::sync::Mutex<engine::cache::ArtifactCache>>,
+    entered: std::sync::mpsc::SyncSender<()>,
+}
+impl Transcriber for WindowGate {
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &Scope) -> Capabilities {
+        let mut caps = FakeAsr::new(Arc::new(AtomicUsize::new(0))).capabilities(scope);
+        caps.model = self.config.model().clone();
+        caps
+    }
+    fn estimate(&self, _: &Scope) -> CostEstimate {
+        CostEstimate::Free
+    }
+    fn transcribe(
+        &self,
+        audio: ai::AudioWindow<'_>,
+        request: &Request<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Vec<RecognitionSegment>, Error> {
+        assert!(
+            self.cache.try_lock().is_ok(),
+            "cache mutex spans provider IO"
+        );
+        let n = self.calls.fetch_add(1, Ordering::AcqRel);
+        if n == 1 {
+            match self.behavior.load(Ordering::Acquire) {
+                1 => return Err(Error::Inference),
+                2 => {
+                    self.entered.send(()).unwrap();
+                    while !hooks.cancelled() {
+                        thread::park_timeout(Duration::from_millis(1));
+                    }
+                    return Err(Error::Cancelled);
+                }
+                _ => {}
+            }
+        }
+        FakeAsr::new(Arc::new(AtomicUsize::new(0))).transcribe(audio, request, hooks)
+    }
+}
+#[test]
+fn registry_failed_and_cancelled_windows_preserve_checkpoints_without_partial_results_or_cache_lock_during_io()
+ {
+    use crate::support::control::finish;
+    use engine::jobs::JobState;
+    use serde_json::json;
+    let Some(input) = testkit::oracle::generate(
+        &testkit::fixture::dir("engine"),
+        "caption windows",
+        "caption-31s.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=16000:duration=31",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    ) else {
+        return;
+    };
+    for behavior_value in [1, 2] {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, budget) = runner();
+        let (cache, _) =
+            engine::cache::ArtifactCache::open(&dir.path().join("cache"), budget, 32).unwrap();
+        let cache = Arc::new(std::sync::Mutex::new(cache));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let behavior = Arc::new(AtomicUsize::new(behavior_value));
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        let asr = Arc::new(WindowGate {
+            config: remote_config("fake-asr", "fake-asr-model"),
+            calls: calls.clone(),
+            behavior: behavior.clone(),
+            cache: cache.clone(),
+            entered: send,
+        });
+        let providers = Providers::from_parts(
+            TranscriptionProvider::OpenAi {
+                model: "fake-asr-model".into(),
+            },
+            asr,
+            Some(Arc::new(ProbeAligner::new(Arc::new(AtomicUsize::new(0))))),
+            None,
+            None,
+        )
+        .unwrap();
+        let access =
+            engine::subtitles::CaptionAccess::new(Arc::new(providers), Arc::new(AllowAll), cache);
+        let mut s = registry_session(&input);
+        let before = s.project().clone();
+        let rev = s.revision();
+        let history = s.history_len();
+        let job = caption_submit(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.generate",
+            json!({"asset":1,"source_language":"en"}),
+            "first",
+        );
+        r.tick().unwrap();
+        if behavior_value == 2 {
+            receive.recv_timeout(Duration::from_secs(10)).unwrap();
+            r.cancel_job(job).unwrap();
+        }
+        finish(&mut r, job);
+        assert_eq!(
+            r.snapshot(job).unwrap().state,
+            if behavior_value == 1 {
+                JobState::Failed
+            } else {
+                JobState::Cancelled
+            }
+        );
+        assert!(r.output_bytes(job).is_none());
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.revision(), rev);
+        assert_eq!(s.history_len(), history);
+        behavior.store(0, Ordering::Release);
+        let retry = caption_submit(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.generate",
+            json!({"asset":1,"source_language":"en"}),
+            "retry",
+        );
+        finish(&mut r, retry);
+        assert_eq!(
+            r.snapshot(retry).unwrap().state,
+            JobState::Completed,
+            "{:?}",
+            r.snapshot(retry).unwrap().error
+        );
+        let result = subtitles::decode_captions(r.output_bytes(retry).unwrap()).unwrap();
+        assert_eq!(result.checkpoints, 1);
+        assert_eq!(calls.load(Ordering::Relaxed), 3);
+    }
+}
+
+fn many_cues(count: i64) -> engine::Session {
+    let s = crate::support::control::seed();
+    let mut data = s.project().data().clone();
+    let item = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == project::ItemId(4))
+        .unwrap();
+    let project::ItemParams::Caption(params) = &mut item.content else {
+        panic!("caption");
+    };
+    let prototype = params.cues.cues[0].clone();
+    params.cues.cues = (0..count)
+        .map(|n| {
+            let mut cue = prototype.clone();
+            cue.id = format!("cue-{n}").into();
+            cue.range =
+                time::SourceRange::new(time::Tick(n * 1000), time::Tick((n + 1) * 1000)).unwrap();
+            cue.word_ranges.clear();
+            if n == 0 {
+                cue.texts.insert(
+                    lang("vi"),
+                    captions::CueText {
+                        text: "manual".into(),
+                        edited: true,
+                        translation_ref: None,
+                    },
+                );
+            }
+            cue
+        })
+        .collect();
+    engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap()
+}
+#[test]
+fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_applies_only_through_retranslate()
+ {
+    use crate::support::control::{error, finish, ok};
+    use engine::control::ErrorCode;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let access = caption_access(
+        &dir.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, true),
+        Arc::new(AllowAll),
+    );
+    let mut s = many_cues(130);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    let (mut r, _) = runner();
+    for (n, cues) in [
+        json!([]),
+        json!(["cue-1", "cue-1"]),
+        json!(["missing"]),
+        json!(["cue-0"]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.translate",
+            json!({"item":4,"cues":cues,"target_language":"vi"}),
+            &format!("invalid-{n}"),
+        );
+        error(
+            response,
+            if n == 0 {
+                ErrorCode::Limit
+            } else {
+                ErrorCode::Refused
+            },
+        );
+    }
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.translate",
+        json!({"item":4,"target_language":"vi"}),
+        "translate",
+    );
+    finish(&mut r, job);
+    assert_eq!(
+        r.snapshot(job).unwrap().state,
+        engine::jobs::JobState::Completed,
+        "{:?}",
+        r.snapshot(job).unwrap().error
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    let result = subtitles::decode_translations(r.output_bytes(job).unwrap()).unwrap();
+    assert_eq!(result.texts.len(), 129);
+    assert!(!result.texts.contains_key(&captions::NfcText::from("cue-0")));
+    assert_eq!(
+        result.translation_ref.as_str(),
+        "fake-translator/fake-translator-model"
+    );
+    ok(caption_command(
+        &mut s,
+        &mut r,
+        &access,
+        "retranslate",
+        json!({"item":4,"target_language":"vi","texts":result.texts,"translation_ref":result.translation_ref,"force":false}),
+        "apply-translation",
+    ));
+    assert_eq!(s.history_len().0, history.0 + 1);
+    let track = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == project::ItemId(4))
+        .unwrap();
+    let project::ItemParams::Caption(params) = &track.content else {
+        panic!("caption");
+    };
+    assert_eq!(
+        params.cues.cues[0].texts[&lang("vi")].text.as_str(),
+        "manual"
+    );
+    assert!(
+        params.cues.cues[129].texts[&lang("vi")]
+            .text
+            .as_str()
+            .ends_with("[vi]")
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.translate",
+        json!({"item":4,"cues":["cue-0"],"target_language":"vi","force":true}),
+        "force",
+    );
+    finish(&mut r, job);
+    let result = subtitles::decode_translations(r.output_bytes(job).unwrap()).unwrap();
+    assert_eq!(result.texts.len(), 1);
+    let deny = engine::subtitles::CaptionAccess::new(
+        Arc::new(providers(Arc::new(AtomicUsize::new(0)), false, true)),
+        Arc::new(DenyUploads),
+        access.cache().unwrap().clone(),
+    );
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &deny,
+        "captions.translate",
+        json!({"item":4,"cues":["cue-1"],"target_language":"vi"}),
+        "deny-translation",
+    );
+    finish(&mut r, job);
+    assert_eq!(
+        r.snapshot(job).unwrap().error.unwrap().code(),
+        ErrorCode::Permission
+    );
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+}
+
+#[test]
+fn complete_retranslation_accepts_ten_thousand_cues_and_refuses_one_more_atomically() {
+    for count in [10_000, 10_001] {
+        let mut session = many_cues(10_000);
+        let before = session.project().clone();
+        let revision = session.revision();
+        let texts = (0..count)
+            .map(|n| (format!("cue-{n}").into(), "Translated".into()))
+            .collect();
+        let result = session.apply(engine::Command::Retranslate {
+            item: project::ItemId(4),
+            target_language: lang("vi"),
+            texts,
+            translation_ref: "fixture".into(),
+            force: true,
+        });
+        if count == 10_000 {
+            assert!(result.unwrap().changed);
+            assert_eq!(session.history_len(), (1, 0));
+        } else {
+            assert!(matches!(
+                result,
+                Err(engine::EditError::Invalid("translation application"))
+            ));
+            assert_eq!(session.project(), &before);
+            assert_eq!(session.revision(), revision);
+            assert_eq!(session.history_len(), (0, 0));
+        }
+    }
+}
+
+struct LargeTranslator(FakeTranslator);
+impl Translator for LargeTranslator {
+    fn config(&self) -> &ProviderConfig {
+        self.0.config()
+    }
+    fn capabilities(&self, scope: &Scope) -> Capabilities {
+        self.0.capabilities(scope)
+    }
+    fn estimate(&self, scope: &Scope) -> CostEstimate {
+        self.0.estimate(scope)
+    }
+    fn translate(
+        &self,
+        window: &TranslationWindow,
+        _: &Request<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Translation, Error> {
+        Ok(Translation {
+            source_language: window.source_language.clone(),
+            target_language: window.target_language.clone(),
+            texts: window
+                .segments
+                .iter()
+                .map(|s| (s.id.clone(), "x".repeat(1024).into()))
+                .collect(),
+            number_warnings: Vec::new(),
+        })
+    }
+}
+#[test]
+fn registry_oversized_translation_and_cancelled_provider_publish_no_result_or_live_edit() {
+    use crate::support::control::finish;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let (mut r, _) = runner();
+    let mut s = many_cues(10_000);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let p = Providers::from_parts(
+        TranscriptionProvider::Whisper {
+            model: "fake-asr-model".into(),
+        },
+        Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
+        None,
+        Some(TranslationProvider::OpenAi {
+            model: "fake-translator-model".into(),
+        }),
+        Some(Arc::new(LargeTranslator(FakeTranslator::new()))),
+    )
+    .unwrap();
+    let access = caption_access(&dir.path().join("large"), p, Arc::new(AllowAll));
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.translate",
+        json!({"item":4,"target_language":"vi"}),
+        "large",
+    );
+    finish(&mut r, job);
+    let snap = r.snapshot(job).unwrap();
+    assert_eq!(snap.state, engine::jobs::JobState::Failed);
+    assert_eq!(
+        snap.error.unwrap().code(),
+        engine::control::ErrorCode::Limit
+    );
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    let entered = Arc::new(AtomicBool::new(false));
+    let p = Providers::from_parts(
+        TranscriptionProvider::Whisper {
+            model: "fake-asr-model".into(),
+        },
+        Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
+        None,
+        Some(TranslationProvider::OpenAi {
+            model: "fake-translator-model".into(),
+        }),
+        Some(Arc::new(BlockingTranslator {
+            config: remote_config("fake-translator", "fake-translator-model"),
+            entered: entered.clone(),
+        })),
+    )
+    .unwrap();
+    let access = caption_access(&dir.path().join("cancel"), p, Arc::new(AllowAll));
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.translate",
+        json!({"item":4,"cues":["cue-1"],"target_language":"vi"}),
+        "cancel",
+    );
+    r.tick().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !entered.load(Ordering::Acquire) {
+        assert!(std::time::Instant::now() < deadline);
+        thread::yield_now();
+    }
+    r.cancel_job(job).unwrap();
+    finish(&mut r, job);
+    assert_eq!(
+        r.snapshot(job).unwrap().state,
+        engine::jobs::JobState::Cancelled
+    );
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+}
+
+#[test]
+fn registry_generation_refuses_changed_source_before_applying_a_completed_job() {
+    use crate::support::control::{error, finish};
+    use serde_json::json;
+    let Some(fixture) = fixture() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("source.mp4");
+    std::fs::copy(fixture, &input).unwrap();
+    let mut s = registry_session(&input);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    let access = caption_access(
+        &dir.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, false),
+        Arc::new(AllowAll),
+    );
+    let (mut r, _) = runner();
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        "generate",
+    );
+    finish(&mut r, job);
+    let mut bytes = std::fs::read(&input).unwrap();
+    bytes.extend_from_slice(b"changed content");
+    std::fs::write(&input, bytes).unwrap();
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":job}),
+            "changed",
+        ),
+        engine::control::ErrorCode::StaleResult,
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+}
+
+struct LanguageGate {
+    inner: FakeAsr,
+    entered: std::sync::mpsc::SyncSender<()>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+#[derive(Default)]
+struct CaptionStageClock(std::sync::atomic::AtomicU64);
+impl engine::jobs::Clock for CaptionStageClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.fetch_add(1000, Ordering::AcqRel))
+    }
+}
+impl LanguageGate {
+    fn wait(&self, hooks: &dyn ExecutionHooks) -> Result<(), Error> {
+        self.entered.send(()).map_err(|_| Error::Inference)?;
+        self.release
+            .lock()
+            .map_err(|_| Error::Inference)?
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| Error::Inference)?;
+        if hooks.cancelled() {
+            Err(Error::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+impl Transcriber for LanguageGate {
+    fn config(&self) -> &ProviderConfig {
+        self.inner.config()
+    }
+    fn capabilities(&self, scope: &Scope) -> Capabilities {
+        self.inner.capabilities(scope)
+    }
+    fn estimate(&self, scope: &Scope) -> CostEstimate {
+        self.inner.estimate(scope)
+    }
+    fn detect_language(
+        &self,
+        _: ai::AudioWindow<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<LanguageTag, Error> {
+        self.wait(hooks)?;
+        Ok(lang("en"))
+    }
+    fn transcribe(
+        &self,
+        audio: ai::AudioWindow<'_>,
+        request: &Request<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Vec<RecognitionSegment>, Error> {
+        self.wait(hooks)?;
+        self.inner.transcribe(audio, request, hooks)
+    }
+}
+
+#[test]
+fn omitted_language_detection_reports_job_stages_and_uses_the_job_cancellation_token() {
+    use crate::support::control::finish;
+    use engine::jobs::{JobStage, JobState};
+    use serde_json::json;
+    let Some(input) = fixture() else {
+        return;
+    };
+    for cancel_detection in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (entered, receive) = std::sync::mpsc::sync_channel(1);
+        let (release, gate) = std::sync::mpsc::sync_channel(1);
+        let providers = Providers::from_parts(
+            TranscriptionProvider::Whisper {
+                model: "fake-asr-model".into(),
+            },
+            Arc::new(LanguageGate {
+                inner: FakeAsr::new(calls.clone()),
+                entered,
+                release: std::sync::Mutex::new(gate),
+            }),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let access = caption_access(&dir.path().join("cache"), providers, Arc::new(DenyUploads));
+        let clock = Arc::new(CaptionStageClock::default());
+        let mut runner = JobRunner::new(
+            RunnerConfig {
+                concurrency: [1, 1, 1],
+                queue: 8,
+                retained: 8,
+                network_attempts: 1,
+                backoff: Duration::from_millis(1),
+                progress_interval: Duration::from_millis(10),
+            },
+            ByteBudget::new(512 << 20).unwrap(),
+            clock.clone(),
+        )
+        .unwrap();
+        let mut session = registry_session(&input);
+        let before = session.project().clone();
+        let revision = session.revision();
+        let history = session.history_len();
+        let job = caption_submit(
+            &mut session,
+            &mut runner,
+            &access,
+            "captions.generate",
+            json!({"asset":1}),
+            "detect",
+        );
+        runner.tick().unwrap();
+        receive.recv_timeout(Duration::from_secs(10)).unwrap();
+        runner.tick().unwrap();
+        assert_eq!(runner.snapshot(job).unwrap().stage, JobStage::Extract);
+        if cancel_detection {
+            runner.cancel_job(job).unwrap();
+        }
+        release.send(()).unwrap();
+        if !cancel_detection {
+            receive.recv_timeout(Duration::from_secs(10)).unwrap();
+            runner.tick().unwrap();
+            assert_eq!(runner.snapshot(job).unwrap().stage, JobStage::Transcribe);
+            release.send(()).unwrap();
+        }
+        finish(&mut runner, job);
+        if cancel_detection {
+            assert_eq!(runner.snapshot(job).unwrap().state, JobState::Cancelled);
+            assert!(runner.output_bytes(job).is_none());
+            assert_eq!(calls.load(Ordering::Acquire), 0);
+        } else {
+            assert_eq!(runner.snapshot(job).unwrap().state, JobState::Completed);
+            let result = subtitles::decode_captions(runner.output_bytes(job).unwrap()).unwrap();
+            assert_eq!(result.source_language, lang("en"));
+            assert!(!result.cues.is_empty());
+            assert_eq!(calls.load(Ordering::Acquire), 1);
+        }
+        assert_eq!(session.project(), &before);
+        assert_eq!(session.revision(), revision);
+        assert_eq!(session.history_len(), history);
+    }
+}
+
+struct RetryTranslator {
+    inner: FakeTranslator,
+    calls: Arc<AtomicUsize>,
+}
+impl Translator for RetryTranslator {
+    fn config(&self) -> &ProviderConfig {
+        self.inner.config()
+    }
+    fn capabilities(&self, s: &Scope) -> Capabilities {
+        self.inner.capabilities(s)
+    }
+    fn estimate(&self, s: &Scope) -> CostEstimate {
+        self.inner.estimate(s)
+    }
+    fn translate(
+        &self,
+        _: &TranslationWindow,
+        _: &Request<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Translation, Error> {
+        self.calls.fetch_add(1, Ordering::AcqRel);
+        Err(Error::Schema)
+    }
+}
+#[derive(Default)]
+struct CaptionClock(std::sync::atomic::AtomicU64);
+impl engine::jobs::Clock for CaptionClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.load(Ordering::Acquire))
+    }
+}
+#[test]
+fn registry_translation_retries_share_the_operation_attempt_ceiling() {
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let p = Providers::from_parts(
+        TranscriptionProvider::Whisper {
+            model: "fake-asr-model".into(),
+        },
+        Arc::new(FakeAsr::new(Arc::new(AtomicUsize::new(0)))),
+        None,
+        Some(TranslationProvider::OpenAi {
+            model: "fake-translator-model".into(),
+        }),
+        Some(Arc::new(RetryTranslator {
+            inner: FakeTranslator::new(),
+            calls: calls.clone(),
+        })),
+    )
+    .unwrap();
+    let access = caption_access(&dir.path().join("cache"), p, Arc::new(AllowAll));
+    let clock = Arc::new(CaptionClock::default());
+    let mut r = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 8,
+            retained: 8,
+            network_attempts: 10,
+            backoff: Duration::from_millis(1),
+            progress_interval: Duration::from_millis(10),
+        },
+        ByteBudget::new(512 << 20).unwrap(),
+        clock.clone(),
+    )
+    .unwrap();
+    let mut s = many_cues(2);
+    let before = s.project().clone();
+    let rev = s.revision();
+    let job = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.translate",
+        json!({"item":4,"cues":["cue-1"],"target_language":"vi"}),
+        "retry",
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        clock.0.fetch_add(1000, Ordering::AcqRel);
+        r.tick().unwrap();
+        if r.snapshot(job).unwrap().state == engine::jobs::JobState::Failed {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        thread::yield_now();
+    }
+    assert_eq!(calls.load(Ordering::Acquire), 3);
+    assert_eq!(r.snapshot(job).unwrap().attempts, 4);
+    assert!(r.output_bytes(job).is_none());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
 }

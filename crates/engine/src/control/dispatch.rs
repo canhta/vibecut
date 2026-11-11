@@ -320,6 +320,96 @@ impl Session {
                 )?;
                 Ok(ControlResult::ChapterSidecars { paths })
             }
+            Command::CaptionsGenerate {
+                asset,
+                range,
+                source_language,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let access = caller
+                    .captions
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
+                let job = crate::subtitles::generate(
+                    self,
+                    runner,
+                    access,
+                    asset,
+                    range,
+                    source_language,
+                    crate::control_preview::control_key(fingerprint)?,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::CaptionsTranslate {
+                item,
+                cues,
+                target_language,
+                force,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let access = caller
+                    .captions
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
+                let job = crate::subtitles::translate(
+                    self,
+                    runner,
+                    access,
+                    item,
+                    cues,
+                    target_language,
+                    force,
+                    crate::control_preview::control_key(fingerprint)?,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::CaptionsApply { job, start } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let snapshot = runner.snapshot(job).ok_or(EditError::JobNotRetained)?;
+                if snapshot.kind != JobKind::Transcribe {
+                    return Err(EditError::Invalid("job is not a transcription"));
+                }
+                if snapshot.state != JobState::Completed {
+                    return Err(EditError::StaleResult);
+                }
+                runner.validate_output_target(job, self)?;
+                let result = crate::subtitles::decode_captions(
+                    runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
+                )?;
+                let asset = self
+                    .project()
+                    .data()
+                    .assets
+                    .iter()
+                    .find(|a| a.id() == result.asset)
+                    .ok_or(EditError::NoAsset(result.asset))?;
+                if result.range.start() < time::Tick::ZERO
+                    || asset
+                        .probe()
+                        .duration
+                        .is_none_or(|d| result.range.end() > d)
+                {
+                    return Err(EditError::StaleResult);
+                }
+                crate::subtitles::validate_source(asset)?;
+                let insert =
+                    crate::subtitles::apply_command(result, start.unwrap_or(time::Tick::ZERO))?;
+                self.apply_control(insert)
+                    .map(|outcome| ControlResult::Edit { outcome })
+            }
             Command::JobCancel { job } => {
                 runner.cancel_job(job)?;
                 Ok(ControlResult::CancelRequested { job })

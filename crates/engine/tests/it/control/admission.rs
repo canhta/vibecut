@@ -128,6 +128,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )

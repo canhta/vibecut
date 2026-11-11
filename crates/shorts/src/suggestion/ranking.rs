@@ -129,10 +129,11 @@ pub fn suggest(
         duration,
         &source_language,
         providers,
-        runner,
-        cache,
+        None,
+        &std::sync::Mutex::new(cache),
         consent,
         progress,
+        cancel,
         cancel,
     )?;
     let Transcription {

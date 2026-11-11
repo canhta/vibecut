@@ -167,6 +167,12 @@ pub(crate) fn apply(
         }
     };
     match command {
+        EditCommand::CaptionsApply { job, start } => {
+            let _ = (job, start);
+            return Err(EditError::Unsupported(
+                "caption application requires control dispatch",
+            ));
+        }
         EditCommand::SaveCaptionPreset { item, name } => {
             data = text::save_caption_preset(data, item, name, sources, next, created)?;
         }

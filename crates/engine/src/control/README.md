@@ -3,7 +3,7 @@
 Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
 `Session::control_typed`, `snapshot_and_subscribe`, `JobOutput`; `Caller.fonts` and
 `Caller.sounds` lend the process asset libraries and `Caller.chapters` lends the process
-`TextAccess`.
+`TextAccess`; `Caller.captions` lends [caption workflow resources](../subtitles/README.md#caption-workflow-commands).
 
 ## Control admission, revisions and receipts
 
@@ -72,7 +72,7 @@ against its admitted immutable snapshot and returns job ID, revision and paths; 
 A command that starts a job is `JobControl`, declares `grant` explicitly and returns
 `JobAccepted { job, revision, paths }`. `job_status` returns a `JobView` whose single
 `output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`,
-`scenes`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
+`scenes`, `captions`, `translations`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
 the runner's retained bytes with one exhaustive `match` on `JobKind`, so a new kind does not
 compile until it names its output or states it has none. Reading does not consume the output; a
 completed job whose bytes were evicted refuses `job_not_retained`.
@@ -87,7 +87,7 @@ completed job whose bytes were evicted refuses `job_not_retained`.
   is for in-process owners only.
 - **Lent implementations.** Engine declares the command and its output type. A workflow that
   lives above `engine` is implemented by a crate above it and lent through one optional access
-  object per workflow family in `Caller` (`fonts`, `media`, `chapters`). Absent, a local workflow
+  object per workflow family in `Caller` (`fonts`, `media`, `chapters`, `captions`). Absent, a local workflow
   refuses `Unsupported` and a remote-capable one refuses `ConsentRequired`.
 - **Grants and consent.** Local workflows are `grant = Agent`. A remote-capable workflow is
   startable by an agent only when its access object already carries the human approval for that

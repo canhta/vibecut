@@ -623,7 +623,7 @@ pub(super) fn execute_retranslate(
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
     if texts.is_empty()
-        || texts.len() > ai::MAX_SEGMENTS
+        || texts.len() > crate::session::wire::MAX_TRANSLATION_CUES
         || translation_ref.as_str().trim().is_empty()
         || translation_ref.as_str().len() > 256
     {

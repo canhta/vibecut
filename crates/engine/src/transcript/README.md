@@ -5,14 +5,17 @@ Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session
 
 Acquires source-timed cues from the user's chosen providers, shared by
 [subtitles](../subtitles/README.md) and the [shorts crate](../../../shorts/README.md):
-acquisition, cue-session assembly, translation and job waiting. `Cancellation::checkpoint`
+acquisition, cue-session assembly, translation and blocking job waiting.
+`transcribe` is synchronous and takes execution hooks, progress, a source range and a
+mutex-protected checkpoint cache (owned or borrowed). It never submits or pumps a runner.
+Provider calls run outside the cache lock; the caller supplies the same cancellation flag
+to media decoding and provider hooks. Registry jobs use their job token for both. `Cancellation::checkpoint`
 refuses the next stage; `media_flag` shares cancellation with media decoding. Provider
 credentials expose only the selected OpenAI or Anthropic key lookup, returning the typed
 missing-credential refusal before adapter construction.
 
 `Providers::detect_language` detects an imported asset's spoken language through the local
-whisper.cpp adapter; composition roots pass the detected tag explicitly, so detection is never a
-hidden fallback inside `transcribe`. A run with no speech returns `NoSpeech`. When every
+whisper.cpp adapter; composition roots or the caption workflow job pass the detected tag explicitly to `transcribe`. A run with no speech returns `NoSpeech`. When every
 recognized word carries confidence and their mean is below the fixed floor, `transcribe` returns
 `LowConfidence` instead of inserting cues for a likely wrong language; providers without
 confidence data never produce this refusal. Both are `transcript::Error`: the acquisition stage
@@ -52,7 +55,8 @@ target scripts and exact provider/model/settings identity.
 Deserialize completed output bytes as `ai::Translation` and apply through
 `JobOutput::apply(session, Command::Retranslate { item, target_language, texts,
 translation_ref, force })`. The registered JSON id is `retranslate`; its required fields are
-those typed fields, with force explicitly boolean. Only returned and selected IDs participate;
+those typed fields, with force explicitly boolean. A complete edit admits up to 10,000 returned texts independently of
+the provider window bound, so a multi-window result applies as one undo step. Only returned and selected IDs participate;
 unknown IDs or blank text refuse the whole command. Edited targets are preserved unless
 force=true, including through JSON. Source-language text cannot be replaced by a translation. A
 successful command is one undo step with translation provenance; locked items and stale Session
