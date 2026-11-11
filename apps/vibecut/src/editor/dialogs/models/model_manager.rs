@@ -78,7 +78,7 @@ struct Download {
 }
 struct CheckOutcome {
     installed: BTreeMap<String, bool>,
-    errors: BTreeMap<String, Arc<EngineError>>,
+    errors: BTreeMap<String, Arc<engine::models::Error>>,
 }
 struct CheckHooks(Arc<AtomicBool>);
 impl ai::ExecutionHooks for CheckHooks {
@@ -94,7 +94,7 @@ pub struct ModelManager {
     suggested: BTreeSet<String>,
     selected: Option<String>,
     installed: BTreeMap<String, bool>,
-    installed_errors: BTreeMap<String, Arc<EngineError>>,
+    installed_errors: BTreeMap<String, Arc<engine::models::Error>>,
     checking: bool,
     check_rx: Option<Receiver<std::result::Result<CheckOutcome, EngineError>>>,
     check_cancel: Arc<AtomicBool>,
@@ -779,64 +779,76 @@ fn error_from(error: Error) -> EngineError {
     }
 }
 fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
-    if let Some(runtime) = error.downcast_ref::<engine::RuntimeError>() {
+    use engine::RuntimeError as R;
+    use engine::models::Error as M;
+    let root = error.downcast_ref::<EngineError>();
+    let models = match root {
+        Some(EngineError::Models(models)) => Some(models),
+        _ => error.downcast_ref::<M>(),
+    };
+    let runtime = match models {
+        Some(M::Runtime(runtime)) => Some(runtime),
+        _ => match root {
+            Some(EngineError::Runtime(runtime)) => Some(runtime),
+            _ => error.downcast_ref::<R>(),
+        },
+    };
+    if let Some(runtime) = runtime {
         return match runtime {
-            engine::RuntimeError::StorageFull
-            | engine::RuntimeError::Model(
+            R::StorageFull
+            | R::Model(
                 ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
             )
-            | engine::RuntimeError::Transfer(
+            | R::Transfer(
                 ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
             ) => ModelProblem::StorageFull,
-            engine::RuntimeError::Model(ai::Error::ModelIntegrity)
-            | engine::RuntimeError::Transfer(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
-            engine::RuntimeError::NetworkTransient => ModelProblem::Network,
-            engine::RuntimeError::CacheBusy => ModelProblem::Busy,
-            engine::RuntimeError::CacheCorrupt => ModelProblem::Corrupt,
-            engine::RuntimeError::Cancelled => ModelProblem::Cancelled,
-            engine::RuntimeError::Io(error) if error.kind() == std::io::ErrorKind::StorageFull => {
+            R::Model(ai::Error::ModelIntegrity) | R::Transfer(ai::Error::ModelIntegrity) => {
+                ModelProblem::Integrity
+            }
+            R::NetworkTransient => ModelProblem::Network,
+            R::CacheBusy => ModelProblem::Busy,
+            R::CacheCorrupt => ModelProblem::Corrupt,
+            R::Cancelled => ModelProblem::Cancelled,
+            R::Io(error) if error.kind() == std::io::ErrorKind::StorageFull => {
                 ModelProblem::StorageFull
             }
             _ => ModelProblem::Failed,
         };
     }
-    let Some(error) = error.downcast_ref::<EngineError>() else {
-        return ModelProblem::Failed;
+    let ai = match models {
+        Some(M::Ai(ai)) => Some(ai),
+        _ => match root {
+            Some(EngineError::Ai(ai)) => Some(ai),
+            _ => None,
+        },
     };
-    match error {
-        EngineError::Runtime(engine::RuntimeError::StorageFull)
-        | EngineError::Runtime(engine::RuntimeError::Model(
-            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
-        ))
-        | EngineError::Runtime(engine::RuntimeError::Transfer(
-            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
-        ))
-        | EngineError::Ai(
-            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
-        ) => ModelProblem::StorageFull,
-        EngineError::Ai(ai::Error::ModelIntegrity)
-        | EngineError::Runtime(engine::RuntimeError::Model(ai::Error::ModelIntegrity))
-        | EngineError::Runtime(engine::RuntimeError::Transfer(ai::Error::ModelIntegrity)) => {
-            ModelProblem::Integrity
-        }
-        EngineError::Ai(
+    if let Some(ai) = ai {
+        return match ai {
+            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull) => {
+                ModelProblem::StorageFull
+            }
+            ai::Error::ModelIntegrity => ModelProblem::Integrity,
             ai::Error::Network
             | ai::Error::Timeout
             | ai::Error::Server
-            | ai::Error::RateLimit { .. },
-        )
-        | EngineError::Runtime(engine::RuntimeError::NetworkTransient) => ModelProblem::Network,
-        EngineError::Runtime(engine::RuntimeError::CacheBusy) => ModelProblem::Busy,
-        EngineError::Runtime(engine::RuntimeError::CacheCorrupt) => ModelProblem::Corrupt,
-        EngineError::Runtime(engine::RuntimeError::Cancelled) => ModelProblem::Cancelled,
-        EngineError::Io(error) | EngineError::Runtime(engine::RuntimeError::Io(error))
-            if error.kind() == std::io::ErrorKind::StorageFull =>
-        {
-            ModelProblem::StorageFull
-        }
-        _ => ModelProblem::Failed,
+            | ai::Error::RateLimit { .. } => ModelProblem::Network,
+            _ => ModelProblem::Failed,
+        };
+    }
+    let io = match models {
+        Some(M::Io(io)) => Some(io),
+        _ => match root {
+            Some(EngineError::Io(io)) => Some(io),
+            _ => None,
+        },
+    };
+    if io.is_some_and(|io| io.kind() == std::io::ErrorKind::StorageFull) {
+        ModelProblem::StorageFull
+    } else {
+        ModelProblem::Failed
     }
 }
+
 fn problem_text(problem: ModelProblem) -> Text {
     match problem {
         ModelProblem::StorageFull => Text::ModelStorageFull,

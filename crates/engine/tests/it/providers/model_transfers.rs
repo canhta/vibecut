@@ -11,7 +11,7 @@ use engine::{
     ByteBudget, ByteOwner, Error as EngineError,
     cache::ArtifactCache,
     jobs::*,
-    models::{ModelIo, ModelTransfers, SystemModelIo},
+    models::{Error as ModelsError, ModelIo, ModelTransfers, SystemModelIo},
 };
 use std::{
     collections::VecDeque,
@@ -215,6 +215,7 @@ impl DownloadTransport for Http {
 struct Io {
     available: u64,
     fail_call: usize,
+    error_kind: io::ErrorKind,
     calls: AtomicUsize,
 }
 impl Io {
@@ -222,6 +223,7 @@ impl Io {
         Arc::new(Self {
             available: u64::MAX,
             fail_call: usize::MAX,
+            error_kind: io::ErrorKind::StorageFull,
             calls: AtomicUsize::new(0),
         })
     }
@@ -234,7 +236,7 @@ impl ModelIo for Io {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
         if call == self.fail_call {
             file.write_all(data.get(..data.len() / 2).unwrap())?;
-            return Err(io::Error::new(io::ErrorKind::StorageFull, "injected"));
+            return Err(io::Error::new(self.error_kind, "injected"));
         }
         file.write_all(data)
     }
@@ -344,7 +346,7 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     assert!(store.installed(&model, &NoHooks).unwrap().is_none());
     assert!(matches!(
         store.submit(&mut runner, model.clone(), None),
-        Err(EngineError::Ai(ai::Error::ConsentRequired))
+        Err(ModelsError::Ai(ai::Error::ConsentRequired))
     ));
     assert_eq!(http.count(), 0);
     let (id, _) = submit(&store, &mut runner, &model);
@@ -363,7 +365,7 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     drop(pressure);
     assert!(matches!(
         store.remove(&model),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(ModelsError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     drop(store);
     assert!(matches!(
@@ -398,6 +400,7 @@ fn interrupted_transfer_resumes_after_cache_reopen_with_range_and_strong_etag() 
     let io = Arc::new(Io {
         available: 65536 + 131072,
         fail_call: usize::MAX,
+        error_kind: io::ErrorKind::StorageFull,
         calls: AtomicUsize::new(0),
     });
     let store = ModelTransfers::new(cache, http.clone(), io);
@@ -479,8 +482,8 @@ fn corrupt_bundles_refuse_without_refetch_and_return_cache_custody() {
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
         let cause = snapshot.error.as_deref().unwrap();
         assert!(matches!(
-            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
-            Some(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<ModelsError>(),
+            Some(ModelsError::Runtime(engine::RuntimeError::CacheCorrupt))
         ));
         assert!(runner.take_output(id).is_none());
         assert_eq!(http.count(), calls);
@@ -611,19 +614,19 @@ fn hostile_ranges_hash_sizes_and_oversized_or_truncated_streams_never_promote() 
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
         let raw = snapshot.error.as_deref().unwrap();
         let typed = (raw as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EngineError>()
+            .downcast_ref::<ModelsError>()
             .unwrap();
         assert!(
             matches!(
                 (variant, typed),
-                (0 | 3, EngineError::Ai(ai::Error::ModelIntegrity))
+                (0 | 3, ModelsError::Ai(ai::Error::ModelIntegrity))
                     | (
                         2,
-                        EngineError::Runtime(engine::RuntimeError::NetworkTransient)
+                        ModelsError::Runtime(engine::RuntimeError::NetworkTransient)
                     )
                     | (
                         1 | 4..=8,
-                        EngineError::Runtime(engine::RuntimeError::ModelResponse)
+                        ModelsError::Runtime(engine::RuntimeError::ModelResponse)
                     )
             ),
             "variant {variant}: {typed:?}"
@@ -639,8 +642,12 @@ fn hostile_ranges_hash_sizes_and_oversized_or_truncated_streams_never_promote() 
     }
 }
 #[test]
-fn disk_preflight_and_mid_write_storage_full_are_typed_and_resumable() {
-    for mid_write in [false, true] {
+fn disk_preflight_and_mid_write_failures_are_typed_and_resumable() {
+    for (mid_write, kind) in [
+        (false, io::ErrorKind::StorageFull),
+        (true, io::ErrorKind::StorageFull),
+        (true, io::ErrorKind::PermissionDenied),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let http = Arc::new(Http::default());
         let (data, model) = specimen(131072);
@@ -648,24 +655,54 @@ fn disk_preflight_and_mid_write_storage_full_are_typed_and_resumable() {
         let io = Arc::new(Io {
             available: if mid_write { u64::MAX } else { 0 },
             fail_call: if mid_write { 1 } else { usize::MAX },
+            error_kind: kind,
             calls: AtomicUsize::new(0),
         });
         let (budget, store, mut runner, clock) = setup(dir.path(), http.clone(), io, 1);
         let (id, _) = submit(&store, &mut runner, &model);
         let result = terminal(&mut runner, id, &clock);
-        assert!(matches!(
-            result
-                .error
-                .as_deref()
-                .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<EngineError>()),
-            Some(EngineError::Runtime(engine::RuntimeError::StorageFull))
-        ));
         assert_eq!((result.state, result.attempts), (JobState::Failed, 1));
-        let raw = result.error.as_deref().unwrap();
-        assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+        let raw = result.error.as_ref().unwrap();
+        let typed = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<ModelsError>()
+            .unwrap();
+        if kind == io::ErrorKind::StorageFull {
+            assert!(matches!(
+                typed,
+                ModelsError::Runtime(engine::RuntimeError::StorageFull)
+            ));
+            assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
+            assert!(raw.source().is_none());
+        } else {
+            let ModelsError::Io(source) = typed else {
+                panic!("model IO cause lost")
+            };
+            assert_eq!(source.kind(), kind);
+            assert!(std::ptr::eq(
+                source,
+                raw.source().unwrap().downcast_ref::<io::Error>().unwrap()
+            ));
+            assert_eq!(raw.code(), engine::control::ErrorCode::Io);
+            assert_eq!(raw.to_string(), "job/cache IO failed");
+        }
         assert!(!raw.transient());
-        assert!(raw.source().is_none());
+        assert!(!raw.job_policy().terminal_cancelled);
+        assert_eq!(raw.job_policy().retry_after_seconds, None);
+        assert!(Arc::ptr_eq(
+            raw,
+            runner.snapshot(id).unwrap().error.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            raw,
+            runner
+                .drain_events()
+                .into_iter()
+                .find(|event| event.id == id)
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+        ));
         assert!(runner.take_output(id).is_none());
         assert!(store.installed(&model, &NoHooks).unwrap().is_none());
         if !mid_write {
@@ -730,7 +767,7 @@ fn verified_multi_file_bundle_cache_hit_needs_no_network_or_new_consent() {
     let error = store.installed(&model, &Cancelled).err().unwrap();
     assert!(matches!(
         &error,
-        EngineError::Runtime(engine::RuntimeError::Model(ai::Error::Cancelled))
+        ModelsError::Runtime(engine::RuntimeError::Model(ai::Error::Cancelled))
     ));
     use engine::Failure;
     use std::error::Error as _;
@@ -753,7 +790,7 @@ fn verified_multi_file_bundle_cache_hit_needs_no_network_or_new_consent() {
     fs::write(lease.file("tokens.txt").unwrap(), vec![8; data.len()]).unwrap();
     assert!(matches!(
         store.installed(&model, &NoHooks),
-        Err(EngineError::Runtime(engine::RuntimeError::Model(
+        Err(ModelsError::Runtime(engine::RuntimeError::Model(
             ai::Error::ModelIntegrity
         )))
     ));
@@ -773,7 +810,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             changed,
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EngineError::Ai(ai::Error::ConsentRequired))
+        Err(ModelsError::Ai(ai::Error::ConsentRequired))
     ));
     let key = ArtifactCache::model_key(&model).unwrap();
     let entries = || {
@@ -804,7 +841,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             model.clone(),
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EngineError::Runtime(engine::RuntimeError::QueueFull))
+        Err(ModelsError::Runtime(engine::RuntimeError::QueueFull))
     ));
     assert_eq!(http.count(), 0);
     assert_eq!(entries(), before, "refusal wrote a checkpoint or artifact");
@@ -821,7 +858,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             model.clone(),
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(ModelsError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     token.cancel();
     runner.shutdown();
@@ -837,7 +874,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
         assert!(DownloadConsent::grant(&bad).is_err());
         assert!(matches!(
             store.installed(&bad, &NoHooks),
-            Err(EngineError::Runtime(engine::RuntimeError::Model(
+            Err(ModelsError::Runtime(engine::RuntimeError::Model(
                 ai::Error::Invalid(_)
             )))
         ));
@@ -936,7 +973,7 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
     let (id, _) = submit(&store, &mut runner, &model);
     assert!(matches!(
         store.remove(&model),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(ModelsError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -953,7 +990,7 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
     assert_eq!(http.count(), 1);
     assert!(matches!(
         store.remove(&model),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(ModelsError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Completed);
     assert_eq!(http.count(), 2);
@@ -1074,6 +1111,7 @@ fn killed_process_resumes_only_the_durable_prefix_and_publishes_atomically() {
         Arc::new(Io {
             available: 3 * 1024 * 1024 + 131072,
             fail_call: usize::MAX,
+            error_kind: io::ErrorKind::StorageFull,
             calls: AtomicUsize::new(0),
         }),
     );
@@ -1157,14 +1195,14 @@ fn malformed_resume_headers_are_refused_without_poisoning_future_restart() {
         assert!(matches!(
             (
                 variant,
-                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
+                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<ModelsError>()
             ),
             (
                 0..=4,
-                Some(EngineError::Runtime(engine::RuntimeError::ModelResponse))
+                Some(ModelsError::Runtime(engine::RuntimeError::ModelResponse))
             ) | (
                 5..=6,
-                Some(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
+                Some(ModelsError::Runtime(engine::RuntimeError::NetworkTransient))
             )
         ));
         assert_eq!(raw.transient(), variant >= 5);
@@ -1263,17 +1301,17 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
         assert!(!raw.job_policy().terminal_cancelled);
         assert_eq!(raw.job_policy().retry_after_seconds, None);
         let composed = (raw.as_ref() as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EngineError>()
+            .downcast_ref::<ModelsError>()
             .unwrap();
         if transient {
             assert!(matches!(
                 composed,
-                EngineError::Runtime(engine::RuntimeError::NetworkTransient)
+                ModelsError::Runtime(engine::RuntimeError::NetworkTransient)
             ));
             assert_eq!(raw.to_string(), "transient network failure");
             assert!(raw.source().is_none());
         } else {
-            let EngineError::Runtime(engine::RuntimeError::Transfer(source)) = composed else {
+            let ModelsError::Runtime(engine::RuntimeError::Transfer(source)) = composed else {
                 panic!("transport cause lost")
             };
             assert_eq!(source.to_string(), expected);

@@ -425,8 +425,8 @@ fn interrupted_download_resumes_with_range_and_strong_etag() {
     let raw = snapshot.error.as_deref().unwrap();
     assert!(raw.transient());
     assert!(matches!(
-        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
-        Some(engine::Error::Runtime(
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::models::Error>(),
+        Some(engine::models::Error::Runtime(
             engine::RuntimeError::NetworkTransient
         ))
     ));
@@ -602,8 +602,10 @@ fn foreign_bundle_is_reported_as_corrupt_without_download_or_adoption() {
     assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
     let cause = snapshot.error.as_deref().unwrap();
     assert!(matches!(
-        (cause as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
-        Some(engine::Error::Runtime(engine::RuntimeError::CacheCorrupt))
+        (cause as &(dyn std::error::Error + 'static)).downcast_ref::<engine::models::Error>(),
+        Some(engine::models::Error::Runtime(
+            engine::RuntimeError::CacheCorrupt
+        ))
     ));
     assert!(
         bench
@@ -633,8 +635,10 @@ fn foreign_bundle_is_reported_as_corrupt_without_download_or_adoption() {
     assert!(inspection.resume.is_empty());
     assert!(matches!(
         (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
-            .downcast_ref::<engine::Error>(),
-        Some(engine::Error::Runtime(engine::RuntimeError::ModelResponse))
+            .downcast_ref::<engine::models::Error>(),
+        Some(engine::models::Error::Runtime(
+            engine::RuntimeError::ModelResponse
+        ))
     ));
 }
 
@@ -703,8 +707,10 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
     assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
     let raw = snapshot.error.as_deref().unwrap();
     assert!(matches!(
-        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
-        Some(engine::Error::Runtime(engine::RuntimeError::StorageFull))
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<engine::models::Error>(),
+        Some(engine::models::Error::Runtime(
+            engine::RuntimeError::StorageFull
+        ))
     ));
     assert_eq!(raw.code(), engine::control::ErrorCode::Refused);
     assert!(!raw.transient());
@@ -749,8 +755,10 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
         assert!(matches!(
             (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
-                .downcast_ref::<engine::Error>(),
-            Some(engine::Error::Runtime(engine::RuntimeError::Transfer(_)))
+                .downcast_ref::<engine::models::Error>(),
+            Some(engine::models::Error::Runtime(
+                engine::RuntimeError::Transfer(_)
+            ))
         ));
         assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
         assert!(inspection.installed.is_empty());

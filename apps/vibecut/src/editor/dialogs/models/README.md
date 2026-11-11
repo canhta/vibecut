@@ -27,3 +27,8 @@ borrowed contained error while keeping its shared Arc intact. Verification cance
 remains an opaque resource failure and does not become scheduler cancellation.
 
 AI task progress and per-upload consent live in [`services`](../../../services/README.md).
+
+Model operations and transfer jobs retain `engine::models::Error`; the manager borrows this
+owner directly or through `engine::Error::Models` for the same problem categories. Installed
+checks retain their model-transfer causes, while check-thread unwind remains its separate
+Runtime worker failure. Presentation does not walk source chains or unwrap opaque failures.

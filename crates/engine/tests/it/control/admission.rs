@@ -823,6 +823,42 @@ fn owner_failures_classify_publication_receipts_and_events() {
     }
     let mut cases = vec![
         row!(
+            E::Models(engine::models::Error::Runtime(B::NetworkTransient)),
+            Job,
+            true
+        ),
+        row!(
+            E::Models(engine::models::Error::Runtime(B::Failed(Arc::new(
+                B::Cancelled
+            )))),
+            Cancelled,
+            false
+        ),
+        row!(
+            E::Models(engine::models::Error::Ai(ai::Error::ConsentRequired)),
+            Ai,
+            false
+        ),
+        row!(
+            E::Models(engine::models::Error::Ai(ai::Error::Chapters(
+                ai::chapters::ChapterRefusal::EmptyTranscript
+            ))),
+            Refused,
+            false
+        ),
+        row!(
+            E::Models(engine::models::Error::Ai(ai::Error::RateLimit {
+                retry_after_seconds: Some(3)
+            })),
+            Ai,
+            true
+        ),
+        row!(
+            E::Models(engine::models::Error::Io(io::Error::other("model IO"))),
+            Io,
+            false
+        ),
+        row!(
             E::Runtime(B::Render(render::Error::Unavailable(Vec::new()))),
             Unavailable,
             false

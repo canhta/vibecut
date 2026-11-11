@@ -1,6 +1,8 @@
 # Runtime
 
 Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`,
+`admit_loudness`.
+
 Single- and multi-scene export submission, completed-export publication, subtitle mapping
 and the Session export entrypoints implemented in this execution owner return `runtime::Result`.
 Their jobs retain the actual Runtime producer through one error erasure; mixed higher
@@ -10,8 +12,6 @@ compose through Runtime Edit without changing classification. Foreign render hoo
 their render results; only direct Runtime cancellation is terminal cancellation. Publication
 writers in these owned jobs return Runtime results, while the generic publication operation
 continues to preserve genuinely mixed caller errors unchanged.
-
-`admit_loudness`.
 
 ## Default cache location
 

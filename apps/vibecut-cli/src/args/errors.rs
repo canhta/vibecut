@@ -207,3 +207,9 @@ impl From<engine::EditError> for CliError {
         Self::Engine(error.into())
     }
 }
+
+impl From<engine::models::Error> for CliError {
+    fn from(error: engine::models::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

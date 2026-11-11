@@ -146,6 +146,10 @@ fn unsupported<T>(result: engine::Result<T>) {
         result,
         Err(EngineError::Runtime(engine::RuntimeError::Edit(
             engine::EditError::Unsupported("OS cache location unavailable")
+        ))) | Err(EngineError::Models(engine::models::Error::Runtime(
+            engine::RuntimeError::Edit(engine::EditError::Unsupported(
+                "OS cache location unavailable"
+            ))
         )))
     ));
 }
@@ -166,11 +170,10 @@ fn cache_location_child() {
     let offline = Arc::new(Offline::default());
     if mode == "unavailable" {
         unsupported(CacheRoot::discover().map_err(EngineError::from));
-        unsupported(ModelTransfers::open_default(
-            budget.clone(),
-            8,
-            offline.clone(),
-        ));
+        unsupported(
+            ModelTransfers::open_default(budget.clone(), 8, offline.clone())
+                .map_err(engine::Error::from),
+        );
         unsupported(MediaAccess::open(budget));
     } else {
         let base = PathBuf::from(std::env::var_os(BASE).unwrap());
