@@ -415,7 +415,7 @@ impl ProjectLibrary {
     }
     fn unique(&self, prefix: &str) -> Result<PathBuf> {
         let mut bytes = [0u8; 16];
-        getrandom::fill(&mut bytes).map_err(|_| EditError::ControlIdentity)?;
+        crate::session::identity_entropy(&mut bytes)?;
         Ok(self
             .root
             .join(format!(".{prefix}-{}", blake3::hash(&bytes).to_hex())))
