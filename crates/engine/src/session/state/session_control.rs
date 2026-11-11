@@ -31,7 +31,13 @@ impl Session {
                     self.project().data(),
                     &keys,
                 )? {
-                    if self.clipboard.as_deref() != Some(&payload) {
+                    let same = self
+                        .clipboard
+                        .as_deref()
+                        .map(|stored| stored.same_bytes(&payload))
+                        .transpose()?
+                        .unwrap_or(false);
+                    if !same {
                         self.clipboard = Some(Arc::new(payload));
                         self.end_merge();
                         self.invalidate_revision(false)?;

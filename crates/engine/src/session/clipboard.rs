@@ -172,6 +172,10 @@ impl KeyframeClipboard {
         }
         Ok(value)
     }
+    pub(super) fn same_bytes(&self, other: &Self) -> Result<bool> {
+        Ok(super::wire::bounded_json(self, MAX_CLIPBOARD_BYTES)?
+            == super::wire::bounded_json(other, MAX_CLIPBOARD_BYTES)?)
+    }
     pub(super) fn compact_bytes(&self) -> Result<usize> {
         Ok(super::wire::bounded_json(self, MAX_CLIPBOARD_BYTES)?.len())
     }

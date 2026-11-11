@@ -1391,6 +1391,7 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
         ),
     })
     .unwrap();
+    s.take_change();
     let revision = s.revision();
     let history = s.history_len();
     let project = s.project().clone();
@@ -1408,6 +1409,7 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
             .changed
     );
     assert_ne!(s.revision(), revision);
+    assert!(s.take_change().is_none());
     assert_eq!(s.history_len(), history);
     assert_eq!(s.project(), &project);
     let copied_rev = s.revision();
@@ -1422,6 +1424,12 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
         param: Param::new(ParamValue::Scalar(0.2)).unwrap(),
     })
     .unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(2),
+        at: frame(101),
+    })
+    .unwrap();
+    assert_eq!(item(&s, ItemId(2)).duration().unwrap(), frame(1));
     let before = s.project().clone();
     let history = s.history_len();
     assert!(
@@ -2147,4 +2155,87 @@ fn clipboard_final_project_budget_counts_replacement_instead_of_old_plus_new_key
     assert_eq!(s.project(), &before);
     assert_eq!(s.revision(), rev);
     assert_eq!(s.history_len(), history);
+}
+
+#[test]
+fn clipboard_copy_revision_distinguishes_signed_zero_snapshot_bytes() {
+    use engine::{KeyframePasteSource::Stored, KeyframeRef};
+    let mut s = session();
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::Value(
+            Channel::new(
+                ParamValue::Scalar(0.0),
+                vec![
+                    Keyframe::new(Tick::ZERO, ParamValue::Scalar(0.0)),
+                    Keyframe::new(frame(120), ParamValue::Scalar(1.0)),
+                ],
+                Extrapolation::Linear,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        ),
+    })
+    .unwrap();
+    let copy = || Command::CopyKeyframes {
+        keys: vec![KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick::ZERO,
+        }],
+    };
+    s.apply(copy()).unwrap();
+    // A real edit changes an unselected neighbor as well, so the committed
+    // source contains -0.0 while the selected snapshot differs only in its bits.
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::Value(
+            Channel::new(
+                ParamValue::Scalar(0.0),
+                vec![
+                    Keyframe::new(Tick::ZERO, ParamValue::Scalar(-0.0)),
+                    Keyframe::new(frame(120), ParamValue::Scalar(0.75)),
+                ],
+                Extrapolation::Linear,
+                Extrapolation::Hold,
+            )
+            .unwrap(),
+        ),
+    })
+    .unwrap();
+    let before = s.revision();
+    let history = s.history_len();
+    assert!(!s.apply(copy()).unwrap().changed);
+    assert_ne!(s.revision(), before);
+    assert_eq!(s.history_len(), history);
+    let copied = s.revision();
+    s.apply(copy()).unwrap();
+    assert_eq!(s.revision(), copied);
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(2),
+        path: path(),
+        param: Param::new(ParamValue::Scalar(0.7)).unwrap(),
+    })
+    .unwrap();
+    s.apply(Command::PasteKeyframes {
+        item: ItemId(2),
+        at: frame(100),
+        source: Stored,
+    })
+    .unwrap();
+    let ParamValue::Scalar(v) = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()[0]
+        .value
+    else {
+        panic!("scalar")
+    };
+    assert_eq!(v.to_bits(), (-0.0_f64).to_bits());
 }
