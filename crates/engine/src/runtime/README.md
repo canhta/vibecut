@@ -159,6 +159,12 @@ identity; a valid old artifact may stay cached without being applied.
 
 ## Render execution
 
+The Runtime rendering composition implements the local Failure contract for `render::Error`:
+Unavailable maps to the existing Unavailable code, every other variant to Render, with ordinary
+nontransient/default scheduling policy. This is the one foreign render projection consumed by
+both the engine aggregate and durable LUT store; Kernel has no Render dependency.
+
+
 `admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or
 mismatched measured gains with code `Refused`, no source and no transience. Export
 submission composes this error before admitting any single- or multi-scene job;

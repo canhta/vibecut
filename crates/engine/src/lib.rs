@@ -64,6 +64,8 @@ pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
+    Lut(#[from] luts::Error),
+    #[error(transparent)]
     Library(#[from] library::Error),
     #[error(transparent)]
     Edit(#[from] EditError),
@@ -103,6 +105,7 @@ impl Error {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
+            Self::Lut(inner) => return (inner.code(), inner.transient()),
             Self::Library(inner) => return (inner.code(), inner.transient()),
             Self::EmptyProject => C::EmptyProject,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
@@ -113,8 +116,7 @@ impl Error {
             Self::Font(inner) => inner.code(),
             Self::Providers(inner) => inner.code(),
             Self::Transcript(inner) => inner.code(),
-            Self::Render(render::Error::Unavailable(_)) => C::Unavailable,
-            Self::Render(_) => C::Render,
+            Self::Render(inner) => inner.code(),
             Self::Media(_) => C::Media,
             Self::Ai(inner) => {
                 return (
@@ -135,6 +137,7 @@ impl Error {
 impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         match self {
+            Self::Lut(error) => error.job_policy(),
             Self::Library(error) => error.job_policy(),
             Self::Edit(error) => error.job_policy(),
             Self::Runtime(error) => error.job_policy(),

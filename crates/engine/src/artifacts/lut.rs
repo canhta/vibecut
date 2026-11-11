@@ -25,7 +25,7 @@ pub(crate) fn submit(
                 ..Default::default()
             },
         },
-        move |context| {
+        move |context| -> Result<Vec<u8>> {
             let record = store.import(
                 project,
                 &path,

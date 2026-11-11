@@ -2,7 +2,9 @@
 
 Interface: `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`.
 
-The private LUT job consumes the [durable copied-resource owner](../store/README.md#imported-lut-bundles), with a request fingerprint distinct from canonical content identity. It returns at most 16 KiB of descriptor data through `JobOutput::Lut`; queue refusal retains no capture, CPU jobs run once and job output never changes the project. Cancellation/publication use the existing runner seal. Inspector grades are not library preview tiles; thumbnail requests carrying unresolved LUT references fail explicitly.
+The private LUT job consumes the [durable copied-resource owner](../store/README.md#imported-lut-bundles), with a request fingerprint distinct from canonical content identity. The store returns its
+LUT-owned result; this callback composes it with its own bounded JSON failure through the
+engine aggregate, preserving the actual typed cause. It returns at most 16 KiB of descriptor data through `JobOutput::Lut`; queue refusal retains no capture, CPU jobs run once and job output never changes the project. Cancellation/publication use the existing runner seal. Inspector grades are not library preview tiles; thumbnail requests carrying unresolved LUT references fail explicitly.
 
 ## Import jobs and thumbnails
 

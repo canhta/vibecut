@@ -101,7 +101,10 @@ impl CliError {
             Self::Job(error) => match (error.as_ref() as &(dyn std::error::Error + 'static))
                 .downcast_ref::<EngineError>()
             {
-                Some(EngineError::Render(render::Error::Unavailable(list))) => Some(list),
+                Some(EngineError::Render(render::Error::Unavailable(list)))
+                | Some(EngineError::Lut(engine::luts::Error::Render(
+                    render::Error::Unavailable(list),
+                ))) => Some(list),
                 _ => None,
             },
             _ => None,

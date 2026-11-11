@@ -304,6 +304,44 @@ fn lut_invalid_cancelled_and_locked_workflows_preserve_state() {
     );
     finish(&mut r, id);
     assert_eq!(r.snapshot(id).unwrap().state, JobState::Failed);
+    let failed = r.snapshot(id).unwrap();
+    let raw = failed.error.as_ref().unwrap();
+    let Some(engine::Error::Lut(engine::luts::Error::Render(original))) =
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>()
+    else {
+        panic!("lost composed LUT parser producer")
+    };
+    assert_eq!(raw.code(), ErrorCode::Render);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.to_string(), "render execution failed");
+    assert!(std::ptr::eq(
+        original,
+        raw.source()
+            .unwrap()
+            .downcast_ref::<render::Error>()
+            .unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        raw,
+        r.snapshots()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        raw,
+        r.drain_events()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
     assert!(r.output_bytes(id).is_none());
     assert_eq!(s.project(), &before);
     std::fs::write(&source, lut_cube()).unwrap();
@@ -507,8 +545,87 @@ fn lut_store_reopen_enforces_disk_quota_without_deleting_foreign_files() {
     drop(file);
     assert!(matches!(
         engine::luts::LutStore::open(dir.path()),
-        Err(engine::Error::Control(engine::control::ControlError::Limit))
+        Err(engine::luts::Error::Edit(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        )))
     ));
+    let blocked = engine::luts::LutStore::open(&sentinel).err().unwrap();
+    use engine::Failure;
+    assert_eq!(blocked.code(), ErrorCode::Io);
+    assert!(!blocked.transient());
+    assert_eq!(blocked.to_string(), "job/cache IO failed");
+    let engine::luts::Error::Io(original) = &blocked else {
+        panic!("lost store IO producer")
+    };
+    assert_eq!(original.kind(), std::io::ErrorKind::AlreadyExists);
+    assert!(std::ptr::eq(
+        original,
+        std::error::Error::source(&blocked)
+            .unwrap()
+            .downcast_ref::<std::io::Error>()
+            .unwrap()
+    ));
+    // A store-only job keeps the actual lower producer, rather than the engine aggregate.
+    let path = dir.path().to_owned();
+    let mut jobs = runner();
+    let (id, _) = jobs
+        .submit(
+            JobSpec {
+                kind: JobKind::ImportLut,
+                class: ResourceClass::Cpu,
+                input: key(),
+                bytes: JobBytes::default(),
+            },
+            move |_| engine::luts::LutStore::open(&path).map(|_| Vec::new()),
+        )
+        .unwrap();
+    finish(&mut jobs, id);
+    let snapshot = jobs.snapshot(id).unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    let raw = snapshot.error.as_ref().unwrap();
+    assert!(matches!(
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::luts::Error>(),
+        Some(engine::luts::Error::Edit(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        )))
+    ));
+    assert_eq!(raw.code(), ErrorCode::Limit);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.job_policy().retry_after_seconds, None);
+    assert_eq!(raw.to_string(), "command limit exceeded");
+    assert!(raw.source().is_none());
+    assert!(std::sync::Arc::ptr_eq(
+        raw,
+        jobs.snapshots()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        raw,
+        jobs.drain_events()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    let projection = seed().snapshot_and_subscribe(&jobs).unwrap();
+    assert_eq!(
+        projection
+            .jobs
+            .iter()
+            .find(|job| job.id == id)
+            .unwrap()
+            .error,
+        Some(ErrorCode::Limit)
+    );
+    assert!(jobs.take_output(id).is_none());
     assert_eq!(std::fs::metadata(&sentinel).unwrap().len(), (256 << 20) + 1);
     std::fs::remove_file(&sentinel).unwrap();
     let store = engine::luts::LutStore::open(dir.path()).unwrap();

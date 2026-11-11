@@ -1,6 +1,10 @@
 //! Publishes durable copied LUT bundles.
+use crate::jobs::JobContext;
 use crate::runtime::{Error as RuntimeError, Result as RuntimeResult};
-use crate::{Error as EngineError, Result, jobs::JobContext};
+use crate::session::{
+    EditError,
+    wire::{ControlError, ErrorCode, Failure, JobFailurePolicy},
+};
 use project::{LutId, LutRecord, ProjectId};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -9,6 +13,52 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+
+/// Durable imported-resource failures keep their original lower causes.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Edit(#[from] EditError),
+    #[error(transparent)]
+    Runtime(#[from] RuntimeError),
+    #[error("job/cache IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("render execution failed")]
+    Render(#[from] render::Error),
+}
+pub type Result<T> = std::result::Result<T, Error>;
+impl Failure for Error {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Edit(error) => error.code(),
+            Self::Runtime(error) => error.code(),
+            Self::Io(_) => ErrorCode::Io,
+            Self::Render(error) => error.code(),
+        }
+    }
+    fn transient(&self) -> bool {
+        match self {
+            Self::Runtime(error) => error.transient(),
+            _ => false,
+        }
+    }
+    fn job_policy(&self) -> JobFailurePolicy {
+        match self {
+            Self::Runtime(error) => error.job_policy(),
+            _ => JobFailurePolicy::default(),
+        }
+    }
+}
+impl From<project::Error> for Error {
+    fn from(error: project::Error) -> Self {
+        Self::Edit(error.into())
+    }
+}
+impl From<ControlError> for Error {
+    fn from(error: ControlError) -> Self {
+        Self::Edit(error.into())
+    }
+}
 
 const QUOTA: u64 = 256 << 20;
 const MAX_BUNDLE: u64 = (24 + 16) * 1024 * 1024 + 16384;
@@ -100,29 +150,27 @@ fn usage(root: &Path) -> Result<(u64, usize, usize)> {
             let entry = entry?;
             count += 1;
             if count > 4096 {
-                return Err(EngineError::Control(
+                return Err(Error::Edit(EditError::Control(
                     crate::session::wire::ControlError::Limit,
-                ));
+                )));
             }
             let meta = plain(&entry.path())?;
             if meta.is_dir() {
                 if depth >= 2 {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
-                        "LUT store nesting",
-                    )));
+                    return Err(Error::Edit(crate::EditError::Invalid("LUT store nesting")));
                 }
                 if depth == 1 {
                     bundles += 1;
                 }
                 dirs.push((entry.path(), depth + 1));
             } else if meta.is_file() {
-                bytes = bytes.checked_add(meta.len()).ok_or(EngineError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ))?;
+                bytes = bytes
+                    .checked_add(meta.len())
+                    .ok_or(Error::Edit(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    )))?;
             } else {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
-                    "LUT store entry",
-                )));
+                return Err(Error::Edit(crate::EditError::Invalid("LUT store entry")));
             }
         }
     }
@@ -139,9 +187,9 @@ impl LutStore {
         let lease = project::WriterLease::acquire(&root.join("store.vibecut"))?;
         let (bytes, _, bundles) = usage(&root)?;
         if bytes > QUOTA || bundles > 1024 {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         Ok(Self(Arc::new(Store {
             root,
@@ -173,9 +221,9 @@ impl LutStore {
                 .saturating_add(MAX_BUNDLE)
                 > QUOTA
         {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         state.pending += MAX_BUNDLE;
         Ok(Pending {
@@ -205,14 +253,14 @@ impl LutStore {
         parents(source)?;
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         let source_name = source
             .file_name()
             .and_then(|s| s.to_str())
-            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+            .ok_or(Error::Edit(crate::EditError::Invalid(
                 "LUT source filename",
             )))?;
         if source_name.len() > 256
@@ -221,9 +269,9 @@ impl LutStore {
                 .is_some_and(|s| s.as_str().is_empty() || s.as_str().len() > 256)
             || licence.as_ref().is_some_and(|s| s.as_str().len() > 1024)
         {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         let mut pending = self.reserve()?;
         let parent = self.0.root.join(project.0.to_string());
@@ -248,17 +296,17 @@ impl LutStore {
             if n == 0 {
                 break;
             }
-            copied = copied.checked_add(n as u64).ok_or(EngineError::Control(
-                crate::session::wire::ControlError::Limit,
-            ))?;
+            copied = copied
+                .checked_add(n as u64)
+                .ok_or(Error::Edit(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                )))?;
             if copied > metadata.len() {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
-                    "LUT source changed",
-                )));
+                return Err(Error::Edit(crate::EditError::Invalid("LUT source changed")));
             }
-            output.write_all(buffer.get(..n).ok_or(EngineError::Control(
+            output.write_all(buffer.get(..n).ok_or(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ))?)?;
+            )))?)?;
         }
         output.sync_all()?;
         drop(output);
@@ -266,9 +314,7 @@ impl LutStore {
             || plain(source)?.len() != metadata.len()
             || plain(source)?.modified()? != metadata.modified()?
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
-                "LUT source changed",
-            )));
+            return Err(Error::Edit(crate::EditError::Invalid("LUT source changed")));
         }
         let (cube, source_hash) =
             render::lut::read_cube(&original, render::lut::MAX_CUBE_SOURCE, context)?;
@@ -284,9 +330,9 @@ impl LutStore {
         drop(output);
         drop(cube);
         if plain(&canonical)?.len() > render::lut::MAX_CUBE_CANONICAL {
-            return Err(EngineError::Control(
+            return Err(Error::Edit(EditError::Control(
                 crate::session::wire::ControlError::Limit,
-            ));
+            )));
         }
         let id = LutId::new(hash_file(
             &canonical,
@@ -306,7 +352,7 @@ impl LutStore {
         if let Some(expected) = expected {
             expected.validate()?;
             if expected.id != id {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "LUT relink content differs",
                 )));
             }
@@ -314,7 +360,7 @@ impl LutStore {
             // provenance proves that a damaged directory belongs to this record.
             let owned_store = expected.directory == destination;
             if !owned_store && read_record(&expected.directory)? != expected {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "LUT relink destination",
                 )));
             }
@@ -323,7 +369,7 @@ impl LutStore {
                     .as_ref()
                     .is_some_and(|licence| Some(licence) != expected.licence.as_ref())
             {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "conflicting LUT provenance",
                 )));
             }
@@ -358,14 +404,14 @@ impl LutStore {
             &record
                 .directory
                 .parent()
-                .ok_or(EngineError::Edit(crate::EditError::Invalid("LUT parent")))?
+                .ok_or(Error::Edit(crate::EditError::Invalid("LUT parent")))?
                 .join(format!("{}.bundle", record.id.hex())),
             std::time::Duration::from_secs(5),
             &|| context.cancelled(),
         )
         .map_err(|error| {
             if context.cancelled() {
-                EngineError::from(crate::RuntimeError::Cancelled)
+                Error::from(crate::RuntimeError::Cancelled)
             } else {
                 error.into()
             }
@@ -374,14 +420,14 @@ impl LutStore {
         if record.directory.exists() {
             let existing = read_record(&record.directory)?;
             if existing.id != record.id {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "foreign LUT destination",
                 )));
             }
             if (name.is_some() && existing.name != record.name)
                 || (licence.is_some() && existing.licence != record.licence)
             {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "conflicting LUT provenance",
                 )));
             }
@@ -396,12 +442,12 @@ impl LutStore {
                 Err(error) => return Err(error.into()),
             }
             if !repairing {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "damaged LUT needs matching relink",
                 )));
             }
             if existing != record {
-                return Err(EngineError::Edit(crate::EditError::Invalid(
+                return Err(Error::Edit(crate::EditError::Invalid(
                     "LUT relink provenance",
                 )));
             }
@@ -409,7 +455,7 @@ impl LutStore {
                 record
                     .directory
                     .parent()
-                    .ok_or(EngineError::Edit(crate::EditError::Invalid("LUT parent")))?,
+                    .ok_or(Error::Edit(crate::EditError::Invalid("LUT parent")))?,
                 "lut-repair",
             )?;
             let _backup = super::projects::DirectoryGuard(Some(backup.clone()));

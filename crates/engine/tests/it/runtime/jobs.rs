@@ -1998,6 +1998,29 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             C::Media,
             false,
         ),
+        (
+            || {
+                E::Lut(engine::luts::Error::Runtime(B::Failed(Arc::new(
+                    B::Cancelled,
+                ))))
+            },
+            C::Cancelled,
+            false,
+        ),
+        (
+            || E::Lut(engine::luts::Error::Render(render::Error::Cancelled)),
+            C::Render,
+            false,
+        ),
+        (
+            || {
+                E::Lut(engine::luts::Error::Render(render::Error::Unavailable(
+                    Vec::new(),
+                )))
+            },
+            C::Unavailable,
+            false,
+        ),
         (|| E::Io(std::io::Error::other("io")), C::Io, false),
         (|| E::Ai(ai::Error::Incomplete), C::Ai, false),
         (

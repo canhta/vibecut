@@ -4,7 +4,7 @@ mod projects;
 /// Durable user-imported LUT bundles.
 pub mod luts {
     //! Owns copied LUT source assets.
-    pub use super::lut_storage::LutStore;
+    pub use super::lut_storage::{Error, LutStore, Result};
 }
 pub mod library {
     //! Owns managed project storage.
