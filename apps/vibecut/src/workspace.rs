@@ -1927,8 +1927,8 @@ mod tests {
                     assert!(Arc::ptr_eq(cause, snapshot.error.as_ref().unwrap()));
                     assert!(matches!(
                         (cause.as_ref() as &(dyn std::error::Error + 'static))
-                            .downcast_ref::<EditError>(),
-                        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
+                            .downcast_ref::<engine::RuntimeError>(),
+                        Some(engine::RuntimeError::WorkerPanicked)
                     ));
                     assert_eq!(snapshot.state, JobState::Failed);
                 }
