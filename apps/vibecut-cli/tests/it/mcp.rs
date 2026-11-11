@@ -329,6 +329,112 @@ fn stdio_catalog_edits_receipts_and_file_permission_share_engine_admission() {
 }
 
 #[test]
+fn caption_style_command_run_custom_values_stale_revision_and_replay() {
+    let root = tempfile::tempdir().unwrap();
+    let path = fixture(root.path(), "captions.json");
+    let ass = root.path().join("captions.ass");
+    std::fs::write(&ass, "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello\n").unwrap();
+    let prepared = engine::prepare_ass_import(&engine::AssImportRequest {
+        path: ass,
+        language: engine::subtitles::LanguageTag::parse("en").unwrap(),
+        start: time::Tick::ZERO,
+        track: None,
+        name: None,
+        asset_id: media::AssetId(1),
+    })
+    .unwrap();
+    let mut session = engine::Session::new(project::load(&path).unwrap().project, 10).unwrap();
+    let imported = session.apply(prepared.command).unwrap();
+    let item = imported
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(item) = id {
+                Some(*item)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    std::fs::write(&path, project::encode(session.project(), true).unwrap()).unwrap();
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let initial = client.call("inspect", json!({}), None, None);
+    let params = json!({"item":item,"style":{"kind":"preset","preset":"box"}});
+    let applied = client.call(
+        "captions.apply_style",
+        params.clone(),
+        Some(&initial["rev_after"]),
+        Some("style"),
+    );
+    assert_eq!(
+        applied.pointer("/value/value/outcome/changed"),
+        Some(&json!(true)),
+        "{applied}"
+    );
+    assert_eq!(
+        client.call(
+            "captions.apply_style",
+            params.clone(),
+            Some(&initial["rev_after"]),
+            Some("style")
+        ),
+        applied
+    );
+    assert_eq!(
+        client.call(
+            "captions.apply_style",
+            params,
+            Some(&initial["rev_after"]),
+            Some("stale")
+        )["value"]["value"],
+        "stale_revision"
+    );
+    let inspected = client.call("inspect", json!({}), None, None);
+    let data: project::ProjectData =
+        serde_json::from_value(inspected["value"]["value"]["project"].clone()).unwrap();
+    let project::ItemParams::Caption(params) = &data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap()
+        .content
+    else {
+        panic!("caption")
+    };
+    let mut style = params.cues.styles[0].clone();
+    assert_eq!(style.border_style, 3);
+    assert_eq!(style.background_color, [0, 0, 0, 255]);
+    style.primary_color = [20, 240, 60, 255];
+    let custom = client.call(
+        "captions.apply_style",
+        json!({"item":item,"style":{"kind":"custom","style":style}}),
+        Some(&applied["rev_after"]),
+        Some("custom"),
+    );
+    assert_eq!(
+        custom.pointer("/value/value/outcome/changed"),
+        Some(&json!(true)),
+        "{custom}"
+    );
+    let inspected = client.call("inspect", json!({}), None, None);
+    let data: project::ProjectData =
+        serde_json::from_value(inspected["value"]["value"]["project"].clone()).unwrap();
+    let found = data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap();
+    let project::ItemParams::Caption(p) = &found.content else {
+        panic!("caption")
+    };
+    assert_eq!(p.cues.styles, vec![style]);
+}
+
+#[test]
 fn attach_lost_response_replays_once_and_matches_stdio_results() {
     let root = tempfile::tempdir().unwrap();
     let path = fixture(root.path(), "headless.json");

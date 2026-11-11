@@ -104,6 +104,11 @@ The shortcut list is a separate 719 px-wide window that resizes with its tab (64
 
 Captions lives in the assets-panel tab. Generate and translation settings use compact disclosures above a scrollable cue list; import and SRT, VTT, TXT and MP4 export share the top action row. Times, source text and each target language stack at panel width, with full fields on selected rows, compact unselected text, edited marks and profile-based CPS warnings. Selection tools sit above the list. The exact-upload approval modal stays global while another tab is visible. Cue editing, bilingual controls and glossary placement fill uncaptured states ([proposed], coordinator-approved); the named captions audit scenes are our rendered evidence. Reference: `.spikes/ui-reference/live/06-text-captions/`. Behaviour: [captions panel](../../../apps/vibecut/src/editor/captions/README.md).
 
+The Captions Style chooser sits below the caption-item selector, above cue tools, using the
+shared 22 px field and 12 px label system. Outline/Box and Custom/Mixed describe the current
+saved style. This uncaptured composition is new; desktop reference parity is unverified.
+Availability and edit behavior belong to the [subtitles owner](../../../apps/vibecut/src/subtitles/README.md).
+
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.

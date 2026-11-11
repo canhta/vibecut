@@ -251,6 +251,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("sounds.search", Effect::Read, false, false),
         ("sounds.unsave", Effect::Read, false, false),
         ("captions.import", Effect::Edit, false, false),
+        ("captions.apply_style", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
         ("timeline.filler_candidates", Effect::Read, true, true),

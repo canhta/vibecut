@@ -204,6 +204,13 @@ impl Editor {
             return false;
         };
         match spec.target {
+            ActionTarget::Ui {
+                action: UiAction::Subtitles,
+                ..
+            } if id.starts_with("subtitles.style.") => self
+                .subtitles
+                .as_ref()
+                .is_some_and(|panel| panel.style_available(&self.session)),
             ActionTarget::Pending { .. } => false,
             ActionTarget::Engine(route) => {
                 route

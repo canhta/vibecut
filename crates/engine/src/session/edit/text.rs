@@ -5,6 +5,46 @@ use super::{
     item, set_range,
 };
 
+pub(super) fn execute_apply_caption_style(
+    mut data: ProjectData,
+    id: ItemId,
+    style: crate::CaptionStyleApply,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    if item_in_other_scene(&data, id) {
+        return Err(EditError::SceneBoundary);
+    }
+    let item = item(&mut data, id)?;
+    let ItemParams::Caption(params) = &mut item.content else {
+        return Err(EditError::Invalid("style requires caption item"));
+    };
+    let style = style.into_style();
+    if !style.is_valid() {
+        return Err(EditError::Invalid("caption style"));
+    }
+    let source = sources.get(&id).map_or(&params.cues, AsRef::as_ref);
+    if source.cues.is_empty() {
+        return Err(EditError::Invalid("empty caption item"));
+    }
+    if source
+        .cues
+        .iter()
+        .all(|cue| source.style_of(cue) == Some(&style))
+    {
+        return Ok(data);
+    }
+    let source = match sources.get_mut(&id) {
+        Some(source) => Arc::make_mut(source),
+        None => &mut params.cues,
+    };
+    source.styles = vec![style];
+    for cue in &mut source.cues {
+        cue.style = Some(captions::CueStyleId(0));
+    }
+    set_range(item, item.source_range, Tick::ZERO, sources)?;
+    Ok(data)
+}
+
 /// Import parsed ASS cues as one caption item on a text track. The asset,
 /// optional track allocation and item insertion form one command and therefore
 /// one undo step. File parsing and asset probing stay with the adapter.

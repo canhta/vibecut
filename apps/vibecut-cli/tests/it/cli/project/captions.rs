@@ -65,6 +65,78 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
     assert_eq!(style.alignment.numpad, 2);
     assert!(style.bold);
     assert_eq!(params.cues.styles.len(), 1);
+    // The saved command feeds the real CLI exporter; no preset-only export parser.
+    for (preset, border) in [("outline", 1), ("box", 3)] {
+        let args = serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":preset}})
+            .to_string();
+        if preset == "box" {
+            let mut control = super::control::ControlSession::start(&project, &[]);
+            let initial = control
+                .send(serde_json::json!({"request_id":"inspect","command":"inspect","params":{}}));
+            let applied = control.send(serde_json::json!({"request_id":"style","command":"captions.apply_style","params":serde_json::from_str::<serde_json::Value>(&args).unwrap(),"base_rev":initial["rev_after"],"idempotency_key":"style"}));
+            assert_eq!(
+                applied["value"]["value"]["outcome"]["changed"], true,
+                "{applied}"
+            );
+            assert_eq!(control.finish().0, 0);
+        } else {
+            let applied = cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os("captions.apply_style"),
+                os(&args),
+                os("--json"),
+            ]);
+            assert_eq!(code(&applied), 0, "{:?}", applied);
+        }
+        let saved = project::load(&project).unwrap().project;
+        let found = saved
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item.id)
+            .unwrap();
+        let project::ItemParams::Caption(p) = &found.content else {
+            panic!("caption")
+        };
+        assert_eq!(p.cues.styles[0].border_style, border);
+        assert_eq!(p.cues.styles[0].font_family.as_str(), "Inter");
+        assert!(
+            p.cues
+                .cues
+                .iter()
+                .all(|c| c.style.is_some_and(|id| id.0 == 0))
+        );
+        if crate::media_fixture::tools() {
+            let output = dir.path().join(format!("{preset}.mp4"));
+            let settings = render::OutputOptions {
+                resolution: Some([360, 640]),
+                ..Default::default()
+            };
+            let settings = serde_json::to_string(&settings).unwrap();
+            let exported = cli(&[
+                os("export"),
+                project.as_os_str(),
+                os("--out"),
+                output.as_os_str(),
+                os("--settings"),
+                os(&settings),
+                os("--json"),
+            ]);
+            assert_eq!(code(&exported), 0, "{:?}", exported);
+            let frames = crate::cli::fixtures::decoded_rgb(&output, 360, 640, &[0, 1]);
+            assert!(
+                frames[0].iter().all(|value| *value < 10),
+                "frame zero precedes the positive caption start"
+            );
+            assert!(
+                frames[1].iter().any(|value| *value > 100),
+                "captions survive encoding"
+            );
+        }
+    }
 }
 
 #[test]

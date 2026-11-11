@@ -12,6 +12,8 @@ Language for the editor's privacy and execution boundaries.
 - **SourceAsset**: A source-media identity and its location, content fingerprint and probed stream information; timeline items refer to it without copying its media.
 - **Transcript**: Source-language recognition result with stable segments and a provider/model/settings fingerprint.
 - **Cue**: Identified source range with source language and per-language text, independent edit flags and translation references.
+- **CueStyle**: Saved static caption appearance shared by cues in a cue track, including its font, colours, alignment and margins.
+- **Caption preset**: A built-in caption look applied as saved cue-style values to one caption item; it has no saved preset identity or project bank.
 - **Filler candidate**: A whole-word source span of filler speech in one cue's timed words, with a stable ID and the cue's edit flag.
 - **Chapter**: A titled topic boundary at a transcript cue start, with the transcript language; a versioned chapter document also carries the video title, description and optional translations for sidecar publication.
 - **EditMapping**: The correspondence between selected source ranges and their positions in an output timeline; one source span can appear more than once.
