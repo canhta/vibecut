@@ -835,6 +835,101 @@ fn failed_cache_download_offers_network_retry_without_editing_the_project() {
 }
 
 #[test]
+fn shared_download_contention_keeps_the_cache_busy_category_and_allows_a_later_add() {
+    use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
+    struct Counted(AtomicUsize);
+    impl DownloadTransport for Counted {
+        fn get(
+            &self,
+            url: &str,
+            headers: &[(String, String)],
+        ) -> Result<HttpStreamResponse, ai::Error> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Download {
+                gate: None,
+                status: 200,
+            }
+            .get(url, headers)
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let library = library(root.path());
+    let sound = result(6, "Creative Commons 0");
+    library.save(&sound).unwrap();
+    let http = Arc::new(Counted(AtomicUsize::new(0)));
+    let downloads = Arc::new(SoundDownloads::new(library.clone(), http.clone()));
+    let budget = ByteBudget::new(128 << 20).unwrap();
+    let mut owner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 1,
+            retained: 1,
+            network_attempts: 1,
+            backoff: Duration::from_millis(10),
+            progress_interval: Duration::from_millis(10),
+        },
+        budget.clone(),
+        Arc::new(SystemClock::default()),
+    )
+    .unwrap();
+    let (queued, cancel) = downloads.submit(&mut owner, &sound.audio_url).unwrap();
+    let sink = Sink::available();
+    let preview = Arc::new(SoundPreview::new(downloads.clone(), sink.clone()));
+    let sounds = Sounds::with_parts(library.clone(), None, downloads, preview, budget).unwrap();
+    let mut editor = editor(
+        library.clone(),
+        None,
+        http.clone(),
+        sink,
+        root.path().join("media"),
+    );
+    editor.set_sounds(sounds);
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "sounds.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("sounds.search")))
+        .type_text("sound");
+    harness.key_press(egui::Key::Enter);
+    wait(&mut harness, "local result", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| sounds.results.len() == 1)
+    });
+    let before = project_bytes(harness.state());
+    click(&mut harness, "sounds.add.6");
+    let sounds = harness.state().inspect().unwrap().sounds.unwrap();
+    assert_eq!(sounds.cache_problem, Some(SoundsProblem::CacheBusy));
+    assert!(sounds.cache.is_none());
+    assert_eq!(http.0.load(Ordering::SeqCst), 0);
+    assert!(library.cached(&sound.audio_url).unwrap().is_none());
+    assert_eq!(project_bytes(harness.state()), before);
+    assert_eq!(harness.state().session.history_len(), (0, 0));
+    cancel.cancel();
+    owner.tick().unwrap();
+    assert_eq!(owner.snapshot(queued).unwrap().state, JobState::Cancelled);
+    click(&mut harness, "sounds.add.6");
+    wait(&mut harness, "add after contention releases", |editor| {
+        editor.session.history_len() == (1, 0)
+    });
+    assert_eq!(http.0.load(Ordering::SeqCst), 1);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .sounds
+            .unwrap()
+            .cache_problem
+            .is_none()
+    );
+    assert!(library.cached(&sound.audio_url).unwrap().is_some());
+}
+
+#[test]
 fn add_waits_for_the_cache_job_and_cancel_leaves_the_project_untouched() {
     let root = tempfile::tempdir().unwrap();
     let library = library(root.path());

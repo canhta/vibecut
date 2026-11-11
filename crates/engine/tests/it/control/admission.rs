@@ -773,7 +773,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::ResyncRequired, ResyncRequired, false),
         row!(E::JobNotRetained, JobNotRetained, false),
         row!(E::ControlIdentity, Refused, false),
-        row!(E::CacheBusy, Refused, false),
+        row!(E::Runtime(B::CacheBusy), Refused, false),
         row!(
             E::Runtime(engine::RuntimeError::ModelResponse),
             Refused,
@@ -979,6 +979,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Ai(ai::Error::Incomplete), Ai, false),
     ];
     for (inner, code) in [
+        (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::NetworkTransient), C::Job),
@@ -1002,6 +1003,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ));
     }
     for (cause, code) in [
+        (E::Runtime(B::CacheBusy), C::Refused),
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::CacheCorrupt), C::Job),
@@ -1026,7 +1028,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         C::Job,
         false,
     ));
-    for cause in [B::ModelResponse, B::StorageFull] {
+    for cause in [B::CacheBusy, B::ModelResponse, B::StorageFull] {
         cases.push((E::Runtime(B::Failed(Arc::new(cause))), C::Refused, false));
     }
     let message = E::Providers(P::ModelMissing("test-model")).to_string();

@@ -59,7 +59,8 @@ impl MediaAccess {
 
     /// Open the process waveform and thumbnail caches under the shared cache
     /// root. One owner holds them so generation and display read the same
-    /// entries; a second open of the same root reports [`EditError::CacheBusy`].
+    /// entries; a second open of the same root reports [`crate::RuntimeError::CacheBusy`]
+    /// through `EditError::Runtime`.
     pub fn open(budget: crate::ByteBudget) -> Result<Self, EditError> {
         Self::open_in(&crate::cache::CacheRoot::discover()?.models(), budget)
     }

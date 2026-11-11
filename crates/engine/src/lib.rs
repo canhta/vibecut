@@ -88,9 +88,6 @@ pub enum EditError {
     #[error("control identity unavailable")]
     ControlIdentity,
 
-    #[error("cache is in use")]
-    CacheBusy,
-
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
     #[error(transparent)]
@@ -216,7 +213,6 @@ impl EditError {
             Self::Project(project::Error::Conflict) => C::Conflict,
             Self::Project(project::Error::Media(_)) => C::Media,
             Self::ControlIdentity
-            | Self::CacheBusy
             | Self::LoudnessStale
             | Self::NoTrack(_)
             | Self::NoAsset(_)
