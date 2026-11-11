@@ -35,6 +35,24 @@ pub enum PreviewZoom {
 }
 
 impl Editor {
+    pub(in crate::editor) fn text_animation_available(
+        &self,
+        state: &crate::editor::properties::State,
+    ) -> bool {
+        state
+            .animation_target(&self.session, &self.selection)
+            .is_some()
+            && self
+                .subtitles
+                .as_ref()
+                .is_none_or(|s| s.edit_ready(&self.session))
+            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !self.importing()
+            && self.lifecycle_action.is_none()
+            && !self.overlay_open
+            && !self.dialogs.export.is_open()
+            && !self.dialogs.models.is_open()
+    }
     fn split_targets(&self) -> Vec<ItemId> {
         let at = self.playback.position().unwrap_or(Tick::ZERO);
         self.session
@@ -204,6 +222,10 @@ impl Editor {
             return false;
         };
         match spec.target {
+            ActionTarget::Ui {
+                action: UiAction::ApplyTextAnimation(_),
+                ..
+            } => self.text_animation_available(&self.properties),
             ActionTarget::Ui {
                 action: UiAction::Subtitles,
                 ..

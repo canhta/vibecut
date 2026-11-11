@@ -21,7 +21,9 @@ impl Editor {
             return Err(Error::NotAvailable(ticket));
         }
         // A disabled style action must not flush an unrelated caption draft.
-        if id.starts_with("subtitles.style.") && !self.action_enabled(id) {
+        if (id.starts_with("subtitles.style.") || id.starts_with("text.animation."))
+            && !self.action_enabled(id)
+        {
             return Err(Error::ActionDisabled(spec.id));
         }
         self.activate_with(Some(id), |editor| {
@@ -122,6 +124,21 @@ impl Editor {
                     self.reveal_media(asset)?;
                 }
                 UiAction::InsertText => self.insert_text(),
+                UiAction::ApplyTextAnimation(preset) => {
+                    let item = crate::editor::context::single(&self.selection)
+                        .ok_or(Error::Invalid("text animation selection"))?;
+                    let snapshot = self.session.project().clone();
+                    let mut state = std::mem::take(&mut self.properties);
+                    let result = crate::editor::properties::apply_text_animation(
+                        &mut state,
+                        &mut self.desk(),
+                        item,
+                        preset,
+                        snapshot,
+                    );
+                    self.properties = state;
+                    result?;
+                }
                 UiAction::Subtitles | UiAction::SubtitleCue => {
                     self.prepare_subtitles()?;
                     let mut options = self.preferences.subtitles.clone();

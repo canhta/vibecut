@@ -16,6 +16,11 @@ pub(in crate::editor) struct Widget {
 /// Requests the properties area cannot satisfy alone; the frame routes them
 /// in order after `show` returns.
 pub(in crate::editor) enum Action {
+    ApplyTextAnimation {
+        item: ItemId,
+        preset: engine::TextAnimationPreset,
+        snapshot: Arc<project::Project>,
+    },
     /// Switch the Project/Details strip through the action registry.
     Activate(&'static str),
     SetField {
@@ -127,6 +132,59 @@ pub(in crate::editor) enum Action {
 }
 
 impl State {
+    pub(in crate::editor) fn animation_target(
+        &self,
+        session: &engine::Session,
+        selection: &std::collections::BTreeSet<ItemId>,
+    ) -> Option<ItemId> {
+        if session.transaction_active()
+            || session.preview_project().is_some()
+            || self.editing()
+            || !self.drafts.is_empty()
+            || self.scrub.is_some()
+            || self.picker.is_some()
+            || self.reorder.is_some()
+            || self.font_picker.open
+        {
+            return None;
+        }
+        let id = crate::editor::context::single(selection)?;
+        session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find_map(|track| {
+                (!track.locked)
+                    .then(|| {
+                        track
+                            .items
+                            .iter()
+                            .find(|item| {
+                                item.id == id && matches!(item.content, ItemParams::Text(_))
+                            })
+                            .map(|item| item.id)
+                    })
+                    .flatten()
+            })
+    }
+
+    pub(super) fn cancel_opacity(&mut self) -> Vec<Action> {
+        self.opacity_edit = None;
+        self.drafts.remove("opacity");
+        if self.focus.as_deref() == Some("opacity") {
+            self.focus = None;
+        }
+        if self
+            .scrub
+            .as_ref()
+            .is_some_and(|s| s.target == ScrubTarget::Item("opacity"))
+        {
+            return self.end_scrub(false);
+        }
+        Vec::new()
+    }
     pub(in crate::editor) fn take_widgets(&mut self) -> Vec<Widget> {
         std::mem::take(&mut self.widgets)
     }

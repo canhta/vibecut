@@ -8,7 +8,7 @@ mod masks;
 mod number_edit;
 mod speed;
 
-pub(in crate::editor) use commands::{set_item_field, set_shared_field};
+pub(in crate::editor) use commands::{apply_text_animation, set_item_field, set_shared_field};
 pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
 pub(super) use number_edit::transform_scrub;
 
@@ -30,6 +30,11 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
 fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
     for action in actions {
         let result = match action {
+            Action::ApplyTextAnimation {
+                item,
+                preset,
+                snapshot,
+            } => commands::apply_text_animation(state, desk, item, preset, snapshot),
             Action::Activate(id) => {
                 // Activation runs on the editor, which holds a placeholder while
                 // this pass carries the area state. A refusal did not write it.
@@ -137,6 +142,14 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
         };
         if let Err(error) = result {
             desk.fail(error.to_string());
+        }
+        if state
+            .scrub
+            .as_ref()
+            .is_some_and(|s| s.target == super::ScrubTarget::Item("opacity"))
+            && let Some((snapshot, _, _)) = &mut state.opacity_edit
+        {
+            *snapshot = desk.view().session.project().clone();
         }
     }
 }

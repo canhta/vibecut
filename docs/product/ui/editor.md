@@ -109,6 +109,13 @@ shared 22 px field and 12 px label system. Outline/Box and Custom/Mixed describe
 saved style. This uncaptured composition is new; desktop reference parity is unverified.
 Availability and edit behavior belong to the [subtitles owner](../../../apps/vibecut/src/subtitles/README.md).
 
+The selected-Text Animation row is a new, explicitly adopted composition: Fade in,
+Fade out and Both use the current segmented control, 22 px fields, 12 px type and
+property-row spacing. Tooltips explain editable opacity keys and the need to undo or
+remove existing keys before changing a fade. No matching selected-title desktop
+reference exists; these captures are non-comparable for reference metrics. Eligibility
+and input lifetime belong to [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
+
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.

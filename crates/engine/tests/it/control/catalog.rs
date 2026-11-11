@@ -6,6 +6,8 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::Allow;
+use crate::support::control::caller;
+use crate::support::control::error;
 use crate::support::control::finish;
 use crate::support::control::fixture_chapters;
 use crate::support::control::font_access;
@@ -19,6 +21,7 @@ use crate::support::control::submit;
 use crate::support::control::with_audio;
 use crate::support::control::with_loudness;
 use crate::support::control::with_source_audio;
+use crate::support::control::with_text;
 use crate::support::control::with_thumbnails;
 use crate::support::control::with_video;
 use crate::support::control::with_waveform;
@@ -105,6 +108,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             serde_json::from_value(json!({"command":spec.id,"params":params})).unwrap();
         assert_eq!(typed.id(), spec.id);
         match spec.example.fixture {
+            Fixture::Text => s = crate::support::control::with_text(&s),
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
@@ -387,6 +391,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "ripple_delete",
                 "set_item_param",
                 "split_at",
+                "text.apply_animation",
                 "timeline.duplicate",
                 "timeline.move_items",
                 "timeline.set_hidden",
@@ -498,4 +503,38 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
         control::reference_markdown().unwrap(),
         "regenerate with cargo xtask catalog"
     );
+}
+
+#[test]
+fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() {
+    let mut s = with_text(&seed());
+    let mut r = runner();
+    let mut req = request(
+        &s,
+        "text.apply_animation",
+        json!({"item":3,"preset":"fade_in_out"}),
+        "fade",
+    );
+    req.registry_hash =
+        Some("3e2b1b0f91c52e1612a9646275304e8b9667a9ae5df0b689d19dff8472fa1d91".into());
+    error(
+        s.control_request(req, caller(&Allow), &mut r).unwrap(),
+        control::ErrorCode::SchemaMismatch,
+    );
+    let before = s.project().clone();
+    assert_eq!(s.history_len(), (0, 0));
+    let req = request(
+        &s,
+        "text.apply_animation",
+        json!({"item":3,"preset":"fade_in_out"}),
+        "current-fade",
+    );
+    ok(s.control_request(req.clone(), caller(&Allow), &mut r)
+        .unwrap());
+    assert_ne!(s.project(), &before);
+    assert_eq!(s.history_len(), (1, 0));
+    let applied = s.project().clone();
+    ok(s.control_request(req, caller(&Allow), &mut r).unwrap());
+    assert_eq!(s.project(), &applied);
+    assert_eq!(s.history_len(), (1, 0));
 }

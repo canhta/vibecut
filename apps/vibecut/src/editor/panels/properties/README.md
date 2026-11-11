@@ -83,8 +83,20 @@ an explicit state or localized refusal. Edits go only through `effects.add`,
 Visual selections show a blend dropdown (`inspector.blendMode`, options
 `inspector.blendMode.<persisted-id>`) and a 0..=1 opacity entry (`inspector.opacity`),
 mixed values marked. Both dispatch the shared-field command: one atomic undo step,
-unrelated fields kept. Opacity edits set a constant channel; animation goes through the
-keyframe commands.
+unrelated fields kept. Opacity displays and edits the real item-local playhead value.
+Keyed edits outside the half-open item range refuse; unkeyed bases remain editable.
+Typed drafts and scrubs belong to their project snapshot, item and playhead; time,
+selection, lock, tab or snapshot changes cancel them before blur. Removing the final
+key exposes the retained base.
+
+The single-Text tab offers Fade in, Fade out and Both in the existing segmented row.
+Apply creates ordinary editable opacity keys through `text.apply_animation`; the
+[engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#text-animation)
+owns the recipe and refusal rules. A choice is selected only for an exact saved Param
+match. Other curves have no selected choice: undo or remove their keys to change modes.
+Exactly one unlocked Text and no active work, transaction, save, inline/caption or
+Properties draft is required. Captured row actions revalidate their target and snapshot;
+direct activation uses the same readiness before any unrelated draft can flush.
 
 Audio and video source items share the batch inspector's volume and mute controls;
 volume steps 0.01 dB over -60..20 dB. `inspector.audio_gain` and

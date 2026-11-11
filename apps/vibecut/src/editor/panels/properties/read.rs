@@ -24,24 +24,6 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
     {
         return transform.value_at(&item.animations, Tick::ZERO).ok();
     }
-    if let Some(path) = project::BuiltinPath::parse(field) {
-        return match path {
-            project::BuiltinPath::Opacity if !matches!(&item.content, ItemParams::Audio(_)) => {
-                Some(
-                    match item
-                        .animations
-                        .value_at(&project::AnimationPath::from(path), Tick::ZERO)
-                        .ok()
-                        .flatten()
-                    {
-                        Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
-                        _ => 1.0,
-                    },
-                )
-            }
-            _ => None,
-        };
-    }
     match (field, &item.content) {
         ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
         ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),

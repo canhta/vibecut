@@ -8,6 +8,15 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick, TimeRange};
 
+/// Built-in opacity recipes expanded once into ordinary editable keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAnimationPreset {
+    FadeIn,
+    FadeOut,
+    FadeInOut,
+}
+
 /// Built-in looks, applied as values rather than a persisted preset identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -310,6 +319,8 @@ pub struct CommandSpec {
 #[derive(Clone, Copy, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fixture {
+    /// Timeline with Text item 3 on the copied empty Text track 3.
+    Text,
     TransitionCut,
     Transition,
     Timeline,
@@ -587,6 +598,7 @@ commands! {
     SoundsSearch, "sounds.search", "Search sound library", Read { query: String, page: u32, page_size: u32, commercial_only: bool } => Timeline, serde_json::json!({"query":"whoosh","page":1,"page_size":15,"commercial_only":true}), grant = Human;
     SoundsUnsave, "sounds.unsave", "Unsave library sound", Read { id: u64 } => Timeline, serde_json::json!({"id":1}), grant = Human;
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
+    ApplyTextAnimation, "text.apply_animation", "Apply text animation", Edit { item: ItemId, preset: TextAnimationPreset } => Text, serde_json::json!({"item":3,"preset":"fade_in_out"}), available = UnlockedItem, grant = Agent;
     AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
     TimelineCommitPreview, "timeline.commit_preview", "Commit timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     TimelineDiscardPreview, "timeline.discard_preview", "Discard timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;

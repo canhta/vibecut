@@ -17,7 +17,8 @@ pub use shared_field::{SharedField, shared_fields};
 pub(in crate::editor) use state::{Action, Widget, element_kind};
 pub(in crate::editor) use view::show;
 pub(in crate::editor) use workflow::{
-    add_effect_to_item, apply, effect_refusal, set_item_field, set_shared_field,
+    add_effect_to_item, apply, apply_text_animation, effect_refusal, set_item_field,
+    set_shared_field,
 };
 
 use crate::editor::{
@@ -46,6 +47,7 @@ pub(in crate::editor) struct State {
     details: bool,
     scrub: Option<ScrubDrag>,
     spatial_edit: Option<(ItemId, String, Tick)>,
+    opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
     picker: Option<color_picker::Draft>,
     /// Project the open picker previews against; a different project closes it.
@@ -145,6 +147,7 @@ impl Default for State {
             details: false,
             scrub: None,
             spatial_edit: None,
+            opacity_edit: None,
             reorder: None,
             picker: None,
             color_base: None,

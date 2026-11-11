@@ -407,6 +407,166 @@ fn export_pixels(project: &project::Project, at: Tick) -> Vec<[f32; 4]> {
         .to_vec()
 }
 
+#[test]
+fn bilingual_fades_scale_glyphs_and_background_once_in_real_time() {
+    use project::{
+        AnimationPath, Channel, Extrapolation::Hold, Keyframe, Param, ParamValue::Scalar,
+    };
+    let mut nfc = None;
+    for content in [
+        "Tiếng Việt\nEnglish",
+        "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t\nEnglish",
+    ] {
+        let mut text = TextParams::new(content);
+        text.font_size = 28.0;
+        text.color = Color([220, 120, 40, 160]);
+        text.background = Some(boxed([30, 80, 180, 128]));
+        let mut data = project_with(text, Default::default(), 2).into_data();
+        data.canvas.background = Color([0; 4]);
+        for track in data.scene_mut().timeline.iter_mut() {
+            track
+                .items
+                .retain(|item| matches!(item.content, project::ItemParams::Text(_)));
+        }
+        let target = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+            .next()
+            .unwrap();
+        target.start = tick(1, 1);
+        target.source_range = time::SourceRange::new(tick(2, 1), tick(3, 1)).unwrap();
+        let still = project::Project::new(data.clone()).unwrap();
+        let coverage = export_pixels(&still, tick(1, 1));
+        if let Some(expected) = &nfc {
+            assert_eq!(&coverage, expected);
+        } else {
+            nfc = Some(coverage.clone());
+        }
+        assert!(
+            coverage.iter().any(|p| p[0] > p[2] && p[3] > 0.5),
+            "Vietnamese and English glyphs"
+        );
+        assert!(
+            coverage.iter().any(|p| p[2] > p[0] && p[3] > 0.4),
+            "real box"
+        );
+        let target = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+            .next()
+            .unwrap();
+        target
+            .animations
+            .set(
+                AnimationPath::new("opacity").unwrap(),
+                Param::Value(
+                    Channel::new(
+                        Scalar(0.6),
+                        [
+                            (0, 0.0),
+                            (76_204_800_000, 0.6),
+                            (177_811_200_000, 0.6),
+                            (254_016_000_000, 0.0),
+                        ]
+                        .into_iter()
+                        .map(|(t, v)| Keyframe::new(Tick(t), Scalar(v)))
+                        .collect(),
+                        Hold,
+                        Hold,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+        let plain = project::Project::new(data.clone()).unwrap();
+        data.scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+            .next()
+            .unwrap()
+            .effects
+            .push(
+                project::effect_definition("hold_time")
+                    .unwrap()
+                    .instance("hold"),
+            );
+        let fade = project::Project::new(data.clone()).unwrap();
+        for (local, opacity) in [
+            (0, 0.0),
+            (38_102_400_000, 0.3),
+            (76_204_800_000, 0.6),
+            (177_811_200_000, 0.6),
+            (215_913_600_000, 0.3),
+            (254_016_000_000, 0.0),
+        ] {
+            let at = tick(1, 1).checked_add(Tick(local)).unwrap();
+            let pixels = export_pixels(&fade, at);
+            let h = Hooks::default();
+            let preview = Renderer::new(&plain, RenderSettings::from_project(&plain))
+                .unwrap()
+                .preview_frame(at, &mut Empty, &h)
+                .unwrap();
+            let exact = export_pixels(&plain, at);
+            let mismatch = preview
+                .pixels()
+                .iter()
+                .zip(&exact)
+                .position(|(a, b)| a != b);
+            assert!(
+                mismatch.is_none(),
+                "preview/render local {local}: {:?}",
+                mismatch.map(|i| (i, preview.pixels()[i], pixels[i]))
+            );
+            for (actual, source) in pixels.iter().zip(&coverage) {
+                for c in 0..4 {
+                    assert!(
+                        (f64::from(actual[c]) - f64::from(source[c]) * opacity).abs() < 3e-6,
+                        "local {local}, c {c}, actual {actual:?}, source {source:?}"
+                    );
+                }
+                assert!(actual[..3].iter().all(|v| *v <= actual[3]));
+            }
+        }
+        assert!(
+            export_pixels(&fade, tick(1, 1).checked_sub(Tick(1)).unwrap())
+                .iter()
+                .all(|p| *p == [0.0; 4])
+        );
+        // Independently compose over a partial-alpha coloured backdrop in linear light.
+        data.canvas.background = Color([64, 128, 192, 153]);
+        let over = project::Project::new(data).unwrap();
+        let linear = |v: f64| {
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let back = [
+            linear(64.0 / 255.0),
+            linear(128.0 / 255.0),
+            linear(192.0 / 255.0),
+            1.0,
+        ];
+        for (actual, source) in export_pixels(&over, tick(23, 20)).iter().zip(&coverage) {
+            let alpha = f64::from(source[3]) * 0.3;
+            for c in 0..4 {
+                let expected =
+                    f64::from(source[c]) * 0.3 + back[c] * (153.0 / 255.0) * (1.0 - alpha);
+                assert!(
+                    (f64::from(actual[c]) - expected).abs() < 3e-6,
+                    "channel {c}"
+                );
+            }
+        }
+    }
+}
+
 const GOLDENS: &[(&str, u64)] = &[
     ("w400-upright-None", 0xf042f3edaf91e427),
     ("w400-upright-Underline", 0x9cd839895551819f),

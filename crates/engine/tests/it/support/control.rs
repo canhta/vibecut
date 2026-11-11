@@ -268,6 +268,32 @@ pub(crate) fn seed() -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// Only this copied seed gets Text item 3 on the previously empty track 3.
+pub(crate) fn with_text(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let track = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .find(|t| t.id == TrackId(3))
+        .unwrap();
+    assert!(track.items.is_empty());
+    track.kind = TrackKind::Text;
+    track.items.push(Item {
+        id: ItemId(3),
+        start: Tick::ZERO,
+        source_asset: None,
+        source_range: SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+        content: ItemParams::Text(project::TextParams::new("Tiếng Việt\nEnglish")),
+        animations: Default::default(),
+        effects: Vec::new(),
+        masks: Vec::new(),
+        blend_mode: Default::default(),
+        hidden: false,
+        retime: Default::default(),
+    });
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed plus one real mono audio asset (id 97) for waveform command examples.
 pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();
