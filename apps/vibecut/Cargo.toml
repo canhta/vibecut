@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
+autoexamples = false
 
 [[bin]]
 name = "vibecut"
@@ -11,7 +12,12 @@ path = "src/main.rs"
 
 [[example]]
 name = "ui_audit"
+path = "examples/ui_audit.rs"
 test = true
+
+[[example]]
+name = "preview_fixture"
+path = "examples/preview_fixture.rs"
 
 [lints]
 workspace = true

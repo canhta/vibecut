@@ -66,6 +66,17 @@ Each module's contract is its README.
 
 ## Checks
 
+The offscreen audit is an example tool. `examples/ui_audit.rs` is the stable CLI
+and composition root holding the two existing test-fixture `#[path]` seams and
+the example tests; its private implementation lives under `examples/audit/`.
+`application.rs` owns the harness, app and theme, `fixture.rs` the shared
+deterministic media and session fixtures, `scenes.rs` the scene registry with
+`scenes/{home,editor,properties,timeline,shorts,assets}.rs`, `readme.rs` the
+README capture/import/edit/publication workflow with
+`readme/{source,process,media,publication,project}.rs`, and `report.rs` reference
+copy plus gallery HTML. `Cargo.toml` declares the `ui_audit` and
+`preview_fixture` example targets explicitly with `autoexamples = false`.
+
 `cargo test -p vibecut` asserts widget and engine state and writes no image. `cargo
 xtask ui-audit [SCENE...]` renders named scenes offscreen through the automation IDs
 at 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
