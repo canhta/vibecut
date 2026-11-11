@@ -661,6 +661,10 @@ fn effect_preview_instance(
             let (_, max) = definition.param("intensity")?.scalar_range()?;
             instance.set_scalar("intensity", max).ok()?;
         }
+        "directional_blur" => {
+            instance.set_scalar("length", 8.0).ok()?;
+            instance.set_scalar("direction", 45.0).ok()?;
+        }
         "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
         "levels" => {
             instance.set_scalar("in_black", 40.0).ok()?;

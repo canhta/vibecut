@@ -234,6 +234,45 @@ impl<'a> Renderer<'a> {
                 let transform = super::transform::Transform::at(item, local)?;
                 let blended = item.blend_mode != project::BlendMode::Normal;
                 let source_at = source_time(item, content_tick(item, content)?)?;
+                // Decode once; spatial author units use this unreduced actual raster.
+                let video = if matches!(item.content, ItemParams::Video(_)) {
+                    if prepared.as_ref().is_some_and(|(id, _)| *id == item.id) {
+                        prepared.take().map(|(_, image)| image)
+                    } else {
+                        self.video_image(item, source_at, placement, sources, hooks, preview)?
+                    }
+                } else {
+                    None
+                };
+                let geometry = if item.effects.iter().any(|e| e.enabled) {
+                    let working = [out.width, out.height];
+                    let gains = if matches!(item.content, ItemParams::Video(_)) {
+                        let shape = video
+                            .as_ref()
+                            .map(|image| [image.width(), image.height()])
+                            .or_else(|| {
+                                project
+                                    .data()
+                                    .assets
+                                    .iter()
+                                    .find(|asset| Some(asset.id()) == item.source_asset)
+                                    .and_then(|asset| {
+                                        asset.probe().streams.iter().find_map(|s| s.video.as_ref())
+                                    })
+                                    .map(|v| [v.width, v.height])
+                            })
+                            .ok_or(Error::Invalid("effect spatial geometry"))?;
+                        super::draw::clip_pixel_scale(working, shape, placement)?
+                    } else {
+                        [
+                            f64::from(out.width) / f64::from(project.data().canvas.width),
+                            f64::from(out.height) / f64::from(project.data().canvas.height),
+                        ]
+                    };
+                    Some(crate::effects::EffectGeometry::new(working, gains)?)
+                } else {
+                    None
+                };
                 let _plan = if item.effects.iter().any(|effect| effect.enabled) {
                     Some(hooks.reserve(
                         MemoryKind::Compositor,
@@ -255,8 +294,7 @@ impl<'a> Renderer<'a> {
                             &item.animations,
                             effect,
                             local,
-                            out.width,
-                            out.height,
+                            geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
                             !preview,
                         )
                     })
@@ -277,12 +315,7 @@ impl<'a> Renderer<'a> {
                 };
                 match &item.content {
                     ItemParams::Video(_) => {
-                        let image = if prepared.as_ref().is_some_and(|(id, _)| *id == item.id) {
-                            prepared.take().map(|(_, image)| image)
-                        } else {
-                            self.video_image(item, source_at, placement, sources, hooks, preview)?
-                        };
-                        if let Some(image) = image {
+                        if let Some(image) = video {
                             draw(&mut out, &image, placement, hooks)?;
                         }
                     }

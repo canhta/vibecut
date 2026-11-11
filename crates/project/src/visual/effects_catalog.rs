@@ -193,6 +193,21 @@ static DEFINITIONS: &[EffectDefinition] = &[
         params: &[slider("rate", "Frame rate", (1.0, 60.0), 2.0, true)],
     },
     EffectDefinition {
+        id: "directional_blur",
+        name: "Streak Blur",
+        shelf: EffectShelf::BlurDetail,
+        params: &[
+            EffectParamDefinition {
+                id: "direction",
+                name: "Direction",
+                kind: EffectParamKind::Angle,
+                default: EffectValue::Scalar(0.0),
+                animatable: true,
+            },
+            ranged("length", "Length", (0.0, 1000.0), (0.0, 20.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
         id: "extract",
         name: "Threshold",
         shelf: EffectShelf::Stylize,
