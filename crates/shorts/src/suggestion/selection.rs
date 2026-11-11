@@ -1,7 +1,7 @@
 //! Resolves the selected clip suggestion provider.
 use super::{
     AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation, ClipSuggester, Cost,
-    Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, OPENAI_POLICY_URL,
+    Credentials, EngineError, Error, HeuristicClipSuggester, LanguageTag, OPENAI_POLICY_URL,
     OpenAiClipSuggester, Scope, SuggestionOption, SuggestionProvider, UploadRequest,
 };
 impl SuggestionProvider {
@@ -55,17 +55,22 @@ pub fn choose_suggestion(provider: &str, model: Option<&str>) -> Result<Suggesti
     let option = suggestion_options()
         .into_iter()
         .find(|option| option.id == provider)
-        .ok_or(EditError::Unsupported("unknown clip suggestion provider"))?;
+        .ok_or(EngineError::Edit(engine::EditError::Unsupported(
+            "unknown clip suggestion provider",
+        )))?;
     let model = model
         .or_else(|| option.models.first().copied())
-        .ok_or(EditError::Unsupported("missing clip suggestion model"))?;
+        .ok_or(EngineError::Edit(engine::EditError::Unsupported(
+            "missing clip suggestion model",
+        )))?;
     if option.local && !option.models.contains(&model) {
-        return Err(
-            EditError::Unsupported("unsupported model for clip suggestion provider").into(),
-        );
+        return Err(EngineError::Edit(engine::EditError::Unsupported(
+            "unsupported model for clip suggestion provider",
+        ))
+        .into());
     }
     if !option.local {
-        ai::defaults::validate_model(model).map_err(EditError::from)?;
+        ai::defaults::validate_model(model).map_err(EngineError::from)?;
     }
     match option.id {
         "heuristic" => Ok(SuggestionProvider::Heuristic),
@@ -75,7 +80,10 @@ pub fn choose_suggestion(provider: &str, model: Option<&str>) -> Result<Suggesti
         "anthropic" => Ok(SuggestionProvider::Anthropic {
             model: model.into(),
         }),
-        _ => Err(EditError::Unsupported("unknown clip suggestion provider").into()),
+        _ => Err(EngineError::Edit(engine::EditError::Unsupported(
+            "unknown clip suggestion provider",
+        ))
+        .into()),
     }
 }
 impl BuiltSuggester {
@@ -89,7 +97,7 @@ impl BuiltSuggester {
     pub(super) fn disclosure(
         &self,
         scope: &Scope,
-    ) -> Result<Option<ai::UploadDisclosure>, EditError> {
+    ) -> Result<Option<ai::UploadDisclosure>, EngineError> {
         self.as_clip().disclosure(scope).map_err(Into::into)
     }
 }
@@ -97,7 +105,7 @@ impl BuiltSuggester {
 pub(super) fn build_suggester(
     provider: &SuggestionProvider,
     credentials: &Credentials,
-) -> Result<BuiltSuggester, EditError> {
+) -> Result<BuiltSuggester, EngineError> {
     match provider {
         SuggestionProvider::Heuristic => {
             Ok(BuiltSuggester::Heuristic(HeuristicClipSuggester::new()?))
@@ -123,12 +131,14 @@ pub(super) fn upload_request(
     scope: &Scope,
     disclosure: &ai::UploadDisclosure,
     language: &LanguageTag,
-) -> Result<UploadRequest, EditError> {
-    let link = |name: &str| -> Result<String, EditError> {
+) -> Result<UploadRequest, EngineError> {
+    let link = |name: &str| -> Result<String, EngineError> {
         disclosure
             .link(name)
             .map(|url| url.as_str().into())
-            .ok_or(EditError::Unsupported("clip disclosure link"))
+            .ok_or(EngineError::Edit(engine::EditError::Unsupported(
+                "clip disclosure link",
+            )))
     };
     Ok(UploadRequest {
         config: scope.provider.clone(),

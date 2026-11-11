@@ -1,6 +1,6 @@
 //! Schedules accepted short exports.
 use super::{
-    ArtifactKind, CacheKey, CancelToken, ClipBatch, ClipJob, EditError, Error, JobBytes, JobId,
+    ArtifactKind, CacheKey, CancelToken, ClipBatch, ClipJob, EngineError, Error, JobBytes, JobId,
     JobKind, JobRunner, JobSpec, JobStage, JobState, KeyInputs, Options, PreparedClip, Project,
     ResourceClass, Tick, TimeRange, Write, extension, mark_subtitle, mark_video,
     reconcile_published, subtitle_file,
@@ -11,12 +11,14 @@ impl ClipBatch {
     /// drain as they submit never leave an orphan admission behind.
     pub fn submit_one(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, Error> {
         if self.jobs.get(index).is_some_and(Option::is_some) {
-            return Err(EditError::Invalid("clip already submitted").into());
+            return Err(
+                EngineError::Edit(engine::EditError::Invalid("clip already submitted")).into(),
+            );
         }
         let clip = self
             .clips
             .get(index)
-            .ok_or(EditError::Invalid("clip index"))?;
+            .ok_or(EngineError::Edit(engine::EditError::Invalid("clip index")))?;
         let (id, cancel) = submit_clip(runner, clip)?;
         if let Some(slot) = self.jobs.get_mut(index) {
             *slot = Some(ClipJob { id, cancel });
@@ -33,7 +35,7 @@ impl ClipBatch {
         let mut submitted = Vec::new();
         submitted
             .try_reserve_exact(self.clips.len())
-            .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+            .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
         for index in 0..self.clips.len() {
             if self.jobs.get(index).is_some_and(Option::is_some) {
                 continue;
@@ -51,15 +53,21 @@ impl ClipBatch {
         let clip = self
             .clips
             .get(index)
-            .ok_or(EditError::Invalid("clip index"))?;
+            .ok_or(EngineError::Edit(engine::EditError::Invalid("clip index")))?;
         let current = self
             .jobs
             .get(index)
             .and_then(Option::as_ref)
-            .ok_or(EditError::Invalid("clip not submitted"))?;
+            .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                "clip not submitted",
+            )))?;
         match runner.snapshot(current.id).map(|snapshot| snapshot.state) {
             Some(JobState::Failed | JobState::Cancelled) => {}
-            _ => return Err(EditError::Invalid("clip is not retryable").into()),
+            _ => {
+                return Err(
+                    EngineError::Edit(engine::EditError::Invalid("clip is not retryable")).into(),
+                );
+            }
         }
         let (id, cancel) = submit_clip(runner, clip)?;
         if let Some(slot) = self.jobs.get_mut(index) {
@@ -76,7 +84,9 @@ impl ClipBatch {
             .jobs
             .get(index)
             .and_then(Option::as_ref)
-            .ok_or(EditError::Invalid("clip not submitted"))?;
+            .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                "clip not submitted",
+            )))?;
         job.cancel.cancel();
         Ok(())
     }
@@ -96,7 +106,7 @@ pub(super) fn job_key(
     settings: &render::ExportSettings,
     crop: Option<project::Crop>,
     options: &Options<'_>,
-) -> Result<CacheKey, EditError> {
+) -> Result<CacheKey, EngineError> {
     let encoded = project::encode(project, false)?;
     let source = media::ContentHash::from_bytes(&encoded).0;
     let range = media::ContentHash::from_bytes(&duration.0.to_le_bytes()).0;
@@ -147,7 +157,7 @@ pub(super) fn job_key(
 fn submit_clip(
     runner: &mut JobRunner,
     clip: &PreparedClip,
-) -> Result<(JobId, CancelToken), EditError> {
+) -> Result<(JobId, CancelToken), EngineError> {
     let project = clip.project.clone();
     let settings = clip.settings.clone();
     let paths = clip.paths.clone();
@@ -158,7 +168,7 @@ fn submit_clip(
     let published = clip.published.clone();
     let sources = clip.sources.clone();
     let range = TimeRange::new(Tick::ZERO, clip.duration)?;
-    Ok(runner.submit::<engine::EditError>(
+    Ok(runner.submit::<engine::Error>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -195,13 +205,15 @@ fn submit_clip(
             let mut staged = Vec::new();
             staged
                 .try_reserve_exact(paths.subtitles.len())
-                .map_err(|_| EditError::Control(engine::control::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
             for (index, subtitle) in paths.subtitles.iter().enumerate() {
                 if subtitles_done.get(index).copied().unwrap_or(false) {
                     continue;
                 }
                 context.check_cancelled()?;
-                let track = caption_track.ok_or(EditError::Invalid("clip subtitle track"))?;
+                let track = caption_track.ok_or(EngineError::Edit(engine::EditError::Invalid(
+                    "clip subtitle track",
+                )))?;
                 let export = subtitle_file(&project, track, subtitle.format, &languages)?;
                 let stage =
                     project::atomic::StreamingStage::new(&subtitle.path, policy, max_output_bytes)?;

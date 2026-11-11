@@ -170,7 +170,9 @@ impl Generator for Once {
             .lock()
             .unwrap()
             .take()
-            .ok_or(engine::EditError::Invalid("fixture already consumed"))
+            .ok_or(engine::Error::Edit(engine::EditError::Invalid(
+                "fixture already consumed",
+            )))
     }
 }
 pub struct Pixels;

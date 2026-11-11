@@ -11,7 +11,7 @@ use ai::{
 };
 use captions::{Cue, CueText, CueTrack, LanguageTag};
 use engine::{
-    ByteBudget, Command, EditError, Session,
+    ByteBudget, Command, Error as EngineError, Session,
     jobs::*,
     translation::{self, TranslationRun, TranslationTarget},
 };
@@ -136,7 +136,7 @@ fn try_run(
     fail_count: usize,
     max_attempts: u8,
     budget: u64,
-) -> Result<(Arc<TranslationRun>, Arc<Transport>), EditError> {
+) -> Result<(Arc<TranslationRun>, Arc<Transport>), EngineError> {
     let config = OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope =
         Scope::translation(config.clone(), TRANSLATION_MODE.into(), &w, "test".into()).unwrap();
@@ -357,7 +357,7 @@ fn maximum_model_ids_submit_translation_with_exact_consent_and_distinct_cache_ke
                 1,
                 None,
             ),
-            Err(EditError::Ai(Error::Cost))
+            Err(EngineError::Ai(Error::Cost))
         ));
         assert_eq!(transport.inner.calls.load(Ordering::Relaxed), 0);
         if let Some(previous) = &previous_acknowledgement {
@@ -435,7 +435,9 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
                 force: false
             }
         ),
-        Err(EditError::Session(engine::SessionError::StaleResult))
+        Err(EngineError::Edit(engine::EditError::Session(
+            engine::SessionError::StaleResult
+        )))
     ));
 }
 
@@ -444,11 +446,11 @@ fn operation_budget_covers_all_attempts_before_any_translation_starts() {
     let s = session();
     assert!(matches!(
         try_run(&s, selected(&s, false), 0, 2, 344064),
-        Err(EditError::Ai(Error::Cost))
+        Err(EngineError::Ai(Error::Cost))
     ));
     assert!(matches!(
         try_run(&s, selected(&s, false), 0, 0, 1_000_000),
-        Err(EditError::Control(engine::control::ControlError::Limit))
+        Err(EngineError::Control(engine::control::ControlError::Limit))
     ));
 }
 
@@ -459,7 +461,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     stale.segments.first_mut().unwrap().text = "old source".into();
     assert!(matches!(
         try_run(&s, stale, 0, 1, 1_000_000),
-        Err(EditError::Session(engine::SessionError::StaleResult))
+        Err(EngineError::Session(engine::SessionError::StaleResult))
     ));
     let (run, transport) = run(&s, selected(&s, false), 0, 1, 1_000_000);
     s.apply(Command::AddTrack {
@@ -470,7 +472,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     .unwrap();
     assert!(matches!(
         run.submit(&mut runner(), &s),
-        Err(EditError::Session(engine::SessionError::StaleResult))
+        Err(EngineError::Session(engine::SessionError::StaleResult))
     ));
     assert_eq!(transport.calls.load(Ordering::Relaxed), 0);
 }
@@ -568,7 +570,7 @@ fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lif
                         s.commit_gesture().unwrap();
                     }
                     "group" => s
-                        .transaction(|s| {
+                        .transaction(|s| -> Result<(), engine::EditError> {
                             for command in commands {
                                 s.apply(command)?;
                             }
@@ -663,13 +665,15 @@ fn translation_trim_cancel_and_failed_commands_restore_retained_content() {
         );
         s.cancel_gesture().unwrap();
 
-        let result: Result<(), EditError> = s.transaction(|s| {
+        let result: Result<(), EngineError> = s.transaction(|s| {
             s.apply(Command::TrimStart {
                 item: ItemId(0),
                 at: Tick(15),
             })?;
             s.apply(translate_cue("cue-1", force))?;
-            Err(EditError::Invalid("test rollback"))
+            Err(EngineError::Edit(engine::EditError::Invalid(
+                "test rollback",
+            )))
         });
         assert!(result.is_err());
         assert_eq!(s.project(), &original);

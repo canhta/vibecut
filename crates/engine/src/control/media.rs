@@ -1,6 +1,6 @@
 //! Lends process media caches and durable LUT sources to generation/import jobs.
 use crate::{
-    EditError,
+    Error as EngineError,
     artifacts::thumbnail_strip::{
         self, ThumbnailStripJob, ThumbnailStripRequest, ThumbnailStripState,
     },
@@ -32,7 +32,7 @@ pub struct MediaAccess {
 impl MediaAccess {
     /// The process waveform/scene-analysis and timeline-thumbnail stores only,
     /// at most 256 registered entries total. No source/model/library roots.
-    pub fn cache_maintenance(&self) -> Result<[crate::cache::CacheMaintenance; 2], EditError> {
+    pub fn cache_maintenance(&self) -> Result<[crate::cache::CacheMaintenance; 2], EngineError> {
         let snapshots = [
             self.artifacts.maintenance()?,
             self.thumbnails.maintenance()?,
@@ -43,7 +43,7 @@ impl MediaAccess {
             .sum::<usize>()
             > 256
         {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
@@ -68,14 +68,14 @@ impl MediaAccess {
     /// Open process waveform/thumbnail caches and the separate durable LUT store
     /// under the shared root. One owner holds them so generation and display read the same
     /// entries; a second open of the same root reports [`crate::RuntimeError::CacheBusy`]
-    /// through `EditError::Runtime`.
-    pub fn open(budget: crate::ByteBudget) -> Result<Self, EditError> {
+    /// through `EngineError::Runtime`.
+    pub fn open(budget: crate::ByteBudget) -> Result<Self, EngineError> {
         Self::open_in(&crate::cache::CacheRoot::discover()?.models(), budget)
     }
 
     /// Open the caches and durable LUT store under an explicit root. The desktop keeps them with
     /// its workspace, while the headless CLI uses the shared cache root.
-    pub fn open_in(root: &std::path::Path, budget: crate::ByteBudget) -> Result<Self, EditError> {
+    pub fn open_in(root: &std::path::Path, budget: crate::ByteBudget) -> Result<Self, EngineError> {
         let artifacts =
             ArtifactCache::open(&root.join("waveform"), budget.clone(), MAX_CACHE_ENTRIES)?.0;
         let thumbnails = ThumbnailCache::open(&root.join("thumbnails"), budget, MAX_CACHE_ENTRIES)?;
@@ -95,7 +95,7 @@ impl MediaAccess {
         item: &Item,
         visible: TimeRange,
         columns: usize,
-    ) -> Result<WaveformState, EditError> {
+    ) -> Result<WaveformState, EngineError> {
         waveform::display(asset, item, visible, columns, &mut self.artifacts)
     }
 
@@ -108,7 +108,7 @@ impl MediaAccess {
         item: &Item,
         visible: TimeRange,
         pixels_per_second: f64,
-    ) -> Result<ThumbnailStripState, EditError> {
+    ) -> Result<ThumbnailStripState, EngineError> {
         thumbnail_strip::display(
             asset,
             item,
@@ -125,7 +125,7 @@ impl MediaAccess {
         &mut self,
         runner: &mut JobRunner,
         asset: SourceAsset,
-    ) -> Result<JobId, EditError> {
+    ) -> Result<JobId, EngineError> {
         self.retain(runner);
         let job = WaveformRequest::new(asset)?.submit(runner, &mut self.artifacts)?;
         let id = job.id;
@@ -142,7 +142,7 @@ impl MediaAccess {
         item: &Item,
         visible: TimeRange,
         pixels_per_second: f64,
-    ) -> Result<JobId, EditError> {
+    ) -> Result<JobId, EngineError> {
         self.retain(runner);
         let request = ThumbnailStripRequest::for_clip(
             asset,
@@ -165,11 +165,15 @@ impl MediaAccess {
         runner: &mut JobRunner,
         asset: SourceAsset,
         settings: DetectionSettings,
-    ) -> Result<JobId, EditError> {
+    ) -> Result<JobId, EngineError> {
         self.retain(runner);
-        let duration = asset.probe().duration.ok_or(EditError::Unsupported(
-            "scene detection needs a known duration",
-        ))?;
+        let duration =
+            asset
+                .probe()
+                .duration
+                .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                    "scene detection needs a known duration",
+                )))?;
         let range = SourceRange::new(Tick::ZERO, duration)?;
         let job =
             DetectionRequest::new(asset, range, settings)?.submit(runner, &mut self.artifacts)?;
@@ -180,7 +184,7 @@ impl MediaAccess {
 
     /// Publish a completed job's validated output. A job this owner no longer
     /// holds was already published or was not submitted here.
-    pub(crate) fn finish(&mut self, runner: &mut JobRunner, job: JobId) -> Result<(), EditError> {
+    pub(crate) fn finish(&mut self, runner: &mut JobRunner, job: JobId) -> Result<(), EngineError> {
         if let Some(handle) = self.waveforms.remove(&job) {
             handle.finish(runner, &mut self.artifacts)?;
         }

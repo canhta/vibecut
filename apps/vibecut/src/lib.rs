@@ -64,7 +64,7 @@ pub enum Error {
     #[error("invalid desktop input: {0}")]
     Invalid(&'static str),
     #[error("engine operation failed")]
-    Engine(#[from] engine::EditError),
+    Engine(#[from] engine::Error),
     #[error(transparent)]
     Shorts(#[from] ::shorts::Error),
     #[error("AI operation failed")]
@@ -100,6 +100,12 @@ impl From<engine::recovery::Error> for Error {
 
 impl From<engine::RuntimeError> for Error {
     fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}
+
+impl From<engine::EditError> for Error {
+    fn from(error: engine::EditError) -> Self {
         Self::Engine(error.into())
     }
 }

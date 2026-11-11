@@ -1,9 +1,6 @@
 //! Applies validated editing commands to project candidates.
 use super::EditCommand;
-use crate::{
-    AssetUsage, Command, CreatedId, EditError, Effect, Move, NewItem, Placement, Result,
-    TrackPlacement,
-};
+use crate::{Command, CreatedId, Effect, Move, NewItem, Placement, TrackPlacement};
 use project::{
     Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId, TrackKind,
 };
@@ -12,6 +9,88 @@ use std::{
     sync::Arc,
 };
 use time::{SourceRange, Tick};
+
+use super::{
+    SessionError,
+    wire::{ControlError, ErrorCode, Failure},
+};
+/// One media asset's timeline usage, retained in the typed removal refusal.
+/// Item IDs are stable identifiers, never user-authored text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetUsage {
+    pub asset: media::AssetId,
+    pub items: Vec<project::ItemId>,
+}
+
+/// Safe refusals from pure Session editing and its lower domain owners.
+#[derive(Debug, thiserror::Error)]
+pub enum EditError {
+    #[error(transparent)]
+    Control(#[from] ControlError),
+    #[error(transparent)]
+    Session(#[from] SessionError),
+    #[error("missing track {0:?}")]
+    NoTrack(project::TrackId),
+    #[error("missing media asset {0:?}")]
+    NoAsset(media::AssetId),
+    #[error("media asset is used by timeline items: {0:?}")]
+    AssetsInUse(Vec<AssetUsage>),
+    #[error("missing item {0:?}")]
+    NoItem(project::ItemId),
+    #[error("track {0:?} is locked")]
+    Locked(project::TrackId),
+    #[error("transcript selection is in another scene")]
+    SceneBoundary,
+    #[error("transcript cue text is edited and protects its words")]
+    Protected,
+    #[error("transcript cues are not adjacent")]
+    CuesNotAdjacent,
+    #[error("transcript cues are on different tracks")]
+    CuesAcrossTracks,
+    #[error("transcript cues are in different items")]
+    CuesAcrossItems,
+    #[error("items overlap on track {0:?}")]
+    Overlap(project::TrackId),
+    #[error("invalid edit: {0}")]
+    Invalid(&'static str),
+    #[error("unsupported edit: {0}")]
+    Unsupported(&'static str),
+    #[error("project candidate rejected")]
+    Project(#[from] project::Error),
+    #[error("invalid edit time")]
+    Time(#[from] time::TimeError),
+    #[error("invalid caption mapping")]
+    Captions(#[from] captions::Error),
+}
+pub(crate) type Result<T> = std::result::Result<T, EditError>;
+impl Failure for EditError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Control(error) => error.code(),
+            Self::Session(error) => error.code(),
+            Self::Project(project::Error::Io(_)) => ErrorCode::Io,
+            Self::Project(project::Error::Busy) => ErrorCode::Busy,
+            Self::Project(project::Error::Conflict) => ErrorCode::Conflict,
+            Self::Project(project::Error::Media(_)) => ErrorCode::Media,
+            Self::NoTrack(_)
+            | Self::NoAsset(_)
+            | Self::AssetsInUse(_)
+            | Self::NoItem(_)
+            | Self::Locked(_)
+            | Self::SceneBoundary
+            | Self::Protected
+            | Self::CuesNotAdjacent
+            | Self::CuesAcrossTracks
+            | Self::CuesAcrossItems
+            | Self::Overlap(_)
+            | Self::Invalid(_)
+            | Self::Unsupported(_)
+            | Self::Project(_)
+            | Self::Time(_)
+            | Self::Captions(_) => ErrorCode::Refused,
+        }
+    }
+}
 
 pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 

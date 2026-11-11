@@ -9,7 +9,7 @@ Interface: `Providers`, `Credentials`, `Error`, `ConsentPrompt`, `TextAccess`, `
 missing provider credential, auto-detection on a provider that is not local whisper.cpp, and a
 remote upload without consent. Display states the fact only, never a command to run: the CLI adds
 its `vibecut-cli model download <id>` hint and the desktop renders its own text from the variant.
-Callers that still return the kernel union wrap it as `EditError::Providers`; the wire maps consent
+Callers that still return the engine aggregate wrap it as `engine::Error::Providers`; the wire maps consent
 to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-language to `Refused`.
 
 ## Adapters, scopes and consent
@@ -67,11 +67,11 @@ fingerprint and result validation.
 
 `models::ModelTransfers` composes JobRunner, ArtifactCache and ai's shared streaming transport.
 `open_default` uses [runtime's `CacheRoot::models()`](../runtime/README.md#default-cache-location);
-unavailable discovery returns runtime's `EditError::Unsupported`. `new` accepts an already owned cache and injected
+unavailable discovery returns kernel `engine::EditError::Unsupported` composed through `engine::Error::Edit`. `new` accepts an already owned cache and injected
 `ModelIo`. The runner must share that cache's ByteBudget. There is one active transfer per cache,
 including queue and backoff; another submission or removal during that ownership returns
 [`RuntimeError::CacheBusy`](../runtime/README.md#background-jobs-and-byte-policy) through
-`EditError::Runtime`, as does removal while a native model lease is live. State mutexes cover
+`engine::Error::Runtime`, as does removal while a native model lease is live. State mutexes cover
 ownership changes only, never network, file IO or verification.
 
 `submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt, and reports
@@ -88,7 +88,7 @@ verified-complete marker permits a `ModelLease`, so partial checkpoints stay una
 loaders. Models and checkpoints are pinned against LRU and generic clear; only an explicit
 `remove` deletes them, and live leases refuse removal. Uncheckpointed tails are reclaimed before
 append or restart and credited during a free-disk preflight; a disk-full write still returns
-`EditError::Runtime(RuntimeError::StorageFull)` when availability changes after the
+`engine::Error::Runtime(RuntimeError::StorageFull)` when availability changes after the
 advisory check. Malformed transfer representations compose `RuntimeError::ModelResponse`;
 both are source-free, nontransient `Refused` failures owned by [Runtime](../runtime/README.md).
 Other IO and foreign AI integrity/storage errors keep their existing types. Unknown directories and

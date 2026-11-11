@@ -29,7 +29,7 @@ recognized word carries confidence and their mean is below the fixed floor, `tra
 confidence data never produce this refusal. Both are `transcript::Error`: the acquisition stage
 constructs them, so they are not provider-selection failures. `AutoLanguageUnsupported` stays a
 `providers::Error` because it refuses a provider capability, and callers that still return the
-kernel union wrap either type in `EditError`.
+engine aggregate wrap either type in `engine::Error`.
 
 The desktop consumes `SubtitleTranslator` without opening an ASR adapter or model lease.
 `translate_selected` composes the translation window, request disclosure, `TranslationRun`

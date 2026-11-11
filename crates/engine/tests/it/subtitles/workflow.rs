@@ -509,7 +509,7 @@ fn blocking_generation_refuses_shared_budget_pressure_before_asr_and_releases_ad
         );
         assert!(matches!(
             result,
-            Err(engine::EditError::Runtime(
+            Err(engine::Error::Runtime(
                 engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge
             ))
         ));
@@ -612,7 +612,7 @@ fn remote_upload_is_refused_without_consent() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::EditError::Providers(engine::providers::Error::ConsentRequired)
+        engine::Error::Providers(engine::providers::Error::ConsentRequired)
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
 }
@@ -661,7 +661,7 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::EditError::Providers(
+        Err(engine::Error::Providers(
             engine::providers::Error::ConsentRequired
         ))
     ));
@@ -705,9 +705,9 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &Cancellation::new()
         ),
-        Err(engine::EditError::Invalid(
+        Err(engine::Error::Edit(engine::EditError::Invalid(
             "cached recognition is malformed"
-        ))
+        )))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(std::fs::read(&path).unwrap(), envelope);
@@ -726,7 +726,7 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             &SilentProgress,
             &cancel
         ),
-        Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(cache.clear().unwrap(), 0);
@@ -783,7 +783,7 @@ fn missing_remote_credentials_are_typed() {
     .unwrap();
     assert!(matches!(
         error,
-        engine::EditError::Providers(engine::providers::Error::CredentialMissing(
+        engine::Error::Providers(engine::providers::Error::CredentialMissing(
             "OPENAI_API_KEY"
         ))
     ));
@@ -988,7 +988,7 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
         &Cancellation::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, engine::EditError::Ai(ai::Error::Inference)));
+    assert!(matches!(error, engine::Error::Ai(ai::Error::Inference)));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     let outcome = subtitles::run(
         &request,
@@ -1096,7 +1096,7 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Runtime(engine::RuntimeError::Cancelled)
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!request.srt.unwrap().exists());
@@ -1144,7 +1144,7 @@ fn cancellation_before_export_preserves_the_existing_output() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Runtime(engine::RuntimeError::Cancelled)
     ));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep this file");
 }
@@ -1237,7 +1237,7 @@ fn operation_cancellation_stops_a_running_translation_job() {
     thread.join().unwrap();
     assert!(matches!(
         error,
-        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Runtime(engine::RuntimeError::Cancelled)
     ));
     assert!(!request.srt.unwrap().exists());
 }
@@ -1281,7 +1281,7 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
     .unwrap_err();
     assert!(matches!(
         error,
-        engine::EditError::Runtime(engine::RuntimeError::Cancelled)
+        engine::Error::Runtime(engine::RuntimeError::Cancelled)
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert!(!request.srt.unwrap().exists());
@@ -1409,9 +1409,8 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
         assert_eq!(snapshot.state, engine::jobs::JobState::Failed);
         let cause = snapshot.error.as_ref().unwrap();
         assert!(matches!(
-            (cause.as_ref() as &(dyn std::error::Error + 'static))
-                .downcast_ref::<engine::EditError>(),
-            Some(engine::EditError::Ai(Error::Cost))
+            (cause.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>(),
+            Some(engine::Error::Ai(Error::Cost))
         ));
     }
     let input = fixture().expect("synthetic media oracle must be available");

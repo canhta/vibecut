@@ -1,7 +1,7 @@
 //! Default cache discovery through the public runtime and consumer boundaries.
 use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::{
-    ByteBudget, EditError,
+    ByteBudget, Error as EngineError,
     cache::{ArtifactCache, CacheRoot},
     control::MediaAccess,
     models::ModelTransfers,
@@ -144,14 +144,16 @@ impl DownloadTransport for Offline {
 fn unsupported<T>(result: engine::Result<T>) {
     assert!(matches!(
         result,
-        Err(EditError::Unsupported("OS cache location unavailable"))
+        Err(EngineError::Edit(engine::EditError::Unsupported(
+            "OS cache location unavailable"
+        )))
     ));
 }
 
 fn locked(path: &Path, budget: &ByteBudget) {
     assert!(matches!(
         ArtifactCache::open(path, budget.clone(), 8),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
 }
 

@@ -1005,7 +1005,9 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
         .unwrap_err();
     assert!(matches!(
         error,
-        vibecut::Error::Engine(engine::EditError::Invalid("snapshot write failed"))
+        vibecut::Error::Engine(engine::Error::Edit(engine::EditError::Invalid(
+            "snapshot write failed"
+        )))
     ));
     let inspect = h.state().inspect().unwrap();
     assert_eq!(inspect.snapshot_error, Some(engine::control::ErrorCode::Io));

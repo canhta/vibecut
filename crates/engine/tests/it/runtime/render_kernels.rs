@@ -3,7 +3,7 @@ use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, EditError};
+use engine::{ByteBudget, Error as EngineError};
 use render::ExecutionHooks;
 use std::{
     sync::{
@@ -15,7 +15,7 @@ use std::{
 
 fn execute(
     limit: u64,
-    task: impl Fn(&engine::jobs::JobContext) -> Result<(), EditError> + Send + Sync + 'static,
+    task: impl Fn(&engine::jobs::JobContext) -> Result<(), EngineError> + Send + Sync + 'static,
 ) {
     let budget = ByteBudget::new(limit).unwrap();
     let mut runner = JobRunner::new(
@@ -45,7 +45,7 @@ fn execute(
     })
     .unwrap();
     let (id, _) = runner
-        .submit::<engine::EditError>(
+        .submit::<engine::Error>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,

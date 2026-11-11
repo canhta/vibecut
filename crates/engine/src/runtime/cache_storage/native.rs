@@ -3,7 +3,7 @@ use super::{
     ArtifactCache, ArtifactKind, ArtifactPin, CacheKey, CacheLock, HEADER, KeyInputs,
     StoredArtifact,
 };
-use crate::{ByteOwner, EditError};
+use crate::{ByteOwner, Error as EngineError};
 use ai::models::Model;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -32,20 +32,20 @@ pub(crate) struct NativeState {
     pub parts: Vec<Part>,
 }
 impl NativeState {
-    fn validate(&self, key: CacheKey) -> Result<(), EditError> {
+    fn validate(&self, key: CacheKey) -> Result<(), EngineError> {
         self.model.validate()?;
         if self.version != 1
             || self.parts.len() != self.model.files.len()
             || model_key(&self.model)? != key
         {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         for (part, file) in self.parts.iter().zip(&self.model.files) {
             if part.offset > file.size
                 || part.etag.as_ref().is_some_and(|tag| !strong_etag(tag))
                 || (self.complete && part.offset != file.size)
             {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
         }
         Ok(())
@@ -61,12 +61,12 @@ pub(crate) fn strong_etag(value: &str) -> bool {
             .get(1..value.len() - 1)
             .is_some_and(|s| s.iter().all(|b| matches!(b, 0x21 | 0x23..=0x7e)))
 }
-pub fn model_key(model: &Model) -> Result<CacheKey, EditError> {
+pub fn model_key(model: &Model) -> Result<CacheKey, EngineError> {
     model.validate()?;
     let settings = serde_json::to_vec(model)
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
     if settings.len() as u64 > META_LIMIT / 4 {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -98,9 +98,11 @@ impl ModelLease {
     pub fn model(&self) -> &Model {
         &self.model
     }
-    pub fn file(&self, name: &str) -> Result<PathBuf, EditError> {
+    pub fn file(&self, name: &str) -> Result<PathBuf, EngineError> {
         if !self.model.files.iter().any(|file| file.name == name) {
-            return Err(EditError::Invalid("unknown model file"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "unknown model file",
+            )));
         }
         Ok(self.directory.join(name))
     }
@@ -113,23 +115,23 @@ pub(crate) struct NativeEdit {
     metadata_bytes: u64,
 }
 impl NativeEdit {
-    pub fn checkpoint(&mut self) -> Result<(), EditError> {
+    pub fn checkpoint(&mut self) -> Result<(), EngineError> {
         self.metadata_bytes = write_state(&self.directory, &self.state)?;
         self.report()
     }
-    pub fn report_length(&mut self, index: usize, len: u64) -> Result<(), EditError> {
+    pub fn report_length(&mut self, index: usize, len: u64) -> Result<(), EngineError> {
         *self
             .lengths
             .get_mut(index)
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))? = len;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))? = len;
         self.report()
     }
-    fn report(&self) -> Result<(), EditError> {
+    fn report(&self) -> Result<(), EngineError> {
         let total = self
             .lengths
             .iter()
             .try_fold(self.metadata_bytes, |n, len| {
-                n.checked_add(*len).ok_or(EditError::Control(
+                n.checked_add(*len).ok_or(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ))
             })?;
@@ -139,12 +141,12 @@ impl NativeEdit {
             .lock()
             .map_err(|_| crate::RuntimeError::Poisoned)?
             .as_mut()
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .resize_models(total)
-            .map_err(EditError::from)
+            .map_err(EngineError::from)
     }
 }
-fn usage(root: &Path, state: &NativeState) -> Result<(u64, Vec<u64>), EditError> {
+fn usage(root: &Path, state: &NativeState) -> Result<(u64, Vec<u64>), EngineError> {
     let metadata = fs::symlink_metadata(root.join(STATE))?.len();
     let lengths = state
         .model
@@ -154,17 +156,17 @@ fn usage(root: &Path, state: &NativeState) -> Result<(u64, Vec<u64>), EditError>
             Ok(m) if m.file_type().is_file() => Ok(m.len()),
             Ok(_) => Ok(0),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(0),
-            Err(e) => Err(EditError::Io(e)),
+            Err(e) => Err(EngineError::Io(e)),
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok((metadata, lengths))
 }
 
-fn envelope(key: CacheKey, state: &NativeState) -> Result<Vec<u8>, EditError> {
+fn envelope(key: CacheKey, state: &NativeState) -> Result<Vec<u8>, EngineError> {
     let body = serde_json::to_vec(state)
-        .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     if body.len() as u64 > META_LIMIT - HEADER as u64 {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -175,26 +177,26 @@ fn envelope(key: CacheKey, state: &NativeState) -> Result<Vec<u8>, EditError> {
     bytes.extend_from_slice(&body);
     Ok(bytes)
 }
-fn write_state(root: &Path, state: &NativeState) -> Result<u64, EditError> {
+fn write_state(root: &Path, state: &NativeState) -> Result<u64, EngineError> {
     let key = model_key(&state.model)?;
     state.validate(key)?;
     let bytes = envelope(key, state)?;
     project::atomic_write(&root.join(STATE), &bytes).map_err(|e| match e {
         project::Error::Io(e) if e.kind() == std::io::ErrorKind::StorageFull => {
-            EditError::Runtime(crate::RuntimeError::StorageFull)
+            EngineError::Runtime(crate::RuntimeError::StorageFull)
         }
-        other => EditError::Project(other),
+        other => EngineError::Edit(crate::EditError::Project(other)),
     })?;
     Ok(bytes.len() as u64)
 }
-fn read_state(root: &Path, key: CacheKey) -> Result<NativeState, EditError> {
+fn read_state(root: &Path, key: CacheKey) -> Result<NativeState, EngineError> {
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
-        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+        return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
     let path = root.join(STATE);
     let meta = fs::symlink_metadata(&path)?;
     if !meta.file_type().is_file() || meta.len() > META_LIMIT {
-        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+        return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
@@ -202,28 +204,28 @@ fn read_state(root: &Path, key: CacheKey) -> Result<NativeState, EditError> {
         .read_to_end(&mut bytes)?;
     let body = bytes
         .get(HEADER..)
-        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     if bytes.len() as u64 > META_LIMIT
         || bytes.get(..8) != Some(b"VCACHE01")
         || bytes.get(8..40) != Some(key.0.as_slice())
         || bytes.get(40..HEADER) != Some(blake3::hash(body).as_bytes().as_slice())
     {
-        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+        return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
     }
     let state: NativeState = serde_json::from_slice(body)
-        .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     state.validate(key)?;
     Ok(state)
 }
-fn reserved_bytes(model: &Model) -> Result<u64, EditError> {
+fn reserved_bytes(model: &Model) -> Result<u64, EngineError> {
     model.files.iter().try_fold(META_LIMIT * 2, |n, f| {
-        n.checked_add(f.size).ok_or(EditError::Control(
+        n.checked_add(f.size).ok_or(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ))
     })
 }
 impl ArtifactCache {
-    pub(super) fn open_native(&mut self, path: &Path) -> Result<bool, EditError> {
+    pub(super) fn open_native(&mut self, path: &Path) -> Result<bool, EngineError> {
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
             return Ok(false);
         };
@@ -239,20 +241,20 @@ impl ArtifactCache {
             return Ok(false);
         };
         if self.entries.len() >= self.max_entries {
-            return Err(EditError::Control(
+            return Err(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ));
         }
         let (meta, lengths) = usage(path, &state)?;
         let total = lengths.iter().try_fold(meta, |n, len| {
-            n.checked_add(*len).ok_or(EditError::Control(
+            n.checked_add(*len).ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))
         })?;
         self.insert_native(key, total)?;
         Ok(true)
     }
-    fn insert_native(&mut self, key: CacheKey, len: u64) -> Result<(), EditError> {
+    fn insert_native(&mut self, key: CacheKey, len: u64) -> Result<(), EngineError> {
         let charge = self.budget.reserve(ByteOwner::ModelWeights, len)?;
         let entry = Arc::new(StoredArtifact {
             path: self.path(key),
@@ -266,7 +268,7 @@ impl ArtifactCache {
         self.entries.insert(key, entry);
         Ok(())
     }
-    pub fn model_key(model: &Model) -> Result<CacheKey, EditError> {
+    pub fn model_key(model: &Model) -> Result<CacheKey, EngineError> {
         model_key(model)
     }
     /// Verify a hit through ai's streaming SHA/size owner before exposing raw paths.
@@ -274,21 +276,21 @@ impl ArtifactCache {
         &mut self,
         model: &Model,
         hooks: &dyn ai::ExecutionHooks,
-    ) -> Result<Option<ModelLease>, EditError> {
+    ) -> Result<Option<ModelLease>, EngineError> {
         let key = model_key(model)?;
         self.prune();
         let Some(entry) = self.entries.get(&key) else {
             return Ok(None);
         };
         if !entry.native {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let pin = entry
             .pin()?
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheBusy))?;
         let state = read_state(&entry.path, key)?;
         if state.model != *model {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if !state.complete {
             return Ok(None);
@@ -297,7 +299,7 @@ impl ArtifactCache {
             let path = entry.path.join(&file.name);
             let meta = fs::symlink_metadata(&path)?;
             if !meta.file_type().is_file() || meta.len() != file.size {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             ai::models::verify_file(&mut fs::File::open(path)?, file, hooks)?;
         }
@@ -308,11 +310,11 @@ impl ArtifactCache {
             _root_lock: self.root_lock.clone(),
         }))
     }
-    pub(crate) fn remaining_model(&self, model: &Model) -> Result<u64, EditError> {
+    pub(crate) fn remaining_model(&self, model: &Model) -> Result<u64, EngineError> {
         let key = model_key(model)?;
         if let Some(entry) = self.entries.get(&key) {
             if !entry.native {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             let state = read_state(&entry.path, key)?;
             state.model.files.iter().zip(&state.parts).try_fold(
@@ -320,17 +322,19 @@ impl ArtifactCache {
                 |sum, (file, part)| {
                     let length = match fs::symlink_metadata(entry.path.join(&file.name)) {
                         Ok(meta) if meta.file_type().is_file() => meta.len(),
-                        Ok(_) => return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)),
+                        Ok(_) => {
+                            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
+                        }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
-                        Err(e) => return Err(EditError::Io(e)),
+                        Err(e) => return Err(EngineError::Io(e)),
                     };
                     if length < part.offset {
-                        return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                        return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
                     }
                     // A crash can leave bytes beyond the durable checkpoint. They
                     // are reclaimed before resumption, so credit their disk space.
                     sum.checked_add(file.size.saturating_sub(length))
-                        .ok_or(EditError::Control(
+                        .ok_or(EngineError::Control(
                             crate::session::wire::ControlError::Limit,
                         ))
                 },
@@ -339,7 +343,7 @@ impl ArtifactCache {
             reserved_bytes(model)
         }
     }
-    pub(crate) fn edit_model(&mut self, model: &Model) -> Result<NativeEdit, EditError> {
+    pub(crate) fn edit_model(&mut self, model: &Model) -> Result<NativeEdit, EngineError> {
         let key = model_key(model)?;
         self.prune();
         if !self.entries.contains_key(&key) {
@@ -349,7 +353,7 @@ impl ArtifactCache {
             let directory = self.path(key);
             // Never overwrite/adopt a foreign directory at this content address.
             if directory.try_exists()? {
-                return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+                return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
             }
             fs::create_dir(&directory)?;
             let state = NativeState {
@@ -374,16 +378,16 @@ impl ArtifactCache {
         let entry = self
             .entries
             .get(&key)
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if !entry.native || entry.pins.load(Ordering::Acquire) != 0 {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let pin = entry
             .pin()?
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheBusy))?;
         let state = read_state(&entry.path, key)?;
         if state.model != *model || state.complete {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let (metadata_bytes, lengths) = usage(&entry.path, &state)?;
         Ok(NativeEdit {
@@ -395,16 +399,16 @@ impl ArtifactCache {
         })
     }
     /// Explicit user removal; never called by LRU, generic clear or download fallback.
-    pub fn remove_model(&mut self, model: &Model) -> Result<(), EditError> {
+    pub fn remove_model(&mut self, model: &Model) -> Result<(), EngineError> {
         let key = model_key(model)?;
         let Some(entry) = self.entries.get(&key) else {
             return Ok(());
         };
         if !entry.native {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if !entry.evict_inner(true)? {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheBusy));
         }
         self.entries.remove(&key);
         Ok(())

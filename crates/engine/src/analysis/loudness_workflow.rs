@@ -4,7 +4,7 @@
 use crate::runtime::{LOUDNESS_VERSION as VERSION, loudness_content_key as content_key};
 use crate::session::wire::LoudnessResult;
 use crate::{
-    EditError,
+    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
 };
@@ -22,7 +22,7 @@ impl From<render::Measurement> for crate::session::wire::Measured {
     }
 }
 
-fn job_key(content: [u8; 32]) -> Result<CacheKey, EditError> {
+fn job_key(content: [u8; 32]) -> Result<CacheKey, EngineError> {
     CacheKey::new(KeyInputs {
         kind: ArtifactKind::Loudness,
         source: content,
@@ -44,10 +44,12 @@ pub fn submit_loudness(
     runner: &mut JobRunner,
     project: Arc<Project>,
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
-) -> Result<JobId, EditError> {
+) -> Result<JobId, EngineError> {
     let l = &project.data().settings.loudness;
     if l.clip.is_none() && l.master.is_none() {
-        return Err(EditError::Invalid("no loudness target set"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "no loudness target set",
+        )));
     }
     let content = content_key(project.data());
     let (id, _) = runner.submit(
@@ -76,9 +78,9 @@ pub fn submit_loudness(
             };
             context.check_cancelled()?;
             let bytes = serde_json::to_vec(&result)
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -89,14 +91,18 @@ pub fn submit_loudness(
 }
 
 /// Decode and validate retained job bytes.
-pub fn decode(bytes: &[u8]) -> Result<LoudnessResult, EditError> {
+pub fn decode(bytes: &[u8]) -> Result<LoudnessResult, EngineError> {
     if bytes.len() > MAX_BYTES {
-        return Err(EditError::Invalid("loudness result"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "loudness result",
+        )));
     }
-    let result: LoudnessResult =
-        serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("loudness result"))?;
+    let result: LoudnessResult = serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("loudness result")))?;
     if !result.gains.is_valid() {
-        return Err(EditError::Invalid("loudness result"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "loudness result",
+        )));
     }
     Ok(result)
 }

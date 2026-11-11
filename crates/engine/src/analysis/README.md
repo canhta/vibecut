@@ -4,7 +4,7 @@ Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapte
 `AnalysisRequest`, `AnalysisJob`.
 
 Every workflow here measures source media, never mutates a project, and returns a typed
-`EditError`. A request binds its source content and settings into a cache key; `submit` queues
+`engine::Error`. A request binds its source content and settings into a cache key; `submit` queues
 one local or network job; `finish` validates and caches complete output, so cancellation before
 runner promotion leaves no cache entry and cache pressure preserves the runner output for a retry.
 Artifact corruption uses [RuntimeError::CacheCorrupt](../runtime/README.md).

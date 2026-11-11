@@ -7,7 +7,7 @@
 //! unknown or duplicate IDs fail the job with the typed `InvalidSegments` reason.
 //! Cancellation discards the result and no project mutation ever happens.
 use crate::{
-    EditError,
+    Error as EngineError,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState},
     providers::TextAccess,
@@ -56,7 +56,7 @@ impl FillerRequest {
         project: &Arc<Project>,
         language: LanguageTag,
         include_markers: bool,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         if !ai::supports_text_language(&language) {
             return Err(ai::Error::from(FillerRefusal::UnsupportedLanguage).into());
         }
@@ -137,7 +137,8 @@ impl FillerRequest {
             },
         };
         input.validate().map_err(ai::Error::from)?;
-        let source = serde_json::to_vec(&input).map_err(|_| EditError::Invalid("filler input"))?;
+        let source = serde_json::to_vec(&input)
+            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("filler input")))?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Fillers,
             source: *blake3::hash(&source).as_bytes(),
@@ -170,7 +171,7 @@ impl FillerRequest {
         &self,
         runner: &mut JobRunner,
         access: &TextAccess,
-    ) -> Result<FillerJob, EditError> {
+    ) -> Result<FillerJob, EngineError> {
         let prepared = access.prepare_fillers(&self.input)?;
         let input = self.input.clone();
         let words = self.words.clone();
@@ -198,9 +199,9 @@ impl FillerRequest {
             context.progress(crate::jobs::JobStage::Process, 0.9)?;
             let candidates = resolve(&findings, &words)?;
             let bytes = serde_json::to_vec(&candidates)
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_RESULT_BYTES {
-                return Err(EditError::Control(
+                return Err(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
@@ -216,25 +217,25 @@ impl FillerJob {
     pub fn finish(
         &self,
         runner: &mut JobRunner,
-    ) -> Result<Option<Vec<FillerCandidate>>, EditError> {
+    ) -> Result<Option<Vec<FillerCandidate>>, EngineError> {
         let snapshot = runner
             .snapshot(self.id)
-            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
-            JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
-            JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
+            JobState::Cancelled => Err(EngineError::Runtime(crate::RuntimeError::Cancelled)),
+            JobState::Failed => Err(EngineError::Runtime(crate::RuntimeError::Failed(
                 snapshot
                     .error
-                    .ok_or(EditError::Session(crate::SessionError::StaleResult))?,
+                    .ok_or(EngineError::Session(crate::SessionError::StaleResult))?,
             ))),
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let candidates = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(candidates))
             }
             _ => Ok(None),
@@ -246,7 +247,7 @@ impl FillerJob {
 fn resolve(
     findings: &[FillerFinding],
     words: &BTreeMap<NfcText, Word>,
-) -> Result<Vec<FillerCandidate>, EditError> {
+) -> Result<Vec<FillerCandidate>, EngineError> {
     let mut candidates = Vec::with_capacity(findings.len());
     for finding in findings {
         let word = words
@@ -269,16 +270,16 @@ fn resolve(
 }
 
 /// Decode retained job bytes as the exact candidate list.
-pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EditError> {
+pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EngineError> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
-    let candidates: Vec<FillerCandidate> =
-        serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("filler result"))?;
+    let candidates: Vec<FillerCandidate> = serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("filler result")))?;
     if candidates.len() > crate::session::wire::MAX_COLLECTION {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -287,7 +288,9 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EditError> {
             || candidate.range.start < Tick::ZERO
             || candidate.range.end <= candidate.range.start
         {
-            return Err(EditError::Invalid("filler result"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "filler result",
+            )));
         }
     }
     Ok(candidates)

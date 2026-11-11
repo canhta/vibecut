@@ -1,6 +1,6 @@
 //! Interprets retained caption workflow results.
 use crate::session::wire::{CaptionsResult, CostView, TranslationsResult};
-use crate::{Command, EditError, NewItem, Placement, Result};
+use crate::{Command, Error as EngineError, NewItem, Placement, Result};
 use captions::CueTrack;
 use time::Tick;
 
@@ -11,7 +11,7 @@ pub(crate) const MAX_CUES: usize = crate::session::wire::MAX_TRANSLATION_CUES;
 
 fn bounded(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
@@ -20,14 +20,18 @@ fn bounded(bytes: &[u8]) -> Result<&[u8]> {
 
 /// Decode the retained bytes of a finished `captions.generate` job.
 pub fn decode_captions(bytes: &[u8]) -> Result<CaptionsResult> {
-    serde_json::from_slice(bounded(bytes)?)
-        .map_err(|_| EditError::Invalid("transcription output is malformed"))
+    serde_json::from_slice(bounded(bytes)?).map_err(|_| {
+        EngineError::Edit(crate::EditError::Invalid(
+            "transcription output is malformed",
+        ))
+    })
 }
 
 /// Decode the retained bytes of a finished `captions.translate` job.
 pub fn decode_translations(bytes: &[u8]) -> Result<TranslationsResult> {
-    serde_json::from_slice(bounded(bytes)?)
-        .map_err(|_| EditError::Invalid("translation output is malformed"))
+    serde_json::from_slice(bounded(bytes)?).map_err(|_| {
+        EngineError::Edit(crate::EditError::Invalid("translation output is malformed"))
+    })
 }
 
 /// The ordinary insert that `captions.apply` runs: one caption item over the
@@ -41,7 +45,7 @@ pub(crate) fn apply_command(result: CaptionsResult, start: Tick) -> Result<Comma
         result.range,
     )?;
     if cues.cues.is_empty() || cues.cues.len() > MAX_CUES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }

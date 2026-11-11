@@ -8,7 +8,7 @@ use ai::{
     transport::{DownloadTransport, HttpStreamResponse},
 };
 use engine::{
-    ByteBudget, ByteOwner, EditError,
+    ByteBudget, ByteOwner, Error as EngineError,
     cache::ArtifactCache,
     jobs::*,
     models::{ModelIo, ModelTransfers, SystemModelIo},
@@ -341,7 +341,7 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     assert!(store.installed(&model, &NoHooks).unwrap().is_none());
     assert!(matches!(
         store.submit(&mut runner, model.clone(), None),
-        Err(EditError::Ai(ai::Error::ConsentRequired))
+        Err(EngineError::Ai(ai::Error::ConsentRequired))
     ));
     assert_eq!(http.count(), 0);
     let (id, _) = submit(&store, &mut runner, &model);
@@ -360,12 +360,12 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     drop(pressure);
     assert!(matches!(
         store.remove(&model),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     drop(store);
     assert!(matches!(
         ArtifactCache::open(dir.path(), budget.clone(), 32),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     drop(lease);
     let (mut cache, diagnostics) = ArtifactCache::open(dir.path(), budget.clone(), 32).unwrap();
@@ -476,8 +476,8 @@ fn corrupt_bundles_refuse_without_refetch_and_return_cache_custody() {
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
         let cause = snapshot.error.as_deref().unwrap();
         assert!(matches!(
-            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
-            Some(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+            (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
+            Some(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
         ));
         assert!(runner.take_output(id).is_none());
         assert_eq!(http.count(), calls);
@@ -608,19 +608,19 @@ fn hostile_ranges_hash_sizes_and_oversized_or_truncated_streams_never_promote() 
         assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
         let raw = snapshot.error.as_deref().unwrap();
         let typed = (raw as &(dyn std::error::Error + 'static))
-            .downcast_ref::<EditError>()
+            .downcast_ref::<EngineError>()
             .unwrap();
         assert!(
             matches!(
                 (variant, typed),
-                (0 | 3, EditError::Ai(ai::Error::ModelIntegrity))
+                (0 | 3, EngineError::Ai(ai::Error::ModelIntegrity))
                     | (
                         2,
-                        EditError::Runtime(engine::RuntimeError::NetworkTransient)
+                        EngineError::Runtime(engine::RuntimeError::NetworkTransient)
                     )
                     | (
                         1 | 4..=8,
-                        EditError::Runtime(engine::RuntimeError::ModelResponse)
+                        EngineError::Runtime(engine::RuntimeError::ModelResponse)
                     )
             ),
             "variant {variant}: {typed:?}"
@@ -655,8 +655,8 @@ fn disk_preflight_and_mid_write_storage_full_are_typed_and_resumable() {
                 .error
                 .as_deref()
                 .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<EditError>()),
-            Some(EditError::Runtime(engine::RuntimeError::StorageFull))
+                    .downcast_ref::<EngineError>()),
+            Some(EngineError::Runtime(engine::RuntimeError::StorageFull))
         ));
         assert_eq!((result.state, result.attempts), (JobState::Failed, 1));
         let raw = result.error.as_deref().unwrap();
@@ -733,7 +733,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             changed,
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EditError::Ai(ai::Error::ConsentRequired))
+        Err(EngineError::Ai(ai::Error::ConsentRequired))
     ));
     let key = ArtifactCache::model_key(&model).unwrap();
     let entries = || {
@@ -746,7 +746,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
     let mut fillers = Vec::new();
     for _ in 0..2 {
         let (_, token) = runner
-            .submit::<engine::EditError>(
+            .submit::<engine::Error>(
                 JobSpec {
                     kind: JobKind::DownloadModel,
                     class: ResourceClass::Network,
@@ -764,7 +764,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             model.clone(),
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+        Err(EngineError::Runtime(engine::RuntimeError::QueueFull))
     ));
     assert_eq!(http.count(), 0);
     assert_eq!(entries(), before, "refusal wrote a checkpoint or artifact");
@@ -781,7 +781,7 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
             model.clone(),
             Some(DownloadConsent::grant(&model).unwrap())
         ),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     token.cancel();
     runner.shutdown();
@@ -819,7 +819,7 @@ fn publication_seal_prevents_a_cancelled_job_from_claiming_success_after_promoti
     let token_slot = Arc::new(Mutex::new(None::<CancelToken>));
     let slot = token_slot.clone();
     let (id, token) = r
-        .submit::<engine::EditError>(
+        .submit::<engine::Error>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,
@@ -889,7 +889,7 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
     let (id, _) = submit(&store, &mut runner, &model);
     assert!(matches!(
         store.remove(&model),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -906,7 +906,7 @@ fn backoff_requires_clock_advance_and_never_removes_a_queued_download() {
     assert_eq!(http.count(), 1);
     assert!(matches!(
         store.remove(&model),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Completed);
     assert_eq!(http.count(), 2);
@@ -1011,7 +1011,7 @@ fn killed_process_resumes_only_the_durable_prefix_and_publishes_atomically() {
     let budget = ByteBudget::new(512 * 1024).unwrap();
     assert!(matches!(
         ArtifactCache::open(&root.path().join("cache"), budget.clone(), 32),
-        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
     ));
     child.0.kill().unwrap();
     child.0.wait().unwrap();
@@ -1110,14 +1110,14 @@ fn malformed_resume_headers_are_refused_without_poisoning_future_restart() {
         assert!(matches!(
             (
                 variant,
-                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+                (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
             ),
             (
                 0..=4,
-                Some(EditError::Runtime(engine::RuntimeError::ModelResponse))
+                Some(EngineError::Runtime(engine::RuntimeError::ModelResponse))
             ) | (
                 5..=6,
-                Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                Some(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
             )
         ));
         assert_eq!(raw.transient(), variant >= 5);
@@ -1228,7 +1228,7 @@ fn a_sealed_publication_is_never_retried_even_for_a_transient_result() {
             },
             |ctx| {
                 ctx.commit_publication(|| {
-                    Err(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+                    Err(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
                 })
             },
         )
@@ -1241,8 +1241,8 @@ fn a_sealed_publication_is_never_retried_even_for_a_transient_result() {
     assert_eq!(raw.code(), engine::control::ErrorCode::Job);
     assert!(raw.source().is_none());
     assert!(matches!(
-        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
-        Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
+        Some(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
     ));
     assert!(runner.take_output(id).is_none());
 }

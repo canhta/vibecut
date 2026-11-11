@@ -1,6 +1,6 @@
 //! Loads verified font faces into the text catalog.
 use super::{
-    Cache, Digest, EditError, FontError, FontLoad, FontLoadState, FontOrigin, FontStore,
+    Cache, Digest, EngineError, FontError, FontLoad, FontLoadState, FontOrigin, FontStore,
     GoogleFamily, LICENSE_FILE, Path, Read, Result, Sha256, fs, hex, io, sidecar,
 };
 impl FontStore {
@@ -54,7 +54,7 @@ impl FontStore {
     pub fn load(&self, family: &str) -> Result<FontLoad> {
         let family = family.trim();
         if family.is_empty() || family.len() > 256 {
-            return Err(EditError::Invalid("font family"));
+            return Err(EngineError::Edit(engine::EditError::Invalid("font family")));
         }
         let state = |state, origin, effective: &str, styles| FontLoad {
             family: family.to_owned(),
@@ -235,7 +235,9 @@ pub(super) fn register(faces: Vec<text::FontData>) -> Result<Vec<String>> {
     }
     match (registered, last) {
         (false, Some(error)) => Err(FontError::Face(error).into()),
-        (false, None) => Err(EditError::Invalid("font family has no readable face")),
+        (false, None) => Err(EngineError::Edit(engine::EditError::Invalid(
+            "font family has no readable face",
+        ))),
         _ => Ok(styles),
     }
 }

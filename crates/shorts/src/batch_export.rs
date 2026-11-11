@@ -6,7 +6,7 @@ use engine::jobs::{
     CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSnapshot, JobSpec, JobStage, JobState,
     ResourceClass,
 };
-use engine::{EditError, subtitle_file};
+use engine::{Error as EngineError, subtitle_file};
 use project::{
     CaptionParams, Item, ItemId, ItemParams, Project, ProjectData, Timeline, Track, TrackId,
     TrackKind, VideoParams,

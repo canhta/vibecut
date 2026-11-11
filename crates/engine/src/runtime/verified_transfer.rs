@@ -1,6 +1,6 @@
 //! Fetches verified downloads through bounded redirects.
 use crate::jobs::JobContext;
-use crate::{EditError, Result};
+use crate::{Error as EngineError, Result};
 use ai::transport::{DownloadTransport, HttpStreamResponse};
 pub(crate) fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result<Option<&'a str>> {
     let mut values = response
@@ -11,7 +11,7 @@ pub(crate) fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result
     if values.next().is_some()
         || value.is_some_and(|v| v.len() > 8192 || v.bytes().any(|b| b == b'\r' || b == b'\n'))
     {
-        return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
+        return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse));
     }
     Ok(value)
 }
@@ -32,23 +32,23 @@ pub fn response(
         ctx.check_cancelled()?;
         let reply = http.get(&url, headers).map_err(|error| {
             if error.is_transient() {
-                EditError::Runtime(crate::RuntimeError::NetworkTransient)
+                EngineError::Runtime(crate::RuntimeError::NetworkTransient)
             } else {
-                EditError::Ai(error)
+                EngineError::Ai(error)
             }
         })?;
         if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
             if redirect == 5 {
-                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
+                return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse));
             }
             url = ai::transport::download_redirect(
                 &url,
                 header(&reply, "location")?
-                    .ok_or(EditError::Runtime(crate::RuntimeError::ModelResponse))?,
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::ModelResponse))?,
             )?;
         } else {
             return Ok(reply);
         }
     }
-    Err(EditError::Runtime(crate::RuntimeError::ModelResponse))
+    Err(EngineError::Runtime(crate::RuntimeError::ModelResponse))
 }

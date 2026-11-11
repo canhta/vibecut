@@ -1,5 +1,5 @@
 //! Bounds font containers before a decoder can allocate from their lengths.
-use super::{EditError, FontError, Result};
+use super::{EngineError, FontError, Result};
 
 pub(super) fn decode(bytes: Vec<u8>) -> Result<Vec<u8>> {
     let bytes = if bytes.starts_with(b"wOF2") {
@@ -9,7 +9,7 @@ pub(super) fn decode(bytes: Vec<u8>) -> Result<Vec<u8>> {
         bytes
     };
     if bytes.len() > text::MAX_FONT_BYTES {
-        return Err(EditError::Control(engine::control::ControlError::Limit));
+        return Err(EngineError::Control(engine::control::ControlError::Limit));
     }
     if !matches!(bytes.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
         return Err(FontError::InvalidImport.into());
@@ -21,7 +21,7 @@ pub(super) fn decode(bytes: Vec<u8>) -> Result<Vec<u8>> {
 fn sfnt_bounds(bytes: &[u8]) -> Result<()> {
     let count = u16_at(bytes, 4)? as usize;
     if count == 0 || count > 128 {
-        return Err(EditError::Control(engine::control::ControlError::Limit));
+        return Err(EngineError::Control(engine::control::ControlError::Limit));
     }
     let directory_end = 12 + count * 16;
     let directory = bytes
@@ -101,7 +101,7 @@ fn woff2_bounds(bytes: &[u8]) -> Result<()> {
     }
     let tables = u16_at(bytes, 12)? as usize;
     if tables == 0 || tables > 128 || u32_at(bytes, 16)? as usize > text::MAX_FONT_BYTES {
-        return Err(EditError::Control(engine::control::ControlError::Limit));
+        return Err(EngineError::Control(engine::control::ControlError::Limit));
     }
     let mut offset = 48usize;
     let mut expanded = 12 + tables * 16;
@@ -146,17 +146,17 @@ fn woff2_bounds(bytes: &[u8]) -> Result<()> {
             .checked_add(
                 original
                     .checked_add(3)
-                    .ok_or(EditError::Control(engine::control::ControlError::Limit))?
+                    .ok_or(EngineError::Control(engine::control::ControlError::Limit))?
                     & !3,
             )
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         transformed = transformed
             .checked_add(compressed)
-            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
         // This bounds Brotli's output and the glyph decoder's point scratch,
         // independently of the attacker-controlled totalSfntSize hint.
         if expanded > text::MAX_FONT_BYTES || transformed > 4 << 20 {
-            return Err(EditError::Control(engine::control::ControlError::Limit));
+            return Err(EngineError::Control(engine::control::ControlError::Limit));
         }
     }
     Ok(())

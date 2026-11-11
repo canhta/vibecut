@@ -4,7 +4,7 @@ use crate::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
 use crate::transfer::{header, response};
-use crate::{ByteBudget, ByteOwner, EditError, Result};
+use crate::{ByteBudget, ByteOwner, Error as EngineError, Result};
 use ai::models::{DownloadConsent, Model};
 use ai::transport::DownloadTransport;
 use std::{
@@ -50,7 +50,7 @@ impl CacheWork {
             .lock()
             .map_err(|_| crate::RuntimeError::Poisoned)?
             .take()
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheBusy))?;
         Ok(Self {
             slot: slot.clone(),
             cache: Some(cache),
@@ -59,7 +59,7 @@ impl CacheWork {
     fn cache(&mut self) -> Result<&mut ArtifactCache> {
         self.cache
             .as_mut()
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheBusy))
     }
 }
 impl Drop for CacheWork {
@@ -70,7 +70,7 @@ impl Drop for CacheWork {
     }
 }
 /// One active transfer per owned cache; additional submissions compose
-/// [`crate::RuntimeError::CacheBusy`] through `EditError::Runtime`.
+/// [`crate::RuntimeError::CacheBusy`] through `EngineError::Runtime`.
 /// There is no runner/thread here: caller supplies its existing JobRunner.
 /// Drop does not remove files. Installed models and checkpoints require user removal.
 pub struct ModelTransfers {
@@ -135,19 +135,21 @@ impl ModelTransfers {
         consent: Option<DownloadConsent>,
     ) -> Result<(JobId, CancelToken)> {
         if !runner.uses_budget(&self.budget) {
-            return Err(EditError::Invalid("model and runner budgets differ"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "model and runner budgets differ",
+            )));
         }
-        let consent = consent.ok_or(EditError::Ai(ai::Error::ConsentRequired))?;
+        let consent = consent.ok_or(EngineError::Ai(ai::Error::ConsentRequired))?;
         consent.authorize(&model)?;
         let key = ArtifactCache::model_key(&model)?;
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| EditError::Runtime(crate::RuntimeError::CacheBusy))?;
+            .map_err(|_| EngineError::Runtime(crate::RuntimeError::CacheBusy))?;
         let reservation = Busy(self.busy.clone());
         let slot = self.cache.clone();
         let http = self.transport.clone();
         let io = self.io.clone();
-        Ok(runner.submit::<crate::EditError>(
+        Ok(runner.submit::<crate::Error>(
             JobSpec {
                 kind: JobKind::DownloadModel,
                 class: ResourceClass::Network,
@@ -170,17 +172,17 @@ impl ModelTransfers {
     /// Called only by an explicit model-manager removal action; live native leases refuse.
     pub fn remove(&self, model: &Model) -> Result<()> {
         if self.busy.load(Ordering::Acquire) {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let mut work = CacheWork::take(&self.cache)?;
         work.cache()?.remove_model(model)
     }
 }
-fn storage(error: io::Error) -> EditError {
+fn storage(error: io::Error) -> EngineError {
     if error.kind() == io::ErrorKind::StorageFull {
-        EditError::Runtime(crate::RuntimeError::StorageFull)
+        EngineError::Runtime(crate::RuntimeError::StorageFull)
     } else {
-        EditError::Io(error)
+        EngineError::Io(error)
     }
 }
 fn decimal(value: &str) -> Option<u64> {
@@ -205,7 +207,7 @@ fn durable(edit: &mut NativeEdit, file: &File, index: usize, offset: u64) -> Res
         .state
         .parts
         .get(index)
-        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
         .offset;
     if old == offset {
         return Ok(());
@@ -213,13 +215,13 @@ fn durable(edit: &mut NativeEdit, file: &File, index: usize, offset: u64) -> Res
     edit.state
         .parts
         .get_mut(index)
-        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
         .offset = offset;
     if let Err(error) = edit.checkpoint() {
         edit.state
             .parts
             .get_mut(index)
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .offset = old;
         return Err(error);
     }
@@ -230,7 +232,7 @@ fn reset(edit: &mut NativeEdit, file: &File, index: usize) -> Result<()> {
         .state
         .parts
         .get_mut(index)
-        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
     part.offset = 0;
     part.etag = None;
     edit.checkpoint()?;
@@ -248,14 +250,14 @@ fn download(
         return Ok(());
     }
     let total = model.files.iter().try_fold(0u64, |sum, file| {
-        sum.checked_add(file.size).ok_or(EditError::Control(
+        sum.checked_add(file.size).ok_or(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ))
     })?;
     // Existing checkpoint bytes can be reused, or reclaimed before a full restart.
     let needed = cache.remaining_model(model)?;
     if io.available(cache.root_path()).map_err(storage)? < needed {
-        return Err(EditError::Runtime(crate::RuntimeError::StorageFull));
+        return Err(EngineError::Runtime(crate::RuntimeError::StorageFull));
     }
     let mut edit = cache.edit_model(model)?;
     for (index, expected) in model.files.iter().enumerate() {
@@ -264,11 +266,11 @@ fn download(
             .state
             .parts
             .get(index)
-            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .clone();
         let path = edit.directory.join(&expected.name);
         if fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_file()) {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         let mut file = File::options()
             .read(true)
@@ -279,13 +281,13 @@ fn download(
             .map_err(storage)?;
         let mut offset = part.offset;
         if file.metadata()?.len() < offset {
-            return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
+            return Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if offset > 0 && offset < expected.size && part.etag.is_none() {
             edit.state
                 .parts
                 .get_mut(index)
-                .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+                .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
                 .offset = 0;
             edit.checkpoint()?;
             offset = 0;
@@ -301,17 +303,17 @@ fn download(
                     "If-Range".into(),
                     part.etag
                         .clone()
-                        .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?,
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?,
                 ));
             }
             let mut reply = response(http, &expected.url, &headers, ctx)?;
             if matches!(reply.status, 408 | 429 | 500..=599) {
-                return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
+                return Err(EngineError::Runtime(crate::RuntimeError::NetworkTransient));
             }
             if header(&reply, "content-encoding")?
                 .is_some_and(|v| !v.eq_ignore_ascii_case("identity"))
             {
-                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
+                return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse));
             }
             let tag = header(&reply, "etag")?
                 .filter(|v| strong_etag(v))
@@ -321,7 +323,7 @@ fn download(
                     // A server ignoring Range/If-Range replaces the representation; never append.
                     offset = 0;
                     if header(&reply, "content-range")?.is_some() {
-                        return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
+                        return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse));
                     }
                 }
                 206 if offset > 0
@@ -333,29 +335,29 @@ fn download(
                             .state
                             .parts
                             .get_mut(index)
-                            .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                            .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                         p.offset = 0;
                         p.etag = None;
                         edit.checkpoint()?;
                         file.set_len(0).map_err(storage)?;
                         edit.report_length(index, 0)?;
-                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
+                        return Err(EngineError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                 }
-                _ => return Err(EditError::Runtime(crate::RuntimeError::ModelResponse)),
+                _ => return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse)),
             }
             let remaining = expected.size - offset;
             if let Some(length) = header(&reply, "content-length")?
                 && decimal(length) != Some(remaining)
             {
-                return Err(EditError::Runtime(crate::RuntimeError::ModelResponse));
+                return Err(EngineError::Runtime(crate::RuntimeError::ModelResponse));
             }
             {
                 let p = edit
                     .state
                     .parts
                     .get_mut(index)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?;
                 p.offset = offset;
                 p.etag = tag;
             }
@@ -368,51 +370,53 @@ fn download(
             loop {
                 if ctx.cancelled() {
                     durable(&mut edit, &file, index, offset)?;
-                    return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                    return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
                 }
                 let limit = usize::try_from(
                     (expected.size - offset)
                         .saturating_add(1)
                         .min(BUFFER as u64),
                 )
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
                 let read =
                     match reply
                         .body
-                        .read(buffer.get_mut(..limit).ok_or(EditError::Control(
+                        .read(buffer.get_mut(..limit).ok_or(EngineError::Control(
                             crate::session::wire::ControlError::Limit,
                         ))?) {
                         Ok(n) => n,
                         Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                         Err(_) => {
                             durable(&mut edit, &file, index, offset)?;
-                            return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
+                            return Err(EngineError::Runtime(
+                                crate::RuntimeError::NetworkTransient,
+                            ));
                         }
                     };
                 if read == 0 {
                     durable(&mut edit, &file, index, offset)?;
                     if offset != expected.size {
-                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
+                        return Err(EngineError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                     break;
                 }
                 if read as u64 > expected.size - offset {
                     reset(&mut edit, &file, index)?;
-                    return Err(EditError::Ai(ai::Error::ModelIntegrity));
+                    return Err(EngineError::Ai(ai::Error::ModelIntegrity));
                 }
                 if ctx.cancelled() {
                     durable(&mut edit, &file, index, offset)?;
-                    return Err(EditError::Runtime(crate::RuntimeError::Cancelled));
+                    return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
                 }
                 edit.report_length(
                     index,
-                    offset.checked_add(read as u64).ok_or(EditError::Control(
+                    offset.checked_add(read as u64).ok_or(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ))?,
                 )?;
                 if let Err(error) = io.write(
                     &mut file,
-                    buffer.get(..read).ok_or(EditError::Control(
+                    buffer.get(..read).ok_or(EngineError::Control(
                         crate::session::wire::ControlError::Limit,
                     ))?,
                 ) {
@@ -423,14 +427,14 @@ fn download(
                     let _ = durable(&mut edit, &file, index, offset);
                     return Err(storage(error));
                 }
-                offset = offset.checked_add(read as u64).ok_or(EditError::Control(
+                offset = offset.checked_add(read as u64).ok_or(EngineError::Control(
                     crate::session::wire::ControlError::Limit,
                 ))?;
                 let saved = edit
                     .state
                     .parts
                     .get(index)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
                     .offset;
                 if offset - saved >= CHECKPOINT_BYTES || offset == expected.size {
                     durable(&mut edit, &file, index, offset)?;

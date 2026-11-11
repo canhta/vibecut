@@ -507,9 +507,7 @@ fn lut_store_reopen_enforces_disk_quota_without_deleting_foreign_files() {
     drop(file);
     assert!(matches!(
         engine::luts::LutStore::open(dir.path()),
-        Err(engine::EditError::Control(
-            engine::control::ControlError::Limit
-        ))
+        Err(engine::Error::Control(engine::control::ControlError::Limit))
     ));
     assert_eq!(std::fs::metadata(&sentinel).unwrap().len(), (256 << 20) + 1);
     std::fs::remove_file(&sentinel).unwrap();
@@ -1061,7 +1059,7 @@ fn labelled_preview_preserves_production_picture_outside_the_label_band() {
     let mut r = runner();
     let project = s.project().clone();
     let (reference, _) = r
-        .submit::<engine::EditError>(
+        .submit::<engine::Error>(
             JobSpec {
                 kind: JobKind::Preview,
                 class: ResourceClass::Cpu,
@@ -1789,10 +1787,10 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
     }
     struct Prompt(Arc<AtomicBool>);
     impl ConsentPrompt for Prompt {
-        fn approve(&self, _: &UploadRequest) -> Result<(), engine::EditError> {
+        fn approve(&self, _: &UploadRequest) -> Result<(), engine::Error> {
             Ok(())
         }
-        fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::EditError> {
+        fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::Error> {
             assert_eq!(request.model, "fixture-control-model");
             assert!(matches!(request.cost, engine::providers::Cost::Unknown));
             if self.0.load(Ordering::SeqCst) {

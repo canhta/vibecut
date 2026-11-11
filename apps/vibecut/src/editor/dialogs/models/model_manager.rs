@@ -10,7 +10,7 @@ use crate::{
 };
 use ai::models::{DownloadConsent, Model};
 use engine::{
-    ByteBudget, EditError,
+    ByteBudget, Error as EngineError,
     jobs::{
         CancelToken, JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock,
     },
@@ -78,7 +78,7 @@ struct Download {
 }
 struct CheckOutcome {
     installed: BTreeMap<String, bool>,
-    errors: BTreeMap<String, Arc<EditError>>,
+    errors: BTreeMap<String, Arc<EngineError>>,
 }
 struct CheckHooks(Arc<AtomicBool>);
 impl ai::ExecutionHooks for CheckHooks {
@@ -94,9 +94,9 @@ pub struct ModelManager {
     suggested: BTreeSet<String>,
     selected: Option<String>,
     installed: BTreeMap<String, bool>,
-    installed_errors: BTreeMap<String, Arc<EditError>>,
+    installed_errors: BTreeMap<String, Arc<EngineError>>,
     checking: bool,
-    check_rx: Option<Receiver<std::result::Result<CheckOutcome, EditError>>>,
+    check_rx: Option<Receiver<std::result::Result<CheckOutcome, EngineError>>>,
     check_cancel: Arc<AtomicBool>,
     check_worker: Option<std::thread::JoinHandle<()>>,
     transfers: Arc<ModelTransfers>,
@@ -144,8 +144,9 @@ impl ModelManager {
         }
         let mut suggested = BTreeSet::new();
         for language in ["en", "vi"] {
-            let tag = captions::LanguageTag::parse(language)
-                .map_err(|error| Error::Engine(EditError::Captions(error)))?;
+            let tag = captions::LanguageTag::parse(language).map_err(|error| {
+                Error::Engine(EngineError::Edit(engine::EditError::Captions(error)))
+            })?;
             if let Ok(model) = ai::models::suggested_transcriber(&tag) {
                 suggested.insert(model.id);
             }
@@ -219,7 +220,7 @@ impl ModelManager {
                     }
                     CheckOutcome { installed, errors }
                 }))
-                .map_err(|_| EditError::Runtime(engine::RuntimeError::WorkerPanicked));
+                .map_err(|_| EngineError::Runtime(engine::RuntimeError::WorkerPanicked));
                 let _ = tx.send(outcome);
             })
             .map_err(Error::Io)?;
@@ -770,11 +771,11 @@ fn record(widgets: &mut Vec<(String, egui::Response)>, id: String, response: egu
         .accesskit_node_builder(response.id, |node| node.set_author_id(&id));
     widgets.push((id, response));
 }
-fn error_from(error: Error) -> EditError {
+fn error_from(error: Error) -> EngineError {
     match error {
         Error::Engine(error) => error,
-        Error::Ai(error) => EditError::Ai(error),
-        _ => EditError::Invalid("model download"),
+        Error::Ai(error) => EngineError::Ai(error),
+        _ => EngineError::Edit(engine::EditError::Invalid("model download")),
     }
 }
 fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
@@ -791,26 +792,26 @@ fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
             _ => ModelProblem::Failed,
         };
     }
-    let Some(error) = error.downcast_ref::<EditError>() else {
+    let Some(error) = error.downcast_ref::<EngineError>() else {
         return ModelProblem::Failed;
     };
     match error {
-        EditError::Runtime(engine::RuntimeError::StorageFull)
-        | EditError::Ai(
+        EngineError::Runtime(engine::RuntimeError::StorageFull)
+        | EngineError::Ai(
             ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
         ) => ModelProblem::StorageFull,
-        EditError::Ai(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
-        EditError::Ai(
+        EngineError::Ai(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
+        EngineError::Ai(
             ai::Error::Network
             | ai::Error::Timeout
             | ai::Error::Server
             | ai::Error::RateLimit { .. },
         )
-        | EditError::Runtime(engine::RuntimeError::NetworkTransient) => ModelProblem::Network,
-        EditError::Runtime(engine::RuntimeError::CacheBusy) => ModelProblem::Busy,
-        EditError::Runtime(engine::RuntimeError::CacheCorrupt) => ModelProblem::Corrupt,
-        EditError::Runtime(engine::RuntimeError::Cancelled) => ModelProblem::Cancelled,
-        EditError::Io(error) | EditError::Runtime(engine::RuntimeError::Io(error))
+        | EngineError::Runtime(engine::RuntimeError::NetworkTransient) => ModelProblem::Network,
+        EngineError::Runtime(engine::RuntimeError::CacheBusy) => ModelProblem::Busy,
+        EngineError::Runtime(engine::RuntimeError::CacheCorrupt) => ModelProblem::Corrupt,
+        EngineError::Runtime(engine::RuntimeError::Cancelled) => ModelProblem::Cancelled,
+        EngineError::Io(error) | EngineError::Runtime(engine::RuntimeError::Io(error))
             if error.kind() == std::io::ErrorKind::StorageFull =>
         {
             ModelProblem::StorageFull

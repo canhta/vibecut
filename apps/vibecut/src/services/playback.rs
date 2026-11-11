@@ -335,7 +335,7 @@ impl Playback {
             );
             let submitted = self
                 .runner
-                .submit::<engine::EditError>(self.spec, move |hooks| {
+                .submit::<engine::Error>(self.spec, move |hooks| {
                     while !hooks.cancelled() {
                         let generation = if audio {
                             &port.epoch

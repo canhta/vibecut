@@ -79,7 +79,7 @@ fn set(
     edge: FadeEdge,
     duration: i64,
     curve: FadeCurve,
-) -> engine::Result<()> {
+) -> Result<(), engine::EditError> {
     session
         .apply(Command::SetFade {
             item: ItemId(20),

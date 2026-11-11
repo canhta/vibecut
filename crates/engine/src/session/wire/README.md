@@ -19,6 +19,10 @@ command decoding retains its mixed result because edit-budget checks also refuse
 operations. `control` re-exports it; the root error composes it transparently.
 This Rust boundary does not change serialized error codes or the catalog.
 
+Pure editing declares `EditError` at the Kernel edit owner, including lower project/time/
+caption classification and static source wrappers. Mixed `engine::Error::Edit` delegates;
+wire categories and schemas do not encode either Rust enum namespace.
+
 `Failure` states code and retry eligibility at the error's declaration owner.
 Its nonserialized `JobFailurePolicy` preserves direct terminal cancellation and direct
 AI retry-advisory seconds for the scheduler. Ordinary owners default to neither;

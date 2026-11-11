@@ -10,7 +10,7 @@ use crate::support::control::{
 };
 use engine::control::{self, Caller, ControlResult, ErrorCode, Payload, ResponseValue};
 use engine::jobs::JobRunner;
-use engine::{Command, EditError, Session, registry};
+use engine::{Command, Error as EngineError, Session, registry};
 use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
 use serde_json::{Value, json};
 use time::{SourceRange, Tick};
@@ -788,7 +788,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
     let revision = history.revision();
     assert!(matches!(
         crate::wire::run(&mut history, "trim_end", json!({"item":1,"at":20})),
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::InvalidParams
         ))
     ));
@@ -811,7 +811,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
 fn owner_failures_classify_publication_receipts_and_events() {
     use ErrorCode as C;
     use engine::recovery::Error as R;
-    use engine::{EditError as E, RuntimeError as B};
+    use engine::{Error as E, RuntimeError as B};
     use engine::{
         Failure, FontError as F, SoundError as S, providers::Error as P, transcript::Error as T,
     };
@@ -982,20 +982,48 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Limit,
             false
         ),
-        row!(E::NoTrack(TrackId(1)), Refused, false),
-        row!(E::NoAsset(media::AssetId(1)), Refused, false),
-        row!(E::AssetsInUse(Vec::new()), Refused, false),
-        row!(E::NoItem(ItemId(1)), Refused, false),
-        row!(E::Locked(TrackId(1)), Refused, false),
-        row!(E::SceneBoundary, Refused, false),
-        row!(E::Protected, Refused, false),
-        row!(E::CuesNotAdjacent, Refused, false),
-        row!(E::CuesAcrossTracks, Refused, false),
-        row!(E::CuesAcrossItems, Refused, false),
-        row!(E::Overlap(TrackId(1)), Refused, false),
+        row!(
+            E::Edit(engine::EditError::NoTrack(TrackId(1))),
+            Refused,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::NoAsset(media::AssetId(1))),
+            Refused,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::AssetsInUse(Vec::new())),
+            Refused,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::NoItem(ItemId(1))),
+            Refused,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::Locked(TrackId(1))),
+            Refused,
+            false
+        ),
+        row!(E::Edit(engine::EditError::SceneBoundary), Refused, false),
+        row!(E::Edit(engine::EditError::Protected), Refused, false),
+        row!(E::Edit(engine::EditError::CuesNotAdjacent), Refused, false),
+        row!(E::Edit(engine::EditError::CuesAcrossTracks), Refused, false),
+        row!(E::Edit(engine::EditError::CuesAcrossItems), Refused, false),
+        row!(
+            E::Edit(engine::EditError::Overlap(TrackId(1))),
+            Refused,
+            false
+        ),
         row!(E::EmptyProject, EmptyProject, false),
-        row!(E::Invalid("input"), Refused, false),
-        row!(E::Unsupported("capability"), Refused, false),
+        row!(E::Edit(engine::EditError::Invalid("input")), Refused, false),
+        row!(
+            E::Edit(engine::EditError::Unsupported("capability")),
+            Refused,
+            false
+        ),
         row!(E::Session(engine::SessionError::Panicked), Failed, false),
         row!(
             E::Session(engine::SessionError::TransactionActive),
@@ -1014,9 +1042,21 @@ fn owner_failures_classify_publication_receipts_and_events() {
             false
         ),
         row!(E::Runtime(B::IdExhausted), Refused, false),
-        row!(E::Project(project::Error::Busy), Busy, false),
-        row!(E::Time(time::TimeError::Overflow), Refused, false),
-        row!(E::Captions(captions::Error::TooLarge), Refused, false),
+        row!(
+            E::Edit(engine::EditError::Project(project::Error::Busy)),
+            Busy,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::Time(time::TimeError::Overflow)),
+            Refused,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::Captions(captions::Error::TooLarge)),
+            Refused,
+            false
+        ),
         row!(E::Providers(P::ModelMissing("test")), Setup, false),
         row!(E::Providers(P::RunnerMissing), Setup, false),
         row!(E::Providers(P::CredentialMissing("test")), Setup, false),
@@ -1071,19 +1111,29 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Render,
             false
         ),
-        row!(E::Project(project::Error::Conflict), Conflict, false),
         row!(
-            E::Project(project::Error::Io(io::Error::other("project"))),
+            E::Edit(engine::EditError::Project(project::Error::Conflict)),
+            Conflict,
+            false
+        ),
+        row!(
+            E::Edit(engine::EditError::Project(project::Error::Io(
+                io::Error::other("project")
+            ))),
             Io,
             false
         ),
         row!(
-            E::Project(project::Error::Media(media::MediaError::Cancelled)),
+            E::Edit(engine::EditError::Project(project::Error::Media(
+                media::MediaError::Cancelled
+            ))),
             Media,
             false
         ),
         row!(
-            E::Project(project::Error::Invalid("project")),
+            E::Edit(engine::EditError::Project(project::Error::Invalid(
+                "project"
+            ))),
             Refused,
             false
         ),

@@ -30,7 +30,7 @@ mod exit_codes {
     }
     #[test]
     fn engine_and_sound_diagnostics_keep_exact_labels_and_exits() {
-        use engine::{EditError as E, SoundError as S, providers::Error as P};
+        use engine::{Error as E, SoundError as S, providers::Error as P};
         use std::sync::Arc;
         type Case = (fn() -> E, (&'static str, u8));
         macro_rules! row {
@@ -145,7 +145,11 @@ mod exit_codes {
                 "rejected",
                 5
             ),
-            row!(E::Project(project::Error::Busy), "busy", 3),
+            row!(
+                E::Edit(engine::EditError::Project(project::Error::Busy)),
+                "busy",
+                3
+            ),
             row!(E::Sounds(S::Auth), "auth", 4),
             row!(E::Sounds(S::Quota), "quota", 4),
             row!(
@@ -166,7 +170,11 @@ mod exit_codes {
                 "unavailable",
                 4
             ),
-            row!(E::Project(project::Error::Conflict), "conflict", 3),
+            row!(
+                E::Edit(engine::EditError::Project(project::Error::Conflict)),
+                "conflict",
+                3
+            ),
         ];
         for (make, expected) in cases {
             for error in [
@@ -178,6 +186,94 @@ mod exit_codes {
                 let value = error.value();
                 assert_eq!(value["code"], expected.0);
                 assert_eq!(value["exit_code"], expected.1);
+            }
+        }
+        let edits: [(fn() -> engine::EditError, (&str, u8), &str); 8] = [
+            (
+                || engine::EditError::NoItem(project::ItemId(999)),
+                ("rejected", 5),
+                "missing item ItemId(999)",
+            ),
+            (
+                || engine::EditError::Project(project::Error::Io(io::Error::other("private"))),
+                ("io", 7),
+                "project candidate rejected",
+            ),
+            (
+                || engine::EditError::Project(project::Error::Busy),
+                ("busy", 3),
+                "project candidate rejected",
+            ),
+            (
+                || engine::EditError::Project(project::Error::Conflict),
+                ("conflict", 3),
+                "project candidate rejected",
+            ),
+            (
+                || engine::EditError::Project(project::Error::Media(media::MediaError::Cancelled)),
+                ("media", 6),
+                "project candidate rejected",
+            ),
+            (
+                || engine::EditError::Time(time::TimeError::Overflow),
+                ("rejected", 5),
+                "invalid edit time",
+            ),
+            (
+                || {
+                    engine::EditError::Captions(
+                        engine::subtitles::LanguageTag::parse("!").unwrap_err(),
+                    )
+                },
+                ("rejected", 5),
+                "invalid caption mapping",
+            ),
+            (
+                || engine::EditError::Session(engine::SessionError::StaleResult),
+                ("job", 7),
+                "job result is stale",
+            ),
+        ];
+        for (make, expected, message) in edits {
+            for error in [CliError::from(make()), CliError::Job(Arc::new(make()))] {
+                assert_eq!(error.code(), expected);
+                let value = error.value();
+                assert_eq!(value["code"], expected.0);
+                assert_eq!(value["exit_code"], expected.1);
+                assert_eq!(value["message"], message);
+                let (edit, source) = match &error {
+                    CliError::Engine(root @ E::Edit(edit)) => {
+                        (edit, std::error::Error::source(root))
+                    }
+                    CliError::Job(raw) => (
+                        (raw.as_ref() as &(dyn std::error::Error + 'static))
+                            .downcast_ref::<engine::EditError>()
+                            .unwrap(),
+                        raw.source(),
+                    ),
+                    _ => panic!("unexpected edit diagnostic adapter"),
+                };
+                match edit {
+                    engine::EditError::Project(expected) => assert!(
+                        source
+                            .unwrap()
+                            .downcast_ref()
+                            .is_some_and(|source| std::ptr::eq(source, expected))
+                    ),
+                    engine::EditError::Time(expected) => assert!(
+                        source
+                            .unwrap()
+                            .downcast_ref()
+                            .is_some_and(|source| std::ptr::eq(source, expected))
+                    ),
+                    engine::EditError::Captions(expected) => assert!(
+                        source
+                            .unwrap()
+                            .downcast_ref()
+                            .is_some_and(|source| std::ptr::eq(source, expected))
+                    ),
+                    _ => assert!(source.is_none()),
+                }
             }
         }
         let sounds = [

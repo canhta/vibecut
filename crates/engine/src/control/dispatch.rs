@@ -5,7 +5,7 @@ use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
     ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
 };
-use crate::{Command, EditError, Result, Session, registry};
+use crate::{Command, Error as EngineError, Result, Session, registry};
 
 impl From<ProviderOption> for ProviderView {
     fn from(p: ProviderOption) -> Self {
@@ -33,7 +33,7 @@ fn font_access<'a>(caller: &Caller<'a>) -> Result<&'a super::FontAccess<'a>> {
 fn sound_access<'a>(caller: &Caller<'a>) -> Result<&'a super::SoundAccess<'a>> {
     caller
         .sounds
-        .ok_or(EditError::Unsupported("sound library unavailable").into())
+        .ok_or(EngineError::Edit(crate::EditError::Unsupported("sound library unavailable")).into())
 }
 impl Session {
     pub(super) fn run_control(
@@ -46,7 +46,7 @@ impl Session {
         match command {
             Command::ReadClipboard {} => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -61,7 +61,7 @@ impl Session {
                 expected_hash,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -73,12 +73,16 @@ impl Session {
                             .iter()
                             .find(|r| r.id == id)
                             .cloned()
-                            .ok_or(EditError::Invalid("unregistered LUT relink"))
+                            .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                                "unregistered LUT relink",
+                            )))
                     })
                     .transpose()?;
                 let store = caller
                     .media
-                    .ok_or(EditError::Unsupported("LUT source store unavailable"))?
+                    .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                        "LUT source store unavailable",
+                    )))?
                     .lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?
                     .lut_store();
@@ -101,7 +105,7 @@ impl Session {
             }
             Command::Inspect {} => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -135,7 +139,7 @@ impl Session {
                 include_markers,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -195,7 +199,7 @@ impl Session {
                 let mut snapshot = JobView::from(
                     runner
                         .snapshot(job)
-                        .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?,
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?,
                 );
                 if matches!(
                     snapshot.kind,
@@ -218,7 +222,7 @@ impl Session {
             }
             Command::GenerateWaveform { asset } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -229,10 +233,13 @@ impl Session {
                     .iter()
                     .find(|candidate| candidate.id() == asset)
                     .cloned()
-                    .ok_or(EditError::NoAsset(asset))?;
-                let media = caller
-                    .media
-                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset)))?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
                 let job = media
                     .lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?
@@ -249,7 +256,7 @@ impl Session {
                 pixels_per_second,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -261,19 +268,24 @@ impl Session {
                     .flat_map(|track| &track.items)
                     .find(|candidate| candidate.id == item)
                     .cloned()
-                    .ok_or(EditError::NoItem(item))?;
-                let asset_id = clip
-                    .source_asset
-                    .ok_or(EditError::Invalid("thumbnail clip has no asset"))?;
+                    .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+                let asset_id =
+                    clip.source_asset
+                        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                            "thumbnail clip has no asset",
+                        )))?;
                 let asset = data
                     .assets
                     .iter()
                     .find(|candidate| candidate.id() == asset_id)
                     .cloned()
-                    .ok_or(EditError::NoAsset(asset_id))?;
-                let media = caller
-                    .media
-                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset_id)))?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
                 let job = media
                     .lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?
@@ -286,7 +298,7 @@ impl Session {
             }
             Command::DetectScenes { asset, settings } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -297,10 +309,13 @@ impl Session {
                     .iter()
                     .find(|candidate| candidate.id() == asset)
                     .cloned()
-                    .ok_or(EditError::NoAsset(asset))?;
-                let media = caller
-                    .media
-                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset)))?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
                 let job = media
                     .lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?
@@ -313,7 +328,7 @@ impl Session {
             }
             Command::MeasureLoudness {} => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -332,7 +347,7 @@ impl Session {
                 crossfade_ms,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -357,7 +372,7 @@ impl Session {
                 max_chapters,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -378,7 +393,7 @@ impl Session {
                 include_markers,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -396,7 +411,7 @@ impl Session {
             }
             Command::ChaptersExportSidecars { dir, document } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -415,7 +430,7 @@ impl Session {
                 source_language,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -444,7 +459,7 @@ impl Session {
                 force,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -469,24 +484,26 @@ impl Session {
             }
             Command::CaptionsApply { job, start } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
                 let snapshot = runner
                     .snapshot(job)
-                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 if snapshot.kind != JobKind::Transcribe {
-                    return Err(EditError::Invalid("job is not a transcription"));
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "job is not a transcription",
+                    )));
                 }
                 if snapshot.state != JobState::Completed {
-                    return Err(EditError::Session(crate::SessionError::StaleResult));
+                    return Err(EngineError::Session(crate::SessionError::StaleResult));
                 }
                 runner.validate_output_target(job, self)?;
                 let result = crate::subtitles::decode_captions(
                     runner
                         .output_bytes(job)
-                        .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?,
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?,
                 )?;
                 let asset = self
                     .project()
@@ -494,20 +511,21 @@ impl Session {
                     .assets
                     .iter()
                     .find(|a| a.id() == result.asset)
-                    .ok_or(EditError::NoAsset(result.asset))?;
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(result.asset)))?;
                 if result.range.start() < time::Tick::ZERO
                     || asset
                         .probe()
                         .duration
                         .is_none_or(|d| result.range.end() > d)
                 {
-                    return Err(EditError::Session(crate::SessionError::StaleResult));
+                    return Err(EngineError::Session(crate::SessionError::StaleResult));
                 }
                 crate::subtitles::validate_source(asset)?;
                 let insert =
                     crate::subtitles::apply_command(result, start.unwrap_or(time::Tick::ZERO))?;
                 self.apply_control(insert)
                     .map(|outcome| ControlResult::Edit { outcome })
+                    .map_err(EngineError::from)
             }
             Command::JobCancel { job } => {
                 runner.cancel_job(job)?;
@@ -516,7 +534,7 @@ impl Session {
             Command::Preview { frames } => crate::control_preview::preview(self, frames, runner),
             Command::Snapshot { time, path } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -541,7 +559,7 @@ impl Session {
                 overwrite,
             } => {
                 if self.transaction_active() {
-                    return Err(EditError::Session(
+                    return Err(EngineError::Session(
                         crate::session::SessionError::TransactionActive,
                     ));
                 }
@@ -550,7 +568,9 @@ impl Session {
                     .extension()
                     .and_then(|extension| extension.to_str())
                     .and_then(media::Container::from_extension)
-                    .ok_or(EditError::Invalid("export container extension"))?;
+                    .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                        "export container extension",
+                    )))?;
                 let paths = options.paths(self.project(), &path)?;
                 for output in &paths {
                     caller.policy.authorize(
@@ -588,7 +608,7 @@ impl Session {
                         path.clone()
                     }
                     _ => {
-                        return Err(EditError::Control(
+                        return Err(EngineError::Control(
                             crate::session::wire::ControlError::InvalidParams,
                         ));
                     }
@@ -606,7 +626,8 @@ impl Session {
             }
             command => self
                 .apply_control(command)
-                .map(|outcome| ControlResult::Edit { outcome }),
+                .map(|outcome| ControlResult::Edit { outcome })
+                .map_err(EngineError::from),
         }
     }
 }

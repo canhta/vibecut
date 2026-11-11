@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-use engine::{ByteBudget, Command, EditError, library::ProjectLibrary};
+use engine::{ByteBudget, Command, Error as EngineError, library::ProjectLibrary};
 use project::{Project, ProjectId, Thumbnail, WriterLease};
 use std::{cell::Cell, fs};
 
@@ -40,7 +40,9 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     let unrelated_writer = WriterLease::acquire(&entries[0].path).unwrap();
     assert!(matches!(
         lib.undo(),
-        Err(EditError::Project(project::Error::Busy))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Busy
+        )))
     ));
     assert_eq!(lib.history_len(), (1, 0));
     drop(writer);
@@ -68,7 +70,9 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     let writer = WriterLease::acquire(&entries[1].path).unwrap();
     assert!(matches!(
         lib.execute(ProjectId(2), Command::DeleteProject {}),
-        Err(EditError::Project(project::Error::Busy))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Busy
+        )))
     ));
     assert!(entries[1].path.exists());
     drop(writer);
@@ -80,7 +84,7 @@ fn catalog_commands_preserve_content_and_history_and_move_to_trash() {
     drop(unrelated_writer);
     assert!(matches!(
         lib.undo(),
-        Err(EditError::Session(engine::SessionError::NoHistory))
+        Err(EngineError::Session(engine::SessionError::NoHistory))
     ));
     drop(lib);
     let reopened = library(root.path());
@@ -126,7 +130,9 @@ fn directory_move_refusals_preserve_history_and_recoverable_bytes() {
     fs::create_dir(directory).unwrap();
     assert!(matches!(
         lib.redo(),
-        Err(EditError::Project(project::Error::Conflict))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Conflict
+        )))
     ));
     assert_eq!(lib.history_len(), (0, 1));
     assert_eq!(fs::read(hidden.join("project.vibecut")).unwrap(), bytes);
@@ -194,7 +200,7 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
                 calls.get() == 4
             }
         ),
-        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
     ));
     fs::write(&media, b"changed").unwrap();
     assert!(
@@ -221,7 +227,9 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
     drop(lease);
     assert!(matches!(
         lib.undo(),
-        Err(EditError::Project(project::Error::Conflict))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Conflict
+        )))
     ));
     assert_eq!(lib.list().unwrap().len(), 2);
 }
@@ -491,7 +499,9 @@ fn restore_refuses_an_occupied_target_and_keeps_the_trashed_bytes() {
     create(&mut lib, 1);
     assert!(matches!(
         lib.execute(ProjectId(1), Command::RestoreProject {}),
-        Err(EditError::Project(project::Error::Conflict))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Conflict
+        )))
     ));
     assert_eq!(lib.list().unwrap().len(), 1);
     assert_eq!(lib.list_trash().unwrap().len(), 1);
@@ -510,7 +520,9 @@ fn delete_refuses_a_busy_project_and_a_hostile_trash_destination() {
     let writer = WriterLease::acquire(&entry.path).unwrap();
     assert!(matches!(
         lib.execute(ProjectId(1), Command::DeleteProject {}),
-        Err(EditError::Project(project::Error::Busy))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Busy
+        )))
     ));
     assert!(entry.path.exists());
     drop(writer);

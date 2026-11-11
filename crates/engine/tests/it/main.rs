@@ -16,7 +16,7 @@ mod transcript;
 pub(crate) mod wire {
     use engine::control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue};
     use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-    use engine::{ByteBudget, Command, EditError, Outcome, Result, Session};
+    use engine::{ByteBudget, Command, Error as EngineError, Outcome, Result, Session};
     use serde_json::Value;
     use std::sync::{
         Arc,
@@ -77,17 +77,19 @@ pub(crate) mod wire {
         )?;
         match response.value {
             ResponseValue::Result(ControlResult::Edit { outcome }) => Ok(outcome),
-            ResponseValue::Result(_) => Err(EditError::Invalid("wire helper: non-edit result")),
-            ResponseValue::Error(ErrorCode::UnknownCommand) => Err(EditError::Control(
+            ResponseValue::Result(_) => Err(EngineError::Edit(engine::EditError::Invalid(
+                "wire helper: non-edit result",
+            ))),
+            ResponseValue::Error(ErrorCode::UnknownCommand) => Err(EngineError::Control(
                 engine::control::ControlError::UnknownCommand,
             )),
-            ResponseValue::Error(ErrorCode::InvalidParams) => Err(EditError::Control(
+            ResponseValue::Error(ErrorCode::InvalidParams) => Err(EngineError::Control(
                 engine::control::ControlError::InvalidParams,
             )),
             ResponseValue::Error(ErrorCode::Limit) => {
-                Err(EditError::Control(engine::control::ControlError::Limit))
+                Err(EngineError::Control(engine::control::ControlError::Limit))
             }
-            ResponseValue::Error(_) => Err(EditError::Control(
+            ResponseValue::Error(_) => Err(EngineError::Control(
                 engine::control::ControlError::InvalidParams,
             )),
         }

@@ -13,7 +13,7 @@ use crate::transcript::{
     translation::{TranslationRun, TranslationTarget, window},
     translation_reference,
 };
-use crate::{Command, EditError, Result, Session, session::wire::TranslationsResult};
+use crate::{Command, Error as EngineError, Result, Session, session::wire::TranslationsResult};
 use captions::{LanguageTag, NfcText};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -42,24 +42,30 @@ pub(crate) fn translate(
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
-        .ok_or(EditError::NoItem(item))?;
+        .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
     let project::ItemParams::Caption(params) = &caption.content else {
-        return Err(EditError::Invalid("translation requires caption item"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "translation requires caption item",
+        )));
     };
     let ids = ids.unwrap_or_else(|| params.cues.cues.iter().map(|c| c.id.clone()).collect());
     if ids.is_empty() || ids.len() > MAX_CUES {
-        return Err(EditError::Control(
+        return Err(EngineError::Control(
             crate::session::wire::ControlError::Limit,
         ));
     }
     if ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
-        return Err(EditError::Invalid("duplicate translation selection"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "duplicate translation selection",
+        )));
     }
     if ids
         .iter()
         .any(|id| !params.cues.cues.iter().any(|c| &c.id == id))
     {
-        return Err(EditError::Invalid("missing selected cue"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "missing selected cue",
+        )));
     }
     let eligible: Vec<_> = ids
         .into_iter()
@@ -73,7 +79,9 @@ pub(crate) fn translate(
         })
         .collect();
     if eligible.is_empty() {
-        return Err(EditError::Invalid("no unprotected translation selection"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "no unprotected translation selection",
+        )));
     }
     let windows = eligible
         .chunks(ai::MAX_SEGMENTS.min(64))
@@ -90,14 +98,16 @@ pub(crate) fn translate(
         })
         .collect::<Result<Vec<_>>>()?;
     let (providers, consent) = access.share()?;
-    let translator = providers
-        .translator
-        .clone()
-        .ok_or(EditError::Unsupported("missing translator"))?;
-    let mode = providers
-        .translation_mode
-        .clone()
-        .ok_or(EditError::Unsupported("missing translation mode"))?;
+    let translator =
+        providers
+            .translator
+            .clone()
+            .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                "missing translator",
+            )))?;
+    let mode = providers.translation_mode.clone().ok_or(EngineError::Edit(
+        crate::EditError::Unsupported("missing translation mode"),
+    ))?;
     let project = session.project().as_ref().clone();
     let session_id = session.session_id().to_owned();
     let revision = session.revision();
@@ -166,8 +176,11 @@ pub(crate) fn translate(
                     .map_err(|_| crate::RuntimeError::Poisoned)?
                     .add(&estimate);
                 let bytes = run.run(hooks)?;
-                let translated: ai::Translation = serde_json::from_slice(&bytes)
-                    .map_err(|_| EditError::Invalid("translation response is malformed"))?;
+                let translated: ai::Translation = serde_json::from_slice(&bytes).map_err(|_| {
+                    EngineError::Edit(crate::EditError::Invalid(
+                        "translation response is malformed",
+                    ))
+                })?;
                 staging.apply(Command::Retranslate {
                     item,
                     target_language: target.clone(),
@@ -210,9 +223,9 @@ pub(crate) fn translate(
             crate::session::budget(&apply.params)?;
             let frame = crate::session::wire::bounded_json(&apply, MAX_FRAME_BYTES)?;
             parse_frame(&frame)
-                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
-                .map_err(crate::EditError::from)
+                .map_err(crate::Error::from)
         },
     )?;
     Ok(id)

@@ -4,7 +4,7 @@ use super::catalog::{
 };
 use super::consent::UploadRequest;
 use super::error::Error;
-use crate::EditError;
+use crate::Error as EngineError;
 use crate::cache::{ArtifactCache, ModelLease};
 use ai::transport::{ApiKey, UreqTransport};
 use ai::{ExecutionHooks, SampleRange, Scope};
@@ -63,7 +63,7 @@ impl Credentials {
         )
     }
     /// Validate the selected OpenAI key, returning typed missing or invalid refusals.
-    pub fn openai(&self) -> Result<ApiKey, EditError> {
+    pub fn openai(&self) -> Result<ApiKey, EngineError> {
         Ok(ApiKey::new(
             self.openai
                 .as_ref()
@@ -72,7 +72,7 @@ impl Credentials {
         )?)
     }
     /// Validate the selected ElevenLabs key, returning typed missing or invalid refusals.
-    pub fn elevenlabs(&self) -> Result<ApiKey, EditError> {
+    pub fn elevenlabs(&self) -> Result<ApiKey, EngineError> {
         Ok(ApiKey::new(
             self.elevenlabs
                 .as_ref()
@@ -81,7 +81,7 @@ impl Credentials {
         )?)
     }
     /// Validate the selected Anthropic key, returning typed missing or invalid refusals.
-    pub fn anthropic(&self) -> Result<ApiKey, EditError> {
+    pub fn anthropic(&self) -> Result<ApiKey, EngineError> {
         Ok(ApiKey::new(
             self.anthropic
                 .as_ref()
@@ -112,7 +112,7 @@ impl Providers {
         cache: &mut ArtifactCache,
         credentials: &Credentials,
         runtime: &Runtime,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         let mut leases = Vec::new();
         let (transcriber, needs_alignment, mode) = match &transcription {
             TranscriptionProvider::Whisper { model } => {
@@ -227,7 +227,7 @@ impl Providers {
         mut self,
         translation: TranslationProvider,
         credentials: &Credentials,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         let (translator, mode) = build_translator(&translation, credentials)?;
         self.translator = Some(translator);
         self.translation = Some(translation);
@@ -243,7 +243,7 @@ impl Providers {
         aligner: Option<Arc<dyn ai::Aligner>>,
         translation: Option<TranslationProvider>,
         translator: Option<Arc<dyn ai::Translator>>,
-    ) -> Result<Self, EditError> {
+    ) -> Result<Self, EngineError> {
         let translation_mode = translation.as_ref().map(|_| "context-window".into());
         let needs_alignment = aligner.is_some();
         Ok(Self {
@@ -277,7 +277,7 @@ impl Providers {
     pub(crate) fn language_profile(
         &self,
         language: &LanguageTag,
-    ) -> Result<LanguageProfile, EditError> {
+    ) -> Result<LanguageProfile, EngineError> {
         Ok(LanguageRegistry::standard()?.profile(language).clone())
     }
     pub(crate) fn transcription_scope(
@@ -285,7 +285,7 @@ impl Providers {
         language: &LanguageTag,
         samples: SampleRange,
         payload: &NfcText,
-    ) -> Result<Scope, EditError> {
+    ) -> Result<Scope, EngineError> {
         Ok(Scope::transcription(
             self.transcriber.config().clone(),
             self.transcription_mode.clone(),
@@ -300,11 +300,13 @@ impl Providers {
         language: &LanguageTag,
         samples: SampleRange,
         payload: &NfcText,
-    ) -> Result<Scope, EditError> {
-        let aligner = self
-            .aligner
-            .as_ref()
-            .ok_or(EditError::Unsupported("missing aligner"))?;
+    ) -> Result<Scope, EngineError> {
+        let aligner =
+            self.aligner
+                .as_ref()
+                .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                    "missing aligner",
+                )))?;
         Ok(Scope::alignment(
             aligner.config().clone(),
             language.clone(),
@@ -317,7 +319,7 @@ impl Providers {
 pub(crate) fn build_translator(
     translation: &TranslationProvider,
     credentials: &Credentials,
-) -> Result<(Arc<dyn ai::Translator>, NfcText), EditError> {
+) -> Result<(Arc<dyn ai::Translator>, NfcText), EngineError> {
     match translation {
         TranslationProvider::OpenAi { model } => {
             let value = ai::openai::OpenAiTranslator::new(
@@ -342,7 +344,7 @@ pub(crate) fn build_translator(
 pub(crate) fn open_chapter(
     chapter: &TextProvider,
     credentials: &Credentials,
-) -> Result<Arc<dyn ai::chapters::ChapterGenerator>, EditError> {
+) -> Result<Arc<dyn ai::chapters::ChapterGenerator>, EngineError> {
     Ok(match chapter {
         TextProvider::OpenAi { model } => Arc::new(ai::chapters::OpenAiChapterGenerator::new(
             ai::chapters::OpenAiChapterGenerator::provider_config(model)?,
@@ -363,7 +365,7 @@ pub(crate) fn open_chapter(
 pub(crate) fn open_filler(
     filler: &TextProvider,
     credentials: &Credentials,
-) -> Result<Arc<dyn ai::fillers::FillerClassifier>, EditError> {
+) -> Result<Arc<dyn ai::fillers::FillerClassifier>, EngineError> {
     Ok(match filler {
         TextProvider::OpenAi { model } => Arc::new(ai::fillers::OpenAiFillerClassifier::new(
             ai::fillers::OpenAiFillerClassifier::provider_config(model)?,
@@ -380,7 +382,7 @@ pub(crate) fn open_filler(
 fn load_aligner(
     cache: &mut ArtifactCache,
     leases: &mut Vec<ModelLease>,
-) -> Result<Arc<dyn ai::Aligner>, EditError> {
+) -> Result<Arc<dyn ai::Aligner>, EngineError> {
     #[cfg(feature = "candle-align")]
     {
         let metadata = ai::models::alignment_model()?;
@@ -394,13 +396,13 @@ fn load_aligner(
     #[cfg(not(feature = "candle-align"))]
     {
         let _ = (cache, leases);
-        Err(EditError::Unsupported(
+        Err(EngineError::Edit(crate::EditError::Unsupported(
             "local alignment support is not enabled in this build",
-        ))
+        )))
     }
 }
 impl Providers {
-    pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
+    pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EngineError> {
         UploadRequest::for_scope(
             CatalogOperation::Transcribe,
             self.transcriber.config(),

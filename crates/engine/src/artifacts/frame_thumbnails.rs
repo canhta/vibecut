@@ -5,7 +5,7 @@
 //! so changed content or a different frame invalidates it. A decode failure is
 //! never a hit: corrupt bytes fall back to regeneration.
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
-use crate::{ByteBudget, EditError, Result};
+use crate::{ByteBudget, Error as EngineError, Result};
 use media::{ContentHash, SourceAsset, THUMBNAIL_MAX_EDGE, Thumbnail};
 use std::path::Path;
 use time::Tick;
@@ -18,7 +18,9 @@ const VERSION: &str = "3";
 /// decodable frame.
 pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> Result<CacheKey> {
     if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
-        return Err(EditError::Invalid("thumbnail max edge"));
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "thumbnail max edge",
+        )));
     }
     let mut frame = blake3::Hasher::new();
     frame.update(b"vibecut-thumbnail-frame-v1");
@@ -86,7 +88,9 @@ impl RetainedThumbnail {
             || image.height > THUMBNAIL_MAX_EDGE
             || u64::from(image.width) * u64::from(image.height) * 4 != image.pixels.len() as u64
         {
-            return Err(EditError::Invalid("retained thumbnail geometry"));
+            return Err(EngineError::Edit(crate::EditError::Invalid(
+                "retained thumbnail geometry",
+            )));
         }
         let lease = budget.reserve(
             crate::ByteOwner::DecodedFrames,
@@ -176,7 +180,7 @@ impl ThumbnailCache {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
-            Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
+            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => {
                 return Ok(ThumbnailLookup::Corrupt);
             }
             Err(error) => return Err(error),
@@ -217,8 +221,9 @@ impl ThumbnailCache {
         thumbnail: &Thumbnail,
     ) -> Result<()> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
-        let metadata = serde_json::to_vec(asset)
-            .map_err(|_| EditError::Invalid("thumbnail probe metadata"))?;
+        let metadata = serde_json::to_vec(asset).map_err(|_| {
+            EngineError::Edit(crate::EditError::Invalid("thumbnail probe metadata"))
+        })?;
         if metadata.len() > 1 << 20 {
             return Err(crate::RuntimeError::ArtifactTooLarge.into());
         }

@@ -2,7 +2,7 @@
 use super::{TaskEvents, Work, Workflow};
 use captions::{CueTrack, Format};
 use engine::{
-    ByteBudget, Command, EditError, NewItem, Session,
+    ByteBudget, Command, Error as EngineError, NewItem, Session,
     cache::ArtifactCache,
     jobs::{JobRunner, RunnerConfig, SystemClock},
     transcript::{Cancellation, Progress, Stage},
@@ -20,7 +20,7 @@ impl Workflow for LocalWorkflow {
         cancel: &Cancellation,
     ) -> engine::Result<Command> {
         if cancel.cancelled() {
-            return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
+            return Err(EngineError::Runtime(engine::RuntimeError::Cancelled));
         }
         match work {
             Work::Import {
@@ -38,7 +38,11 @@ impl Workflow for LocalWorkflow {
                 {
                     Some("srt") => Format::Srt,
                     Some("vtt") => Format::WebVtt,
-                    _ => return Err(EditError::Unsupported("import SRT or VTT")),
+                    _ => {
+                        return Err(EngineError::Edit(engine::EditError::Unsupported(
+                            "import SRT or VTT",
+                        )));
+                    }
                 };
                 let mut bytes = Vec::new();
                 std::fs::File::open(&path)?
@@ -51,7 +55,9 @@ impl Workflow for LocalWorkflow {
                     .iter()
                     .map(|c| c.range.end())
                     .max()
-                    .ok_or(EditError::Invalid("no imported cues"))?;
+                    .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                        "no imported cues",
+                    )))?;
                 let asset = media::SourceAsset::try_from(media::AssetData {
                     ephemeral: true,
                     id: asset_id,
@@ -105,10 +111,13 @@ impl Workflow for LocalWorkflow {
                     &credentials,
                     &runtime,
                 )?;
-                let duration = asset
-                    .probe()
-                    .duration
-                    .ok_or(EditError::Invalid("source duration unavailable"))?;
+                let duration =
+                    asset
+                        .probe()
+                        .duration
+                        .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                            "source duration unavailable",
+                        )))?;
                 // Auto-detect first; the detected tag then goes to every ASR
                 // request explicitly, exactly like a user-picked language.
                 let language = if options.source == "auto" {
@@ -140,7 +149,7 @@ impl Workflow for LocalWorkflow {
                     range,
                 )?;
                 if cancel.cancelled() {
-                    return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
+                    return Err(EngineError::Runtime(engine::RuntimeError::Cancelled));
                 }
                 insert(cues, Some(asset.id()), range, start)
             }
@@ -185,11 +194,11 @@ impl Workflow for LocalWorkflow {
                     .iter()
                     .flat_map(|t| &t.items)
                     .find(|i| i.id == item)
-                    .ok_or(EditError::NoItem(item))?
+                    .ok_or(EngineError::Edit(engine::EditError::NoItem(item)))?
                     .content
                     .clone();
                 if cancel.cancelled() {
-                    return Err(EditError::Runtime(engine::RuntimeError::Cancelled));
+                    return Err(EngineError::Runtime(engine::RuntimeError::Cancelled));
                 }
                 Ok(Command::SetItemParam { item, content })
             }
@@ -217,7 +226,7 @@ fn insert(
     start: Tick,
 ) -> engine::Result<Command> {
     if cues.cues.is_empty() || cues.cues.len() > 10_000 {
-        return Err(EditError::Control(engine::control::ControlError::Limit));
+        return Err(EngineError::Control(engine::control::ControlError::Limit));
     }
     Ok(Command::InsertItem {
         placement: engine::Placement::Auto,

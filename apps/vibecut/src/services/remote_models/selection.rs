@@ -48,9 +48,9 @@ impl AiPreferences {
             {
                 return Err(Error::Invalid("AI model settings"));
             }
-            ai::defaults::validate_model(&choice.model).map_err(engine::EditError::from)?;
+            ai::defaults::validate_model(&choice.model).map_err(engine::Error::from)?;
             for (i, model) in choice.recent.iter().enumerate() {
-                ai::defaults::validate_model(model).map_err(engine::EditError::from)?;
+                ai::defaults::validate_model(model).map_err(engine::Error::from)?;
                 if choice
                     .recent
                     .iter()
@@ -73,7 +73,7 @@ impl AiPreferences {
             )
     }
     pub fn select(&mut self, provider: &str, feature: Operation, model: &str) -> Result<()> {
-        ai::defaults::validate_model(model).map_err(engine::EditError::from)?;
+        ai::defaults::validate_model(model).map_err(engine::Error::from)?;
         let choice = self
             .choices
             .iter_mut()

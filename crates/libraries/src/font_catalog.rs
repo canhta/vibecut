@@ -5,7 +5,7 @@ use engine::jobs::ResourceClass;
 use engine::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage,
 };
-use engine::{EditError, Result};
+use engine::{Error as EngineError, Result};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},

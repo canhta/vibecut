@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::*;
-use engine::{ByteBudget, EditError};
+use engine::{ByteBudget, Error as EngineError};
 use std::{
     sync::{
         Arc,
@@ -167,7 +167,7 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
                 second.clone(),
                 || panic!("stale source opened"),
             ),
-            Err(EditError::Runtime(engine::RuntimeError::LoudnessStale))
+            Err(EngineError::Runtime(engine::RuntimeError::LoudnessStale))
         ));
         assert!(runner.snapshots().is_empty());
         assert!(runner.drain_events().is_empty());
@@ -194,7 +194,7 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
             vec![first.clone(), second.clone()],
             || panic!("partial scene admitted"),
         ),
-        Err(EditError::Runtime(engine::RuntimeError::LoudnessStale))
+        Err(EngineError::Runtime(engine::RuntimeError::LoudnessStale))
     ));
     assert!(runner.snapshots().is_empty());
     assert!(runner.drain_events().is_empty());
@@ -409,7 +409,7 @@ fn cancellation_before_publication_refuses_and_after_commit_point_completes() {
         let stored = Arc::new(std::sync::Mutex::new(None::<CancelToken>));
         let token = stored.clone();
         let (id, cancel) = runner
-            .submit::<engine::EditError>(
+            .submit::<engine::Error>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,
@@ -476,9 +476,9 @@ fn oversized_export_fails_with_requested_bytes_before_frame_allocation() {
     let s = complete(&mut runner, id);
     assert!(matches!(
         s.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         ),
-        Some(EditError::Render(render::Error::Budget {
+        Some(EngineError::Render(render::Error::Budget {
             requested: 4362076160,
             ..
         }))
@@ -712,9 +712,9 @@ fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly()
     let result = complete(&mut r, id);
     assert!(matches!(
         result.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         ),
-        Some(EditError::Render(render::Error::Invalid(
+        Some(EngineError::Render(render::Error::Invalid(
             "output aliases a source"
         )))
     ));
@@ -787,7 +787,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         .unwrap();
     let result = complete(&mut r, id);
     assert!(
-        matches!(result.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()), Some(EditError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
+        matches!(result.error.as_deref().and_then(|error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()), Some(EngineError::Render(render::Error::Unavailable(details))) if details.len() == 1 && details[0].reason == render::UnavailableReason::Missing)
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -937,9 +937,11 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     assert_eq!(result.state, JobState::Failed);
     assert!(matches!(
         result.error.as_deref().and_then(
-            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         ),
-        Some(EditError::Project(project::Error::Io(_)))
+        Some(EngineError::Edit(engine::EditError::Project(
+            project::Error::Io(_)
+        )))
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
     assert_eq!(std::fs::read(&destination).unwrap(), b"prior movie");

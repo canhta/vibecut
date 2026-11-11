@@ -34,7 +34,7 @@ pub(crate) enum CachePhase {
 pub(crate) struct CacheUi {
     pub(crate) phase: CachePhase,
     pub(crate) report: Option<std::sync::Arc<engine::cache::CacheMaintenanceReport>>,
-    pub(crate) cause: Option<std::sync::Arc<engine::EditError>>,
+    pub(crate) cause: Option<std::sync::Arc<engine::Error>>,
     pub(crate) checked: Option<std::time::Instant>,
 }
 impl Default for CacheUi {
@@ -234,7 +234,9 @@ impl<'a> Desk<'a> {
     }
 
     /// Push the selection for callers that own the failure path.
-    pub(in crate::editor) fn push_selection(&mut self) -> engine::Result<()> {
+    pub(in crate::editor) fn push_selection(
+        &mut self,
+    ) -> std::result::Result<(), engine::EditError> {
         self.editor
             .session
             .set_selection(self.editor.selection.clone())
@@ -246,7 +248,7 @@ impl<'a> Desk<'a> {
         &mut self,
         command: engine::Command,
         ripple: bool,
-    ) -> engine::Result<engine::Outcome> {
+    ) -> std::result::Result<engine::Outcome, engine::EditError> {
         self.push_selection()?;
         self.editor.session.apply_with_ripple(command, ripple)
     }

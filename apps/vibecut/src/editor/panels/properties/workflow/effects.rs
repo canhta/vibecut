@@ -132,7 +132,9 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
         Err(error) => {
             let text = if matches!(
                 &error,
-                crate::Error::Engine(engine::EditError::Project(project::Error::TooLarge(_)))
+                crate::Error::Engine(engine::Error::Edit(engine::EditError::Project(
+                    project::Error::TooLarge(_)
+                )))
             ) {
                 crate::i18n::text(desk.view().preferences.locale, Text::EffectLimit).to_owned()
             } else {

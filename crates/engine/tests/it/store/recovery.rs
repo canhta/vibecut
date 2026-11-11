@@ -4,7 +4,7 @@
     reason = "test fixtures and assertions"
 )]
 use engine::{
-    ByteBudget, Command, EditError, Failure, Session,
+    ByteBudget, Command, Error as EngineError, Failure, Session,
     jobs::Clock,
     recovery::{Autosave, Error as RecoveryError, Schedule, discover},
 };
@@ -173,7 +173,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
     .unwrap();
     assert!(matches!(
         a.save(),
-        Err(EditError::Recovery(RecoveryError::SaveAsRequired))
+        Err(EngineError::Recovery(RecoveryError::SaveAsRequired))
     ));
     let destination = dir.path().join("recovered.vibecut");
     a.save_as(destination.clone()).unwrap();
@@ -228,7 +228,7 @@ fn stale_save_completion_cannot_acknowledge_new_edits() {
     a.save_as(dir.path().join("saved.vibecut")).unwrap();
     edit(&mut a); // Deterministic: completion cannot be acknowledged before tick.
     until(|| match a.tick() {
-        Err(EditError::Session(engine::SessionError::StaleResult)) => true,
+        Err(EngineError::Session(engine::SessionError::StaleResult)) => true,
         Ok(()) => false,
         Err(e) => panic!("unexpected {e}"),
     });
@@ -261,7 +261,9 @@ fn switch_flushes_pending_and_gestures_cannot_cross_a_boundary() {
     a.session_mut().begin_gesture().unwrap();
     assert!(matches!(
         a.switch(session(2)),
-        Err(EditError::Session(engine::SessionError::TransactionActive))
+        Err(EngineError::Session(
+            engine::SessionError::TransactionActive
+        ))
     ));
     a.session_mut().cancel_gesture().unwrap();
     a.switch(session(2)).unwrap();
@@ -416,7 +418,7 @@ fn undo_to_saved_state_retires_obsolete_recovery_and_internal_save_is_refused() 
     let directory = fs::read_dir(&root).unwrap().next().unwrap().unwrap().path();
     assert!(matches!(
         a.save_as(directory.join("lock")),
-        Err(EditError::Invalid(_))
+        Err(EngineError::Edit(engine::EditError::Invalid(_)))
     ));
     drop(a);
     assert!(discover(&root).unwrap().candidates.is_empty());
@@ -450,7 +452,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
             a.session_mut().undo().unwrap();
         }
         until(|| match a.tick() {
-            Err(EditError::Session(engine::SessionError::StaleResult)) => true,
+            Err(EngineError::Session(engine::SessionError::StaleResult)) => true,
             Ok(()) => false,
             Err(e) => panic!("unexpected {e}"),
         });
@@ -545,10 +547,10 @@ fn busy(path: &Path) {
     ));
 }
 fn project_cause<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a project::Error> {
-    if let Some(error) = error.downcast_ref::<EditError>() {
+    if let Some(error) = error.downcast_ref::<EngineError>() {
         return match error {
-            EditError::Project(error) => Some(error),
-            EditError::Recovery(error) => project_cause(error),
+            EngineError::Edit(engine::EditError::Project(error)) => Some(error),
+            EngineError::Recovery(error) => project_cause(error),
             _ => None,
         };
     }
@@ -603,7 +605,9 @@ fn locked_invalid_project_is_refused_before_load() {
     );
     assert!(matches!(
         result,
-        Err(EditError::Project(project::Error::Busy))
+        Err(EngineError::Edit(engine::EditError::Project(
+            project::Error::Busy
+        )))
     ));
     assert!(!dir.path().join("journals").exists());
     drop(held);
@@ -672,7 +676,7 @@ fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
     busy(&destination);
     edit(&mut a);
     until(|| match a.tick() {
-        Err(EditError::Session(engine::SessionError::StaleResult)) => true,
+        Err(EngineError::Session(engine::SessionError::StaleResult)) => true,
         Err(error) => panic!("unexpected {error}"),
         Ok(()) => false,
     });
@@ -936,10 +940,10 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
     edit(&mut a);
     let error = a.save().unwrap_err();
     fn too_large(error: &(dyn std::error::Error + 'static)) -> bool {
-        if let Some(error) = error.downcast_ref::<EditError>() {
+        if let Some(error) = error.downcast_ref::<EngineError>() {
             return match error {
-                EditError::Runtime(error) => too_large(error),
-                EditError::Recovery(error) => too_large(error),
+                EngineError::Runtime(error) => too_large(error),
+                EngineError::Recovery(error) => too_large(error),
                 _ => false,
             };
         }
@@ -962,10 +966,10 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
     let error = a.tick().unwrap_err();
     assert!(too_large(&error));
     assert_eq!(error.code(), engine::control::ErrorCode::Budget);
-    let EditError::Recovery(RecoveryError::PersistenceFailed(cause)) = error else {
+    let EngineError::Recovery(RecoveryError::PersistenceFailed(cause)) = error else {
         panic!("automatic refusal must retain its typed cause");
     };
-    let EditError::Recovery(RecoveryError::PersistenceFailed(repeated)) = a.tick().unwrap_err()
+    let EngineError::Recovery(RecoveryError::PersistenceFailed(repeated)) = a.tick().unwrap_err()
     else {
         panic!("automatic refusal must remain sticky");
     };
@@ -999,7 +1003,10 @@ fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
             snapshot.exists()
         );
     }
-    assert!(matches!(result, Err(EditError::Invalid(_))));
+    assert!(matches!(
+        result,
+        Err(EngineError::Edit(engine::EditError::Invalid(_)))
+    ));
     assert_eq!(fs::read(&snapshot).unwrap(), before);
     assert!(a.saved_path().is_none());
     assert!(a.saved_receipt().is_none());

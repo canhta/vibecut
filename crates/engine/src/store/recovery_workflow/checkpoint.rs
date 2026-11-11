@@ -1,6 +1,6 @@
 //! Publishes scheduled recoverable checkpoints.
 use super::{
-    Arc, ArtifactKind, Autosave, CacheKey, EditError, Error, Flight, JOURNAL, JOURNAL_VERSION,
+    Arc, ArtifactKind, Autosave, CacheKey, EngineError, Error, Flight, JOURNAL, JOURNAL_VERSION,
     JobBytes, JobKind, JobSpec, JobState, Journal, KeyInputs, MAX_META, MAX_PROJECT, Mutex, Path,
     PathBuf, Project, PumpFailure, ResourceClass, Result, SaveFlight, SaveSlot, SaveWork,
     SystemTime, UNIX_EPOCH, WORK_BYTES, WorkingSave, WriterLease, clear, fs, read_bounded,
@@ -57,7 +57,7 @@ fn save_on_worker(
 ) -> crate::Result<()> {
     let work = slot
         .lock()
-        .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
+        .map_err(|_| EngineError::from(crate::RuntimeError::Poisoned))?
         .take()
         .ok_or(Error::Busy)?;
     let mut active = WorkingSave {
@@ -74,8 +74,8 @@ fn save_on_worker(
     work.metadata = Some(metadata.clone());
     Ok(())
 }
-impl From<EditError> for PumpFailure {
-    fn from(error: EditError) -> Self {
+impl From<EngineError> for PumpFailure {
+    fn from(error: EngineError) -> Self {
         Self::Persistence(error)
     }
 }
@@ -87,7 +87,7 @@ impl Autosave {
         }
         let now = self.clock.now();
         if !Arc::ptr_eq(&self.observed, self.session.project()) {
-            self.revision = self.revision.checked_add(1).ok_or(EditError::Control(
+            self.revision = self.revision.checked_add(1).ok_or(EngineError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
             self.observed = self.session.project().clone();
@@ -116,9 +116,9 @@ impl Autosave {
         match self.pump() {
             Ok(()) => Ok(()),
             Err(PumpFailure::Admission(error)) => Err(error),
-            Err(PumpFailure::Persistence(EditError::Session(crate::SessionError::StaleResult))) => {
-                Err(EditError::Session(crate::SessionError::StaleResult))
-            }
+            Err(PumpFailure::Persistence(EngineError::Session(
+                crate::SessionError::StaleResult,
+            ))) => Err(EngineError::Session(crate::SessionError::StaleResult)),
             Err(PumpFailure::Persistence(error)) => {
                 let error: Arc<dyn crate::Failure> = Arc::new(error);
                 self.failure = Some(error.clone());
@@ -131,28 +131,28 @@ impl Autosave {
 impl Autosave {
     pub(super) fn pump(&mut self) -> std::result::Result<(), PumpFailure> {
         self.observe()?;
-        self.runner.tick().map_err(EditError::from)?;
+        self.runner.tick().map_err(EngineError::from)?;
         self.runner.drain_events();
         if let Some(f) = &self.flight {
             let state = self
                 .runner
                 .snapshot(f.id)
-                .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
             match state.state {
                 JobState::Failed | JobState::Cancelled => {
                     let cause = state.error.unwrap_or_else(|| {
-                        Arc::new(EditError::Runtime(crate::RuntimeError::WorkerPanicked))
+                        Arc::new(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))
                     });
-                    return Err(EditError::from(Error::PersistenceFailed(cause)).into());
+                    return Err(EngineError::from(Error::PersistenceFailed(cause)).into());
                 }
                 JobState::Completed => {
                     let f = self
                         .flight
                         .take()
-                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.runner
                         .take_output(f.id)
-                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.journaled = if f.clear { 0 } else { f.revision };
                     if self.revision == f.revision {
                         self.first_dirty = None;
@@ -161,21 +161,23 @@ impl Autosave {
                         let mut work = save
                             .slot
                             .lock()
-                            .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
+                            .map_err(|_| EngineError::from(crate::RuntimeError::Poisoned))?
                             .take()
-                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                            .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                         let receipt = work
                             .receipt
                             .take()
-                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                            .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                         let metadata = work
                             .metadata
                             .take()
-                            .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                            .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                         if receipt.path() != work.writer.path()
                             || receipt.project_id() != f.snapshot.data().id
                         {
-                            return Err(EditError::Session(crate::SessionError::StaleResult).into());
+                            return Err(
+                                EngineError::Session(crate::SessionError::StaleResult).into()
+                            );
                         }
                         // An in-place save advances the held baseline even if the
                         // edited revision is now stale. Save-as retains its source
@@ -190,8 +192,10 @@ impl Autosave {
                         // Revision identity includes gesture rollback/save boundaries,
                         // not just equal content or a matching numeric revision.
                         if current {
-                            self.session.restore_metadata(metadata)?;
-                            self.session.saved()?;
+                            self.session
+                                .restore_metadata(metadata)
+                                .map_err(EngineError::from)?;
+                            self.session.saved().map_err(EngineError::from)?;
                             if !save.in_place {
                                 self.session.adopt_saved_project(f.snapshot.clone());
                                 self.observed = f.snapshot.clone();
@@ -207,7 +211,9 @@ impl Autosave {
                             // aliases); only a fresh save may reestablish cleanliness.
                             self.saved = None;
                             self.saved_receipt = None;
-                            return Err(EditError::Session(crate::SessionError::StaleResult).into());
+                            return Err(
+                                EngineError::Session(crate::SessionError::StaleResult).into()
+                            );
                         }
                     }
                 }
@@ -221,7 +227,7 @@ impl Autosave {
             let path = self
                 .pending_save
                 .take()
-                .ok_or_else(|| EditError::from(Error::Busy))?;
+                .ok_or_else(|| EngineError::from(Error::Busy))?;
             if let Err(error) = self.start(Some(path)) {
                 return Err(if self.flight.is_none() {
                     PumpFailure::Admission(error)
@@ -271,7 +277,7 @@ impl Autosave {
             return Err(Error::Busy.into());
         }
         if self.session.transaction_active() {
-            return Err(EditError::Session(
+            return Err(EngineError::Session(
                 crate::session::SessionError::TransactionActive,
             ));
         }
@@ -328,7 +334,7 @@ impl Autosave {
         let published_snapshot = project.clone();
         let slot = save.as_ref().map(|save| save.slot.clone());
         let recovery_snapshot = snapshot.clone();
-        let submitted = self.runner.submit::<crate::EditError>(
+        let submitted = self.runner.submit::<crate::Error>(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -364,9 +370,9 @@ impl Autosave {
                     let work = save
                         .slot
                         .lock()
-                        .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
+                        .map_err(|_| EngineError::from(crate::RuntimeError::Poisoned))?
                         .take()
-                        .ok_or(EditError::Runtime(crate::RuntimeError::WorkerPanicked))?;
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::WorkerPanicked))?;
                     self.writer = if save.in_place {
                         Some(work.writer)
                     } else {
@@ -385,7 +391,7 @@ impl Autosave {
             clear: clear_journal,
         });
         self.first_dirty = None;
-        self.runner.tick().map_err(EditError::from)?;
+        self.runner.tick().map_err(EngineError::from)?;
         Ok(())
     }
 }

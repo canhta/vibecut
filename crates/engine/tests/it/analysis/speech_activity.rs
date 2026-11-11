@@ -5,7 +5,7 @@
     reason = "synthetic fixtures and explicit assertions"
 )]
 use engine::{
-    ByteBudget, EditError,
+    ByteBudget, Error as EngineError,
     cache::ArtifactCache,
     jobs::{Clock, JobRunner, JobState, RunnerConfig, SystemClock},
     speech_activity::{
@@ -344,7 +344,7 @@ fn warm_cache_reuses_the_spans_without_opening_the_source() {
         .to_vec();
     assert!(matches!(
         request.submit(&mut runner, &mut cache),
-        Err(EditError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     assert_eq!(runner.counts(), counts);
     assert_eq!(
@@ -398,7 +398,7 @@ fn cancelling_after_a_decoded_window_publishes_nothing() {
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Runtime(engine::RuntimeError::Cancelled))
+        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(runner.output_bytes(job.id).is_none());
     assert!(cache.is_empty());
@@ -420,7 +420,7 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
     let video = video_only(&dir);
     assert!(matches!(
         SpeechActivityRequest::new(video, range(0, 1), SpeechActivitySettings::default()),
-        Err(EditError::Unsupported(_))
+        Err(EngineError::Edit(engine::EditError::Unsupported(_)))
     ));
 
     let copy = asset.path().with_file_name("unreadable.wav");
@@ -435,7 +435,7 @@ fn audio_less_unreadable_and_hostile_inputs_are_typed_failures() {
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EditError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(), Some(EditError::Media(_)))
+        Err(EngineError::Runtime(engine::RuntimeError::Failed(inner))) if matches!((inner.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(), Some(EngineError::Media(_)))
     ));
     assert!(cache.is_empty());
 

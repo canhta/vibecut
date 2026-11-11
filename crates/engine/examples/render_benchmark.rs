@@ -3,7 +3,7 @@ use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
 };
-use engine::{ByteBudget, EditError};
+use engine::{ByteBudget, Error as EngineError};
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -64,7 +64,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 export_benchmark(hooks, mode == "blur")?
             };
             serde_json::to_vec(&output)
-                .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))
+                .map_err(|_| EngineError::Control(engine::control::ControlError::InvalidParams))
         },
     )?;
     let mut charged_peak = 0u64;
@@ -73,9 +73,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         charged_peak = charged_peak.max(budget.snapshot()?.used);
         if let Some(s) = runner.snapshot(id) {
             if s.state == JobState::Completed {
-                let output = runner
-                    .take_output(id)
-                    .ok_or(EditError::Invalid("missing benchmark output"))?;
+                let output =
+                    runner
+                        .take_output(id)
+                        .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                            "missing benchmark output",
+                        )))?;
                 println!("{}", std::str::from_utf8(output.bytes())?);
                 println!("sampled aggregate charged peak: {charged_peak} bytes");
                 break;
@@ -94,7 +97,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn text_benchmark(
     hooks: &engine::jobs::JobContext,
     uncached: bool,
-) -> Result<serde_json::Value, EditError> {
+) -> Result<serde_json::Value, EngineError> {
     let mut d = project::Project::empty(project::ProjectId(0), "".into())?.into_data();
     d.canvas.width = 640;
     d.canvas.height = 360;
@@ -140,7 +143,9 @@ fn text_benchmark(
         let frame = renderer.render_frame(Tick::ZERO, &mut sources, hooks)?;
         elapsed += start.elapsed();
         if frame.pixels() != reference.pixels() {
-            return Err(EditError::Invalid("text benchmark pixel drift"));
+            return Err(EngineError::Edit(engine::EditError::Invalid(
+                "text benchmark pixel drift",
+            )));
         }
     }
     let stats = renderer.text_cache_stats();
@@ -151,7 +156,7 @@ fn text_benchmark(
 fn export_benchmark(
     hooks: &engine::jobs::JobContext,
     blur: bool,
-) -> Result<serde_json::Value, EditError> {
+) -> Result<serde_json::Value, EngineError> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/render");
     std::fs::create_dir_all(&root)?;
     let input = root.join("benchmark-60s-1080p.mp4");
@@ -187,7 +192,9 @@ fn export_benchmark(
             .arg(&input)
             .output()?;
         if !output.status.success() {
-            return Err(EditError::Invalid("benchmark fixture generation"));
+            return Err(EngineError::Edit(engine::EditError::Invalid(
+                "benchmark fixture generation",
+            )));
         }
     }
     let asset =
@@ -195,7 +202,9 @@ fn export_benchmark(
     let duration = asset
         .probe()
         .duration
-        .ok_or(EditError::Invalid("fixture duration"))?;
+        .ok_or(EngineError::Edit(engine::EditError::Invalid(
+            "fixture duration",
+        )))?;
     let mut d = project::Project::empty(project::ProjectId(0), "".into())?.into_data();
     d.assets.push(asset);
     d.scene_mut().timeline.insert_track(project::Track {

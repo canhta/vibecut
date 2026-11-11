@@ -2,7 +2,7 @@
 use super::{
     Cancellation, ClipBatch, ClipBatchRequest, ClipExportOutcome, ClipExportPaths, ClipExportPrep,
     ClipExportRequest, ClipShort, ClipSuggestionOutcome, ConsentPrompt, Cost, CueTrack, Duration,
-    EditError, Error, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers,
+    EngineError, Error, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers,
     ResourceClass, fingerprint, translate_track,
 };
 /// Translate (when needed) and prepare every selected short for export.
@@ -17,12 +17,14 @@ pub fn prepare_export(
     cancel: &Cancellation,
 ) -> Result<ClipExportPrep, Error> {
     if request.select.is_empty() || request.select.len() > MAX_BATCH_CLIPS {
-        return Err(EditError::Invalid("clip selection size").into());
+        return Err(EngineError::Edit(engine::EditError::Invalid("clip selection size")).into());
     }
     let mut seen = std::collections::BTreeSet::new();
     for index in &request.select {
         if *index >= outcome.clips.len() || !seen.insert(*index) {
-            return Err(EditError::Invalid("clip selection index").into());
+            return Err(
+                EngineError::Edit(engine::EditError::Invalid("clip selection index")).into(),
+            );
         }
     }
     let mut track = CueTrack {
@@ -50,7 +52,9 @@ pub fn prepare_export(
         )?;
         for (target, source) in track.cues.iter_mut().zip(translated.cues) {
             if target.id != source.id {
-                return Err(EditError::Invalid("translated clip cues").into());
+                return Err(
+                    EngineError::Edit(engine::EditError::Invalid("translated clip cues")).into(),
+                );
             }
             for (tag, text) in source.texts {
                 if tag != outcome.source_language {
@@ -61,10 +65,13 @@ pub fn prepare_export(
     }
     let mut shorts = Vec::with_capacity(request.select.len());
     for index in &request.select {
-        let candidate = outcome
-            .clips
-            .get(*index)
-            .ok_or(EditError::Invalid("clip selection index"))?;
+        let candidate =
+            outcome
+                .clips
+                .get(*index)
+                .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                    "clip selection index",
+                )))?;
         shorts.push(ClipShort::new(
             candidate.proposal.title.clone(),
             candidate.segments.clone(),
@@ -116,7 +123,7 @@ pub fn export(
                         next += 1;
                     }
                     // Pump the caller's other work before retrying admission.
-                    Err(Error::Engine(EditError::Runtime(engine::RuntimeError::QueueFull))) => {
+                    Err(Error::Engine(EngineError::Runtime(engine::RuntimeError::QueueFull))) => {
                         break;
                     }
                     Err(error) => return Err(error),
@@ -136,29 +143,30 @@ pub fn export(
             while index < active.len() {
                 let slot = *active
                     .get(index)
-                    .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
+                    .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
                 let snapshot = batch
                     .snapshot(runner, slot)
-                    .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
+                    .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
                 match snapshot.state {
                     JobState::Completed => {
                         let _ = runner
                             .take_output(snapshot.id)
-                            .ok_or(EditError::Session(engine::SessionError::StaleResult))?;
+                            .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
                         active.swap_remove(index);
                     }
                     JobState::Failed => {
                         return Err(match snapshot.error {
                             Some(error) => {
-                                EditError::Runtime(engine::RuntimeError::Failed(error)).into()
+                                EngineError::Runtime(engine::RuntimeError::Failed(error)).into()
                             }
-                            None => {
-                                EditError::Invalid("clip job failed without diagnostics").into()
-                            }
+                            None => EngineError::Edit(engine::EditError::Invalid(
+                                "clip job failed without diagnostics",
+                            ))
+                            .into(),
                         });
                     }
                     JobState::Cancelled => {
-                        return Err(EditError::Runtime(engine::RuntimeError::Cancelled).into());
+                        return Err(EngineError::Runtime(engine::RuntimeError::Cancelled).into());
                     }
                     _ => index += 1,
                 }
@@ -201,7 +209,7 @@ pub fn export(
             candidate: *candidate,
             paths: batch
                 .paths(slot)
-                .ok_or(EditError::Invalid("clip paths"))?
+                .ok_or(EngineError::Edit(engine::EditError::Invalid("clip paths")))?
                 .clone(),
         });
     }

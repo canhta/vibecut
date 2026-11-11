@@ -72,7 +72,7 @@ impl Editor {
         let result = self.import_queue()?.start(paths.clone(), first);
         if matches!(
             result,
-            Err(Error::Engine(engine::EditError::Runtime(
+            Err(Error::Engine(engine::Error::Runtime(
                 engine::RuntimeError::BudgetFull
             )))
         ) {

@@ -158,7 +158,7 @@ struct Active {
     token: CancelToken,
     cancel: Cancellation,
     events: Arc<TaskEvents>,
-    receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::EditError>>>,
+    receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::Error>>>,
 }
 #[derive(Clone, Debug)]
 pub struct Inspection {
@@ -421,19 +421,15 @@ impl Subtitles {
                     worker.run(work.clone(), budget.clone(), &worker_events, &worker_cancel);
                 match result {
                     Ok(command) => {
-                        send.send(Ok(command)).map_err(|_| {
-                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
+                        send.send(Ok(command))
+                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
                         Ok(Vec::new())
                     }
                     Err(error) => {
                         let error = Arc::new(error);
-                        send.send(Err(error.clone())).map_err(|_| {
-                            engine::EditError::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Err(engine::EditError::Runtime(engine::RuntimeError::Failed(
-                            error,
-                        )))
+                        send.send(Err(error.clone()))
+                            .map_err(|_| engine::Error::Runtime(engine::RuntimeError::Cancelled))?;
+                        Err(engine::Error::Runtime(engine::RuntimeError::Failed(error)))
                     }
                 }
             },
@@ -570,9 +566,9 @@ impl Subtitles {
                 self.problem = Some(Text::ShortsJobCancelled);
             } else {
                 let result = active.receive.try_recv().unwrap_or_else(|_| {
-                    Err(Arc::new(engine::EditError::Invalid(
+                    Err(Arc::new(engine::Error::Edit(engine::EditError::Invalid(
                         "subtitle worker terminated",
-                    )))
+                    ))))
                 });
                 match result {
                     Ok(command) => {
@@ -628,9 +624,9 @@ impl Subtitles {
     fn fail(&mut self, error: Arc<dyn engine::Failure + 'static>) {
         self.error = Some(error.clone());
         let cause: &(dyn std::error::Error + 'static) = error.as_ref();
-        let root = cause.downcast_ref::<engine::EditError>();
+        let root = cause.downcast_ref::<engine::Error>();
         let runtime = match root {
-            Some(engine::EditError::Runtime(error)) => Some(error),
+            Some(engine::Error::Runtime(error)) => Some(error),
             _ => cause.downcast_ref::<engine::RuntimeError>(),
         };
         if let Some(engine::RuntimeError::Failed(inner)) = runtime {
@@ -641,31 +637,43 @@ impl Subtitles {
             self.problem = Some(Text::ShortsJobCancelled);
             return;
         }
+        if matches!(
+            cause.downcast_ref::<engine::EditError>(),
+            Some(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            ))
+        ) {
+            self.problem = Some(Text::SubStale);
+            return;
+        }
         self.problem = Some(match root {
-            Some(engine::EditError::Providers(engine::providers::Error::ModelMissing(id))) => {
+            Some(engine::Error::Providers(engine::providers::Error::ModelMissing(id))) => {
                 self.missing_model = Some((*id).into());
                 Text::ShortsModelMissing
             }
-            Some(engine::EditError::Providers(engine::providers::Error::CredentialMissing(_))) => {
+            Some(engine::Error::Providers(engine::providers::Error::CredentialMissing(_))) => {
                 Text::ShortsCredentialsMissing
             }
-            Some(engine::EditError::Providers(engine::providers::Error::RunnerMissing)) => {
+            Some(engine::Error::Providers(engine::providers::Error::RunnerMissing)) => {
                 Text::SubRunnerMissing
             }
-            Some(engine::EditError::Providers(
-                engine::providers::Error::AutoLanguageUnsupported,
-            )) => Text::SubAutoUnsupported,
-            Some(engine::EditError::Providers(engine::providers::Error::ConsentRequired)) => {
+            Some(engine::Error::Providers(engine::providers::Error::AutoLanguageUnsupported)) => {
+                Text::SubAutoUnsupported
+            }
+            Some(engine::Error::Providers(engine::providers::Error::ConsentRequired)) => {
                 Text::ShortsConsentRequired
             }
-            Some(engine::EditError::Transcript(engine::transcript::Error::NoSpeech)) => {
+            Some(engine::Error::Transcript(engine::transcript::Error::NoSpeech)) => {
                 Text::SubNoSpeech
             }
-            Some(engine::EditError::Transcript(engine::transcript::Error::LowConfidence)) => {
+            Some(engine::Error::Transcript(engine::transcript::Error::LowConfidence)) => {
                 Text::SubLowConfidence
             }
-            Some(engine::EditError::Session(engine::SessionError::StaleResult)) => Text::SubStale,
-            Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled)) => {
+            Some(engine::Error::Session(engine::SessionError::StaleResult))
+            | Some(engine::Error::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult,
+            ))) => Text::SubStale,
+            Some(engine::Error::Runtime(engine::RuntimeError::Cancelled)) => {
                 Text::ShortsJobCancelled
             }
             _ => Text::SubFailed,

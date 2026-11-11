@@ -1,7 +1,8 @@
 //! Inserts cached library sounds into a project.
 use super::{
-    CachedSound, EditError, Error, MAX_AUDIO_BYTES, Path, Placement, Read, Result, Session, Sound,
-    SoundLibrary, SoundResult, Tick, cached_from_path, fs, hex, private_directory, validate_result,
+    CachedSound, EngineError, Error, MAX_AUDIO_BYTES, Path, Placement, Read, Result, Session,
+    Sound, SoundLibrary, SoundResult, Tick, cached_from_path, fs, hex, private_directory,
+    validate_result,
 };
 /// Copy a cached preview into project-owned media so library unsave, clear-all and
 /// URL invalidation can never remove bytes a project references. The file name is the
@@ -63,12 +64,14 @@ pub fn add_to_timeline(
     let id = next_asset_id(session)?;
     let (imported, created) = import_into_project(cached, media_dir)?;
     let result = imported.asset(id).and_then(|asset| {
-        session.apply(engine::Command::AddLibrarySound {
-            placement,
-            start,
-            asset,
-            sound: sound.library_sound(),
-        })
+        session
+            .apply(engine::Command::AddLibrarySound {
+                placement,
+                start,
+                asset,
+                sound: sound.library_sound(),
+            })
+            .map_err(EngineError::from)
     });
     if result.is_err() && created {
         let _ = fs::remove_file(&imported.path);
@@ -102,6 +105,6 @@ fn next_asset_id(session: &Session) -> Result<media::AssetId> {
         .map(|asset| asset.id().0)
         .max()
         .map_or(Some(0), |id| id.checked_add(1))
-        .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
+        .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
     Ok(media::AssetId(next))
 }

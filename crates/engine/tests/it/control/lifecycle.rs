@@ -7,7 +7,7 @@
 )]
 use crate::support::control::{Allow, add, caller, error, ok, request, run, runner, session};
 use engine::control::{self, ControlResult, ErrorCode, Payload, Request};
-use engine::{Command, EditError, Session};
+use engine::{Command, Error as EngineError, Session};
 use project::ProjectId;
 use serde_json::{Value, json};
 
@@ -45,7 +45,9 @@ fn revision_and_job_target_share_ui_save_preview_undo_and_rollback_boundaries() 
                 name: "stale".into()
             }
         ),
-        Err(EditError::Session(engine::SessionError::StaleResult))
+        Err(engine::EditError::Session(
+            engine::SessionError::StaleResult
+        ))
     ));
     let edit = s.revision();
     s.undo().unwrap();
@@ -56,14 +58,14 @@ fn revision_and_job_target_share_ui_save_preview_undo_and_rollback_boundaries() 
     s.saved().unwrap();
     assert_ne!(s.revision(), before);
     let before = s.revision();
-    s.transaction(|_| Ok(())).unwrap();
+    s.transaction(|_| Ok::<(), engine::EditError>(())).unwrap();
     assert_ne!(s.revision(), before);
     let before = s.revision();
     let result: engine::Result<()> = s.transaction(|s| {
         s.apply(Command::RenameProject {
             name: "preview".into(),
         })?;
-        Err(EditError::Control(
+        Err(EngineError::Control(
             engine::control::ControlError::InvalidParams,
         ))
     });
@@ -226,7 +228,7 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
             caller(&Allow),
             |_, _| {
                 failure_publishes += 1;
-                Err(EditError::Io(std::io::Error::other("disk")))
+                Err(EngineError::Io(std::io::Error::other("disk")))
             },
         )
         .unwrap();
@@ -289,6 +291,6 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
     );
     assert!(matches!(
         invalid,
-        Err(EditError::Control(engine::control::ControlError::Limit))
+        Err(EngineError::Control(engine::control::ControlError::Limit))
     ));
 }

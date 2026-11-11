@@ -74,7 +74,7 @@ pub(in crate::editor) struct Media {
     request_id: u64,
     /// False reserves bounded recovery metadata; true means a job was admitted.
     recovery: RefCell<BTreeMap<VisualKey, bool>>,
-    visual_cause: RefCell<Option<Arc<engine::EditError>>>,
+    visual_cause: RefCell<Option<Arc<engine::Error>>>,
     cache: CacheUi,
     cache_worker: Option<CacheWorker>,
     cache_operation: CacheOperation,
@@ -138,19 +138,19 @@ impl Media {
             CacheAction::Retry if self.cache.phase == CachePhase::Failed => self.cache_operation,
             _ => CacheOperation::Inspect,
         };
-        let snapshots = (|| {
-            let access = self
-                .access
-                .as_ref()
-                .ok_or(engine::EditError::Unsupported("media cache unavailable"))?;
-            let access = access.try_lock().map_err(|error| match error {
-                std::sync::TryLockError::WouldBlock => {
-                    engine::EditError::Runtime(engine::RuntimeError::CacheBusy)
-                }
-                std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
-            })?;
-            access.cache_maintenance()
-        })();
+        let snapshots =
+            (|| {
+                let access = self.access.as_ref().ok_or(engine::Error::Edit(
+                    engine::EditError::Unsupported("media cache unavailable"),
+                ))?;
+                let access = access.try_lock().map_err(|error| match error {
+                    std::sync::TryLockError::WouldBlock => {
+                        engine::Error::Runtime(engine::RuntimeError::CacheBusy)
+                    }
+                    std::sync::TryLockError::Poisoned(_) => engine::RuntimeError::Poisoned.into(),
+                })?;
+                access.cache_maintenance()
+            })();
         let snapshots = match snapshots {
             Ok(snapshots) => snapshots,
             Err(error) => {
@@ -180,7 +180,7 @@ impl Media {
             Err(error) => self.fail_cache(error.into()),
         }
     }
-    fn fail_cache(&mut self, error: engine::EditError) {
+    fn fail_cache(&mut self, error: engine::Error) {
         // Keep the last measured size/age; a failed admission measured no zero.
         self.cache.phase = CachePhase::Failed;
         self.cache.cause = Some(Arc::new(error));
@@ -196,10 +196,10 @@ impl Media {
         self.cache.checked = Some(std::time::Instant::now());
     }
     /// Only an actual typed corruption permits one regeneration per visual key.
-    fn display_failed(&self, error: engine::EditError, request: VisualRequest) -> bool {
+    fn display_failed(&self, error: engine::Error, request: VisualRequest) -> bool {
         let corrupt = matches!(
             error,
-            engine::EditError::Runtime(engine::RuntimeError::CacheCorrupt)
+            engine::Error::Runtime(engine::RuntimeError::CacheCorrupt)
         );
         self.visual_cause
             .borrow_mut()
@@ -578,7 +578,7 @@ fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
             assert!(cancel.load(Ordering::Acquire));
             CacheMaintenanceReport {
                 removed_bytes: 100,
-                cause: Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled)),
+                cause: Some(engine::Error::Runtime(engine::RuntimeError::Cancelled)),
                 ..Default::default()
             }
         })
@@ -603,15 +603,13 @@ fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
     assert_eq!(report.removed_bytes, 100);
     assert!(matches!(
         report.cause,
-        Some(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
+        Some(engine::Error::Runtime(engine::RuntimeError::Cancelled))
     ));
     let worker = CacheWorker::spawn(|_| panic!("injected worker unwind")).unwrap();
     let report = worker.handle.join().unwrap();
     assert!(matches!(
         report.cause,
-        Some(engine::EditError::Runtime(
-            engine::RuntimeError::WorkerPanicked
-        ))
+        Some(engine::Error::Runtime(engine::RuntimeError::WorkerPanicked))
     ));
     let (done, joined) = mpsc::sync_channel(1);
     media.cache_worker = Some(

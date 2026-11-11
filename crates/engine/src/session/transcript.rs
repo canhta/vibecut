@@ -1,5 +1,6 @@
 //! Reads caption cues and measured words in output time.
-use crate::{EditError, Result, Session};
+use crate::Session;
+use crate::session::{EditError, Result};
 use captions::{CueText, LanguageTag, NfcText};
 use project::{ItemId, ItemParams, ProjectData, SceneId, TrackId, WordSpan};
 use serde::{Deserialize, Serialize};

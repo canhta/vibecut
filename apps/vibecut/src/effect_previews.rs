@@ -258,7 +258,7 @@ impl EffectPreviews {
                     });
                     entry.desired = None;
                 }
-                Err(engine::EditError::Runtime(engine::RuntimeError::QueueFull)) => {
+                Err(engine::Error::Runtime(engine::RuntimeError::QueueFull)) => {
                     self.deferred.push_front(kind);
                     break;
                 }
@@ -280,7 +280,7 @@ impl EffectPreviews {
             let job = flight.job;
             let sequence = flight.sequence;
             let outcome = match self.runner.snapshot(job) {
-                None => Some(Err(engine::EditError::Runtime(
+                None => Some(Err(engine::Error::Runtime(
                     engine::RuntimeError::JobNotRetained,
                 )
                 .to_string())),

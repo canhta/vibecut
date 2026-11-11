@@ -1,5 +1,5 @@
 //! Discovers the per-user cache location.
-use crate::{EditError, Result};
+use crate::{Error as EngineError, Result};
 use std::path::PathBuf;
 
 /// Per-user cache paths, discovered without filesystem IO.
@@ -13,7 +13,7 @@ impl CacheRoot {
     /// Native environment values retain their path representation.
     ///
     /// # Errors
-    /// Returns [`EditError::Unsupported`] when the selected base is absent or
+    /// Returns [`crate::EditError::Unsupported`] composed through [`crate::Error::Edit`] when the selected base is absent or
     /// nonabsolute, including a present empty or relative `XDG_CACHE_HOME`.
     pub fn discover() -> Result<Self> {
         #[cfg(target_os = "macos")]
@@ -24,9 +24,9 @@ impl CacheRoot {
         let base = std::env::var_os("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".cache")));
-        let base = base
-            .filter(|p| p.is_absolute())
-            .ok_or(EditError::Unsupported("OS cache location unavailable"))?;
+        let base = base.filter(|p| p.is_absolute()).ok_or(EngineError::Edit(
+            crate::EditError::Unsupported("OS cache location unavailable"),
+        ))?;
         Ok(Self {
             root: base.join("VibeCut"),
         })

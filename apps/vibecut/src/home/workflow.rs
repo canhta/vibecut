@@ -29,7 +29,7 @@ pub(super) enum Request {
 }
 
 pub(super) enum Event {
-    Failed(engine::EditError),
+    Failed(engine::Error),
     Ready(Result<Vec<ProjectEntry>, String>),
     Listed(Result<Vec<ProjectEntry>, String>),
     TrashListed(Result<Vec<ProjectEntry>, String>),
@@ -124,10 +124,12 @@ pub(super) fn catalog_worker(
                         .iter()
                         .find(|entry| entry.id == id)
                         .map(|entry| entry.path.clone())
-                        .ok_or(engine::EditError::NoItem(project::ItemId(0)))?;
+                        .ok_or(engine::Error::Edit(engine::EditError::NoItem(
+                            project::ItemId(0),
+                        )))?;
                     Ok((path, entries))
                 })()
-                .map_err(|error: engine::EditError| error.to_string());
+                .map_err(|error: engine::Error| error.to_string());
                 let _ = events.send(Event::Created(result));
             }
             Request::Rename { id, name } => {
@@ -140,7 +142,7 @@ pub(super) fn catalog_worker(
                     )?;
                     library.list()
                 })()
-                .map_err(|error: engine::EditError| error.to_string());
+                .map_err(|error: engine::Error| error.to_string());
                 let _ = events.send(Event::Renamed(result));
             }
             Request::Duplicate { sources } => {
@@ -154,9 +156,7 @@ pub(super) fn catalog_worker(
                             .max()
                             .unwrap_or(0)
                             .checked_add(1)
-                            .ok_or(engine::EditError::Control(
-                                engine::control::ControlError::Limit,
-                            ))?;
+                            .ok_or(engine::Error::Control(engine::control::ControlError::Limit))?;
                         library.execute(
                             source,
                             Command::DuplicateProject {
@@ -165,7 +165,7 @@ pub(super) fn catalog_worker(
                         )?;
                         Ok(())
                     })()
-                    .map_err(|error: engine::EditError| error.to_string());
+                    .map_err(|error: engine::Error| error.to_string());
                     if let Err(error) = &result {
                         failures.push(error.clone());
                     }

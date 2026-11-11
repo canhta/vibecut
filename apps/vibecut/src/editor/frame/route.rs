@@ -188,10 +188,12 @@ impl Editor {
                 time: key.time,
             })
             .collect();
-        let result = self.session.transaction(|session| {
-            session.apply(engine::Command::DeleteKeyframes { keys })?;
-            Ok(())
-        });
+        let result =
+            self.session
+                .transaction(|session| -> std::result::Result<(), engine::EditError> {
+                    session.apply(engine::Command::DeleteKeyframes { keys })?;
+                    Ok(())
+                });
         match result {
             Ok(()) => {
                 self.selection_scopes.keyframes.clear();

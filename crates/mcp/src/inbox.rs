@@ -3,7 +3,7 @@ use super::{Grants, Handler};
 use crate::Error;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
-    ByteBudget, EditError, Session,
+    ByteBudget, Error as EngineError, Session,
     control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
     providers::TextAccess,
@@ -21,7 +21,7 @@ pub(super) const DEADLINE: Duration = Duration::from_secs(30);
 pub(super) struct Pending {
     pub(super) value: Value,
     pub(super) expires: Instant,
-    pub(super) reply: oneshot::Sender<Result<Value, EditError>>,
+    pub(super) reply: oneshot::Sender<Result<Value, EngineError>>,
 }
 
 /// UI-thread inbox. Polling serializes mutations with ordinary desktop commands.
@@ -151,7 +151,7 @@ impl Inbox {
             .and_then(|fields| fields.remove("project_id"))
             .map(serde_json::from_value::<project::ProjectId>)
             .transpose()
-            .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams));
+            .map_err(|_| EngineError::Control(engine::control::ControlError::InvalidParams));
         let result = target.and_then(|id| dispatch(id, self, value));
         let _ = pending.reply.send(result);
         Ok(())
@@ -219,7 +219,7 @@ impl Inbox {
             captions,
             ..
         } = self;
-        let runner = projects.get_mut(&id).ok_or(EditError::Control(
+        let runner = projects.get_mut(&id).ok_or(EngineError::Control(
             engine::control::ControlError::SessionGone,
         ))?;
         session.observe_jobs(runner);
@@ -283,26 +283,26 @@ impl Inbox {
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response)
-            .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))?;
+            .map_err(|_| EngineError::Control(engine::control::ControlError::InvalidParams))?;
         // Send JPEG as MCP image content, not an array of byte-valued JSON numbers.
         if let ResponseValue::Result(ControlResult::Job { snapshot }) = &response.value
             && let Some(control::JobOutput::Preview(result)) = &snapshot.output
         {
             let frames = serde_json::to_value(result)
-                .map_err(|_| EditError::Control(engine::control::ControlError::InvalidParams))?;
+                .map_err(|_| EngineError::Control(engine::control::ControlError::InvalidParams))?;
             if let Some(frames) = frames.get("frames").and_then(Value::as_array) {
                 let mut images = Vec::new();
                 for frame in frames {
                     let bytes: Vec<u8> =
                         serde_json::from_value(frame.get("jpeg").cloned().unwrap_or(Value::Null))
                             .map_err(|_| {
-                            EditError::Control(engine::control::ControlError::InvalidParams)
+                            EngineError::Control(engine::control::ControlError::InvalidParams)
                         })?;
                     images.push(json!({"data":STANDARD.encode(bytes),"mimeType":"image/jpeg"}));
                 }
                 value
                     .as_object_mut()
-                    .ok_or(EditError::Control(
+                    .ok_or(EngineError::Control(
                         engine::control::ControlError::InvalidParams,
                     ))?
                     .insert("images".into(), json!(images));

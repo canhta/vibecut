@@ -77,7 +77,7 @@ impl TaskEvents {
             .send(approved)
             .map_err(|_| crate::Error::Cancelled)
     }
-    fn request(&self, request: &UploadRequest) -> std::result::Result<(), engine::EditError> {
+    fn request(&self, request: &UploadRequest) -> std::result::Result<(), engine::Error> {
         let (send, receive) = mpsc::sync_channel(1);
         let mut state = self
             .state
@@ -94,7 +94,7 @@ impl TaskEvents {
         drop(state);
         loop {
             if self.cancel.cancelled() {
-                return Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled));
+                return Err(engine::Error::Runtime(engine::RuntimeError::Cancelled));
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),
@@ -108,10 +108,10 @@ impl TaskEvents {
 }
 
 impl ConsentPrompt for TaskEvents {
-    fn approve(&self, request: &UploadRequest) -> Result<(), engine::EditError> {
+    fn approve(&self, request: &UploadRequest) -> Result<(), engine::Error> {
         self.request(request)
     }
-    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::EditError> {
+    fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::Error> {
         self.request(request)
     }
 }
@@ -192,7 +192,7 @@ mod tests {
         assert!(cancelled.answer(true).is_err());
         assert!(matches!(
             worker.join().unwrap(),
-            Err(engine::EditError::Runtime(engine::RuntimeError::Cancelled))
+            Err(engine::Error::Runtime(engine::RuntimeError::Cancelled))
         ));
     }
 }

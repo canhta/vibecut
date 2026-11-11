@@ -66,7 +66,10 @@ pub enum CaptionStyleApply {
     Saved { preset: project::CaptionPresetId },
 }
 impl CaptionStyleApply {
-    pub(super) fn resolve(self, data: &project::ProjectData) -> crate::Result<captions::CueStyle> {
+    pub(super) fn resolve(
+        self,
+        data: &project::ProjectData,
+    ) -> crate::session::Result<captions::CueStyle> {
         Ok(match self {
             Self::Preset { preset } => preset.style(),
             Self::Custom { style } => style,
@@ -74,7 +77,9 @@ impl CaptionStyleApply {
                 .caption_presets
                 .iter()
                 .find(|value| value.id == preset)
-                .ok_or(crate::EditError::Invalid("caption preset not found"))?
+                .ok_or(crate::session::EditError::Invalid(
+                    "caption preset not found",
+                ))?
                 .style
                 .clone(),
         })
@@ -242,12 +247,12 @@ impl ItemParamPatch {
                 )
         )
     }
-    pub(crate) fn validate(&self) -> crate::Result<()> {
+    pub(crate) fn validate(&self) -> crate::session::Result<()> {
         if let Some((field, value)) = self.transform() {
             return if field.clamp(value).is_ok_and(|bounded| bounded == value) {
                 Ok(())
             } else {
-                Err(crate::EditError::Invalid("transform bounds"))
+                Err(crate::session::EditError::Invalid("transform bounds"))
             };
         }
         let valid = match self {
@@ -291,7 +296,7 @@ impl ItemParamPatch {
         if valid {
             Ok(())
         } else {
-            Err(crate::EditError::Invalid("shared field value"))
+            Err(crate::session::EditError::Invalid("shared field value"))
         }
     }
 }

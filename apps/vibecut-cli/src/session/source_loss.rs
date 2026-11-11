@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use super::{Context, export_project_with};
 use crate::CliError;
-use engine::EditError;
+use engine::Error as EngineError;
 use engine::jobs::{JobBytes, JobContext, JobKind, JobSpec, ResourceClass};
 use std::path::Path;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ fn export_refuses_when_a_source_disappears_mid_job() {
         true,
         move |runner, input_key, project, range, mut settings, path| {
             settings.mode = render::ExportMode::Encode;
-            Ok(runner.submit::<engine::EditError>(
+            Ok(runner.submit::<engine::Error>(
                 JobSpec {
                     kind: JobKind::Export,
                     class: ResourceClass::GpuEncoder,
@@ -107,8 +107,8 @@ fn export_refuses_when_a_source_disappears_mid_job() {
     );
     assert!(matches!(
         error,
-        CliError::Job(error) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
-            Some(EditError::Render(render::Error::Unavailable(entries)))
+        CliError::Job(error) if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
+            Some(EngineError::Render(render::Error::Unavailable(entries)))
             if entries.iter().any(|entry| entry.asset == media::AssetId(1)
                 && entry.item == project::ItemId(0)
                 && entry.reason == render::UnavailableReason::Missing))

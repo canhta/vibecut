@@ -1,5 +1,5 @@
 //! Reconciles published short artifacts.
-use super::{ClipPaths, EditError, Mutex, Path, Published};
+use super::{ClipPaths, EngineError, Mutex, Path, Published};
 fn artifact_present(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
@@ -10,7 +10,7 @@ fn artifact_present(path: &Path) -> bool {
 pub(super) fn reconcile_published(
     published: &Mutex<Published>,
     paths: &ClipPaths,
-) -> Result<(bool, Vec<bool>), EditError> {
+) -> Result<(bool, Vec<bool>), EngineError> {
     let (video, mut subtitles) = {
         let state = published
             .lock()
@@ -36,7 +36,7 @@ pub(super) fn reconcile_published(
     Ok((video, subtitles))
 }
 
-pub(super) fn mark_video(published: &Mutex<Published>) -> Result<(), EditError> {
+pub(super) fn mark_video(published: &Mutex<Published>) -> Result<(), EngineError> {
     published
         .lock()
         .map_err(|_| engine::RuntimeError::Poisoned)?
@@ -44,14 +44,17 @@ pub(super) fn mark_video(published: &Mutex<Published>) -> Result<(), EditError> 
     Ok(())
 }
 
-pub(super) fn mark_subtitle(published: &Mutex<Published>, index: usize) -> Result<(), EditError> {
+pub(super) fn mark_subtitle(published: &Mutex<Published>, index: usize) -> Result<(), EngineError> {
     let mut state = published
         .lock()
         .map_err(|_| engine::RuntimeError::Poisoned)?;
-    let done = state
-        .subtitles
-        .get_mut(index)
-        .ok_or(EditError::Invalid("clip artifact index"))?;
+    let done =
+        state
+            .subtitles
+            .get_mut(index)
+            .ok_or(EngineError::Edit(engine::EditError::Invalid(
+                "clip artifact index",
+            )))?;
     *done = true;
     Ok(())
 }

@@ -2,7 +2,7 @@
 use ai::transport::{
     DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport,
 };
-use engine::{Command, EditError, Placement, Session};
+use engine::{Command, Error as EngineError, Placement, Session};
 use libraries::sounds::{
     PreviewClip, PreviewSink, SearchRequest, SoundClient, SoundDownloads, SoundLibrary,
     SoundPreview, SoundResult, Token, add_saved,
@@ -787,7 +787,7 @@ fn adding_an_uncached_sound_is_typed_and_changes_nothing() {
             Placement::Auto,
             Tick::ZERO
         ),
-        Err(EditError::Sounds(engine::SoundError::NotCached))
+        Err(EngineError::Sounds(engine::SoundError::NotCached))
     ));
     assert!(session.project().data().assets.is_empty());
     assert_eq!(session.history_len(), (0, 0));
@@ -917,14 +917,14 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
                     input: key,
                     bytes: engine::jobs::JobBytes::default(),
                 },
-                |_| -> Result<Vec<u8>, engine::EditError> { panic!("cancelled filler ran") },
+                |_| -> Result<Vec<u8>, engine::Error> { panic!("cancelled filler ran") },
             )
             .unwrap();
         fillers.push(token);
     }
     assert!(matches!(
         downloads.submit(&mut runner, "https://cdn.example/job.mp3"),
-        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+        Err(EngineError::Runtime(engine::RuntimeError::QueueFull))
     ));
     assert_eq!(http.0.load(Ordering::SeqCst), 0);
     assert!(
@@ -950,7 +950,7 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
         let error = downloads.submit(&mut runner, source).err().unwrap();
         assert!(matches!(
             error,
-            EditError::Runtime(engine::RuntimeError::CacheBusy)
+            EngineError::Runtime(engine::RuntimeError::CacheBusy)
         ));
         assert_eq!(
             engine::Failure::code(&error),
@@ -1033,8 +1033,8 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
     let raw = snapshot.error.as_deref().unwrap();
     assert!(raw.transient());
     assert!(matches!(
-        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>(),
-        Some(EditError::Runtime(engine::RuntimeError::NetworkTransient))
+        (raw as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>(),
+        Some(EngineError::Runtime(engine::RuntimeError::NetworkTransient))
     ));
     assert!(runner.take_output(id).is_none());
     assert!(library.cached(source).unwrap().is_none());

@@ -415,10 +415,7 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         .err()
         .unwrap();
         assert!(
-            matches!(
-                error,
-                shorts::Error::Engine(engine::EditError::Ai(Error::Cost))
-            ),
+            matches!(error, shorts::Error::Engine(engine::Error::Ai(Error::Cost))),
             "{error:?}"
         );
         assert_eq!(*transport.calls.lock().unwrap(), 0);
@@ -479,7 +476,7 @@ fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
         );
         assert!(matches!(
             result,
-            Err(shorts::Error::Engine(engine::EditError::Runtime(
+            Err(shorts::Error::Engine(engine::Error::Runtime(
                 engine::RuntimeError::BudgetFull
             )))
         ));
@@ -666,7 +663,7 @@ fn export_preparation_covers_source_and_translated_captions() {
     );
     assert!(matches!(
         result,
-        Err(shorts::Error::Engine(engine::EditError::Runtime(
+        Err(shorts::Error::Engine(engine::Error::Runtime(
             engine::RuntimeError::Cancelled
         )))
     ));

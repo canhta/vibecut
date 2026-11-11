@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "validated fixtures")]
-use engine::{AssImportRequest, Command, EditError, prepare_ass_import};
+use engine::{AssImportRequest, Command, Error as EngineError, prepare_ass_import};
 use std::fs;
 use time::Tick;
 
@@ -56,12 +56,12 @@ fn prepare_rejects_oversized_files_and_documents_without_cues() {
     };
     assert!(matches!(
         prepare_ass_import(&request(large)),
-        Err(EditError::Control(engine::control::ControlError::Limit))
+        Err(EngineError::Control(engine::control::ControlError::Limit))
     ));
     let empty = dir.path().join("empty.ass");
     fs::write(&empty, b"[Script Info]\nTitle: none\n").unwrap();
     assert!(matches!(
         prepare_ass_import(&request(empty)),
-        Err(EditError::Unsupported(_))
+        Err(EngineError::Edit(engine::EditError::Unsupported(_)))
     ));
 }

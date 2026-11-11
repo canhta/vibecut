@@ -30,7 +30,9 @@ a project change; its refusal receipt can be replayed.
 
 `Session::control_typed` is the in-process adapter entry: the same bounds, admission, receipts
 and events as `control_request`, but an execution refusal keeps its typed cause so the adapter
-can map the exit codes its own transport documents. Wire callers use `control_request` and see
+can map the exit codes its own transport documents. These mixed methods use
+`engine::Error`; pure Session command failures compose through its `Edit` variant,
+while direct control/runtime/provider refusals keep their actual owner composition. Wire callers use `control_request` and see
 only the closed `ErrorCode`.
 
 Session and project lifecycle creation and disk saves belong to `Session::create`/`Autosave`;
