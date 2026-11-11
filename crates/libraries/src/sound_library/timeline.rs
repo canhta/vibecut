@@ -102,6 +102,6 @@ fn next_asset_id(session: &Session) -> Result<media::AssetId> {
         .map(|asset| asset.id().0)
         .max()
         .map_or(Some(0), |id| id.checked_add(1))
-        .ok_or(EditError::IdExhausted)?;
+        .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
     Ok(media::AssetId(next))
 }

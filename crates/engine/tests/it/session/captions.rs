@@ -328,7 +328,8 @@ fn caption_bank_refusals_roll_back_history_sources_and_global_allocator() {
                     error,
                     EditError::Control(engine::control::ControlError::Limit)
                 ),
-                "exhausted" => matches!(error, EditError::IdExhausted),
+                "exhausted" =>
+                    matches!(error, EditError::Session(engine::SessionError::IdExhausted)),
                 _ => matches!(error, EditError::Invalid(_)),
             },
             "{case}: {error}"

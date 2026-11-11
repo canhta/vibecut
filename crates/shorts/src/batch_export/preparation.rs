@@ -171,7 +171,9 @@ fn prepare_clip(
                 crop: None,
             }),
         });
-        next_item = next_item.checked_add(1).ok_or(EditError::IdExhausted)?;
+        next_item = next_item
+            .checked_add(1)
+            .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
     }
     let mut caption_items = Vec::new();
     let mut sidecar_bytes = 0u64;
@@ -213,7 +215,9 @@ fn prepare_clip(
                 start: *start,
                 content: ItemParams::Caption(CaptionParams { cues: clipped }),
             });
-            next_item = next_item.checked_add(1).ok_or(EditError::IdExhausted)?;
+            next_item = next_item
+                .checked_add(1)
+                .ok_or(EditError::Session(engine::SessionError::IdExhausted))?;
         }
         Some(TrackId(3))
     };

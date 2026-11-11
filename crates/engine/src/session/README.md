@@ -72,7 +72,9 @@ item and bookmark IDs in execution order, including batch children. IDs share on
 increasing counter initialized above all loaded IDs and are not reused after delete, undo,
 branching, cancelled previews or rolled-back groups within a Session. A failed command or batch
 consumes no IDs; successful preview and group children retire theirs even when the outer
-operation rolls back. ID exhaustion returns a typed error. Reloading a project starts a new
+operation rolls back. The edit allocator returns the kernel's `SessionError::IdExhausted` through ordinary
+composition. Its last u64 ID is returned once, then the absent next ID refuses without
+mutation. This is separate from Runtime job-ID exhaustion and generation/wire limits. Reloading a project starts a new
 Session and identity lifetime.
 
 ## Transcript read model

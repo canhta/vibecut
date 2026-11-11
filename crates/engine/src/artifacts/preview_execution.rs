@@ -118,12 +118,18 @@ pub(crate) fn preview(
                     .max()
                     .unwrap_or(0)
                     .checked_add(1)
-                    .ok_or(EditError::IdExhausted)?;
-                let background_id =
-                    project::ItemId(next.checked_add(1).ok_or(EditError::IdExhausted)?);
-                let label_track =
-                    project::TrackId(next.checked_add(2).ok_or(EditError::IdExhausted)?);
-                let label_id = project::ItemId(next.checked_add(3).ok_or(EditError::IdExhausted)?);
+                    .ok_or(EditError::Session(
+                        crate::session::SessionError::IdExhausted,
+                    ))?;
+                let background_id = project::ItemId(next.checked_add(1).ok_or(
+                    EditError::Session(crate::session::SessionError::IdExhausted),
+                )?);
+                let label_track = project::TrackId(next.checked_add(2).ok_or(
+                    EditError::Session(crate::session::SessionError::IdExhausted),
+                )?);
+                let label_id = project::ItemId(next.checked_add(3).ok_or(EditError::Session(
+                    crate::session::SessionError::IdExhausted,
+                ))?);
                 let label = format!(
                     "Frame {} | clips {}",
                     frame,

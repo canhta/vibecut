@@ -121,8 +121,8 @@ fn outside_edit(command: &Command) -> Result<()> {
 }
 use media_edits::ratchet_fps;
 
-fn alloc(next: &mut Option<u64>) -> Result<u64> {
-    let id = next.ok_or(EditError::IdExhausted)?;
+fn alloc(next: &mut Option<u64>) -> std::result::Result<u64, super::SessionError> {
+    let id = next.ok_or(super::SessionError::IdExhausted)?;
     *next = id.checked_add(1);
     Ok(id)
 }

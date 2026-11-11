@@ -1008,7 +1008,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             false
         ),
         row!(E::Session(engine::SessionError::NoHistory), Refused, false),
-        row!(E::IdExhausted, Refused, false),
+        row!(
+            E::Session(engine::SessionError::IdExhausted),
+            Refused,
+            false
+        ),
         row!(E::Runtime(B::IdExhausted), Refused, false),
         row!(E::Project(project::Error::Busy), Busy, false),
         row!(E::Time(time::TimeError::Overflow), Refused, false),
