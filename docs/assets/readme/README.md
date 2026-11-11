@@ -1,57 +1,78 @@
 # README media
 
 `hero.jpg`, `timeline.gif` and `timeline.jpg` are original offscreen captures of
-the real VibeCut editor. They are documentation postprocessing outputs, not app
-export formats and not a product performance benchmark.
+the real VibeCut editor over a credited excerpt of **Big Buck Bunny** (2008,
+Blender Foundation). They are documentation postprocessing outputs, not app export
+formats and not a product performance benchmark.
+
+## Film source and licence
+
+- Film: [Big Buck Bunny](https://peach.blender.org/) (2008), Blender Foundation.
+- Excerpt credit: `(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org`.
+- Film licence: [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/), full
+  unmodified text at [CC-BY-3.0.txt](../../licenses/CC-BY-3.0.txt).
+- Original source used for this fixture: public 720p H.264 master at
+  `https://www.peach.themazzone.com/big_buck_bunny_720p_h264.mov`, 416,751,190
+  bytes, SHA-256
+  `45c8bafeb9a53df7f491198d2e71529701bcf1cd51805782089fac1d32869f9b`.
+- Shared excerpt: 12.000 seconds starting at 50.0 s, 1280x720, 30 fps, SAR 1:1,
+  H.264/AAC 48 kHz stereo with the film's original audio. Transformation is
+  `fps=30,scale=1280:720:flags=lanczos,setsar=1`, libx264 medium CRF 20,
+  yuv420p, GOP 30, BT.709 TV, `movflags faststart`, `map_metadata -1`, no
+  data/subtitle streams, AAC 160k. Excerpt SHA-256
+  `66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1`.
+- The full master, excerpt file, projects, raw frames and manifests stay outside
+  Git. The compact excerpt is also published as the dedicated versioned
+  `fixtures-big-buck-bunny-2026-11-11` fixture prerelease; it is not the app,
+  nightly, built-in content or a runtime download. The film is CC-BY-3.0;
+  VibeCut code and this capture remain GPL-3.0-only. Blender Foundation does not
+  endorse VibeCut. [ADR 0007](../../adr/0007-big-buck-bunny-documentation.md)
+  records the narrow admission.
 
 ## Files and provenance
 
 Each final file has a populated `.attribution` sidecar with the eight fields the
-[asset checker](../../../xtask/README.md) requires. The author is the
-VibeCut contributor capture, the media licence is the project's
-[GPL-3.0-only](../../../LICENSE), and the embedded UI fonts/icons retain their own
-existing grants:
+[asset checker](../../../xtask/README.md) requires. Embedded UI fonts/icons keep
+their existing grants:
 
 | Component | Grant and existing owner |
 |---|---|
-| VibeCut application/project capture | GPL-3.0-only, [LICENSE](../../../LICENSE) |
+| VibeCut capture/code | GPL-3.0-only, [LICENSE](../../../LICENSE) |
+| Big Buck Bunny excerpt | CC-BY-3.0, [licence text](../../licenses/CC-BY-3.0.txt) |
 | Inter and Noto UI fonts | OFL-1.1, [Inter sidecar](../../../assets/fonts/Inter-Bold.ttf.attribution), [OFL text](../../../assets/fonts/OFL-Inter.txt) |
 | Phosphor icons | MIT, [icon licence](../../../assets/icons/phosphor/LICENSE) |
 
-The synthetic source is generated fresh for each run; no personal recording,
-third-party mark or reference-product picture is embedded. The capture shows
-authored Vietnamese/English cue text, not recognized or translated speech.
+The authored Vietnamese/English caption and title are demo edits, not recognized
+or translated speech. No provider/model received the film.
 
 | File | Bytes | SHA-256 | Content |
 |---|---:|---|---|
-| `hero.jpg` | 83954 | `8b40781996611531e9a3d4271e15bbaf4a070cf715d34612564018c7d2e781f8` | 960x600 editor still with file-backed video, sine audio, title and bilingual caption |
-| `timeline.gif` | 67442 | `f04cd4946ab5fa590d5034b6df062ef71dcf922b6a7a112c1aa6bfd3562d3ae6` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
-| `timeline.jpg` | 84120 | `d50df8b93b8ae985fa1a65fb7a698c858e25884359c9f0eaac77d363349c800e` | 960x600 poster at the trimmed state (frame 40) |
+| `hero.jpg` | 97039 | `94e18339c2939944c35a998bd810aa7f616e73208cdb623183b8aebb379128fe` | 960x600 editor still with the film, audio, title and bilingual caption |
+| `timeline.gif` | 108685 | `971c15b1b69dbfb87514cff441a6d15fd755590ad27f51fb4812dd12578d4f5c` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
+| `timeline.jpg` | 97240 | `24ea8f891526f08d306b49e1ce9c65b43e7117eaf4d590616080afc69edccaa7` | 960x600 poster at the trimmed state (frame 40) |
 
-Generated at source commit `52c3c5ef21404a8b1c1bc5b024ac2142720d6e78` with source
-fixture SHA-256 `934a2e686af6368649353ef74e775d3d0c5693d0e6c06ce9dd6e550f308468bd`.
-Measured source-vs-decoded RGB mean/max absolute error was 0.714/29 for `hero.jpg`,
-0.717/29 for `timeline.jpg`, and 0.376/132 for the palette-optimized GIF frame 40.
-These values are refreshed by the regeneration command below; the per-run
-manifest is the authoritative receipt for a particular capture.
+Generated at source commit `43a9f86a762abf18e3bcba90886d09a8d3b7ad3f`.
+Measured source-vs-decoded RGB mean/max absolute error is recorded in each run
+manifest and repeated below after the final regeneration. The per-run manifest is
+the authoritative receipt for a particular capture.
 
 ## Regeneration
 
-Prerequisites are the existing external FFmpeg/FFprobe oracle and the normal
-warm MSYS2/Clang runtime DLLs used by the other oracle-backed checks. Capture
-refuses less than 8 GiB of scratch headroom and refuses missing tools.
+Prerequisites are the existing external FFmpeg/FFprobe oracle, the normal warm
+MSYS2/Clang runtime DLLs, and the shared local excerpt. Capture refuses less than
+8 GiB of scratch headroom, a missing/unreadable source or missing tools. There is
+no synthetic fallback.
 
 ```sh
-cargo xtask build -- cargo xtask ui-audit --readme hero
-cargo xtask build -- cargo xtask ui-audit --readme timeline
+cargo xtask build -- cargo xtask ui-audit --readme hero --source /absolute/path/to/big-buck-bunny-12s-720p30.mp4
+cargo xtask build -- cargo xtask ui-audit --readme timeline --source /absolute/path/to/big-buck-bunny-12s-720p30.mp4
 ```
 
 `--readme` is a consumed mode of the existing [ui-audit example](../../../apps/vibecut/examples/ui_audit.rs);
 ordinary scene selection is unchanged and `xtask ui_audit` only forwards the
-arguments. The mode generates a 12-second 1280x720/30 fps `testsrc2` source with a
-997 Hz sine (`libx264`/`yuv420p`/gop 30/BT.709 plus mono AAC), imports it through
-the real `Editor`/`Session`/`Files` path, builds the multitrack project through
-real commands and renders with the real offscreen editor UI at 1440x900 logical
+arguments. The mode imports the explicit local excerpt through the real
+`Editor`/`Session`/`Files` path, builds the multitrack project through real
+commands and renders with the real offscreen editor UI at 1440x900 logical
 pixels, dark English, scale 1. Output is 960x600; no native window or picker is
 opened.
 
@@ -66,11 +87,11 @@ their ranges. The poster is the trimmed state.
 After every edit the runner seeks the real snapshot at 3 seconds, polls until the
 frame generation equals the current generation and the frame time equals the
 requested tick, requires the presented tick to match, settles effect/thumbnail
-work and captures. Raw PNG frames, the source probe, tool identities, revisions,
-project hashes, generation/tick per boundary and all 80 frame mappings stay
-outside Git under the run's target `readme-media/<slot>/` subtree (`manifest.json`
-beside the frames). Only the three final media files and their sidecars are
-tracked.
+work and captures. Raw PNG frames, source probe, tool identities, source/excerpt
+hashes, revisions, project hashes, generation/tick per boundary and all 80 frame
+mappings stay outside Git under the run's target `readme-media/<slot>/` subtree
+(`manifest.json` beside the frames). Only the three final media files and their
+sidecars are tracked.
 
 ## Independent output checks
 

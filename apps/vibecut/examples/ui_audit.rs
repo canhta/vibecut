@@ -2759,6 +2759,10 @@ const README_GIF_FRAMES: usize = 80;
 const README_MAX_GIF: u64 = 5_000_000;
 const README_MAX_JPG: u64 = 512 * 1024;
 const README_SCRATCH: u64 = 8 << 30;
+const BBB_SOURCE_URL: &str = "https://www.peach.themazzone.com/big_buck_bunny_720p_h264.mov";
+const BBB_SOURCE_BYTES: u64 = 416_751_190;
+const BBB_SOURCE_SHA256: &str = "45c8bafeb9a53df7f491198d2e71529701bcf1cd51805782089fac1d32869f9b";
+const BBB_CREDIT: &str = "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org";
 
 fn hex(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -3333,9 +3337,18 @@ fn readme_boundary(
     }))
 }
 
-fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
+fn readme_media(root: &Path, target: &Path, slot: &str, source: &Path) -> Result<(), Failure> {
     if !matches!(slot, "hero" | "timeline") {
         return Err(format!("unknown README slot `{slot}`; expected hero or timeline").into());
+    }
+    let source = std::fs::canonicalize(source).map_err(|error| {
+        format!(
+            "README source `{}` is not readable: {error}",
+            source.display()
+        )
+    })?;
+    if !source.is_file() {
+        return Err("README source must be a local file".into());
     }
     if !testkit::oracle::require("README capture") {
         return Err("README capture requires ffmpeg and ffprobe".into());
@@ -3352,42 +3365,6 @@ fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
         fs::remove_dir_all(&run)?;
     }
     fs::create_dir_all(&run)?;
-    let video = "testsrc2=size=1280x720:rate=30:duration=12";
-    let audio = "sine=frequency=997:sample_rate=44100:duration=12";
-    testkit::oracle::generate(
-        &run,
-        "README capture",
-        "source.mp4",
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            video,
-            "-f",
-            "lavfi",
-            "-i",
-            audio,
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-g",
-            "30",
-            "-color_primaries",
-            "bt709",
-            "-color_trc",
-            "bt709",
-            "-colorspace",
-            "bt709",
-            "-c:a",
-            "aac",
-            "-ac",
-            "1",
-            "-shortest",
-        ],
-    )
-    .ok_or("README source generation failed")?;
-    let source = run.join("source.mp4");
     let source_hash = sha256_file(&source)?;
     let tools = [tool_identity("ffmpeg")?, tool_identity("ffprobe")?];
     let commit = git_head(root)?;
@@ -3409,26 +3386,35 @@ fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
         .ok_or("README project lost its asset")?;
     let probe = serde_json::to_value(asset.probe())?;
     let source_relative = source
-        .strip_prefix(&run)
-        .unwrap_or(&source)
-        .to_string_lossy()
-        .into_owned();
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "excerpt.mp4".into());
     let outputs = root.join("docs/assets/readme");
     fs::create_dir_all(&outputs)?;
     let mut manifest = serde_json::json!({
         "slot": slot,
-        "command": format!("cargo xtask build -- cargo xtask ui-audit --readme {slot}"),
+        "command": format!("cargo xtask build -- cargo xtask ui-audit --readme {slot} --source <local Big Buck Bunny excerpt>"),
         "source_commit": commit,
         "source": {
+            "kind": "Big Buck Bunny (2008, Blender Foundation)",
+            "credit": BBB_CREDIT,
+            "source_page": "https://peach.blender.org/download/",
+            "license": "CC-BY-3.0",
+            "license_url": "https://creativecommons.org/licenses/by/3.0/",
+            "license_file": "docs/licenses/CC-BY-3.0.txt",
+            "original": {
+                "url": BBB_SOURCE_URL,
+                "bytes": BBB_SOURCE_BYTES,
+                "sha256": BBB_SOURCE_SHA256
+            },
             "path": source_relative,
             "sha256": source_hash,
             "probe": probe,
-            "recipe": [
-                "-f lavfi -i testsrc2=size=1280x720:rate=30:duration=12",
-                "-f lavfi -i sine=frequency=997:sample_rate=44100:duration=12",
-                "-c:v libx264 -pix_fmt yuv420p -g 30 -color_primaries bt709 -color_trc bt709 -colorspace bt709",
-                "-c:a aac -ac 1 -shortest"
-            ]
+            "excerpt": {
+                "start_seconds": 50.0,
+                "duration_seconds": 12.0,
+                "transform": "fps=30,scale=1280:720:flags=lanczos,setsar=1,libx264 medium crf20 yuv420p gop30 BT.709 TV,movflags faststart,map_metadata -1,no data/subtitles; AAC 160k 48k stereo; original audio retained"
+            }
         },
         "tools": tools,
         "decoded_frame_sha256": { "at_1s": at_one, "at_3s": at_three }
@@ -3622,10 +3608,10 @@ fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
         });
     }
     let source_note = format!(
-        "source: apps/vibecut/examples/ui_audit.rs --readme {slot} at {commit}; testsrc2 1280x720 30fps 12s plus 997Hz sine, source SHA256 {}",
+        "source: Big Buck Bunny (2008, Blender Foundation), {BBB_CREDIT}; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 {}; captured by apps/vibecut/examples/ui_audit.rs --readme {slot} at {commit}",
         manifest["source"]["sha256"].as_str().unwrap_or("")
     );
-    let notes = "notes: original offscreen VibeCut capture of a generated synthetic project; authored Vietnamese/English caption, no recognition or translation was run; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md";
+    let notes = "notes: VibeCut original offscreen capture (GPL-3.0-only code/capture) over a CC-BY-3.0 Big Buck Bunny excerpt; authored Vietnamese/English caption is a demo edit, not recognition or translation; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md; film credit retained";
     let files = if slot == "hero" {
         vec![(
             "hero.jpg",
@@ -3648,7 +3634,7 @@ fn readme_media(root: &Path, target: &Path, slot: &str) -> Result<(), Failure> {
     };
     for (asset, title, description) in files {
         let sidecar = format!(
-            "asset: {asset}\ntitle: {title}\nauthor: VibeCut contributors\n{source_note}\nlicense: GPL-3.0-only\nlicense-file: ../../../LICENSE\nadded: p0-core/22\n{notes}; capture: {description}\n"
+            "asset: {asset}\ntitle: {title}\nauthor: Blender Foundation; VibeCut contributors\n{source_note}\nlicense: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)\nlicense-file: ../../licenses/CC-BY-3.0.txt\nadded: p0-core/22\n{notes}; capture: {description}\n"
         );
         fs::write(outputs.join(format!("{asset}.attribution")), sidecar)?;
     }
@@ -3669,11 +3655,11 @@ fn main() -> Result<(), Failure> {
         None => root.join("target"),
     };
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(slot) = args.strip_prefix(&["--readme".to_owned()]) {
-        if slot.len() != 1 {
-            return Err("usage: cargo xtask ui-audit --readme hero|timeline".into());
+    if args.first().is_some_and(|arg| arg == "--readme") {
+        if args.len() != 4 || args.get(2).is_none_or(|arg| arg != "--source") {
+            return Err("usage: cargo xtask ui-audit --readme hero|timeline --source PATH".into());
         }
-        return readme_media(&root, &target, &slot[0]);
+        return readme_media(&root, &target, &args[1], Path::new(&args[3]));
     }
     let output = target.join("ui-audit");
     std::fs::create_dir_all(&output)?;
@@ -4194,7 +4180,13 @@ mod tests {
         let media = root.join("docs/assets/readme");
         fs::create_dir_all(&media)?;
         fs::write(media.join("hero.jpg"), b"keep")?;
-        let error = readme_media(root, &root.join("target"), "unknown").unwrap_err();
+        let error = readme_media(
+            root,
+            &root.join("target"),
+            "unknown",
+            &media.join("hero.jpg"),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("unknown README slot"));
         assert_eq!(fs::read(media.join("hero.jpg"))?, b"keep");
         assert!(!root.join("target/readme-media").exists());

@@ -13,8 +13,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/hero.jpg" width="960" alt="The VibeCut editor with a multitrack project, preview, timeline and properties" />
+  <img src="docs/assets/readme/hero.jpg" width="960" alt="The VibeCut editor with a Big Buck Bunny multitrack project, preview, timeline and properties" />
 </p>
+<p align="center"><sub>Demo footage: <a href="https://peach.blender.org/">Big Buck Bunny</a> © 2008 Blender Foundation, <a href="docs/licenses/CC-BY-3.0.txt">CC BY 3.0</a>.</sub></p>
 
 ## Features
 
