@@ -54,6 +54,8 @@ propagation adds a `RuntimeError::Failed` envelope. This does not make callbacks
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std threads.
 `submit(spec, task)` returns a `JobId` and `CancelToken`; `tick()` joins finished workers,
 admits queued work and observes progress, and the application calls it from its event loop.
+`memory_budget()` lends that same aggregate policy to blocking composition stages; they
+reserve before invoking adapters and retain leases for their allocation lifetime.
 `JobContext` implements `ai::ExecutionHooks`; other domain owners receive its cancellation and
 progress functions through their own hooks. Engine disables ai's default native feature:
 composing an adapter is an app choice.

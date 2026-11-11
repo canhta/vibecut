@@ -37,6 +37,7 @@ fn submit_media(
         sounds: None,
         media: Some(media),
         chapters: None,
+        captions: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::JobAccepted { job, .. } => job,
@@ -59,6 +60,7 @@ fn media_status(
         sounds: None,
         media: Some(media),
         chapters: None,
+        captions: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::Job { snapshot } => snapshot,
@@ -275,6 +277,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -299,6 +302,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: Some(&chapters),
+                captions: None,
             },
             &mut r,
         )
@@ -319,6 +323,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: Some(&chapters),
+                captions: None,
             },
             &mut r,
         )
@@ -364,6 +369,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -405,6 +411,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -789,6 +796,7 @@ fn scene_detection_returns_candidates_warms_the_cache_and_refuses_bad_input() {
         sounds: None,
         media,
         chapters: None,
+        captions: None,
     };
     for (key, id, params, with_media) in [
         ("missing", "media.detect_scenes", json!({"asset":99}), true),
@@ -1089,6 +1097,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         sounds: None,
         media: Some(&media),
         chapters: None,
+        captions: None,
     };
     error(
         wave_session
@@ -1111,6 +1120,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             sounds: None,
             media: Some(&media),
             chapters: None,
+            captions: None,
         };
         error(
             thumbnail_session

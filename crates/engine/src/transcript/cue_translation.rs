@@ -118,7 +118,7 @@ pub fn translate_selected(
 ) -> Result<(), EditError> {
     let item = selection.item;
     if selection.ids.is_empty()
-        || selection.ids.len() > 10_000
+        || selection.ids.len() > crate::session::wire::MAX_TRANSLATION_CUES
         || selection
             .ids
             .iter()

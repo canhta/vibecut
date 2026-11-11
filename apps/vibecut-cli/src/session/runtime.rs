@@ -39,3 +39,29 @@ pub(crate) fn cli_runner(budget: ByteBudget) -> Result<JobRunner, CliError> {
         Arc::new(SystemClock::default()),
     )?)
 }
+
+/// Optional local speech resources. Their typed refusal is lent to control while
+/// edits and inspection remain available; this never downloads models.
+pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAccess {
+    use engine::{
+        cache::{ArtifactCache, CacheRoot},
+        providers::{Credentials, DenyUploads, Providers},
+    };
+    let open = || -> engine::Result<engine::subtitles::CaptionAccess> {
+        let root = CacheRoot::discover()?.models();
+        let (mut cache, _) = ArtifactCache::open(&root, budget, 128)?;
+        let providers = Providers::open(
+            engine::providers::choose_transcription("whisper.cpp", None)?,
+            None,
+            &mut cache,
+            &Credentials::from_env(),
+            &engine::providers::Runtime::default(),
+        )?;
+        Ok(engine::subtitles::CaptionAccess::new(
+            Arc::new(providers),
+            Arc::new(DenyUploads),
+            Arc::new(std::sync::Mutex::new(cache)),
+        ))
+    };
+    open().unwrap_or_else(engine::subtitles::CaptionAccess::unavailable)
+}

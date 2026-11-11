@@ -1,3 +1,3 @@
 //! Behaviour coverage for subtitles.
 mod ass_import;
-mod workflow;
+pub(crate) mod workflow;
