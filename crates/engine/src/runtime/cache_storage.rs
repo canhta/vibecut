@@ -885,7 +885,7 @@ mod tests {
         let owner = cache.root_lock.clone();
         // A duplicated open file description pins the same flock, just as a
         // concurrent fork can before its child execs or closes the descriptor.
-        let retained = owner.0.try_clone().unwrap();
+        let retained = owner.file.try_clone().unwrap();
         drop(cache);
         assert!(matches!(
             ArtifactCache::open(root.path(), budget.clone(), 32),
