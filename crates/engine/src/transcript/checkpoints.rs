@@ -143,8 +143,8 @@ pub fn wait_for_job(
     token: &CancelToken,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> std::result::Result<JobOutput, crate::Error> {
-    use crate::Error as EngineError;
+) -> crate::runtime::Result<JobOutput> {
+    use crate::runtime::Error as RuntimeError;
     loop {
         if cancel.cancelled() {
             token.cancel();
@@ -155,27 +155,27 @@ pub fn wait_for_job(
                 progress.job(&event);
             }
         }
-        let snapshot = runner
-            .snapshot(id)
-            .ok_or(EngineError::Session(crate::SessionError::StaleResult))?;
+        let snapshot = runner.snapshot(id).ok_or(RuntimeError::from(
+            crate::session::SessionError::StaleResult,
+        ))?;
         match snapshot.state {
             // A completed job is returned even if cancellation arrived during its
             // publication fence; callers decide whether later stages may proceed.
             JobState::Completed => {
-                return runner
-                    .take_output(id)
-                    .ok_or(EngineError::Session(crate::SessionError::StaleResult));
+                return runner.take_output(id).ok_or(RuntimeError::from(
+                    crate::session::SessionError::StaleResult,
+                ));
             }
             JobState::Failed => {
                 return Err(match snapshot.error {
-                    Some(error) => EngineError::Runtime(crate::RuntimeError::Failed(error)),
-                    None => EngineError::Edit(crate::EditError::Invalid(
+                    Some(error) => RuntimeError::Failed(error),
+                    None => RuntimeError::Edit(crate::EditError::Invalid(
                         "job failed without diagnostics",
                     )),
                 });
             }
             JobState::Cancelled => {
-                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(RuntimeError::Cancelled);
             }
             _ => {
                 if cancel.cancelled() {

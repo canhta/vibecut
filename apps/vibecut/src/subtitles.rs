@@ -638,6 +638,11 @@ impl Subtitles {
             return;
         }
         if matches!(
+            runtime,
+            Some(engine::RuntimeError::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            )))
+        ) || matches!(
             cause.downcast_ref::<engine::EditError>(),
             Some(engine::EditError::Session(
                 engine::SessionError::StaleResult

@@ -96,6 +96,11 @@ impl From<captions::Error> for Error {
         Self::Edit(error.into())
     }
 }
+impl From<crate::session::SessionError> for Error {
+    fn from(error: crate::session::SessionError) -> Self {
+        Self::Edit(error.into())
+    }
+}
 pub type Result<T> = std::result::Result<T, Error>;
 
 mod budget;

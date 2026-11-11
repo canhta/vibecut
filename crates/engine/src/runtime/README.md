@@ -172,7 +172,10 @@ kept. The closure must revalidate request consent and aggregate monetary authori
 attempt; the runner never grants consent or performs automatic provider fallback.
 
 `submit_for_session(session, spec, task)` binds its `JobOutput` to the original Session and
-revision; `output.apply(session, command)` uses that identity. `Session::job_target()` captures
+revision; `output.apply(session, command)` returns the Kernel Edit result using that identity.
+Completed-output validation returns the Runtime result: absent retained output is
+`JobNotRetained`, while missing or stale Session targets retain Kernel Session `StaleResult`
+through Runtime Edit composition. `Session::job_target()` captures
 the identity for externally adapted work, and `apply_job_result(target, command)` refuses stale
 identity and active previews or groups before using the normal atomic command boundary. Every
 changed edit, undo/redo and changed preview invalidates older targets, even if undo restores

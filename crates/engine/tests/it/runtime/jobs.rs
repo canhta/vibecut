@@ -136,7 +136,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     for mode in 0..9 {
         let mut session = crate::support::control::session();
         let mut cursor = session.snapshot_and_subscribe(&r).unwrap().cursor;
-        let (id, _) = r
+        let (id, token) = r
             .submit(spec(ResourceClass::Network), move |_| {
                 Err(match mode {
                     0 => EngineError::Runtime(B::Cancelled),
@@ -238,6 +238,23 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
                         && row.state == snapshot.state
                 ))
         );
+        let waited = engine::transcript::wait_for_job(
+            &mut r,
+            id,
+            &token,
+            &engine::transcript::SilentProgress,
+            &engine::transcript::Cancellation::new(),
+        )
+        .err()
+        .unwrap();
+        match waited {
+            B::Cancelled => assert!(matches!(mode, 0 | 5 | 7)),
+            B::Failed(retained) => {
+                assert!(!matches!(mode, 0 | 5 | 7));
+                assert!(Arc::ptr_eq(raw, &retained));
+            }
+            other => panic!("unexpected waiter failure: {other}"),
+        }
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
@@ -1293,21 +1310,43 @@ fn submitted_output_carries_original_session_revision_through_completion() {
     let output = r.take_output(id).unwrap();
     assert!(matches!(
         output.apply(&mut session, command()),
-        Err(EngineError::Edit(engine::EditError::Session(
+        Err(engine::EditError::Session(
             engine::SessionError::StaleResult
-        )))
+        ))
     ));
-    let (id, _) = r
+    drop(output);
+    let (id, token) = r
         .submit_for_session::<engine::Error>(&session, spec(ResourceClass::Cpu), |_| Ok(vec![2]))
         .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Completed);
-    assert!(
-        r.take_output(id)
-            .unwrap()
-            .apply(&mut session, command())
-            .unwrap()
-            .changed
-    );
+    let cancel = engine::transcript::Cancellation::new();
+    cancel.cancel();
+    let output = engine::transcript::wait_for_job(
+        &mut r,
+        id,
+        &token,
+        &engine::transcript::SilentProgress,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(output.bytes(), &[2]);
+    assert!(output.apply(&mut session, command()).unwrap().changed);
+    drop(output);
+    for missing in [id, JobId(u64::MAX)] {
+        assert!(matches!(
+            engine::transcript::wait_for_job(
+                &mut r,
+                missing,
+                &token,
+                &engine::transcript::SilentProgress,
+                &cancel,
+            ),
+            Err(B::Edit(engine::EditError::Session(
+                engine::SessionError::StaleResult
+            )))
+        ));
+    }
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 #[test]
 fn fully_pinned_cache_refuses_pressure_and_repeated_inserts_remain_bounded() {
@@ -1390,9 +1429,9 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         assert_eq!(pump(&mut r, id).state, JobState::Completed);
         assert!(matches!(
             r.take_output(id).unwrap().apply(&mut session, add()),
-            Err(EngineError::Edit(engine::EditError::Session(
+            Err(engine::EditError::Session(
                 engine::SessionError::StaleResult
-            )))
+            ))
         ));
         assert!(
             session
