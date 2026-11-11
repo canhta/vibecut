@@ -302,7 +302,7 @@ fn panic_during_production_export_cleans_stage_and_reports_worker_failure() {
             .and_then(
                 |error| (error as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
             ),
-        Some(EditError::WorkerPanicked)
+        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
     ));
     assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -802,7 +802,7 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
                     .as_deref()
                     .and_then(|error| (error as &(dyn std::error::Error + 'static))
                         .downcast_ref::<EditError>()),
-                Some(EditError::WorkerPanicked)
+                Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
             ));
         }
         assert_eq!(clock.calls.load(Ordering::SeqCst), 3);

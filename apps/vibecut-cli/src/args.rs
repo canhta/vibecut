@@ -48,7 +48,7 @@ mod exit_codes {
             row!(E::ResyncRequired, "rejected", 5),
             row!(E::JobNotRetained, "rejected", 5),
             row!(E::ControlIdentity, "rejected", 5),
-            row!(E::QueueFull, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::QueueFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::BudgetFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::ArtifactTooLarge), "job", 7),
             row!(
@@ -63,7 +63,7 @@ mod exit_codes {
                 5
             ),
             row!(E::Cancelled, "job", 7),
-            row!(E::WorkerPanicked, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::WorkerPanicked), "job", 7),
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
             row!(
@@ -147,6 +147,23 @@ mod exit_codes {
                 engine::RuntimeError::Failed(Arc::new(make())),
             ))));
             assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
+        }
+        let messages: [(fn() -> E, &str); 2] = [
+            (
+                || E::Runtime(engine::RuntimeError::QueueFull),
+                "job queue is full",
+            ),
+            (
+                || E::Runtime(engine::RuntimeError::WorkerPanicked),
+                "job worker unwound",
+            ),
+        ];
+        for (make, message) in messages {
+            let error = CliError::Job(Arc::new(E::Runtime(engine::RuntimeError::Failed(
+                Arc::new(make()),
+            ))));
+            assert_eq!(error.value()["message"], message);
+            assert_eq!(error.code(), ("job", 7));
         }
         let model = E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Providers(
             P::ModelMissing("test-model"),

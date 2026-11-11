@@ -117,7 +117,9 @@ impl State {
             }))
             .is_err()
             {
-                let _ = failure.send(Event::Failed(engine::EditError::WorkerPanicked));
+                let _ = failure.send(Event::Failed(engine::EditError::Runtime(
+                    engine::RuntimeError::WorkerPanicked,
+                )));
             }
         }));
     }

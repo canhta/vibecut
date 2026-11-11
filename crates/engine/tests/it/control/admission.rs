@@ -813,11 +813,19 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Refused,
             false
         ),
-        row!(E::QueueFull, QueueFull, false),
+        row!(
+            E::Runtime(engine::RuntimeError::QueueFull),
+            QueueFull,
+            false
+        ),
         row!(E::Runtime(B::BudgetFull), Budget, false),
         row!(E::Runtime(B::ArtifactTooLarge), Budget, false),
         row!(E::Cancelled, Cancelled, false),
-        row!(E::WorkerPanicked, WorkerFailure, false),
+        row!(
+            E::Runtime(engine::RuntimeError::WorkerPanicked),
+            WorkerFailure,
+            false
+        ),
         row!(E::Runtime(B::Poisoned), Job, false),
         row!(E::Runtime(B::Io(io::Error::other("eviction"))), Io, false),
         row!(E::Runtime(B::Limit), Limit, false),
@@ -959,6 +967,8 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Ai(ai::Error::Incomplete), Ai, false),
     ];
     for (inner, code) in [
+        (E::Runtime(B::QueueFull), C::QueueFull),
+        (E::Runtime(B::WorkerPanicked), C::WorkerFailure),
         (E::Limit, C::Limit),
         (E::StaleResult, C::StaleResult),
         (E::Io(io::Error::other("disk")), C::Io),
@@ -978,7 +988,10 @@ fn owner_failures_classify_publication_receipts_and_events() {
     for (cause, code) in [
         (E::Limit, C::Limit),
         (E::Runtime(B::BudgetFull), C::Budget),
-        (E::WorkerPanicked, C::WorkerFailure),
+        (
+            E::Runtime(engine::RuntimeError::WorkerPanicked),
+            C::WorkerFailure,
+        ),
         (E::Runtime(B::Poisoned), C::Job),
         (E::Cancelled, C::Cancelled),
         (E::StaleResult, C::StaleResult),

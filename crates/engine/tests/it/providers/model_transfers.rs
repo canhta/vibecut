@@ -604,6 +604,45 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
         ),
         Err(EditError::Ai(ai::Error::ConsentRequired))
     ));
+    let key = ArtifactCache::model_key(&model).unwrap();
+    let entries = || {
+        fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let before = entries();
+    let mut fillers = Vec::new();
+    for _ in 0..2 {
+        let (_, token) = runner
+            .submit(
+                JobSpec {
+                    kind: JobKind::DownloadModel,
+                    class: ResourceClass::Network,
+                    input: key,
+                    bytes: JobBytes::default(),
+                },
+                |_| panic!("cancelled filler ran"),
+            )
+            .unwrap();
+        fillers.push(token);
+    }
+    assert!(matches!(
+        store.submit(
+            &mut runner,
+            model.clone(),
+            Some(DownloadConsent::grant(&model).unwrap())
+        ),
+        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+    ));
+    assert_eq!(http.count(), 0);
+    assert_eq!(entries(), before, "refusal wrote a checkpoint or artifact");
+    assert!(store.installed(&model, &NoHooks).unwrap().is_none());
+    for token in fillers {
+        token.cancel();
+    }
+    runner.tick().unwrap();
+    assert_eq!(runner.counts().0, 0);
     let (_id, token) = submit(&store, &mut runner, &model);
     assert!(matches!(
         store.submit(

@@ -643,6 +643,11 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     )
     .await;
     for (index, (inner, code)) in [
+        (engine::RuntimeError::QueueFull.into(), "queue_full"),
+        (
+            engine::RuntimeError::WorkerPanicked.into(),
+            "worker_failure",
+        ),
         (EditError::Limit, "limit"),
         (EditError::StaleResult, "stale_result"),
         (engine::RuntimeError::BudgetFull.into(), "budget"),

@@ -375,7 +375,16 @@ fn engine_catches_preview_worker_panic_and_app_reports_failure() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Err(error) = playback.poll(std::time::Instant::now()) {
-            assert!(matches!(error, vibecut::Error::Worker(_)));
+            let vibecut::Error::Worker(cause) = error else {
+                panic!("lost the worker diagnostic")
+            };
+            assert!(matches!(
+                (cause.as_ref() as &(dyn std::error::Error + 'static))
+                    .downcast_ref::<engine::EditError>(),
+                Some(engine::EditError::Runtime(
+                    engine::RuntimeError::WorkerPanicked
+                ))
+            ));
             break;
         }
         assert!(Instant::now() < deadline);

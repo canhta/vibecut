@@ -418,6 +418,36 @@ fn export_preparation_covers_source_and_translated_captions() {
         "nine-clip export left admitted jobs pending or active"
     );
 
+    // Window two / pending queue one necessarily refuses the second unpumped
+    // submission. The workflow must pump and retry that exact admission error.
+    let queued_directory = tempfile::tempdir().unwrap();
+    let (mut congested, budget) = runner_with_exports(2, 1, 8);
+    let exported = clip_suggest::export(
+        &outcome,
+        ClipExportRequest {
+            directory: queued_directory.path().to_path_buf(),
+            select: (0..3).collect(),
+            languages: Vec::new(),
+            formats: Vec::new(),
+            overwrite: false,
+            allow_degraded: false,
+            max_output_bytes: 1 << 30,
+        },
+        &providers,
+        &mut congested,
+        &DenyUploads,
+        &SilentProgress,
+        &Cancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(exported.exports.len(), 3);
+    assert_eq!(
+        std::fs::read_dir(queued_directory.path()).unwrap().count(),
+        3
+    );
+    assert_eq!((congested.counts().0, congested.counts().1), (0, 0));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+
     let cancelled_directory = tempfile::tempdir().unwrap();
     let cancellation = Cancellation::new();
     let progress = ExportProgress {

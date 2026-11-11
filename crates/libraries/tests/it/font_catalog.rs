@@ -565,6 +565,47 @@ fn download_needs_acceptance_a_catalog_family_and_one_job_per_family() {
     assert_eq!(server.calls.load(Ordering::SeqCst), 0);
     assert!(entries_below(root.path()).is_empty());
 
+    let key = engine::cache::CacheKey::new(engine::cache::KeyInputs {
+        kind: engine::cache::ArtifactKind::FontDownload,
+        source: [0; 32],
+        provider: "fixture",
+        model: "queue",
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    let mut fillers = Vec::new();
+    for _ in 0..16 {
+        let (_, cancel) = runner
+            .submit(
+                engine::jobs::JobSpec {
+                    kind: engine::jobs::JobKind::DownloadFont,
+                    class: engine::jobs::ResourceClass::Network,
+                    input: key,
+                    bytes: engine::jobs::JobBytes::default(),
+                },
+                |_| panic!("cancelled filler ran"),
+            )
+            .unwrap();
+        fillers.push(cancel);
+    }
+    assert!(matches!(
+        store.submit_download(&mut runner, "Gate Sample", true),
+        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+    ));
+    assert_eq!(runner.counts().0, 16);
+    assert_eq!(server.calls.load(Ordering::SeqCst), 0);
+    assert!(entries_below(root.path()).is_empty());
+    for token in fillers {
+        token.cancel();
+    }
+    runner.tick().unwrap();
+    assert_eq!(runner.counts().0, 0);
+
     let (started, started_rx) = std::sync::mpsc::sync_channel(1);
     let (release, release_rx) = std::sync::mpsc::channel();
     *server.gate.lock().unwrap() = Some(Arc::new(Gate {

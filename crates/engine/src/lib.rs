@@ -97,14 +97,10 @@ pub enum EditError {
 
     #[error(transparent)]
     Recovery(#[from] recovery::Error),
-    #[error("job queue is full")]
-    QueueFull,
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
     #[error("job cancelled")]
     Cancelled,
-    #[error("job worker unwound")]
-    WorkerPanicked,
     #[error("transient network failure")]
     NetworkTransient,
     #[error("job result is stale")]
@@ -200,13 +196,11 @@ impl EditError {
             Self::InvalidParams => C::InvalidParams,
             Self::Limit => C::Limit,
             Self::Cancelled => C::Cancelled,
-            Self::QueueFull => C::QueueFull,
             Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,
             Self::Runtime(inner) => return (inner.code(), inner.transient()),
             Self::StaleResult => C::StaleResult,
-            Self::WorkerPanicked => C::WorkerFailure,
             Self::CacheCorrupt => C::Job,
             Self::NetworkTransient => return (C::Job, true),
             Self::Recovery(inner) => inner.code(),

@@ -219,7 +219,7 @@ impl ModelManager {
                     }
                     CheckOutcome { installed, errors }
                 }))
-                .map_err(|_| EditError::WorkerPanicked);
+                .map_err(|_| EditError::Runtime(engine::RuntimeError::WorkerPanicked));
                 let _ = tx.send(outcome);
             })
             .map_err(Error::Io)?;

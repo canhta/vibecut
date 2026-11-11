@@ -320,7 +320,7 @@ impl JobRunner {
         task: impl Fn(&JobContext) -> Result<Vec<u8>, EditError> + Send + Sync + 'static,
     ) -> Result<(JobId, CancelToken), EditError> {
         if self.queue.len() >= self.config.queue {
-            return Err(EditError::QueueFull);
+            return Err(EditError::Runtime(crate::RuntimeError::QueueFull));
         }
         let total = [
             spec.bytes.decoded_frames,
@@ -399,7 +399,9 @@ impl JobRunner {
                 _work,
                 result: charge,
             } = running;
-            let outcome = handle.join().unwrap_or(Err(EditError::WorkerPanicked));
+            let outcome = handle
+                .join()
+                .unwrap_or(Err(EditError::Runtime(crate::RuntimeError::WorkerPanicked)));
             drop(_work);
             let outcome = if pending.context.cancelled() {
                 Err(EditError::Cancelled)
@@ -537,7 +539,7 @@ impl JobRunner {
                         context.check_cancelled()?;
                         task(&context)
                     }))
-                    .unwrap_or(Err(EditError::WorkerPanicked))
+                    .unwrap_or(Err(EditError::Runtime(crate::RuntimeError::WorkerPanicked)))
                 }) {
                 Ok(handle) => {
                     self.events

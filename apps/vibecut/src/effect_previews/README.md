@@ -11,7 +11,7 @@ Each kind owns its bounded effect/animations, one job, one coalesced latest sequ
 one last good image. Time never cancels slow work; current-generation completions present
 in increasing unwrapped sequence order. Changed inputs/retry/visibility invalidate old IDs.
 FIFO admission preserves older deferred kinds while replacing their desired time in place.
-QueueFull alone defers; other failures and missing retained IDs stay explicit Failed.
+Runtime `QueueFull` alone defers; other failures and missing retained IDs stay explicit Failed.
 Ready images remain visible during refresh. The owner updates the existing texture once
 per presented image; stationary paints reuse it. `settle` freezes its current target,
 including refresh/deferred work behind Ready, and observes the existing deadline without

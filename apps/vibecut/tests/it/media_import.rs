@@ -750,7 +750,9 @@ fn worker_panic_is_a_typed_failure_not_complete() {
             .as_deref()
             .and_then(|error| (error as &(dyn std::error::Error + 'static))
                 .downcast_ref::<engine::EditError>()),
-        Some(engine::EditError::WorkerPanicked)
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::WorkerPanicked
+        ))
     ));
     assert!(
         inspection

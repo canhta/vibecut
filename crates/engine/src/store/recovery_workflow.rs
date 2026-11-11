@@ -504,7 +504,9 @@ mod tests {
             }
             match cause(&error) {
                 EditError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::StorageFull),
-                EditError::WorkerPanicked => assert_eq!(code, ErrorCode::WorkerFailure),
+                EditError::Runtime(crate::RuntimeError::WorkerPanicked) => {
+                    assert_eq!(code, ErrorCode::WorkerFailure)
+                }
                 EditError::Cancelled => assert_eq!(code, ErrorCode::Cancelled),
                 EditError::StaleResult => assert_eq!(code, ErrorCode::StaleResult),
                 _ => panic!("lost the typed worker cause"),

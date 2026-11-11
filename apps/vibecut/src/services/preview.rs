@@ -346,7 +346,7 @@ fn error_for(code: ErrorCode) -> EditError {
         ErrorCode::ResyncRequired => EditError::ResyncRequired,
         ErrorCode::JobNotRetained => EditError::JobNotRetained,
         ErrorCode::Cancelled => EditError::Cancelled,
-        ErrorCode::QueueFull => EditError::QueueFull,
+        ErrorCode::QueueFull => EditError::Runtime(engine::RuntimeError::QueueFull),
         ErrorCode::SchemaMismatch => EditError::SchemaMismatch,
         ErrorCode::Refused
         | ErrorCode::Failed

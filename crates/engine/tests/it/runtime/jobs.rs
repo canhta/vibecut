@@ -110,7 +110,7 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         pump(&mut r, id).error.as_deref().and_then(|error| (error
             as &(dyn std::error::Error + 'static))
             .downcast_ref::<EditError>()),
-        Some(EditError::WorkerPanicked)
+        Some(EditError::Runtime(engine::RuntimeError::WorkerPanicked))
     ));
     let (id, _) = r
         .submit(spec(ResourceClass::Cpu), |_| Ok(vec![0; 11]))
@@ -162,6 +162,98 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
         assert_eq!(matches!(cause, EditError::Runtime(B::Failed(_))), wrapped);
         assert!(r.take_output(id).is_none());
         assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn worker_unwind_routes_keep_typed_failures_and_cancellation_order() {
+    struct Capture(Arc<AtomicUsize>);
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct PanicOnDrop(Arc<AtomicUsize>);
+    impl Drop for PanicOnDrop {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            panic!("payload drop escaped the inner catch");
+        }
+    }
+    for mode in 0..4 {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let captures = Arc::new(AtomicUsize::new(0));
+        let payloads = Arc::new(AtomicUsize::new(0));
+        let capture = Capture(captures.clone());
+        let payload = payloads.clone();
+        let (started, start) = mpsc::sync_channel(1);
+        let (release, gate) = mpsc::sync_channel(1);
+        let gate = std::sync::Mutex::new(gate);
+        let (id, token) = r
+            .submit(spec(ResourceClass::Network), move |ctx| {
+                let _capture = &capture;
+                if mode == 3 {
+                    ctx.begin_publication()?;
+                }
+                started.send(()).unwrap();
+                gate.lock().unwrap().recv().unwrap();
+                if mode == 1 {
+                    std::panic::panic_any(PanicOnDrop(payload.clone()));
+                }
+                panic!("ordinary task panic");
+            })
+            .unwrap();
+        r.tick().unwrap();
+        start.recv_timeout(Duration::from_secs(10)).unwrap();
+        if mode >= 2 {
+            token.cancel();
+            assert_eq!(token.cancelled(), mode == 2);
+        }
+        release.send(()).unwrap();
+        let snapshot = pump(&mut r, id);
+        assert_eq!(
+            (snapshot.state, snapshot.attempts),
+            (
+                if mode == 2 {
+                    JobState::Cancelled
+                } else {
+                    JobState::Failed
+                },
+                1
+            )
+        );
+        let cause = snapshot.error.as_deref().unwrap();
+        assert!(matches!(
+            (
+                mode,
+                (cause as &(dyn std::error::Error + 'static)).downcast_ref::<EditError>()
+            ),
+            (2, Some(EditError::Cancelled))
+                | (0 | 1 | 3, Some(EditError::Runtime(B::WorkerPanicked)))
+        ));
+        assert_eq!(
+            cause.code(),
+            if mode == 2 {
+                engine::control::ErrorCode::Cancelled
+            } else {
+                engine::control::ErrorCode::WorkerFailure
+            }
+        );
+        assert!(!cause.transient());
+        assert_eq!(
+            cause.to_string(),
+            if mode == 2 {
+                "job cancelled"
+            } else {
+                "job worker unwound"
+            }
+        );
+        assert!(cause.source().is_none());
+        assert!(r.take_output(id).is_none());
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert_eq!(captures.load(Ordering::SeqCst), 1);
+        assert_eq!(payloads.load(Ordering::SeqCst), usize::from(mode == 1));
     }
 }
 
@@ -462,10 +554,22 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let (network, _) = r
         .submit(spec(ResourceClass::Network), |_| Ok(vec![]))
         .unwrap();
+    let ran = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(());
+    let released = Arc::downgrade(&captured);
+    let calls = ran.clone();
+    let before = (r.counts(), budget.snapshot().unwrap().used);
     assert!(matches!(
-        r.submit(spec(ResourceClass::Cpu), |_| Ok(vec![])),
-        Err(EditError::QueueFull)
+        r.submit(spec(ResourceClass::Cpu), move |_| {
+            let _capture = &captured;
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![])
+        }),
+        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
     ));
+    assert_eq!((r.counts(), budget.snapshot().unwrap().used), before);
+    assert!(released.upgrade().is_none());
+    assert_eq!(ran.load(Ordering::SeqCst), 0);
     r.tick().unwrap();
     assert_eq!(r.snapshot(cpu2).unwrap().state, JobState::Queued);
     assert_eq!(budget.snapshot().unwrap().used, 220);
@@ -479,6 +583,7 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let (id, _) = r
         .submit(spec(ResourceClass::GpuEncoder), |_| Ok(vec![]))
         .unwrap();
+    assert_eq!(id, JobId(network.0 + 1), "refusal consumed an ID");
     r.tick().unwrap();
     assert_eq!(r.snapshot(id).unwrap().state, JobState::Queued);
     drop(held);
@@ -1223,6 +1328,22 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (|| E::Runtime(B::QueueFull), C::QueueFull, false),
+        (|| E::Runtime(B::WorkerPanicked), C::WorkerFailure, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(E::Runtime(B::QueueFull)))),
+            C::QueueFull,
+            false,
+        ),
+        (
+            || {
+                let inner = E::Runtime(B::WorkerPanicked);
+                let wrapped = E::Runtime(B::Failed(Arc::new(inner)));
+                E::Runtime(B::Failed(Arc::new(wrapped)))
+            },
+            C::WorkerFailure,
+            false,
+        ),
         (
             || {
                 E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(

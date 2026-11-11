@@ -4,6 +4,10 @@ use crate::session::wire::{ErrorCode, Failure};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("job queue is full")]
+    QueueFull,
+    #[error("job worker unwound")]
+    WorkerPanicked,
     #[error("aggregate byte budget is full")]
     BudgetFull,
     #[error("artifact exceeds aggregate budget")]
@@ -22,6 +26,8 @@ pub enum Error {
 impl Failure for Error {
     fn code(&self) -> ErrorCode {
         match self {
+            Self::QueueFull => ErrorCode::QueueFull,
+            Self::WorkerPanicked => ErrorCode::WorkerFailure,
             Self::BudgetFull | Self::ArtifactTooLarge => ErrorCode::Budget,
             Self::Poisoned => ErrorCode::Job,
             Self::Io(_) => ErrorCode::Io,
