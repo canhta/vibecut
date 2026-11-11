@@ -167,44 +167,22 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 "export accepts a job before publication admission"
             );
             let refused_job = refused["value"]["value"]["job"].clone();
-            let mut refused_state = String::new();
-            for n in 0..200 {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            for n in 0.. {
                 let status=control.send(serde_json::json!({"request_id":format!("refusal-status-{n}"),"command":"job_status","params":{"job":refused_job}}));
-                refused_state = status["value"]["value"]["snapshot"]["state"]
+                let state = status["value"]["value"]["snapshot"]["state"]
                     .as_str()
-                    .unwrap()
-                    .into();
-                if refused_state == "failed" {
+                    .unwrap();
+                if state == "failed" {
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(5));
+                assert!(std::time::Instant::now() < deadline, "{status}");
             }
-            assert_eq!(refused_state, "failed");
             assert_eq!(fs::read(&protected).unwrap(), b"existing destination");
-            let mut last = serde_json::Value::Null;
-            let mut destination = dir.path().join("cancel-0.mp4");
-            for n in 0..8 {
-                destination = dir.path().join(format!("cancel-{n}.mp4"));
-                let out=control.send(serde_json::json!({"request_id":format!("export-{n}"),"command":"export","params":{"settings":settings,"path":destination,"overwrite":false},"base_rev":after["rev_after"],"idempotency_key":format!("export-{n}")}));
-                assert_eq!(out["exit_code"], 0, "{out}");
-                last = out["value"]["value"]["job"].clone();
-            }
-            let cancel=control.send(serde_json::json!({"request_id":"cancel-bank-export","command":"job_cancel","params":{"job":last},"base_rev":after["rev_after"],"idempotency_key":"cancel-bank-export"}));
-            assert_eq!(cancel["exit_code"], 0, "{cancel}");
-            let mut state = String::new();
-            for n in 0..200 {
-                let status=control.send(serde_json::json!({"request_id":format!("cancel-status-{n}"),"command":"job_status","params":{"job":last}}));
-                state = status["value"]["value"]["snapshot"]["state"]
-                    .as_str()
-                    .unwrap()
-                    .into();
-                if state == "cancelled" {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            assert_eq!(state, "cancelled");
-            assert!(!destination.exists());
+            cancel_bank_export(
+                project::load(&project).unwrap().project,
+                dir.path().join("cancel.mp4"),
+            );
             assert_eq!(fs::read(&project).unwrap(), bytes);
         }
         assert_eq!(control.finish().0, 0);
@@ -295,6 +273,139 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             assert!(mse < 150.0, "caption-bank CLI encoded MSE {mse}");
         }
     }
+}
+
+fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf) {
+    use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
+    use engine::control::{Caller, ControlResult, Policy};
+    use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::{Duration, Instant};
+
+    struct CancelOnly;
+    impl Policy for CancelOnly {
+        fn authorize(&self, command: &engine::Command, _: &project::Project) -> engine::Result<()> {
+            if matches!(command, engine::Command::JobCancel { .. }) {
+                Ok(())
+            } else {
+                Err(engine::EditError::Permission)
+            }
+        }
+    }
+
+    let saved = project.data().caption_presets.last().unwrap();
+    assert_eq!(saved.name.as_str(), "box renamed");
+    assert_eq!(saved.style.border_style, 3);
+    let cues = project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| match &item.content {
+            project::ItemParams::Caption(params) => Some(&params.cues),
+            _ => None,
+        })
+        .unwrap();
+    assert!(!cues.cues.is_empty());
+    assert!(
+        cues.cues
+            .iter()
+            .all(|cue| cues.style_of(cue) == Some(&saved.style))
+    );
+    let mut session = engine::Session::new(project, 100).unwrap();
+    let snapshot = session.project().clone();
+    let revision = session.revision();
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1; 3],
+            queue: 2,
+            retained: 2,
+            network_attempts: 1,
+            backoff: Duration::from_millis(100),
+            progress_interval: Duration::from_millis(10),
+        },
+        engine::ByteBudget::new(128 << 20).unwrap(),
+        Arc::new(SystemClock::default()),
+    )
+    .unwrap();
+    let key = CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Preview,
+        source: [0; 32],
+        provider: "render",
+        model: "caption-bank",
+        version: "1",
+        settings: b"{}",
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    let (entered, waiting) = mpsc::sync_channel(1);
+    let (release, held) = mpsc::sync_channel(1);
+    let held = Mutex::new(Some(held));
+    // The real export worker stops at its existing source-factory seam before
+    // render can publish. This gate orders cancellation independently of speed.
+    let (job, _) = engine::submit_export_with_sources(
+        &mut runner,
+        key,
+        snapshot.clone(),
+        time::TimeRange::new(Tick::ZERO, snapshot.duration()).unwrap(),
+        render::ExportSettings::from_project(&snapshot),
+        destination.clone(),
+        move || {
+            let held = held.lock().unwrap().take().unwrap();
+            entered.send(()).unwrap();
+            held.recv_timeout(Duration::from_secs(30)).unwrap();
+            Box::new(render::FileSources::default())
+        },
+    )
+    .unwrap();
+    runner.tick().unwrap();
+    waiting.recv_timeout(Duration::from_secs(30)).unwrap();
+    assert_eq!(runner.snapshot(job).unwrap().state, JobState::Running);
+    assert!(!destination.exists());
+    let request = engine::control::build_request(
+        &session,
+        serde_json::json!({"request_id":"cancel-bank-export","command":"job_cancel","params":{"job":job},"base_rev":revision,"idempotency_key":"cancel-bank-export"}),
+    )
+    .unwrap();
+    let cancelled = session.control_typed(
+        request,
+        Caller {
+            principal: "vibecut-cli",
+            external: true,
+            policy: &CancelOnly,
+            fonts: None,
+            sounds: None,
+            media: None,
+            chapters: None,
+        },
+        &mut runner,
+    );
+    release.send(()).unwrap();
+    assert!(matches!(cancelled.unwrap(), ControlResult::CancelRequested { job: id } if id == job));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let state = loop {
+        runner.tick().unwrap();
+        let state = runner.snapshot(job).unwrap().state;
+        if matches!(
+            state,
+            JobState::Completed | JobState::Failed | JobState::Cancelled
+        ) {
+            break state;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    assert_eq!(state, JobState::Cancelled);
+    assert!(runner.take_output(job).is_none());
+    assert!(!destination.exists());
+    assert!(Arc::ptr_eq(session.project(), &snapshot));
+    assert_eq!(session.revision(), revision);
+    assert_eq!(session.history_len(), (0, 0));
+    runner.shutdown();
 }
 
 #[test]
