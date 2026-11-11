@@ -657,6 +657,41 @@ fn custom_store_metadata_quotas_bound_reopen_before_face_reads() {
 }
 
 #[test]
+fn custom_import_preserves_weight_order_for_multiple_faces_of_one_family() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("fonts");
+    let store = store(&root, vec![], vec![], offline());
+    let mut runner = runner();
+    // Import bold first; catalog/resolve order must follow font weight, not input
+    // order or alphabetic style names. Both are admitted OFL Inter assets.
+    for (name, bytes) in [
+        (
+            "bold",
+            include_bytes!("../../../../assets/fonts/Inter-Bold.ttf").as_slice(),
+        ),
+        (
+            "regular",
+            include_bytes!("../../../../assets/fonts/Inter-Regular.ttf").as_slice(),
+        ),
+    ] {
+        let input = dir.path().join(format!("{name}.ttf"));
+        fs::write(&input, renamed(bytes, "Inter", "Scope")).unwrap();
+        let (job, _) = store.submit_import(&mut runner, input, true).unwrap();
+        assert_eq!(finish(&mut runner, job), JobState::Completed);
+    }
+    let listed = store.list(Some("Scope")).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].styles, ["Regular", "Bold"]);
+    assert_eq!(store.load("Scope").unwrap().styles, ["Regular", "Bold"]);
+    for (style, weight) in [("Regular", 400), ("Bold", 700)] {
+        let resolved = text::resolve("Scope", style);
+        assert!(!resolved.missing);
+        assert_eq!(text::face(resolved.face).weight, weight);
+    }
+    runner.shutdown();
+}
+
+#[test]
 fn directory_scan_finds_nested_fonts_and_skips_junk() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("VibeCutFixtureSans-Regular.ttf"), FIXTURE).unwrap();

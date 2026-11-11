@@ -367,8 +367,7 @@ impl FontStore {
                 entry.styles.push(record.style.clone());
             }
         }
-        for (_, mut entry) in custom {
-            entry.styles.sort();
+        for (_, entry) in custom {
             offer(1, entry);
         }
         for g in &self.google {

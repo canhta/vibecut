@@ -179,7 +179,7 @@ fn records(root: &Path) -> Result<Vec<Imported>> {
             return Err(EditError::Limit);
         }
     }
-    out.sort_by(|a, b| (&a.family, &a.style).cmp(&(&b.family, &b.style)));
+    out.sort_by_cached_key(|record| (record.family.to_lowercase(), record.weight, record.italic));
     Ok(out)
 }
 
