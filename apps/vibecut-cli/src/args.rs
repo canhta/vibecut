@@ -193,6 +193,27 @@ mod exit_codes {
                 "ai",
                 4
             ),
+            row!(
+                E::Runtime(engine::RuntimeError::Transfer(ai::Error::Chapters(
+                    ai::chapters::ChapterRefusal::EmptyTranscript
+                ))),
+                "rejected",
+                5
+            ),
+            row!(
+                E::Runtime(engine::RuntimeError::Transfer(ai::Error::Cancelled)),
+                "ai",
+                4
+            ),
+            row!(
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(
+                    engine::RuntimeError::Transfer(ai::Error::RateLimit {
+                        retry_after_seconds: Some(3)
+                    })
+                ))),
+                "ai",
+                4
+            ),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
             row!(

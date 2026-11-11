@@ -118,16 +118,7 @@ impl Error {
             Self::Transcript(inner) => inner.code(),
             Self::Render(inner) => inner.code(),
             Self::Media(error) => error.code(),
-            Self::Ai(inner) => {
-                return (
-                    if matches!(inner, ai::Error::Chapters(_)) {
-                        C::Refused
-                    } else {
-                        C::Ai
-                    },
-                    inner.is_transient(),
-                );
-            }
+            Self::Ai(inner) => return (inner.code(), inner.transient()),
             Self::Io(_) => C::Io,
             Self::Edit(inner) => return (inner.code(), inner.transient()),
         };
@@ -143,12 +134,7 @@ impl Failure for Error {
             Self::Runtime(error) => error.job_policy(),
             Self::Session(error) => error.job_policy(),
             Self::Control(error) => error.job_policy(),
-            Self::Ai(ai::Error::RateLimit {
-                retry_after_seconds,
-            }) => JobFailurePolicy {
-                retry_after_seconds: *retry_after_seconds,
-                ..Default::default()
-            },
+            Self::Ai(error) => error.job_policy(),
             _ => JobFailurePolicy::default(),
         }
     }

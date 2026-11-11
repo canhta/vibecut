@@ -156,13 +156,16 @@ type RequestLog = Vec<(String, Vec<(String, String)>)>;
 
 #[derive(Default)]
 struct Http {
-    replies: Mutex<VecDeque<Reply>>,
+    replies: Mutex<VecDeque<Result<Reply, ai::Error>>>,
     requests: Mutex<RequestLog>,
     max: Arc<AtomicUsize>,
 }
 impl Http {
     fn push(&self, r: Reply) {
-        self.replies.lock().unwrap().push_back(r);
+        self.replies.lock().unwrap().push_back(Ok(r));
+    }
+    fn fail(&self, error: ai::Error) {
+        self.replies.lock().unwrap().push_back(Err(error));
     }
     fn count(&self) -> usize {
         self.requests.lock().unwrap().len()
@@ -194,7 +197,7 @@ impl DownloadTransport for Http {
             .lock()
             .unwrap()
             .pop_front()
-            .ok_or(ai::Error::Network)?;
+            .ok_or(ai::Error::Network)??;
         Ok(HttpStreamResponse {
             status: r.status,
             headers: r.headers,
@@ -1221,6 +1224,125 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
         );
         assert_eq!(http.count(), if downgrade { 1 } else { 2 });
     }
+    // The public transport can refuse with any AI error, including non-Ureq producers.
+    for error in [
+        ai::Error::Chapters(ai::chapters::ChapterRefusal::EmptyTranscript),
+        ai::Error::Cancelled,
+        ai::Error::Auth,
+        ai::Error::StorageFull,
+        ai::Error::ModelStorage(io::ErrorKind::StorageFull),
+        ai::Error::ModelIntegrity,
+        ai::Error::RateLimit {
+            retry_after_seconds: Some(3),
+        },
+    ] {
+        use engine::control::{ErrorCode, Failure};
+        let code = if error.is_transient() {
+            ErrorCode::Job
+        } else {
+            error.code()
+        };
+        let transient = error.is_transient();
+        let expected = error.to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let http = Arc::new(Http::default());
+        http.fail(error);
+        let (_, model) = specimen(11);
+        let io = Io::healthy();
+        let (_, store, mut runner, clock) = setup(dir.path(), http.clone(), io.clone(), 1);
+        let (id, _) = submit(&store, &mut runner, &model);
+        let result = terminal(&mut runner, id, &clock);
+        assert_eq!((result.state, result.attempts), (JobState::Failed, 1));
+        assert!(runner.take_output(id).is_none());
+        assert_eq!(http.count(), 1);
+        assert_eq!(io.calls.load(Ordering::Relaxed), 0);
+        assert!(store.installed(&model, &NoHooks).unwrap().is_none());
+        let raw = result.error.as_ref().unwrap();
+        assert_eq!(raw.code(), code);
+        assert_eq!(raw.transient(), transient);
+        assert!(!raw.job_policy().terminal_cancelled);
+        assert_eq!(raw.job_policy().retry_after_seconds, None);
+        let composed = (raw.as_ref() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<EngineError>()
+            .unwrap();
+        if transient {
+            assert!(matches!(
+                composed,
+                EngineError::Runtime(engine::RuntimeError::NetworkTransient)
+            ));
+            assert_eq!(raw.to_string(), "transient network failure");
+            assert!(raw.source().is_none());
+        } else {
+            let EngineError::Runtime(engine::RuntimeError::Transfer(source)) = composed else {
+                panic!("transport cause lost")
+            };
+            assert_eq!(source.to_string(), expected);
+            assert_eq!(raw.to_string(), "AI execution failed");
+            assert!(std::ptr::eq(
+                source,
+                raw.source().unwrap().downcast_ref::<ai::Error>().unwrap()
+            ));
+        }
+        assert!(Arc::ptr_eq(
+            raw,
+            runner.snapshot(id).unwrap().error.as_ref().unwrap()
+        ));
+        let event = runner
+            .drain_events()
+            .into_iter()
+            .find(|event| event.id == id)
+            .unwrap();
+        assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let http = Arc::new(Http::default());
+    http.fail(ai::Error::Cancelled);
+    let (_, model) = specimen(11);
+    let (_, _, mut runner, clock) = setup(dir.path(), http.clone(), Io::healthy(), 1);
+    let request_http = http.clone();
+    let (id, _) = runner
+        .submit(
+            JobSpec {
+                kind: JobKind::DownloadModel,
+                class: ResourceClass::Network,
+                input: ArtifactCache::model_key(&model).unwrap(),
+                bytes: JobBytes::default(),
+            },
+            move |ctx| {
+                engine::transfer::response(
+                    request_http.as_ref(),
+                    "https://models.example/weights.bin",
+                    &[],
+                    ctx,
+                )
+                .map(|_| Vec::new())
+            },
+        )
+        .unwrap();
+    let result = terminal(&mut runner, id, &clock);
+    assert_eq!((result.state, result.attempts), (JobState::Failed, 1));
+    assert!(runner.take_output(id).is_none());
+    assert_eq!(http.count(), 1);
+    let raw = result.error.as_ref().unwrap();
+    assert!(matches!(
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::RuntimeError>(),
+        Some(engine::RuntimeError::Transfer(ai::Error::Cancelled))
+    ));
+    assert!(Arc::ptr_eq(
+        raw,
+        runner.snapshot(id).unwrap().error.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        raw,
+        runner
+            .drain_events()
+            .into_iter()
+            .find(|event| event.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
 }
 #[cfg(unix)]
 #[test]
