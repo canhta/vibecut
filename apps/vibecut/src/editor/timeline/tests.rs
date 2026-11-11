@@ -548,14 +548,19 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
         _ => panic!("item"),
     };
     let before = session.project().clone();
-    let endpoint = std::path::PathBuf::from(format!(
-        "vibecut-shared-media-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let socket_dir = tempfile::tempdir().unwrap();
+    let endpoint = if cfg!(windows) {
+        std::path::PathBuf::from(format!(
+            "vibecut-shared-media-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    } else {
+        socket_dir.path().join("private/control.sock")
+    };
     let mut server = mcp::Server::bind_with_media(
         &endpoint,
         mcp::Grants::default(),
@@ -563,6 +568,20 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
         Some(shared.clone()),
     )
     .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+        let directory = std::fs::symlink_metadata(endpoint.parent().unwrap()).unwrap();
+        let socket = std::fs::symlink_metadata(&endpoint).unwrap();
+        assert!(directory.is_dir());
+        assert_eq!(directory.permissions().mode() & 0o777, 0o700);
+        assert!(socket.file_type().is_socket());
+        assert_eq!(socket.permissions().mode() & 0o777, 0o600);
+        let owner = std::fs::metadata(socket_dir.path()).unwrap().uid();
+        assert_eq!(directory.uid(), owner);
+        assert_eq!(socket.uid(), owner);
+        eprintln!("shared media endpoint: owned directory=0700 socket=0600");
+    }
     let accepted_rev = session.revision();
     let accepted = server
         .inbox
@@ -654,6 +673,16 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
 
 #[test]
 fn thumbnail_strip_and_waveform_render_and_trim_updates_them() {
+    // Keep kittest's software-preferred adapter selection and fail if the host
+    // lacks a rendering runtime. No native window or display handle is needed.
+    let render_state = egui_kittest::wgpu::create_render_state(
+        egui_kittest::wgpu::default_wgpu_setup(),
+        eframe::egui_wgpu::RendererOptions::PREDICTABLE,
+    );
+    eprintln!(
+        "timeline render adapter: {:?}",
+        render_state.adapter.get_info()
+    );
     let mut rig = Rig::visual(TrackKind::Video);
     rig.visuals.strip_ready(AssetId(1), ranges(4));
     let bars = (0..64)
@@ -664,7 +693,13 @@ fn thumbnail_strip_and_waveform_render_and_trim_updates_them() {
         .collect();
     rig.visuals.wave_ready(AssetId(1), bars);
     let first = rig.first;
-    let mut harness = harness(rig);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1000.0, 260.0))
+        .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(
+            render_state,
+        ))
+        .build_ui_state(|ui, rig: &mut Rig| rig.paint(ui), rig);
+    harness.run_steps(3);
     harness.state_mut().take();
     let strip = format!("timeline.item.{}.filmstrip", first.0);
     let wave = format!("timeline.item.{}.waveform", first.0);
@@ -689,6 +724,41 @@ fn thumbnail_strip_and_waveform_render_and_trim_updates_them() {
         (strip_call.pixels_per_second - f64::from(harness.state().state.zoom)).abs() < 1e-9,
         "the timeline zoom is passed in pixels per second"
     );
+
+    // Inspect the real rendered bands, not just the display-query calls. The
+    // grayscale fixture tiles must be visible, and bars must extend above and
+    // below the centre line (a pending flat line cannot satisfy this).
+    let render_bands = |harness: &mut Harness<'_, Rig>| {
+        let image = harness.render().unwrap();
+        assert_eq!(image.dimensions(), (1000, 260));
+        let strip_rect = harness.state().rect(&strip).shrink(2.0);
+        let shades: Vec<_> = (strip_rect.left().ceil() as u32..strip_rect.right().floor() as u32)
+            .map(|x| image.get_pixel(x, strip_rect.center().y as u32).0)
+            .filter(|[r, g, b, a]| r == g && g == b && *a == 255)
+            .map(|pixel| pixel[0])
+            .collect();
+        assert!(shades.len() > 20, "filmstrip textures must be visible");
+        assert!(
+            shades.iter().max().unwrap() - shades.iter().min().unwrap() > 32,
+            "filmstrip must contain the fixture's light and dark pixels"
+        );
+        let wave_rect = harness.state().rect(&wave).shrink(2.0);
+        let ink = theme::waveform(true);
+        for y in [wave_rect.center().y - 3.0, wave_rect.center().y + 3.0] {
+            let bars = (wave_rect.left().ceil() as u32..wave_rect.right().floor() as u32)
+                .filter(|x| {
+                    let pixel = image.get_pixel(*x, y as u32).0;
+                    pixel[..3]
+                        .iter()
+                        .zip(ink.to_array()[..3].iter())
+                        .all(|(actual, expected)| actual.abs_diff(*expected) < 24)
+                })
+                .count();
+            assert!(bars > 5, "waveform bars missing at y={y}: {bars}");
+        }
+        image
+    };
+    render_bands(&mut harness);
 
     // A trim command changes the source window the display query receives.
     let at = SECOND;
@@ -728,7 +798,7 @@ fn thumbnail_strip_and_waveform_render_and_trim_updates_them() {
     let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/p1-18-clip-visuals.png");
     std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-    harness.render().unwrap().save(&screenshot).unwrap();
+    render_bands(&mut harness).save(&screenshot).unwrap();
 }
 
 #[test]
