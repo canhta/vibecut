@@ -130,3 +130,14 @@ and input lifetime belong to [Properties](../../../apps/vibecut/src/editor/panel
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
 
 The Captions Style chooser lists Saved in project as explicit copy actions, retaining Outline/Box/Custom/Mixed as value summaries. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.
+
+## AI preferences
+
+Window / Settings opens the AI model rows, grouped by provider and feature. The
+shipped default comes first; Refresh adds models for the selected key, followed by
+recent choices and a custom-ID field with Apply. Without a key or offline, default
+and custom remain usable. Refresh alone requests the remote list. Pending, empty,
+failed and stale-key states are explicit. Unknown-price upload sheets require a
+separate checkbox naming the exact model already disclosed above it. These new
+compositions use the existing 22 px fields and are unmeasured against desktop
+reference; `ai-preferences` and `ai-preferences-vi` are the audit scenes.

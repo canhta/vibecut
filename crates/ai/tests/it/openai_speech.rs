@@ -5,8 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::openai::{
-    OpenAiSpeechSynthesizer, SPEECH_ENDPOINT, SPEECH_LANGUAGES, SPEECH_MODEL, SPEECH_SAMPLE_RATE,
-    SPEECH_VOICES,
+    OpenAiSpeechSynthesizer, SPEECH_ENDPOINT, SPEECH_LANGUAGES, SPEECH_SAMPLE_RATE, SPEECH_VOICES,
 };
 use ai::speech::{
     SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer, SynthesisConsent,
@@ -124,7 +123,7 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn config() -> ProviderConfig {
-    OpenAiSpeechSynthesizer::provider_config(SPEECH_MODEL).unwrap()
+    OpenAiSpeechSynthesizer::provider_config("gpt-audio-1.5").unwrap()
 }
 
 fn request_with(
@@ -217,8 +216,8 @@ fn success_replays_recorded_fixture_and_exact_transcript() {
     assert_eq!(audio.transcript.as_ref(), Some(request.text()));
     assert_eq!(audio.usage.input_tokens, Some(62));
     assert_eq!(audio.usage.output_tokens, Some(81));
-    assert_eq!(audio.usage.actual_cost.micros(), 4_043);
-    assert_eq!(audio.usage.actual_cost.currency(), "USD");
+    assert_eq!(audio.usage.actual_cost.as_ref().unwrap().micros(), 4_043);
+    assert_eq!(audio.usage.actual_cost.as_ref().unwrap().currency(), "USD");
     assert_eq!(audio.fingerprint, synth.capabilities(&request).fingerprint);
 
     let requests = fake.requests.lock().unwrap();
@@ -602,7 +601,7 @@ fn capabilities_disclose_observed_languages_builtin_voices_and_policy() {
 
     let fingerprint = caps.fingerprint.as_str();
     for part in [
-        SPEECH_MODEL,
+        "gpt-audio-1.5",
         "voice=marin",
         "language=vi",
         "script=Latn",
@@ -694,12 +693,12 @@ fn live_openai_speech_uses_production_transport() {
         assert_eq!(audio.transcript.as_ref(), Some(request.text()));
         assert_eq!(audio.sample_rate, SPEECH_SAMPLE_RATE);
         assert!(!audio.samples.is_empty());
-        assert!(audio.usage.actual_cost.micros() <= 100_000);
+        assert!(audio.usage.actual_cost.as_ref().unwrap().micros() <= 100_000);
         eprintln!(
             "live speech verified: language={language} samples={} duration_us={} cost_micros={}",
             audio.samples.len(),
             audio.duration_micros,
-            audio.usage.actual_cost.micros()
+            audio.usage.actual_cost.as_ref().unwrap().micros()
         );
     }
 }

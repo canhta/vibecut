@@ -134,6 +134,7 @@ pub(super) struct Preview {
 }
 
 pub struct State {
+    pub(crate) models: crate::services::remote_models::AiPreferences,
     pub preferences: Look,
     pub request: GenerationRequest,
     pub(super) source: Option<ReviewSource>,
@@ -242,6 +243,34 @@ impl Drop for State {
     }
 }
 impl State {
+    pub(crate) fn apply_model_preferences(
+        &mut self,
+        models: &crate::services::remote_models::AiPreferences,
+    ) {
+        self.models = models.clone();
+        if matches!(
+            self.request.transcription_provider.as_str(),
+            "openai" | "elevenlabs"
+        ) {
+            self.request.transcription_model = models
+                .model(
+                    &self.request.transcription_provider,
+                    ai::Operation::Transcribe,
+                )
+                .into();
+        }
+        if matches!(
+            self.request.suggestion_provider.as_str(),
+            "openai" | "anthropic"
+        ) {
+            self.request.suggestion_model = models
+                .model(
+                    &self.request.suggestion_provider,
+                    ai::Operation::SuggestClips,
+                )
+                .into();
+        }
+    }
     pub fn new(preferences: Look, budget: ByteBudget) -> Result<Self> {
         Self::with_generator(
             preferences,
@@ -257,6 +286,7 @@ impl State {
         preview_sources: Arc<dyn Sources>,
     ) -> Result<Self> {
         Ok(Self {
+            models: Default::default(),
             preferences,
             request: GenerationRequest {
                 path: PathBuf::new(),
@@ -536,15 +566,7 @@ impl State {
             .generating
             .as_ref()
             .ok_or(Error::Invalid("no generation"))?;
-        let upload = job
-            .events
-            .state
-            .lock()
-            .map_err(|_| Error::Poisoned)?
-            .upload
-            .take()
-            .ok_or(Error::Invalid("no upload request"))?;
-        upload.reply.send(approve).map_err(|_| Error::Cancelled)
+        job.events.answer(approve)
     }
     pub fn tick(&mut self) {
         self.thumbs.drain();

@@ -137,7 +137,7 @@ fn try_run(
     max_attempts: u8,
     budget: u64,
 ) -> Result<(Arc<TranslationRun>, Arc<Transport>), EditError> {
-    let config = OpenAiTranslator::provider_config(TRANSLATION_MODEL).unwrap();
+    let config = OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope =
         Scope::translation(config.clone(), TRANSLATION_MODE.into(), &w, "test".into()).unwrap();
     let c = Consent::grant(scope.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
@@ -159,7 +159,7 @@ fn try_run(
             scope,
             Some(c),
             max_attempts,
-            Money::new("USD", budget).unwrap(),
+            Some(Money::new("USD", budget).unwrap()),
         )?,
         transport,
     ))

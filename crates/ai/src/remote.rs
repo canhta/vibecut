@@ -1,9 +1,10 @@
-//! Shared remote-adapter machinery: constructor admission, scope binding, wire
-//! arithmetic and provider error classification. Each adapter keeps only its
-//! endpoint, request form, response parser and price table.
+//! Owns shared remote provider admission.
+pub mod defaults;
+mod models;
 use crate::transport::{HttpResponse, retry_after, wav_bytes};
 use crate::{Capabilities, CostEstimate, Error, Location, Operation, ProviderConfig, Scope};
 use captions::NfcText;
+pub use models::{MAX_REMOTE_MODELS, list_remote_models};
 
 /// What composition shows before any remote byte leaves the machine. One value
 /// for every remote operation; local adapters return `None` instead.
@@ -70,16 +71,16 @@ impl UploadDisclosure {
 /// configuration (`None` refuses it as unsupported).
 pub(crate) fn admit(
     config: &ProviderConfig,
-    models: &[&str],
     settings: Option<&str>,
     backend: &str,
     base_url: &str,
     local: Option<&'static str>,
 ) -> Result<(), Error> {
-    if !models.contains(&config.model().as_str()) {
-        return Err(Error::Unsupported);
-    }
-    if settings.is_some_and(|settings| config.settings_fingerprint().as_str() != settings) {
+    crate::defaults::validate_model(config.model().as_str())?;
+    if settings.is_some_and(|settings| {
+        config.settings_fingerprint().as_str()
+            != format!("{settings};model={}", config.model().as_str())
+    }) {
         return Err(Error::Unsupported);
     }
     match config.location() {
@@ -99,7 +100,6 @@ pub(crate) fn admit(
 
 /// The adapter's one admitted configuration for a model id.
 pub(crate) fn provider_config(
-    models: &[&str],
     model: &str,
     settings: &str,
     backend: &str,
@@ -107,13 +107,11 @@ pub(crate) fn provider_config(
     id: &str,
     auth_ref: &str,
 ) -> Result<ProviderConfig, Error> {
-    if !models.contains(&model) {
-        return Err(Error::Unsupported);
-    }
+    crate::defaults::validate_model(model)?;
     ProviderConfig::new(
         id.into(),
         model.into(),
-        settings.into(),
+        format!("{settings};model={model}").into(),
         Location::Remote {
             backend: backend.into(),
             base_url: base_url.into(),
@@ -165,6 +163,78 @@ pub(crate) fn single_text(scope: &Scope) -> Result<&NfcText, Error> {
         [text] => Ok(text),
         _ => Err(Error::ConsentRequired),
     }
+}
+
+/// Classify only model/capability refusals. Provider text is inspected transiently,
+/// never retained in the error or presented as untrusted instructions.
+pub(crate) fn check_model_response(
+    response: &HttpResponse,
+    config: &ProviderConfig,
+) -> Result<(), Error> {
+    if !matches!(response.status, 400 | 404 | 422) {
+        return Ok(());
+    }
+    let fields = error_fields(&response.body);
+    // The fixed Anthropic Messages endpoint has no resource selector other
+    // than the chosen model; its typed 404 remains actionable without prose.
+    let model = (config.id().as_str() == "anthropic"
+        && response.status == 404
+        && fields.iter().any(|field| field == "not_found_error"))
+        || matches(
+            &fields,
+            &[
+                "model_not_found",
+                "model_not_available",
+                "invalid_model",
+                "unknown_model",
+                "model_not_supported",
+                "model_not_exist",
+            ],
+        )
+        || (matches(&fields, &["model"])
+            && matches(
+                &fields,
+                &[
+                    "does not exist",
+                    "not_found_error",
+                    "not found",
+                    "not supported",
+                    "does not support",
+                    "unavailable",
+                    "not available",
+                    "no access",
+                ],
+            ));
+    let capability = matches(
+        &fields,
+        &[
+            "unsupported_value",
+            "unsupported_parameter",
+            "not supported",
+            "does not support",
+        ],
+    ) && matches(
+        &fields,
+        &[
+            "response_format",
+            "json_schema",
+            "structured",
+            "audio",
+            "modalities",
+        ],
+    );
+    if model || capability {
+        return Err(Error::ModelUnavailable {
+            provider: config.id().clone(),
+            model: config.model().clone(),
+            message: if capability {
+                "required capability is not supported"
+            } else {
+                "model is missing or inaccessible"
+            },
+        });
+    }
+    Ok(())
 }
 
 /// The disclosure language for a source/target operation.
@@ -290,7 +360,7 @@ mod tests {
         ProviderConfig::new(
             "provider".into(),
             model.into(),
-            settings.into(),
+            format!("{settings};model={model}").into(),
             Location::Remote {
                 backend: backend.into(),
                 base_url: base_url.into(),
@@ -304,7 +374,7 @@ mod tests {
         ProviderConfig::new(
             "provider".into(),
             model.into(),
-            settings.into(),
+            format!("{settings};model={model}").into(),
             Location::Local {
                 backend: "local".into(),
                 model_ref: "sha256:model".into(),
@@ -313,20 +383,13 @@ mod tests {
         .unwrap()
     }
 
-    const MODELS: [&str; 1] = ["model-v1"];
     const SETTINGS: &str = "settings-v1";
     const BACKEND: &str = "provider";
     const BASE_URL: &str = "https://api.provider.example/v1";
 
     #[test]
     fn admission_table_refuses_every_unverified_constructor_input() {
-        let cases: [(&str, ProviderConfig, Option<&'static str>, &str); 7] = [
-            (
-                "deprecated model",
-                config("model-v0", SETTINGS, BACKEND, BASE_URL),
-                Some("remote provider required"),
-                "unsupported",
-            ),
+        let cases: [(&str, ProviderConfig, Option<&'static str>, &str); 6] = [
             (
                 "wrong settings",
                 config("model-v1", "other-settings", BACKEND, BASE_URL),
@@ -375,15 +438,8 @@ mod tests {
             ),
         ];
         for (name, provider, local_refusal, expected) in cases {
-            let error = admit(
-                &provider,
-                &MODELS,
-                Some(SETTINGS),
-                BACKEND,
-                BASE_URL,
-                local_refusal,
-            )
-            .expect_err("unverified configuration admitted");
+            let error = admit(&provider, Some(SETTINGS), BACKEND, BASE_URL, local_refusal)
+                .expect_err("unverified configuration admitted");
             let matches_expected = match expected {
                 "unsupported" => matches!(error, Error::Unsupported),
                 _ => matches!(error, Error::Invalid(_)),
@@ -397,7 +453,6 @@ mod tests {
                 BACKEND,
                 "https://api.provider.example/v1/",
             ),
-            &MODELS,
             Some(SETTINGS),
             BACKEND,
             BASE_URL,
@@ -407,9 +462,8 @@ mod tests {
     }
 
     #[test]
-    fn provider_config_admits_only_the_documented_model() {
+    fn provider_config_binds_the_selected_model_to_its_settings() {
         let provider = provider_config(
-            &MODELS,
             "model-v1",
             SETTINGS,
             BACKEND,
@@ -419,18 +473,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(provider.model().as_str(), "model-v1");
-        assert_eq!(provider.settings_fingerprint().as_str(), SETTINGS);
+        assert_eq!(
+            provider.settings_fingerprint().as_str(),
+            "settings-v1;model=model-v1"
+        );
         assert!(matches!(
             provider_config(
-                &MODELS,
-                "model-v0",
+                "",
                 SETTINGS,
                 BACKEND,
                 BASE_URL,
                 "provider",
                 "PROVIDER_API_KEY",
             ),
-            Err(Error::Unsupported)
+            Err(Error::Invalid(_))
         ));
     }
 

@@ -28,6 +28,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let mut provider = "openai".to_owned();
     let mut model: Option<String> = None;
     let mut yes_upload = false;
+    let mut accept_unknown_price = false;
     while let Some(flag) = args.next() {
         match utf8(&flag, "fillers flag")? {
             "--language" => {
@@ -64,6 +65,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
                 );
             }
             "--yes-upload" => yes_upload = true,
+            "--accept-unknown-price" => accept_unknown_price = true,
             "--help" | "-h" => return Ok(usage_output()),
             other => return Err(CliError::Usage(format!("unknown fillers flag: {other}"))),
         }
@@ -86,7 +88,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let access = TextAccess::open(
         provider,
         &credentials,
-        Box::new(CliConsent::new(yes_upload)),
+        Box::new(CliConsent::new(yes_upload, accept_unknown_price)),
     )?;
 
     let lease = WriterLease::acquire(&project_path)?;
@@ -131,7 +133,7 @@ fn usage() -> CliError {
 }
 fn usage_text() -> &'static str {
     "usage: vibecut-cli fillers <project> --language vi|en|zh|zh-Hans|zh-Hant --llm \
-     [--include-markers] [--provider openai|anthropic] [--model <id>] [--yes-upload]"
+     [--include-markers] [--provider openai|anthropic] [--model <id>] [--yes-upload] [--accept-unknown-price]"
 }
 fn usage_output() -> Output {
     Output::new(

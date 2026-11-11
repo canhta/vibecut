@@ -49,7 +49,7 @@ pub fn is_match(iou: f64) -> bool {
     iou >= 0.5
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Metrics {
     pub suggestions: usize,
     pub must_total: usize,
@@ -64,8 +64,30 @@ pub struct Metrics {
     pub duration_compliant: usize,
     pub duration_compliance: f64,
     pub snap_failures: usize,
-    pub cost_micros: u64,
+    pub cost_micros: Option<u64>,
     pub wall_ms: u64,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            suggestions: 0,
+            must_total: 0,
+            must_hit: 0,
+            hit_rate: 0.0,
+            precision_k: 0,
+            precision_matches: 0,
+            precision_at_k: 0.0,
+            boundary_edges: 0,
+            boundary_bad_edges: 0,
+            boundary_quality: None,
+            duration_compliant: 0,
+            duration_compliance: 0.0,
+            snap_failures: 0,
+            cost_micros: Some(0),
+            wall_ms: 0,
+        }
+    }
 }
 
 impl Metrics {
@@ -85,7 +107,10 @@ impl Metrics {
             .duration_compliant
             .saturating_add(other.duration_compliant);
         self.snap_failures = self.snap_failures.saturating_add(other.snap_failures);
-        self.cost_micros = self.cost_micros.saturating_add(other.cost_micros);
+        self.cost_micros = self
+            .cost_micros
+            .zip(other.cost_micros)
+            .map(|(a, b)| a.saturating_add(b));
         self.wall_ms = self.wall_ms.saturating_add(other.wall_ms);
         self.recompute();
     }
@@ -121,7 +146,7 @@ pub struct Evaluation<'a> {
     pub profile: &'a LanguageProfile,
     pub settings: &'a ResolvedSettings,
     pub k: usize,
-    pub cost_micros: u64,
+    pub cost_micros: Option<u64>,
     pub wall_ms: u64,
     pub snap_failures: usize,
 }
@@ -352,7 +377,7 @@ mod tests {
             profile,
             settings: &settings,
             k: 5,
-            cost_micros: 0,
+            cost_micros: Some(0),
             wall_ms: 0,
             snap_failures: 0,
         })

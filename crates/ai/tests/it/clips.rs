@@ -57,9 +57,9 @@ fn input(language: &str, n: usize) -> ClipInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::clips::AnthropicClipSuggester::provider_config(ai::anthropic::MODEL).unwrap()
+        ai::clips::AnthropicClipSuggester::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::clips::OpenAiClipSuggester::provider_config(ai::openai::TRANSLATION_MODEL).unwrap()
+        ai::clips::OpenAiClipSuggester::provider_config("gpt-6.1-sol").unwrap()
     }
 }
 fn scope(w: &ClipInput, p: &dyn ClipSuggester) -> Scope {
@@ -438,7 +438,7 @@ fn provider_failures_are_typed() {
 #[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; one bounded gpt-6-luna request"]
 fn live_clip_providers() {
     assert_eq!(std::env::var("VIBECUT_LIVE_AI").as_deref(), Ok("1"));
-    let cfg = ai::clips::OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL).unwrap();
+    let cfg = ai::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
     let p = OpenAiClipSuggester::new(
         cfg,
         ApiKey::new(std::env::var("OPENAI_API_KEY").unwrap()).unwrap(),
@@ -999,18 +999,18 @@ fn luna_model_selection_disclosure_and_nested_schema_match_the_wire() {
         cancel: None,
         fail: false,
     });
-    let cfg = ai::clips::OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL).unwrap();
+    let cfg = ai::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
     let p =
         OpenAiClipSuggester::new(cfg, ApiKey::new("synthetic-key").unwrap(), t.clone()).unwrap();
     let s = scope(&w, &p);
     assert_eq!(
         p.disclosure(&s).unwrap().unwrap().model.as_str(),
-        OPENAI_LUNA_MODEL
+        "gpt-6-luna"
     );
     assert_eq!(run(&p, &w).unwrap().clips.len(), 1);
     let requests = t.requests.lock().unwrap();
     let wire: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(wire["model"], OPENAI_LUNA_MODEL);
+    assert_eq!(wire["model"], "gpt-6-luna");
     let item = &wire["text"]["format"]["schema"]["properties"]["clips"]["items"];
     assert!(item["properties"].get("start_segment_id").is_none());
     assert_eq!(

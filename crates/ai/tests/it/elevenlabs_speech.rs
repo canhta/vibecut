@@ -5,8 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::elevenlabs::speech::{
-    ElevenLabsSpeech, ElevenLabsSpeechSettings, FLASH_MICROS_PER_CHARACTER, FLASH_MODEL,
-    LoggingMode, MULTILINGUAL_MICROS_PER_CHARACTER, MULTILINGUAL_MODEL, SAMPLE_RATE, SpeechSpeed,
+    ElevenLabsSpeech, ElevenLabsSpeechSettings, LoggingMode, SAMPLE_RATE, SpeechSpeed,
 };
 use ai::speech::{
     SpeechAudio, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer,
@@ -316,7 +315,7 @@ fn write_capture(
         "samples": audio.samples.len(),
         "duration_micros": audio.duration_micros,
         "character_cost": audio.usage.billable_characters,
-        "actual_micros": audio.usage.actual_cost.micros(),
+        "actual_micros": audio.usage.actual_cost.as_ref().unwrap().micros(),
         "fingerprint": audio.fingerprint.as_str(),
         "captured": "live production transport; synthetic text",
     });
@@ -339,7 +338,7 @@ fn success_uses_production_seam_and_exact_request() {
         pcm("provider-success.wav"),
         Some(character_cost),
     )]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let request = build_request(
         adapter.config().clone(),
         text,
@@ -361,7 +360,7 @@ fn success_uses_production_seam_and_exact_request() {
     assert_eq!(text.chars().count(), 44);
     assert_eq!(character_cost, 22);
     assert_eq!(audio.usage.billable_characters, Some(character_cost));
-    assert_eq!(audio.usage.actual_cost, money(actual_micros));
+    assert_eq!(audio.usage.actual_cost, Some(money(actual_micros)));
     assert_eq!(
         audio.fingerprint,
         adapter.capabilities(&request).fingerprint
@@ -388,7 +387,7 @@ fn success_uses_production_seam_and_exact_request() {
     }));
     let value = body(call);
     assert_eq!(value["text"], text);
-    assert_eq!(value["model_id"], FLASH_MODEL);
+    assert_eq!(value["model_id"], "eleven_flash_v2_5");
     assert_eq!(value["language_code"], "vi");
     assert_eq!(value["apply_text_normalization"], "auto");
     assert!(value.get("voice_settings").is_none());
@@ -399,8 +398,8 @@ fn success_uses_production_seam_and_exact_request() {
 #[test]
 fn capability_gates_refuse_before_transport() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let multilingual = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
-    let flash = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+    let multilingual = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
+    let flash = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let table = fixture_json("unsupported-language.json");
 
     for (adapter, key, expected_ok) in [
@@ -506,27 +505,24 @@ fn capability_gates_refuse_before_transport() {
 #[test]
 fn cost_is_exact_per_scalar_with_minimum_one() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let flash = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
-    let multilingual = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+    let flash = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
+    let multilingual = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let table = fixture_json("cost.json");
     assert_eq!(table["currency"].as_str(), Some("USD"));
-    assert_eq!(
-        table["flash_micros_per_character"].as_u64(),
-        Some(FLASH_MICROS_PER_CHARACTER)
-    );
+    assert_eq!(table["flash_micros_per_character"].as_u64(), Some(40));
     assert_eq!(
         table["multilingual_micros_per_character"].as_u64(),
-        Some(MULTILINGUAL_MICROS_PER_CHARACTER)
+        Some(80)
     );
     assert_eq!(table["minimum_characters"].as_u64(), Some(1));
     for example in table["examples"].as_array().unwrap() {
         let model = example["model"].as_str().unwrap();
-        let adapter = if model == FLASH_MODEL {
+        let adapter = if model == "eleven_flash_v2_5" {
             &flash
         } else {
             &multilingual
         };
-        let language = if model == FLASH_MODEL {
+        let language = if model == "eleven_flash_v2_5" {
             language("vi", "Latn")
         } else {
             language("en", "Latn")
@@ -558,10 +554,7 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
         output(),
         1_000_000,
     );
-    assert_eq!(
-        flash.estimate(&one),
-        SynthesisEstimate::Exact(money(FLASH_MICROS_PER_CHARACTER))
-    );
+    assert_eq!(flash.estimate(&one), SynthesisEstimate::Exact(money(40)));
     let one_multi = build_request(
         multilingual.config().clone(),
         "A",
@@ -572,7 +565,7 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
     );
     assert_eq!(
         multilingual.estimate(&one_multi),
-        SynthesisEstimate::Exact(money(MULTILINGUAL_MICROS_PER_CHARACTER))
+        SynthesisEstimate::Exact(money(80))
     );
 
     let emoji = build_request(
@@ -587,14 +580,14 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
     // Non-BMP text uses the larger UTF-16 count as a pre-call upper bound.
     assert_eq!(
         flash.estimate(&emoji),
-        SynthesisEstimate::UpperBound(money(16 * FLASH_MICROS_PER_CHARACTER))
+        SynthesisEstimate::UpperBound(money(16 * 40))
     );
     assert!(matches!(
         SynthesisConsent::grant(
             &emoji,
             &flash.capabilities(&emoji),
             flash.estimate(&emoji),
-            money(13 * FLASH_MICROS_PER_CHARACTER)
+            money(13 * 40)
         ),
         Err(Error::Cost)
     ));
@@ -613,7 +606,7 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
     assert_eq!(combining.characters(), 1);
     assert_eq!(
         flash.estimate(&combining),
-        SynthesisEstimate::Exact(money(10_001 * FLASH_MICROS_PER_CHARACTER))
+        SynthesisEstimate::Exact(money(10_001 * 40))
     );
 
     // `character-cost` is recorded as provider billing units. Flash reports half a
@@ -624,7 +617,7 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
         pcm_reply(pcm("success.wav"), Some(17)),
         pcm_reply(pcm("success.wav"), None),
     ]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let request = build_request(
         adapter.config().clone(),
         "Xin chào 👩🏽‍💻",
@@ -636,19 +629,13 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
     let approved = grant_consent(&adapter, &request, 1_000_000);
     let audio = synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
     assert_eq!(audio.usage.billable_characters, Some(17));
-    assert_eq!(
-        audio.usage.actual_cost,
-        money(16 * FLASH_MICROS_PER_CHARACTER)
-    );
+    assert_eq!(audio.usage.actual_cost, Some(money(16 * 40)));
 
     let approved = grant_consent(&adapter, &request, 1_000_000);
     let audio = synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
     // Without the provider header, the usage stays explicitly unknown.
     assert_eq!(audio.usage.billable_characters, None);
-    assert_eq!(
-        audio.usage.actual_cost,
-        money(16 * FLASH_MICROS_PER_CHARACTER)
-    );
+    assert_eq!(audio.usage.actual_cost, Some(money(16 * 40)));
 }
 
 #[test]
@@ -669,21 +656,21 @@ fn settings_and_normalization_are_consent_bound() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|model| model.as_str() == Some(FLASH_MODEL))
+            .any(|model| model.as_str() == Some("eleven_flash_v2_5"))
     );
     assert!(
         table["language_code_unsupported_models"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|model| model.as_str() == Some(MULTILINGUAL_MODEL))
+            .any(|model| model.as_str() == Some("eleven_multilingual_v2"))
     );
 
     let fake = Arc::new(FakeTransport::new(vec![
         pcm_reply(pcm("success.wav"), Some(13)),
         pcm_reply(pcm("success.wav"), Some(13)),
     ]));
-    let adapter = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let request = build_request(
         adapter.config().clone(),
         "Xin chào 👩🏽‍💻",
@@ -720,7 +707,7 @@ fn settings_and_normalization_are_consent_bound() {
         pcm("success.wav"),
         Some(13),
     )]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, speed_settings, voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", speed_settings, voices());
     let request = build_request(
         adapter.config().clone(),
         "Xin chào 👩🏽‍💻",
@@ -755,7 +742,7 @@ fn settings_and_normalization_are_consent_bound() {
     assert_ne!(slow.settings_fingerprint(), fast.settings_fingerprint());
     let slow_adapter = build_adapter(
         Arc::new(FakeTransport::new(Vec::new())),
-        FLASH_MODEL,
+        "eleven_flash_v2_5",
         slow,
         voices(),
     );
@@ -763,7 +750,7 @@ fn settings_and_normalization_are_consent_bound() {
         pcm("success.wav"),
         Some(13),
     )]));
-    let fast_adapter = build_adapter(fast_fake.clone(), FLASH_MODEL, fast, voices());
+    let fast_adapter = build_adapter(fast_fake.clone(), "eleven_flash_v2_5", fast, voices());
     assert_ne!(slow_adapter.config(), fast_adapter.config());
     let slow_request = build_request(
         slow_adapter.config().clone(),
@@ -814,7 +801,7 @@ fn zero_retention_is_requested_but_never_claimed() {
         pcm("success.wav"),
         Some(13),
     )]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, zrm, voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", zrm, voices());
     let request = build_request(
         adapter.config().clone(),
         "Xin chào 👩🏽‍💻",
@@ -833,7 +820,7 @@ fn zero_retention_is_requested_but_never_claimed() {
             .contains("does not verify")
     );
     assert_eq!(disclosure.operation, ai::Operation::Synthesize);
-    assert_eq!(disclosure.model.as_str(), FLASH_MODEL);
+    assert_eq!(disclosure.model.as_str(), "eleven_flash_v2_5");
     assert_eq!(disclosure.languages.as_str(), "vi/Latn");
     assert_eq!(disclosure.audio_micros, 1_000_000);
     assert!(matches!(
@@ -855,7 +842,7 @@ fn zero_retention_is_requested_but_never_claimed() {
             pcm("success.wav"),
             Some(13),
         )])),
-        FLASH_MODEL,
+        "eleven_flash_v2_5",
         settings(),
         voices(),
     );
@@ -909,7 +896,7 @@ fn long_text_splits_at_boundaries_without_losing_text() {
             .map(|chunk| pcm_reply(pcm("success.wav"), Some(chunk.chars().count() as u64)))
             .collect();
         let fake = Arc::new(FakeTransport::new(replies));
-        let adapter = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+        let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
         let request = build_request(
             adapter.config().clone(),
             &text,
@@ -937,7 +924,7 @@ fn long_text_splits_at_boundaries_without_losing_text() {
         assert_eq!(actual.concat(), text);
         for (call, chunk) in calls.iter().zip(&expected) {
             let value = body(call);
-            assert_eq!(value["model_id"], MULTILINGUAL_MODEL);
+            assert_eq!(value["model_id"], "eleven_multilingual_v2");
             assert!(value.get("language_code").is_none());
             assert!(chunk.chars().count() <= limit);
         }
@@ -974,7 +961,7 @@ fn errors_are_typed_and_never_retried() {
     ];
     for (file, kind) in cases {
         let fake = Arc::new(FakeTransport::new(vec![error_reply(file)]));
-        let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+        let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
         let request = build_request(
             adapter.config().clone(),
             "synthetic text",
@@ -1014,7 +1001,7 @@ fn errors_are_typed_and_never_retried() {
             headers: Vec::new(),
             body: b"{}".to_vec(),
         }]));
-        let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+        let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
         let request = build_request(
             adapter.config().clone(),
             "synthetic text",
@@ -1045,7 +1032,7 @@ fn malformed_and_oversized_audio_is_rejected() {
     ];
     for (body, cost) in cases {
         let fake = Arc::new(FakeTransport::new(vec![pcm_reply(body, cost)]));
-        let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+        let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
         let request = build_request(
             adapter.config().clone(),
             "synthetic text",
@@ -1065,7 +1052,7 @@ fn malformed_and_oversized_audio_is_rejected() {
         pcm_reply(vec![0; 4_800], Some(10_000)),
         pcm_reply(vec![0; 4_800], Some(10_000)),
     ]));
-    let adapter = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let text = format!("{}\n{}", "a".repeat(9_000), "b".repeat(2_000));
     let request = build_request(
         adapter.config().clone(),
@@ -1107,7 +1094,7 @@ fn malformed_and_oversized_audio_is_rejected() {
     });
     for reply in replies {
         let fake = Arc::new(FakeTransport::new(vec![reply]));
-        let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+        let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
         let request = build_request(
             adapter.config().clone(),
             "synthetic text",
@@ -1128,7 +1115,7 @@ fn malformed_and_oversized_audio_is_rejected() {
 #[test]
 fn synthesis_failures_are_typed_without_partial_audio() {
     let fake = Arc::new(FakeTransport::new(vec![Reply::Failure(Error::Network)]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let request = build_request(
         adapter.config().clone(),
         "synthetic text",
@@ -1148,7 +1135,7 @@ fn synthesis_failures_are_typed_without_partial_audio() {
         pcm("success.wav"),
         Some(13),
     )]));
-    let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let flag = Arc::new(AtomicBool::new(true));
     let hooks = Hooks::shared(flag);
     assert!(matches!(
@@ -1163,7 +1150,7 @@ fn synthesis_failures_are_typed_without_partial_audio() {
         pcm_reply(pcm("success.wav"), Some(9_001)),
         Reply::Failure(Error::Server),
     ]));
-    let adapter = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let split_request = build_request(
         adapter.config().clone(),
         &split,
@@ -1191,7 +1178,7 @@ fn synthesis_failures_are_typed_without_partial_audio() {
         flag.clone(),
         expected_calls,
     ));
-    let adapter = build_adapter(fake.clone(), MULTILINGUAL_MODEL, settings(), voices());
+    let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let split_request = build_request(
         adapter.config().clone(),
         &split,
@@ -1221,7 +1208,7 @@ fn unsupported_configuration_and_voices_are_refused() {
     for stock in [Vec::new(), vec![voices()[0].clone(), voices()[0].clone()]] {
         assert!(matches!(
             ElevenLabsSpeech::new(
-                provider_config(FLASH_MODEL, settings()),
+                provider_config("eleven_flash_v2_5", settings()),
                 key.clone(),
                 fake.clone(),
                 settings(),
@@ -1238,7 +1225,7 @@ fn unsupported_configuration_and_voices_are_refused() {
         }];
         assert!(matches!(
             ElevenLabsSpeech::new(
-                provider_config(FLASH_MODEL, settings()),
+                provider_config("eleven_flash_v2_5", settings()),
                 key.clone(),
                 fake.clone(),
                 settings(),
@@ -1264,19 +1251,19 @@ fn live_elevenlabs_speech_uses_production_transport() {
         (
             "vi",
             "Latn",
-            FLASH_MODEL,
+            "eleven_flash_v2_5",
             "Xin chào, đây là một bài kiểm tra giọng nói.",
         ),
         (
             "en",
             "Latn",
-            MULTILINGUAL_MODEL,
+            "eleven_multilingual_v2",
             "Hello, this is a synthetic speech test.",
         ),
         (
             "zh",
             "Hans",
-            MULTILINGUAL_MODEL,
+            "eleven_multilingual_v2",
             "你好，这是一次合成语音测试。",
         ),
     ];

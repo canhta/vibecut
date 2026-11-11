@@ -105,7 +105,7 @@ fn runner() -> JobRunner {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::chapters::OpenAiChapterGenerator::provider_config(ai::chapters::OPENAI_MODEL).unwrap()
+    ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
 }
 
 fn capabilities(scope: &ai::Scope, config: &ai::ProviderConfig) -> ai::Capabilities {
@@ -271,8 +271,7 @@ fn access(
     generator: Arc<dyn ai::chapters::ChapterGenerator>,
     allowed: Arc<AtomicBool>,
 ) -> TextAccess {
-    let config =
-        ai::fillers::OpenAiFillerClassifier::provider_config(ai::fillers::OPENAI_MODEL).unwrap();
+    let config = ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
     TextAccess::new(
         generator,
         Arc::new(UnusedFillers { config }),

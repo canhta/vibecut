@@ -6,7 +6,7 @@ use super::translation::{TranslationRun, TranslationTarget, window};
 use crate::jobs::JobRunner;
 use crate::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, TranslationProvider,
-    UploadRequest, build_translator, estimate_money,
+    UploadRequest, approve_upload, build_translator, estimate_money,
 };
 use crate::{Command, EditError, Session};
 use ai::Money;
@@ -160,11 +160,7 @@ pub fn translate_selected(
             &estimate,
             &scope,
         )?;
-        consent.approve(&request)?;
-        let consent_token = Some(ai::Consent::grant(
-            scope.clone(),
-            estimate_money(&estimate)?,
-        )?);
+        let consent_token = Some(approve_upload(consent, &request, &scope, &estimate)?);
         let run = TranslationRun::new(
             TranslationTarget { session, item },
             adapter.translator.clone(),
@@ -173,11 +169,15 @@ pub fn translate_selected(
             consent_token,
             TRANSLATE_ATTEMPTS,
             {
-                let each = estimate_money(&estimate)?;
-                Money::new(
-                    each.currency(),
-                    each.micros().saturating_mul(u64::from(TRANSLATE_ATTEMPTS)),
-                )?
+                if matches!(estimate, ai::CostEstimate::Unknown) {
+                    None
+                } else {
+                    let each = estimate_money(&estimate)?;
+                    Some(Money::new(
+                        each.currency(),
+                        each.micros().saturating_mul(u64::from(TRANSLATE_ATTEMPTS)),
+                    )?)
+                }
             },
         )?;
         let (id, token) = run.submit(runner, session)?;

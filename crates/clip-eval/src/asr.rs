@@ -5,7 +5,7 @@
 //! source coordinates and caches the resulting captions transcript.
 use crate::budget::Budget;
 use crate::{Error, Result};
-use ai::elevenlabs::{ElevenLabsTranscriber, MODEL};
+use ai::elevenlabs::ElevenLabsTranscriber;
 use ai::transport::UreqTransport;
 use ai::{
     AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Request, SampleRange, Scope, Stage,
@@ -35,7 +35,7 @@ impl ExecutionHooks for NoHooks {
 
 pub struct Prepared {
     pub transcript: Transcript,
-    pub cost_micros: u64,
+    pub cost_micros: Option<u64>,
     pub wall_ms: u64,
     pub chunks: usize,
     pub notes: Vec<String>,
@@ -49,10 +49,12 @@ pub fn prepare(
     language: &LanguageTag,
     source_sha: &str,
     budget: &mut Budget,
+    model: &str,
+    accept_unknown_price: bool,
 ) -> Result<Prepared> {
     let started = Instant::now();
     let key = Credentials::from_env().elevenlabs()?;
-    let config = ElevenLabsTranscriber::provider_config(MODEL)?;
+    let config = ElevenLabsTranscriber::provider_config(model)?;
     let transcriber = ElevenLabsTranscriber::new(config, key, Arc::new(UreqTransport::new()))?;
     let asset = SourceAsset::import(AssetId(1), source.to_path_buf())?;
     let duration = asset
@@ -65,7 +67,7 @@ pub fn prepare(
         overlap: Tick::ZERO,
     };
     let mut recognitions = Vec::new();
-    let mut cost_micros = 0u64;
+    let mut cost_micros = Some(0u64);
     let mut notes = Vec::new();
     let mut failure = None;
     let mut windows = 0usize;
@@ -95,10 +97,26 @@ pub fn prepare(
                     SAMPLE_RATE,
                     format!("asr:{source_sha}").into(),
                 )?;
-                let estimate = estimate_micros(&transcriber.estimate(&scope))?;
-                budget.reserve(estimate)?;
-                cost_micros = cost_micros.saturating_add(estimate);
-                let consent = Consent::grant(scope.clone(), Money::new("USD", estimate)?)?;
+                let estimate = transcriber.estimate(&scope);
+                let consent = match estimate {
+                    CostEstimate::Free => Consent::grant(scope.clone(), Money::new("USD", 0)?)?,
+                    CostEstimate::UpperBound(money) => {
+                        budget.reserve(money.micros())?;
+                        cost_micros = cost_micros.map(|total| total.saturating_add(money.micros()));
+                        Consent::grant(scope.clone(), money)?
+                    }
+                    CostEstimate::Unknown if accept_unknown_price => {
+                        cost_micros = None;
+                        Consent::grant_unknown_price(
+                            scope.clone(),
+                            &ai::UnknownPriceAcknowledgement::grant(
+                                scope.provider.clone(),
+                                scope.operation,
+                            ),
+                        )?
+                    }
+                    CostEstimate::Unknown => return Err(Error::UnknownCost),
+                };
                 let request = Request {
                     scope: &scope,
                     consent: Some(&consent),
@@ -238,19 +256,12 @@ fn samples_from_tick(tick: Tick) -> Result<u64> {
     u64::try_from(samples).map_err(|_| Error::Payload)
 }
 
-fn estimate_micros(estimate: &CostEstimate) -> Result<u64> {
-    match estimate {
-        CostEstimate::Free => Ok(0),
-        CostEstimate::UpperBound(money) => Ok(money.micros()),
-        CostEstimate::Unknown => Err(Error::UnknownCost),
-    }
-}
-
 /// Cache path for a source whose transcript was prepared by Scribe.
-pub fn cache_path(out_dir: &Path, source_sha: &str) -> PathBuf {
-    out_dir
-        .join("cache/transcripts")
-        .join(format!("{source_sha}-elevenlabs-{MODEL}.json"))
+pub fn cache_path(out_dir: &Path, source_sha: &str, model: &str) -> PathBuf {
+    out_dir.join("cache/transcripts").join(format!(
+        "{source_sha}-elevenlabs-{}.json",
+        crate::label::sha256_bytes(model.as_bytes())
+    ))
 }
 
 #[cfg(test)]

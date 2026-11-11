@@ -14,6 +14,7 @@ mod model_transport;
 mod models;
 mod openai;
 mod openai_speech;
+mod remote_models;
 mod speech;
 mod translation;
 mod vision;

@@ -184,13 +184,54 @@ pub struct Scope {
 #[derive(Clone, Debug)]
 pub struct Consent {
     scope: Scope,
-    budget: Money,
+    budget: Option<Money>,
+}
+/// A human's explicit acknowledgement that this exact model's price is unknown.
+/// It authorizes no other configuration or operation, and is never persisted.
+#[derive(Clone, Debug)]
+pub struct UnknownPriceAcknowledgement {
+    provider: ProviderConfig,
+    operation: Operation,
+}
+impl UnknownPriceAcknowledgement {
+    /// Call only after the human explicitly accepts unknown pricing for this model/job kind.
+    pub fn grant(provider: ProviderConfig, operation: Operation) -> Self {
+        Self {
+            provider,
+            operation,
+        }
+    }
+    pub(crate) fn check(
+        &self,
+        provider: &ProviderConfig,
+        operation: Operation,
+    ) -> Result<(), Error> {
+        if &self.provider != provider || self.operation != operation {
+            return Err(Error::ConsentRequired);
+        }
+        Ok(())
+    }
 }
 impl Consent {
     /// The composition root calls this only after affirmative approval of the scope/budget.
     pub fn grant(scope: Scope, budget: Money) -> Result<Self, Error> {
         scope.validate()?;
-        Ok(Self { scope, budget })
+        Ok(Self {
+            scope,
+            budget: Some(budget),
+        })
+    }
+    /// Bind exact payload consent after a separate, model-bound unknown-price acknowledgement.
+    pub fn grant_unknown_price(
+        scope: Scope,
+        acknowledgement: &UnknownPriceAcknowledgement,
+    ) -> Result<Self, Error> {
+        scope.validate()?;
+        acknowledgement.check(&scope.provider, scope.operation)?;
+        Ok(Self {
+            scope,
+            budget: None,
+        })
     }
 }
 impl Scope {
@@ -283,7 +324,15 @@ pub fn authorize(
     }
     match estimate {
         CostEstimate::Free => Ok(()),
-        CostEstimate::UpperBound(cost) if token.budget.covers(cost) => Ok(()),
+        CostEstimate::UpperBound(cost)
+            if token
+                .budget
+                .as_ref()
+                .is_some_and(|budget| budget.covers(cost)) =>
+        {
+            Ok(())
+        }
+        CostEstimate::Unknown if token.budget.is_none() => Ok(()),
         _ => Err(Error::Cost),
     }
 }

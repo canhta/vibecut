@@ -8,7 +8,7 @@
 //! is used.
 use super::adapters::{Credentials, open_chapter, open_filler};
 use super::catalog::{CatalogOperation, TextProvider};
-use super::consent::{ConsentPrompt, Cost, UploadRequest, estimate_money};
+use super::consent::{ConsentPrompt, Cost, UploadRequest, approve_upload};
 use super::error::Error;
 use crate::EditError;
 use ai::chapters::{ChapterGenerator, ChapterInput};
@@ -167,8 +167,7 @@ impl TextAccess {
     ) -> Result<Consent, EditError> {
         let request =
             UploadRequest::for_scope(operation, &scope.provider, disclosure, estimate, scope)?;
-        self.consent.approve(&request)?;
-        Ok(Consent::grant(scope.clone(), estimate_money(estimate)?)?)
+        approve_upload(self.consent.as_ref(), &request, scope, estimate)
     }
 }
 

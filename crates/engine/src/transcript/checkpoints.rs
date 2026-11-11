@@ -6,7 +6,7 @@ use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{
     CancelToken, JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSpec, JobState, ResourceClass,
 };
-use crate::providers::{ConsentPrompt, Cost, Providers, estimate_money};
+use crate::providers::{ConsentPrompt, Cost, Providers, approve_upload};
 use ai::{Request, SampleRange};
 use captions::LanguageTag;
 use captions::NfcText;
@@ -63,11 +63,7 @@ pub(crate) fn transcribe_window(
             cost.add(&estimate);
             let consent_token = if providers.transcription().is_remote() {
                 let request = providers.upload_request(scope.clone())?;
-                consent.approve(&request)?;
-                Some(ai::Consent::grant(
-                    scope.clone(),
-                    estimate_money(&estimate)?,
-                )?)
+                Some(approve_upload(consent, &request, &scope, &estimate)?)
             } else {
                 None
             };

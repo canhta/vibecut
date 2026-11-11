@@ -627,7 +627,10 @@ fn provider_catalog_filters_operation_and_language() {
         engine::providers::choose_transcription("gipformer", None),
         Ok(TranscriptionProvider::Gipformer { .. })
     ));
-    assert!(engine::providers::choose_transcription("openai", Some("not-a-model")).is_err());
+    assert!(
+        matches!(engine::providers::choose_transcription("openai",Some("fixture-custom")),Ok(TranscriptionProvider::OpenAi {model}) if model=="fixture-custom")
+    );
+    assert!(engine::providers::choose_transcription("openai", Some("")).is_err());
 }
 
 #[test]

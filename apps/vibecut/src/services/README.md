@@ -1,6 +1,6 @@
 # Services
 
-Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_task`, `progress`.
+Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_task`, `remote_models`, `progress`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -13,6 +13,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `crop` | The source-normalized crop model: `portrait` and `control` (edge and corner drag, ratio lock, 5% minimum edge, 1% and 10% arrow steps). The editor's crop dialog lives in the player panel. |
 | `color_picker` | [Target-free colour controls and native screen sampler](color_picker/README.md). Callers own project targets, publication and history. |
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
+| `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
 | `progress` | `job_progress`: the stage line and progress bar every job surface draws from an engine snapshot. |
 
 ## Playback and limits
@@ -77,3 +78,8 @@ payload size, duration, cost and policy links the caller must disclose; the work
 blocks until the user approves or denies, the request is answered once, and a cancelled
 task returns `Cancelled` without sending approval. The modal keeps the request until
 answered, so a tab switch cannot drop it.
+
+Unknown-price uploads have an explicit checkbox. `TaskEvents` remembers at most
+16 acknowledged exact provider/operation identities within that task, while every
+payload still requires upload approval; changed models or job kinds need a new
+acknowledgement. Cancellation never sends approval.

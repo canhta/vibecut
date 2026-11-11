@@ -1,4 +1,4 @@
-//! Single-attempt OpenAI `gpt-audio-1.5` speech synthesis over Chat Completions.
+//! Single-attempt OpenAI speech synthesis over Chat Completions.
 //! Consent, cost, cancellation and validation stay in `speech`; this adapter owns
 //! the exact wire schema, built-in voice gate and bounded WAV decoding.
 use crate::remote::{self, UploadDisclosure};
@@ -16,14 +16,13 @@ use serde_json::json;
 use std::fmt;
 use std::sync::Arc;
 
-/// The only admitted OpenAI audio model. Deprecated Speech API models are refused.
-pub const SPEECH_MODEL: &str = "gpt-audio-1.5";
+/// The official OpenAI audio backend.
 const SPEECH_BACKEND: &str = "openai";
 pub const SPEECH_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 /// Observed live output: 24 kHz mono 16-bit PCM WAV.
 pub const SPEECH_SAMPLE_RATE: u32 = 24_000;
 /// Settings identity for composition-owned cache keys and provider configs.
-const SPEECH_SETTINGS_FINGERPRINT: &str = "openai-speech-v1;model=gpt-audio-1.5;format=wav;pcm16;rate=24000;store=false;instructions=verbatim-v1;normalization=nfc";
+const SPEECH_SETTINGS_FINGERPRINT: &str = "openai-speech-v1;format=wav;pcm16;rate=24000;store=false;instructions=verbatim-v1;normalization=nfc";
 /// Built-in voices from the OpenAI TTS guide. Custom voice IDs are voice cloning.
 pub const SPEECH_VOICES: [&str; 13] = [
     "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse",
@@ -42,11 +41,7 @@ pub const MAX_OUTPUT_TOKENS: u64 = 16_384;
 pub const AUDIO_TOKENS_PER_SECOND: u64 = 20;
 const INPUT_TOKEN_HEADROOM: u64 = 1_024;
 const COMPLETION_TOKEN_HEADROOM: u64 = 64;
-/// Published list prices in integer micro-USD per million tokens (2026-11-04).
-const PRICE_INPUT_MICROS_PER_MILLION: u64 = 2_500_000;
-const PRICE_AUDIO_INPUT_MICROS_PER_MILLION: u64 = 32_000_000;
-const PRICE_AUDIO_OUTPUT_MICROS_PER_MILLION: u64 = 64_000_000;
-const PRICE_TEXT_OUTPUT_MICROS_PER_MILLION: u64 = 10_000_000;
+/// Provider data policy linked in the upload disclosure.
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const INSTRUCTIONS: &str = "You are a text-to-speech engine. Read the user's text exactly as written, in its language, with natural pacing. Do not add, omit, translate, or explain anything.";
 
@@ -60,10 +55,9 @@ pub struct OpenAiSpeechSynthesizer {
 }
 
 impl OpenAiSpeechSynthesizer {
-    /// The one admitted configuration for this model id.
+    /// Bind one selected model to the adapter's wire settings.
     pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
         remote::provider_config(
-            &[SPEECH_MODEL],
             model,
             SPEECH_SETTINGS_FINGERPRINT,
             SPEECH_BACKEND,
@@ -73,7 +67,7 @@ impl OpenAiSpeechSynthesizer {
         )
     }
 
-    /// Admits only `gpt-audio-1.5`, the `openai` backend and the official HTTPS base
+    /// Admits a bounded selected model, the `openai` backend and official HTTPS base
     /// URL. The key is resolved by composition, never here.
     pub fn new(
         config: ProviderConfig,
@@ -82,7 +76,6 @@ impl OpenAiSpeechSynthesizer {
     ) -> Result<Self, Error> {
         remote::admit(
             &config,
-            &[SPEECH_MODEL],
             Some(SPEECH_SETTINGS_FINGERPRINT),
             SPEECH_BACKEND,
             super::BASE_URL,
@@ -167,6 +160,14 @@ impl SpeechSynthesizer for OpenAiSpeechSynthesizer {
     }
 
     fn estimate(&self, request: &SpeechRequest) -> SynthesisEstimate {
+        let Some(crate::defaults::Price::Speech {
+            text_input,
+            audio_output,
+            ..
+        }) = crate::defaults::price(&self.config, Operation::Synthesize)
+        else {
+            return SynthesisEstimate::Unknown;
+        };
         let Some(max_completion) = max_completion_tokens(request) else {
             return SynthesisEstimate::Unknown;
         };
@@ -178,12 +179,12 @@ impl SpeechSynthesizer for OpenAiSpeechSynthesizer {
         let Some(input_tokens) = text_bytes.checked_add(INPUT_TOKEN_HEADROOM) else {
             return SynthesisEstimate::Unknown;
         };
-        let Some(input) = price(input_tokens, PRICE_INPUT_MICROS_PER_MILLION) else {
+        let Some(input) = price(input_tokens, text_input) else {
             return SynthesisEstimate::Unknown;
         };
         // Price every completion token at the higher audio rate. This covers text
         // output, reasoning tokens and any unreported completion detail.
-        let Some(output) = price(max_completion, PRICE_AUDIO_OUTPUT_MICROS_PER_MILLION) else {
+        let Some(output) = price(max_completion, audio_output) else {
             return SynthesisEstimate::Unknown;
         };
         let Some(total) = input.checked_add(output) else {
@@ -240,6 +241,7 @@ impl SpeechSynthesizer for OpenAiSpeechSynthesizer {
             },
             MAX_SPEECH_RESPONSE_BYTES,
         )?;
+        remote::check_model_response(&response, &self.config)?;
         check_cancelled(hooks)?;
         let audio = parse_speech_response(&response, request)?;
         check_cancelled(hooks)?;
@@ -257,7 +259,8 @@ fn check_cancelled(hooks: &dyn ExecutionHooks) -> Result<(), Error> {
 
 fn capability_fingerprint(request: &SpeechRequest) -> NfcText {
     NfcText::from(format!(
-        "openai-gpt-audio-1.5;voice={};language={};script={};output=wav-pcm16-24000;instructions=verbatim-v1;normalization=NFC;settings={SPEECH_SETTINGS_FINGERPRINT}",
+        "openai-speech;model={};voice={};language={};script={};output=wav-pcm16-24000;instructions=verbatim-v1;normalization=NFC;settings={SPEECH_SETTINGS_FINGERPRINT}",
+        request.provider().model().as_str(),
         request.voice().as_str(),
         request.language().language.as_str(),
         request.language().script.as_str(),
@@ -288,7 +291,7 @@ fn price(tokens: u64, micros_per_million: u64) -> Option<u64> {
 
 fn build_body(request: &SpeechRequest, max_completion: u64) -> Result<Vec<u8>, Error> {
     let body = serde_json::to_vec(&json!({
-        "model": SPEECH_MODEL,
+        "model": request.provider().model().as_str(),
         "modalities": ["text", "audio"],
         "audio": {
             "voice": request.voice().as_str(),
@@ -352,7 +355,7 @@ fn parse_speech_response(
         sample_rate,
         duration_micros,
         fingerprint: capability_fingerprint(request),
-        usage: speech_usage(&parsed.usage)?,
+        usage: speech_usage(&parsed.usage, request.provider())?,
         transcript: Some(normalized),
     })
 }
@@ -516,7 +519,7 @@ fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, Error> {
     ))
 }
 
-fn speech_usage(usage: &WireUsage) -> Result<SpeechUsage, Error> {
+fn speech_usage(usage: &WireUsage, config: &ProviderConfig) -> Result<SpeechUsage, Error> {
     let completion = usage.completion_tokens;
     let (audio_tokens, text_tokens) = usage
         .completion_tokens_details
@@ -544,28 +547,38 @@ fn speech_usage(usage: &WireUsage) -> Result<SpeechUsage, Error> {
     let prompt_text = prompt_text
         .checked_add(usage.prompt_tokens - prompt_accounted)
         .ok_or(Error::Schema)?;
-    let input = price(prompt_text, PRICE_INPUT_MICROS_PER_MILLION)
-        .and_then(|value| {
-            price(prompt_audio, PRICE_AUDIO_INPUT_MICROS_PER_MILLION)
-                .and_then(|audio| value.checked_add(audio))
-        })
-        .ok_or(Error::Schema)?;
-    let output = price(audio_tokens, PRICE_AUDIO_OUTPUT_MICROS_PER_MILLION)
-        .and_then(|value| {
-            price(text_tokens, PRICE_TEXT_OUTPUT_MICROS_PER_MILLION)
-                .and_then(|text| value.checked_add(text))
-                .and_then(|value| {
-                    price(other_tokens, PRICE_AUDIO_OUTPUT_MICROS_PER_MILLION)
-                        .and_then(|other| value.checked_add(other))
-                })
-        })
-        .ok_or(Error::Schema)?;
-    let actual = input.checked_add(output).ok_or(Error::Schema)?;
+    let actual_cost = if let Some(crate::defaults::Price::Speech {
+        text_input,
+        audio_input,
+        text_output,
+        audio_output,
+    }) = crate::defaults::price(config, Operation::Synthesize)
+    {
+        let input = price(prompt_text, text_input)
+            .and_then(|value| {
+                price(prompt_audio, audio_input).and_then(|audio| value.checked_add(audio))
+            })
+            .ok_or(Error::Schema)?;
+        let output = price(audio_tokens, audio_output)
+            .and_then(|value| {
+                price(text_tokens, text_output).and_then(|text| value.checked_add(text))
+            })
+            .and_then(|value| {
+                price(other_tokens, audio_output).and_then(|other| value.checked_add(other))
+            })
+            .ok_or(Error::Schema)?;
+        Some(
+            Money::new("USD", input.checked_add(output).ok_or(Error::Schema)?)
+                .map_err(|_| Error::Schema)?,
+        )
+    } else {
+        None
+    };
     Ok(SpeechUsage {
         billable_characters: None,
         input_tokens: Some(usage.prompt_tokens),
         output_tokens: Some(completion),
-        actual_cost: Money::new("USD", actual).map_err(|_| Error::Schema)?,
+        actual_cost,
     })
 }
 

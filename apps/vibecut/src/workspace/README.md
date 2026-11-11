@@ -31,4 +31,4 @@ cache entries and a second open of that root composes
 through `EditError::Runtime`. The native adapter
 keeps an audio stream per project and shares the GPU adapter. Preferences persist bounded
 logical size, position and maximization by Home, Shorts and ProjectId (64 retained
-geometry entries, within the 16 KiB store bound).
+geometry entries, within the [preference store bound](../preferences/README.md)).

@@ -11,6 +11,7 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let at = editor.playback.position().unwrap_or(Tick::ZERO);
     let bank_ready = editor.caption_bank_ready();
     if let Some(subtitles) = &mut editor.subtitles {
+        subtitles.models = editor.preferences.ai_models.clone();
         let widgets = subtitles.ui(
             ui,
             &mut editor.session,

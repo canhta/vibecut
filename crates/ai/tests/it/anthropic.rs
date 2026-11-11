@@ -5,7 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::anthropic::{
-    ANTHROPIC_VERSION, AnthropicTranslator, ENDPOINT, MODEL, MessagesClient, TRANSLATION_MODE,
+    ANTHROPIC_VERSION, AnthropicTranslator, ENDPOINT, MessagesClient, TRANSLATION_MODE,
     message_text,
 };
 use ai::transport::{
@@ -66,7 +66,7 @@ fn response(text: Value) -> Value {
         "id": "msg_test",
         "type": "message",
         "role": "assistant",
-        "model": MODEL,
+        "model": "claude-sonnet-5-5",
         "content": [{"type": "text", "text": text.to_string()}],
         "stop_reason": "end_turn",
         "stop_sequence": null,
@@ -79,7 +79,7 @@ fn lang(value: &str) -> LanguageTag {
 }
 
 fn config() -> ProviderConfig {
-    AnthropicTranslator::provider_config(MODEL).unwrap()
+    AnthropicTranslator::provider_config("claude-sonnet-5-5").unwrap()
 }
 
 fn window(source: &str, target: &str) -> TranslationWindow {
@@ -188,7 +188,7 @@ fn six_directions_use_strict_messages_schema_and_context() {
         );
         assert!(!format!("{request:?}").contains("test-anthropic-key"));
         let body: Value = serde_json::from_slice(&request.body).unwrap();
-        assert_eq!(body["model"], MODEL);
+        assert_eq!(body["model"], "claude-sonnet-5-5");
         assert_eq!(body["stream"], false);
         assert_eq!(body["thinking"]["type"], "between_tools");
         assert_eq!(body["output_config"]["format"]["type"], "json_schema");
@@ -208,7 +208,7 @@ fn six_directions_use_strict_messages_schema_and_context() {
         assert_eq!(input["before"][0], "earlier context");
         let disclosure = translator.disclosure(&scope).unwrap().unwrap();
         assert_eq!(disclosure.provider.as_str(), "Anthropic");
-        assert_eq!(disclosure.model.as_str(), MODEL);
+        assert_eq!(disclosure.model.as_str(), "claude-sonnet-5-5");
         assert_eq!(
             disclosure.link("policy").unwrap().as_str(),
             ai::anthropic::POLICY_URL
@@ -467,7 +467,7 @@ fn capabilities_and_reuse_transport_are_explicit() {
     .unwrap();
     let scope = scope(&window("vi", "en"), config());
     let capabilities = translator.capabilities(&scope);
-    assert_eq!(capabilities.model.as_str(), MODEL);
+    assert_eq!(capabilities.model.as_str(), "claude-sonnet-5-5");
     assert_eq!(capabilities.mode.as_str(), TRANSLATION_MODE);
     assert_eq!(capabilities.operation, Operation::Translate);
     assert_eq!(capabilities.max_upload_bytes, Some(65_536));

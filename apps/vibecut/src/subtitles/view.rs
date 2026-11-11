@@ -18,6 +18,7 @@ use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 
 struct Controls {
+    models: crate::services::remote_models::AiPreferences,
     locale: Locale,
     widgets: Vec<(String, egui::Response)>,
 }
@@ -163,7 +164,7 @@ impl Controls {
         let options = provider_options_for(operation, tag.as_ref());
         let current = options
             .iter()
-            .find(|p| p.id == provider && p.models.contains(model));
+            .find(|p| p.id == provider && (!p.local || p.models.contains(model)));
         let label = current
             .map(|p| format!("{} / {}", provider_name(self.locale, p), model))
             .unwrap_or_else(|| self.tr(Text::SubChooseProvider).to_owned());
@@ -173,7 +174,23 @@ impl Controls {
             .selected_text(label)
             .show_ui(ui, |ui| {
                 for option in options {
-                    for value in &option.models {
+                    let selected_models = if option.local {
+                        option.models.clone()
+                    } else {
+                        vec![
+                            self.models
+                                .model(
+                                    option.id,
+                                    if operation == CatalogOperation::Transcribe {
+                                        ai::Operation::Transcribe
+                                    } else {
+                                        ai::Operation::Translate
+                                    },
+                                )
+                                .into(),
+                        ]
+                    };
+                    for value in &selected_models {
                         let r = ui.selectable_label(
                             option.id == provider && value == model,
                             format!("{} / {}", provider_name(self.locale, &option), value),
@@ -249,8 +266,19 @@ impl Subtitles {
             options.load_source(project);
         }
         self.project = Some(project);
+        if matches!(options.transcription.as_str(), "openai" | "elevenlabs") {
+            options.transcription_model = self
+                .models
+                .model(&options.transcription, ai::Operation::Transcribe)
+                .into();
+        }
+        options.translation_model = self
+            .models
+            .model(&options.translation, ai::Operation::Translate)
+            .into();
         let previous_options = options.clone();
         let mut controls = Controls {
+            models: self.models.clone(),
             locale,
             widgets: Vec::new(),
         };
@@ -373,6 +401,12 @@ impl Subtitles {
                         });
                     });
                 controls.remember("subtitles.translation.settings", &r.header_response);
+                if matches!(
+                    options.transcription.as_str(),
+                    "whisper.cpp" | "whisper" | "gipformer"
+                ) {
+                    options.local_transcription_model = options.transcription_model.clone();
+                }
                 if options.source != previous_options.source {
                     options.remember_source(project);
                 }
@@ -600,6 +634,7 @@ impl Subtitles {
         locale: Locale,
     ) -> Vec<(String, egui::Response)> {
         let mut controls = Controls {
+            models: self.models.clone(),
             locale,
             widgets: Vec::new(),
         };
@@ -1179,19 +1214,45 @@ impl Subtitles {
             } else {
                 Text::ShortsUploadTranscript
             }));
-            ui.label(i18n::format(
-                c.locale,
-                Text::SubDisclosure,
-                &[
-                    ("seconds", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
-                    ("cost", &cost_text(c.locale, &upload.cost)),
-                ],
-            ));
+            if matches!(upload.cost, Cost::Unknown) {
+                ui.label(i18n::format(
+                    c.locale,
+                    Text::ShortsValue,
+                    &[
+                        ("label", c.tr(Text::ShortsSeconds)),
+                        ("value", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
+                    ],
+                ));
+                ui.label(c.tr(Text::ShortsUnknownCost));
+            } else {
+                ui.label(i18n::format(
+                    c.locale,
+                    Text::SubDisclosure,
+                    &[
+                        ("seconds", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
+                        ("cost", &cost_text(c.locale, &upload.cost)),
+                    ],
+                ));
+            }
             for (i, (_, url)) in upload.terms.iter().enumerate() {
                 if url.starts_with("https://") {
                     let r = ui.hyperlink_to(c.tr(Text::SubProviderPolicy), url);
                     c.remember(format!("subtitles.consent.policy.{i}"), &r);
                 }
+            }
+            let mut acknowledged = false;
+            if let Some(active) = &self.active
+                && let Ok(mut state) = active.events.state.lock()
+                && let Some(pending) = &mut state.upload
+            {
+                if matches!(upload.cost, engine::providers::Cost::Unknown) {
+                    let response = ui.checkbox(
+                        &mut pending.price_acknowledged,
+                        c.tr(Text::ModelRemoteUnknownPrice),
+                    );
+                    c.remember("subtitles.consent.unknown_price", &response);
+                }
+                acknowledged = pending.price_acknowledged;
             }
             ui.horizontal(|ui| {
                 if c.button(
@@ -1199,7 +1260,7 @@ impl Subtitles {
                     "subtitles.consent.approve",
                     Text::ShortsConsent,
                     Icon::UploadSimple,
-                    true,
+                    !matches!(upload.cost, engine::providers::Cost::Unknown) || acknowledged,
                 ) {
                     let result = self.approve_upload(true);
                     self.ui_result(result);

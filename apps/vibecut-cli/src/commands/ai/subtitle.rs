@@ -29,6 +29,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let mut translate_provider = "openai".to_owned();
     let mut translate_model: Option<String> = None;
     let mut yes_upload = false;
+    let mut accept_unknown_price = false;
     let mut overwrite = false;
     while let Some(arg) = args.next() {
         let flag = utf8(&arg, "subtitle flag")?;
@@ -116,6 +117,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
                 );
             }
             "--yes-upload" => yes_upload = true,
+            "--accept-unknown-price" => accept_unknown_price = true,
             "--overwrite" => overwrite = true,
             "--help" | "-h" => {
                 return Ok(Output::new(
@@ -224,7 +226,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         overwrite,
     };
     let progress = CliProgress::new();
-    let consent = CliConsent::new(yes_upload);
+    let consent = CliConsent::new(yes_upload, accept_unknown_price);
     let outcome = subtitles::run(
         &request,
         &providers,
@@ -248,7 +250,7 @@ fn subtitle_usage() -> &'static str {
     "usage: vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]\n\
                      [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]\n\
                      [--provider <id>] [--model <id>] [--translate-provider <id>]\n\
-                     [--translate-model <id>] [--yes-upload] [--overwrite]"
+                     [--translate-model <id>] [--yes-upload] [--accept-unknown-price] [--overwrite]"
 }
 fn subtitle_usage_error() -> CliError {
     CliError::Usage(subtitle_usage().into())

@@ -128,7 +128,7 @@ impl SpeechSynthesizer for Fake {
                 billable_characters: Some(r.text().as_str().chars().count() as u64),
                 input_tokens: Some(1),
                 output_tokens: Some(1),
-                actual_cost: money(5),
+                actual_cost: Some(money(5)),
             },
             transcript: Some(r.text().clone()),
         };
@@ -147,7 +147,7 @@ impl SpeechSynthesizer for Fake {
                 audio.samples = vec![0.; 24_001];
                 audio.duration_micros = 1_000_042;
             }
-            Fixture::Overspend => audio.usage.actual_cost = money(11),
+            Fixture::Overspend => audio.usage.actual_cost = Some(money(11)),
             Fixture::Auth => return Err(Error::Auth),
             Fixture::Quota => return Err(Error::Quota),
             Fixture::RateLimit => {
@@ -466,7 +466,7 @@ fn free_exact_optional_transcript_and_duration_rounding() {
     audio.duration_micros = 42;
     audio.transcript = None;
     validate_speech_audio(&audio, &r, &p.caps, &p.estimate).unwrap();
-    audio.usage.actual_cost = money(0);
+    audio.usage.actual_cost = Some(money(0));
     validate_speech_audio(&audio, &r, &p.caps, &SynthesisEstimate::Free).unwrap();
     audio.duration_micros = 41;
     assert!(matches!(

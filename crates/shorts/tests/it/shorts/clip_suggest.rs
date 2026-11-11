@@ -554,7 +554,14 @@ fn provider_choice_never_falls_back() {
                 model: "gpt-6.1-sol".into(),
             }),
         ),
-        ("openai", Some("other"), None),
+        (
+            "openai",
+            Some("fixture-custom"),
+            Some(SuggestionProvider::OpenAi {
+                model: "fixture-custom".into(),
+            }),
+        ),
+        ("openai", Some(""), None),
         ("unknown", None, None),
     ];
     for (provider, model, expected) in cases {

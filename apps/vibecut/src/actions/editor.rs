@@ -640,6 +640,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "preferences.open",
+        Text::Settings,
+        ActionCategory::View,
+        "preferences dialog",
+        UiAction::OpenPreferences,
+        &[],
+    ),
+    ActionSpec::ui(
         "models.open",
         Text::ActionModelsOpen,
         ActionCategory::View,

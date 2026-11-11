@@ -3,7 +3,7 @@
 mod fixture;
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{
     ByteBudget,
@@ -31,9 +31,10 @@ fn open_first(h: &mut Harness<'static, Shorts>) {
 thread_local! {
     static OPENED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
-fn harness(app: Shorts) -> Harness<'static, Shorts> {
+fn harness(app: Shorts, scale: f32) -> Harness<'static, Shorts> {
     OPENED.set(false);
     crate::gpu::builder()
+        .with_pixels_per_point(scale)
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(
             |ui, a: &mut Shorts| {
@@ -49,7 +50,7 @@ fn harness(app: Shorts) -> Harness<'static, Shorts> {
 }
 #[test]
 fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
-    let mut h = harness(ready());
+    let mut h = harness(ready(), 1.0);
     h.run_steps(3);
     open_first(&mut h);
     let preview = h.state().preview_session().unwrap().project();
@@ -319,7 +320,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(app.reviews()[0].segments[0].range, range(10, 13));
     app.redo();
     assert_eq!(app.reviews()[0], before);
-    let mut h = harness(app);
+    let mut h = harness(app, 1.0);
     h.run_steps(3);
     open_first(&mut h);
     h.get(by("shorts.tool.trim")).click();
@@ -348,7 +349,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
             .unwrap();
         app.generate().unwrap();
         wait(&mut app);
-        let mut h = harness(app);
+        let mut h = harness(app, 1.0);
         h.run_steps(3);
         open_first(&mut h);
         h.get(by("shorts.tool.trim")).click();
@@ -387,7 +388,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
 }
 #[test]
 fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
-    let mut h = harness(ready());
+    let mut h = harness(ready(), 1.0);
     h.run_steps(3);
     open_first(&mut h);
     h.get(by("shorts.tool.layout")).click();
@@ -463,7 +464,7 @@ fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
 }
 #[test]
 fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {
-    let mut h = harness(ready());
+    let mut h = harness(ready(), 1.0);
     h.run_steps(3);
     open_first(&mut h);
     h.get(by("shorts.accept")).click();
@@ -495,6 +496,7 @@ fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {
     ));
 }
 struct ApprovalGenerator {
+    unknown_price: bool,
     entered: Mutex<mpsc::SyncSender<()>>,
     approved: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -507,7 +509,7 @@ impl Generator for ApprovalGenerator {
         _: &Cancellation,
     ) -> engine::Result<ReviewSource> {
         self.entered.lock().unwrap().send(()).unwrap();
-        events.approve(&UploadRequest {
+        let request = UploadRequest {
             config: ai::ProviderConfig::new(
                 "injected".into(),
                 "explicit-model".into(),
@@ -525,9 +527,18 @@ impl Generator for ApprovalGenerator {
             languages: "vi".into(),
             audio_seconds: 0.0,
             upload_bytes: 123,
-            cost: Cost::Free,
+            cost: if self.unknown_price {
+                Cost::Unknown
+            } else {
+                Cost::Free
+            },
             terms: vec![],
-        })?;
+        };
+        if self.unknown_price {
+            events.approve_unknown_price(&request)?;
+        } else {
+            events.approve(&request)?;
+        }
         self.approved
             .store(true, std::sync::atomic::Ordering::Release);
         Ok(source())
@@ -554,50 +565,93 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
         "queued cancellation must not call the generator"
     );
 
-    for decision in [Some(true), Some(false), None] {
-        let (send, receive) = mpsc::sync_channel(1);
-        let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let mut app = Shorts::with_generator(
-            Default::default(),
-            ByteBudget::new(512 << 20).unwrap(),
-            Arc::new(ApprovalGenerator {
-                entered: Mutex::new(send),
-                approved: approved.clone(),
-            }),
-            Arc::new(Pixels),
-        )
-        .unwrap();
-        app.captions = false;
-        app.pick_video(std::env::temp_dir().join("video.mp4"))
+    for (locale, unknown_price, scale) in [
+        (Locale::En, false, 1.0),
+        (Locale::En, true, 1.0),
+        (Locale::Vi, true, 1.0),
+        (Locale::En, true, 2.0),
+        (Locale::Vi, true, 2.0),
+    ] {
+        for decision in [Some(true), Some(false), None] {
+            let (send, receive) = mpsc::sync_channel(1);
+            let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let mut app = Shorts::with_generator(
+                Default::default(),
+                ByteBudget::new(512 << 20).unwrap(),
+                Arc::new(ApprovalGenerator {
+                    unknown_price,
+                    entered: Mutex::new(send),
+                    approved: approved.clone(),
+                }),
+                Arc::new(Pixels),
+            )
             .unwrap();
-        let mut h = harness(app);
-        h.run_steps(3);
-        h.get(by("shorts.generate")).click();
-        h.run_steps(2);
-        receive
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while h.query_all(by("shorts.consent.approve")).count() == 0 {
+            app.preferences.locale = locale;
+            app.captions = false;
+            app.pick_video(std::env::temp_dir().join("video.mp4"))
+                .unwrap();
+            let mut h = harness(app, scale);
+            h.run_steps(3);
+            h.get(by("shorts.generate")).click();
+            h.run_steps(2);
+            receive
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while h.query_all(by("shorts.consent.approve")).count() == 0 {
+                h.run_steps(1);
+                assert!(std::time::Instant::now() < deadline);
+            }
+            assert!(!approved.load(std::sync::atomic::Ordering::Acquire));
+            if locale == Locale::En {
+                assert!(h.query_by_label("Size: 123").is_some());
+            }
+            assert!(h.query_by_label("injected · explicit-model · vi").is_some());
+            if unknown_price {
+                assert!(
+                    h.query_by_label(vibecut::i18n::Text::ShortsUnknownCost.text(locale))
+                        .is_some()
+                );
+                assert!(
+                    h.get(by("shorts.consent.approve"))
+                        .accesskit_node()
+                        .is_disabled()
+                );
+                if decision == Some(true) {
+                    let output = std::env::var_os("CARGO_TARGET_DIR")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| {
+                            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
+                        })
+                        .join("ui-audit");
+                    std::fs::create_dir_all(&output).unwrap();
+                    h.render()
+                        .unwrap()
+                        .save(output.join(format!("shorts-unknown-price-{locale:?}@{scale}x.png")))
+                        .unwrap();
+                    h.get(by("shorts.consent.unknown_price")).click();
+                    h.run_steps(2);
+                    assert!(
+                        !h.get(by("shorts.consent.approve"))
+                            .accesskit_node()
+                            .is_disabled()
+                    );
+                }
+            }
+            match decision {
+                Some(true) => h.get(by("shorts.consent.approve")).click(),
+                Some(false) => h.get(by("shorts.consent.deny")).click(),
+                None => h.get(by("shorts.cancel")).click(),
+            };
             h.run_steps(1);
-            assert!(std::time::Instant::now() < deadline);
+            wait(h.state_mut());
+            h.run_steps(2);
+            assert_eq!(
+                approved.load(std::sync::atomic::Ordering::Acquire),
+                decision == Some(true)
+            );
+            assert_eq!(h.state().source().is_some(), decision == Some(true));
         }
-        assert!(!approved.load(std::sync::atomic::Ordering::Acquire));
-        assert!(h.query_by_label("Size: 123").is_some());
-        assert!(h.query_by_label("injected · vi").is_some());
-        match decision {
-            Some(true) => h.get(by("shorts.consent.approve")).click(),
-            Some(false) => h.get(by("shorts.consent.deny")).click(),
-            None => h.get(by("shorts.cancel")).click(),
-        };
-        h.run_steps(1);
-        wait(h.state_mut());
-        h.run_steps(2);
-        assert_eq!(
-            approved.load(std::sync::atomic::Ordering::Acquire),
-            decision == Some(true)
-        );
-        assert_eq!(h.state().source().is_some(), decision == Some(true));
     }
 }
 
@@ -680,7 +734,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
         }
     }
     let path = directory.path().join("cuộc trò chuyện.mp4");
-    let mut h = harness(fixture::app());
+    let mut h = harness(fixture::app(), 1.0);
     h.state_mut().request.transcription_provider = "unavailable".into();
     h.run_steps(2);
     assert_eq!(h.state().request.transcription_provider, "unavailable");

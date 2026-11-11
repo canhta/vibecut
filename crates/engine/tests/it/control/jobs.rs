@@ -1121,3 +1121,104 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
     }
     runner.shutdown();
 }
+#[test]
+fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_acknowledgement() {
+    use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    struct Wire(AtomicUsize);
+    impl ai::transport::HttpTransport for Wire {
+        fn send(
+            &self,
+            request: ai::transport::HttpRequest,
+        ) -> Result<ai::transport::HttpResponse, ai::Error> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            let body: Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["model"], "fixture-control-model");
+            let input: Value = serde_json::from_str(body["input"].as_str().unwrap()).unwrap();
+            let proposal = json!({"title":"Fixture title","description":"Fixture description","chapters":[{"start_segment_id":input["segments"][0]["id"],"title":"Opening"}]});
+            Ok(ai::transport::HttpResponse {status:200,headers:vec![],body:serde_json::to_vec(&json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":proposal.to_string()}]}]})).unwrap()})
+        }
+    }
+    struct Prompt(Arc<AtomicBool>);
+    impl ConsentPrompt for Prompt {
+        fn approve(&self, _: &UploadRequest) -> Result<(), engine::EditError> {
+            Ok(())
+        }
+        fn approve_unknown_price(&self, request: &UploadRequest) -> Result<(), engine::EditError> {
+            assert_eq!(request.model, "fixture-control-model");
+            assert!(matches!(request.cost, engine::providers::Cost::Unknown));
+            if self.0.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(ai::Error::Cost.into())
+            }
+        }
+    }
+    let wire = Arc::new(Wire(AtomicUsize::new(0)));
+    let accepted = Arc::new(AtomicBool::new(false));
+    let config =
+        ai::chapters::OpenAiChapterGenerator::provider_config("fixture-control-model").unwrap();
+    let filler =
+        ai::fillers::OpenAiFillerClassifier::provider_config("fixture-control-model").unwrap();
+    let access = TextAccess::new(
+        Arc::new(
+            ai::chapters::OpenAiChapterGenerator::new(
+                config,
+                ai::transport::ApiKey::new("synthetic").unwrap(),
+                wire.clone(),
+            )
+            .unwrap(),
+        ),
+        Arc::new(
+            ai::fillers::OpenAiFillerClassifier::new(
+                filler,
+                ai::transport::ApiKey::new("synthetic").unwrap(),
+                wire.clone(),
+            )
+            .unwrap(),
+        ),
+        Box::new(Prompt(accepted.clone())),
+    );
+    let mut session = with_words(&seed());
+    let mut runner = runner();
+    let caller = || Caller {
+        principal: "fixture",
+        external: false,
+        policy: &Allow,
+        fonts: None,
+        sounds: None,
+        media: None,
+        chapters: Some(&access),
+    };
+    let req = request(
+        &session,
+        "chapters.generate",
+        json!({"language":"en","max_chapters":2}),
+        "custom-refused",
+    );
+    let refused = session.control_request(req, caller(), &mut runner).unwrap();
+    assert!(!matches!(
+        refused.value,
+        ResponseValue::Result(ControlResult::JobAccepted { .. })
+    ));
+    assert_eq!(wire.0.load(Ordering::SeqCst), 0);
+    accepted.store(true, Ordering::SeqCst);
+    let req = request(
+        &session,
+        "chapters.generate",
+        json!({"language":"en","max_chapters":2}),
+        "custom-accepted",
+    );
+    let ControlResult::JobAccepted { job, .. } =
+        ok(session.control_request(req, caller(), &mut runner).unwrap())
+    else {
+        panic!("expected job")
+    };
+    finish(&mut runner, job);
+    assert_eq!(runner.snapshot(job).unwrap().state, JobState::Completed);
+    assert_eq!(wire.0.load(Ordering::SeqCst), 1);
+    runner.shutdown();
+}

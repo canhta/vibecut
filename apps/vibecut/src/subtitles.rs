@@ -30,8 +30,14 @@ pub struct Options {
     pub source: String,
     pub target: String,
     pub transcription: String,
+    /// Downloaded local weight choice; remote ids persist in AiPreferences.
+    #[serde(rename = "transcription_model")]
+    pub local_transcription_model: String,
+    /// Transient workflow snapshot; remote choices persist only in AiPreferences.
+    #[serde(skip)]
     pub transcription_model: String,
     pub translation: String,
+    #[serde(skip)]
     pub translation_model: String,
     pub bilingual: bool,
     /// Last spoken-language choice per project; absent means Auto.
@@ -43,9 +49,10 @@ impl Default for Options {
             source: "auto".into(),
             target: "en".into(),
             transcription: "whisper.cpp".into(),
+            local_transcription_model: "whisper-large-v3-turbo".into(),
             transcription_model: "whisper-large-v3-turbo".into(),
             translation: "openai".into(),
-            translation_model: ai::openai::TRANSLATION_MODEL.into(),
+            translation_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
             bilingual: false,
             project_sources: BTreeMap::new(),
         }
@@ -70,9 +77,12 @@ impl Options {
         }
         engine::providers::choose_transcription(
             &self.transcription,
-            Some(&self.transcription_model),
+            (!self.transcription_model.is_empty()).then_some(self.transcription_model.as_str()),
         )?;
-        engine::providers::choose_translation(&self.translation, Some(&self.translation_model))?;
+        engine::providers::choose_translation(
+            &self.translation,
+            (!self.translation_model.is_empty()).then_some(self.translation_model.as_str()),
+        )?;
         Ok(())
     }
     /// Auto is the default until a project stores an explicit choice.
@@ -102,7 +112,10 @@ impl Options {
                 self.source_tag().as_ref(),
             )
             .iter()
-            .any(|p| p.id == self.transcription && p.models.contains(&self.transcription_model))
+            .any(|p| {
+                p.id == self.transcription
+                    && (!p.local || p.models.contains(&self.transcription_model))
+            })
     }
 }
 /// Immutable input to a real engine workflow; no UI state is shared with a worker.
@@ -195,6 +208,7 @@ struct BankEdit {
 
 /// Panel state survives tab and locale changes; only Options enter preferences.
 pub struct Subtitles {
+    pub(crate) models: crate::services::remote_models::AiPreferences,
     bank: Option<BankEdit>,
     bank_frame: Option<u64>,
     workflow: Arc<dyn Workflow>,
@@ -249,6 +263,7 @@ impl Subtitles {
             Arc::new(SystemClock::default()),
         )?;
         Ok(Self {
+            models: Default::default(),
             bank: None,
             bank_frame: None,
             workflow,
@@ -360,15 +375,7 @@ impl Subtitles {
         if active.cancel.cancelled() {
             return Err(Error::Cancelled);
         }
-        let upload = active
-            .events
-            .state
-            .lock()
-            .map_err(|_| Error::Poisoned)?
-            .upload
-            .take()
-            .ok_or(Error::Invalid("no subtitle upload"))?;
-        upload.reply.send(approved).map_err(|_| Error::Cancelled)
+        active.events.answer(approved)
     }
     fn start(&mut self, session: &Session, work: Work) -> Result<()> {
         if self.busy() || session.transaction_active() {

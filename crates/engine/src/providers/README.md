@@ -27,8 +27,7 @@ retains AI's typed refusal. Malformed values belonging to other providers never 
 `ai::UploadDisclosure` for the exact scope. An adapter without a disclosure that has a local
 configuration has no upload and is refused; a remote adapter composed without one (a test
 provider) is described from its configuration and scope. `ConsentPrompt` is the only consent
-shape: the prompt shows the request and returns `Ok` or `ConsentRequired`; the caller then grants
-the `ai::Consent` token for the displayed estimate. Shorts keeps its operation-specific disclosure
+shape: the prompt shows the request and returns `Ok` or `ConsentRequired`; `approve_upload` binds the display to the scope and grants the `ai::Consent` token for the displayed estimate. Unknown pricing calls `approve_unknown_price`, whose default refuses; money-only approval never authorizes unknown spending. Shorts keeps its operation-specific disclosure
 terms on the same `UploadRequest` shape.
 
 Each run uses one provider. A fallback runs only when the user configured it, and nothing lets a
@@ -42,8 +41,7 @@ every other adapter returns `Unsupported`, which engine reports as `AutoLanguage
 
 `TextProvider` is the user's explicit transcript-text provider and model for the chapters and
 fillers operations, listed by `provider_options` and resolved by `choose_chapter` /
-`choose_filler`; there is no fallback, and the catalog constants in
-[`catalog.rs`](catalog.rs) own the model ids. `TextAccess::open(provider, credentials, consent)`
+`choose_filler`; there is no fallback, and [`ai::defaults`](../../../ai/src/remote/defaults.rs) owns the shipped model ids. `TextAccess::open(provider, credentials, consent)`
 builds both the chapter adapter and the filler classifier once; `TextAccess::new(chapters,
 fillers, consent)` lends already built ones. Composition roots construct one access per process
 and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with

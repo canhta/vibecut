@@ -11,7 +11,7 @@ pub struct CachedTranscript {
     pub cache_path: PathBuf,
     pub cache_hit: bool,
     pub source: &'static str,
-    pub cost_micros: u64,
+    pub cost_micros: Option<u64>,
     pub wall_ms: u64,
     pub notes: Vec<String>,
 }
@@ -24,6 +24,8 @@ pub struct LoadContext<'a> {
     pub source: &'a Path,
     pub language: &'a LanguageTag,
     pub transcribe: bool,
+    pub model: &'a str,
+    pub accept_unknown_price: bool,
 }
 
 /// Load a label-provided transcript, an existing prepared cache, or opt-in live
@@ -38,6 +40,8 @@ pub fn load(context: &LoadContext<'_>, budget: &mut Budget) -> Result<CachedTran
         source,
         language,
         transcribe,
+        model,
+        accept_unknown_price,
     } = *context;
     let cache_dir = out_dir.join("cache/transcripts");
     if let Some(path) = label.transcript_path(label_dir) {
@@ -66,15 +70,22 @@ pub fn load(context: &LoadContext<'_>, budget: &mut Budget) -> Result<CachedTran
         validate_language(language, &transcript)?;
         return Ok(cached(transcript, cache_path, true, "cache"));
     }
-    let asr_path = asr::cache_path(out_dir, source_sha);
+    let asr_path = asr::cache_path(out_dir, source_sha, model);
     if asr_path.exists() {
         let transcript = read_transcript(&asr_path)?;
         validate_language(language, &transcript)?;
         return Ok(cached(transcript, asr_path, true, "cache"));
     }
     if transcribe {
-        let prepared = asr::prepare(source, language, source_sha, budget)?;
-        let cache_path = asr::cache_path(out_dir, source_sha);
+        let prepared = asr::prepare(
+            source,
+            language,
+            source_sha,
+            budget,
+            model,
+            accept_unknown_price,
+        )?;
+        let cache_path = asr::cache_path(out_dir, source_sha, model);
         write_cache(&cache_path, &prepared.transcript)?;
         return Ok(CachedTranscript {
             transcript: prepared.transcript,
@@ -103,7 +114,7 @@ fn cached(
         cache_path,
         cache_hit,
         source,
-        cost_micros: 0,
+        cost_micros: Some(0),
         wall_ms: 0,
         notes: Vec::new(),
     }
@@ -186,6 +197,8 @@ mod tests {
             source: &source,
             language: &language,
             transcribe: false,
+            model: "fixture-asr-model",
+            accept_unknown_price: false,
         };
         let mut budget = Budget::new(0);
         let first = load(&context, &mut budget).unwrap();

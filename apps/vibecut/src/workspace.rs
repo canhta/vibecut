@@ -557,6 +557,7 @@ impl Workspace {
                     .builder()
                     .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
+                    shorts.apply_model_preferences(&self.preferences.ai_models);
                     actions = crate::shorts::show(shorts, &cx, ui);
                     close = ui.input(|i| i.viewport().close_requested());
                     if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {

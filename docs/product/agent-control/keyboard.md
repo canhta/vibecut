@@ -86,6 +86,7 @@
 | `inspector.project` — Project properties | View | — | — | selection inspector |
 | `inspector.details` — Element details | View | — | — | selection inspector |
 | `preview.retry` — Retry preview | View | — | — | playback transport |
+| `preferences.open` — Settings | View | — | — | preferences dialog |
 | `models.open` — Manage downloads | View | — | — | model manager |
 | `export.run` — Export | View | — | — | export dialog |
 | `export.retry` — Retry export | View | — | — | export dialog |

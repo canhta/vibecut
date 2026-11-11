@@ -126,7 +126,7 @@ impl TranslationRun {
         scope: Scope,
         consent: Option<Consent>,
         max_attempts: u8,
-        budget: Money,
+        budget: Option<Money>,
     ) -> crate::Result<Arc<Self>> {
         window.validate()?;
         if !(1..=10).contains(&max_attempts) {
@@ -171,11 +171,14 @@ impl TranslationRun {
         match estimate {
             CostEstimate::Free => {}
             CostEstimate::UpperBound(cost)
-                if cost.currency() == budget.currency()
-                    && cost
-                        .micros()
-                        .checked_mul(u64::from(max_attempts))
-                        .is_some_and(|total| total <= budget.micros()) => {}
+                if budget.as_ref().is_some_and(|budget| {
+                    cost.currency() == budget.currency()
+                        && cost
+                            .micros()
+                            .checked_mul(u64::from(max_attempts))
+                            .is_some_and(|total| total <= budget.micros())
+                }) => {}
+            CostEstimate::Unknown if budget.is_none() => {}
             _ => return Err(ai::Error::Cost.into()),
         }
         Ok(Arc::new(Self {

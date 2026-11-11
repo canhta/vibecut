@@ -7,7 +7,7 @@ use crate::transport::{
     ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, wav,
 };
 use crate::{
-    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Money, Operation,
+    AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation,
     Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,
     Support, TimingUnit, Transcriber,
 };
@@ -17,7 +17,6 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
-pub const MODEL: &str = "scribe_v2";
 const BACKEND: &str = "elevenlabs";
 const BASE_URL: &str = "https://api.elevenlabs.io/v1";
 pub const ENDPOINT: &str = "https://api.elevenlabs.io/v1/speech-to-text";
@@ -25,10 +24,9 @@ pub const ENDPOINT: &str = "https://api.elevenlabs.io/v1/speech-to-text";
 pub const MAX_UPLOAD_BYTES: u64 = 3_000_000_000;
 pub const MAX_DURATION_MICROS: u64 = 10 * 60 * 60 * 1_000_000;
 /// Published list price, integer micro-USD per audio hour ($0.22/h).
-const PRICE_MICROS_PER_HOUR: u64 = 220_000;
 pub const MODE: &str = "file";
 pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
-const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;model=scribe_v2;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
+const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
 const POLICY_URL: &str = "https://elevenlabs.io/privacy-policy";
 const DOCS_URL: &str = "https://elevenlabs.io/docs/capabilities/speech-to-text";
 const PRICING_URL: &str = "https://elevenlabs.io/pricing/api?price.section=speech_to_text";
@@ -43,7 +41,6 @@ impl ElevenLabsTranscriber {
     /// The one admitted configuration for this model id.
     pub fn provider_config(model: &str) -> Result<ProviderConfig, Error> {
         remote::provider_config(
-            &[MODEL],
             model,
             SETTINGS_FINGERPRINT,
             BACKEND,
@@ -53,7 +50,7 @@ impl ElevenLabsTranscriber {
         )
     }
 
-    /// Admits only `scribe_v2`, backend `elevenlabs`, this adapter's settings
+    /// Admits a bounded selected model, backend `elevenlabs`, this adapter's settings
     /// fingerprint and the official HTTPS base URL.
     pub fn new(
         config: ProviderConfig,
@@ -62,7 +59,6 @@ impl ElevenLabsTranscriber {
     ) -> Result<Self, Error> {
         remote::admit(
             &config,
-            &[MODEL],
             Some(SETTINGS_FINGERPRINT),
             BACKEND,
             BASE_URL,
@@ -115,23 +111,9 @@ impl Transcriber for ElevenLabsTranscriber {
     }
 
     fn estimate(&self, scope: &Scope) -> CostEstimate {
-        let Some(seconds) = remote::rounded_up_seconds(scope) else {
-            return CostEstimate::Unknown;
-        };
-        let Some(micros) = seconds
-            .checked_mul(u128::from(PRICE_MICROS_PER_HOUR))
-            .and_then(|value| value.checked_add(3_599))
-            .map(|value| value / 3_600)
-        else {
-            return CostEstimate::Unknown;
-        };
-        let Ok(micros) = u64::try_from(micros) else {
-            return CostEstimate::Unknown;
-        };
-        match Money::new("USD", micros) {
-            Ok(money) => CostEstimate::UpperBound(money),
-            Err(_) => CostEstimate::Unknown,
-        }
+        remote::rounded_up_seconds(scope).map_or(CostEstimate::Unknown, |seconds| {
+            crate::defaults::audio_estimate(&self.config, seconds)
+        })
     }
 
     fn disclosure(&self, scope: &Scope) -> Result<Option<UploadDisclosure>, Error> {
@@ -171,6 +153,7 @@ impl Transcriber for ElevenLabsTranscriber {
         let outbound = build_request(scope, &self.key, audio)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let response = self.transport.send(outbound)?;
+        remote::check_model_response(&response, &self.config)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let segments = parse_transcription(&response, audio.range, audio.sample_rate)?;
         checkpoint(hooks, Stage::Transcribe)?;
@@ -188,7 +171,7 @@ fn build_request(
         return Err(Error::Payload);
     }
     let mut form = Multipart::new(&audio)?;
-    form.field("model_id", MODEL);
+    form.field("model_id", scope.provider.model().as_str());
     form.field("language_code", scope.source_language.as_str());
     form.field("timestamps_granularity", "word");
     form.file("audio.wav", "audio/wav", &audio);
