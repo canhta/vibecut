@@ -57,3 +57,9 @@ pub enum Error {
     #[error("pinned baseline input differs for label {0}")]
     BaselineMismatch(String),
 }
+
+impl From<engine::providers::Error> for Error {
+    fn from(error: engine::providers::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}

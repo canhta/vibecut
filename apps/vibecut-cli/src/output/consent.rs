@@ -1,5 +1,4 @@
 //! Presents explicit upload consent scope.
-use engine::providers::Error as ProviderError;
 use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
 use serde_json::{Value, json};
 use std::io;
@@ -81,6 +80,7 @@ pub(crate) fn cost_json(cost: &Cost) -> Value {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use engine::providers::Error as ProviderError;
     #[test]
     fn cli_model_selection_and_unknown_price_flag_are_independent_from_upload_approval() {
         let selected =
