@@ -6,8 +6,13 @@ Interface: `library`, `recovery`, `luts`; project-cover capture is private.
 
 Shared native copy/verify and staging operations return the runtime resource result, preserving
 IO/Invalid/Limit/budget/cancel and lower Kernel validation/entropy causes. Pure provenance
-record validation returns Kernel EditError. LutStore and import callbacks retain their mixed
-engine result; repair/reuse matches the actual direct helper error without peeling wrappers.
+record validation returns Kernel EditError. Store-owned open/quota/import/reuse/relink and
+publication consume `luts::Error` / `luts::Result`: transparent Edit/Runtime lower causes,
+owned IO (`job/cache IO failed`) and render (`render execution failed`) sources. Only direct
+Runtime composition forwards transience and scheduling policy; foreign render cancellation
+and explicit Failed stay opaque. Higher workflows compose through `engine::Error::Lut`.
+The artifact import callback also bounds JSON and keeps its real mixed engine result;
+repair/reuse matches actual direct helper errors without peeling wrappers.
 
 `luts::LutStore` owns durable copied user resources under the process media root's `luts/<ProjectId>/<LutId>` directory. Ordinary artifact eviction never removes them. One store lease and per-content publication leases serialize publishers; quota admission uses no mutex across IO. Admission counts at most 4096 filesystem entries, 1024 bundles and 256 MiB of retained plus pending bytes. Staging conservatively reserves a complete 40 MiB-plus-metadata bundle, releases on every failure/cancel/unwind, and may retain a complete unregistered resource after a stale/evicted result. There is no destructive automatic garbage collector.
 

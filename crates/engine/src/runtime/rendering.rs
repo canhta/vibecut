@@ -1,5 +1,16 @@
 //! Submits bounded project export work.
 use crate::cache::CacheKey;
+use crate::session::wire::{ErrorCode, Failure};
+
+impl Failure for render::Error {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Unavailable(_) => ErrorCode::Unavailable,
+            _ => ErrorCode::Render,
+        }
+    }
+}
+
 use crate::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };

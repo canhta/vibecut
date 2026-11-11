@@ -1034,6 +1034,16 @@ async fn delegated_job_failures_keep_codes_on_the_mcp_wire() {
     .await;
     for (index, (inner, code)) in [
         (
+            EngineError::Lut(engine::luts::Error::Render(render::Error::Unavailable(
+                Vec::new(),
+            ))),
+            "unavailable",
+        ),
+        (
+            EngineError::Lut(engine::luts::Error::Render(render::Error::Cancelled)),
+            "render",
+        ),
+        (
             EngineError::Library(engine::library::Error::Edit(engine::EditError::Project(
                 project::Error::Busy,
             ))),
