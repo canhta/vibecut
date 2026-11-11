@@ -151,7 +151,7 @@ fn unsupported<T>(result: engine::Result<T>) {
 fn locked(path: &Path, budget: &ByteBudget) {
     assert!(matches!(
         ArtifactCache::open(path, budget.clone(), 8),
-        Err(EditError::CacheBusy)
+        Err(EditError::Runtime(engine::RuntimeError::CacheBusy))
     ));
 }
 

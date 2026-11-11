@@ -19,6 +19,8 @@ A fresh manager hashes installed bundles in a background check; dropping the man
 cancels and joins it before releasing cache ownership. Opening, selecting a model,
 accepting a licence or starting transcription never starts a transfer: the affirmative
 Download click is the only place a `DownloadConsent` is granted. Closing during a
-transfer is refused; Cancel leaves the engine checkpoint for Resume.
+transfer is refused; Cancel leaves the engine checkpoint for Resume. The composed runtime
+`CacheBusy` refusal keeps the existing Busy presentation and starts no second transfer;
+releasing the owning transfer permits a later explicit Download.
 
 AI task progress and per-upload consent live in [`services`](../../../services/README.md).

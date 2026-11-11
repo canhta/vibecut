@@ -441,6 +441,72 @@ fn interrupted_download_resumes_with_range_and_strong_etag() {
 }
 
 #[test]
+fn queued_transfer_refuses_download_as_busy_until_its_owner_releases() {
+    let dir = tempfile::tempdir().unwrap();
+    let data: Arc<[u8]> = Arc::from(vec![7; 11]);
+    let fixture = model("fixture-busy", "MIT", &data);
+    let http = Arc::new(Http::default());
+    http.push(Reply::ok(data, "\"one\""));
+    let budget = ByteBudget::new(4 << 20).unwrap();
+    let (cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 16).unwrap();
+    let transfers = ModelTransfers::new(
+        cache,
+        http.clone(),
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    let mut owner = engine::jobs::JobRunner::new(
+        engine::jobs::RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 1,
+            retained: 1,
+            network_attempts: 1,
+            backoff: Duration::from_millis(10),
+            progress_interval: Duration::from_millis(10),
+        },
+        budget.clone(),
+        Arc::new(engine::jobs::SystemClock::default()),
+    )
+    .unwrap();
+    let (queued, cancel) = transfers
+        .submit(
+            &mut owner,
+            fixture.clone(),
+            Some(ai::models::DownloadConsent::grant(&fixture).unwrap()),
+        )
+        .unwrap();
+    let bundle = dir
+        .path()
+        .join(ArtifactCache::model_key(&fixture).unwrap().filename());
+    let manager = ModelManager::with_transfers(budget, vec![fixture], transfers).unwrap();
+    let mut bench = bench(open(manager, "fixture-busy"));
+    wait_check(&mut bench);
+    bench.click("models.download.fixture-busy");
+    let inspection = inspect(&bench);
+    assert_eq!(inspection.problem, Some(ModelProblem::Busy));
+    assert!(inspection.job.is_none());
+    assert!(inspection.installed.is_empty());
+    assert!(inspection.resume.is_empty());
+    assert!(
+        bench
+            .harness()
+            .query_by_label("Another download is running.")
+            .is_some()
+    );
+    assert_eq!(http.count(), 0);
+    assert!(!bundle.exists());
+    cancel.cancel();
+    owner.tick().unwrap();
+    assert_eq!(owner.snapshot(queued).unwrap().state, JobState::Cancelled);
+    bench.click("models.download.fixture-busy");
+    wait_terminal(&mut bench);
+    assert_eq!(inspect(&bench).job.unwrap().state, JobState::Completed);
+    assert!(inspect(&bench).problem.is_none());
+    assert_eq!(http.count(), 1);
+}
+
+#[test]
 fn checksum_failure_is_discarded_and_reported() {
     let dir = tempfile::tempdir().unwrap();
     let expected = vec![3u8; 64 * 1024];

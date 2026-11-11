@@ -191,7 +191,7 @@ impl Panel<'_, '_> {
                     engine::EditError::Runtime(engine::RuntimeError::CacheCorrupt) => {
                         Text::CacheCorrupt
                     }
-                    engine::EditError::CacheBusy => Text::CacheBusy,
+                    engine::EditError::Runtime(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
                     engine::EditError::Unsupported(_) => Text::CacheUnavailable,
                     _ => Text::CacheFailed,
                 }

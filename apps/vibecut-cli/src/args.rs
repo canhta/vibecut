@@ -39,6 +39,7 @@ mod exit_codes {
             };
         }
         let cases: &[Case] = &[
+            row!(E::Runtime(engine::RuntimeError::CacheBusy), "rejected", 5),
             row!(
                 E::Runtime(engine::RuntimeError::ModelResponse),
                 "rejected",
@@ -185,7 +186,8 @@ mod exit_codes {
                 assert_eq!(error.code(), ("job", 7));
             }
         }
-        let refusals: [(fn() -> engine::RuntimeError, &str); 2] = [
+        let refusals: [(fn() -> engine::RuntimeError, &str); 3] = [
+            (|| engine::RuntimeError::CacheBusy, "cache is in use"),
             (
                 || engine::RuntimeError::ModelResponse,
                 "model transfer response does not match the requested representation",

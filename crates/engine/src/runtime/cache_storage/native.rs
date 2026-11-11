@@ -270,7 +270,9 @@ impl ArtifactCache {
         if !entry.native {
             return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
-        let pin = entry.pin()?.ok_or(EditError::CacheBusy)?;
+        let pin = entry
+            .pin()?
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
         let state = read_state(&entry.path, key)?;
         if state.model != *model {
             return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
@@ -359,12 +361,14 @@ impl ArtifactCache {
             .get(&key)
             .ok_or(EditError::Runtime(crate::RuntimeError::CacheCorrupt))?;
         if !entry.native || entry.pins.load(Ordering::Acquire) != 0 {
-            return Err(EditError::CacheBusy);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
         }
-        let pin = entry.pin()?.ok_or(EditError::CacheBusy)?;
+        let pin = entry
+            .pin()?
+            .ok_or(EditError::Runtime(crate::RuntimeError::CacheBusy))?;
         let state = read_state(&entry.path, key)?;
         if state.model != *model || state.complete {
-            return Err(EditError::CacheBusy);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let (metadata_bytes, lengths) = usage(&entry.path, &state)?;
         Ok(NativeEdit {
@@ -385,7 +389,7 @@ impl ArtifactCache {
             return Err(EditError::Runtime(crate::RuntimeError::CacheCorrupt));
         }
         if !entry.evict_inner(true)? {
-            return Err(EditError::CacheBusy);
+            return Err(EditError::Runtime(crate::RuntimeError::CacheBusy));
         }
         self.entries.remove(&key);
         Ok(())

@@ -90,7 +90,7 @@ impl SoundsProblem {
         match error {
             EditError::Sounds(error) => Self::from_error(error),
             EditError::Runtime(engine::RuntimeError::NetworkTransient) => Self::Network,
-            EditError::CacheBusy => Self::CacheBusy,
+            EditError::Runtime(engine::RuntimeError::CacheBusy) => Self::CacheBusy,
             _ => Self::CacheFailed,
         }
     }

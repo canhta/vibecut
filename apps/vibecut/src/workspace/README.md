@@ -26,7 +26,9 @@ allowance, so export cannot consume journal or save admission. Model transfers s
 app-owned across project saves and closes. The workspace opens the one process
 `MediaAccess` under `<root>/media` and lends the same mutex instance to every editor's
 timeline display and to the desktop MCP inbox, so generation and display always share
-cache entries and a second open of that root refuses as `CacheBusy`. The native adapter
+cache entries and a second open of that root composes
+[`RuntimeError::CacheBusy`](../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)
+through `EditError::Runtime`. The native adapter
 keeps an audio stream per project and shares the GPU adapter. Preferences persist bounded
 logical size, position and maximization by Home, Shorts and ProjectId (64 retained
 geometry entries, within the 16 KiB store bound).

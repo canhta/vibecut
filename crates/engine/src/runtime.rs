@@ -4,6 +4,8 @@ use crate::session::wire::{ErrorCode, Failure};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("cache is in use")]
+    CacheBusy,
     #[error("model transfer response does not match the requested representation")]
     ModelResponse,
     #[error("model storage is full")]
@@ -40,7 +42,9 @@ impl Failure for Error {
             Self::NetworkTransient | Self::CacheCorrupt | Self::Poisoned => ErrorCode::Job,
             Self::Io(_) => ErrorCode::Io,
             Self::Limit => ErrorCode::Limit,
-            Self::ModelResponse | Self::StorageFull | Self::Invalid(_) => ErrorCode::Refused,
+            Self::CacheBusy | Self::ModelResponse | Self::StorageFull | Self::Invalid(_) => {
+                ErrorCode::Refused
+            }
             Self::Failed(cause) => cause.code(),
         }
     }

@@ -37,4 +37,6 @@ shared cache job with progress and Cancel and adds only after the preview publis
 
 Auth, quota, rate-limit, network, server, malformed-response, size, publication and
 no-audio-device failures are typed states with creator copy; a missing token is a
-local-only state. The panel changes project JSON only through the add command.
+local-only state. Engine's `RuntimeError::CacheBusy` retains the panel's `CacheBusy` category
+when a shared download owner refuses an add; it leaves the project and pending add untouched.
+The panel changes project JSON only through the add command.
