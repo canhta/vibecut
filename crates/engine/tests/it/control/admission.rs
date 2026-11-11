@@ -1156,7 +1156,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Refused,
             false
         ),
-        row!(E::EmptyProject, EmptyProject, false),
+        row!(
+            E::Artifacts(engine::ArtifactError::EmptyProject),
+            EmptyProject,
+            false
+        ),
         row!(E::Edit(engine::EditError::Invalid("input")), Refused, false),
         row!(
             E::Edit(engine::EditError::Unsupported("capability")),

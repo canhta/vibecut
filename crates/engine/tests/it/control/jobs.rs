@@ -306,8 +306,9 @@ fn lut_invalid_cancelled_and_locked_workflows_preserve_state() {
     assert_eq!(r.snapshot(id).unwrap().state, JobState::Failed);
     let failed = r.snapshot(id).unwrap();
     let raw = failed.error.as_ref().unwrap();
-    let Some(engine::Error::Lut(engine::luts::Error::Render(original))) =
-        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>()
+    let Some(engine::ArtifactError::Lut(engine::luts::Error::Render(original))) = (raw.as_ref()
+        as &(dyn std::error::Error + 'static))
+        .downcast_ref::<engine::ArtifactError>()
     else {
         panic!("lost composed LUT parser producer")
     };

@@ -5,7 +5,7 @@
     reason = "synthetic fixtures and explicit assertions"
 )]
 use engine::{
-    ByteBudget, Error as EngineError,
+    ArtifactError, ByteBudget,
     jobs::{Clock, JobRunner, JobState, RunnerConfig, SystemClock},
     thumbnail_strip::{
         MAX_TILES, ThumbnailStripRequest, ThumbnailStripState, display, tile_interval,
@@ -348,7 +348,7 @@ fn trim_and_retime_map_to_source_frames() {
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(ArtifactError::Edit(engine::EditError::Invalid(
             "thumbnail strip display outside clip"
         )))
     ));
@@ -377,9 +377,7 @@ fn cold_pending_ready_and_hostile_inputs() {
     for interval in [Tick::ZERO, Tick(-1)] {
         assert!(matches!(
             ThumbnailStripRequest::new(asset.clone(), range(0, 3), interval, THUMBNAIL_MAX_EDGE),
-            Err(EngineError::Edit(engine::EditError::Invalid(
-                "thumbnail strip interval"
-            )))
+            Err(engine::EditError::Invalid("thumbnail strip interval"))
         ));
     }
     for pixels_per_second in [0.0, -1.0, f64::NAN, f64::INFINITY] {
@@ -392,7 +390,7 @@ fn cold_pending_ready_and_hostile_inputs() {
                 THUMBNAIL_MAX_EDGE,
                 &mut cache
             ),
-            Err(EngineError::Edit(engine::EditError::Invalid(
+            Err(ArtifactError::Edit(engine::EditError::Invalid(
                 "thumbnail strip interval"
             )))
         ));
@@ -400,9 +398,7 @@ fn cold_pending_ready_and_hostile_inputs() {
     for edge in [0, THUMBNAIL_MAX_EDGE + 1] {
         assert!(matches!(
             ThumbnailStripRequest::new(asset.clone(), range(0, 3), t(1), edge),
-            Err(EngineError::Edit(engine::EditError::Invalid(
-                "thumbnail max edge"
-            )))
+            Err(engine::EditError::Invalid("thumbnail max edge"))
         ));
         assert!(matches!(
             display(
@@ -413,16 +409,14 @@ fn cold_pending_ready_and_hostile_inputs() {
                 edge,
                 &mut cache
             ),
-            Err(EngineError::Edit(engine::EditError::Invalid(
+            Err(ArtifactError::Edit(engine::EditError::Invalid(
                 "thumbnail max edge"
             )))
         ));
     }
     assert!(matches!(
         ThumbnailStripRequest::new(asset.clone(), range(0, 3), Tick(1), THUMBNAIL_MAX_EDGE),
-        Err(EngineError::Edit(engine::EditError::Invalid(
-            "thumbnail strip tiles"
-        )))
+        Err(engine::EditError::Invalid("thumbnail strip tiles"))
     ));
     let other = source_asset(&path, 2);
     assert!(matches!(
@@ -434,7 +428,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(ArtifactError::Edit(engine::EditError::Invalid(
             "thumbnail strip display asset"
         )))
     ));
@@ -447,7 +441,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(ArtifactError::Edit(engine::EditError::Invalid(
             "thumbnail strip display outside clip"
         )))
     ));
@@ -461,7 +455,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
-        Err(EngineError::Edit(engine::EditError::Invalid(
+        Err(ArtifactError::Edit(engine::EditError::Invalid(
             "thumbnail strip tiles"
         )))
     ));
@@ -489,9 +483,9 @@ fn cold_pending_ready_and_hostile_inputs() {
     let audio = source_asset(&audio, 3);
     assert!(matches!(
         ThumbnailStripRequest::new(audio.clone(), range(0, 1), t(1), THUMBNAIL_MAX_EDGE),
-        Err(EngineError::Edit(engine::EditError::Unsupported(
+        Err(engine::EditError::Unsupported(
             "thumbnail strip requires video"
-        )))
+        ))
     ));
     assert!(matches!(
         display(
@@ -609,10 +603,51 @@ fn deleted_source_fails_and_keeps_no_frames() {
     let (mut runner, mut cache, dir) = setup();
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, job.id), JobState::Failed);
-    assert!(matches!(
-        job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Failed(_)))
+    let snapshot = runner.snapshot(job.id).unwrap();
+    let raw = snapshot.error.as_ref().unwrap();
+    let Some(ArtifactError::Media(media_source)) =
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<ArtifactError>()
+    else {
+        panic!("thumbnail producer changed")
+    };
+    assert!(std::ptr::eq(
+        media_source,
+        raw.source()
+            .unwrap()
+            .downcast_ref::<media::MediaError>()
+            .unwrap()
     ));
+    assert_eq!(raw.to_string(), "media operation failed");
+    assert_eq!(raw.code(), engine::control::ErrorCode::Media);
+    assert!(!raw.transient());
+    assert!(!raw.job_policy().terminal_cancelled);
+    assert_eq!(raw.job_policy().retry_after_seconds, None);
+    assert_eq!(snapshot.attempts, 1);
+    let listed = runner
+        .snapshots()
+        .into_iter()
+        .find(|row| row.id == job.id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, listed.error.as_ref().unwrap()));
+    let event = runner
+        .drain_events()
+        .into_iter()
+        .find(|row| row.id == job.id)
+        .unwrap();
+    assert!(Arc::ptr_eq(raw, event.error.as_ref().unwrap()));
+    let mut session =
+        engine::Session::new(Project::empty(ProjectId(1), "".into()).unwrap(), 10).unwrap();
+    let resync = session.snapshot_and_subscribe(&runner).unwrap();
+    assert!(resync.jobs.iter().any(|row| row.id == job.id
+        && row.error == Some(engine::control::ErrorCode::Media)
+        && row.state == JobState::Failed));
+    let error = job.finish(&mut runner, &mut cache).err().unwrap();
+    let ArtifactError::Runtime(engine::RuntimeError::Failed(retained)) = error else {
+        panic!("finisher cause changed")
+    };
+    assert!(Arc::ptr_eq(raw, &retained));
+    assert!(runner.output_bytes(job.id).is_none());
+    assert_eq!(runner.memory_budget().snapshot().unwrap().used, 0);
     assert_eq!(entries(dir.path()), 0);
     let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
     assert!(matches!(
@@ -627,6 +662,16 @@ fn deleted_source_fails_and_keeps_no_frames() {
         .unwrap(),
         ThumbnailStripState::Pending
     ));
+    std::fs::copy(&source, &path).unwrap();
+    let retry = request.submit(&mut runner, &mut cache).unwrap();
+    assert_eq!(wait(&mut runner, retry.id), JobState::Completed);
+    assert!(retry.finish(&mut runner, &mut cache).unwrap().is_some());
+    assert!(
+        cache
+            .get(&asset, Tick::ZERO, THUMBNAIL_MAX_EDGE)
+            .unwrap()
+            .is_some()
+    );
 }
 
 struct FrameGate {
@@ -689,7 +734,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
     assert_eq!(wait(&mut runner, job.id), JobState::Cancelled);
     assert!(matches!(
         job.finish(&mut runner, &mut cache),
-        Err(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Err(ArtifactError::Runtime(engine::RuntimeError::Cancelled))
     ));
     assert!(runner.output_bytes(job.id).is_none());
     assert_eq!(
@@ -758,7 +803,7 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
             &mut cache
         )
         .unwrap(),
-        ThumbnailStripState::Failed(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        ThumbnailStripState::Failed(ArtifactError::Runtime(engine::RuntimeError::CacheCorrupt))
     ));
     let job = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, job.id), JobState::Completed);

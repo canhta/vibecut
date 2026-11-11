@@ -4,8 +4,9 @@
 //! the source content hash, the requested frame position and the output edge,
 //! so changed content or a different frame invalidates it. A decode failure is
 //! never a hit: corrupt bytes fall back to regeneration.
+use super::{Error as ArtifactError, Result as ArtifactResult};
+use crate::ByteBudget;
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
-use crate::{ByteBudget, Error as EngineError, Result};
 use media::{ContentHash, SourceAsset, THUMBNAIL_MAX_EDGE, Thumbnail};
 use std::path::Path;
 use time::Tick;
@@ -16,9 +17,9 @@ const VERSION: &str = "3";
 
 /// Canonical key for one decoded frame. `at == Tick::ZERO` means the first
 /// decodable frame.
-pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> Result<CacheKey> {
+pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> ArtifactResult<CacheKey> {
     if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
             "thumbnail max edge",
         )));
     }
@@ -38,7 +39,7 @@ pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> Result<Ca
         clip_range: *frame.finalize().as_bytes(),
         translation: [0; 32],
     })
-    .map_err(EngineError::from)
+    .map_err(ArtifactError::from)
 }
 
 /// Shared retained pixels and allowance for CPU image, upload staging and GPU
@@ -82,14 +83,14 @@ impl RetainedThumbnail {
     }
     /// The generator's temporary allocation belongs to its working allowance;
     /// transfer to this lease before releasing that allowance.
-    pub fn new(image: Thumbnail, asset: &SourceAsset, budget: &ByteBudget) -> Result<Self> {
+    pub fn new(image: Thumbnail, asset: &SourceAsset, budget: &ByteBudget) -> ArtifactResult<Self> {
         if image.width == 0
             || image.height == 0
             || image.width > THUMBNAIL_MAX_EDGE
             || image.height > THUMBNAIL_MAX_EDGE
             || u64::from(image.width) * u64::from(image.height) * 4 != image.pixels.len() as u64
         {
-            return Err(EngineError::Edit(crate::EditError::Invalid(
+            return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
                 "retained thumbnail geometry",
             )));
         }
@@ -123,11 +124,15 @@ pub struct ThumbnailCache {
 
 impl ThumbnailCache {
     /// Registered disk artifacts only; does not count retained decoded images.
-    pub fn maintenance(&self) -> Result<crate::cache::CacheMaintenance> {
-        self.cache.maintenance().map_err(EngineError::from)
+    pub fn maintenance(&self) -> crate::runtime::Result<crate::cache::CacheMaintenance> {
+        self.cache.maintenance()
     }
 
-    pub fn open(root: &Path, budget: ByteBudget, max_entries: usize) -> Result<Self> {
+    pub fn open(
+        root: &Path,
+        budget: ByteBudget,
+        max_entries: usize,
+    ) -> crate::runtime::Result<Self> {
         let (cache, _diagnostics) = ArtifactCache::open(root, budget.clone(), max_entries)?;
         Ok(Self { cache, budget })
     }
@@ -163,7 +168,7 @@ impl ThumbnailCache {
         asset: &SourceAsset,
         at: Tick,
         max_edge: u32,
-    ) -> Result<Option<RetainedThumbnail>> {
+    ) -> ArtifactResult<Option<RetainedThumbnail>> {
         Ok(match self.lookup(asset, at, max_edge)? {
             ThumbnailLookup::Hit(image) => Some(image),
             ThumbnailLookup::Missing | ThumbnailLookup::Corrupt => None,
@@ -177,7 +182,7 @@ impl ThumbnailCache {
         asset: &SourceAsset,
         at: Tick,
         max_edge: u32,
-    ) -> Result<ThumbnailLookup> {
+    ) -> ArtifactResult<ThumbnailLookup> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
@@ -220,10 +225,12 @@ impl ThumbnailCache {
         at: Tick,
         max_edge: u32,
         thumbnail: &Thumbnail,
-    ) -> Result<()> {
+    ) -> ArtifactResult<()> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let metadata = serde_json::to_vec(asset).map_err(|_| {
-            EngineError::Edit(crate::EditError::Invalid("thumbnail probe metadata"))
+            ArtifactError::Edit(crate::session::EditError::Invalid(
+                "thumbnail probe metadata",
+            ))
         })?;
         if metadata.len() > 1 << 20 {
             return Err(crate::RuntimeError::ArtifactTooLarge.into());
@@ -234,7 +241,7 @@ impl ThumbnailCache {
         payload.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
         payload.extend_from_slice(&metadata);
         payload.extend_from_slice(&image);
-        self.cache.put(key, &payload).map_err(EngineError::from)
+        self.cache.put(key, &payload).map_err(ArtifactError::from)
     }
 
     /// Cache hit without decoding; otherwise decode once and publish. The
@@ -245,7 +252,7 @@ impl ThumbnailCache {
         at: Tick,
         max_edge: u32,
         generate: impl FnOnce() -> media::Result<Thumbnail>,
-    ) -> Result<RetainedThumbnail> {
+    ) -> ArtifactResult<RetainedThumbnail> {
         if let Some(thumbnail) = self.get(asset, at, max_edge)? {
             return Ok(thumbnail);
         }

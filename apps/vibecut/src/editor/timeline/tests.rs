@@ -1584,7 +1584,9 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
             );
             assert!(matches!(
                 media.cache_ui().cause.as_deref(),
-                Some(engine::Error::Runtime(engine::RuntimeError::CacheCorrupt))
+                Some(engine::Error::Artifacts(engine::ArtifactError::Runtime(
+                    engine::RuntimeError::CacheCorrupt
+                )))
             ));
         }
         if commit {

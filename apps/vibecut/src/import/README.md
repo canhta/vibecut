@@ -18,3 +18,6 @@ Partial failures use short recovery copy and a concise toast; typed probe detail
 in diagnostics.
 
 Cards, sorting and insertion: [media library](../media_panel/README.md).
+
+Thumbnail results retain the Artifact owner; the media adapter recognizes its direct Runtime
+pressure causes before its existing cache-miss fallback. Shared cache setup stays Runtime-owned.

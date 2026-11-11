@@ -109,3 +109,7 @@ Lane menus activate shared Copy/Paste actions, with component-distinct
 `timeline.lane.<item>.<path>.<component>.copy|paste` IDs. The selected item's
 `timeline.item.<item>.paste` menu supports existing Params with no keys. Current frame
 eligibility supplies disabled states; opening another item's menu never retargets Paste.
+
+Thumbnail display failures retain Artifact causes inside the mixed engine boundary. The
+existing corrupt-cache recovery recognizes that explicit shape; waveform causes keep their
+own result contract.

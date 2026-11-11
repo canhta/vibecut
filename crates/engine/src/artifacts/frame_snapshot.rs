@@ -4,7 +4,8 @@
 //! reuses project's same-directory staging owner: a private temp file is written,
 //! synced and renamed over the destination only after source/project alias
 //! admission succeeds. A refusal or failed write leaves no partial destination.
-use crate::{ByteBudget, ByteBudgetHooks, Error as EngineError, Result};
+use super::{Error as ArtifactError, Result as ArtifactResult};
+use crate::{ByteBudget, ByteBudgetHooks};
 use image::ImageEncoder;
 use project::Project;
 use std::{
@@ -41,7 +42,7 @@ pub fn save(
     time: Tick,
     path: &Path,
     protected: &[PathBuf],
-) -> Result<SnapshotResult> {
+) -> ArtifactResult<SnapshotResult> {
     let budget = local_budget(project)?;
     save_with_budget(project, time, path, protected, &budget)
 }
@@ -53,7 +54,7 @@ pub fn save_with_budget(
     path: &Path,
     protected: &[PathBuf],
     budget: &ByteBudget,
-) -> Result<SnapshotResult> {
+) -> ArtifactResult<SnapshotResult> {
     save_with_overwrite(
         project,
         time,
@@ -71,7 +72,7 @@ pub(crate) fn save_with_overwrite(
     protected: &[PathBuf],
     budget: &ByteBudget,
     overwrite: project::atomic::Overwrite,
-) -> Result<SnapshotResult> {
+) -> ArtifactResult<SnapshotResult> {
     let hooks = ByteBudgetHooks::new(budget, None);
     let image = render(project, time, &hooks)?;
     crate::publication::Publication {
@@ -83,7 +84,7 @@ pub(crate) fn save_with_overwrite(
     .write(
         overwrite,
         u64::try_from(image.png.len())
-            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?,
+            .map_err(|_| ArtifactError::from(crate::session::wire::ControlError::Limit))?,
         &project::atomic::Fs,
         |writer| -> crate::runtime::Result<()> {
             writer.write_all(&image.png)?;
@@ -100,14 +101,14 @@ pub(crate) fn save_with_overwrite(
 }
 
 /// Render the current frame as PNG without publishing a file (Copy action).
-pub fn image(project: &Project, time: Tick) -> Result<SnapshotImage> {
+pub fn image(project: &Project, time: Tick) -> ArtifactResult<SnapshotImage> {
     let budget = local_budget(project)?;
     render(project, time, &ByteBudgetHooks::new(&budget, None))
 }
 
 /// Default save name: `<project>-<timecode>.png`, reserved characters replaced
 /// and `snapshot` used when the project name is empty after sanitizing.
-pub fn default_name(project: &Project, time: Tick) -> Result<String> {
+pub fn default_name(project: &Project, time: Tick) -> ArtifactResult<String> {
     let at = render_time(project, time)?;
     let timecode = timecode(project, at)?.replace(':', "-");
     let suffix = format!("-{timecode}.png");
@@ -120,13 +121,13 @@ pub fn default_name(project: &Project, time: Tick) -> Result<String> {
 
 /// The frame actually captured: empty projects refuse, negative times refuse,
 /// and a playhead at/past the end clamps to the last frame.
-pub fn render_time(project: &Project, time: Tick) -> Result<Tick> {
+pub fn render_time(project: &Project, time: Tick) -> ArtifactResult<Tick> {
     let duration = project.duration();
     if duration == Tick::ZERO {
-        return Err(EngineError::EmptyProject);
+        return Err(ArtifactError::EmptyProject);
     }
     if time < Tick::ZERO {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(ArtifactError::Edit(crate::session::EditError::Invalid(
             "snapshot time",
         )));
     }
@@ -140,7 +141,7 @@ pub fn render_time(project: &Project, time: Tick) -> Result<Tick> {
         .snap(duration.saturating_sub(Tick(1)))?)
 }
 
-fn local_budget(project: &Project) -> Result<ByteBudget> {
+fn local_budget(project: &Project) -> ArtifactResult<ByteBudget> {
     let canvas = &project.data().canvas;
     let bytes = render::Image::bytes(canvas.width, canvas.height)?;
     let limit = bytes
@@ -154,7 +155,7 @@ fn render(
     project: &Project,
     time: Tick,
     hooks: &dyn render::ExecutionHooks,
-) -> Result<SnapshotImage> {
+) -> ArtifactResult<SnapshotImage> {
     let at = render_time(project, time)?;
     let canvas = &project.data().canvas;
     let settings = render::RenderSettings::from_project(project);
@@ -172,11 +173,11 @@ fn render(
     })
 }
 
-fn timecode(project: &Project, at: Tick) -> Result<String> {
+fn timecode(project: &Project, at: Tick) -> crate::session::Result<String> {
     Ok(time::format_timecode(at, project.data().canvas.fps)?)
 }
 
-fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
+fn encode_png(rgba: &[u8], width: u32, height: u32) -> crate::session::Result<Vec<u8>> {
     let mut writer = PngWriter {
         bytes: Vec::new(),
         max: MAX_SNAPSHOT_PNG_BYTES,
@@ -190,12 +191,10 @@ fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
     );
     match encoded {
         Ok(()) => Ok(writer.bytes),
-        Err(_) if writer.exceeded => Err(EngineError::Control(
+        Err(_) if writer.exceeded => Err(crate::session::EditError::from(
             crate::session::wire::ControlError::Limit,
         )),
-        Err(_) => Err(EngineError::Edit(crate::EditError::Invalid(
-            "snapshot encoding",
-        ))),
+        Err(_) => Err(crate::session::EditError::Invalid("snapshot encoding")),
     }
 }
 
@@ -232,7 +231,7 @@ mod tests {
         protected: &[PathBuf],
         hooks: &dyn render::ExecutionHooks,
         fs: &dyn project::atomic::AtomicFs,
-    ) -> Result<()> {
+    ) -> ArtifactResult<()> {
         crate::publication::Publication {
             project,
             path,
@@ -290,14 +289,14 @@ mod tests {
         let error = publish(&path, b"new png", &project(), &[], &hooks(), &FullDisk).unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
-                project::Error::Io(_)
-            )))
+            ArtifactError::Runtime(crate::RuntimeError::Edit(
+                crate::session::EditError::Project(project::Error::Io(_))
+            ))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         let cause: std::sync::Arc<dyn crate::Failure> =
-            std::sync::Arc::new(EngineError::Ai(ai::Error::RateLimit {
+            std::sync::Arc::new(crate::Error::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3),
             }));
         for unwinds in [false, true] {
@@ -314,7 +313,7 @@ mod tests {
                     project::atomic::Overwrite::Replace,
                     64,
                     &project::atomic::Fs,
-                    |writer| -> Result<()> {
+                    |writer| -> crate::Result<()> {
                         writer.write_all(b"partial callback bytes")?;
                         if unwinds {
                             panic!("injected mixed writer unwind");
@@ -332,7 +331,7 @@ mod tests {
                 assert!(!error.transient());
                 assert!(!error.job_policy().terminal_cancelled);
                 assert_eq!(error.job_policy().retry_after_seconds, None);
-                let EngineError::Recovery(crate::recovery::Error::PersistenceFailed(original)) =
+                let crate::Error::Recovery(crate::recovery::Error::PersistenceFailed(original)) =
                     error
                 else {
                     panic!("writer error was normalized")
@@ -353,9 +352,9 @@ mod tests {
             publish(&path, b"new png", &project(), &[], &hooks(), &FailPublish).unwrap_err();
         assert!(matches!(
             error,
-            EngineError::Runtime(crate::RuntimeError::Edit(crate::EditError::Project(
-                project::Error::Io(_)
-            )))
+            ArtifactError::Runtime(crate::RuntimeError::Edit(
+                crate::session::EditError::Project(project::Error::Io(_))
+            ))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);

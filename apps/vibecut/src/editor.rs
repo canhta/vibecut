@@ -631,7 +631,7 @@ impl Editor {
         let at = self.playback.position()?;
         if let Err(error) = crate::services::preview::copy(&self.session, at, ctx) {
             self.player.snapshot.error = Some(match &error {
-                Error::Engine(engine::Error::EmptyProject) => {
+                Error::Engine(engine::Error::Artifacts(engine::ArtifactError::EmptyProject)) => {
                     engine::control::ErrorCode::EmptyProject
                 }
                 _ => engine::control::ErrorCode::Failed,

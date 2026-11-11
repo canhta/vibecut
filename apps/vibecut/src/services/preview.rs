@@ -269,7 +269,9 @@ impl SnapshotDialog {
         self.error = None;
         if session.project().duration() == Tick::ZERO {
             self.error = Some(ErrorCode::EmptyProject);
-            return Err(Error::Engine(EngineError::EmptyProject));
+            return Err(Error::Engine(EngineError::Artifacts(
+                engine::ArtifactError::EmptyProject,
+            )));
         }
         session.protect_paths(protected)?;
         let runner = match &mut self.runner {
@@ -334,7 +336,7 @@ impl SnapshotDialog {
 
 fn error_for(code: ErrorCode) -> EngineError {
     match code {
-        ErrorCode::EmptyProject => EngineError::EmptyProject,
+        ErrorCode::EmptyProject => EngineError::Artifacts(engine::ArtifactError::EmptyProject),
         ErrorCode::TransactionActive => {
             EngineError::Session(engine::SessionError::TransactionActive)
         }

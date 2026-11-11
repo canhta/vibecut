@@ -700,7 +700,7 @@ fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache
             Animations::default(),
             Tick(-1)
         ),
-        Err(engine::Error::Edit(engine::EditError::Invalid(
+        Err(engine::ArtifactError::Edit(engine::EditError::Invalid(
             "thumbnail local time"
         )))
     ));
@@ -960,9 +960,12 @@ fn running_thumbnail_cancel_and_device_failure_keep_cache_empty() {
         let result = pump(&mut runner, id);
         if let Some(expected) = expected {
             assert_eq!(result.state, JobState::Failed);
-            let Some(engine::Error::Render(error)) = result.error.as_deref().and_then(|error| {
-                (error as &(dyn std::error::Error + 'static)).downcast_ref::<engine::Error>()
-            }) else {
+            let Some(engine::ArtifactError::Render(error)) =
+                result.error.as_deref().and_then(|error| {
+                    (error as &(dyn std::error::Error + 'static))
+                        .downcast_ref::<engine::ArtifactError>()
+                })
+            else {
                 panic!("typed adapter error was lost");
             };
             assert_eq!(std::mem::discriminant(error), expected);
@@ -1432,7 +1435,7 @@ fn streak_thumbnail_geometry_keys_independent_pixels_fallback_and_refusal() {
                 Animations::default(),
                 Tick::ZERO
             ),
-            Err(engine::Error::Edit(engine::EditError::Invalid(
+            Err(engine::ArtifactError::Edit(engine::EditError::Invalid(
                 "thumbnail source geometry"
             )))
         ));

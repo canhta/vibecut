@@ -101,18 +101,36 @@ impl CliError {
             Self::Job(error) => {
                 let raw = error.as_ref() as &(dyn std::error::Error + 'static);
                 match raw.downcast_ref::<EngineError>() {
-                    Some(EngineError::Render(render::Error::Unavailable(list)))
+                    Some(EngineError::Artifacts(engine::ArtifactError::Render(
+                        render::Error::Unavailable(list),
+                    )))
+                    | Some(EngineError::Artifacts(engine::ArtifactError::Runtime(
+                        engine::RuntimeError::Render(render::Error::Unavailable(list)),
+                    )))
+                    | Some(EngineError::Artifacts(engine::ArtifactError::Lut(
+                        engine::luts::Error::Render(render::Error::Unavailable(list)),
+                    )))
+                    | Some(EngineError::Render(render::Error::Unavailable(list)))
                     | Some(EngineError::Runtime(engine::RuntimeError::Render(
                         render::Error::Unavailable(list),
                     )))
                     | Some(EngineError::Lut(engine::luts::Error::Render(
                         render::Error::Unavailable(list),
                     ))) => Some(list),
-                    _ => match raw.downcast_ref::<engine::RuntimeError>() {
-                        Some(engine::RuntimeError::Render(render::Error::Unavailable(list))) => {
-                            Some(list)
-                        }
-                        _ => None,
+                    _ => match raw.downcast_ref::<engine::ArtifactError>() {
+                        Some(engine::ArtifactError::Render(render::Error::Unavailable(list)))
+                        | Some(engine::ArtifactError::Runtime(engine::RuntimeError::Render(
+                            render::Error::Unavailable(list),
+                        )))
+                        | Some(engine::ArtifactError::Lut(engine::luts::Error::Render(
+                            render::Error::Unavailable(list),
+                        ))) => Some(list),
+                        _ => match raw.downcast_ref::<engine::RuntimeError>() {
+                            Some(engine::RuntimeError::Render(render::Error::Unavailable(
+                                list,
+                            ))) => Some(list),
+                            _ => None,
+                        },
                     },
                 }
             }
@@ -148,13 +166,20 @@ fn edit_message(error: &(dyn Failure + 'static)) -> String {
     if let Some(providers::Error::ModelMissing(id)) = providers {
         return format!("local model {id} is not installed; run `vibecut-cli model download {id}`");
     }
-    let runtime = match subtitles {
-        Some(engine::subtitles::Error::Runtime(error)) => Some(error),
-        _ => match transcript {
-            Some(engine::transcript::Error::Runtime(error)) => Some(error),
-            _ => match root {
-                Some(EngineError::Runtime(error)) => Some(error),
-                _ => cause.downcast_ref::<engine::RuntimeError>(),
+    let artifact = match root {
+        Some(EngineError::Artifacts(error)) => Some(error),
+        _ => cause.downcast_ref::<engine::ArtifactError>(),
+    };
+    let runtime = match artifact {
+        Some(engine::ArtifactError::Runtime(error)) => Some(error),
+        _ => match subtitles {
+            Some(engine::subtitles::Error::Runtime(error)) => Some(error),
+            _ => match transcript {
+                Some(engine::transcript::Error::Runtime(error)) => Some(error),
+                _ => match root {
+                    Some(EngineError::Runtime(error)) => Some(error),
+                    _ => cause.downcast_ref::<engine::RuntimeError>(),
+                },
             },
         },
     };
@@ -255,6 +280,12 @@ impl From<engine::transcript::Error> for CliError {
 
 impl From<engine::subtitles::Error> for CliError {
     fn from(error: engine::subtitles::Error) -> Self {
+        Self::Engine(error.into())
+    }
+}
+
+impl From<engine::ArtifactError> for CliError {
+    fn from(error: engine::ArtifactError) -> Self {
         Self::Engine(error.into())
     }
 }
