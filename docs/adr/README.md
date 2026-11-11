@@ -9,3 +9,4 @@ ADRs record consequential choices and their rationale. Current contracts live in
 - [0004 Module structure](0004-module-structure.md)
 - [0005 Three independent windows](0005-three-windows.md)
 - [0006 Closed command catalog](0006-closed-command-catalog.md)
+- [0007 Big Buck Bunny documentation and fixture use](0007-big-buck-bunny-documentation.md)

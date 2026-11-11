@@ -1,0 +1,126 @@
+//! Builds the assets-window audit scene, thumbnail fixture.
+use super::super::Failure;
+use super::super::application::*;
+use super::super::fixture::*;
+use media::MediaError;
+use media::SourceAsset;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
+use time::Tick;
+use vibecut::i18n::Locale;
+
+/// Uses the area slot at the measured editor size, independent of sibling work.
+pub(super) struct EffectsClock(std::sync::atomic::AtomicU64);
+impl engine::jobs::Clock for EffectsClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.load(Ordering::SeqCst))
+    }
+}
+pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
+    let locale = if state.ends_with("-vi") {
+        Locale::Vi
+    } else {
+        Locale::En
+    };
+    let state = state.strip_suffix("-vi").unwrap_or(state);
+    let phase3 = state.ends_with("-phase3");
+    let state = state.strip_suffix("-phase3").unwrap_or(state);
+    let mut sound_library = None;
+    let mut editor = empty_editor(theme, locale)?;
+    let clock = Arc::new(EffectsClock(std::sync::atomic::AtomicU64::new(0)));
+    editor.set_clock(clock.clone());
+    if matches!(state, "media" | "offline") {
+        editor.set_import_probe(Arc::new(CompletedProbe))?;
+        editor.set_thumbnailer(Arc::new(AssetsThumbnail))?;
+        editor.drop_files(vec![
+            std::env::temp_dir().join("Interview.mp4"),
+            std::env::temp_dir().join("audio-music.wav"),
+        ])?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while editor.importing() {
+            editor.tick();
+            if Instant::now() >= deadline {
+                return Err("assets audit import timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    editor.preferences.assets_tab = match state {
+        "effects" => vibecut::panels::AssetsTab::Effects,
+        "transitions" => vibecut::panels::AssetsTab::Transitions,
+        "text" => vibecut::panels::AssetsTab::Text,
+        "captions" => vibecut::panels::AssetsTab::Captions,
+        "offline" => vibecut::panels::AssetsTab::Sounds,
+        _ => vibecut::panels::AssetsTab::Media,
+    };
+    if state == "offline" {
+        let directory = tempfile::tempdir()?;
+        let library = Arc::new(libraries::sounds::SoundLibrary::open(directory.path())?);
+        library.save(&libraries::sounds::SoundResult {
+            id: 1,
+            name: "Night Drive".into(),
+            author: "BCD Studio".into(),
+            licence: "Creative Commons 0".into(),
+            attribution: "Night Drive by BCD Studio (Creative Commons 0)".into(),
+            source_url: "https://freesound.org/s/1/".into(),
+            audio_url: "https://cdn.example/1.mp3".into(),
+            duration_ms: 31_000,
+            downloads: 100,
+        })?;
+        editor.set_sound_library(library)?;
+        sound_library = Some(directory);
+    }
+    if state == "loading" {
+        editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
+        editor.drop_files(vec![
+            std::env::temp_dir().join("one.mp4"),
+            std::env::temp_dir().join("two.mp4"),
+        ])?;
+    }
+    if state == "error" {
+        editor.start_import(vec![std::env::temp_dir().join("missing-audit-media.mp4")])?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while editor.importing() {
+            editor.tick();
+            if Instant::now() >= deadline {
+                return Err("assets audit refusal timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    let mut app = harness_sized(App::Assets(Box::new(editor)), scale, [1727.0, 1029.0]);
+    app.state_mut()._sound_library = sound_library;
+    app.run_steps(4);
+    if phase3 {
+        if let App::Assets(editor) = &mut app.state_mut().app {
+            editor.settle_previews(Duration::from_secs(10))?;
+        }
+        clock.0.store(100, Ordering::SeqCst);
+        app.run_steps(1);
+    }
+    Ok(app)
+}
+
+/// Own generated pixels, injected through the real thumbnail publication seam.
+pub(super) struct AssetsThumbnail;
+impl vibecut::import::ThumbnailSource for AssetsThumbnail {
+    fn thumbnail(
+        &self,
+        _: &SourceAsset,
+        _: Tick,
+        _: u32,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+    ) -> media::Result<media::Thumbnail> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(MediaError::Cancelled);
+        }
+        Ok(media::Thumbnail {
+            width: 120,
+            height: 73,
+            frame: Tick::ZERO,
+            pixels: [80, 103, 126, 255].repeat(120 * 73),
+        })
+    }
+}

@@ -12,7 +12,10 @@
   A free, fast, native video editor for macOS, Windows and Linux, with MCP and a CLI built in.
 </p>
 
-<!-- Hero: docs/assets/readme/hero.jpg (editor: media panel, preview, timeline, properties) -->
+<p align="center">
+  <img src="docs/assets/readme/hero.jpg" width="960" alt="The VibeCut editor with a Big Buck Bunny multitrack project, preview, timeline and properties" />
+</p>
+<p align="center"><sub>Demo footage: <a href="https://peach.blender.org/">Big Buck Bunny</a> © 2008 Blender Foundation, <a href="docs/licenses/CC-BY-3.0.txt">CC BY 3.0</a>.</sub></p>
 
 ## Features
 
@@ -58,7 +61,7 @@ Cut, split, trim, ripple, snap and group clips across video, audio and text
 tracks, with undo.
 
 </td>
-<td width="50%"><!-- docs/assets/readme/timeline.gif --></td>
+<td width="50%"><picture><source srcset="docs/assets/readme/timeline.gif" type="image/gif"><img src="docs/assets/readme/timeline.jpg" width="960" alt="Split, trim and undo a Big Buck Bunny multitrack timeline in VibeCut"></picture></td>
 </tr>
 <tr>
 <td width="50%" valign="middle">
