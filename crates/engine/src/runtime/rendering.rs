@@ -17,10 +17,11 @@ impl Failure for render::Error {
     }
 }
 
+use super::{Error as RuntimeError, Result};
 use crate::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
-use crate::{ByteBudgetHooks, ByteLease, Error as EngineError};
+use crate::{ByteBudgetHooks, ByteLease};
 use std::{path::PathBuf, sync::Arc};
 impl render::Reservation for ByteLease {}
 impl render::ExecutionHooks for JobContext {
@@ -137,7 +138,7 @@ pub fn submit_export(
     range: time::TimeRange,
     settings: render::ExportSettings,
     path: PathBuf,
-) -> Result<(JobId, CancelToken), EngineError> {
+) -> Result<(JobId, CancelToken)> {
     submit_export_with_sources(runner, input, project, range, settings, path, || {
         Box::new(render::FileSources::default())
     })
@@ -153,9 +154,9 @@ pub fn submit_export_with_sources(
     settings: render::ExportSettings,
     path: PathBuf,
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
-) -> Result<(JobId, CancelToken), EngineError> {
+) -> Result<(JobId, CancelToken)> {
     super::loudness_admission::admit(&project)?;
-    Ok(runner.submit::<crate::Error>(
+    Ok(runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -187,10 +188,10 @@ pub fn submit_scene_exports_with_sources(
     settings: render::ExportSettings,
     paths: Vec<PathBuf>,
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
-) -> Result<(JobId, CancelToken), EngineError> {
+) -> Result<(JobId, CancelToken)> {
     let scenes = options.ranges(&project)?;
     if scenes.len() != paths.len() {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(RuntimeError::Edit(crate::EditError::Invalid(
             "scene output paths",
         )));
     }
@@ -200,7 +201,7 @@ pub fn submit_scene_exports_with_sources(
         .len()
         != paths.len()
     {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(RuntimeError::Edit(crate::EditError::Invalid(
             "duplicate scene output paths",
         )));
     }
@@ -231,14 +232,14 @@ pub fn submit_scene_exports_with_sources(
             settings,
             paths
                 .first()
-                .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                .ok_or(RuntimeError::Edit(crate::EditError::Invalid(
                     "scene output path",
                 )))?
                 .clone(),
             sources,
         );
     }
-    Ok(runner.submit::<crate::Error>(
+    Ok(runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -294,7 +295,7 @@ pub fn submit_scene_exports_with_sources(
                     protected: &[],
                     hooks: context,
                 }
-                .write(
+                .write::<RuntimeError>(
                     settings.overwrite,
                     settings.max_bytes,
                     &project::atomic::Fs,
@@ -309,13 +310,13 @@ pub fn submit_scene_exports_with_sources(
                         let mut buffer = vec![0; 64 << 10];
                         loop {
                             if context.cancelled() {
-                                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+                                return Err(RuntimeError::Cancelled);
                             }
                             let count = input.read(&mut buffer)?;
                             if count == 0 {
                                 break;
                             }
-                            writer.write_all(buffer.get(..count).ok_or(EngineError::Edit(
+                            writer.write_all(buffer.get(..count).ok_or(RuntimeError::Edit(
                                 crate::EditError::Invalid("scene publication read"),
                             ))?)?;
                         }
@@ -330,10 +331,11 @@ pub fn submit_scene_exports_with_sources(
 
 struct SceneExportStaging(PathBuf);
 impl SceneExportStaging {
-    fn new() -> Result<Self, EngineError> {
+    fn new() -> Result<Self> {
         let mut nonce = [0_u8; 16];
-        getrandom::fill(&mut nonce)
-            .map_err(|_| EngineError::Edit(crate::EditError::Invalid("export staging identity")))?;
+        getrandom::fill(&mut nonce).map_err(|_| {
+            RuntimeError::Edit(crate::EditError::Invalid("export staging identity"))
+        })?;
         let path = std::fs::canonicalize(std::env::temp_dir())?.join(format!(
             "vibecut-scenes-{:032x}",
             u128::from_le_bytes(nonce)
@@ -358,8 +360,8 @@ pub fn submit_export_publication(
     destination: PathBuf,
     protected: Vec<PathBuf>,
     fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
-) -> Result<(JobId, CancelToken), EngineError> {
-    Ok(runner.submit::<crate::Error>(
+) -> Result<(JobId, CancelToken)> {
+    Ok(runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::Cpu,
@@ -381,20 +383,20 @@ pub fn submit_export_publication(
                 protected: &protected,
                 hooks: context,
             }
-            .write(
+            .write::<RuntimeError>(
                 project::atomic::Overwrite::Replace,
                 size.max(1),
                 fs.as_ref(),
                 |writer| {
                     loop {
                         if context.cancelled() {
-                            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+                            return Err(RuntimeError::Cancelled);
                         }
                         let count = source.read(&mut buffer)?;
                         if count == 0 {
                             break;
                         }
-                        writer.write_all(buffer.get(..count).ok_or(EngineError::Edit(
+                        writer.write_all(buffer.get(..count).ok_or(RuntimeError::Edit(
                             crate::EditError::Invalid("publication read size"),
                         ))?)?;
                         copied += count as u64;
@@ -419,10 +421,10 @@ impl crate::Session {
         runner: &mut JobRunner,
         input: CacheKey,
         command: crate::Command,
-    ) -> Result<(JobId, CancelToken), EngineError> {
+    ) -> Result<(JobId, CancelToken)> {
         if self.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
+            return Err(RuntimeError::Edit(
+                crate::session::SessionError::TransactionActive.into(),
             ));
         }
         match command {
@@ -443,7 +445,7 @@ impl crate::Session {
                                 && i.end().is_ok_and(|end| end > range.start())
                         })
                 }) {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                    return Err(RuntimeError::Edit(crate::EditError::Invalid(
                         "no visible caption item in burn range",
                     )));
                 }
@@ -472,9 +474,9 @@ impl crate::Session {
                     .timeline
                     .iter()
                     .find(|t| t.id == track)
-                    .ok_or(EngineError::Edit(crate::EditError::NoTrack(track)))?;
+                    .ok_or(RuntimeError::Edit(crate::EditError::NoTrack(track)))?;
                 if selected.kind != project::TrackKind::Text {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                    return Err(RuntimeError::Edit(crate::EditError::Invalid(
                         "subtitle export requires a caption track",
                     )));
                 }
@@ -482,7 +484,7 @@ impl crate::Session {
                     || languages.len() > 2
                     || (languages.len() == 2 && languages.first() == languages.get(1))
                 {
-                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                    return Err(RuntimeError::Edit(crate::EditError::Invalid(
                         "select one language or two distinct languages",
                     )));
                 }
@@ -515,16 +517,16 @@ impl crate::Session {
                             )
                         })
                     })
-                    .ok_or(EngineError::Control(
-                        crate::session::wire::ControlError::Limit,
+                    .ok_or(RuntimeError::Edit(
+                        crate::session::wire::ControlError::Limit.into(),
                     ))?;
                 let bytes = text_bytes
                     .checked_mul(16)
                     .and_then(|n| n.checked_add(4096))
-                    .ok_or(EngineError::Control(
-                        crate::session::wire::ControlError::Limit,
+                    .ok_or(RuntimeError::Edit(
+                        crate::session::wire::ControlError::Limit.into(),
                     ))?;
-                Ok(runner.submit(
+                Ok(runner.submit::<RuntimeError>(
                     JobSpec {
                         kind: JobKind::Export,
                         class: ResourceClass::Cpu,
@@ -541,7 +543,7 @@ impl crate::Session {
                         let output = subtitle_file(&project, track, format, &languages)?;
                         context.progress(JobStage::Finalize, 0.5)?;
                         if context.cancelled() {
-                            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+                            return Err(RuntimeError::Cancelled);
                         }
                         let stage = project::atomic::StreamingStage::new(
                             &path,
@@ -552,9 +554,7 @@ impl crate::Session {
                             let mut writer = stage.writer()?;
                             for chunk in output.text.as_bytes().chunks(65536) {
                                 if context.cancelled() {
-                                    return Err(EngineError::Runtime(
-                                        crate::RuntimeError::Cancelled,
-                                    ));
+                                    return Err(RuntimeError::Cancelled);
                                 }
                                 writer.write_all(chunk)?;
                             }
@@ -568,7 +568,7 @@ impl crate::Session {
                     },
                 )?)
             }
-            _ => Err(EngineError::Edit(crate::EditError::Invalid(
+            _ => Err(RuntimeError::Edit(crate::EditError::Invalid(
                 "command is not an export command",
             ))),
         }
@@ -579,7 +579,7 @@ impl crate::Session {
         runner: &mut JobRunner,
         input: CacheKey,
         command: crate::Command,
-    ) -> Result<(JobId, CancelToken), EngineError> {
+    ) -> Result<(JobId, CancelToken)> {
         self.submit_export_command(runner, input, command)
     }
 }
@@ -598,16 +598,16 @@ pub fn subtitle_file(
     track: project::TrackId,
     format: captions::Format,
     languages: &[captions::LanguageTag],
-) -> Result<captions::Export, EngineError> {
+) -> Result<captions::Export> {
     let track = project
         .data()
         .scene()
         .timeline
         .iter()
         .find(|t| t.id == track)
-        .ok_or(EngineError::Edit(crate::EditError::NoTrack(track)))?;
+        .ok_or(RuntimeError::Edit(crate::EditError::NoTrack(track)))?;
     if track.kind != project::TrackKind::Text {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(RuntimeError::Edit(crate::EditError::Invalid(
             "subtitle export requires a caption track",
         )));
     }

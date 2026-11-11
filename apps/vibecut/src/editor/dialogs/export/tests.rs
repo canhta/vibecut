@@ -922,14 +922,12 @@ fn save_refuses_every_source_alias_without_replacing_media() {
                 error
                     .as_deref()
                     .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                        .downcast_ref::<engine::Error>()),
-                Some(engine::Error::Runtime(engine::RuntimeError::Render(
-                    render::Error::Invalid(
-                        "output aliases a source"
-                            | "output aliases a source by hard link"
-                            | "output hard-links a source"
-                            | "output may alias source content"
-                    )
+                        .downcast_ref::<engine::RuntimeError>()),
+                Some(engine::RuntimeError::Render(render::Error::Invalid(
+                    "output aliases a source"
+                        | "output aliases a source by hard link"
+                        | "output hard-links a source"
+                        | "output may alias source content"
                 )))
             ),
             "unexpected source-protection failure: {error:?}"

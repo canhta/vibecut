@@ -40,7 +40,7 @@ pub(crate) fn export_project(
         options,
         move |runner, key, project, _, settings, path| {
             let paths = options.paths(&project, &path)?;
-            engine::submit_scene_exports_with_sources(
+            Ok(engine::submit_scene_exports_with_sources(
                 runner,
                 key,
                 project,
@@ -48,7 +48,7 @@ pub(crate) fn export_project(
                 settings,
                 paths,
                 || Box::new(render::FileSources::default()),
-            )
+            )?)
         },
     )
 }

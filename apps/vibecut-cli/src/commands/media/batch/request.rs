@@ -35,7 +35,15 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     }
     let path = path.ok_or_else(batch_usage)?;
     let batch = load(&path, allow_degraded, allow_overwrite)?;
-    execute(context, batch, engine::submit_export)
+    execute(
+        context,
+        batch,
+        |runner, key, project, range, settings, path| {
+            Ok(engine::submit_export(
+                runner, key, project, range, settings, path,
+            )?)
+        },
+    )
 }
 
 fn batch_usage_text() -> &'static str {
