@@ -33,7 +33,7 @@ use std::{
     process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -2858,26 +2858,24 @@ impl Drop for ChildGuard {
     }
 }
 
-fn read_bounded(mut reader: impl Read, cap: usize, overflow: Arc<AtomicBool>) -> Vec<u8> {
+fn read_capped(path: &Path, cap: usize, label: &str) -> Result<Vec<u8>, Failure> {
+    let mut file = fs::File::open(path)?;
     let mut out = Vec::new();
     let mut buffer = [0u8; 8192];
-    let mut total = 0usize;
     loop {
-        let read = match reader.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => read,
-            Err(_) => break,
-        };
-        total = total.saturating_add(read);
-        if total > cap {
-            overflow.store(true, Ordering::SeqCst);
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
         }
-        let room = cap.saturating_sub(out.len());
+        let room = (cap + 1).saturating_sub(out.len());
         if room > 0 {
             out.extend_from_slice(&buffer[..read.min(room)]);
         }
+        if out.len() > cap {
+            return Err(format!("{label} output exceeded its bounded cap").into());
+        }
     }
-    out
+    Ok(out)
 }
 
 fn tool_command(program: &str) -> ProcessCommand {
@@ -2904,51 +2902,40 @@ fn run_tool(
     timeout: Duration,
     stdout_cap: usize,
 ) -> Result<SupervisedOutput, Failure> {
-    let mut child = tool_command(program)
+    let scratch = tempfile::tempdir()?;
+    let out_path = scratch.path().join("stdout");
+    let err_path = scratch.path().join("stderr");
+    let out_file = fs::File::create(&out_path)?;
+    let err_file = fs::File::create(&err_path)?;
+    let child = tool_command(program)
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::from(err_file))
         .spawn()
         .map_err(|error| format!("spawn {program}: {error}"))?;
-    let stdout = child.stdout.take().ok_or("tool stdout unavailable")?;
-    let stderr = child.stderr.take().ok_or("tool stderr unavailable")?;
-    let overflow = Arc::new(AtomicBool::new(false));
-    let out_flag = overflow.clone();
-    let err_flag = overflow.clone();
-    let out_thread = std::thread::spawn(move || read_bounded(stdout, stdout_cap, out_flag));
-    let err_thread = std::thread::spawn(move || read_bounded(stderr, TOOL_STDERR_CAP, err_flag));
     let mut guard = ChildGuard(Some(child));
     let deadline = Instant::now() + timeout;
     let mut status = None;
     while Instant::now() < deadline {
-        if overflow.load(Ordering::SeqCst) {
-            break;
-        }
         if let Some(exit) = guard.child()?.try_wait()? {
             status = Some(exit);
             break;
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-    if status.is_none() {
+    let timed_out = status.is_none();
+    if timed_out {
         guard.kill();
     }
-    let stdout = out_thread
-        .join()
-        .map_err(|_| format!("{program} stdout reader panicked"))?;
-    let stderr = err_thread
-        .join()
-        .map_err(|_| format!("{program} stderr reader panicked"))?;
-    if overflow.load(Ordering::SeqCst) {
-        return Err(format!("{program} output exceeded its bounded cap").into());
-    }
-    let Some(status) = status else {
+    let stdout = read_capped(&out_path, stdout_cap, program)?;
+    let stderr = read_capped(&err_path, TOOL_STDERR_CAP, program)?;
+    if timed_out {
         return Err(format!("{program} timed out after {timeout:?}").into());
-    };
+    }
     guard.0.take();
     Ok(SupervisedOutput {
-        status,
+        status: status.ok_or("supervised child status")?,
         stdout,
         stderr,
     })
@@ -3167,6 +3154,52 @@ fn owned_by_runner(outputs: &Path, name: &str, slot: &str) -> Result<bool, Failu
             .any(|line| line.starts_with("source:") && line.contains(&marker)))
 }
 
+#[derive(Debug)]
+struct Publication {
+    outputs: PathBuf,
+    backup: PathBuf,
+    published: Vec<String>,
+    backed: Vec<String>,
+    run: PathBuf,
+}
+
+impl Publication {
+    fn commit(self) {
+        fs::remove_dir_all(&self.backup).ok();
+    }
+
+    fn rollback(self, error: Failure) -> Failure {
+        let mut rollback = Vec::new();
+        for name in self.published.iter().rev() {
+            let path = self.outputs.join(name);
+            if path.exists() && fs::remove_file(&path).is_err() {
+                rollback.push(format!("remove {name}"));
+            }
+        }
+        for name in self.backed.iter().rev() {
+            if fs::rename(self.backup.join(name), self.outputs.join(name)).is_err() {
+                rollback.push(format!("restore {name}"));
+            }
+        }
+        if rollback.is_empty() {
+            fs::remove_dir_all(&self.backup).ok();
+            error
+        } else {
+            fs::write(
+                self.run.join("preserve-staging"),
+                format!("rollback incomplete: {}", rollback.join(", ")),
+            )
+            .ok();
+            format!(
+                "{error}; rollback incomplete ({}) with backups at {}",
+                rollback.join(", "),
+                self.backup.display()
+            )
+            .into()
+        }
+    }
+}
+
 fn publish_outputs(
     stage: &Path,
     outputs: &Path,
@@ -3175,17 +3208,29 @@ fn publish_outputs(
     all_names: &[&str],
     run: &Path,
     run_id: &str,
-) -> Result<(), Failure> {
+) -> Result<Publication, Failure> {
     for name in media_names {
-        owned_by_runner(outputs, name, slot)?;
+        let exists =
+            outputs.join(name).exists() || outputs.join(format!("{name}.attribution")).exists();
+        if exists && !owned_by_runner(outputs, name, slot)? {
+            return Err(format!(
+                "refusing unrelated existing README output `{name}`: sidecar does not prove runner ownership"
+            )
+            .into());
+        }
     }
     let backup = outputs.join(format!(".readme-media-backup-{run_id}"));
     if backup.exists() {
         return Err("README publication backup already exists".into());
     }
     fs::create_dir_all(&backup)?;
-    let mut published = Vec::new();
-    let mut backed = Vec::new();
+    let mut publication = Publication {
+        outputs: outputs.to_owned(),
+        backup: backup.clone(),
+        published: Vec::new(),
+        backed: Vec::new(),
+        run: run.to_owned(),
+    };
     let mut apply = || -> Result<(), Failure> {
         for name in all_names {
             let src = stage.join(name);
@@ -3195,7 +3240,7 @@ fn publish_outputs(
             let dst = outputs.join(name);
             if dst.exists() {
                 fs::rename(&dst, backup.join(name))?;
-                backed.push(*name);
+                publication.backed.push((*name).to_owned());
             }
             let temp = outputs.join(format!(".{name}.tmp-{run_id}"));
             if temp.exists() {
@@ -3203,45 +3248,28 @@ fn publish_outputs(
             }
             fs::copy(&src, &temp)?;
             fs::rename(&temp, &dst)?;
-            published.push(*name);
+            publication.published.push((*name).to_owned());
         }
         Ok(())
     };
     match apply() {
-        Ok(()) => {
-            fs::remove_dir_all(&backup).ok();
-            Ok(())
-        }
-        Err(error) => {
-            let mut rollback = Vec::new();
-            for name in published.iter().rev() {
-                let path = outputs.join(name);
-                if path.exists() && fs::remove_file(&path).is_err() {
-                    rollback.push(format!("remove {name}"));
-                }
-            }
-            for name in backed.iter().rev() {
-                if fs::rename(backup.join(name), outputs.join(name)).is_err() {
-                    rollback.push(format!("restore {name}"));
-                }
-            }
-            if rollback.is_empty() {
-                fs::remove_dir_all(&backup).ok();
-                Err(error)
-            } else {
-                fs::write(
-                    run.join("preserve-staging"),
-                    format!("rollback incomplete: {}", rollback.join(", ")),
-                )?;
-                Err(format!(
-                    "{error}; rollback incomplete ({}) with backups at {}",
-                    rollback.join(", "),
-                    backup.display()
-                )
-                .into())
-            }
-        }
+        Ok(()) => Ok(publication),
+        Err(error) => Err(publication.rollback(error)),
     }
+}
+
+fn finish_publication(
+    publication: Publication,
+    manifest_path: &Path,
+    manifest: &[u8],
+) -> Result<(), Failure> {
+    if let Err(error) = fs::write(manifest_path, manifest) {
+        return Err(
+            publication.rollback(format!("publication manifest write failed: {error}").into())
+        );
+    }
+    publication.commit();
+    Ok(())
 }
 
 fn encode_jpg(raw: &Path, out: &Path) -> Result<serde_json::Value, Failure> {
@@ -4126,12 +4154,10 @@ fn readme_media_run(
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .ok_or("README run id")?;
-    publish_outputs(&stage, &outputs, slot, media, all, run, &run_id)?;
+    let publication = publish_outputs(&stage, &outputs, slot, media, all, run, &run_id)?;
     manifest["publication"] = serde_json::json!("published");
-    fs::write(
-        run.join("manifest.json"),
-        serde_json::to_vec_pretty(&manifest)?,
-    )?;
+    let manifest = serde_json::to_vec_pretty(&manifest)?;
+    finish_publication(publication, &run.join("manifest.json"), &manifest)?;
     println!("readme-media: {} {}", slot, run.display());
     Ok(())
 }
@@ -4754,6 +4780,101 @@ mod tests {
         assert!(error.to_string().contains("refusing unrelated"));
         assert_eq!(fs::read(finals.join("hero.jpg"))?, b"unrelated");
         Ok(())
+    }
+
+    #[test]
+    fn publish_refuses_readable_but_incomplete_ownership_sidecar() -> Result<(), Failure> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let stage = root.join("stage");
+        let finals = root.join("finals");
+        let run = root.join("run");
+        fs::create_dir_all(&stage)?;
+        fs::create_dir_all(&finals)?;
+        fs::create_dir_all(&run)?;
+        fs::write(finals.join("hero.jpg"), b"unrelated")?;
+        fs::write(finals.join("hero.jpg.attribution"), b"asset: hero.jpg\n")?;
+        fs::write(stage.join("hero.jpg"), b"new-media")?;
+        fs::write(stage.join("hero.jpg.attribution"), b"asset: hero.jpg\n")?;
+        let error = publish_outputs(
+            &stage,
+            &finals,
+            "hero",
+            &["hero.jpg"],
+            &["hero.jpg", "hero.jpg.attribution"],
+            &run,
+            "run3",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("refusing unrelated"));
+        assert_eq!(fs::read(finals.join("hero.jpg"))?, b"unrelated");
+        Ok(())
+    }
+
+    #[test]
+    fn publication_manifest_failure_rolls_back_finals() -> Result<(), Failure> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let stage = root.join("stage");
+        let finals = root.join("finals");
+        let run = root.join("run");
+        fs::create_dir_all(&stage)?;
+        fs::create_dir_all(&finals)?;
+        fs::create_dir_all(&run)?;
+        let owned = "asset: hero.jpg\ntitle: old\nauthor: VibeCut contributors\nsource: apps/vibecut/examples/ui_audit.rs --readme hero at old\nlicense: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)\nlicense-file: ../../licenses/CC-BY-3.0.txt\nadded: p0-core/22\nnotes: old\n";
+        fs::write(finals.join("hero.jpg"), b"old-media")?;
+        fs::write(finals.join("hero.jpg.attribution"), owned)?;
+        fs::write(stage.join("hero.jpg"), b"new-media")?;
+        fs::write(stage.join("hero.jpg.attribution"), owned)?;
+        let publication = publish_outputs(
+            &stage,
+            &finals,
+            "hero",
+            &["hero.jpg"],
+            &["hero.jpg", "hero.jpg.attribution"],
+            &run,
+            "run4",
+        )?;
+        assert_eq!(fs::read(finals.join("hero.jpg"))?, b"new-media");
+        let manifest_directory = root.join("manifest-dir");
+        fs::create_dir_all(&manifest_directory)?;
+        let error = finish_publication(publication, &manifest_directory, b"manifest").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("publication manifest write failed")
+        );
+        assert_eq!(fs::read(finals.join("hero.jpg"))?, b"old-media");
+        assert_eq!(
+            fs::read_to_string(finals.join("hero.jpg.attribution"))?,
+            owned
+        );
+        assert!(!finals.join(".readme-media-backup-run4").exists());
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn supervised_runner_does_not_wait_for_inherited_output_handles() {
+        let start = Instant::now();
+        let result = run_tool(
+            "cmd",
+            &[
+                "/c",
+                "start",
+                "/b",
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Start-Sleep -Seconds 5",
+            ],
+            Duration::from_secs(2),
+            1024,
+        );
+        assert!(start.elapsed() < Duration::from_secs(3));
+        if let Err(error) = result {
+            assert!(!error.to_string().contains("timed out"), "{error}");
+        }
     }
 
     #[cfg(windows)]

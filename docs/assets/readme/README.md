@@ -115,11 +115,13 @@ and their sidecars are tracked.
 
 All external tools used by this mode (FFmpeg/FFprobe, Git, PowerShell/df
 headroom probe, metadata, encode/decode) run through one private supervised
-runner with 10 s metadata / 120 s work deadlines, bounded stdout/stderr, pipe
-readers, and kill+wait/reap on timeout, overflow or unwind. Decoded RGB is capped
-at 16 MiB, ample for one 1440x900 RGB frame. A stalled child and bounded-output
-violation are exercised by the example tests. Interactive cancellation is not a
-separate signal UI; hard process-kill recovery is outside this bounded tool.
+runner with 10 s metadata / 120 s work deadlines, bounded stdout/stderr,
+run-owned capture files instead of reader threads, capped reads after exit or
+deadline, and kill+wait/reap on timeout or unwind. Decoded RGB is capped at
+16 MiB, ample for one 1440x900 RGB frame. A stalled child, a bounded-output
+violation, and a descendant retaining inherited output handles are exercised by
+the example tests. Interactive cancellation is not a separate signal UI; hard
+process-kill recovery is outside this bounded tool.
 
 ## Independent output checks
 
