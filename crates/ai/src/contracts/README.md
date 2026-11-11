@@ -22,7 +22,10 @@ Each operation has one `Scope` constructor (`transcription`, `alignment`, `trans
 
 `defaults::validate_model` admits nonblank IDs of at most 256 UTF-8 bytes with no
 control characters. Adapters send the chosen ID unchanged; they never use the
-shipped table as an allowlist. The settings fingerprint includes the model.
+shipped table as an allowlist. The remote settings fingerprint is `sha256:` plus
+64 lowercase hex digits over the canonical JSON tuple `("remote-settings-v1",
+adapter settings, NFC model ID)`. Construction and admission use this same
+identity, binding every component without exceeding workflow cache-version bounds.
 `ModelUnavailable` retains the selected provider/model and a static diagnostic
 category derived from the provider response. Raw provider messages stay out of
 errors and logs, as required by [standards](../../../../docs/engineering/standards.md#logging).

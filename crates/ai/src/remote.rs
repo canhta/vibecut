@@ -5,6 +5,7 @@ use crate::transport::{HttpResponse, retry_after, wav_bytes};
 use crate::{Capabilities, CostEstimate, Error, Location, Operation, ProviderConfig, Scope};
 use captions::NfcText;
 pub use models::{MAX_REMOTE_MODELS, list_remote_models};
+use sha2::{Digest, Sha256};
 
 /// What composition shows before any remote byte leaves the machine. One value
 /// for every remote operation; local adapters return `None` instead.
@@ -77,10 +78,10 @@ pub(crate) fn admit(
     local: Option<&'static str>,
 ) -> Result<(), Error> {
     crate::defaults::validate_model(config.model().as_str())?;
-    if settings.is_some_and(|settings| {
-        config.settings_fingerprint().as_str()
-            != format!("{settings};model={}", config.model().as_str())
-    }) {
+    if let Some(settings) = settings
+        && config.settings_fingerprint()
+            != &settings_fingerprint(settings, config.model().as_str())?
+    {
         return Err(Error::Unsupported);
     }
     match config.location() {
@@ -108,16 +109,30 @@ pub(crate) fn provider_config(
     auth_ref: &str,
 ) -> Result<ProviderConfig, Error> {
     crate::defaults::validate_model(model)?;
+    let model = NfcText::from(model);
+    let fingerprint = settings_fingerprint(settings, model.as_str())?;
     ProviderConfig::new(
         id.into(),
-        model.into(),
-        format!("{settings};model={model}").into(),
+        model,
+        fingerprint,
         Location::Remote {
             backend: backend.into(),
             base_url: base_url.into(),
             auth_ref: auth_ref.into(),
         },
     )
+}
+
+/// Keep the complete model/settings identity within downstream cache-version bounds.
+/// JSON tuple framing distinguishes component boundaries, including embedded delimiters.
+fn settings_fingerprint(settings: &str, model: &str) -> Result<NfcText, Error> {
+    let canonical = serde_json::to_vec(&("remote-settings-v1", settings, model))
+        .map_err(|_| Error::Invalid("remote settings identity"))?;
+    let digest: String = Sha256::digest(canonical)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(format!("sha256:{digest}").into())
 }
 
 /// The disclosure cost ceiling for a speech quote.
@@ -360,7 +375,7 @@ mod tests {
         ProviderConfig::new(
             "provider".into(),
             model.into(),
-            format!("{settings};model={model}").into(),
+            settings_fingerprint(settings, model).unwrap(),
             Location::Remote {
                 backend: backend.into(),
                 base_url: base_url.into(),
@@ -374,7 +389,7 @@ mod tests {
         ProviderConfig::new(
             "provider".into(),
             model.into(),
-            format!("{settings};model={model}").into(),
+            settings_fingerprint(settings, model).unwrap(),
             Location::Local {
                 backend: "local".into(),
                 model_ref: "sha256:model".into(),
@@ -473,10 +488,43 @@ mod tests {
         )
         .unwrap();
         assert_eq!(provider.model().as_str(), "model-v1");
-        assert_eq!(
-            provider.settings_fingerprint().as_str(),
-            "settings-v1;model=model-v1"
+        let build = |model: &str, settings: &str| {
+            provider_config(
+                model,
+                settings,
+                BACKEND,
+                BASE_URL,
+                "provider",
+                "PROVIDER_API_KEY",
+            )
+            .unwrap()
+        };
+        for model in ["x".repeat(256), "λ".repeat(128), "e\u{301}".into()] {
+            let config = build(&model, SETTINGS);
+            assert_eq!(config.model(), &NfcText::from(model));
+            assert!(config.settings_fingerprint().as_str().len() <= 256);
+            admit(&config, Some(SETTINGS), BACKEND, BASE_URL, None).unwrap();
+        }
+        assert_ne!(
+            provider.settings_fingerprint(),
+            build("model-v1", "changed-settings").settings_fingerprint(),
         );
+        assert_ne!(
+            build("b;model=c", "a").settings_fingerprint(),
+            build("c", "a;model=b").settings_fingerprint(),
+            "component framing must preserve the complete settings/model identity",
+        );
+        let changed = ProviderConfig::new(
+            provider.id().clone(),
+            "another-model".into(),
+            provider.settings_fingerprint().clone(),
+            provider.location().clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            admit(&changed, Some(SETTINGS), BACKEND, BASE_URL, None),
+            Err(Error::Unsupported)
+        ));
         assert!(matches!(
             provider_config(
                 "",

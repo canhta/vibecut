@@ -235,9 +235,10 @@ impl Providers {
         Ok(self)
     }
 
-    /// Test/application composition with already built adapters.
+    /// Test/application composition with already built adapters and their resolved ASR mode.
     pub fn from_parts(
         transcription: TranscriptionProvider,
+        transcription_mode: NfcText,
         transcriber: Arc<dyn ai::Transcriber>,
         aligner: Option<Arc<dyn ai::Aligner>>,
         translation: Option<TranslationProvider>,
@@ -251,7 +252,7 @@ impl Providers {
             translator,
             transcription,
             translation,
-            transcription_mode: "transcribe".into(),
+            transcription_mode,
             translation_mode,
             needs_alignment,
             _leases: Vec::new(),

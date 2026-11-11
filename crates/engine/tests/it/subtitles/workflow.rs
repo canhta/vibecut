@@ -243,6 +243,7 @@ fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool) -> Provid
     };
     Providers::from_parts(
         transcription,
+        "transcribe".into(),
         Arc::new(asr),
         None,
         translation.then(|| TranslationProvider::OpenAi {
@@ -771,6 +772,7 @@ fn text_only_providers(
     }
     Providers::from_parts(
         transcription,
+        "transcribe".into(),
         Arc::new(TextOnlyAsr(asr)),
         Some(aligner),
         None,
@@ -935,6 +937,7 @@ fn operation_cancellation_stops_a_running_asr_job_without_output() {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         transcriber,
         None,
         None,
@@ -1070,6 +1073,7 @@ fn operation_cancellation_stops_a_running_translation_job() {
         TranscriptionProvider::Whisper {
             model: "fake-asr-model".into(),
         },
+        "transcribe".into(),
         Arc::new(FakeAsr::new(calls)),
         None,
         Some(TranslationProvider::OpenAi {

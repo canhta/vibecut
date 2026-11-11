@@ -14,6 +14,10 @@ to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-la
 
 ## Adapters, scopes and consent
 
+`from_parts` receives the resolved ASR mode explicitly: remote file adapters use
+their `file` mode, while injected/local adapters supply their own mode. Scope and
+consent retain that exact choice; composition does not rewrite it during execution.
+
 `Providers` holds one `Arc<dyn ai::Transcriber>`, an optional aligner and an optional `Arc<dyn
 ai::Translator>`; it never names an adapter after `open`. Operation scopes come from the AI
 constructors (`Scope::transcription`, `alignment`, `translation`, `clip_suggestion`, `chapters`,
