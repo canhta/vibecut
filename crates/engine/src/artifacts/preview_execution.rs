@@ -25,6 +25,7 @@ pub(crate) fn control_key(fingerprint: blake3::Hash) -> Result<crate::cache::Cac
         clip_range: [0; 32],
         translation: [0; 32],
     })
+    .map_err(EngineError::from)
 }
 pub(crate) fn preview(
     session: &Session,

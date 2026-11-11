@@ -50,8 +50,8 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
         match (*guard).borrow_mut().get(key) {
             Ok(value) => value,
-            Err(EngineError::Runtime(crate::RuntimeError::CacheCorrupt)) => None,
-            Err(error) => return Err(error),
+            Err(crate::RuntimeError::CacheCorrupt) => None,
+            Err(error) => return Err(error.into()),
         }
     };
     let raw = match cached {
@@ -91,10 +91,10 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
                 let mut guard = cache.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
                 match (*guard).borrow_mut().put(key, &bytes) {
                     Ok(()) => {}
-                    Err(EngineError::Runtime(
+                    Err(
                         crate::RuntimeError::BudgetFull | crate::RuntimeError::ArtifactTooLarge,
-                    )) => {}
-                    Err(error) => return Err(error),
+                    ) => {}
+                    Err(error) => return Err(error.into()),
                 }
             }
             recognition

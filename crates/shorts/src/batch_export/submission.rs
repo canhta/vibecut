@@ -152,6 +152,7 @@ pub(super) fn job_key(
         clip_range: range,
         translation: [0; 32],
     })
+    .map_err(EngineError::from)
 }
 
 fn submit_clip(

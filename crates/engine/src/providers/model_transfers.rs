@@ -124,7 +124,7 @@ impl ModelTransfers {
     ) -> Result<Option<ModelLease>> {
         let _memory = self.budget.reserve(ByteOwner::CacheReads, WORK_BYTES)?;
         let mut work = CacheWork::take(&self.cache)?;
-        work.cache()?.model(model, hooks)
+        work.cache()?.model(model, hooks).map_err(EngineError::from)
     }
     /// Only the composition root's affirmative licence/source/size download action
     /// may supply this ai-owned token. Choosing a provider never calls grant here.
@@ -175,7 +175,7 @@ impl ModelTransfers {
             return Err(EngineError::Runtime(crate::RuntimeError::CacheBusy));
         }
         let mut work = CacheWork::take(&self.cache)?;
-        work.cache()?.remove_model(model)
+        work.cache()?.remove_model(model).map_err(EngineError::from)
     }
 }
 fn storage(error: io::Error) -> EngineError {
@@ -223,7 +223,7 @@ fn durable(edit: &mut NativeEdit, file: &File, index: usize, offset: u64) -> Res
             .get_mut(index)
             .ok_or(EngineError::Runtime(crate::RuntimeError::CacheCorrupt))?
             .offset = old;
-        return Err(error);
+        return Err(error.into());
     }
     Ok(())
 }
@@ -237,7 +237,7 @@ fn reset(edit: &mut NativeEdit, file: &File, index: usize) -> Result<()> {
     part.etag = None;
     edit.checkpoint()?;
     file.set_len(0).map_err(storage)?;
-    edit.report_length(index, 0)
+    edit.report_length(index, 0).map_err(EngineError::from)
 }
 fn download(
     cache: &mut ArtifactCache,
@@ -340,7 +340,7 @@ fn download(
                         p.etag = None;
                         edit.checkpoint()?;
                         file.set_len(0).map_err(storage)?;
-                        edit.report_length(index, 0)?;
+                        edit.report_length(index, 0).map_err(EngineError::from)?;
                         return Err(EngineError::Runtime(crate::RuntimeError::NetworkTransient));
                     }
                 }
@@ -457,6 +457,6 @@ fn download(
     }
     ctx.commit_publication(|| {
         edit.state.complete = true;
-        edit.checkpoint()
+        edit.checkpoint().map_err(EngineError::from)
     })
 }

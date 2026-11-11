@@ -102,6 +102,7 @@ fn export_key(asset: &SourceAsset, label: &str) -> Result<CacheKey, EngineError>
         clip_range: [0; 32],
         translation: [0; 32],
     })
+    .map_err(EngineError::from)
 }
 
 pub(super) fn ensure_distinct(input: &Path, output: &Path) -> Result<(), EngineError> {

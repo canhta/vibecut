@@ -144,8 +144,8 @@ impl DownloadTransport for Offline {
 fn unsupported<T>(result: engine::Result<T>) {
     assert!(matches!(
         result,
-        Err(EngineError::Edit(engine::EditError::Unsupported(
-            "OS cache location unavailable"
+        Err(EngineError::Runtime(engine::RuntimeError::Edit(
+            engine::EditError::Unsupported("OS cache location unavailable")
         )))
     ));
 }
@@ -153,7 +153,7 @@ fn unsupported<T>(result: engine::Result<T>) {
 fn locked(path: &Path, budget: &ByteBudget) {
     assert!(matches!(
         ArtifactCache::open(path, budget.clone(), 8),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(engine::RuntimeError::CacheBusy)
     ));
 }
 
@@ -165,7 +165,7 @@ fn cache_location_child() {
     let budget = ByteBudget::new(8 << 20).unwrap();
     let offline = Arc::new(Offline::default());
     if mode == "unavailable" {
-        unsupported(CacheRoot::discover());
+        unsupported(CacheRoot::discover().map_err(EngineError::from));
         unsupported(ModelTransfers::open_default(
             budget.clone(),
             8,

@@ -365,7 +365,7 @@ fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     drop(store);
     assert!(matches!(
         ArtifactCache::open(dir.path(), budget.clone(), 32),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(engine::RuntimeError::CacheBusy)
     ));
     drop(lease);
     let (mut cache, diagnostics) = ArtifactCache::open(dir.path(), budget.clone(), 32).unwrap();
@@ -716,8 +716,45 @@ fn verified_multi_file_bundle_cache_hit_needs_no_network_or_new_consent() {
     let (id, _) = submit(&store, &mut runner, &model);
     assert_eq!(terminal(&mut runner, id, &clock).state, JobState::Completed);
     assert_eq!(http.count(), 2);
-    fs::write(lease.file("tokens.txt").unwrap(), b"bad").unwrap();
-    assert!(store.installed(&model, &NoHooks).is_err());
+    // The existing hooks seam cancels verification without changing the cached bundle.
+    struct Cancelled;
+    impl ai::ExecutionHooks for Cancelled {
+        fn cancelled(&self) -> bool {
+            true
+        }
+        fn stage(&self, _: ai::Stage) {}
+    }
+    let error = store.installed(&model, &Cancelled).err().unwrap();
+    assert!(matches!(
+        &error,
+        EngineError::Runtime(engine::RuntimeError::Model(ai::Error::Cancelled))
+    ));
+    use engine::Failure;
+    use std::error::Error as _;
+    assert_eq!(error.code(), engine::control::ErrorCode::Ai);
+    assert!(!error.transient());
+    assert!(!error.job_policy().terminal_cancelled);
+    assert_eq!(error.job_policy().retry_after_seconds, None);
+    assert_eq!(error.to_string(), "AI execution failed");
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<ai::Error>()),
+        Some(ai::Error::Cancelled)
+    ));
+    assert_eq!(
+        fs::read(lease.file("tokens.txt").unwrap()).unwrap(),
+        data.as_ref()
+    );
+    // Preserve size and marker so this reaches actual SHA verification, not size refusal.
+    fs::write(lease.file("tokens.txt").unwrap(), vec![8; data.len()]).unwrap();
+    assert!(matches!(
+        store.installed(&model, &NoHooks),
+        Err(EngineError::Runtime(engine::RuntimeError::Model(
+            ai::Error::ModelIntegrity
+        )))
+    ));
+    assert_eq!(http.count(), 2);
 }
 #[test]
 fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
@@ -795,6 +832,13 @@ fn consent_scope_queue_admission_and_metadata_namespace_are_strict() {
         let mut bad = model.clone();
         bad.files.first_mut().unwrap().name = name.into();
         assert!(DownloadConsent::grant(&bad).is_err());
+        assert!(matches!(
+            store.installed(&bad, &NoHooks),
+            Err(EngineError::Runtime(engine::RuntimeError::Model(
+                ai::Error::Invalid(_)
+            )))
+        ));
+        assert_eq!(entries(), before);
     }
     assert_eq!(http.count(), 0);
 }
@@ -1011,7 +1055,7 @@ fn killed_process_resumes_only_the_durable_prefix_and_publishes_atomically() {
     let budget = ByteBudget::new(512 * 1024).unwrap();
     assert!(matches!(
         ArtifactCache::open(&root.path().join("cache"), budget.clone(), 32),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheBusy))
+        Err(engine::RuntimeError::CacheBusy)
     ));
     child.0.kill().unwrap();
     child.0.wait().unwrap();

@@ -648,7 +648,7 @@ impl ModelManager {
         if let Some(error) = self.installed_errors.get(&id).cloned() {
             ui.colored_label(
                 theme::error_text(dark),
-                tr(problem_text(problem_for(&error))),
+                tr(problem_text(problem_for(error.as_ref()))),
             );
         }
         if self.installed.get(&id).copied().unwrap_or(false) {
@@ -781,7 +781,11 @@ fn error_from(error: Error) -> EngineError {
 fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
     if let Some(runtime) = error.downcast_ref::<engine::RuntimeError>() {
         return match runtime {
-            engine::RuntimeError::StorageFull => ModelProblem::StorageFull,
+            engine::RuntimeError::StorageFull
+            | engine::RuntimeError::Model(
+                ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
+            ) => ModelProblem::StorageFull,
+            engine::RuntimeError::Model(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
             engine::RuntimeError::NetworkTransient => ModelProblem::Network,
             engine::RuntimeError::CacheBusy => ModelProblem::Busy,
             engine::RuntimeError::CacheCorrupt => ModelProblem::Corrupt,
@@ -797,10 +801,16 @@ fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
     };
     match error {
         EngineError::Runtime(engine::RuntimeError::StorageFull)
+        | EngineError::Runtime(engine::RuntimeError::Model(
+            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
+        ))
         | EngineError::Ai(
             ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
         ) => ModelProblem::StorageFull,
-        EngineError::Ai(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
+        EngineError::Ai(ai::Error::ModelIntegrity)
+        | EngineError::Runtime(engine::RuntimeError::Model(ai::Error::ModelIntegrity)) => {
+            ModelProblem::Integrity
+        }
         EngineError::Ai(
             ai::Error::Network
             | ai::Error::Timeout

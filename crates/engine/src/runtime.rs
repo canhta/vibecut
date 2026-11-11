@@ -4,6 +4,10 @@ use crate::session::wire::{ErrorCode, Failure, JobFailurePolicy};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(transparent)]
+    Edit(#[from] crate::session::EditError),
+    #[error("AI execution failed")]
+    Model(#[source] ai::Error),
     #[error("job is absent or no longer retained")]
     JobNotRetained,
     #[error("identifier space exhausted")]
@@ -50,6 +54,8 @@ impl Failure for Error {
     }
     fn code(&self) -> ErrorCode {
         match self {
+            Self::Edit(error) => error.code(),
+            Self::Model(_) => ErrorCode::Ai,
             Self::Cancelled => ErrorCode::Cancelled,
             Self::JobNotRetained => ErrorCode::JobNotRetained,
             Self::QueueFull => ErrorCode::QueueFull,

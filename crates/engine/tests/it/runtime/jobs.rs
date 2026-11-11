@@ -944,10 +944,54 @@ fn persistent_chunks_resume_and_corruption_is_a_typed_miss() {
     let mut corrupt = std::fs::read(&path).unwrap();
     corrupt[72] ^= 1;
     std::fs::write(path, corrupt).unwrap();
+    let shared = Arc::new(std::sync::Mutex::new(cache));
+    let producer = shared.clone();
+    let (mut jobs, _) = runner(&budget);
+    let (id, _) = jobs
+        .submit(spec(ResourceClass::Network), move |_| {
+            producer
+                .lock()
+                .map_err(|_| B::Poisoned)?
+                .get(key(1))
+                .map(|hit| hit.map_or_else(Vec::new, |lease| lease.bytes().to_vec()))
+        })
+        .unwrap();
+    let failed = pump(&mut jobs, id);
+    assert_eq!((failed.state, failed.attempts), (JobState::Failed, 1));
+    let raw = failed.error.as_ref().unwrap();
     assert!(matches!(
-        cache.get(key(1)),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<B>(),
+        Some(B::CacheCorrupt)
     ));
+    assert_eq!(raw.code(), engine::control::ErrorCode::Job);
+    assert!(!raw.transient());
+    assert!(raw.source().is_none());
+    assert!(Arc::ptr_eq(
+        raw,
+        jobs.snapshot(id).unwrap().error.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        raw,
+        jobs.snapshots()
+            .iter()
+            .find(|job| job.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        raw,
+        jobs.drain_events()
+            .iter()
+            .find(|job| job.id == id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+    ));
+    assert!(jobs.take_output(id).is_none());
+    let mut cache = shared.lock().unwrap();
     assert!(cache.get(key(1)).unwrap().is_none());
     assert_eq!(
         cache.get(key(2)).unwrap().unwrap().bytes(),
@@ -969,7 +1013,7 @@ fn byte_eviction_pins_clear_in_use_oversize_and_accounting() {
     assert_eq!(pinned.bytes(), [1; 28]);
     assert!(matches!(
         cache.put(key(4), &[0; 500]),
-        Err(EngineError::Runtime(B::ArtifactTooLarge))
+        Err(B::ArtifactTooLarge)
     ));
     drop(pinned);
     assert_eq!(cache.clear().unwrap(), 0);
@@ -997,10 +1041,7 @@ fn hostile_cache_reads_preserve_unrelated_files_and_release_charges() {
         if fault != 4 {
             std::fs::write(&path, bytes).unwrap();
         }
-        assert!(matches!(
-            cache.get(key(1)),
-            Err(EngineError::Runtime(B::CacheCorrupt))
-        ));
+        assert!(matches!(cache.get(key(1)), Err(B::CacheCorrupt)));
         assert!(cache.get(key(1)).unwrap().is_none());
         assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
         assert_eq!(budget.snapshot().unwrap().used, 0);
@@ -1010,14 +1051,14 @@ fn hostile_cache_reads_preserve_unrelated_files_and_release_charges() {
     std::fs::create_dir(&lock).unwrap();
     assert!(matches!(
         ArtifactCache::open(dir.path(), ByteBudget::new(4096).unwrap(), 10),
-        Err(EngineError::Runtime(B::CacheCorrupt))
+        Err(B::CacheCorrupt)
     ));
     assert!(lock.is_dir());
     let file = dir.path().join("not-a-directory");
     std::fs::write(&file, b"preserve").unwrap();
     assert!(matches!(
         ArtifactCache::open(&file, ByteBudget::new(4096).unwrap(), 10),
-        Err(EngineError::Io(_))
+        Err(engine::RuntimeError::Io(_))
     ));
     assert_eq!(std::fs::read(file).unwrap(), b"preserve");
     std::fs::remove_dir(lock).unwrap();
@@ -1193,7 +1234,7 @@ fn cache_reopen_skips_bad_headers_and_changed_sizes_are_corruption() {
     file.set_len(1000).unwrap();
     assert!(matches!(
         cache.get(key(1)),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(engine::RuntimeError::CacheCorrupt)
     ));
     let path = dir.path().join(key(2).filename());
     std::fs::write(path, [0; 80]).unwrap();
@@ -1257,10 +1298,7 @@ fn fully_pinned_cache_refuses_pressure_and_repeated_inserts_remain_bounded() {
     cache.put(key(2), &[2; 28]).unwrap();
     let a = cache.get(key(1)).unwrap().unwrap();
     let b = cache.get(key(2)).unwrap().unwrap();
-    assert!(matches!(
-        cache.put(key(3), &[3; 28]),
-        Err(EngineError::Runtime(B::BudgetFull))
-    ));
+    assert!(matches!(cache.put(key(3), &[3; 28]), Err(B::BudgetFull)));
     assert_eq!(cache.clear().unwrap(), 2);
     assert_eq!(budget.snapshot().unwrap().used, 400);
     drop(a);
@@ -1470,10 +1508,7 @@ fn read_reclaims_other_caches_by_global_recency_and_refuses_all_pinned_pressure(
         a.put(key(1), &[1; 328]).unwrap();
         b.put(key(2), &[2; 128]).unwrap();
         let other = b.get(key(2)).unwrap().unwrap(); // 600 disk + 200 pin: only 200 free
-        assert!(matches!(
-            a.get(key(1)),
-            Err(EngineError::Runtime(B::BudgetFull))
-        ));
+        assert!(matches!(a.get(key(1)), Err(B::BudgetFull)));
         assert_eq!(other.bytes(), [2; 128]);
         drop(other);
         assert_eq!(a.get(key(1)).unwrap().unwrap().bytes(), [1; 328]);
@@ -1605,14 +1640,14 @@ fn corrupt_read_preserves_existing_pin_and_removes_entry_after_release() {
     std::fs::write(&path, bytes).unwrap();
     assert!(matches!(
         cache.get(key(1)),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(engine::RuntimeError::CacheCorrupt)
     ));
     assert_eq!(original.bytes(), [1; 28]);
     assert_eq!(cache.clear().unwrap(), 1);
     drop(original);
     assert!(matches!(
         cache.get(key(1)),
-        Err(EngineError::Runtime(engine::RuntimeError::CacheCorrupt))
+        Err(engine::RuntimeError::CacheCorrupt)
     ));
     assert!(cache.get(key(1)).unwrap().is_none());
     assert_eq!(budget.snapshot().unwrap().used, 0);
@@ -2094,10 +2129,7 @@ fn cache_maintenance_counts_envelopes_pins_missing_and_snapshot_replacement() {
         (report.disk_bytes, report.missing, report.in_use_bytes),
         (0, 1, 100)
     );
-    assert!(matches!(
-        report.cause,
-        Some(EngineError::Runtime(B::CacheCorrupt))
-    ));
+    assert!(matches!(report.cause, Some(B::CacheCorrupt)));
     assert_eq!(lease.bytes(), &[1; 28]);
     assert_eq!(budget.snapshot().unwrap().used, 200);
     drop(lease);
@@ -2139,7 +2171,7 @@ fn cache_maintenance_cancel_keeps_prior_removals_and_independent_roots() {
     });
     assert!(matches!(
         report.cause,
-        Some(EngineError::Runtime(engine::RuntimeError::Cancelled))
+        Some(engine::RuntimeError::Cancelled)
     ));
     assert_eq!(
         (report.removed_bytes, report.disk_bytes, report.entries),
@@ -2201,10 +2233,7 @@ fn cache_maintenance_preserves_unknown_and_hostile_substitutions() {
             (report.failed, report.removed_bytes, report.entries),
             (1, 100, 1)
         );
-        assert!(matches!(
-            report.cause,
-            Some(EngineError::Runtime(B::CacheCorrupt))
-        ));
+        assert!(matches!(report.cause, Some(B::CacheCorrupt)));
         assert_eq!(budget.snapshot().unwrap().used, 100);
         assert_eq!(std::fs::read(&sentinel).unwrap(), b"personal source");
         assert!(std::fs::symlink_metadata(&path).is_ok());
@@ -2290,18 +2319,12 @@ fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
         }
         let report = cache.maintenance().unwrap().run(Clear, || false);
         assert!(report.root_unavailable, "fault {fault}: {report:?}");
-        assert!(matches!(
-            report.cause,
-            Some(EngineError::Runtime(B::CacheCorrupt))
-        ));
+        assert!(matches!(report.cause, Some(B::CacheCorrupt)));
         assert!(matches!(
             cache.put(key(2), b"no recreate"),
-            Err(EngineError::Runtime(B::CacheCorrupt))
+            Err(B::CacheCorrupt)
         ));
-        assert!(matches!(
-            cache.get(key(1)),
-            Err(EngineError::Runtime(B::CacheCorrupt))
-        ));
+        assert!(matches!(cache.get(key(1)), Err(B::CacheCorrupt)));
         let retained = if fault == 4 { &root } else { &moved };
         assert_eq!(
             std::fs::read(retained.join(key(1).filename())).unwrap(),
