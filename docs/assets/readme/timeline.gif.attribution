@@ -1,8 +1,8 @@
 asset: timeline.gif
 title: Split, trim and undo on the VibeCut timeline
-author: VibeCut contributors
-source: apps/vibecut/examples/ui_audit.rs --readme timeline at 52c3c5ef21404a8b1c1bc5b024ac2142720d6e78; testsrc2 1280x720 30fps 12s plus 997Hz sine, source SHA256 934a2e686af6368649353ef74e775d3d0c5693d0e6c06ce9dd6e550f308468bd
-license: GPL-3.0-only
-license-file: ../../../LICENSE
+author: Blender Foundation; VibeCut contributors
+source: Big Buck Bunny (2008, Blender Foundation), (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1; captured by apps/vibecut/examples/ui_audit.rs --readme timeline at f8f2d6474d293bfb98ee046c8984362e487bcc2e
+license: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)
+license-file: ../../licenses/CC-BY-3.0.txt
 added: p0-core/22
-notes: original offscreen VibeCut capture of a generated synthetic project; authored Vietnamese/English caption, no recognition or translation was run; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md; capture: An actual offscreen edit: split at 4 s, trim the right end by 0.5 s, undo.
+notes: VibeCut original offscreen capture (GPL-3.0-only code/capture) over a CC-BY-3.0 Big Buck Bunny excerpt; authored Vietnamese/English caption is a demo edit, not recognition or translation; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md; film credit retained; capture: An actual offscreen edit: split at 4 s, trim the right end by 0.5 s, undo.

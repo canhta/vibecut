@@ -23,11 +23,12 @@ formats and not a product performance benchmark.
   `66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1`.
 - The full master, excerpt file, projects, raw frames and manifests stay outside
   Git. The compact excerpt is also published as the dedicated versioned
-  `fixtures-big-buck-bunny-2026-11-11` fixture prerelease; it is not the app,
-  nightly, built-in content or a runtime download. The film is CC-BY-3.0;
-  VibeCut code and this capture remain GPL-3.0-only. Blender Foundation does not
-  endorse VibeCut. [ADR 0007](../../adr/0007-big-buck-bunny-documentation.md)
-  records the narrow admission.
+  [fixtures-big-buck-bunny-2026-11-11](https://github.com/canhta/vibecut/releases/tag/fixtures-big-buck-bunny-2026-11-11)
+  fixture prerelease; it is not the app, nightly, built-in content or a runtime
+  download. The film is CC-BY-3.0; VibeCut code and this capture remain
+  GPL-3.0-only. Blender Foundation does not endorse VibeCut.
+  [ADR 0007](../../adr/0007-big-buck-bunny-documentation.md) records the narrow
+  admission.
 
 ## Files and provenance
 
@@ -51,10 +52,11 @@ or translated speech. No provider/model received the film.
 | `timeline.gif` | 108685 | `971c15b1b69dbfb87514cff441a6d15fd755590ad27f51fb4812dd12578d4f5c` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
 | `timeline.jpg` | 97240 | `24ea8f891526f08d306b49e1ce9c65b43e7117eaf4d590616080afc69edccaa7` | 960x600 poster at the trimmed state (frame 40) |
 
-Generated at source commit `43a9f86a762abf18e3bcba90886d09a8d3b7ad3f`.
-Measured source-vs-decoded RGB mean/max absolute error is recorded in each run
-manifest and repeated below after the final regeneration. The per-run manifest is
-the authoritative receipt for a particular capture.
+Generated at source commit `f8f2d6474d293bfb98ee046c8984362e487bcc2e`.
+Measured source-vs-decoded RGB mean/max absolute error was 0.861/24 for
+`hero.jpg`, 0.863/24 for `timeline.jpg`, and 0.791/101 for the palette-optimized
+GIF frame 40. The per-run manifest is the authoritative receipt for a particular
+capture.
 
 ## Regeneration
 

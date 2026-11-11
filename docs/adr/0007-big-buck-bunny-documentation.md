@@ -10,9 +10,10 @@ the remaining README slots stay open.
 Only documentation media under `docs/assets/readme/` and explicit local media
 smoke/integration fixtures may use this excerpt. The film, source master, excerpt
 files, projects and raw frames stay out of Git and out of the product bundle. The
-shared excerpt is published separately as a versioned fixture release. It is not
-built-in content, a library item, a model/provider input, or an offer to download
-the full film at runtime.
+shared excerpt is published separately as the versioned
+[fixtures-big-buck-bunny-2026-11-11](https://github.com/canhta/vibecut/releases/tag/fixtures-big-buck-bunny-2026-11-11)
+fixture prerelease. It is not built-in content, a library item, a model/provider
+input, or an offer to download the full film at runtime.
 
 The required excerpt credit is `(c) copyright 2008, Blender Foundation /
 www.bigbuckbunny.org`. The unmodified licence text is
