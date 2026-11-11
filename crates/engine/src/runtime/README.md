@@ -81,6 +81,15 @@ files stay pinned and cannot starve ordinary work admission. Reservations are de
 allocation ceilings, not an allocator sandbox or RSS measurement; captured task data is
 caller-owned and must be bounded. The preferences owner supplies the aggregate limit.
 
+Scheduler configuration, submission, tick, cancellation and JobContext progress return
+`runtime::Result` directly. Higher feature/control/app boundaries compose their engine result
+through ordinary From. `JobNotRetained` owns absent/evicted jobs and missing completed data,
+with the original static diagnostic, its existing wire code, no source or transience.
+`IdExhausted` owns only the checked runtime job counter and classifies as Refused; edit/domain
+ID allocation remains separate. Neither failure authorizes regeneration or retry.
+`commit_publication` returns its caller's error type via `E: From<RuntimeError>` for seal and
+progress-lock failures; the synchronous publish callback's own error passes through unchanged.
+
 `RunnerConfig` admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000 pending jobs,
 1..=10,000 terminal results and 1..=10 network attempts. Admission checks the sum of declared
 work and maximum result bytes against the aggregate, and a full queue returns `RuntimeError::QueueFull` through the composed engine result.

@@ -130,8 +130,11 @@ impl Session {
                 removed: (sound_access(caller)?.unsave)(id)?,
             }),
             Command::JobStatus { job } => {
-                let mut snapshot =
-                    JobView::from(runner.snapshot(job).ok_or(EditError::JobNotRetained)?);
+                let mut snapshot = JobView::from(
+                    runner
+                        .snapshot(job)
+                        .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?,
+                );
                 if matches!(
                     snapshot.kind,
                     JobKind::GenerateWaveform

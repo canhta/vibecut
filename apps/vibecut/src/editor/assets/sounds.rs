@@ -554,7 +554,7 @@ impl Sounds {
     /// Pump jobs and retain only terminal truth the panel can show.
     pub fn tick(&mut self) -> Result<()> {
         if let Err(error) = self.runner.tick() {
-            self.cache_problem = Some(SoundsProblem::from_edit(&error));
+            self.cache_problem = Some(SoundsProblem::from_edit(&error.into()));
             self.cache = None;
         }
         if let Some(rx) = &self.search_rx {

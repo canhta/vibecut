@@ -216,11 +216,12 @@ fn cancellation_panics_failure_and_oversized_results_never_promote() {
     for direct in [true, false] {
         let (id, _) = r
             .submit(spec(ResourceClass::Network), move |context| {
-                context.begin_publication()?;
-                Err(if direct {
-                    B::Cancelled
-                } else {
-                    B::Failed(Arc::new(B::Cancelled))
+                context.commit_publication(|| {
+                    Err(if direct {
+                        B::Cancelled
+                    } else {
+                        B::Failed(Arc::new(B::Cancelled))
+                    })
                 })
             })
             .unwrap();
@@ -686,6 +687,30 @@ fn ai_transient_failures_retry_with_retry_after_but_auth_fails_once() {
 fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let budget = ByteBudget::new(250).unwrap();
     let (mut r, _) = runner(&budget);
+    for invalid in [
+        RunnerConfig {
+            queue: 0,
+            ..config()
+        },
+        RunnerConfig {
+            concurrency: [0, 1, 1],
+            ..config()
+        },
+        RunnerConfig {
+            network_attempts: 11,
+            ..config()
+        },
+        RunnerConfig {
+            progress_interval: Duration::ZERO,
+            ..config()
+        },
+    ] {
+        assert!(matches!(
+            JobRunner::new(invalid, budget.clone(), Arc::new(SystemClock::default())),
+            Err(B::Limit)
+        ));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
     let hold = Arc::new(std::sync::Barrier::new(2));
     let gate = hold.clone();
     let (cpu, _) = r
@@ -705,6 +730,7 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
     let captured = Arc::new(());
     let released = Arc::downgrade(&captured);
     let calls = ran.clone();
+    r.drain_events();
     let before = (r.counts(), budget.snapshot().unwrap().used);
     assert!(matches!(
         r.submit::<engine::EditError>(spec(ResourceClass::Cpu), move |_| {
@@ -712,9 +738,10 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
             calls.fetch_add(1, Ordering::SeqCst);
             Ok(vec![])
         }),
-        Err(EditError::Runtime(engine::RuntimeError::QueueFull))
+        Err(B::QueueFull)
     ));
     assert_eq!((r.counts(), budget.snapshot().unwrap().used), before);
+    assert!(r.drain_events().is_empty());
     assert!(released.upgrade().is_none());
     assert_eq!(ran.load(Ordering::SeqCst), 0);
     r.tick().unwrap();
@@ -740,11 +767,20 @@ fn bounded_queue_resource_classes_and_aggregate_bytes() {
 fn progress_and_slow_consumer_retention_are_bounded_over_repeated_jobs() {
     let budget = ByteBudget::new(1000).unwrap();
     let (mut r, clock) = runner(&budget);
+    assert!(matches!(
+        r.cancel_job(JobId(u64::MAX)),
+        Err(B::JobNotRetained)
+    ));
+    assert!(r.snapshots().is_empty());
+    assert!(r.drain_events().is_empty());
     for _ in 0..200 {
         let clock = clock.clone();
         let (id, _) = r
             .submit::<engine::EditError>(spec(ResourceClass::Cpu), move |ctx| {
-                assert!(ctx.progress(JobStage::Process, f32::NAN).is_err());
+                assert!(matches!(
+                    ctx.progress(JobStage::Process, f32::NAN),
+                    Err(B::Invalid("job progress"))
+                ));
                 for _ in 0..100 {
                     ctx.progress(JobStage::Process, 0.5)?;
                 }
@@ -754,10 +790,13 @@ fn progress_and_slow_consumer_retention_are_bounded_over_repeated_jobs() {
             })
             .unwrap();
         assert_eq!(pump(&mut r, id).state, JobState::Completed);
+        r.cancel_job(id).unwrap();
+        assert_eq!(r.snapshot(id).unwrap().state, JobState::Completed);
         assert!(r.counts().2 <= 2);
         assert!(r.counts().3 <= 2);
         assert!(budget.snapshot().unwrap().used <= 20);
     }
+    assert!(matches!(r.cancel_job(JobId(0)), Err(B::JobNotRetained)));
     assert_eq!(r.drain_events().len(), 2);
     assert!(r.drain_events().is_empty());
     drop(r);
@@ -1300,10 +1339,14 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
     assert_eq!(budget.snapshot().unwrap().used, 0);
     // Truly oversized work is rejected at admission; active pins are temporary pressure.
     request.bytes.compositor = 1001;
+    r.drain_events();
+    let before = (r.counts(), budget.snapshot().unwrap().used);
     assert!(matches!(
         r.submit::<engine::EditError>(request, |_| Ok(vec![])),
-        Err(EditError::Runtime(B::ArtifactTooLarge))
+        Err(B::ArtifactTooLarge)
     ));
+    assert_eq!((r.counts(), budget.snapshot().unwrap().used), before);
+    assert!(r.drain_events().is_empty());
     drop(cache); // Release the exclusive root writer before reopening.
     let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
     cache.put(key(1), &[1; 328]).unwrap();
@@ -1624,6 +1667,13 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
     use engine::control::{ErrorCode as C, Payload};
     type Case = (fn() -> E, C, bool);
     let cases: &[Case] = &[
+        (|| E::Runtime(B::JobNotRetained), C::JobNotRetained, false),
+        (
+            || E::Runtime(B::Failed(Arc::new(B::JobNotRetained))),
+            C::JobNotRetained,
+            false,
+        ),
+        (|| E::Runtime(B::IdExhausted), C::Refused, false),
         (|| E::Runtime(B::CacheBusy), C::Refused, false),
         (
             || E::Runtime(B::Failed(Arc::new(B::CacheBusy))),
@@ -1829,6 +1879,8 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             .downcast_ref::<E>()
             .unwrap();
         let message = match typed {
+            E::Runtime(B::JobNotRetained) => Some("job is absent or no longer retained"),
+            E::Runtime(B::IdExhausted) => Some("identifier space exhausted"),
             E::Runtime(B::CacheBusy) => Some("cache is in use"),
             E::Runtime(B::ModelResponse) => {
                 Some("model transfer response does not match the requested representation")
@@ -1840,7 +1892,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
             _ => None,
         };
         if let Some(message) = message {
-            assert_eq!(raw.code(), C::Refused);
+            assert_eq!(raw.code(), code);
             assert!(!raw.transient());
             assert!(raw.source().is_none());
             assert_eq!(raw.to_string(), message);

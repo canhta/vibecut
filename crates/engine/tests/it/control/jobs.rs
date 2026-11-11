@@ -218,6 +218,20 @@ fn job_acceptance_precedes_events_cancel_and_result_eviction_never_resubmit() {
     assert!(terminal.iter().any(|e|matches!(&e.payload,Payload::JobChanged{snapshot} if snapshot.state==JobState::Completed)));
     s.observe_jobs(&r);
     assert!(s.events(&mut snapshot.cursor).unwrap().is_empty());
+    r.cancel_job(job).unwrap();
+    drop(r.take_output(job).unwrap());
+    assert_eq!(r.snapshot(job).unwrap().state, JobState::Completed);
+    error(
+        run(
+            &mut s,
+            &mut r,
+            "job_status",
+            json!({"job":job.0}),
+            "missing-output",
+        ),
+        ErrorCode::JobNotRetained,
+    );
+    r.cancel_job(job).unwrap();
     for _ in 0..20 {
         let id = submit(&mut r);
         finish(&mut r, id);

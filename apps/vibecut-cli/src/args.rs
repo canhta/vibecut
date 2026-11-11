@@ -60,7 +60,11 @@ mod exit_codes {
             row!(E::IdempotencyConflict, "rejected", 5),
             row!(E::ReceiptCapacity, "rejected", 5),
             row!(E::ResyncRequired, "rejected", 5),
-            row!(E::JobNotRetained, "rejected", 5),
+            row!(
+                E::Runtime(engine::RuntimeError::JobNotRetained),
+                "rejected",
+                5
+            ),
             row!(E::ControlIdentity, "rejected", 5),
             row!(E::Runtime(engine::RuntimeError::QueueFull), "job", 7),
             row!(E::Runtime(engine::RuntimeError::BudgetFull), "job", 7),
@@ -206,8 +210,16 @@ mod exit_codes {
                 assert_eq!(error.value()["message"], "job cancelled");
             }
         }
-        let refusals: [(fn() -> engine::RuntimeError, &str); 4] = [
+        let refusals: [(fn() -> engine::RuntimeError, &str); 6] = [
             (|| engine::RuntimeError::CacheBusy, "cache is in use"),
+            (
+                || engine::RuntimeError::JobNotRetained,
+                "job is absent or no longer retained",
+            ),
+            (
+                || engine::RuntimeError::IdExhausted,
+                "identifier space exhausted",
+            ),
             (
                 || engine::RuntimeError::LoudnessStale,
                 "loudness gains are missing or measured for different audio; measure again",

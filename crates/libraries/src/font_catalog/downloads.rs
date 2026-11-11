@@ -45,7 +45,7 @@ impl FontStore {
         })?;
         let root = self.root.clone();
         let transport = self.transport.clone();
-        runner.submit::<engine::EditError>(
+        Ok(runner.submit::<engine::EditError>(
             JobSpec {
                 kind: JobKind::DownloadFont,
                 class: ResourceClass::Network,
@@ -60,7 +60,7 @@ impl FontStore {
                 download(&root, &g, transport.as_ref(), ctx)?;
                 Ok(Vec::new())
             },
-        )
+        )?)
     }
 }
 impl Active {
