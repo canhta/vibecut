@@ -646,9 +646,31 @@ impl Subtitles {
             self.problem = Some(Text::SubStale);
             return;
         }
-        let provider = match root {
-            Some(engine::Error::Providers(provider)) => Some(provider),
-            _ => cause.downcast_ref::<engine::providers::Error>(),
+        let transcript = match root {
+            Some(engine::Error::Transcript(transcript)) => Some(transcript),
+            _ => cause.downcast_ref::<engine::transcript::Error>(),
+        };
+        match transcript {
+            Some(engine::transcript::Error::NoSpeech) => {
+                self.problem = Some(Text::SubNoSpeech);
+                return;
+            }
+            Some(engine::transcript::Error::LowConfidence) => {
+                self.problem = Some(Text::SubLowConfidence);
+                return;
+            }
+            Some(engine::transcript::Error::Runtime(engine::RuntimeError::Cancelled)) => {
+                self.problem = Some(Text::ShortsJobCancelled);
+                return;
+            }
+            _ => {}
+        }
+        let provider = match transcript {
+            Some(engine::transcript::Error::Providers(provider)) => Some(provider),
+            _ => match root {
+                Some(engine::Error::Providers(provider)) => Some(provider),
+                _ => cause.downcast_ref::<engine::providers::Error>(),
+            },
         };
         if let Some(provider) = provider {
             use engine::providers::Error as P;
@@ -667,12 +689,6 @@ impl Subtitles {
             return;
         }
         self.problem = Some(match root {
-            Some(engine::Error::Transcript(engine::transcript::Error::NoSpeech)) => {
-                Text::SubNoSpeech
-            }
-            Some(engine::Error::Transcript(engine::transcript::Error::LowConfidence)) => {
-                Text::SubLowConfidence
-            }
             Some(engine::Error::Session(engine::SessionError::StaleResult))
             | Some(engine::Error::Edit(engine::EditError::Session(
                 engine::SessionError::StaleResult,

@@ -246,6 +246,25 @@ mod exit_codes {
                 "job",
                 7
             ),
+            row!(
+                E::Transcript(engine::transcript::Error::Providers(P::ModelMissing(
+                    "test-model"
+                ))),
+                "setup",
+                4
+            ),
+            row!(
+                E::Transcript(engine::transcript::Error::Runtime(
+                    engine::RuntimeError::Cancelled
+                )),
+                "job",
+                7
+            ),
+            row!(
+                E::Transcript(engine::transcript::Error::Ai(ai::Error::Cancelled)),
+                "ai",
+                4
+            ),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
             row!(
@@ -540,6 +559,13 @@ mod exit_codes {
                 "local model test-model is not installed; run `vibecut-cli model download test-model`"
             );
         }
+        let raw_transcript = CliError::Job(Arc::new(engine::transcript::Error::Providers(
+            P::ModelMissing("test-model"),
+        )));
+        assert_eq!(
+            raw_transcript.value()["message"],
+            "local model test-model is not installed; run `vibecut-cli model download test-model`"
+        );
         let raw_provider = CliError::Job(Arc::new(P::ModelMissing("test-model")));
         assert_eq!(raw_provider.code(), ("setup", 4));
         assert_eq!(

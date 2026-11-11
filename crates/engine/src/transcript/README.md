@@ -1,7 +1,7 @@
 # Transcript
 
 Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session`,
-`wait_for_job`, `Cancellation`, `Error`, `Progress`, `translation`.
+`wait_for_job`, `Cancellation`, `Error`, `Result`, `Progress`, `translation`.
 
 Acquires source-timed cues from the user's chosen providers, shared by
 [subtitles](../subtitles/README.md) and the [shorts crate](../../../shorts/README.md):
@@ -13,6 +13,15 @@ to media decoding and provider hooks. Registry jobs use their job token for both
 refuses the next stage; `media_flag` shares cancellation with media decoding. Provider
 credentials expose only the selected OpenAI or Anthropic key lookup, returning the typed
 missing-credential refusal before adapter construction.
+
+Synchronous speech/detection and recognition checkpoint operations return the Transcript
+result, retaining Kernel Edit, Runtime, Providers, Media and AI causes. Cancellation checkpoints
+return Runtime results directly. Only the existing acquisition execution bridges normalize AI
+cancellation and the extraction cancellation sentinel to direct Runtime cancellation; a captured
+concrete failure wins over that sentinel. General AI/Media conversions remain ordinary foreign
+failures. Root Transcript composition delegates the actual owner's code/transience/job policy;
+native Model/Transfer/Failed remain opaque. Mixed Session building, translation and blocking
+job waiting keep their existing engine results; wait_for_job retains the original raw cause Arc.
 
 The blocking composition root reserves `WORK_BYTES` (64 MiB) and `RESULT_BYTES` (16 MiB)
 from the runner's shared `ByteBudget` before extraction/detection or provider work. Work
@@ -28,8 +37,8 @@ recognized word carries confidence and their mean is below the fixed floor, `tra
 `LowConfidence` instead of inserting cues for a likely wrong language; providers without
 confidence data never produce this refusal. Both are `transcript::Error`: the acquisition stage
 constructs them, so they are not provider-selection failures. `AutoLanguageUnsupported` stays a
-`providers::Error` because it refuses a provider capability, and callers that still return the
-engine aggregate wrap either type in `engine::Error`.
+`providers::Error` composed through Transcript because it refuses a provider capability. Mixed
+callers compose the acquisition result through `engine::Error::Transcript`.
 
 The desktop consumes `SubtitleTranslator` without opening an ASR adapter or model lease.
 `translate_selected` composes the translation window, request disclosure, `TranslationRun`

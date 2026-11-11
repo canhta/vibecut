@@ -1,7 +1,7 @@
 //! Holds the state one transcript acquisition shares with its caller.
-use crate::Error as EngineError;
 use crate::jobs::JobSnapshot;
 use crate::providers::Cost;
+use crate::runtime::{Error as RuntimeError, Result as RuntimeResult};
 use captions::LanguageTag;
 use captions::{Cue, Transcript};
 use std::{
@@ -60,9 +60,9 @@ impl Cancellation {
         self.flag.clone()
     }
     /// Refuse the next operation stage after cooperative cancellation.
-    pub fn checkpoint(&self) -> Result<(), EngineError> {
+    pub fn checkpoint(&self) -> RuntimeResult<()> {
         if self.cancelled() {
-            Err(EngineError::Runtime(crate::RuntimeError::Cancelled))
+            Err(RuntimeError::Cancelled)
         } else {
             Ok(())
         }

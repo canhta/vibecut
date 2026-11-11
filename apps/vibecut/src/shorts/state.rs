@@ -1057,9 +1057,16 @@ pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
 pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
     let cause = error as &(dyn std::error::Error + 'static);
     let root = cause.downcast_ref::<engine::Error>();
-    let provider = match root {
-        Some(engine::Error::Providers(provider)) => Some(provider),
-        _ => cause.downcast_ref::<engine::providers::Error>(),
+    let transcript = match root {
+        Some(engine::Error::Transcript(transcript)) => Some(transcript),
+        _ => cause.downcast_ref::<engine::transcript::Error>(),
+    };
+    let provider = match transcript {
+        Some(engine::transcript::Error::Providers(provider)) => Some(provider),
+        _ => match root {
+            Some(engine::Error::Providers(provider)) => Some(provider),
+            _ => cause.downcast_ref::<engine::providers::Error>(),
+        },
     };
     if let Some(provider) = provider {
         match provider {
@@ -1073,11 +1080,14 @@ pub(super) fn failure_text(error: &(dyn engine::Failure + 'static)) -> Text {
             _ => {}
         }
     }
-    let runtime = match provider {
-        Some(engine::providers::Error::Runtime(runtime)) => Some(runtime),
-        _ => match root {
-            Some(engine::Error::Runtime(runtime)) => Some(runtime),
-            _ => cause.downcast_ref::<engine::RuntimeError>(),
+    let runtime = match transcript {
+        Some(engine::transcript::Error::Runtime(runtime)) => Some(runtime),
+        _ => match provider {
+            Some(engine::providers::Error::Runtime(runtime)) => Some(runtime),
+            _ => match root {
+                Some(engine::Error::Runtime(runtime)) => Some(runtime),
+                _ => cause.downcast_ref::<engine::RuntimeError>(),
+            },
         },
     };
     if let Some(runtime) = runtime {

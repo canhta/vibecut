@@ -595,13 +595,16 @@ mod tests {
             match case {
                 0 | 1 => assert!(!result.unwrap().cues.is_empty()),
                 2 => {
-                    assert!(matches!(result, Err(crate::Error::Runtime(Error::Io(_)))));
+                    assert!(matches!(
+                        result,
+                        Err(crate::transcript::Error::Runtime(Error::Io(_)))
+                    ));
                     assert_eq!(budget.snapshot().unwrap().used, 1 << 20);
                 }
                 3 => {
                     assert!(matches!(
                         result,
-                        Err(crate::Error::Runtime(Error::Poisoned))
+                        Err(crate::transcript::Error::Runtime(Error::Poisoned))
                     ));
                     assert!(matches!(budget.snapshot(), Err(Error::Poisoned)));
                 }

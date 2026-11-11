@@ -1,7 +1,7 @@
 //! Reuses independently committed ASR windows.
+use super::error::{Error as TranscriptError, Result as TranscriptResult};
 use super::operation::{Cancellation, Progress, Stage};
 use super::speech::sample_range;
-use crate::Error as EngineError;
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobId, JobOutput, JobRunner, JobState};
 use crate::providers::{ConsentPrompt, Cost, Providers, approve_upload};
@@ -22,9 +22,9 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     window: SpeechWindow,
     cost: &mut Cost,
     checkpoints: &mut usize,
-) -> Result<ai::Recognition, EngineError> {
+) -> TranscriptResult<ai::Recognition> {
     if hooks.cancelled() {
-        return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+        return Err(TranscriptError::Runtime(crate::RuntimeError::Cancelled));
     }
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
@@ -58,7 +58,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         Some(lease) => {
             *checkpoints = checkpoints.saturating_add(1);
             serde_json::from_slice(lease.bytes()).map_err(|_| {
-                EngineError::Edit(crate::EditError::Invalid("cached recognition is malformed"))
+                TranscriptError::Edit(crate::EditError::Invalid("cached recognition is malformed"))
             })?
         }
         None => {
@@ -101,7 +101,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         }
     };
     if hooks.cancelled() {
-        return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+        return Err(TranscriptError::Runtime(crate::RuntimeError::Cancelled));
     }
     let Some(aligner) = providers.aligner_arc() else {
         return Ok(raw);
@@ -128,9 +128,9 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     .map_err(provider_error)?)
 }
 
-pub(super) fn provider_error(error: ai::Error) -> EngineError {
+pub(super) fn provider_error(error: ai::Error) -> TranscriptError {
     match error {
-        ai::Error::Cancelled => EngineError::Runtime(crate::RuntimeError::Cancelled),
+        ai::Error::Cancelled => TranscriptError::Runtime(crate::RuntimeError::Cancelled),
         error => error.into(),
     }
 }
@@ -143,7 +143,8 @@ pub fn wait_for_job(
     token: &CancelToken,
     progress: &dyn Progress,
     cancel: &Cancellation,
-) -> Result<JobOutput, EngineError> {
+) -> std::result::Result<JobOutput, crate::Error> {
+    use crate::Error as EngineError;
     loop {
         if cancel.cancelled() {
             token.cancel();

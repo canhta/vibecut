@@ -48,3 +48,7 @@ Geometry: [Long video to shorts window](../../../../docs/product/ui/shorts.md).
 Provider choice/credential/consent operations return their provider-owned result. The review
 borrows raw or engine-composed provider refusals for existing setup/consent labels and explicit
 Runtime resource categories; opaque failures are not searched for an inner category.
+
+Synchronous acquisition retains the Transcript owner through its engine composition. Review
+borrows its explicit provider and Runtime resource categories alongside genuinely mixed
+workflow errors, without walking sources or peeling opaque failures.

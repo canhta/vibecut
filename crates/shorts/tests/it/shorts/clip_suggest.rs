@@ -417,9 +417,9 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         assert!(
             matches!(
                 error,
-                shorts::Error::Engine(engine::Error::Providers(engine::providers::Error::Ai(
-                    Error::Cost
-                )))
+                shorts::Error::Engine(engine::Error::Transcript(
+                    engine::transcript::Error::Providers(engine::providers::Error::Ai(Error::Cost))
+                ))
             ),
             "{error:?}"
         );

@@ -1,8 +1,7 @@
 //! Transcribes the speech windows of one source into source-timed cues.
 use super::checkpoints::{hex, transcribe_window};
-use super::error::Error as TranscriptError;
+use super::error::{Error as TranscriptError, Result};
 use super::operation::{Cancellation, Progress, Stage, Transcription};
-use crate::Error as EngineError;
 use crate::cache::ArtifactCache;
 use crate::providers::{ConsentPrompt, Cost, Error as ProviderError, Providers};
 use ai::SampleRange;
@@ -45,12 +44,12 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     progress: &dyn Progress,
     cancel: &Cancellation,
     hooks: &dyn ai::ExecutionHooks,
-) -> Result<Transcription, EngineError> {
+) -> Result<Transcription> {
     if !["vi", "en", "zh"]
         .iter()
         .any(|tag| *tag == source_language.as_str())
     {
-        return Err(EngineError::Edit(crate::EditError::Unsupported(
+        return Err(TranscriptError::Edit(crate::EditError::Unsupported(
             "source language must be vi, en or zh",
         )));
     }
@@ -71,7 +70,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     };
     let full_range = range.unwrap_or(SourceRange::new(Tick::ZERO, duration)?);
     if full_range.start() < Tick::ZERO || full_range.end() > duration {
-        return Err(EngineError::Edit(crate::EditError::Invalid(
+        return Err(TranscriptError::Edit(crate::EditError::Invalid(
             "transcription range outside asset",
         )));
     }
@@ -114,8 +113,8 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
                             .map_or(usize::MAX, |bytes| bytes.len()),
                     );
                     if recognition_bytes > 16 << 20 {
-                        failure = Some(EngineError::Control(
-                            crate::session::wire::ControlError::Limit,
+                        failure = Some(TranscriptError::Edit(
+                            crate::session::wire::ControlError::Limit.into(),
                         ));
                         return Err(media::MediaError::Cancelled);
                     }
@@ -135,7 +134,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     match extraction {
         Ok(()) => {}
         Err(media::MediaError::Cancelled) => {
-            return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+            return Err(TranscriptError::Runtime(crate::RuntimeError::Cancelled));
         }
         Err(error) => return Err(error.into()),
     }
@@ -178,11 +177,7 @@ impl Providers {
     /// Import a media path and detect the spoken language without opening a
     /// translator. Composition roots use this to decide whether translation (and
     /// its credentials) is required at all.
-    pub fn detect_language_for(
-        &self,
-        input: &Path,
-        cancel: &Cancellation,
-    ) -> Result<LanguageTag, EngineError> {
+    pub fn detect_language_for(&self, input: &Path, cancel: &Cancellation) -> Result<LanguageTag> {
         cancel.checkpoint()?;
         let asset = SourceAsset::import(media::AssetId(1), input.to_path_buf())?;
         let duration = media_duration(&asset)?;
@@ -196,7 +191,7 @@ impl Providers {
         asset: &SourceAsset,
         duration: Tick,
         cancel: &Cancellation,
-    ) -> Result<LanguageTag, EngineError> {
+    ) -> Result<LanguageTag> {
         self.detect_language_with_hooks(asset, duration, cancel, cancel)
     }
 
@@ -206,7 +201,7 @@ impl Providers {
         duration: Tick,
         cancel: &Cancellation,
         hooks: &dyn ai::ExecutionHooks,
-    ) -> Result<LanguageTag, EngineError> {
+    ) -> Result<LanguageTag> {
         cancel.checkpoint()?;
         let end = duration.min(Tick::from_seconds_f64(
             MIN_CAPTION_SECONDS as f64,
@@ -241,9 +236,9 @@ impl Providers {
                         .map_err(|error| match error {
                             ai::Error::Unsupported => ProviderError::AutoLanguageUnsupported.into(),
                             ai::Error::Cancelled => {
-                                EngineError::Runtime(crate::RuntimeError::Cancelled)
+                                TranscriptError::Runtime(crate::RuntimeError::Cancelled)
                             }
-                            error => EngineError::Ai(error),
+                            error => TranscriptError::Ai(error),
                         })
                 }) {
                     Ok(language) => {
@@ -263,7 +258,7 @@ impl Providers {
         match result {
             Ok(()) => {}
             Err(media::MediaError::Cancelled) => {
-                return Err(EngineError::Runtime(crate::RuntimeError::Cancelled));
+                return Err(TranscriptError::Runtime(crate::RuntimeError::Cancelled));
             }
             Err(error) => return Err(error.into()),
         }
@@ -286,32 +281,32 @@ fn mean_confidence(transcript: &Transcript) -> Option<f64> {
     (count > 0).then(|| sum / count as f64)
 }
 
-fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange), EngineError> {
+fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange)> {
     let (start, end) = sample_range(window)?;
     Ok((window.samples.as_slice(), SampleRange::new(start, end)?))
 }
 
-pub(crate) fn media_duration(asset: &SourceAsset) -> Result<Tick, EngineError> {
+pub(crate) fn media_duration(asset: &SourceAsset) -> Result<Tick> {
     asset
         .probe()
         .duration
         .filter(|value| *value > Tick::ZERO)
-        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+        .ok_or(TranscriptError::Edit(crate::EditError::Unsupported(
             "media duration is unknown",
         )))
 }
 
-pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EngineError> {
+pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64)> {
     let start = window
         .source_range
         .start()
         .to_units(i64::from(media::SPEECH_SAMPLE_RATE), Rounding::Nearest)?;
     let start = u64::try_from(start)
-        .map_err(|_| EngineError::Edit(crate::EditError::Invalid("sample origin")))?;
+        .map_err(|_| TranscriptError::Edit(crate::EditError::Invalid("sample origin")))?;
     let size = u64::try_from(window.samples.len())
-        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::Limit))?;
-    let end = start.checked_add(size).ok_or(EngineError::Control(
-        crate::session::wire::ControlError::Limit,
+        .map_err(|_| TranscriptError::Edit(crate::session::wire::ControlError::Limit.into()))?;
+    let end = start.checked_add(size).ok_or(TranscriptError::Edit(
+        crate::session::wire::ControlError::Limit.into(),
     ))?;
     Ok((start, end))
 }
