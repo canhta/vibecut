@@ -180,7 +180,7 @@ impl TextAccess {
         Ok(self
             .approval
             .lock()
-            .map_err(|_| EditError::JobPoisoned)?
+            .map_err(|_| crate::RuntimeError::Poisoned)?
             .approve(scope, estimate, false)?
             .ok_or(Error::ConsentRequired)?)
     }

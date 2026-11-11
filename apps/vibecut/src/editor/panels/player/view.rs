@@ -1,6 +1,7 @@
 //! Renders the player panel from read-only editor context.
 use super::{Action, Context, State, state::TimecodeEdit};
 use crate::{
+    actions::{BookmarkDirection, bookmark_target},
     egui::{self, Align2, FontId, Rect, Sense, Vec2},
     i18n::Text,
     kit,
@@ -80,6 +81,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 Text::SnapshotSave,
                 !empty,
                 "preview.snapshot",
+                None,
             );
             menu(
                 ui,
@@ -89,6 +91,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 Text::SnapshotCopy,
                 !empty,
                 "copy",
+                None,
             );
             ui.separator();
             menu(
@@ -99,6 +102,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 Text::Back,
                 !empty,
                 "transport.back",
+                None,
             );
             menu(
                 ui,
@@ -108,6 +112,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 Text::Forward,
                 !empty,
                 "transport.forward",
+                None,
             );
         });
         remember(cx, &mut actions, "preview.menu", response);
@@ -241,6 +246,7 @@ fn remember(cx: &Context<'_>, actions: &mut Vec<Action>, id: &str, response: egu
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn menu(
     ui: &mut egui::Ui,
     cx: &Context<'_>,
@@ -249,6 +255,7 @@ fn menu(
     text: Text,
     enabled: bool,
     command: &str,
+    shortcut: Option<String>,
 ) {
     let button = if let Some((icon, _)) = control(id, cx.playback.playing()) {
         egui::Button::image_and_text(
@@ -257,6 +264,10 @@ fn menu(
         )
     } else {
         egui::Button::new(cx.tr(text))
+    };
+    let button = match shortcut {
+        Some(shortcut) => button.shortcut_text(shortcut),
+        None => button,
     };
     let r = ui.add_enabled(enabled, button);
     if r.clicked() {
@@ -484,6 +495,7 @@ fn footer_controls(
                     Text::ZoomFit,
                     true,
                     "preview.zoom.fit",
+                    None,
                 );
             }
             for percent in preview::PRESETS {
@@ -507,6 +519,7 @@ fn footer_controls(
                 Text::ZoomOut,
                 true,
                 "preview.zoom.out",
+                None,
             );
             menu(
                 ui,
@@ -516,6 +529,7 @@ fn footer_controls(
                 Text::ZoomIn,
                 true,
                 "preview.zoom.in",
+                None,
             );
         });
         remember(cx, actions, "preview.zoom", r);
@@ -644,6 +658,7 @@ fn canvas(
                 Text::SnapshotSave,
                 !empty,
                 "preview.snapshot",
+                None,
             );
             menu(
                 ui,
@@ -653,6 +668,7 @@ fn canvas(
                 Text::SnapshotCopy,
                 !empty,
                 "copy",
+                None,
             );
             menu(
                 ui,
@@ -662,7 +678,35 @@ fn canvas(
                 Text::Fullscreen,
                 true,
                 "preview.fullscreen",
+                None,
             );
+            ui.separator();
+            let scene = cx.staged_project().data().scene();
+            for (widget, id, text, direction) in [
+                (
+                    "preview.menu.jump.next",
+                    "playback.jump_bookmark.next",
+                    Text::ActionPlaybackJumpBookmarkNext,
+                    BookmarkDirection::Next,
+                ),
+                (
+                    "preview.menu.jump.previous",
+                    "playback.jump_bookmark.previous",
+                    Text::ActionPlaybackJumpBookmarkPrevious,
+                    BookmarkDirection::Previous,
+                ),
+            ] {
+                menu(
+                    ui,
+                    cx,
+                    actions,
+                    widget,
+                    text,
+                    bookmark_target(scene, cx.playhead, direction).is_some(),
+                    id,
+                    cx.shortcut(id),
+                );
+            }
         });
     }
     remember(cx, actions, "preview.canvas", r.clone());

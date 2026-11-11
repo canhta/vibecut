@@ -353,6 +353,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["End"],
     ),
     ActionSpec::ui(
+        "playback.jump_bookmark.next",
+        Text::ActionPlaybackJumpBookmarkNext,
+        ActionCategory::Playback,
+        "playback transport",
+        UiAction::JumpBookmark(super::BookmarkDirection::Next),
+        &[],
+    ),
+    ActionSpec::ui(
+        "playback.jump_bookmark.previous",
+        Text::ActionPlaybackJumpBookmarkPrevious,
+        ActionCategory::Playback,
+        "playback transport",
+        UiAction::JumpBookmark(super::BookmarkDirection::Previous),
+        &[],
+    ),
+    ActionSpec::ui(
         "timeline.select_all",
         Text::ActionTimelineSelectAll,
         ActionCategory::Selection,

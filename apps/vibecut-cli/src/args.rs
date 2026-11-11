@@ -49,10 +49,22 @@ mod exit_codes {
             row!(E::JobNotRetained, "rejected", 5),
             row!(E::ControlIdentity, "rejected", 5),
             row!(E::QueueFull, "job", 7),
-            row!(E::BudgetFull, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::BudgetFull), "job", 7),
+            row!(E::Runtime(engine::RuntimeError::ArtifactTooLarge), "job", 7),
+            row!(
+                E::Runtime(engine::RuntimeError::Io(std::io::Error::other("eviction"))),
+                "io",
+                7
+            ),
+            row!(E::Runtime(engine::RuntimeError::Limit), "usage", 2),
+            row!(
+                E::Runtime(engine::RuntimeError::Invalid("model accounting owner")),
+                "rejected",
+                5
+            ),
             row!(E::Cancelled, "job", 7),
             row!(E::WorkerPanicked, "job", 7),
-            row!(E::JobPoisoned, "job", 7),
+            row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::StaleResult, "job", 7),
             row!(E::JobFailure(Arc::new(E::Limit)), "usage", 2),
             row!(E::Render(render::Error::Cancelled), "render", 6),

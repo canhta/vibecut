@@ -20,7 +20,7 @@ use std::{
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     AppCommand, Editor, PreviewZoom, egui,
-    i18n::Text,
+    i18n::{Locale, Text},
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
     services::preview,
@@ -1093,6 +1093,104 @@ fn fullscreen_toggles_from_toolbar_and_context_menu_and_escape_exits() {
     h.key_press(egui::Key::Escape);
     h.run_steps(3);
     assert!(!h.state().inspect().unwrap().preview_fullscreen);
+}
+
+fn add_bookmark(editor: &mut Editor, second: i64) {
+    editor
+        .session
+        .apply(engine::Command::BookmarkAdd {
+            start: Tick(second * TICKS_PER_SECOND),
+            duration: Tick::ZERO,
+            note: "Mark".into(),
+            color: project::Color([255, 255, 0, 255]),
+        })
+        .unwrap();
+}
+
+#[test]
+fn bookmark_jump_preview_menu_shares_lookup_enablement_and_dispatch() {
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    add_bookmark(h.state_mut(), 3);
+    add_bookmark(h.state_mut(), 8);
+    h.state_mut()
+        .dispatch(AppCommand::Seek(Tick::ZERO))
+        .unwrap();
+    h.run_steps(2);
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click_secondary();
+    h.run_steps(3);
+    assert!(widget(&h, "preview.menu.jump.next").enabled);
+    assert!(!widget(&h, "preview.menu.jump.previous").enabled);
+    click(&mut h, "preview.menu.jump.next");
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(3 * TICKS_PER_SECOND)
+    );
+
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click_secondary();
+    h.run_steps(3);
+    click(&mut h, "preview.menu.jump.next");
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(8 * TICKS_PER_SECOND)
+    );
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click_secondary();
+    h.run_steps(3);
+    assert!(!widget(&h, "preview.menu.jump.next").enabled);
+    assert!(widget(&h, "preview.menu.jump.previous").enabled);
+    click(&mut h, "preview.menu.jump.previous");
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(3 * TICKS_PER_SECOND)
+    );
+}
+
+#[test]
+fn bookmark_jump_menu_render_screenshot() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&root).unwrap();
+    for (locale, name) in [(Locale::En, "en"), (Locale::Vi, "vi")] {
+        for pixels in [1.0, 2.0] {
+            let mut editor = editor(
+                project(FrameRate::FPS_30, 640, 360, false),
+                Preferences {
+                    locale,
+                    ..Preferences::default()
+                },
+            );
+            add_bookmark(&mut editor, 3);
+            add_bookmark(&mut editor, 8);
+            let mut h = crate::gpu::builder()
+                .with_size(egui::vec2(1440.0, 900.0))
+                .with_pixels_per_point(pixels)
+                .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+            h.run_steps(3);
+            h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+                .click_secondary();
+            h.run_steps(3);
+            let path = root.join(format!("p1-73-bookmark-nav-preview-{name}-{pixels}x.png"));
+            h.render().unwrap().save(&path).unwrap();
+            h.key_press(egui::Key::Escape);
+            h.run_steps(3);
+            let ruler =
+                h.get(By::new().predicate(|node| node.author_id() == Some("timeline.ruler")));
+            ruler.click_secondary();
+            h.run_steps(3);
+            let path = root.join(format!("p1-73-bookmark-nav-timeline-{name}-{pixels}x.png"));
+            h.render().unwrap().save(&path).unwrap();
+            println!("bookmark menu screenshot: {}", path.display());
+        }
+    }
+    std::fs::copy(
+        root.join("p1-73-bookmark-nav-preview-en-2x.png"),
+        root.join("p1-73-bookmark-nav.png"),
+    )
+    .unwrap();
 }
 
 #[test]

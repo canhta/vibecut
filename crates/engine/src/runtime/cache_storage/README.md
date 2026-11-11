@@ -32,7 +32,10 @@ payloads.
 Headers bind the canonical key; `get` checks admitted size, header and payload digest before
 returning a hit. Corruption or a missing file returns `CacheCorrupt`; corrupt-file removal waits
 for older reader pins to release, so a caller can record the typed diagnostic and recompute.
-Other IO errors retain their source.
+Other IO errors retain their source. Reservation/pin/evict failures compose the runtime owner's
+error through `EditError::Runtime`; other cache filesystem failures retain their existing root IO.
+A failed unlink retains its charge and resets the eviction pin so repair and retry remain possible.
+ASR checkpoint writes tolerate only runtime budget pressure, never IO or poisoned accounting.
 
 `put` commits a complete artifact through project's synced atomic-file writer. The 72-byte
 envelope is charged along with the payload, so even empty entries consume budget; the shared

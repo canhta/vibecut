@@ -109,7 +109,9 @@ pub(crate) fn transcribe_window(
             match cache.put(key, &bytes) {
                 Ok(()) => {}
                 // A checkpoint that cannot be stored must not discard a valid recognition.
-                Err(EditError::BudgetFull | EditError::ArtifactTooLarge) => {}
+                Err(EditError::Runtime(
+                    crate::RuntimeError::BudgetFull | crate::RuntimeError::ArtifactTooLarge,
+                )) => {}
                 Err(error) => return Err(error),
             }
             if cancel.cancelled() {

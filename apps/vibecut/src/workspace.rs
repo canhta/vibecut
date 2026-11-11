@@ -1110,7 +1110,7 @@ impl EditorWindow {
                 ctx.check_cancelled()?;
                 let work = worker_input
                     .lock()
-                    .map_err(|_| EditError::JobPoisoned)?
+                    .map_err(|_| engine::RuntimeError::Poisoned)?
                     .take()
                     .ok_or(EditError::Invalid("missing lifecycle work"))?;
                 let result = run(

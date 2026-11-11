@@ -14,6 +14,9 @@ pub enum AppCommand {
     Export(crate::export::ExportOptions),
     /// `playback.seek`: move the shared transport to an absolute tick.
     Seek(Tick),
+    /// `playback.jump_bookmark`: seek to the nearest eligible bookmark in one
+    /// direction, without wrapping or mutating the project.
+    JumpBookmark(actions::BookmarkDirection),
     /// `preview.set_zoom`: fit the frame or set an explicit scale.
     PreviewZoom(PreviewZoom),
     /// `ui.keybindings.set`: replace one action's chords.
@@ -171,6 +174,14 @@ impl Editor {
                     .seek(at, self.playback.playing(), self.session.project().clone())?;
                 self.remember_view()
             }
+            AppCommand::JumpBookmark(direction) => {
+                let at = self.playback.position()?;
+                match actions::bookmark_target(self.session.project().data().scene(), at, direction)
+                {
+                    Some(target) => self.dispatch(AppCommand::Seek(target)),
+                    None => Ok(()),
+                }
+            }
             AppCommand::PreviewZoom(PreviewZoom::Fit) => self.set_preview_fit(),
             AppCommand::PreviewZoom(PreviewZoom::Zoom(zoom)) => {
                 let viewport = self.player.viewport;
@@ -234,6 +245,13 @@ impl Editor {
                 action: UiAction::Crop,
                 ..
             } => crate::editor::panels::player::crop::available(self),
+            ActionTarget::Ui {
+                action: UiAction::JumpBookmark(direction),
+                ..
+            } => self.playback.position().is_ok_and(|at| {
+                actions::bookmark_target(self.session.project().data().scene(), at, direction)
+                    .is_some()
+            }),
             ActionTarget::Ui { .. } => true,
         }
     }
@@ -380,5 +398,88 @@ impl Editor {
         }
         self.session.end_merge();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use actions::BookmarkDirection::{Next, Previous};
+    use project::{Bookmark, BookmarkId, Color};
+    use time::TICKS_PER_SECOND;
+
+    fn mark(id: u64, second: i64) -> Bookmark {
+        Bookmark {
+            id: BookmarkId(id),
+            start: Tick(second * TICKS_PER_SECOND),
+            duration: Tick::ZERO,
+            note: "Mark".into(),
+            color: Color([255, 255, 0, 255]),
+        }
+    }
+
+    fn at(at: i64, direction: actions::BookmarkDirection, marks: &[Bookmark]) -> Option<i64> {
+        actions::bookmark_target_in(
+            marks,
+            Tick(10 * TICKS_PER_SECOND),
+            Tick(at * TICKS_PER_SECOND),
+            direction,
+        )
+        .map(|tick| tick.0 / TICKS_PER_SECOND)
+    }
+
+    #[test]
+    fn bookmark_jump_stops_before_between_and_after_without_wrapping() {
+        assert_eq!(at(0, Next, &[]), None);
+        assert_eq!(at(0, Previous, &[]), None);
+        let marks = [mark(1, 3), mark(2, 8)];
+        assert_eq!(at(0, Next, &marks), Some(3));
+        assert_eq!(at(5, Next, &marks), Some(8));
+        assert_eq!(at(5, Previous, &marks), Some(3));
+        assert_eq!(at(9, Next, &marks), None, "no wrap to the first mark");
+        assert_eq!(at(9, Previous, &marks), Some(8));
+        assert_eq!(at(3, Previous, &marks), None, "no wrap to the last mark");
+        assert_eq!(at(3, Next, &marks), Some(8), "exact playhead is skipped");
+        assert_eq!(at(8, Next, &marks), None);
+    }
+
+    #[test]
+    fn equal_time_marks_are_ordered_and_skipped_at_their_instant() {
+        let forward = [mark(1, 5), mark(9, 5), mark(4, 8)];
+        let reverse = [mark(4, 8), mark(9, 5), mark(1, 5)];
+        for marks in [forward, reverse] {
+            assert_eq!(at(4, Next, &marks), Some(5));
+            assert_eq!(
+                at(5, Next, &marks),
+                Some(8),
+                "the shared instant is skipped"
+            );
+            assert_eq!(at(5, Previous, &marks), None);
+            assert_eq!(at(6, Previous, &marks), Some(5));
+            assert_eq!(at(7, Next, &marks), Some(8));
+        }
+    }
+
+    #[test]
+    fn marks_past_the_end_clamp_to_duration_once_and_zero_duration_never_moves() {
+        let far = [mark(1, 15)];
+        assert_eq!(at(0, Next, &far), Some(10));
+        assert_eq!(at(5, Next, &far), Some(10));
+        assert_eq!(at(10, Next, &far), None, "already at duration");
+        assert_eq!(at(10, Previous, &far), None);
+        let zero = [mark(1, 0)];
+        assert_eq!(
+            actions::bookmark_target_in(&zero, Tick::ZERO, Tick::ZERO, Next),
+            None
+        );
+        assert_eq!(
+            actions::bookmark_target_in(&zero, Tick::ZERO, Tick::ZERO, Previous),
+            None
+        );
+        assert_eq!(
+            actions::bookmark_target_in(&[mark(2, 15)], Tick::ZERO, Tick::ZERO, Next),
+            None
+        );
     }
 }

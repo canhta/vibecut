@@ -31,15 +31,24 @@ Contention chooses CPU for that entire frame. Standalone calls use the same scop
 implementation. Each scope fixes its first geometry and exact borrowed hooks object.
 No device or GPU dependency crosses the render interface.
 
+Export attachment follows the [export dialog policy](../editor/dialogs/export/README.md).
+
 Mapped uploads make all staging explicit: work A/B, readback and upload-current cost
 4I; Sample/blend add a distinct auxiliary/upload pair for 6I. Non-Sample calls drop
 the auxiliary pair. Metadata has distinct slots per pass, charged at 1024 bytes/pass
 (up to 512), with at most 49 values each; actual fixed scope records are charged
-separately within 4096 bytes. Caller and result Images reserve independently. These
-bounds exclude native driver/pipeline memory and do not guarantee export admission.
+separately within 4096 bytes. These bounds exclude native driver/pipeline memory and
+do not guarantee export admission.
 
-Completed scratch is reused only within its scope. CPU runs, masks, transforms,
-transitions and the next decode release idle capacity. Submitted completion owns
+Device geometry support and [aggregate byte admission](../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)
+are separate: supported dimensions can still refuse once caller/result images,
+decoding and encoding consume the shared budget.
+
+Completed scratch reuses buffer allocations only within its frame scope, not image
+contents. Every apply/composite still packs and uploads its inputs, submits and waits
+for native work, reads the output back and constructs a separately charged CPU Image.
+CPU runs, masks, transforms, transitions and the next decode release idle capacity.
+Submitted completion owns
 buffers, leases and the permit through timeout/unwind; a pending submission cannot
 be recycled. Completion is serviced by native polling, with no detached poller. A
 30-second wait and total one-second mapping receipt ceiling return Unsupported;

@@ -344,6 +344,9 @@ impl Editor {
                         .ok_or(Error::Invalid("preview zoom"))?;
                     self.set_preview_zoom(zoom, viewport, canvas)?;
                 }
+                UiAction::JumpBookmark(direction) => {
+                    self.dispatch(crate::editor::AppCommand::JumpBookmark(direction))?;
+                }
                 UiAction::Seek
                 | UiAction::SetPreviewZoom
                 | UiAction::SetPreference

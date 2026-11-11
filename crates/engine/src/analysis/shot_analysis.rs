@@ -238,7 +238,7 @@ impl AnalysisRequest {
             }
             let mut detector = detector
                 .lock()
-                .map_err(|_| EditError::JobPoisoned)?
+                .map_err(|_| crate::RuntimeError::Poisoned)?
                 .take()
                 .ok_or(EditError::StaleResult)?;
             let result = request.analyze(&mut detector, ctx)?;

@@ -10,4 +10,6 @@ major and minor intervals from zoom and project fps, with labels at least
 Whole-second labels split into ten ticks when they fit; finer labels use frame ticks that
 divide the label interval. Major labels show `MM:SS` (or `H:MM:SS`) while labels fall on
 whole seconds, and time's shared DF/NDF frame timecode once labels are finer than one
-second.
+second. Right-clicking the ruler opens the next/previous bookmark entries, enabled and
+dispatched through the
+[action registry's bookmark lookup](../../../../actions/README.md#bookmark-navigation).

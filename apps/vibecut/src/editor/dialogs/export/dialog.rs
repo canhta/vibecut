@@ -907,15 +907,16 @@ fn unavailable_details(
 }
 
 fn export_failure(error: &engine::EditError) -> Text {
-    use engine::EditError as E;
+    use engine::{EditError as E, RuntimeError as B};
     use render::Error as R;
     match error {
-        E::BudgetFull | E::ArtifactTooLarge | E::Render(R::Budget { .. } | R::Allocation(_)) => {
-            Text::ExportMemory
-        }
+        E::Runtime(B::BudgetFull | B::ArtifactTooLarge)
+        | E::Render(R::Budget { .. } | R::Allocation(_)) => Text::ExportMemory,
         E::Render(R::AudioOverload { .. }) => Text::ExportOverload,
         E::Render(R::Unavailable(_)) => Text::ExportBlocked,
-        E::Io(_) | E::Render(R::Io(_) | R::Project(project::Error::Io(_))) => Text::ExportStorage,
+        E::Io(_)
+        | E::Runtime(B::Io(_))
+        | E::Render(R::Io(_) | R::Project(project::Error::Io(_))) => Text::ExportStorage,
         E::Render(R::Media(_) | R::Unsupported(_)) => Text::ExportCapability,
         E::Render(R::Text(_) | R::Raster(_)) => Text::ExportTextFailure,
         _ => Text::ExportFailure,

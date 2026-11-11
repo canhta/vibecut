@@ -131,7 +131,7 @@ impl Session {
                         | JobKind::DetectScenes
                 ) && let Some(media) = caller.media
                 {
-                    let mut media = media.lock().map_err(|_| EditError::JobPoisoned)?;
+                    let mut media = media.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
                     match snapshot.state {
                         JobState::Completed => media.finish(runner, job)?,
                         JobState::Cancelled | JobState::Failed => media.forget(job),
@@ -160,7 +160,7 @@ impl Session {
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
                 let job = media
                     .lock()
-                    .map_err(|_| EditError::JobPoisoned)?
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
                     .generate_waveform(runner, asset)?;
                 Ok(ControlResult::JobAccepted {
                     job,
@@ -199,7 +199,7 @@ impl Session {
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
                 let job = media
                     .lock()
-                    .map_err(|_| EditError::JobPoisoned)?
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
                     .generate_clip_thumbnails(runner, asset, &clip, visible, pixels_per_second)?;
                 Ok(ControlResult::JobAccepted {
                     job,
@@ -224,7 +224,7 @@ impl Session {
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
                 let job = media
                     .lock()
-                    .map_err(|_| EditError::JobPoisoned)?
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
                     .detect_scenes(runner, asset, settings)?;
                 Ok(ControlResult::JobAccepted {
                     job,

@@ -8,6 +8,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::i18n::{Locale, Text};
+use project::Scene;
+use time::Tick;
 
 pub use crate::input::{
     BlockedReason, Chord, ChordError, Dispatch, DispatchContext, DispatchInfo, KEYBINDING_FORMAT,
@@ -52,6 +54,51 @@ impl ActionCategory {
             Self::Timeline => "Timeline",
             Self::View => "View",
         }
+    }
+}
+
+/// Which way `playback.jump_bookmark` searches from the playhead; it never wraps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BookmarkDirection {
+    Next,
+    Previous,
+}
+
+/// The one bookmark lookup behind enablement, dispatch and both menus.
+/// Bookmarks sort by raw (start, id); each candidate targets its start clamped
+/// to the scene duration, exactly as Seek clamps. Comparing those effective
+/// times skips a marker already at the playhead, including markers past the
+/// end that all land on the duration.
+pub(crate) fn bookmark_target(
+    scene: &Scene,
+    at: Tick,
+    direction: BookmarkDirection,
+) -> Option<Tick> {
+    bookmark_target_in(&scene.bookmarks, scene.duration(), at, direction)
+}
+
+pub(crate) fn bookmark_target_in(
+    bookmarks: &[project::Bookmark],
+    duration: Tick,
+    at: Tick,
+    direction: BookmarkDirection,
+) -> Option<Tick> {
+    let candidates = bookmarks.iter().map(|bookmark| {
+        (
+            bookmark.start,
+            bookmark.id,
+            bookmark.start.clamp(Tick::ZERO, duration),
+        )
+    });
+    match direction {
+        BookmarkDirection::Next => candidates
+            .filter(|(_, _, target)| *target > at)
+            .min_by_key(|(start, id, _)| (*start, *id))
+            .map(|(_, _, target)| target),
+        BookmarkDirection::Previous => candidates
+            .filter(|(_, _, target)| *target < at)
+            .max_by_key(|(start, id, _)| (*start, *id))
+            .map(|(_, _, target)| target),
     }
 }
 
@@ -123,6 +170,7 @@ pub enum UiAction {
     PreviewZoomOut,
     PreviewZoomPreset,
     Seek,
+    JumpBookmark(BookmarkDirection),
     SetPreviewZoom,
     SetPreference,
     SetKeybinding,

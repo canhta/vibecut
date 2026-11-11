@@ -57,7 +57,7 @@ fn save_on_worker(
 ) -> crate::Result<()> {
     let work = slot
         .lock()
-        .map_err(|_| EditError::JobPoisoned)?
+        .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
         .take()
         .ok_or(Error::Busy)?;
     let mut active = WorkingSave {
@@ -154,7 +154,7 @@ impl Autosave {
                         let mut work = save
                             .slot
                             .lock()
-                            .map_err(|_| EditError::JobPoisoned)?
+                            .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
                             .take()
                             .ok_or(EditError::WorkerPanicked)?;
                         let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
@@ -349,7 +349,7 @@ impl Autosave {
                     let work = save
                         .slot
                         .lock()
-                        .map_err(|_| EditError::JobPoisoned)?
+                        .map_err(|_| EditError::from(crate::RuntimeError::Poisoned))?
                         .take()
                         .ok_or(EditError::WorkerPanicked)?;
                     self.writer = if save.in_place {
