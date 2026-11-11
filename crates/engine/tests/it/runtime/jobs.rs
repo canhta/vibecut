@@ -1886,29 +1886,67 @@ fn cache_maintenance_preserves_unknown_and_hostile_substitutions() {
 #[test]
 fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
     use engine::cache::CacheOperation::Clear;
-    for fault in 0..3 {
+    for fault in 0..5 {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("cache");
         let moved = dir.path().join("retained");
         let budget = ByteBudget::new(8192).unwrap();
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 8).unwrap();
         cache.put(key(1), b"original").unwrap();
+        let original = std::fs::read(root.join(key(1).filename())).unwrap();
         // Windows refuses this directory rename while its lock file is held.
         // Keep that lock held outside it during the move, then restore its path.
         let held_lock = dir.path().join(".cache.lock");
         std::fs::rename(root.join(".cache.lock"), &held_lock).unwrap();
-        std::fs::rename(&root, &moved).unwrap();
+        if fault == 4 {
+            // Replace only the lock while the original directory stays put.
+            std::fs::create_dir(&moved).unwrap();
+        } else {
+            std::fs::rename(&root, &moved).unwrap();
+        }
         std::fs::rename(&held_lock, moved.join(".cache.lock")).unwrap();
-        if fault == 1 {
+        if matches!(fault, 1 | 3) {
             std::fs::create_dir(&root).unwrap();
+        }
+        if fault == 3 {
+            // Replace only the root, preserving the original held lock.
+            std::fs::rename(moved.join(".cache.lock"), root.join(".cache.lock")).unwrap();
+        }
+        if matches!(fault, 1 | 4) {
             std::fs::write(root.join(".cache.lock"), b"").unwrap();
+        }
+        if matches!(fault, 1 | 3 | 4) {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::{FileTimesExt, OpenOptionsExt};
+                // Distinct Windows objects can have equal creation times.
+                // Set the real replacement timestamps to reproduce that case.
+                for suffix in ["", ".cache.lock"] {
+                    if (fault == 3 && !suffix.is_empty()) || (fault == 4 && suffix.is_empty()) {
+                        continue;
+                    }
+                    let created = std::fs::metadata(moved.join(suffix))
+                        .unwrap()
+                        .created()
+                        .unwrap();
+                    let replacement = std::fs::File::options()
+                        .access_mode(0x100) // FILE_WRITE_ATTRIBUTES
+                        .custom_flags(0x02000000) // FILE_FLAG_BACKUP_SEMANTICS
+                        .open(root.join(suffix))
+                        .unwrap();
+                    replacement
+                        .set_times(std::fs::FileTimes::new().set_created(created))
+                        .unwrap();
+                    assert_eq!(replacement.metadata().unwrap().created().unwrap(), created);
+                }
+            }
         }
         if fault == 2 {
             #[cfg(unix)]
             std::os::unix::fs::symlink(&moved, &root).unwrap();
         }
         let report = cache.maintenance().unwrap().run(Clear, || false);
-        assert!(report.root_unavailable);
+        assert!(report.root_unavailable, "fault {fault}: {report:?}");
         assert!(matches!(
             report.cause,
             Some(EditError::Runtime(B::CacheCorrupt))
@@ -1921,12 +1959,17 @@ fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
             cache.get(key(1)),
             Err(EditError::Runtime(B::CacheCorrupt))
         ));
-        assert!(moved.join(key(1).filename()).is_file());
+        let retained = if fault == 4 { &root } else { &moved };
+        assert_eq!(
+            std::fs::read(retained.join(key(1).filename())).unwrap(),
+            original
+        );
+        assert!(!root.join(key(2).filename()).exists());
         if fault == 0 {
             assert!(!root.exists());
         }
         drop(cache);
-        if fault == 1 {
+        if matches!(fault, 1 | 3) {
             std::fs::remove_file(root.join(".cache.lock")).unwrap();
             std::fs::remove_dir(&root).unwrap();
         }
