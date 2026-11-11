@@ -177,6 +177,8 @@ pub enum JobKind {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum JobStage {
+    Extract,
+    Segment,
     Queued,
     Starting,
     Preparing,
@@ -328,4 +330,62 @@ pub struct DetectionResult {
     pub(crate) range: SourceRange,
     pub candidates: Vec<SceneCandidate>,
     pub decoded_frames: u64,
+}
+
+/// What a provider run cost or may cost, as the CLI and `job_status` disclose it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CostView {
+    Free,
+    UpperBound { currency: String, micros: u64 },
+    Unknown,
+}
+/// The finished transcription of `captions.generate`: source-timed cues that
+/// `captions.apply { job }` inserts as one caption item.
+#[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptionsResult {
+    pub asset: media::AssetId,
+    pub range: SourceRange,
+    pub source_language: captions::LanguageTag,
+    pub cues: Vec<captions::Cue>,
+    pub segments: usize,
+    /// ASR windows served from the checkpoint cache.
+    pub checkpoints: usize,
+    pub cost: CostView,
+    pub provider: NfcText,
+    pub model: NfcText,
+}
+
+/// The finished translation of `captions.translate`: exactly the fields the
+/// `retranslate` edit takes.
+#[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TranslationsResult {
+    pub item: ItemId,
+    pub target_language: captions::LanguageTag,
+    pub texts: std::collections::BTreeMap<NfcText, NfcText>,
+    pub translation_ref: NfcText,
+    pub cost: CostView,
+    pub provider: NfcText,
+    pub model: NfcText,
+}
+
+impl std::fmt::Debug for CaptionsResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CaptionsResult")
+            .field("asset", &self.asset)
+            .field("cues", &self.cues.len())
+            .field("segments", &self.segments)
+            .field("checkpoints", &self.checkpoints)
+            .finish_non_exhaustive()
+    }
+}
+impl std::fmt::Debug for TranslationsResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TranslationsResult")
+            .field("item", &self.item)
+            .field("texts", &self.texts.len())
+            .finish_non_exhaustive()
+    }
 }

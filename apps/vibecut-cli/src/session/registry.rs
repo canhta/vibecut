@@ -63,6 +63,7 @@ pub(crate) fn run(
         sounds: lent.sounds,
         media: lent.media,
         chapters: None,
+        captions: None,
     };
     session
         .control_typed(request, caller, runner)

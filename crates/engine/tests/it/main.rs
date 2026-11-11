@@ -71,6 +71,7 @@ pub(crate) mod wire {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut runner,
         )?;

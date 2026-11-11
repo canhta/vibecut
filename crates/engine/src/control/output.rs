@@ -12,6 +12,12 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         JobKind::ImportLut => JobOutput::Lut(
             serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
         ),
+        JobKind::Transcribe => {
+            JobOutput::Captions(Box::new(crate::subtitles::decode_captions(retained()?)?))
+        }
+        JobKind::Translate => JobOutput::Translations(Box::new(
+            crate::subtitles::decode_translations(retained()?)?,
+        )),
         JobKind::Preview => JobOutput::Preview(
             serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
         ),
@@ -24,9 +30,7 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         },
         JobKind::MeasureLoudness => JobOutput::Loudness(crate::loudness::decode(retained()?)?),
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
-        JobKind::Transcribe
-        | JobKind::Translate
-        | JobKind::SuggestClips
+        JobKind::SuggestClips
         | JobKind::AnalyzeShots
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform

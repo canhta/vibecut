@@ -470,6 +470,7 @@ mod tests {
             sounds: None,
             media: None,
             chapters: None,
+            captions: None,
         };
         for (fault, code) in [
             (disk_full as fn() -> crate::Result<()>, ErrorCode::Io),

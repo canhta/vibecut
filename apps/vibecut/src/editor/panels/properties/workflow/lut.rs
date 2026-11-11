@@ -91,6 +91,7 @@ impl LutWorkflow {
                 sounds: None,
                 media: Some(access.as_ref()),
                 chapters: None,
+                captions: None,
             },
             self.runner
                 .as_mut()

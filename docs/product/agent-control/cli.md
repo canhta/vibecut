@@ -185,7 +185,7 @@ diagnostics. Stdout control keeps its separate projection: IO and unwind use exi
 limits and budgets use 2.
 These failures retain the safe message `session persistence failed` and remain non-transient;
 code delegation does not retry a sticky write or expose its cause's diagnostic payload.
-API remains 3 with the current catalog digest; no error-code vocabulary changes.
+The current API version and catalog digest are published by `commands --json`.
 
 ## Sounds
 
