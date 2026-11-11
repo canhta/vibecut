@@ -212,6 +212,18 @@ impl Subtitles {
                 self.refresh(session);
             }
             "subtitles.cancel" => self.cancel(),
+            "subtitles.consent.unknown_price" => {
+                let active = self
+                    .active
+                    .as_ref()
+                    .ok_or(Error::Invalid("no subtitle job"))?;
+                let mut state = active.events.state.lock().map_err(|_| Error::Poisoned)?;
+                let upload = state
+                    .upload
+                    .as_mut()
+                    .ok_or(Error::Invalid("no upload request"))?;
+                upload.price_acknowledged = !upload.price_acknowledged;
+            }
             "subtitles.consent.approve" => self.approve_upload(true)?,
             "subtitles.consent.deny" => self.approve_upload(false)?,
             "subtitles.generate" => self.generate(

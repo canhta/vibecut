@@ -837,10 +837,8 @@ impl ai::fillers::FillerClassifier for FixtureFillers {
     }
 }
 pub(crate) fn fixture_chapters() -> engine::providers::TextAccess {
-    let chapter =
-        ai::chapters::OpenAiChapterGenerator::provider_config(ai::chapters::OPENAI_MODEL).unwrap();
-    let filler =
-        ai::fillers::OpenAiFillerClassifier::provider_config(ai::fillers::OPENAI_MODEL).unwrap();
+    let chapter = ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
+    let filler = ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
     engine::providers::TextAccess::new(
         Arc::new(FixtureChapters {
             config: chapter.clone(),

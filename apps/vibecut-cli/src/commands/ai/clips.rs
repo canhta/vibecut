@@ -42,6 +42,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let mut bilingual = false;
     let mut aspect: Option<String> = None;
     let mut yes_upload = false;
+    let mut accept_unknown_price = false;
     let mut overwrite = false;
     let mut allow_degraded = false;
     while let Some(arg) = args.next() {
@@ -175,6 +176,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
                 );
             }
             "--yes-upload" => yes_upload = true,
+            "--accept-unknown-price" => accept_unknown_price = true,
             "--overwrite" => overwrite = true,
             "--allow-degraded" => allow_degraded = true,
             "--help" | "-h" => {
@@ -321,7 +323,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     };
     let mut runner = cli_runner(budget)?;
     let progress = CliProgress::new();
-    let consent = CliConsent::new(yes_upload);
+    let consent = CliConsent::new(yes_upload, accept_unknown_price);
     let outcome = clip_suggest::suggest(
         &request,
         &credentials,
@@ -392,7 +394,7 @@ fn clips_usage() -> &'static str {
                     [--asr-provider <id>] [--asr-model <id>] [--keywords a,b]\n\
                     [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual]\n\
                      [--aspect 9:16] [--translate-provider <id>] [--overwrite]\n\
-                     [--allow-degraded]] [--yes-upload]"
+                     [--allow-degraded]] [--yes-upload] [--accept-unknown-price]"
 }
 fn clips_usage_error() -> CliError {
     CliError::Usage(clips_usage().into())

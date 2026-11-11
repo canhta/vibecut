@@ -123,6 +123,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             ("window.home", Icon::SquaresFour, Text::Home),
             ("project.save", Icon::FloppyDisk, Text::Save),
             ("project.save_as", Icon::FloppyDiskBack, Text::SaveAs),
+            ("preferences.open", Icon::GearSix, Text::Settings),
             ("models.open", Icon::File, Text::Models),
             ("layout.reset", Icon::CornersOut, Text::Reset),
             ("appearance.locale", Icon::Translate, Text::Language),

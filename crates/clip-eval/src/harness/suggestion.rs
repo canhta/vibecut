@@ -30,21 +30,23 @@ pub(super) fn estimate_provider(
     provider: &dyn ClipSuggester,
     input: &ClipInput,
     source_sha: &str,
-) -> Result<u64> {
+) -> Result<Option<u64>> {
     let windows = input.windows()?;
-    let mut total = 0u64;
+    let mut total = Some(0u64);
     for window in &windows {
         let scope = scope_for(provider, window, source_sha)?;
-        total = total.saturating_add(estimate_micros(&provider.estimate(&scope))?);
+        total = total
+            .zip(estimate_micros(&provider.estimate(&scope))?)
+            .map(|(a, b)| a.saturating_add(b));
     }
     Ok(total)
 }
 
-fn estimate_micros(estimate: &CostEstimate) -> Result<u64> {
+fn estimate_micros(estimate: &CostEstimate) -> Result<Option<u64>> {
     match estimate {
-        CostEstimate::Free => Ok(0),
-        CostEstimate::UpperBound(money) => Ok(money.micros()),
-        CostEstimate::Unknown => Err(Error::UnknownCost),
+        CostEstimate::Free => Ok(Some(0)),
+        CostEstimate::UpperBound(money) => Ok(Some(money.micros())),
+        CostEstimate::Unknown => Ok(None),
     }
 }
 
@@ -58,12 +60,13 @@ pub(super) struct RunContext<'a> {
     pub(super) source_sha: &'a str,
     pub(super) source: &'a Path,
     pub(super) energy: bool,
+    pub(super) accept_unknown_price: bool,
 }
 
 pub(super) fn run_provider(
     context: &RunContext<'_>,
     notes: &mut Vec<String>,
-    estimate: u64,
+    estimate: Option<u64>,
     budget: &mut Budget,
 ) -> Result<ProviderRun> {
     let RunContext {
@@ -75,8 +78,13 @@ pub(super) fn run_provider(
         source_sha,
         source,
         energy: energy_enabled,
+        accept_unknown_price,
     } = *context;
-    budget.reserve(estimate)?;
+    if let Some(estimate) = estimate {
+        budget.reserve(estimate)?;
+    } else if !accept_unknown_price {
+        return Err(Error::UnknownCost);
+    }
     let windows = input.windows()?;
     let mut scopes = Vec::with_capacity(windows.len());
     for window in &windows {
@@ -86,11 +94,19 @@ pub(super) fn run_provider(
     for scope in &scopes {
         if provider.config().is_remote() {
             let estimate = provider.estimate(scope);
-            let micros = estimate_micros(&estimate)?;
-            consents.push(Some(Consent::grant(
-                scope.clone(),
-                Money::new("USD", micros)?,
-            )?));
+            consents.push(Some(if let Some(micros) = estimate_micros(&estimate)? {
+                Consent::grant(scope.clone(), Money::new("USD", micros)?)?
+            } else if accept_unknown_price {
+                Consent::grant_unknown_price(
+                    scope.clone(),
+                    &ai::UnknownPriceAcknowledgement::grant(
+                        scope.provider.clone(),
+                        scope.operation,
+                    ),
+                )?
+            } else {
+                return Err(Error::UnknownCost);
+            }));
         } else {
             consents.push(None);
         }

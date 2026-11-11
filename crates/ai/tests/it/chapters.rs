@@ -55,9 +55,9 @@ fn input(language: &str, n: usize) -> ChapterInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::chapters::AnthropicChapterGenerator::provider_config(ai::anthropic::MODEL).unwrap()
+        ai::chapters::AnthropicChapterGenerator::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::chapters::OpenAiChapterGenerator::provider_config(OPENAI_MODEL).unwrap()
+        ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
     }
 }
 fn scope(w: &ChapterInput, p: &dyn ChapterGenerator) -> Scope {
@@ -726,8 +726,7 @@ fn optional_translation_reuses_the_shared_window_without_moving_chapters() {
         glossary: Vec::new(),
         style: style.clone(),
     };
-    let config =
-        ai::openai::OpenAiTranslator::provider_config(ai::openai::TRANSLATION_MODEL).unwrap();
+    let config = ai::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope = Scope {
         provider: config.clone(),
         operation: Operation::Translate,

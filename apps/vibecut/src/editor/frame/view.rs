@@ -206,6 +206,7 @@ impl Editor {
             }
         }
         self.show_models(ui);
+        self.show_preferences(ui);
         self.shortcuts_dialog(ui.ctx());
         if self
             .properties
@@ -266,6 +267,12 @@ impl Editor {
             self.dialogs = state;
             actions
         };
+        super::super::dialogs::apply(&mut self.desk(), actions);
+    }
+    fn show_preferences(&mut self, ui: &mut egui::Ui) {
+        let mut state = std::mem::take(&mut self.dialogs);
+        let actions = super::super::dialogs::show_preferences(&mut state, &self.context(), ui);
+        self.dialogs = state;
         super::super::dialogs::apply(&mut self.desk(), actions);
     }
     /// Paint the model manager and route its requests.

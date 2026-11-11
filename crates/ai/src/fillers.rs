@@ -12,7 +12,7 @@ use captions::{FillerKind, LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub use remote::{AnthropicFillerClassifier, OPENAI_MODEL, OpenAiFillerClassifier};
+pub use remote::{AnthropicFillerClassifier, OpenAiFillerClassifier};
 
 pub const MODE: &str = "transcript-fillers";
 impl Scope {

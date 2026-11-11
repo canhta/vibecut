@@ -1322,6 +1322,7 @@ fn import_is_atomic_bounded_and_export_uses_selected_bilingual_languages() {
 }
 
 struct TranslateWorkflow {
+    unknown_price: bool,
     calls: Arc<AtomicUsize>,
     /// Holds the provider call until the test opens the gate, so a job stays
     /// running while the busy block is on screen.
@@ -1358,6 +1359,7 @@ impl Workflow for TranslateWorkflow {
         )?;
         let adapter = engine::transcript::SubtitleTranslator::from_parts(
             Arc::new(Translator {
+                unknown_price: self.unknown_price,
                 config,
                 calls: self.calls.clone(),
                 gate: self.gate.clone(),
@@ -1408,6 +1410,7 @@ impl Workflow for TranslateWorkflow {
     }
 }
 struct Translator {
+    unknown_price: bool,
     config: ai::ProviderConfig,
     calls: Arc<AtomicUsize>,
     gate: Option<Gate>,
@@ -1434,7 +1437,11 @@ impl ai::Translator for Translator {
         }
     }
     fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
-        ai::CostEstimate::UpperBound(ai::Money::new("USD", 1_000).unwrap())
+        if self.unknown_price {
+            ai::CostEstimate::Unknown
+        } else {
+            ai::CostEstimate::UpperBound(ai::Money::new("USD", 1_000).unwrap())
+        }
     }
     fn translate(
         &self,
@@ -1472,7 +1479,11 @@ fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
     e.subtitles = Some(
         Subtitles::with_workflow(
             e.playback.budget().clone(),
-            Arc::new(TranslateWorkflow { calls, gate: None }),
+            Arc::new(TranslateWorkflow {
+                calls,
+                gate: None,
+                unknown_price: false,
+            }),
         )
         .unwrap(),
     );
@@ -1495,6 +1506,7 @@ fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
         Subtitles::with_workflow(
             e.playback.budget().clone(),
             Arc::new(TranslateWorkflow {
+                unknown_price: false,
                 calls,
                 gate: Some(gate.clone()),
             }),
@@ -2311,4 +2323,81 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
         track(h.state()).cues[0].texts[&lang("vi")].text.as_str(),
         "External caption change"
     );
+}
+
+#[test]
+fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales() {
+    for (locale, scale) in [
+        (Locale::En, 1.0),
+        (Locale::Vi, 1.0),
+        (Locale::En, 2.0),
+        (Locale::Vi, 2.0),
+    ] {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut e = editor("vi");
+        e.preferences.locale = locale;
+        e.preferences
+            .ai_models
+            .select("openai", ai::Operation::Translate, "fixture-unknown-price")
+            .unwrap();
+        e.preferences.resolve_models();
+        e.subtitles = Some(
+            Subtitles::with_workflow(
+                e.playback.budget().clone(),
+                Arc::new(TranslateWorkflow {
+                    calls: calls.clone(),
+                    gate: None,
+                    unknown_price: true,
+                }),
+            )
+            .unwrap(),
+        );
+        let mut h = harness(e, scale);
+        h.run_steps(3);
+        click(&mut h, "subtitles.cue.cue-0");
+        with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
+        wait(&mut h, |e| panel(e).consent.is_some());
+        let disclosure = panel(h.state()).consent.unwrap();
+        assert_eq!(disclosure.model, "fixture-unknown-price");
+        assert!(
+            h.query_by_label(&format!(
+                "{} · {} · {}",
+                disclosure.provider, disclosure.model, disclosure.languages
+            ))
+            .is_some()
+        );
+        assert!(
+            h.query_by_label(vibecut::i18n::Text::ShortsUnknownCost.text(locale))
+                .is_some()
+        );
+        assert_eq!(disclosure.cost, Cost::Unknown);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.consent.approve")))
+                .accesskit_node()
+                .is_disabled()
+        );
+        let output = std::env::var_os("CARGO_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
+            })
+            .join("ui-audit");
+        std::fs::create_dir_all(&output).unwrap();
+        h.render()
+            .unwrap()
+            .save(output.join(format!("captions-unknown-price-{locale:?}@{scale}x.png")))
+            .unwrap();
+        click(&mut h, "subtitles.consent.unknown_price");
+        h.run_steps(2);
+        assert!(
+            !h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.consent.approve")))
+                .accesskit_node()
+                .is_disabled()
+        );
+        click(&mut h, "subtitles.consent.approve");
+        wait(&mut h, |e| !panel(e).busy);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(track(h.state()).cues[0].texts.contains_key(&lang("en")));
+    }
 }

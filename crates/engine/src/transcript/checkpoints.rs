@@ -4,7 +4,7 @@ use super::speech::sample_range;
 use crate::EditError;
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::jobs::{CancelToken, JobId, JobOutput, JobRunner, JobState};
-use crate::providers::{ConsentPrompt, Cost, Providers, estimate_money};
+use crate::providers::{ConsentPrompt, Cost, Providers, approve_upload};
 use ai::{ExecutionHooks, Request, SampleRange};
 use captions::{LanguageTag, NfcText};
 use media::SpeechWindow;
@@ -65,11 +65,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
             cost.add(&estimate);
             let token = if config.is_remote() {
                 let request = providers.upload_request(scope.clone())?;
-                consent.approve(&request)?;
-                Some(ai::Consent::grant(
-                    scope.clone(),
-                    estimate_money(&estimate)?,
-                )?)
+                Some(approve_upload(consent, &request, &scope, &estimate)?)
             } else {
                 None
             };

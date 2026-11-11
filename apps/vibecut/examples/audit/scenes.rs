@@ -22,6 +22,18 @@ impl Scene {
 
 pub(super) const SCENES: &[Scene] = &[
     Scene {
+        name: "ai-preferences",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| ai_preferences(theme, scale, Locale::En),
+    },
+    Scene {
+        name: "ai-preferences-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| ai_preferences(theme, scale, Locale::Vi),
+    },
+    Scene {
         name: "player-timecode",
         reference_dark: None,
         reference_light: None,

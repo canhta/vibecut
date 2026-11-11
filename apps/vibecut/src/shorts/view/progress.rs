@@ -157,10 +157,12 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                     ui.set_width(392.0);
                     ui.spacing_mut().item_spacing.y = 8.0;
                     let Some(job) = &state.generating else { return };
-                    let Ok(guard) = job.events.state.lock() else {
+                    let Ok(mut guard) = job.events.state.lock() else {
                         return;
                     };
-                    let Some(upload) = &guard.upload else { return };
+                    let Some(upload) = &mut guard.upload else {
+                        return;
+                    };
                     let request = &upload.request;
                     ui.label(
                         egui::RichText::new(i18n::format(
@@ -192,6 +194,10 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                         ),
                         (Text::ShortsCost, cost_text(locale, &request.cost)),
                     ] {
+                        if label == Text::ShortsCost && matches!(request.cost, Cost::Unknown) {
+                            ui.label(state.tr(Text::ShortsUnknownCost));
+                            continue;
+                        }
                         ui.label(i18n::format(
                             locale,
                             Text::ShortsValue,
@@ -210,6 +216,13 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                             widgets::author(&r, &format!("shorts.consent.policy.{index}"));
                         }
                     }
+                    if matches!(request.cost, Cost::Unknown) {
+                        let response = ui.checkbox(
+                            &mut upload.price_acknowledged,
+                            state.tr(Text::ModelRemoteUnknownPrice),
+                        );
+                        widgets::author(&response, "shorts.consent.unknown_price");
+                    }
                     ui.add_space(8.0);
                     let row = ui.allocate_space(vec2(392.0, 40.0)).1;
                     let approve = Rect::from_min_size(row.min, vec2(200.0, 40.0));
@@ -222,7 +235,7 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                         Some(state.tr(Text::ShortsConsent)),
                         state.tr(Text::ShortsConsent),
                         Look::Primary,
-                        true,
+                        !matches!(request.cost, Cost::Unknown) || upload.price_acknowledged,
                     )
                     .clicked()
                     {

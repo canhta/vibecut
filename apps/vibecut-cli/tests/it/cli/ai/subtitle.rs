@@ -39,40 +39,48 @@ fn subtitle_remote_provider_without_key_refuses_before_upload() {
     let input = directory.path().join("input.mp4");
     fs::write(&input, b"never read").unwrap();
     // A parallel CLI run must not hold this credential check's cache lease.
-    let output = Command::new(bin())
-        .env("HOME", directory.path())
-        .env("LOCALAPPDATA", directory.path())
-        .env_remove("OPENAI_API_KEY")
-        .args([
-            os("subtitle"),
-            input.as_os_str(),
-            os("--from"),
-            os("en"),
-            os("--to"),
-            os("vi"),
-            os("--provider"),
-            os("openai"),
-            os("--srt"),
-            directory.path().join("out.srt").as_os_str(),
-            os("--yes-upload"),
-            os("--json"),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(
-        code(&output),
-        4,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let error = error_json(&output);
-    assert_eq!(error["error"]["code"], "setup");
-    assert!(
-        error["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("OPENAI_API_KEY")
-    );
+    for (model, expected_exit, expected_kind) in [("fixture-cli-custom", 4, "setup"), ("", 4, "ai")]
+    {
+        let output = Command::new(bin())
+            .env("HOME", directory.path())
+            .env("LOCALAPPDATA", directory.path())
+            .env_remove("OPENAI_API_KEY")
+            .args([
+                os("subtitle"),
+                input.as_os_str(),
+                os("--from"),
+                os("en"),
+                os("--to"),
+                os("vi"),
+                os("--provider"),
+                os("openai"),
+                os("--srt"),
+                directory.path().join("out.srt").as_os_str(),
+                os("--model"),
+                os(model),
+                os("--accept-unknown-price"),
+                os("--yes-upload"),
+                os("--json"),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            code(&output),
+            expected_exit,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let error = error_json(&output);
+        assert_eq!(error["error"]["code"], expected_kind);
+        if expected_kind == "setup" {
+            assert!(
+                error["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("OPENAI_API_KEY")
+            );
+        }
+    }
 }
 
 #[test]

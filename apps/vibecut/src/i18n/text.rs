@@ -32,6 +32,20 @@ macro_rules! catalog {
 
 #[rustfmt::skip]
 catalog! {
+    // Remote model settings (explicit advanced choices)
+    ModelRemoteChapters { key: "ai_chapters", en: "Chapters", vi: "Chương" },
+    ModelRemoteCustom { key: "ai_custom", en: "Custom model ID", vi: "Mã mô hình tùy chỉnh" },
+    ModelRemoteEmpty { key: "ai_empty", en: "This key returned no models. You can enter an ID below.", vi: "Khóa này không trả về mô hình. Bạn có thể nhập mã bên dưới." },
+    ModelRemoteFillers { key: "ai_fillers", en: "Filler classification", vi: "Phân loại từ đệm" },
+    ModelRemoteInvalid { key: "ai_invalid", en: "Enter a model ID of 1–256 bytes without control characters.", vi: "Nhập mã mô hình từ 1–256 byte, không có ký tự điều khiển." },
+    ModelRemoteListFailed { key: "ai_list_failed", en: "Could not refresh. Default, recent and custom models remain available.", vi: "Không làm mới được. Vẫn có thể dùng mô hình mặc định, gần đây và tùy chỉnh." },
+    ModelRemoteLoading { key: "ai_loading", en: "Loading models…", vi: "Đang tải danh sách mô hình…" },
+    ModelRemoteModels { key: "ai_models", en: "AI models", vi: "Mô hình AI" },
+    ModelRemoteNoKey { key: "ai_no_key", en: "Add a valid service key to refresh. Default and custom models are still available.", vi: "Thêm khóa dịch vụ hợp lệ để làm mới. Vẫn có thể dùng mô hình mặc định và tùy chỉnh." },
+    ModelRemoteRefresh { key: "ai_refresh", en: "Refresh models", vi: "Làm mới mô hình" },
+    ModelRemoteSpeech { key: "ai_speech", en: "Text to speech", vi: "Chuyển chữ thành giọng nói" },
+    ModelRemoteUnknownPrice { key: "ai_unknown_price", en: "I accept that this model's price is unknown to VibeCut for this job kind.", vi: "Tôi chấp nhận rằng VibeCut chưa biết giá của mô hình này cho loại tác vụ này." },
+    // Common
     AddKeyframe { key: "add_keyframe", en: "Add keyframe", vi: "Thêm khung hình chính" },
     AfterKeyframes { key: "after_keyframes", en: "After", vi: "Sau" },
     BeforeKeyframes { key: "before_keyframes", en: "Before", vi: "Trước" },
@@ -70,7 +84,7 @@ catalog! {
     ShortsJobFailed { key: "shorts_job_failed", en: "Failed", vi: "Thất bại" },
     ShortsMoney { key: "shorts_money", en: "{currency} {amount}", vi: "{currency} {amount}" },
     ShortsProviderModel { key: "shorts_provider_model", en: "{provider}", vi: "{provider}" },
-    ShortsUploadIdentity { key: "shorts_upload_identity", en: "{provider} · {languages}", vi: "{provider} · {languages}" },
+    ShortsUploadIdentity { key: "shorts_upload_identity", en: "{provider} · {model} · {languages}", vi: "{provider} · {model} · {languages}" },
     ShortsValue { key: "shorts_value", en: "{label}: {value}", vi: "{label}: {value}" },
     ShowKeyframes { key: "show_keyframes", en: "Show keyframes", vi: "Hiện khung hình chính" },
     SubAddTerm { key: "sub_add_term", en: "Add term", vi: "Thêm thuật ngữ" },

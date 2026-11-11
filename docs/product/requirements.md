@@ -27,7 +27,7 @@ Build order: foundation (structure, build, test kit), the reference product's co
 
 ## Providers
 
-The user picks the provider for every AI feature:
+The user picks the provider and the model for every AI feature:
 
 | Feature | Providers |
 |---|---|

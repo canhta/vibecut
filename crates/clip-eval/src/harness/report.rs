@@ -40,8 +40,8 @@ pub struct Aggregate {
     pub current: Metrics,
     pub baseline: Metrics,
     pub main_baseline: Option<Metrics>,
-    pub current_cost_micros: u64,
-    pub baseline_cost_micros: u64,
+    pub current_cost_micros: Option<u64>,
+    pub baseline_cost_micros: Option<u64>,
     pub wall_ms: u64,
 }
 
@@ -50,6 +50,7 @@ pub struct Report {
     pub schema: u32,
     pub set: String,
     pub provider: String,
+    pub model: String,
     pub live: bool,
     pub k: usize,
     pub revision: String,
@@ -68,7 +69,12 @@ pub(super) fn write_report(
     set: &str,
 ) -> Result<(PathBuf, PathBuf)> {
     std::fs::create_dir_all(out_dir)?;
-    let stem = format!("{}-{}", sanitize(set), report.provider);
+    let stem = format!(
+        "{}-{}-{}",
+        sanitize(set),
+        sanitize(&report.provider),
+        crate::label::sha256_bytes(report.model.as_bytes())
+    );
     let json_path = out_dir.join(format!("{stem}.json"));
     let markdown_path = out_dir.join(format!("{stem}.md"));
     std::fs::write(&json_path, serde_json::to_vec_pretty(report)?)?;
@@ -105,9 +111,9 @@ pub(super) fn markdown(report: &Report) -> String {
         report.aggregate.current.duration_compliance, report.aggregate.baseline.duration_compliance
     ));
     out.push_str(&format!(
-        "- Cost estimate: current USD {:.6} vs baseline USD {:.6}; wall {} ms.\n",
-        micros(report.aggregate.current_cost_micros),
-        micros(report.aggregate.baseline_cost_micros),
+        "- Cost estimate: current {} vs baseline {}; wall {} ms.\n",
+        cost(report.aggregate.current_cost_micros),
+        cost(report.aggregate.baseline_cost_micros),
         report.aggregate.wall_ms
     ));
     out.push_str(&format!(
@@ -179,13 +185,10 @@ pub(super) fn markdown(report: &Report) -> String {
         main.map_or_else(|| "n/a".into(), |metrics| metrics.snap_failures.to_string())
     ));
     out.push_str(&format!(
-        "| Cost (USD, upper bound) | {:.6} | {:.6} | {} |\n",
-        micros(report.aggregate.current_cost_micros),
-        micros(report.aggregate.baseline_cost_micros),
-        main.map_or_else(
-            || "n/a".into(),
-            |metrics| format!("{:.6}", micros(metrics.cost_micros))
-        )
+        "| Cost (upper bound) | {} | {} | {} |\n",
+        cost(report.aggregate.current_cost_micros),
+        cost(report.aggregate.baseline_cost_micros),
+        main.map_or_else(|| "n/a".into(), |metrics| cost(metrics.cost_micros))
     ));
     out.push_str(&format!(
         "| Wall time (ms) | {} | {} | {} |\n",
@@ -201,7 +204,7 @@ pub(super) fn markdown(report: &Report) -> String {
     for video in &report.videos {
         let main = video.main_baseline.as_ref();
         out.push_str(&format!(
-            "| `{}` | {:.3} ({}/{}) | {:.3} ({}/{}) | {} | {:.3} | {:.3} | {} | {} | {} | {} | {:.3} | {:.3} | {} | {} | {:.6} | {} |\n",
+            "| `{}` | {:.3} ({}/{}) | {:.3} ({}/{}) | {} | {:.3} | {:.3} | {} | {} | {} | {} | {:.3} | {:.3} | {} | {} | {} | {} |\n",
             video.label,
             video.current.hit_rate,
             video.current.must_hit,
@@ -235,7 +238,7 @@ pub(super) fn markdown(report: &Report) -> String {
                 |metrics| format!("{:.3}", metrics.duration_compliance)
             ),
             video.current.suggestions,
-            micros(video.current.cost_micros),
+            cost(video.current.cost_micros),
             video.current.wall_ms
         ));
     }
@@ -315,4 +318,11 @@ mod tests {
         assert_eq!(sanitize("real/set 1"), "real-set-1");
         assert_eq!(sanitize(""), "set");
     }
+}
+
+fn cost(value: Option<u64>) -> String {
+    value.map_or_else(
+        || "unknown".to_owned(),
+        |value| format!("USD {:.6}", micros(value)),
+    )
 }

@@ -363,6 +363,7 @@ impl Editor {
                         serde_json::to_value(Preferences::default().panels)?,
                     )?;
                 }
+                UiAction::OpenPreferences => self.dialogs.preferences.open = true,
                 UiAction::OpenModels => self.open_models()?,
                 UiAction::OpenShortcuts => self.open_shortcuts(),
                 UiAction::RetryPreview => {

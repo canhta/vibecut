@@ -72,7 +72,7 @@ Label each claim observed, source-documented, inferred or unverified, with comma
 
 ## Reports
 
-Reports stay local; hand over paths. Open with `## TL;DR` (at most 10 lines: outcome, SHA or blocker, decisions, follow-ups).
+Write reports beside the work and transfer handback reports with their linked evidence to the master's local archive under the [tracker's custody rules](../agents/issue-tracker.md). Remote paths alone do not establish durable custody. Open with `## TL;DR` (at most 10 lines: outcome, SHA or blocker, decisions, follow-ups).
 
 Size the report to the decision and its risks. A fix receipt contains the correction and affected evidence with links to retained proof; an admission report contains only unresolved decisions and the proposed working boundary. Keep raw logs and inventories as linked artifacts. A passing review needs only its revision, scope, verdict and material limitations; actionable findings travel immediately under the [review process](../agents/orchestration.md#review-and-merge).
 

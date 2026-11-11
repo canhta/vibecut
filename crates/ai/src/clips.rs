@@ -7,7 +7,7 @@ use crate::{
 };
 use captions::{LanguageTag, NfcText};
 pub use heuristic::HeuristicClipSuggester;
-pub use remote::{AnthropicClipSuggester, OPENAI_LUNA_MODEL, OpenAiClipSuggester};
+pub use remote::{AnthropicClipSuggester, OpenAiClipSuggester};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{SourceRange, Tick};

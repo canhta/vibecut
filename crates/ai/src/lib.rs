@@ -23,7 +23,7 @@ pub use translation::*;
 pub mod whisper;
 pub use assembly::*;
 pub use contracts::*;
-pub use remote::UploadDisclosure;
+pub use remote::{MAX_REMOTE_MODELS, UploadDisclosure, defaults, list_remote_models};
 
 /// Transcript-text operations accept these exact BCP 47 tags; `zh` is a request
 /// tag that adapters normalise rather than a distinct model language.
@@ -36,6 +36,13 @@ pub fn supports_text_language(language: &captions::LanguageTag) -> bool {
 /// Safe categories only: adapters must not attach response bodies or credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("selected remote model is unavailable: {message}")]
+    ModelUnavailable {
+        provider: captions::NfcText,
+        model: captions::NfcText,
+        /// Bounded provider-error category, never a raw response body or message.
+        message: &'static str,
+    },
     #[error("alignment attention is unavailable or degenerate")]
     AttentionUnavailable,
     #[error("structured output failed schema or semantic validation")]

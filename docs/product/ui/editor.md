@@ -142,3 +142,14 @@ pattern, localized labels, existing icons and 20 px lanes as a new composition. 
 uses selected keys; Paste can target an existing zero-key Param. Scope/draft admission:
 [frame input](../../../apps/vibecut/src/editor/frame/input/README.md#clipboard-actions).
 No comparable captured menu reference exists; product/native parity remains unverified.
+
+## AI preferences
+
+Window / Settings opens the AI model rows, grouped by provider and feature. The
+shipped default comes first; Refresh adds models for the selected key, followed by
+recent choices and a custom-ID field with Apply. Without a key or offline, default
+and custom remain usable. Refresh alone requests the remote list. Pending, empty,
+failed and stale-key states are explicit. Unknown-price upload sheets require a
+separate checkbox naming the exact model already disclosed above it. These new
+compositions use the existing 22 px fields and are unmeasured against desktop
+reference; `ai-preferences` and `ai-preferences-vi` are the audit scenes.
