@@ -16,9 +16,10 @@ use ai::clips::{
     ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester, OPENAI_LUNA_MODEL,
     OpenAiClipSuggester,
 };
-use ai::transport::{ApiKey, UreqTransport};
+use ai::transport::UreqTransport;
 use ai::{ExecutionHooks, Stage};
 use captions::{LanguageProfile, LanguageRegistry, LanguageTag, NfcText, SegmentRules, Transcript};
+use engine::providers::Credentials;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -404,9 +405,7 @@ fn make_provider(options: &Options) -> Result<(Box<dyn ClipSuggester>, String)> 
             if !options.live {
                 return Err(Error::LiveRequired);
             }
-            let key =
-                std::env::var("OPENAI_API_KEY").map_err(|_| Error::MissingKey("OPENAI_API_KEY"))?;
-            let key = ApiKey::new(key).map_err(|_| Error::MissingKey("OPENAI_API_KEY"))?;
+            let key = Credentials::from_env()?.openai()?.clone();
             let config = OpenAiClipSuggester::provider_config(OPENAI_LUNA_MODEL)?;
             let provider = OpenAiClipSuggester::new(config, key, Arc::new(UreqTransport::new()))?;
             Ok((Box::new(provider), "gpt-6-luna".into()))

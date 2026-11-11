@@ -1,9 +1,9 @@
 //! Resolves the selected clip suggestion provider.
 use super::{
-    AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation, ClipSuggester, Consent, Cost,
-    CostEstimate, Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, Money,
-    OPENAI_LUNA_MODEL, OPENAI_POLICY_URL, OpenAiClipSuggester, PromptApproval, Scope,
-    SuggestionOption, SuggestionProvider, UploadRequest, engine_providers,
+    AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation, ClipSuggester, Cost,
+    Credentials, EditError, Error, HeuristicClipSuggester, LanguageTag, OPENAI_LUNA_MODEL,
+    OPENAI_POLICY_URL, OpenAiClipSuggester, Scope, SuggestionOption, SuggestionProvider,
+    UploadRequest,
 };
 impl SuggestionProvider {
     pub fn id(&self) -> &'static str {
@@ -115,6 +115,7 @@ pub(super) fn build_suggester(
 }
 
 pub(super) fn upload_request(
+    scope: &Scope,
     disclosure: &ai::UploadDisclosure,
     language: &LanguageTag,
 ) -> Result<UploadRequest, EditError> {
@@ -125,6 +126,7 @@ pub(super) fn upload_request(
             .ok_or(EditError::Unsupported("clip disclosure link"))
     };
     Ok(UploadRequest {
+        config: scope.provider.clone(),
         operation: CatalogOperation::SuggestClips,
         provider: disclosure.provider.as_str().into(),
         model: disclosure.model.as_str().into(),
@@ -145,36 +147,6 @@ pub(super) fn upload_request(
         ],
     })
 }
-impl engine_providers::Approval for PromptApproval<'_> {
-    fn approve(
-        &mut self,
-        scope: &Scope,
-        estimate: &CostEstimate,
-        _fallback: bool,
-    ) -> Result<Option<Consent>, ai::Error> {
-        self.spent.add(estimate);
-        if !scope.provider.is_remote() {
-            return Ok(None);
-        }
-        let request = self
-            .requests
-            .iter()
-            .find(|(planned, _)| planned == scope)
-            .map(|(_, request)| request)
-            .ok_or(ai::Error::Invalid("clip consent scope"))?;
-        if let Err(error) = self.consent.approve(request) {
-            self.refusal = Some(error);
-            return Err(ai::Error::ConsentRequired);
-        }
-        let money = match estimate {
-            CostEstimate::Free => Money::new("USD", 0)?,
-            CostEstimate::UpperBound(money) => money.clone(),
-            CostEstimate::Unknown => return Err(ai::Error::Cost),
-        };
-        Ok(Some(Consent::grant(scope.clone(), money)?))
-    }
-}
-
 /// Refuse a remote suggestion choice without its credential before ASR work starts.
 pub fn check_suggestion_credentials(
     provider: &SuggestionProvider,

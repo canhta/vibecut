@@ -13,6 +13,28 @@ use std::collections::{BTreeMap, BTreeSet};
 use time::{SourceRange, Tick};
 
 pub const MODE: &str = "transcript-clips";
+impl Scope {
+    /// Consent scope of one clip-suggestion window. The fingerprint identifies the
+    /// source the transcript came from.
+    pub fn clip_suggestion(
+        provider: ProviderConfig,
+        window: &ClipInput,
+        payload_fingerprint: NfcText,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            provider,
+            operation: Operation::SuggestClips,
+            payload_fingerprint,
+            mode: MODE.into(),
+            texts: vec![window.consent_text()?],
+            source_language: window.settings.language.clone(),
+            target_language: None,
+            source_samples: crate::SampleRange::new(0, 1_000)?,
+            sample_rate: 1,
+            max_bytes: MAX_WIRE,
+        })
+    }
+}
 pub const MAX_WINDOW_SEGMENTS: usize = 128;
 pub const MAX_WINDOW_BYTES: usize = 24 * 1024;
 pub const MAX_WIRE: u64 = 64 * 1024;

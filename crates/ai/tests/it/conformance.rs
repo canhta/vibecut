@@ -1706,3 +1706,48 @@ fn separate_alignment_rejects_a_different_recognition_window_or_sample_rate() {
         assert_eq!(aligner.calls.load(Ordering::Relaxed), 0);
     }
 }
+
+#[allow(clippy::unwrap_used, reason = "offline fixture")]
+#[test]
+fn transcription_scope_bounds_the_encoded_wav_and_detection_is_an_optional_capability() {
+    let provider = config(true);
+    let lang = || LanguageTag::parse("vi").unwrap();
+    let range = SampleRange::new(100, 1_100).unwrap();
+    let scope = Scope::transcription(
+        provider.clone(),
+        "file".into(),
+        lang(),
+        range,
+        16_000,
+        "fp".into(),
+    )
+    .unwrap();
+    assert_eq!(scope.operation, Operation::Transcribe);
+    assert_eq!(scope.max_bytes, 1_000 * 2 + 44);
+    assert_eq!(scope.source_samples, range);
+    assert!(scope.texts.is_empty() && scope.target_language.is_none());
+    // A range whose PCM16 size overflows is a payload refusal, never a wrapped bound.
+    assert!(matches!(
+        Scope::transcription(
+            provider.clone(),
+            "file".into(),
+            lang(),
+            SampleRange::new(0, u64::MAX).unwrap(),
+            16_000,
+            "fp".into(),
+        ),
+        Err(Error::Payload)
+    ));
+    // An adapter that does not override detection reports it unsupported.
+    let adapter = Fake::new(provider, "[]");
+    let samples = [0.0f32; 4];
+    let window = AudioWindow {
+        samples: &samples,
+        range: SampleRange::new(0, 4).unwrap(),
+        sample_rate: 16_000,
+    };
+    assert!(matches!(
+        adapter.detect_language(window, &Hooks::new()),
+        Err(Error::Unsupported)
+    ));
+}

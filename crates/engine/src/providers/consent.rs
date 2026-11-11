@@ -2,7 +2,7 @@
 use super::catalog::CatalogOperation;
 use super::error::Error;
 use crate::EditError;
-use ai::{CostEstimate, Money};
+use ai::{CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
 /// A provider disclosure shown before any remote byte leaves the machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Cost {
@@ -12,6 +12,9 @@ pub enum Cost {
 }
 #[derive(Clone, Debug)]
 pub struct UploadRequest {
+    /// Exact adapter identity, including endpoint, settings and credential reference.
+    /// Stored approvals bind this value rather than the display labels below.
+    pub config: ProviderConfig,
     pub operation: CatalogOperation,
     pub provider: String,
     pub model: String,
@@ -20,6 +23,60 @@ pub struct UploadRequest {
     pub upload_bytes: u64,
     pub cost: Cost,
     pub terms: Vec<(&'static str, String)>,
+}
+impl UploadRequest {
+    /// The one builder of upload consent: the adapter's neutral disclosure for
+    /// this exact scope. An adapter without a disclosure is a local one, which
+    /// has no upload; a remote adapter that supplies none (a composed test
+    /// provider) is described from the scope and its configuration alone.
+    pub fn for_scope(
+        operation: CatalogOperation,
+        config: &ProviderConfig,
+        disclosure: Option<UploadDisclosure>,
+        estimate: &CostEstimate,
+        scope: &Scope,
+    ) -> Result<Self, EditError> {
+        if let Some(disclosure) = disclosure {
+            return Ok(Self {
+                config: config.clone(),
+                operation,
+                provider: disclosure.provider.as_str().into(),
+                model: disclosure.model.as_str().into(),
+                languages: disclosure.languages.as_str().into(),
+                audio_seconds: disclosure.audio_micros as f64 / 1_000_000.0,
+                upload_bytes: disclosure.upload_bytes,
+                cost: Cost::from(&disclosure.estimate),
+                terms: disclosure
+                    .links
+                    .iter()
+                    .map(|(name, url)| (*name, url.as_str().into()))
+                    .collect(),
+            });
+        }
+        if !config.is_remote() {
+            return Err(EditError::Unsupported("local provider has no upload"));
+        }
+        let languages = match &scope.target_language {
+            Some(target) => format!("{} -> {}", scope.source_language.as_str(), target.as_str()),
+            None => scope.source_language.as_str().into(),
+        };
+        let audio_seconds = if scope.texts.is_empty() {
+            scope.source_samples.len() as f64 / f64::from(scope.sample_rate)
+        } else {
+            0.0
+        };
+        Ok(Self {
+            config: config.clone(),
+            operation,
+            provider: config.id().as_str().into(),
+            model: config.model().as_str().into(),
+            languages,
+            audio_seconds,
+            upload_bytes: scope.max_bytes,
+            cost: Cost::from(estimate),
+            terms: vec![("policy", "test provider policy".into())],
+        })
+    }
 }
 /// The adapter refuses the remote request when this returns `Err(ConsentRequired)`.
 pub trait ConsentPrompt {

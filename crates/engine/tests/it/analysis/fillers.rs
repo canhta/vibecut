@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::fillers::{FillerJob, FillerRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
-use engine::providers::{Approval, TextAccess};
+use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
 use engine::{ByteBudget, EditError};
 use project::{
     CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
@@ -87,17 +87,7 @@ fn project() -> Arc<Project> {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::ProviderConfig::new(
-        "openai".into(),
-        ai::fillers::OPENAI_MODEL.into(),
-        ai::fillers::OPENAI_SETTINGS.into(),
-        ai::Location::Remote {
-            backend: ai::openai::BACKEND.into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "OPENAI_API_KEY".into(),
-        },
-    )
-    .unwrap()
+    ai::fillers::OpenAiFillerClassifier::provider_config(ai::fillers::OPENAI_MODEL).unwrap()
 }
 
 struct Fillers {
@@ -176,22 +166,13 @@ impl ai::chapters::ChapterGenerator for UnusedChapters {
 struct Grant {
     allowed: Arc<AtomicBool>,
 }
-impl Approval for Grant {
-    fn approve(
-        &mut self,
-        scope: &ai::Scope,
-        estimate: &ai::CostEstimate,
-        _: bool,
-    ) -> Result<Option<ai::Consent>, ai::Error> {
-        if !self.allowed.load(Ordering::SeqCst) {
-            return Ok(None);
+impl ConsentPrompt for Grant {
+    fn approve(&self, _: &UploadRequest) -> Result<(), engine::EditError> {
+        if self.allowed.load(Ordering::SeqCst) {
+            Ok(())
+        } else {
+            Err(engine::providers::Error::ConsentRequired.into())
         }
-        let budget = match estimate {
-            ai::CostEstimate::Free => ai::Money::new("USD", 0)?,
-            ai::CostEstimate::UpperBound(money) => money.clone(),
-            ai::CostEstimate::Unknown => return Err(ai::Error::Cost),
-        };
-        Ok(Some(ai::Consent::grant(scope.clone(), budget)?))
     }
 }
 

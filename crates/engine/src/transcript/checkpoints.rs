@@ -29,9 +29,8 @@ pub(crate) fn transcribe_window(
     cancel.checkpoint()?;
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
-    let sample_count = u64::try_from(window.samples.len()).map_err(|_| EditError::Limit)?;
     let samples_pcm = Arc::new(window.samples);
-    let scope = providers.transcription_scope(language, samples, sample_count, fingerprint, 0)?;
+    let scope = providers.transcription_scope(language, samples, fingerprint)?;
     let config = providers.transcriber().config();
     let key = CacheKey::new(KeyInputs {
         kind: ArtifactKind::AsrChunk,
@@ -72,7 +71,7 @@ pub(crate) fn transcribe_window(
             } else {
                 None
             };
-            let provider = providers.transcriber_arc();
+            let provider = providers.transcriber.clone();
             let job_scope = scope.clone();
             let job_samples = samples_pcm.clone();
             let (id, token) = runner.submit(

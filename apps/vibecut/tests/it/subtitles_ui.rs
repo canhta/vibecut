@@ -1105,6 +1105,14 @@ impl Workflow for GenerateWorkflow {
             engine::providers::ConsentPrompt::approve(
                 events,
                 &engine::providers::UploadRequest {
+                    config: if options.transcription == "openai" {
+                        ai::openai::OpenAiTranscriber::provider_config(&options.transcription_model)
+                    } else {
+                        ai::elevenlabs::ElevenLabsTranscriber::provider_config(
+                            &options.transcription_model,
+                        )
+                    }
+                    .unwrap(),
                     operation: engine::providers::CatalogOperation::Transcribe,
                     provider: options.transcription.clone(),
                     model: options.transcription_model,

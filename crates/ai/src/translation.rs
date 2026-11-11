@@ -1,13 +1,16 @@
 //! Contextual translation contract. Texts, IDs, glossary and style are consent-bound.
 use crate::{
-    Capabilities, CostEstimate, Error, ExecutionHooks, Operation, ProviderConfig, Request, Scope,
-    Stage,
+    Capabilities, CostEstimate, Error, ExecutionHooks, Operation, ProviderConfig, Request,
+    SampleRange, Scope, Stage,
 };
 use captions::{LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_WINDOW_BYTES: usize = 32 * 1024;
+/// Wire-payload floor of a translation request: the structured-output envelope
+/// around a full window.
+const MAX_JSON_BYTES: u64 = 64 * 1024;
 pub const MAX_SEGMENTS: usize = 64;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -97,6 +100,31 @@ pub struct Translation {
     pub target_language: LanguageTag,
     pub texts: BTreeMap<NfcText, NfcText>,
     pub number_warnings: Vec<NfcText>,
+}
+impl Scope {
+    /// Consent scope of one translation window. The fingerprint identifies the
+    /// exact payload for the caller's cache and consent records.
+    pub fn translation(
+        provider: ProviderConfig,
+        mode: NfcText,
+        window: &TranslationWindow,
+        payload_fingerprint: NfcText,
+    ) -> Result<Self, Error> {
+        let payload = window.consent_text()?;
+        let bytes = u64::try_from(payload.as_str().len()).map_err(|_| Error::Payload)?;
+        Ok(Self {
+            provider,
+            operation: Operation::Translate,
+            payload_fingerprint,
+            mode,
+            texts: vec![payload],
+            source_language: window.source_language.clone(),
+            target_language: Some(window.target_language.clone()),
+            source_samples: SampleRange::new(0, 1)?,
+            sample_rate: 1,
+            max_bytes: bytes.max(MAX_JSON_BYTES),
+        })
+    }
 }
 pub trait Translator: Send + Sync {
     fn config(&self) -> &ProviderConfig;

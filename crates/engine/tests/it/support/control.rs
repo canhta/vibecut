@@ -789,28 +789,10 @@ impl ai::fillers::FillerClassifier for FixtureFillers {
     }
 }
 pub(crate) fn fixture_chapters() -> engine::providers::TextAccess {
-    let chapter = ai::ProviderConfig::new(
-        "openai".into(),
-        ai::chapters::OPENAI_MODEL.into(),
-        ai::chapters::OPENAI_SETTINGS.into(),
-        ai::Location::Remote {
-            backend: ai::openai::BACKEND.into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "OPENAI_API_KEY".into(),
-        },
-    )
-    .unwrap();
-    let filler = ai::ProviderConfig::new(
-        "openai".into(),
-        ai::fillers::OPENAI_MODEL.into(),
-        ai::fillers::OPENAI_SETTINGS.into(),
-        ai::Location::Remote {
-            backend: ai::openai::BACKEND.into(),
-            base_url: ai::openai::BASE_URL.into(),
-            auth_ref: "OPENAI_API_KEY".into(),
-        },
-    )
-    .unwrap();
+    let chapter =
+        ai::chapters::OpenAiChapterGenerator::provider_config(ai::chapters::OPENAI_MODEL).unwrap();
+    let filler =
+        ai::fillers::OpenAiFillerClassifier::provider_config(ai::fillers::OPENAI_MODEL).unwrap();
     engine::providers::TextAccess::new(
         Arc::new(FixtureChapters {
             config: chapter.clone(),

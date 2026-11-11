@@ -167,10 +167,6 @@ impl Providers {
         cancel: &Cancellation,
     ) -> Result<LanguageTag, EditError> {
         cancel.checkpoint()?;
-        let whisper = self
-            .transcriber
-            .whisper()
-            .ok_or(ProviderError::AutoLanguageUnsupported)?;
         let end = duration.min(Tick::from_seconds_f64(
             MIN_CAPTION_SECONDS as f64,
             Rounding::Floor,
@@ -192,7 +188,7 @@ impl Providers {
                     return Err(media::MediaError::Cancelled);
                 }
                 match detection_window(&window).and_then(|(samples, range)| {
-                    whisper
+                    self.transcriber
                         .detect_language(
                             ai::AudioWindow {
                                 samples,
@@ -201,7 +197,10 @@ impl Providers {
                             },
                             &IdleHooks,
                         )
-                        .map_err(EditError::Ai)
+                        .map_err(|error| match error {
+                            ai::Error::Unsupported => ProviderError::AutoLanguageUnsupported.into(),
+                            error => EditError::Ai(error),
+                        })
                 }) {
                     Ok(language) => {
                         detected = Some(language);

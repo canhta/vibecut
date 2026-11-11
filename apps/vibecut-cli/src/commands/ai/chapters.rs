@@ -1,6 +1,6 @@
 //! Generates chapters, title and description for one project transcript.
 use crate::args::{CliError, parse_u64, utf8};
-use crate::output::{CliApproval, Output, json_path, wait_for_job};
+use crate::output::{CliConsent, Output, json_path, wait_for_job};
 use crate::session::{Context, cli_runner};
 use engine::providers::{Credentials, TextAccess, choose_chapter};
 use engine::{chapter_sidecars, chapters};
@@ -88,15 +88,11 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ));
     }
     let provider = choose_chapter(&provider, model.as_deref())?;
-    let credentials = Credentials::new(
-        std::env::var("OPENAI_API_KEY").ok(),
-        std::env::var("ELEVENLABS_API_KEY").ok(),
-        std::env::var("ANTHROPIC_API_KEY").ok(),
-    )?;
+    let credentials = Credentials::from_env()?;
     let access = TextAccess::open(
         provider,
         &credentials,
-        Box::new(CliApproval::new(yes_upload)),
+        Box::new(CliConsent::new(yes_upload)),
     )?;
 
     let lease = WriterLease::acquire(&project_path)?;

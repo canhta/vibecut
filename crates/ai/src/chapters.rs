@@ -12,6 +12,24 @@ use time::{TICKS_PER_SECOND, Tick};
 pub use remote::{AnthropicChapterGenerator, OPENAI_MODEL, OpenAiChapterGenerator};
 
 pub const MODE: &str = "transcript-chapters";
+impl Scope {
+    /// Consent scope of one chapter request, bound to the complete input text.
+    pub fn chapters(
+        provider: ProviderConfig,
+        input: &ChapterInput,
+        payload_fingerprint: NfcText,
+    ) -> Result<Self, Error> {
+        Self::text(
+            provider,
+            Operation::GenerateChapters,
+            MODE,
+            input.consent_text()?,
+            payload_fingerprint,
+            input.settings.language.clone(),
+            MAX_WIRE,
+        )
+    }
+}
 /// The versioned chapter-document schema written to `.json` sidecars.
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MAX_SEGMENTS: usize = 10_000;

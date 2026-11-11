@@ -2,12 +2,11 @@
 use super::{
     Arc, ArtifactCache, ArtifactKind, BoundaryFailure, CacheKey, Cancellation,
     ClipBoundarySettings, ClipCandidate, ClipInput, ClipRequest, ClipSegment, ClipSettings,
-    ClipSuggester, ClipSuggestion, ClipSuggestionOutcome, ConsentPrompt, Cost, CostEstimate,
-    Credentials, Cue, EditError, Error, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec,
-    KeyInputs, LanguageTag, MAX_WIRE, MODE, Money, NfcText, Operation, Progress, PromptApproval,
-    Providers, RejectedClip, ResourceClass, SampleRange, Scope, SnapSettings, SourceAsset,
-    SourceRange, Stage, Tick, Transcription, build_session, build_suggester, engine_providers,
-    snap_clip_boundaries, transcribe, upload_request, wait_for_job,
+    ClipSuggestion, ClipSuggestionOutcome, Consent, ConsentPrompt, Cost, CostEstimate, Credentials,
+    Cue, EditError, Error, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec, KeyInputs,
+    LanguageTag, Money, NfcText, Progress, Providers, RejectedClip, ResourceClass, Scope,
+    SnapSettings, SourceAsset, SourceRange, Stage, Tick, Transcription, build_session,
+    build_suggester, snap_clip_boundaries, transcribe, upload_request, wait_for_job,
 };
 fn clip_input(
     cues: &[Cue],
@@ -35,25 +34,6 @@ fn clip_input(
     };
     input.validate()?;
     Ok(input)
-}
-
-fn scope_for(
-    provider: &dyn ClipSuggester,
-    window: &ClipInput,
-    fingerprint: &NfcText,
-) -> Result<Scope, EditError> {
-    Ok(Scope {
-        provider: provider.config().clone(),
-        operation: Operation::SuggestClips,
-        payload_fingerprint: fingerprint.clone(),
-        mode: MODE.into(),
-        texts: vec![window.consent_text()?],
-        source_language: window.settings.language.clone(),
-        target_language: None,
-        source_samples: SampleRange::new(0, 1_000)?,
-        sample_rate: 1,
-        max_bytes: MAX_WIRE,
-    })
 }
 
 fn snap_settings(
@@ -171,40 +151,36 @@ pub fn suggest(
     let source_fingerprint = NfcText::from(fingerprint(&asset));
     let windows = input.windows().map_err(Error::kernel)?;
     let mut scopes = Vec::with_capacity(windows.len());
-    let mut requests = Vec::with_capacity(windows.len());
-    for window in &windows {
-        let scope = scope_for(provider.as_clip(), window, &source_fingerprint)?;
-        if let Some(disclosure) = provider.disclosure(&scope)? {
-            requests.push((
-                scope.clone(),
-                upload_request(&disclosure, &source_language)?,
-            ));
-        }
-        scopes.push(scope);
-    }
-    let mut approval = PromptApproval {
-        consent,
-        requests,
-        spent: Cost::Free,
-        refusal: None,
-    };
-    // Approval binds exact payloads. Retries reuse only these approved scopes,
+    let mut tokens = Vec::with_capacity(windows.len());
+    let mut spent = Cost::Free;
+    // Consent binds exact payloads. Retries reuse only these approved scopes,
     // like transcription jobs; the runner owns their attempts and backoff.
-    let tokens = scopes
-        .iter()
-        .map(|scope| {
-            engine_providers::Approval::approve(
-                &mut approval,
-                scope,
-                &provider.as_clip().estimate(scope),
-                false,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>();
-    if let Some(error) = approval.refusal.take() {
-        return Err(error.into());
+    for window in &windows {
+        let scope = Scope::clip_suggestion(
+            provider.as_clip().config().clone(),
+            window,
+            source_fingerprint.clone(),
+        )
+        .map_err(EditError::from)?;
+        let estimate = provider.as_clip().estimate(&scope);
+        spent.add(&estimate);
+        let token = if scope.provider.is_remote() {
+            let disclosure = provider
+                .disclosure(&scope)?
+                .ok_or(EditError::Invalid("clip consent scope"))?;
+            consent.approve(&upload_request(&scope, &disclosure, &source_language)?)?;
+            let money = match &estimate {
+                CostEstimate::Free => Money::new("USD", 0).map_err(Error::kernel)?,
+                CostEstimate::UpperBound(money) => money.clone(),
+                CostEstimate::Unknown => return Err(Error::kernel(ai::Error::Cost)),
+            };
+            Some(Consent::grant(scope.clone(), money).map_err(Error::kernel)?)
+        } else {
+            None
+        };
+        scopes.push(scope);
+        tokens.push(token);
     }
-    let tokens = tokens.map_err(Error::kernel)?;
     let settings_bytes = serde_json::to_vec(&(provider.as_clip().config(), &input))
         .map_err(|_| EditError::Invalid("clip input serialization"))?;
     let key = CacheKey::new(KeyInputs {
@@ -254,9 +230,9 @@ pub fn suggest(
         .map_err(|_| EditError::Invalid("clip result serialization"))?;
     // Account for every attempted invocation, including transient failures.
     let attempts = runner.snapshot(id).ok_or(EditError::StaleResult)?.attempts;
-    let estimate = approval.spent.clone();
+    let estimate = spent.clone();
     for _ in 1..attempts {
-        approval.spent.add(&match &estimate {
+        spent.add(&match &estimate {
             Cost::Free => CostEstimate::Free,
             Cost::UpperBound { currency, micros } => {
                 CostEstimate::UpperBound(Money::new(currency, *micros).map_err(Error::kernel)?)
@@ -311,7 +287,7 @@ pub fn suggest(
         cues: cues.len(),
         checkpoints,
         transcription_cost,
-        suggestion_cost: approval.spent,
+        suggestion_cost: spent,
         elapsed: started.elapsed(),
         asset,
         duration,

@@ -2,16 +2,15 @@
 use super::catalog::{
     CatalogOperation, TextProvider, TranscriptionProvider, TranslationProvider, catalog_model,
 };
-use super::consent::{Cost, UploadRequest};
+use super::consent::UploadRequest;
 use super::error::Error;
 use crate::EditError;
 use crate::cache::{ArtifactCache, ModelLease};
 use ai::transport::{ApiKey, UreqTransport};
-use ai::{ExecutionHooks, SampleRange, Scope, Transcriber, Translator};
+use ai::{ExecutionHooks, SampleRange, Scope};
 use captions::LanguageTag;
 use captions::{LanguageProfile, LanguageRegistry, NfcText};
 use std::{path::PathBuf, sync::Arc};
-const MAX_JSON_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub struct Credentials {
@@ -27,23 +26,11 @@ pub struct Runtime {
     pub gipformer_runner: Option<PathBuf>,
 }
 pub(crate) struct IdleHooks;
-pub(crate) enum TranscriberKind {
-    Whisper(Arc<ai::whisper::Whisper>),
-    Gipformer(Arc<ai::gipformer::Gipformer>),
-    OpenAi(Arc<ai::openai::OpenAiTranscriber>),
-    ElevenLabs(Arc<ai::elevenlabs::ElevenLabsTranscriber>),
-    Other(Arc<dyn ai::Transcriber>),
-}
-pub(crate) enum TranslatorKind {
-    OpenAi(Arc<ai::openai::OpenAiTranslator>),
-    Anthropic(Arc<ai::anthropic::AnthropicTranslator>),
-    Other(Arc<dyn ai::Translator>),
-}
 /// Resolved adapter instances and the leases that keep native model files immutable.
 pub struct Providers {
-    pub(crate) transcriber: TranscriberKind,
+    pub(crate) transcriber: Arc<dyn ai::Transcriber>,
     pub(crate) aligner: Option<Arc<dyn ai::Aligner>>,
-    pub(crate) translator: Option<TranslatorKind>,
+    pub(crate) translator: Option<Arc<dyn ai::Translator>>,
     pub(crate) transcription: TranscriptionProvider,
     pub(crate) translation: Option<TranslationProvider>,
     pub(crate) transcription_mode: NfcText,
@@ -65,6 +52,16 @@ impl Credentials {
             anthropic: key(anthropic)?,
         })
     }
+    /// The composition roots' one source of secrets: the process environment.
+    /// An unset variable is an absent credential; the selected adapter refuses it.
+    pub fn from_env() -> Result<Self, EditError> {
+        let var = |name| std::env::var(name).ok();
+        Self::new(
+            var("OPENAI_API_KEY"),
+            var("ELEVENLABS_API_KEY"),
+            var("ANTHROPIC_API_KEY"),
+        )
+    }
     /// Resolve the configured OpenAI credential for a selected adapter or refuse.
     pub fn openai(&self) -> Result<&ApiKey, EditError> {
         Ok(self
@@ -72,7 +69,8 @@ impl Credentials {
             .as_ref()
             .ok_or(Error::CredentialMissing("OPENAI_API_KEY"))?)
     }
-    pub(crate) fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
+    /// Resolve the configured ElevenLabs credential for a selected adapter or refuse.
+    pub fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
         Ok(self
             .elevenlabs
             .as_ref()
@@ -100,32 +98,6 @@ impl ExecutionHooks for IdleHooks {
         false
     }
     fn stage(&self, _: ai::Stage) {}
-}
-impl TranscriberKind {
-    pub(crate) fn as_transcriber(&self) -> &dyn ai::Transcriber {
-        match self {
-            Self::Whisper(value) => value.as_ref(),
-            Self::Gipformer(value) => value.as_ref(),
-            Self::OpenAi(value) => value.as_ref(),
-            Self::ElevenLabs(value) => value.as_ref(),
-            Self::Other(value) => value.as_ref(),
-        }
-    }
-    pub(crate) fn whisper(&self) -> Option<&ai::whisper::Whisper> {
-        match self {
-            Self::Whisper(value) => Some(value.as_ref()),
-            _ => None,
-        }
-    }
-}
-impl TranslatorKind {
-    pub(crate) fn as_translator(&self) -> &dyn ai::Translator {
-        match self {
-            Self::OpenAi(value) => value.as_ref(),
-            Self::Anthropic(value) => value.as_ref(),
-            Self::Other(value) => value.as_ref(),
-        }
-    }
 }
 impl Providers {
     pub fn open(
@@ -163,7 +135,7 @@ impl Providers {
                 )?;
                 leases.push(lease);
                 (
-                    TranscriberKind::Whisper(Arc::new(value)),
+                    Arc::new(value) as Arc<dyn ai::Transcriber>,
                     false,
                     "transcribe",
                 )
@@ -187,7 +159,7 @@ impl Providers {
                 )?;
                 leases.push(lease);
                 (
-                    TranscriberKind::Gipformer(Arc::new(value)),
+                    Arc::new(value) as Arc<dyn ai::Transcriber>,
                     true,
                     "transcribe",
                 )
@@ -198,7 +170,11 @@ impl Providers {
                     credentials.openai()?.clone(),
                     Arc::new(UreqTransport::new()),
                 )?;
-                (TranscriberKind::OpenAi(Arc::new(value)), true, "file")
+                (
+                    Arc::new(value) as Arc<dyn ai::Transcriber>,
+                    true,
+                    ai::openai::MODE,
+                )
             }
             TranscriptionProvider::ElevenLabs { model } => {
                 let value = ai::elevenlabs::ElevenLabsTranscriber::new(
@@ -206,7 +182,11 @@ impl Providers {
                     credentials.elevenlabs()?.clone(),
                     Arc::new(UreqTransport::new()),
                 )?;
-                (TranscriberKind::ElevenLabs(Arc::new(value)), false, "file")
+                (
+                    Arc::new(value) as Arc<dyn ai::Transcriber>,
+                    false,
+                    ai::elevenlabs::MODE,
+                )
             }
         };
         let aligner = if needs_alignment {
@@ -217,8 +197,8 @@ impl Providers {
         let (translator, translation_mode) = match &translation {
             None => (None, None),
             Some(value) => {
-                let (kind, mode) = build_translator(value, credentials)?;
-                (Some(kind), Some(mode))
+                let (translator, mode) = build_translator(value, credentials)?;
+                (Some(translator), Some(mode))
             }
         };
         Ok(Self {
@@ -260,9 +240,9 @@ impl Providers {
         let translation_mode = translation.as_ref().map(|_| "context-window".into());
         let needs_alignment = aligner.is_some();
         Ok(Self {
-            transcriber: TranscriberKind::Other(transcriber),
+            transcriber,
             aligner,
-            translator: translator.map(TranslatorKind::Other),
+            translator,
             transcription,
             translation,
             transcription_mode: "transcribe".into(),
@@ -279,19 +259,10 @@ impl Providers {
         self.translation.as_ref()
     }
     pub fn transcriber(&self) -> &dyn ai::Transcriber {
-        self.transcriber.as_transcriber()
+        self.transcriber.as_ref()
     }
     pub fn translator(&self) -> Option<&dyn ai::Translator> {
-        self.translator.as_ref().map(TranslatorKind::as_translator)
-    }
-    pub(crate) fn transcriber_arc(&self) -> Arc<dyn ai::Transcriber> {
-        match &self.transcriber {
-            TranscriberKind::Whisper(value) => value.clone(),
-            TranscriberKind::Gipformer(value) => value.clone(),
-            TranscriberKind::OpenAi(value) => value.clone(),
-            TranscriberKind::ElevenLabs(value) => value.clone(),
-            TranscriberKind::Other(value) => value.clone(),
-        }
+        self.translator.as_deref()
     }
     pub(crate) fn aligner_arc(&self) -> Option<Arc<dyn ai::Aligner>> {
         self.aligner.clone()
@@ -306,22 +277,16 @@ impl Providers {
         &self,
         language: &LanguageTag,
         samples: SampleRange,
-        sample_count: u64,
         payload: &NfcText,
-        remote_bytes: u64,
     ) -> Result<Scope, EditError> {
-        Ok(Scope {
-            provider: self.transcriber().config().clone(),
-            operation: ai::Operation::Transcribe,
-            payload_fingerprint: payload.clone(),
-            mode: self.transcription_mode.clone(),
-            texts: Vec::new(),
-            source_language: language.clone(),
-            target_language: None,
-            source_samples: samples,
-            sample_rate: media::SPEECH_SAMPLE_RATE,
-            max_bytes: remote_bytes.max(sample_count.saturating_mul(2).saturating_add(44)),
-        })
+        Ok(Scope::transcription(
+            self.transcriber.config().clone(),
+            self.transcription_mode.clone(),
+            language.clone(),
+            samples,
+            media::SPEECH_SAMPLE_RATE,
+            payload.clone(),
+        )?)
     }
     pub(crate) fn alignment_scope(
         &self,
@@ -333,47 +298,19 @@ impl Providers {
             .aligner
             .as_ref()
             .ok_or(EditError::Unsupported("missing aligner"))?;
-        Ok(Scope {
-            provider: aligner.config().clone(),
-            operation: ai::Operation::Align,
-            payload_fingerprint: payload.clone(),
-            mode: ai::alignment::MODE.into(),
-            texts: Vec::new(),
-            source_language: language.clone(),
-            target_language: None,
-            source_samples: samples,
-            sample_rate: media::SPEECH_SAMPLE_RATE,
-            max_bytes: samples.len().saturating_mul(4),
-        })
+        Ok(Scope::alignment(
+            aligner.config().clone(),
+            language.clone(),
+            samples,
+            media::SPEECH_SAMPLE_RATE,
+            payload.clone(),
+        ))
     }
-}
-pub(crate) fn translation_scope(
-    translator: &dyn ai::Translator,
-    mode: &NfcText,
-    source: &LanguageTag,
-    target: &LanguageTag,
-    payload: &NfcText,
-    fingerprint: &NfcText,
-) -> Result<Scope, EditError> {
-    Ok(Scope {
-        provider: translator.config().clone(),
-        operation: ai::Operation::Translate,
-        payload_fingerprint: fingerprint.clone(),
-        mode: mode.clone(),
-        texts: vec![payload.clone()],
-        source_language: source.clone(),
-        target_language: Some(target.clone()),
-        source_samples: SampleRange::new(0, 1)?,
-        sample_rate: 1,
-        max_bytes: u64::try_from(payload.as_str().len())
-            .map_err(|_| EditError::Limit)?
-            .max(MAX_JSON_BYTES as u64),
-    })
 }
 pub(crate) fn build_translator(
     translation: &TranslationProvider,
     credentials: &Credentials,
-) -> Result<(TranslatorKind, NfcText), EditError> {
+) -> Result<(Arc<dyn ai::Translator>, NfcText), EditError> {
     match translation {
         TranslationProvider::OpenAi { model } => {
             let value = ai::openai::OpenAiTranslator::new(
@@ -381,10 +318,7 @@ pub(crate) fn build_translator(
                 credentials.openai()?.clone(),
                 Arc::new(UreqTransport::new()),
             )?;
-            Ok((
-                TranslatorKind::OpenAi(Arc::new(value)),
-                ai::openai::TRANSLATION_MODE.into(),
-            ))
+            Ok((Arc::new(value), ai::openai::TRANSLATION_MODE.into()))
         }
         TranslationProvider::Anthropic { model } => {
             let value = ai::anthropic::AnthropicTranslator::new(
@@ -392,10 +326,7 @@ pub(crate) fn build_translator(
                 credentials.anthropic()?.clone(),
                 Arc::new(UreqTransport::new()),
             )?;
-            Ok((
-                TranslatorKind::Anthropic(Arc::new(value)),
-                ai::anthropic::TRANSLATION_MODE.into(),
-            ))
+            Ok((Arc::new(value), ai::anthropic::TRANSLATION_MODE.into()))
         }
     }
 }
@@ -463,98 +394,12 @@ fn load_aligner(
 }
 impl Providers {
     pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
-        match &self.transcriber {
-            TranscriberKind::OpenAi(value) => {
-                transcriber_upload(value.disclosure(&scope)?, CatalogOperation::Transcribe)
-            }
-            TranscriberKind::ElevenLabs(value) => {
-                transcriber_upload(value.disclosure(&scope)?, CatalogOperation::Transcribe)
-            }
-            TranscriberKind::Other(value) => {
-                let estimate = value.estimate(&scope);
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Transcribe,
-                    provider: value.config().id().as_str().into(),
-                    model: value.config().model().as_str().into(),
-                    languages: scope.source_language.as_str().into(),
-                    audio_seconds: scope.source_samples.len() as f64 / f64::from(scope.sample_rate),
-                    upload_bytes: scope.max_bytes,
-                    cost: Cost::from(&estimate),
-                    terms: vec![("policy", "test provider policy".into())],
-                })
-            }
-            _ => Err(EditError::Unsupported("local provider has no upload")),
-        }
+        UploadRequest::for_scope(
+            CatalogOperation::Transcribe,
+            self.transcriber.config(),
+            self.transcriber.disclosure(&scope)?,
+            &self.transcriber.estimate(&scope),
+            &scope,
+        )
     }
-}
-
-fn transcriber_upload(
-    disclosure: Option<ai::UploadDisclosure>,
-    operation: CatalogOperation,
-) -> Result<UploadRequest, EditError> {
-    let disclosure = disclosure.ok_or(EditError::Unsupported("provider has no upload"))?;
-    Ok(UploadRequest {
-        operation,
-        provider: disclosure.provider.as_str().into(),
-        model: disclosure.model.as_str().into(),
-        languages: disclosure.languages.as_str().into(),
-        audio_seconds: disclosure.audio_micros as f64 / 1_000_000.0,
-        upload_bytes: disclosure.upload_bytes,
-        cost: Cost::from(&disclosure.estimate),
-        terms: disclosure
-            .links
-            .iter()
-            .map(|(name, url)| (*name, url.as_str().into()))
-            .collect(),
-    })
-}
-impl TranslatorKind {
-    pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
-        match self {
-            Self::OpenAi(value) => translator_upload(value.disclosure(&scope)?, &scope),
-            Self::Anthropic(value) => translator_upload(value.disclosure(&scope)?, &scope),
-            Self::Other(value) => {
-                let estimate = value.estimate(&scope);
-                Ok(UploadRequest {
-                    operation: CatalogOperation::Translate,
-                    provider: value.config().id().as_str().into(),
-                    model: value.config().model().as_str().into(),
-                    languages: format!(
-                        "{} -> {}",
-                        scope.source_language.as_str(),
-                        scope
-                            .target_language
-                            .as_ref()
-                            .map_or("", LanguageTag::as_str)
-                    ),
-                    audio_seconds: 0.0,
-                    upload_bytes: scope.max_bytes,
-                    cost: Cost::from(&estimate),
-                    terms: vec![("policy", "test provider policy".into())],
-                })
-            }
-        }
-    }
-}
-
-fn translator_upload(
-    disclosure: Option<ai::UploadDisclosure>,
-    scope: &Scope,
-) -> Result<UploadRequest, EditError> {
-    let disclosure = disclosure.ok_or(EditError::Unsupported("provider has no upload"))?;
-    Ok(UploadRequest {
-        operation: CatalogOperation::Translate,
-        provider: disclosure.provider.as_str().into(),
-        model: disclosure.model.as_str().into(),
-        languages: disclosure.languages.as_str().into(),
-        audio_seconds: 0.0,
-        upload_bytes: u64::try_from(scope.texts.first().map_or(0, |t| t.as_str().len()))
-            .map_err(|_| EditError::Limit)?,
-        cost: Cost::from(&disclosure.estimate),
-        terms: disclosure
-            .links
-            .iter()
-            .map(|(name, url)| (*name, url.as_str().into()))
-            .collect(),
-    })
 }

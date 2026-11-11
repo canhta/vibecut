@@ -6,14 +6,15 @@
 use crate::budget::Budget;
 use crate::{Error, Result};
 use ai::elevenlabs::{ElevenLabsTranscriber, MODEL};
-use ai::transport::{ApiKey, UreqTransport};
+use ai::transport::UreqTransport;
 use ai::{
-    AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Operation, Request, SampleRange,
-    Scope, Stage, Transcriber,
+    AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Request, SampleRange, Scope, Stage,
+    Transcriber,
 };
 use captions::{
     LanguageProfile, LanguageRegistry, LanguageTag, NfcText, TimingSpans, Transcript, Word,
 };
+use engine::providers::Credentials;
 use media::{AssetId, SourceAsset, SpeechExtractSettings, extract_speech_windows_with_cancel};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::AtomicBool};
@@ -50,9 +51,7 @@ pub fn prepare(
     budget: &mut Budget,
 ) -> Result<Prepared> {
     let started = Instant::now();
-    let key =
-        std::env::var("ELEVENLABS_API_KEY").map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
-    let key = ApiKey::new(key).map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
+    let key = Credentials::from_env()?.elevenlabs()?.clone();
     let config = ElevenLabsTranscriber::provider_config(MODEL)?;
     let transcriber = ElevenLabsTranscriber::new(config, key, Arc::new(UreqTransport::new()))?;
     let asset = SourceAsset::import(AssetId(1), source.to_path_buf())?;
@@ -88,22 +87,14 @@ pub fn prepare(
                 if sample_range.len().saturating_mul(4) > MAX_PCM_BYTES {
                     return Err(Error::Payload);
                 }
-                let scope = Scope {
-                    provider: transcriber.config().clone(),
-                    operation: Operation::Transcribe,
-                    payload_fingerprint: format!("asr:{source_sha}").into(),
-                    mode: "file".into(),
-                    texts: Vec::new(),
-                    source_language: language.clone(),
-                    target_language: None,
-                    source_samples: sample_range,
-                    sample_rate: SAMPLE_RATE,
-                    max_bytes: sample_range
-                        .len()
-                        .checked_mul(2)
-                        .and_then(|bytes| bytes.checked_add(44))
-                        .ok_or(Error::Payload)?,
-                };
+                let scope = Scope::transcription(
+                    transcriber.config().clone(),
+                    ai::elevenlabs::MODE.into(),
+                    language.clone(),
+                    sample_range,
+                    SAMPLE_RATE,
+                    format!("asr:{source_sha}").into(),
+                )?;
                 let estimate = estimate_micros(&transcriber.estimate(&scope))?;
                 budget.reserve(estimate)?;
                 cost_micros = cost_micros.saturating_add(estimate);

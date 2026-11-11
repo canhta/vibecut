@@ -197,11 +197,7 @@ impl Workflow for LocalWorkflow {
     }
 }
 fn credentials() -> engine::Result<engine::providers::Credentials> {
-    engine::providers::Credentials::new(
-        std::env::var("OPENAI_API_KEY").ok(),
-        std::env::var("ELEVENLABS_API_KEY").ok(),
-        std::env::var("ANTHROPIC_API_KEY").ok(),
-    )
+    engine::providers::Credentials::from_env()
 }
 fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
     JobRunner::new(

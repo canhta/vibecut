@@ -42,8 +42,6 @@ pub enum Error {
     TranscriptLanguage { expected: String, actual: String },
     #[error("live LLM calls require --live")]
     LiveRequired,
-    #[error("missing API key: {0}")]
-    MissingKey(&'static str),
     #[error("provider cost estimate is unknown")]
     UnknownCost,
     #[error("cost estimate {estimate} micros exceeds cap {cap} micros")]

@@ -3,10 +3,9 @@ mod adapters;
 mod catalog;
 mod consent;
 mod error;
-mod selection;
 mod text;
 pub use adapters::{Credentials, Providers, Runtime};
-pub(crate) use adapters::{IdleHooks, TranslatorKind, build_translator, translation_scope};
+pub(crate) use adapters::{IdleHooks, build_translator};
 pub(crate) use catalog::normalize_target;
 pub use catalog::{
     CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
@@ -17,10 +16,6 @@ pub use catalog::{
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest};
 pub use error::Error;
-pub use selection::{
-    Approval, ClipAttempt, ProviderOutput, TranscriptionAttempt, TranslationAttempt, suggest_clips,
-    transcribe, translate,
-};
 pub use text::{StoredConsent, TextAccess};
 mod model_transfers;
 pub mod models {

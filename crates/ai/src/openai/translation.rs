@@ -11,7 +11,7 @@ use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
 pub const TRANSLATION_MODEL: &str = "gpt-6.1-sol";
 pub const TRANSLATION_MODE: &str = "context-window";
-pub const TRANSLATION_SETTINGS: &str =
+const TRANSLATION_SETTINGS: &str =
     "openai-translation-v1;responses;strict;store=false;max_output=8192";
 pub const TRANSLATION_ENDPOINT: &str = "https://api.openai.com/v1/responses";
 pub const TRANSLATION_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];

@@ -508,6 +508,17 @@ impl Generator for ApprovalGenerator {
     ) -> engine::Result<ReviewSource> {
         self.entered.lock().unwrap().send(()).unwrap();
         events.approve(&UploadRequest {
+            config: ai::ProviderConfig::new(
+                "injected".into(),
+                "explicit-model".into(),
+                "fixture".into(),
+                ai::Location::Remote {
+                    backend: "fixture".into(),
+                    base_url: "https://fixture.invalid".into(),
+                    auth_ref: "fixture".into(),
+                },
+            )
+            .unwrap(),
             operation: CatalogOperation::SuggestClips,
             provider: "injected".into(),
             model: "explicit-model".into(),

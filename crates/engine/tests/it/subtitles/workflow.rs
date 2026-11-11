@@ -79,6 +79,20 @@ fn config(provider: &str, model: &str) -> ProviderConfig {
     .unwrap()
 }
 
+fn remote_config(provider: &str, model: &str) -> ProviderConfig {
+    ProviderConfig::new(
+        provider.into(),
+        model.into(),
+        format!("{provider}-settings-v1").into(),
+        Location::Remote {
+            backend: "fixture".into(),
+            base_url: "https://fixture.invalid".into(),
+            auth_ref: "fixture".into(),
+        },
+    )
+    .unwrap()
+}
+
 struct FakeAsr {
     config: ProviderConfig,
     calls: Arc<AtomicUsize>,
@@ -143,7 +157,7 @@ struct FakeTranslator {
 impl FakeTranslator {
     fn new() -> Self {
         Self {
-            config: config("fake-translator", "fake-translator-model"),
+            config: remote_config("fake-translator", "fake-translator-model"),
         }
     }
 }
@@ -214,6 +228,10 @@ impl Translator for FakeTranslator {
 }
 
 fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool) -> Providers {
+    let mut asr = FakeAsr::new(calls);
+    if remote {
+        asr.config = remote_config("fake-asr", "fake-asr-model");
+    }
     let transcription = if remote {
         TranscriptionProvider::OpenAi {
             model: "fake-asr-model".into(),
@@ -225,7 +243,7 @@ fn providers(calls: Arc<AtomicUsize>, remote: bool, translation: bool) -> Provid
     };
     Providers::from_parts(
         transcription,
-        Arc::new(FakeAsr::new(calls)),
+        Arc::new(asr),
         None,
         translation.then(|| TranslationProvider::OpenAi {
             model: "fake-translator-model".into(),
@@ -744,9 +762,13 @@ fn text_only_providers(
     asr_calls: Arc<AtomicUsize>,
     aligner: Arc<ProbeAligner>,
 ) -> Providers {
+    let mut asr = FakeAsr::new(asr_calls);
+    if transcription.is_remote() {
+        asr.config = remote_config("fake-asr", "fake-asr-model");
+    }
     Providers::from_parts(
         transcription,
-        Arc::new(TextOnlyAsr(FakeAsr::new(asr_calls))),
+        Arc::new(TextOnlyAsr(asr)),
         Some(aligner),
         None,
         None,
@@ -1045,7 +1067,7 @@ fn operation_cancellation_stops_a_running_translation_job() {
             model: "fake-translator-model".into(),
         }),
         Some(Arc::new(BlockingTranslator {
-            config: config("fake-translator", "fake-translator-model"),
+            config: remote_config("fake-translator", "fake-translator-model"),
             entered: entered.clone(),
         })),
     )

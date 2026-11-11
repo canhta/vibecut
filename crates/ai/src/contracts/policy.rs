@@ -194,6 +194,59 @@ impl Consent {
     }
 }
 impl Scope {
+    /// Local audio transcription, or the file upload of a remote adapter. The
+    /// wire bound is the PCM16 WAV the adapter encodes: two bytes per sample plus
+    /// the 44-byte header.
+    pub fn transcription(
+        provider: ProviderConfig,
+        mode: NfcText,
+        language: LanguageTag,
+        samples: SampleRange,
+        sample_rate: u32,
+        payload_fingerprint: NfcText,
+    ) -> Result<Self, Error> {
+        let max_bytes = samples
+            .len()
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(44))
+            .ok_or(Error::Payload)?;
+        Ok(Self {
+            provider,
+            operation: Operation::Transcribe,
+            payload_fingerprint,
+            mode,
+            texts: Vec::new(),
+            source_language: language,
+            target_language: None,
+            source_samples: samples,
+            sample_rate,
+            max_bytes,
+        })
+    }
+    /// One text payload with no audio: the shape of every transcript-text operation.
+    pub(crate) fn text(
+        provider: ProviderConfig,
+        operation: Operation,
+        mode: &str,
+        payload: NfcText,
+        payload_fingerprint: NfcText,
+        language: LanguageTag,
+        max_wire: u64,
+    ) -> Result<Self, Error> {
+        let bytes = u64::try_from(payload.as_str().len()).map_err(|_| Error::Payload)?;
+        Ok(Self {
+            provider,
+            operation,
+            payload_fingerprint,
+            mode: mode.into(),
+            texts: vec![payload],
+            source_language: language,
+            target_language: None,
+            source_samples: SampleRange::new(0, 1)?,
+            sample_rate: 1,
+            max_bytes: bytes.max(max_wire),
+        })
+    }
     pub(crate) fn validate(&self) -> Result<(), Error> {
         nonempty(&self.payload_fingerprint)?;
         nonempty(&self.mode)?;
@@ -232,70 +285,5 @@ pub fn authorize(
         CostEstimate::Free => Ok(()),
         CostEstimate::UpperBound(cost) if token.budget.covers(cost) => Ok(()),
         _ => Err(Error::Cost),
-    }
-}
-
-/// One feature's explicit provider order. Constructing a primary never adds a
-/// fallback. Persist this value in application settings, independently of projects.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SelectionData", into = "SelectionData")]
-pub struct ProviderSelection(SelectionData);
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SelectionData {
-    schema_version: u32,
-    operation: Operation,
-    primary: ProviderConfig,
-    #[serde(default)]
-    fallbacks: Vec<ProviderConfig>,
-}
-impl ProviderSelection {
-    pub fn new(operation: Operation, primary: ProviderConfig) -> Self {
-        Self(SelectionData {
-            schema_version: 1,
-            operation,
-            primary,
-            fallbacks: Vec::new(),
-        })
-    }
-    /// At most seven distinct fallbacks; repeated exact configurations are refused.
-    pub fn with_fallbacks(self, fallbacks: Vec<ProviderConfig>) -> Result<Self, Error> {
-        SelectionData {
-            fallbacks,
-            ..self.0
-        }
-        .try_into()
-    }
-    pub fn operation(&self) -> Operation {
-        self.0.operation
-    }
-    pub fn providers(&self) -> impl Iterator<Item = &ProviderConfig> {
-        std::iter::once(&self.0.primary).chain(&self.0.fallbacks)
-    }
-}
-impl TryFrom<SelectionData> for ProviderSelection {
-    type Error = Error;
-    fn try_from(data: SelectionData) -> Result<Self, Error> {
-        if data.schema_version != 1 || data.fallbacks.len() > 7 {
-            return Err(Error::Invalid("provider selection version or limit"));
-        }
-        let providers: Vec<_> = std::iter::once(&data.primary)
-            .chain(&data.fallbacks)
-            .collect();
-        for (i, provider) in providers.iter().enumerate() {
-            if providers
-                .iter()
-                .take(i)
-                .any(|previous| previous == provider)
-            {
-                return Err(Error::Invalid("duplicate provider configuration"));
-            }
-        }
-        Ok(Self(data))
-    }
-}
-impl From<ProviderSelection> for SelectionData {
-    fn from(value: ProviderSelection) -> Self {
-        value.0
     }
 }

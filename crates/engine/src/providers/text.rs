@@ -7,21 +7,21 @@
 //! Without an affirmative approval it refuses before any adapter or credential
 //! is used.
 use super::adapters::{Credentials, open_chapter, open_filler};
-use super::catalog::TextProvider;
+use super::catalog::{CatalogOperation, TextProvider};
+use super::consent::{ConsentPrompt, Cost, UploadRequest, estimate_money};
 use super::error::Error;
-use super::selection::Approval;
 use crate::EditError;
 use ai::chapters::{ChapterGenerator, ChapterInput};
 use ai::fillers::{FillerClassifier, FillerInput};
-use ai::{Consent, CostEstimate, Money, Operation, ProviderConfig, SampleRange, Scope};
-use captions::{LanguageTag, NfcText};
-use std::sync::{Arc, Mutex};
+use ai::{Consent, CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
+use captions::NfcText;
+use std::sync::Arc;
 
 /// One process's selected transcript-text adapters and the human approval they consult.
 pub struct TextAccess {
     chapter: Arc<dyn ChapterGenerator>,
     filler: Arc<dyn FillerClassifier>,
-    approval: Mutex<Box<dyn Approval + Send>>,
+    consent: Box<dyn ConsentPrompt + Send + Sync>,
 }
 
 /// The consent token and chapter adapter one validated input runs with.
@@ -38,8 +38,7 @@ pub(crate) struct PreparedFillers {
 }
 
 /// A human consent the composition root recorded for each exact provider
-/// configuration and cost ceiling. It never prompts and never broadens: a
-/// different provider or a higher estimate is refused by the token check.
+/// configuration and cost ceiling. It never prompts or broadens the approval.
 pub struct StoredConsent {
     grants: Vec<(ProviderConfig, Money)>,
 }
@@ -51,46 +50,53 @@ impl StoredConsent {
         }
     }
 }
-impl Approval for StoredConsent {
-    fn approve(
-        &mut self,
-        scope: &Scope,
-        _: &CostEstimate,
-        _: bool,
-    ) -> Result<Option<Consent>, ai::Error> {
-        self.grants
+impl ConsentPrompt for StoredConsent {
+    fn approve(&self, request: &UploadRequest) -> Result<(), EditError> {
+        let covered = |ceiling: &Money| match &request.cost {
+            Cost::Free => true,
+            Cost::UpperBound { currency, micros } => {
+                currency == ceiling.currency() && *micros <= ceiling.micros()
+            }
+            Cost::Unknown => false,
+        };
+        let (_, ceiling) = self
+            .grants
             .iter()
-            .find(|(provider, _)| provider == &scope.provider)
-            .map(|(_, budget)| Consent::grant(scope.clone(), budget.clone()))
-            .transpose()
+            .find(|(config, _)| config == &request.config)
+            .ok_or(Error::ConsentRequired)?;
+        if covered(ceiling) {
+            Ok(())
+        } else {
+            Err(ai::Error::Cost.into())
+        }
     }
 }
 
 impl TextAccess {
-    /// Lend already built adapters, for composition roots and tests. One approval
+    /// Lend already built adapters, for composition roots and tests. One consent
     /// covers both operations because they use the same provider configuration.
     pub fn new(
         chapter: Arc<dyn ChapterGenerator>,
         filler: Arc<dyn FillerClassifier>,
-        approval: Box<dyn Approval + Send>,
+        consent: Box<dyn ConsentPrompt + Send + Sync>,
     ) -> Self {
         Self {
             chapter,
             filler,
-            approval: Mutex::new(approval),
+            consent,
         }
     }
 
-    /// Build the selected provider's adapters and lend them with `approval`.
+    /// Build the selected provider's adapters and lend them with `consent`.
     pub fn open(
         provider: TextProvider,
         credentials: &Credentials,
-        approval: Box<dyn Approval + Send>,
+        consent: Box<dyn ConsentPrompt + Send + Sync>,
     ) -> Result<Self, EditError> {
         Ok(Self::new(
             open_chapter(&provider, credentials)?,
             open_filler(&provider, credentials)?,
-            approval,
+            consent,
         ))
     }
 
@@ -109,16 +115,18 @@ impl TextAccess {
         &self,
         input: &ChapterInput,
     ) -> Result<PreparedChapter, EditError> {
-        let scope = self.scope(
-            Operation::GenerateChapters,
-            ai::chapters::MODE,
-            self.chapter_provider(),
-            input.consent_text()?,
-            &input.settings.language,
-            ai::chapters::MAX_WIRE,
+        let scope = Scope::chapters(
+            self.chapter_provider().clone(),
+            input,
+            fingerprint(&input.consent_text()?),
         )?;
         let estimate = self.chapter.estimate(&scope);
-        let consent = self.approve(&scope, &estimate)?;
+        let consent = self.approve(
+            CatalogOperation::GenerateChapters,
+            &scope,
+            self.chapter.disclosure(&scope)?,
+            &estimate,
+        )?;
         Ok(PreparedChapter {
             generator: self.chapter.clone(),
             scope,
@@ -131,16 +139,18 @@ impl TextAccess {
         &self,
         input: &FillerInput,
     ) -> Result<PreparedFillers, EditError> {
-        let scope = self.scope(
-            Operation::ClassifyFillers,
-            ai::fillers::MODE,
-            self.filler_provider(),
-            input.consent_text()?,
-            &input.settings.language,
-            ai::fillers::MAX_WIRE,
+        let scope = Scope::fillers(
+            self.filler_provider().clone(),
+            input,
+            fingerprint(&input.consent_text()?),
         )?;
         let estimate = self.filler.estimate(&scope);
-        let consent = self.approve(&scope, &estimate)?;
+        let consent = self.approve(
+            CatalogOperation::ClassifyFillers,
+            &scope,
+            self.filler.disclosure(&scope)?,
+            &estimate,
+        )?;
         Ok(PreparedFillers {
             classifier: self.filler.clone(),
             scope,
@@ -148,40 +158,23 @@ impl TextAccess {
         })
     }
 
-    fn scope(
+    fn approve(
         &self,
-        operation: Operation,
-        mode: &str,
-        provider: &ProviderConfig,
-        payload: NfcText,
-        language: &LanguageTag,
-        max_wire: u64,
-    ) -> Result<Scope, EditError> {
-        let bytes = u64::try_from(payload.as_str().len()).map_err(|_| EditError::Limit)?;
-        let fingerprint: NfcText = blake3::hash(payload.as_str().as_bytes())
-            .to_hex()
-            .to_string()
-            .into();
-        Ok(Scope {
-            provider: provider.clone(),
-            operation,
-            payload_fingerprint: fingerprint,
-            mode: mode.into(),
-            texts: vec![payload],
-            source_language: language.clone(),
-            target_language: None,
-            source_samples: SampleRange::new(0, 1)?,
-            sample_rate: 1,
-            max_bytes: bytes.max(max_wire),
-        })
+        operation: CatalogOperation,
+        scope: &Scope,
+        disclosure: Option<UploadDisclosure>,
+        estimate: &CostEstimate,
+    ) -> Result<Consent, EditError> {
+        let request =
+            UploadRequest::for_scope(operation, &scope.provider, disclosure, estimate, scope)?;
+        self.consent.approve(&request)?;
+        Ok(Consent::grant(scope.clone(), estimate_money(estimate)?)?)
     }
+}
 
-    fn approve(&self, scope: &Scope, estimate: &CostEstimate) -> Result<Consent, EditError> {
-        Ok(self
-            .approval
-            .lock()
-            .map_err(|_| crate::RuntimeError::Poisoned)?
-            .approve(scope, estimate, false)?
-            .ok_or(Error::ConsentRequired)?)
-    }
+fn fingerprint(payload: &NfcText) -> NfcText {
+    blake3::hash(payload.as_str().as_bytes())
+        .to_hex()
+        .to_string()
+        .into()
 }

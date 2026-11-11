@@ -23,11 +23,11 @@ use crate::transport::{
 /// The only production model admitted here. Deprecated transcription models are refused.
 pub const MODEL: &str = "gpt-transcribe";
 /// Provider backend name expected in the tagged remote configuration.
-pub const BACKEND: &str = "openai";
+pub(crate) const BACKEND: &str = "openai";
 /// Current documented file limit for `/v1/audio/transcriptions` (25 MB decimal).
 pub const MAX_UPLOAD_BYTES: u64 = 25_000_000;
 /// The only admitted provider base URL in v1; no proxies or custom processors.
-pub const BASE_URL: &str = "https://api.openai.com/v1";
+pub(crate) const BASE_URL: &str = "https://api.openai.com/v1";
 /// The only admitted transcription endpoint.
 pub const ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 /// Published list price, integer micro-USD per audio second ($0.0045/min).
@@ -35,7 +35,7 @@ const PRICE_MICROS_PER_SECOND: u64 = 75;
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-text";
 /// File mode is the only mode this adapter advertises.
-const MODE: &str = "file";
+pub const MODE: &str = "file";
 /// Product ASR languages. Extend this data table only with documented API support.
 pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 /// Settings identity for composition-owned cache keys.

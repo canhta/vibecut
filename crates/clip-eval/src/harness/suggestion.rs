@@ -4,8 +4,8 @@ use super::{NoHooks, RangeReport, SuggestionReport};
 use crate::budget::Budget;
 use crate::label::ResolvedSettings;
 use crate::{Error, Result};
-use ai::clips::{ClipInput, ClipSource, ClipSuggester, MAX_WIRE, MODE, suggest_clips};
-use ai::{Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope};
+use ai::clips::{ClipInput, ClipSource, ClipSuggester, suggest_clips};
+use ai::{Consent, CostEstimate, Money, Request, Scope};
 use captions::{LanguageProfile, Transcript};
 use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
 use std::path::Path;
@@ -19,18 +19,11 @@ pub(super) struct ProviderRun {
 }
 
 fn scope_for(provider: &dyn ClipSuggester, window: &ClipInput, source_sha: &str) -> Result<Scope> {
-    Ok(Scope {
-        provider: provider.config().clone(),
-        operation: Operation::SuggestClips,
-        payload_fingerprint: format!("clip-eval:{source_sha}").into(),
-        mode: MODE.into(),
-        texts: vec![window.consent_text()?],
-        source_language: window.settings.language.clone(),
-        target_language: None,
-        source_samples: SampleRange::new(0, 1_000)?,
-        sample_rate: 1,
-        max_bytes: MAX_WIRE,
-    })
+    Ok(Scope::clip_suggestion(
+        provider.config().clone(),
+        window,
+        format!("clip-eval:{source_sha}").into(),
+    )?)
 }
 
 pub(super) fn estimate_provider(

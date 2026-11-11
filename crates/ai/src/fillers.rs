@@ -15,6 +15,24 @@ use std::collections::BTreeSet;
 pub use remote::{AnthropicFillerClassifier, OPENAI_MODEL, OpenAiFillerClassifier};
 
 pub const MODE: &str = "transcript-fillers";
+impl Scope {
+    /// Consent scope of one filler classification, bound to the complete transcript text.
+    pub fn fillers(
+        provider: ProviderConfig,
+        input: &FillerInput,
+        payload_fingerprint: NfcText,
+    ) -> Result<Self, Error> {
+        Self::text(
+            provider,
+            Operation::ClassifyFillers,
+            MODE,
+            input.consent_text()?,
+            payload_fingerprint,
+            input.settings.language.clone(),
+            MAX_WIRE,
+        )
+    }
+}
 pub const MAX_SEGMENTS: usize = 10_000;
 pub const MAX_WORDS: usize = 50_000;
 pub const MAX_INPUT_BYTES: usize = 96 * 1024;

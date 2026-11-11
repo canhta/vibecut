@@ -16,7 +16,7 @@ The native runtime polls after encoding a window and after decoder work and cann
 
 `ai::transcribe` returns validated native segments and original subword bytes in `RecognitionSegment::raw_tokens`, with optional absolute sample ranges, native provenance and confidence. The adapter advertises segment and token timing; individual tokens can still lack timing. Missing, invalid and zero-width timestamps stay absent. Tokens may split UTF-8 and are never relabelled as words. `Recognition::to_transcript` uses the shared captions span owner and converts sample boundaries once to ticks.
 
-The pinned catalog entry supplies the exact vi/en/zh data (`Model::languages`). `Whisper::detect_language` runs one bounded detection pass on a decoded 16 kHz window and returns a captions `LanguageTag`. Detection is an explicit caller action, not a fallback; the caller passes the tag to the transcription request and owns chunking, consent and retries. It produces no transcript or timestamp.
+The pinned catalog entry supplies the exact vi/en/zh data (`Model::languages`). `Whisper` overrides `Transcriber::detect_language`, which runs one bounded detection pass on a decoded 16 kHz window and returns a captions `LanguageTag`. Detection is an explicit caller action, not a fallback; the caller passes the tag to the transcription request and owns chunking, consent and retries. It produces no transcript or timestamp.
 
 The `local_whisper` example is an opt-in local smoke/benchmark harness; it refuses inputs above the invocation ceiling instead of cutting speech and prints recognition JSON. Native tests and benchmarks need external weights and audio and are opt-in. Windows native runtime and Vulkan are unverified.
 

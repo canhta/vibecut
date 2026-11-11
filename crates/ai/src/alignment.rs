@@ -9,7 +9,7 @@ use crate::{
     TimedText, TimingUnit, contracts::checkpoint,
 };
 use candle_core::Tensor;
-use captions::{LanguageRegistry, LanguageTag};
+use captions::{LanguageRegistry, LanguageTag, NfcText};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -23,6 +23,29 @@ use tokenizers::Tokenizer;
 pub const MODEL_ID: &str = "whisper-small-dtw";
 pub const MODE: &str = "teacher-forced-dtw";
 pub const MAX_SAMPLES: u64 = 480000;
+impl Scope {
+    /// Consent scope of one teacher-forced alignment pass over `samples`.
+    pub fn alignment(
+        provider: ProviderConfig,
+        language: LanguageTag,
+        samples: SampleRange,
+        sample_rate: u32,
+        payload_fingerprint: NfcText,
+    ) -> Self {
+        Self {
+            provider,
+            operation: Operation::Align,
+            payload_fingerprint,
+            mode: MODE.into(),
+            texts: Vec::new(),
+            source_language: language,
+            target_language: None,
+            source_samples: samples,
+            sample_rate,
+            max_bytes: samples.len().saturating_mul(4),
+        }
+    }
+}
 struct Runtime {
     model: model::Model,
     tokenizer: Tokenizer,

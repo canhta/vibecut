@@ -1,7 +1,7 @@
 # Providers
 
 Interface: `Providers`, `Credentials`, `Error`, `ConsentPrompt`, `TextAccess`, `TextProvider`,
-`provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models`.
+`provider_options`, `model_info`, `models`.
 
 ## Failures
 
@@ -12,51 +12,49 @@ its `vibecut-cli model download <id>` hint and the desktop renders its own text 
 Callers that still return the kernel union wrap it as `EditError::Providers`; the wire maps consent
 to `Permission`, missing setup prerequisites to `Setup`, and unsupported auto-language to `Refused`.
 
-## Provider selection and fallback
+## Adapters, scopes and consent
 
-`providers::{transcribe, translate, suggest_clips}` execute an AI-owned `ProviderSelection` on
-the job worker with its `ExecutionHooks`. A caller that configures a local fallback takes a CPU
-resource reservation for the whole run, so switching from network to inference cannot bypass CPU
-concurrency limits. Every attempt must exactly match the persisted feature/provider order; no
-adapters are inferred, and each adapter is invoked at most once. A successful attempt ends the
-run. Auth, quota, network, server, rate-limit, schema and incomplete-response failures advance
-only to the next configured provider; cancellation, consent, cost, input and capability errors
-stop immediately. Exhaustion returns the last typed failure.
+`Providers` holds one `Arc<dyn ai::Transcriber>`, an optional aligner and an optional `Arc<dyn
+ai::Translator>`; it never names an adapter after `open`. Operation scopes come from the AI
+constructors (`Scope::transcription`, `alignment`, `translation`, `clip_suggestion`, `chapters`,
+`fillers`), so no caller fills `Scope` fields. `Credentials::from_env` is the one place that reads
+the API-key environment variables; every desktop and CLI composition root calls it.
 
-Composition implements `providers::Approval` to show provider identity, its policy link, exact
-payload and cost at setup and again immediately before a fallback executes. The callback
-receives `fallback=true` for the renewed prompt; a remote attempt without its own exact consent
-token cannot upload. Approval errors stop the run. Clip windows are all approved before a
-provider's first IO, and partial results from a failed provider are discarded. Local heuristics
-are an explicitly configured `ClipSuggester`, never an implicit recovery path.
+`UploadRequest::for_scope` builds transcription, translation and transcript-text consent from the adapter's neutral
+`ai::UploadDisclosure` for the exact scope. An adapter without a disclosure that has a local
+configuration has no upload and is refused; a remote adapter composed without one (a test
+provider) is described from its configuration and scope. `ConsentPrompt` is the only consent
+shape: the prompt shows the request and returns `Ok` or `ConsentRequired`; the caller then grants
+the `ai::Consent` token for the displayed estimate. Shorts keeps its operation-specific disclosure
+terms on the same `UploadRequest` shape.
 
-`ProviderOutput` keeps the exact successful provider configuration beside its output, and
-serializable outputs preserve this provenance in job result bytes. Callers store the complete
-envelope and include the entire selection and request settings in cache keys. Recognition keeps
-its sample-coordinate model, including text-only results when timing is unavailable. The
-functions do not mutate projects; translation results go through the registered edit command.
-Clip provider outputs preserve AI-owned ordered source segments, resolved source-order ranks and
-summed duration; consumers use the [AI clip contract](../../../ai/src/clips/README.md#transcript-clip-suggestions).
+Each run uses one provider. A fallback runs only when the user configured it, and nothing lets a
+user configure one yet, so there is no fallback runner; it returns with the setting that
+configures it.
+
+Language detection is `ai::Transcriber::detect_language`; only local whisper.cpp implements it,
+every other adapter returns `Unsupported`, which engine reports as `AutoLanguageUnsupported`.
 
 ## Transcript-text generation
 
 `TextProvider` is the user's explicit transcript-text provider and model for the chapters and
 fillers operations, listed by `provider_options` and resolved by `choose_chapter` /
 `choose_filler`; there is no fallback, and the catalog constants in
-[`catalog.rs`](catalog.rs) own the model ids. `TextAccess::open(provider, credentials, approval)`
+[`catalog.rs`](catalog.rs) own the model ids. `TextAccess::open(provider, credentials, consent)`
 builds both the chapter adapter and the filler classifier once; `TextAccess::new(chapters,
-fillers, approval)` lends already built ones. Composition roots construct one access per process
+fillers, consent)` lends already built ones. Composition roots construct one access per process
 and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with
 `Inbox::attach_text`.
 
 `TextAccess::prepare_chapter(input)` and `prepare_fillers(input)` bind the complete canonical
 transcript, the provider configuration, the operation and a bounded cost estimate into an
-`ai::Scope`, then ask the composition's `Approval` for the exact token. `Approval` is where the
-human decision lives: a prompt shows provider, model, payload and cost; `StoredConsent::grant`
-records already-given human approvals and only returns a token for that exact configuration,
-leaving a higher estimate to the token's cost check; no token means `ConsentRequired` and no
-adapter call. The access never constructs consent on its own and never retries or switches
-provider. Both operations share the `ai::text_model` request path: one official backend check,
+`ai::Scope`, then ask the composition's `ConsentPrompt` to approve the adapter's disclosure.
+The prompt is where the human decision lives: it shows provider, model, payload and cost;
+`StoredConsent::grant` records already-given human approvals per exact `ProviderConfig` and cost
+ceiling, using `UploadRequest::config` rather than display labels. A different configuration
+returns `ConsentRequired`; a higher, unknown or different-currency estimate returns `ai::Error::Cost`,
+before any adapter call. The access grants the token only after approval and never retries or
+switches provider. Both operations share the `ai::text_model` request path: one official backend check,
 one bounded body and one response parser; they differ only in prompt, schema, settings
 fingerprint and result validation.
 

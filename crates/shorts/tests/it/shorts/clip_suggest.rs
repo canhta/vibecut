@@ -68,15 +68,12 @@ fn fixture() -> Option<PathBuf> {
         .clone()
 }
 
-fn config(provider: &str, model: &str) -> ProviderConfig {
+fn config(provider: &str, model: &str, location: Location) -> ProviderConfig {
     ProviderConfig::new(
         provider.into(),
         model.into(),
         format!("{provider}-settings-v1").into(),
-        Location::Local {
-            backend: "fixture".into(),
-            model_ref: "fixture".into(),
-        },
+        location,
     )
     .unwrap()
 }
@@ -89,7 +86,14 @@ struct FakeAsr {
 impl FakeAsr {
     fn new() -> Self {
         Self {
-            config: config("fake-asr", "fake-asr-model"),
+            config: config(
+                "fake-asr",
+                "fake-asr-model",
+                Location::Local {
+                    backend: "fixture".into(),
+                    model_ref: "fixture".into(),
+                },
+            ),
         }
     }
 }
@@ -140,7 +144,15 @@ struct FakeTranslator {
 impl FakeTranslator {
     fn new() -> Self {
         Self {
-            config: config("fake-translator", "fake-translator-model"),
+            config: config(
+                "fake-translator",
+                "fake-translator-model",
+                Location::Remote {
+                    backend: "fixture".into(),
+                    base_url: "https://fixture.invalid".into(),
+                    auth_ref: "fixture".into(),
+                },
+            ),
         }
     }
 }

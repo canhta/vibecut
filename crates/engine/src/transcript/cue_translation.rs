@@ -5,8 +5,8 @@ use super::operation::{Cancellation, Progress, Stage};
 use super::translation::{TranslationRun, TranslationTarget, window};
 use crate::jobs::JobRunner;
 use crate::providers::{
-    ConsentPrompt, Cost, Credentials, Providers, TranslationProvider, TranslatorKind,
-    build_translator, estimate_money, translation_scope,
+    CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, TranslationProvider,
+    UploadRequest, build_translator, estimate_money,
 };
 use crate::{Command, EditError, Session};
 use ai::Money;
@@ -19,7 +19,7 @@ use time::Tick;
 pub const TRANSLATE_ATTEMPTS: u8 = 3;
 /// A translation-only adapter. Opening it never loads ASR weights or downloads files.
 pub struct SubtitleTranslator {
-    kind: TranslatorKind,
+    translator: Arc<dyn ai::Translator>,
     mode: NfcText,
 }
 /// Exact cue selection and glossary bound into every remote request.
@@ -60,15 +60,10 @@ pub(crate) fn translate_cues(
         params.cues.cues.iter().map(|cue| cue.id.clone()).collect()
     };
     let adapter = SubtitleTranslator {
-        kind: match providers
+        translator: providers
             .translator
-            .as_ref()
-            .ok_or(EditError::Unsupported("missing translator"))?
-        {
-            TranslatorKind::OpenAi(v) => TranslatorKind::OpenAi(v.clone()),
-            TranslatorKind::Anthropic(v) => TranslatorKind::Anthropic(v.clone()),
-            TranslatorKind::Other(v) => TranslatorKind::Other(v.clone()),
-        },
+            .clone()
+            .ok_or(EditError::Unsupported("missing translator"))?,
         mode: providers
             .translation_mode
             .clone()
@@ -96,13 +91,13 @@ impl SubtitleTranslator {
         provider: &TranslationProvider,
         credentials: &Credentials,
     ) -> Result<Self, EditError> {
-        let (kind, mode) = build_translator(provider, credentials)?;
-        Ok(Self { kind, mode })
+        let (translator, mode) = build_translator(provider, credentials)?;
+        Ok(Self { translator, mode })
     }
     /// Inject an existing adapter while preserving the real translation/consent job path.
     pub fn from_parts(provider: Arc<dyn ai::Translator>, mode: NfcText) -> Self {
         Self {
-            kind: TranslatorKind::Other(provider),
+            translator: provider,
             mode,
         }
     }
@@ -134,7 +129,7 @@ pub fn translate_selected(
         return Err(EditError::Limit);
     }
     progress.stage(Stage::Translate);
-    let translator = adapter.kind.as_translator();
+    let translator = adapter.translator.as_ref();
     for chunk in selection.ids.chunks(ai::MAX_SEGMENTS.min(64)) {
         cancel.checkpoint()?;
         let window = window(
@@ -147,20 +142,24 @@ pub fn translate_selected(
             selection.force,
         )?;
         let payload = window.consent_text()?;
-        let scope = translation_scope(
-            translator,
-            &adapter.mode,
-            &window.source_language,
-            &selection.target,
-            &payload,
-            &blake3::hash(payload.as_str().as_bytes())
+        let scope = ai::Scope::translation(
+            translator.config().clone(),
+            adapter.mode.clone(),
+            &window,
+            blake3::hash(payload.as_str().as_bytes())
                 .to_hex()
                 .as_str()
                 .into(),
         )?;
         let estimate = translator.estimate(&scope);
         cost.add(&estimate);
-        let request = adapter.kind.upload_request(scope.clone())?;
+        let request = UploadRequest::for_scope(
+            CatalogOperation::Translate,
+            translator.config(),
+            translator.disclosure(&scope)?,
+            &estimate,
+            &scope,
+        )?;
         consent.approve(&request)?;
         let consent_token = Some(ai::Consent::grant(
             scope.clone(),
@@ -168,11 +167,7 @@ pub fn translate_selected(
         )?);
         let run = TranslationRun::new(
             TranslationTarget { session, item },
-            match &adapter.kind {
-                TranslatorKind::OpenAi(v) => v.clone(),
-                TranslatorKind::Anthropic(v) => v.clone(),
-                TranslatorKind::Other(v) => v.clone(),
-            },
+            adapter.translator.clone(),
             window,
             scope,
             consent_token,

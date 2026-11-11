@@ -233,6 +233,16 @@ pub trait Transcriber: Send + Sync {
     fn disclosure(&self, _scope: &Scope) -> Result<Option<crate::UploadDisclosure>, Error> {
         Ok(None)
     }
+    /// Spoken language of a bounded window, for adapters that can detect it
+    /// without recognition. The caller still supplies the returned tag explicitly
+    /// to every transcription request.
+    fn detect_language(
+        &self,
+        _audio: AudioWindow<'_>,
+        _hooks: &dyn ExecutionHooks,
+    ) -> Result<LanguageTag, Error> {
+        Err(Error::Unsupported)
+    }
     fn transcribe(
         &self,
         audio: AudioWindow<'_>,

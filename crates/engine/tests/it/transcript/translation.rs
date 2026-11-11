@@ -137,29 +137,9 @@ fn try_run(
     max_attempts: u8,
     budget: u64,
 ) -> Result<(Arc<TranslationRun>, Arc<Transport>), EditError> {
-    let config = ProviderConfig::new(
-        "openai".into(),
-        TRANSLATION_MODEL.into(),
-        TRANSLATION_SETTINGS.into(),
-        Location::Remote {
-            backend: "openai".into(),
-            base_url: BASE_URL.into(),
-            auth_ref: "test".into(),
-        },
-    )
-    .unwrap();
-    let scope = Scope {
-        provider: config.clone(),
-        operation: Operation::Translate,
-        payload_fingerprint: "test".into(),
-        mode: TRANSLATION_MODE.into(),
-        texts: vec![w.consent_text().unwrap()],
-        source_language: w.source_language.clone(),
-        target_language: Some(w.target_language.clone()),
-        source_samples: SampleRange::new(0, 1).unwrap(),
-        sample_rate: 1,
-        max_bytes: 65536,
-    };
+    let config = OpenAiTranslator::provider_config(TRANSLATION_MODEL).unwrap();
+    let scope =
+        Scope::translation(config.clone(), TRANSLATION_MODE.into(), &w, "test".into()).unwrap();
     let c = Consent::grant(scope.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
     let transport = Arc::new(Transport {
         calls: AtomicUsize::new(0),

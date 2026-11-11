@@ -1,6 +1,6 @@
 //! Classifies filler words in one project transcript through the lent text provider.
 use crate::args::{CliError, utf8};
-use crate::output::{CliApproval, Output, json_path, wait_for_job};
+use crate::output::{CliConsent, Output, json_path, wait_for_job};
 use crate::session::{Context, cli_runner};
 use engine::fillers::FillerRequest;
 use engine::providers::{Credentials, TextAccess, choose_filler};
@@ -82,15 +82,11 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ));
     }
     let provider = choose_filler(&provider, model.as_deref())?;
-    let credentials = Credentials::new(
-        std::env::var("OPENAI_API_KEY").ok(),
-        std::env::var("ELEVENLABS_API_KEY").ok(),
-        std::env::var("ANTHROPIC_API_KEY").ok(),
-    )?;
+    let credentials = Credentials::from_env()?;
     let access = TextAccess::open(
         provider,
         &credentials,
-        Box::new(CliApproval::new(yes_upload)),
+        Box::new(CliConsent::new(yes_upload)),
     )?;
 
     let lease = WriterLease::acquire(&project_path)?;

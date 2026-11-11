@@ -7,14 +7,13 @@ use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
     AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
     ClipSourceSegment, ClipSuggester, ClipSuggestion, DroppedClip, HeuristicClipSuggester,
-    MAX_WIRE, MODE, OPENAI_LUNA_MODEL, OpenAiClipSuggester,
+    OPENAI_LUNA_MODEL, OpenAiClipSuggester,
 };
-use ai::{Consent, CostEstimate, Money, Operation, SampleRange, Scope};
+use ai::{Consent, CostEstimate, Money, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
 use engine::EditError;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
-use engine::providers as engine_providers;
 use engine::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,
 };
@@ -115,13 +114,6 @@ enum BuiltSuggester {
     Heuristic(HeuristicClipSuggester),
     OpenAi(OpenAiClipSuggester),
     Anthropic(AnthropicClipSuggester),
-}
-
-struct PromptApproval<'a> {
-    consent: &'a dyn ConsentPrompt,
-    requests: Vec<(Scope, UploadRequest)>,
-    spent: Cost,
-    refusal: Option<EditError>,
 }
 
 #[derive(Clone, Debug)]
