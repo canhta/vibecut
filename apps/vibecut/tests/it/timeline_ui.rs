@@ -5196,3 +5196,75 @@ fn clipboard_direct_actions_preserve_focused_property_drafts_and_text_paste_stay
     );
     assert!(h.state().session.clipboard_has_entry());
 }
+
+#[test]
+fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_without_state_changes()
+ {
+    let f = fixture();
+    let id = f.video_a;
+    let mut editor = f.editor;
+    let path = project::AnimationPath::new("params.text").unwrap();
+    let mut key = project::Keyframe::new(
+        Tick::ZERO,
+        project::ParamValue::Text("x".repeat(600_000).into()),
+    );
+    key.segment = project::Segment::Step;
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: id,
+            path: path.clone(),
+            param: project::Param::Value(
+                project::Channel::new(
+                    project::ParamValue::Text("b".repeat(600_000).into()),
+                    vec![key],
+                    project::Extrapolation::Hold,
+                    project::Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        })
+        .unwrap();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    click_item(&mut h, id);
+    h.state_mut()
+        .selection_scopes
+        .keyframes
+        .insert(vibecut::selection::KeyframeSelection {
+            item: id,
+            path,
+            component: None,
+            time: Tick::ZERO,
+        });
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    let rev = h.state().session.revision();
+    let history = h.state().session.history_len();
+    assert_eq!(
+        h.state().inspect().unwrap().selection_scope,
+        vibecut::selection::SelectionScope::Keyframes
+    );
+    assert!(!h.state().action_enabled("edit.copy"));
+    assert!(h.state_mut().activate("edit.copy").is_err());
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::C,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        !h.output()
+            .platform_output
+            .commands
+            .iter()
+            .any(|c| matches!(c, egui::OutputCommand::CopyText(_)))
+    );
+    h.run_steps(3);
+    assert!(!h.state().session.clipboard_has_entry());
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.revision(), rev);
+    assert_eq!(h.state().session.history_len(), history);
+}

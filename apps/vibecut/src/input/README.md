@@ -23,13 +23,16 @@ otherwise media paste gets the event.
 `text_clipboard(ctx, owner)` bridges raw native clipboard keys before widgets in each
 viewport. Native shortcut translation is disabled so nontext keyframe Paste works
 independently of OS clipboard content. Focused Copy/Cut become egui events; focused
-Paste requests text through the existing viewport command. Dedicated keys and Windows
-Insert/Delete aliases retain text semantics. Nontext keys stay with the keymap and never
-request system data. Keyframe snapshots are never serialized to the system clipboard.
+Paste queues a text read for the app [service](../services/README.md#focused-text-reads).
+Dedicated keys and Windows Insert/Delete aliases retain text semantics. Nontext keys
+stay with the keymap and never request system data. Keyframe snapshots are never
+serialized to the system clipboard.
 
-One pending request per viewport retains widget, owner, frame and issue time; focus,
-pointer, owner changes or a two-second timeout invalidate delivery. The locked eframe
-Wgpu adapter performs requests synchronously after painting and queues a result for the
-next frame; the bridge classifies it before replacement widgets. An empty result completes
-on that next frame too, without confusing repeated egui discard passes with native frames.
-Home and both immediate child-window consumers supply their own owner identities.
+One pending request per viewport retains widget, owner, issue time and a unique service
+token. Focus, pointer, owner changes, close or a two-second expiry invalidate delivery
+permanently. A claimed read completes explicitly, including empty/error results; empty
+input frames never end custody. Completion is tagged data rather than an unowned Paste
+event and is classified before replacement widgets. Replayed/foreign tokens cannot
+complete another request. Genuine unowned context-menu Paste and IME remain egui events.
+Discard passes cannot issue another native read for the same chord. Home and both
+immediate child-window consumers supply their own owner identities.

@@ -143,7 +143,7 @@ impl Session {
     pub fn can_copy_keyframes(&self, keys: &[crate::KeyframeRef]) -> bool {
         !self.transaction_active()
             && !keys.is_empty()
-            && super::KeyframeClipboard::capture(self.project().data(), keys).is_ok()
+            && super::KeyframeClipboard::can_capture(self.project().data(), keys)
     }
     /// Current target/lock/value/time admission for desktop Paste; zero-key Params qualify.
     pub fn can_paste_keyframes(&self, item: ItemId, at: Tick) -> bool {

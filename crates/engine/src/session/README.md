@@ -134,7 +134,12 @@ and strictly ordered path/Param pairs containing only selected keys. It admits o
 source item, 64 paths, 4096 refs/keys and 1 MiB compact UTF-8 JSON. Every time,
 handle delta, derived offset and pasted time fits ±(2^53−1); invalid values,
 versions, duplicates, missing keys and unordered entries refuse atomically.
-Empty Copy preserves the store. Source locks permit Copy.
+Empty Copy preserves the store. Source locks permit Copy. Availability and Copy first
+admit a borrowed projection: capped reference metadata, selected-key/time/component
+checks, then compact JSON byte counting with actual escaping and borrowed normalized
+text. No selected key, Text or base is cloned before that admission; availability never
+materializes a snapshot. Copy constructs the owned payload only after it passes. Typed
+construction and deserialization retain the same validation and byte ceiling.
 
 Paste accepts one active-scene item with matching existing Params, including channels
 with zero keys. It adopts each participating channel's base and extrapolation,

@@ -1024,6 +1024,8 @@ fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
     );
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.run_steps(1);
+    h.state_mut().text_clipboard =
+        vibecut::services::text_clipboard::TextClipboard::new(|| Some("English".into()));
     h.input_mut().events.push(egui::Event::Key {
         key: egui::Key::C,
         physical_key: None,
@@ -1048,13 +1050,12 @@ fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
     });
     h.step();
     assert!(
-        h.output()
+        !h.output()
             .viewport_output
             .values()
             .flat_map(|v| &v.commands)
             .any(|c| matches!(c, egui::ViewportCommand::RequestPaste))
     );
-    h.event(egui::Event::Paste("English".into()));
     h.run_steps(2);
     assert_eq!(
         h.state()

@@ -33,6 +33,8 @@ pub struct Workspace {
     pub projects: HomeState,
     pub shorts: Option<crate::shorts::State>,
     pub preferences: Preferences,
+    /// Injected native reader shared by Home and immediate child composition.
+    pub text_clipboard: crate::services::text_clipboard::TextClipboard,
     home: EditorWindow,
     focused: Option<project::ProjectId>,
     focus_requested: Option<project::ProjectId>,
@@ -101,6 +103,7 @@ impl Workspace {
             projects: HomeState::new(projects_root, budget),
             shorts: None,
             preferences,
+            text_clipboard: Default::default(),
             home,
             focused: None,
             focus_requested: None,
@@ -433,7 +436,7 @@ impl Workspace {
                 ))
             })
             .unwrap_or_else(|| egui::Id::unique(("loading", id)));
-        crate::input::text_clipboard(ui.ctx(), owner);
+        self.text_clipboard.bridge(ui.ctx(), owner);
         if let Some(window) = self.windows.get_mut(&id) {
             window.preferences = self.preferences.clone();
             if let Some(editor) = &mut window.editor {
@@ -480,7 +483,7 @@ impl Workspace {
         Editor::theme(ui.ctx(), self.preferences.dark);
         let ctx = ui.ctx().clone();
         if self.home_open {
-            crate::input::text_clipboard(
+            self.text_clipboard.bridge(
                 ui.ctx(),
                 egui::Id::unique(("home.text", self.projects.selection())),
             );
@@ -577,7 +580,7 @@ impl Workspace {
                     .builder()
                     .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
-                    crate::input::text_clipboard(
+                    self.text_clipboard.bridge(
                         ui.ctx(),
                         egui::Id::unique((
                             "shorts.text",
@@ -610,6 +613,21 @@ impl Workspace {
         if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
             remember_geometry(&mut self.preferences, "home".into(), geometry);
         }
+        let mut text_viewports: Vec<_> = self
+            .windows
+            .keys()
+            .filter_map(|id| self.viewport(*id))
+            .collect();
+        if self.home_open {
+            text_viewports.push(egui::ViewportId::ROOT);
+        }
+        if self.shorts_window {
+            text_viewports.push(egui::ViewportId::from_hash_of("shorts.window"));
+        }
+        if ctx.embed_viewports() && !text_viewports.is_empty() {
+            text_viewports = vec![egui::ViewportId::ROOT];
+        }
+        self.text_clipboard.retain_viewports(&ctx, &text_viewports);
         if self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }

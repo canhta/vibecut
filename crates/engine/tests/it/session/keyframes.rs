@@ -2239,3 +2239,191 @@ fn clipboard_copy_revision_distinguishes_signed_zero_snapshot_bytes() {
     };
     assert_eq!(v.to_bits(), (-0.0_f64).to_bits());
 }
+
+#[test]
+fn clipboard_copy_admission_counts_escaped_bases_and_selected_keys_at_the_byte_boundary() {
+    use crate::support::control::{ok, run, runner};
+    use engine::{EditError, KeyframeRef};
+    // Independent wire fixture includes JSON escaping and UTF-8 in both base and key.
+    let base = "\"\\\n\u{0001}Việt".repeat(20_000);
+    let mut expected = json!({"version":1,"origin":0,"params":[{"path":"params.text","param":{"kind":"value","channels":{"value":{"kind":"text","value":base},"keys":[{"time":0,"value":{"kind":"text","value":"\"\\\nViệt"},"segment":"step","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]});
+    let overhead = serde_json::to_vec(&expected).unwrap().len();
+    let text = format!("\"\\\nViệt{}", "a".repeat((1 << 20) - overhead));
+    expected["params"][0]["param"]["channels"]["keys"][0]["value"]["value"] = json!(text);
+    assert_eq!(serde_json::to_vec(&expected).unwrap().len(), 1 << 20);
+    for extra in [0, 1] {
+        let mut data = session().project().data().clone();
+        let mut selected = Keyframe::new(
+            Tick(0),
+            ParamValue::Text(format!("{text}{}", "b".repeat(extra)).into()),
+        );
+        selected.segment = Segment::Step;
+        let mut unselected = Keyframe::new(Tick(1), ParamValue::Text("z".repeat(1 << 20).into()));
+        unselected.segment = Segment::Step;
+        data.scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+            .next()
+            .unwrap()
+            .animations
+            .set(
+                AnimationPath::new("params.text").unwrap(),
+                Param::Value(
+                    Channel::new(
+                        ParamValue::Text(base.clone().into()),
+                        vec![selected, unselected],
+                        Extrapolation::Hold,
+                        Extrapolation::Hold,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        let old = KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick::ZERO,
+        };
+        s.apply(Command::CopyKeyframes { keys: vec![old] }).unwrap();
+        let mut r = runner();
+        let stored =
+            serde_json::to_value(ok(run(&mut s, &mut r, "clipboard.read", json!({}), "old")))
+                .unwrap();
+        let before = s.project().clone();
+        let history = s.history_len();
+        let rev = s.revision();
+        let selection = s.selection().clone();
+        let keys = vec![KeyframeRef {
+            item: ItemId(2),
+            path: AnimationPath::new("params.text").unwrap(),
+            component: None,
+            time: Tick::ZERO,
+        }];
+        assert_eq!(s.can_copy_keyframes(&keys), extra == 0);
+        assert_eq!(s.revision(), rev);
+        // Exercise strict wire Copy as well as typed admission.
+        let result = s.execute("clipboard.copy_keyframes", json!({"keys":keys}));
+        if extra == 0 {
+            assert!(!result.unwrap().changed);
+            let read =
+                serde_json::to_value(ok(run(&mut s, &mut r, "clipboard.read", json!({}), "new")))
+                    .unwrap();
+            assert_eq!(read["payload"], expected);
+            assert_eq!(serde_json::to_vec(&read["payload"]).unwrap().len(), 1 << 20);
+        } else {
+            assert!(matches!(result, Err(EditError::Limit)));
+            assert_eq!(s.revision(), rev);
+            let read = serde_json::to_value(ok(run(
+                &mut s,
+                &mut r,
+                "clipboard.read",
+                json!({}),
+                "unchanged",
+            )))
+            .unwrap();
+            assert_eq!(read, stored);
+        }
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+        assert_eq!(s.selection(), &selection);
+    }
+}
+
+#[test]
+fn clipboard_hostile_text_availability_and_copy_refuse_before_materializing_values() {
+    use engine::{EditError, KeyframeRef};
+    // A fresh subprocess isolates hostile admission from parallel tests and earlier heaps.
+    // This is a real typed-valid 64 MiB source; the old capture cloned it before refusal.
+    const CHILD: &str = "VIBECUT_CLIPBOARD_ALLOCATION_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "session::keyframes::clipboard_hostile_text_availability_and_copy_refuse_before_materializing_values", "--nocapture", "--test-threads=1"])
+            .env(CHILD, "1")
+            .output().unwrap();
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        return;
+    }
+    let mut data = session().project().data().clone();
+    let mut keys = Vec::new();
+    for n in 0..128 {
+        let mut key = Keyframe::new(Tick(n), ParamValue::Text("x".repeat(512 << 10).into()));
+        key.segment = Segment::Step;
+        keys.push(key);
+    }
+    let p = AnimationPath::new("params.text").unwrap();
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .next()
+        .unwrap()
+        .animations
+        .set(
+            p.clone(),
+            Param::Value(
+                Channel::new(
+                    ParamValue::Text("base".into()),
+                    keys,
+                    Extrapolation::Hold,
+                    Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    s.apply(Command::CopyKeyframes {
+        keys: vec![KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: Tick::ZERO,
+        }],
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let rev = s.revision();
+    let history = s.history_len();
+    let selection = s.selection().clone();
+    let refs: Vec<_> = (0..128)
+        .map(|n| KeyframeRef {
+            item: ItemId(2),
+            path: p.clone(),
+            component: None,
+            time: Tick(n),
+        })
+        .collect();
+    for _ in 0..8 {
+        assert!(!s.can_copy_keyframes(&refs));
+    }
+    assert!(matches!(
+        s.apply(Command::CopyKeyframes { keys: refs }),
+        Err(EditError::Limit)
+    ));
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), rev);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.selection(), &selection);
+    // Read through the consumed control boundary, proving the earlier scalar store survived.
+    let mut r = crate::support::control::runner();
+    let stored = crate::support::control::ok(crate::support::control::run(
+        &mut s,
+        &mut r,
+        "clipboard.read",
+        json!({}),
+        "preserved",
+    ));
+    assert_eq!(
+        serde_json::to_value(stored).unwrap()["payload"]["params"][0]["path"],
+        "opacity"
+    );
+}
