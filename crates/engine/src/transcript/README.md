@@ -20,8 +20,10 @@ return Runtime results directly. Only the existing acquisition execution bridges
 cancellation and the extraction cancellation sentinel to direct Runtime cancellation; a captured
 concrete failure wins over that sentinel. General AI/Media conversions remain ordinary foreign
 failures. Root Transcript composition delegates the actual owner's code/transience/job policy;
-native Model/Transfer/Failed remain opaque. Mixed Session building, translation and blocking
-job waiting keep their existing engine results; wait_for_job retains the original raw cause Arc.
+native Model/Transfer/Failed remain opaque. Mixed Session building and translation keep their engine results. The blocking
+`wait_for_job` returns Runtime results: failed jobs retain the original raw cause Arc in
+`Failed`, direct cancellation stays direct, and missing snapshots or completed output retain
+Kernel Session `StaleResult` through Runtime Edit composition.
 
 The blocking composition root reserves `WORK_BYTES` (64 MiB) and `RESULT_BYTES` (16 MiB)
 from the runner's shared `ByteBudget` before extraction/detection or provider work. Work

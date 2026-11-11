@@ -435,9 +435,9 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
                 force: false
             }
         ),
-        Err(EngineError::Edit(engine::EditError::Session(
+        Err(engine::EditError::Session(
             engine::SessionError::StaleResult
-        )))
+        ))
     ));
 }
 
