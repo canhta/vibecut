@@ -32,6 +32,19 @@ code, no transience and ordinary scheduling policy. Verification cancellation re
 opaque model error, distinct from direct Runtime cancellation. Other AI workflow producers
 retain their own policies.
 
+## Verified transfer result boundary
+
+Verified response and header operations return `runtime::Result`. Retryable GET failures
+normalize to direct `NetworkTransient`, without inheriting an AI retry-after advisory.
+Nontransient GET and redirect-validation failures retain their original `ai::Error` in
+`RuntimeError::Transfer`, with `AI execution failed`, no transience and ordinary policy.
+Its code borrows the one foreign AI projection in the verified-transfer execution owner:
+Chapters is Refused, other AI errors are Ai. The engine aggregate's genuine AI composition
+also borrows that projection's transience and direct rate-limit advisory; native `Model`
+validation remains opaque Ai. Foreign cancellation is not direct Runtime cancellation.
+Higher model/font workflows compose Runtime failures at their own mixed result boundary;
+redirect/header bounds, consent, checkpoint and publication policies stay with their owners.
+
 ## Background jobs and byte policy
 
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting

@@ -4,6 +4,8 @@ use crate::session::wire::{ErrorCode, Failure, JobFailurePolicy};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("AI execution failed")]
+    Transfer(#[source] ai::Error),
     #[error("render execution failed")]
     Render(#[from] render::Error),
     #[error("media operation failed")]
@@ -58,6 +60,7 @@ impl Failure for Error {
     }
     fn code(&self) -> ErrorCode {
         match self {
+            Self::Transfer(error) => error.code(),
             Self::Render(error) => error.code(),
             Self::Media(error) => error.code(),
             Self::Edit(error) => error.code(),

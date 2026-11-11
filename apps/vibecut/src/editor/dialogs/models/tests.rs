@@ -118,12 +118,15 @@ impl Read for Body {
 type Request = (String, Vec<(String, String)>);
 #[derive(Default)]
 struct Http {
-    replies: Mutex<VecDeque<Reply>>,
+    replies: Mutex<VecDeque<Result<Reply, ai::Error>>>,
     requests: Mutex<Vec<Request>>,
 }
 impl Http {
     fn push(&self, reply: Reply) {
-        self.replies.lock().unwrap().push_back(reply);
+        self.replies.lock().unwrap().push_back(Ok(reply));
+    }
+    fn fail(&self, error: ai::Error) {
+        self.replies.lock().unwrap().push_back(Err(error));
     }
     fn count(&self) -> usize {
         self.requests.lock().unwrap().len()
@@ -156,7 +159,7 @@ impl DownloadTransport for Http {
             .lock()
             .unwrap()
             .pop_front()
-            .ok_or(ai::Error::Network)?;
+            .ok_or(ai::Error::Network)??;
         Ok(HttpStreamResponse {
             status: reply.status,
             headers: reply.headers,
@@ -721,4 +724,42 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
             .is_some()
     );
     assert_eq!(http.count(), 0, "disk preflight precedes transfer");
+    for error in [
+        ai::Error::StorageFull,
+        ai::Error::ModelStorage(io::ErrorKind::StorageFull),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let fixture = model("fixture-disk", "MIT", &vec![6u8; 64 * 1024]);
+        let http = Arc::new(Http::default());
+        http.fail(error);
+        let manager = self::manager(
+            dir.path(),
+            vec![fixture],
+            http.clone(),
+            Arc::new(Io {
+                available: u64::MAX,
+            }),
+        );
+        let mut bench = self::bench(open(manager, "fixture-disk"));
+        wait_check(&mut bench);
+        bench.click("models.download.fixture-disk");
+        wait_terminal(&mut bench);
+        let inspection = inspect(&bench);
+        let snapshot = inspection.job.as_ref().unwrap();
+        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+        assert!(matches!(
+            (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
+                .downcast_ref::<engine::Error>(),
+            Some(engine::Error::Runtime(engine::RuntimeError::Transfer(_)))
+        ));
+        assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
+        assert!(inspection.installed.is_empty());
+        assert!(
+            bench
+                .harness()
+                .query_by_label("Not enough space. Free some and retry.")
+                .is_some()
+        );
+        assert_eq!(http.count(), 1);
+    }
 }

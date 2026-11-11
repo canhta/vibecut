@@ -784,8 +784,12 @@ fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
             engine::RuntimeError::StorageFull
             | engine::RuntimeError::Model(
                 ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
+            )
+            | engine::RuntimeError::Transfer(
+                ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
             ) => ModelProblem::StorageFull,
-            engine::RuntimeError::Model(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
+            engine::RuntimeError::Model(ai::Error::ModelIntegrity)
+            | engine::RuntimeError::Transfer(ai::Error::ModelIntegrity) => ModelProblem::Integrity,
             engine::RuntimeError::NetworkTransient => ModelProblem::Network,
             engine::RuntimeError::CacheBusy => ModelProblem::Busy,
             engine::RuntimeError::CacheCorrupt => ModelProblem::Corrupt,
@@ -804,11 +808,15 @@ fn problem_for(error: &(dyn std::error::Error + 'static)) -> ModelProblem {
         | EngineError::Runtime(engine::RuntimeError::Model(
             ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
         ))
+        | EngineError::Runtime(engine::RuntimeError::Transfer(
+            ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
+        ))
         | EngineError::Ai(
             ai::Error::StorageFull | ai::Error::ModelStorage(std::io::ErrorKind::StorageFull),
         ) => ModelProblem::StorageFull,
         EngineError::Ai(ai::Error::ModelIntegrity)
-        | EngineError::Runtime(engine::RuntimeError::Model(ai::Error::ModelIntegrity)) => {
+        | EngineError::Runtime(engine::RuntimeError::Model(ai::Error::ModelIntegrity))
+        | EngineError::Runtime(engine::RuntimeError::Transfer(ai::Error::ModelIntegrity)) => {
             ModelProblem::Integrity
         }
         EngineError::Ai(
