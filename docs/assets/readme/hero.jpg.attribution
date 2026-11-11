@@ -1,7 +1,7 @@
 asset: hero.jpg
 title: VibeCut editor with a multitrack project
 author: Blender Foundation; VibeCut contributors
-source: Big Buck Bunny (2008, Blender Foundation), (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1; captured by apps/vibecut/examples/ui_audit.rs --readme hero at 48a9b56b9c73e9f95a23af9ffcce6dcd5d6ec4b3
+source: Big Buck Bunny (2008, Blender Foundation), (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; https://peach.blender.org/download/; 12s excerpt at 50s, excerpt SHA256 66518061bbabbde0c7d48b639675ce8c46a549182d32c3cc1203f2cded7c21a1; captured by apps/vibecut/examples/ui_audit.rs --readme hero at 17a67592ec7184f6e352a2339a21dc2088e73f5b
 license: CC-BY-3.0 (film excerpt); GPL-3.0-only (VibeCut capture)
 license-file: ../../licenses/CC-BY-3.0.txt
 added: p0-core/22
