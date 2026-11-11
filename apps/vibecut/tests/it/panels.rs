@@ -2948,3 +2948,184 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
         }
     }
 }
+
+#[test]
+fn graphic_scalar_label_drags_survive_own_updates_and_commit_one_undo() {
+    for field in ["strokeWidth", "cornerRadius"] {
+        for keyed in [false, true] {
+            let mut f = fixture();
+            f.editor
+                .session
+                .apply(Command::SetItemParam {
+                    item: f.graphic,
+                    content: ItemParams::Graphic(project::GraphicParams::rectangle()),
+                })
+                .unwrap();
+            let path = project::AnimationPath::new(format!("params.{field}")).unwrap();
+            f.editor
+                .set_item_field(f.graphic, path.as_str(), "10")
+                .unwrap();
+            if keyed {
+                f.editor
+                    .session
+                    .apply(Command::AddKeyframe {
+                        item: f.graphic,
+                        path: path.clone(),
+                        component: None,
+                        key: project::Keyframe::new(Tick::ZERO, project::ParamValue::Scalar(10.)),
+                    })
+                    .unwrap();
+            }
+            let id = f.graphic;
+            let mut h = build(f.editor);
+            h.run_steps(3);
+            let at = item(&h, id).start;
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(at))
+                .unwrap();
+            select(&mut h, id);
+            let value = |h: &Harness<Editor>| {
+                item(h, id)
+                    .animations
+                    .value_at(&path, Tick::ZERO)
+                    .unwrap()
+                    .unwrap()
+            };
+            let history = h.state().session.history_len();
+            let widget = format!("inspector.params.{field}.scrub");
+            let start = widget_rect(&h, &widget).center();
+            drag_to(&mut h, &widget, egui::vec2(20., 0.));
+            assert!(
+                h.state().session.gesture_active(),
+                "{field}, keyed={keyed}: own update must keep drag alive"
+            );
+            assert_eq!(value(&h), project::ParamValue::Scalar(20.));
+            assert_eq!(h.state().session.history_len(), history);
+            h.hover_at(start + egui::vec2(40., 0.));
+            h.run_steps(3);
+            assert!(h.state().session.gesture_active());
+            assert_eq!(value(&h), project::ParamValue::Scalar(30.));
+            h.drop_at(start + egui::vec2(40., 0.));
+            h.run_steps(3);
+            assert!(!h.state().session.gesture_active());
+            assert_eq!(value(&h), project::ParamValue::Scalar(30.));
+            assert_eq!(h.state().session.history_len().0, history.0 + 1);
+            let param = item(&h, id).animations.get(&path).unwrap().clone();
+            let channel = param.channel(None).unwrap();
+            if keyed {
+                assert_eq!(channel.base(), &project::ParamValue::Scalar(10.));
+                assert_eq!(channel.keys().len(), 1);
+                assert_eq!(channel.keys()[0].time, Tick::ZERO);
+                assert_eq!(channel.keys()[0].value, project::ParamValue::Scalar(30.));
+            } else {
+                assert!(channel.keys().is_empty());
+            }
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(2);
+            assert_eq!(value(&h), project::ParamValue::Scalar(10.));
+            h.state_mut().activate("edit.redo").unwrap();
+            h.run_steps(2);
+            assert_eq!(value(&h), project::ParamValue::Scalar(30.));
+        }
+    }
+}
+
+#[test]
+fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
+    for field in ["strokeWidth", "cornerRadius"] {
+        for change in ["time", "selection", "tab", "snapshot", "lock"] {
+            let mut f = fixture();
+            let id = f.graphic;
+            let other = f.text;
+            f.editor
+                .session
+                .apply(Command::SetItemParam {
+                    item: id,
+                    content: ItemParams::Graphic(project::GraphicParams::rectangle()),
+                })
+                .unwrap();
+            let path = project::AnimationPath::new(format!("params.{field}")).unwrap();
+            f.editor.set_item_field(id, path.as_str(), "10").unwrap();
+            f.editor
+                .session
+                .apply(Command::AddKeyframe {
+                    item: id,
+                    path: path.clone(),
+                    component: None,
+                    key: project::Keyframe::new(Tick::ZERO, project::ParamValue::Scalar(10.)),
+                })
+                .unwrap();
+            let mut h = build(f.editor);
+            h.run_steps(3);
+            let at = item(&h, id).start;
+            h.state_mut()
+                .dispatch(vibecut::AppCommand::Seek(at))
+                .unwrap();
+            select(&mut h, id);
+            let original = h.state().session.project().clone();
+            let history = h.state().session.history_len();
+            let widget = format!("inspector.params.{field}.scrub");
+            let start = widget_rect(&h, &widget).center();
+            drag_to(&mut h, &widget, egui::vec2(20., 0.));
+            assert!(
+                h.state().session.gesture_active(),
+                "{field}/{change}: active preview precondition"
+            );
+            assert_eq!(
+                item(&h, id).animations.value_at(&path, Tick::ZERO).unwrap(),
+                Some(project::ParamValue::Scalar(20.))
+            );
+            let foreign = if matches!(change, "snapshot" | "lock") {
+                let mut data = (*original).clone().into_data();
+                if change == "snapshot" {
+                    data.name = "Foreign snapshot".into();
+                } else {
+                    for track in data.scene_mut().timeline.iter_mut() {
+                        if track.items.iter().any(|i| i.id == id) {
+                            track.locked = true;
+                        }
+                    }
+                }
+                let new = Project::new(data).unwrap();
+                h.state_mut().session = Memory(Box::new(Session::new(new, 100).unwrap()));
+                Some(h.state().session.project().clone())
+            } else {
+                match change {
+                    "time" => h
+                        .state_mut()
+                        .dispatch(vibecut::AppCommand::Seek(at.checked_add(Tick(1)).unwrap()))
+                        .unwrap(),
+                    "selection" => h.state_mut().selection = [other].into_iter().collect(),
+                    "tab" => h
+                        .state_mut()
+                        .preferences
+                        .set(
+                            "properties_tabs",
+                            serde_json::json!({"graphic":"transform"}),
+                        )
+                        .unwrap(),
+                    _ => unreachable!(),
+                }
+                None
+            };
+            h.run_steps(3);
+            h.drop_at(start + egui::vec2(40., 0.));
+            h.run_steps(3);
+            assert!(!h.state().session.gesture_active(), "{field}/{change}");
+            assert_eq!(
+                item(&h, id).animations.value_at(&path, Tick::ZERO).unwrap(),
+                Some(project::ParamValue::Scalar(10.)),
+                "{field}/{change}"
+            );
+            if let Some(foreign) = foreign {
+                assert!(
+                    Arc::ptr_eq(h.state().session.project(), &foreign),
+                    "foreign snapshot survives cancellation"
+                );
+            } else {
+                assert_eq!(h.state().session.project(), &original);
+                assert_eq!(h.state().session.history_len(), history);
+            }
+        }
+    }
+}
