@@ -367,7 +367,7 @@ impl LutStore {
             )?;
             let _backup = super::projects::DirectoryGuard(Some(backup.clone()));
             let old = backup.as_path().join("old");
-            context.commit_publication(|| {
+            context.commit_publication(|| -> Result<()> {
                 self.0.lease.validate()?;
                 publication.validate()?;
                 fs::rename(&record.directory, &old)?;
@@ -380,7 +380,7 @@ impl LutStore {
             // Conservative disk accounting includes the replacement; no free-budget
             // assumption if another reader still has the prior files open.
         } else {
-            context.commit_publication(|| {
+            context.commit_publication(|| -> Result<()> {
                 self.0.lease.validate()?;
                 publication.validate()?;
                 parents(&record.directory)?;

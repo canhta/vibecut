@@ -197,7 +197,7 @@ impl Workflow for LocalWorkflow {
     }
 }
 fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
-    JobRunner::new(
+    Ok(JobRunner::new(
         RunnerConfig {
             concurrency: [2, 1, 1],
             queue: 8,
@@ -208,7 +208,7 @@ fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
         },
         budget,
         Arc::new(SystemClock::default()),
-    )
+    )?)
 }
 fn insert(
     cues: CueTrack,

@@ -1657,7 +1657,11 @@ fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
     );
     assert_eq!(
         previews.failure("channel_mix"),
-        Some(engine::EditError::JobNotRetained.to_string().as_str())
+        Some(
+            engine::EditError::Runtime(engine::RuntimeError::JobNotRetained)
+                .to_string()
+                .as_str()
+        )
     );
     drop(pressure);
     previews.settle(std::time::Duration::from_secs(10)).unwrap();

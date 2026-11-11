@@ -4,6 +4,10 @@ use crate::session::wire::{ErrorCode, Failure, JobFailurePolicy};
 /// Runtime failures retain typed causes without exposing allocation or file contents.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("job is absent or no longer retained")]
+    JobNotRetained,
+    #[error("identifier space exhausted")]
+    IdExhausted,
     #[error("job cancelled")]
     Cancelled,
     #[error("loudness gains are missing or measured for different audio; measure again")]
@@ -47,13 +51,15 @@ impl Failure for Error {
     fn code(&self) -> ErrorCode {
         match self {
             Self::Cancelled => ErrorCode::Cancelled,
+            Self::JobNotRetained => ErrorCode::JobNotRetained,
             Self::QueueFull => ErrorCode::QueueFull,
             Self::WorkerPanicked => ErrorCode::WorkerFailure,
             Self::BudgetFull | Self::ArtifactTooLarge => ErrorCode::Budget,
             Self::NetworkTransient | Self::CacheCorrupt | Self::Poisoned => ErrorCode::Job,
             Self::Io(_) => ErrorCode::Io,
             Self::Limit => ErrorCode::Limit,
-            Self::LoudnessStale
+            Self::IdExhausted
+            | Self::LoudnessStale
             | Self::CacheBusy
             | Self::ModelResponse
             | Self::StorageFull

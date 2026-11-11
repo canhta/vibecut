@@ -85,8 +85,6 @@ pub enum EditError {
     ReceiptCapacity,
     #[error("event cursor requires a new snapshot")]
     ResyncRequired,
-    #[error("job is absent or no longer retained")]
-    JobNotRetained,
     #[error("control identity unavailable")]
     ControlIdentity,
 
@@ -178,7 +176,6 @@ impl EditError {
             Self::IdempotencyConflict => C::IdempotencyConflict,
             Self::ReceiptCapacity => C::ReceiptCapacity,
             Self::ResyncRequired => C::ResyncRequired,
-            Self::JobNotRetained => C::JobNotRetained,
             Self::UnknownCommand => C::UnknownCommand,
             Self::InvalidParams => C::InvalidParams,
             Self::Limit => C::Limit,

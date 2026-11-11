@@ -280,7 +280,10 @@ impl EffectPreviews {
             let job = flight.job;
             let sequence = flight.sequence;
             let outcome = match self.runner.snapshot(job) {
-                None => Some(Err(engine::EditError::JobNotRetained.to_string())),
+                None => Some(Err(engine::EditError::Runtime(
+                    engine::RuntimeError::JobNotRetained,
+                )
+                .to_string())),
                 Some(snapshot) => match snapshot.state {
                     JobState::Completed => Some(
                         self.runner

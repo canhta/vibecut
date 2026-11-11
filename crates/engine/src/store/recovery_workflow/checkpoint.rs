@@ -127,7 +127,7 @@ impl Autosave {
 impl Autosave {
     pub(super) fn pump(&mut self) -> std::result::Result<(), PumpFailure> {
         self.observe()?;
-        self.runner.tick()?;
+        self.runner.tick().map_err(EditError::from)?;
         self.runner.drain_events();
         if let Some(f) = &self.flight {
             let state = self
@@ -367,7 +367,7 @@ impl Autosave {
                         work.source
                     };
                 }
-                return Err(error);
+                return Err(error.into());
             }
         };
         self.flight = Some(Flight {
@@ -379,7 +379,7 @@ impl Autosave {
             clear: clear_journal,
         });
         self.first_dirty = None;
-        self.runner.tick()?;
+        self.runner.tick().map_err(EditError::from)?;
         Ok(())
     }
 }

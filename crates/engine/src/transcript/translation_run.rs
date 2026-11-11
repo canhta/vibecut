@@ -235,7 +235,7 @@ impl TranslationRun {
             translation: [0; 32],
         })?;
         let run = self.clone();
-        runner.submit_for_session(
+        Ok(runner.submit_for_session(
             session,
             JobSpec {
                 kind: JobKind::Translate,
@@ -248,6 +248,6 @@ impl TranslationRun {
                 },
             },
             move |hooks: &JobContext| run.run(hooks),
-        )
+        )?)
     }
 }

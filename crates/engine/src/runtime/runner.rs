@@ -150,10 +150,10 @@ impl JobContext {
     /// Seal a verified atomic publication against cancellation. Cancellation that
     /// wins first refuses publication; after sealing, cancel is a no-op and the
     /// operation finishes or fails with its IO result. No mutex spans IO.
-    pub fn commit_publication<T>(
+    pub fn commit_publication<T, E: From<RuntimeError>>(
         &self,
-        publish: impl FnOnce() -> Result<T, EditError>,
-    ) -> Result<T, EditError> {
+        publish: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
         self.begin_publication()?;
         {
             let mut progress = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
@@ -164,10 +164,10 @@ impl JobContext {
     }
     /// Latest value only, at most once per configured interval (including stage
     /// changes). Invalid values are refused without changing visible progress.
-    pub fn progress(&self, stage: JobStage, value: f32) -> Result<(), EditError> {
+    pub fn progress(&self, stage: JobStage, value: f32) -> RuntimeResult<()> {
         self.check_cancelled()?;
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err(EditError::Invalid("job progress"));
+            return Err(RuntimeError::Invalid("job progress"));
         }
         let now = self.clock.now();
         let mut p = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
@@ -275,7 +275,7 @@ impl JobRunner {
         config: RunnerConfig,
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
-    ) -> Result<Self, EditError> {
+    ) -> RuntimeResult<Self> {
         if config.concurrency.iter().any(|n| *n == 0 || *n > 16)
             || !(1..=10_000).contains(&config.queue)
             || !(1..=10_000).contains(&config.retained)
@@ -283,7 +283,7 @@ impl JobRunner {
             || config.backoff.is_zero()
             || config.progress_interval < Duration::from_millis(10)
         {
-            return Err(EditError::Limit);
+            return Err(RuntimeError::Limit);
         }
         Ok(Self {
             config,
@@ -304,7 +304,7 @@ impl JobRunner {
         &mut self,
         spec: JobSpec,
         task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
-    ) -> Result<(JobId, CancelToken), EditError> {
+    ) -> RuntimeResult<(JobId, CancelToken)> {
         self.submit_target(spec, None, task)
     }
     /// Bind returned output to exactly this Session revision before scheduling.
@@ -313,7 +313,7 @@ impl JobRunner {
         session: &Session,
         spec: JobSpec,
         task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
-    ) -> Result<(JobId, CancelToken), EditError> {
+    ) -> RuntimeResult<(JobId, CancelToken)> {
         self.submit_target(spec, Some(session.job_target()), task)
     }
     fn submit_target<E: Failure + 'static>(
@@ -321,9 +321,9 @@ impl JobRunner {
         spec: JobSpec,
         target: Option<JobTarget>,
         task: impl Fn(&JobContext) -> Result<Vec<u8>, E> + Send + Sync + 'static,
-    ) -> Result<(JobId, CancelToken), EditError> {
+    ) -> RuntimeResult<(JobId, CancelToken)> {
         if self.queue.len() >= self.config.queue {
-            return Err(EditError::Runtime(crate::RuntimeError::QueueFull));
+            return Err(RuntimeError::QueueFull);
         }
         let total = [
             spec.bytes.decoded_frames,
@@ -333,12 +333,12 @@ impl JobRunner {
         ]
         .into_iter()
         .try_fold(0u64, |a, b| a.checked_add(b))
-        .ok_or(EditError::Runtime(RuntimeError::ArtifactTooLarge))?;
+        .ok_or(RuntimeError::ArtifactTooLarge)?;
         if total > self.budget.snapshot()?.limit {
-            return Err(EditError::Runtime(RuntimeError::ArtifactTooLarge));
+            return Err(RuntimeError::ArtifactTooLarge);
         }
         let id = JobId(self.next);
-        self.next = self.next.checked_add(1).ok_or(EditError::IdExhausted)?;
+        self.next = self.next.checked_add(1).ok_or(RuntimeError::IdExhausted)?;
         let context = JobContext {
             budget: self.budget.clone(),
             cancel: CancelToken::default(),
@@ -389,7 +389,7 @@ impl JobRunner {
     }
     /// Pump from the UI/CLI event loop. No wait for executing tasks; completed
     /// handles are joined. Scheduling scans past resource-blocked jobs.
-    pub fn tick(&mut self) -> Result<(), EditError> {
+    pub fn tick(&mut self) -> RuntimeResult<()> {
         let now = self.clock.now();
         let mut i = 0;
         while i < self.running.len() {
@@ -630,7 +630,7 @@ impl JobRunner {
             .collect()
     }
     /// Cancellation is a request; the existing publication fence can win.
-    pub fn cancel_job(&mut self, id: JobId) -> Result<(), EditError> {
+    pub fn cancel_job(&mut self, id: JobId) -> RuntimeResult<()> {
         if let Some(p) = self
             .queue
             .iter()
@@ -643,7 +643,7 @@ impl JobRunner {
         if self.finished.iter().any(|f| f.snapshot.id == id) {
             return Ok(());
         }
-        Err(EditError::JobNotRetained)
+        Err(RuntimeError::JobNotRetained)
     }
     pub fn snapshot(&self, id: JobId) -> Option<JobSnapshot> {
         self.queue
@@ -678,7 +678,7 @@ impl JobRunner {
             .iter()
             .find(|f| f.snapshot.id == id)
             .and_then(|f| f.output.as_ref())
-            .ok_or(EditError::JobNotRetained)?;
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         if output
             .target
             .as_ref()

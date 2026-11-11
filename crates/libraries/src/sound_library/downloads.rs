@@ -67,7 +67,7 @@ impl SoundDownloads {
             busy: Arc::new(AtomicBool::new(false)),
         };
         let source = source.to_owned();
-        runner.submit(
+        Ok(runner.submit(
             JobSpec {
                 kind: JobKind::SoundDownload,
                 class: ResourceClass::Network,
@@ -90,7 +90,7 @@ impl SoundDownloads {
                     Err(error) => Err(error.into()),
                 }
             },
-        )
+        )?)
     }
     /// Download through bounded HTTPS redirects into the library cache. Cancellation
     /// is checked before every read and write and leaves no partial cache entry.

@@ -147,7 +147,7 @@ impl SoundLibrary {
         if let Some(ctx) = fence {
             // Cancellation is decided at the job fence; once sealed the rename finishes.
             let mut renamed = None;
-            ctx.commit_publication(|| {
+            ctx.commit_publication::<_, engine::EditError>(|| {
                 renamed = Some(fs::rename(temp, &target));
                 Ok(())
             })

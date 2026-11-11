@@ -182,7 +182,9 @@ impl PauseCandidatesJob {
     /// Validate and decode complete output; typed terminal failures and
     /// cancellation propagate.
     pub fn finish(&self, runner: &mut JobRunner) -> Result<Option<PauseCandidates>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -191,11 +193,11 @@ impl PauseCandidatesJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(result))
             }
             _ => Ok(None),
