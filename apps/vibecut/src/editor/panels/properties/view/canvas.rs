@@ -24,6 +24,11 @@ const SWATCH_ROW: f32 = 24.0;
 
 impl Panel<'_, '_> {
     pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical()
+            .id_salt("inspector.settings")
+            .show(ui, |ui| self.settings_sections(ui));
+    }
+    fn settings_sections(&mut self, ui: &mut egui::Ui) {
         self.panel_section(
             ui,
             "inspector.section.canvas",
@@ -56,6 +61,148 @@ impl Panel<'_, '_> {
                 panel.background_palette(ui);
             },
         );
+        self.panel_section(
+            ui,
+            "inspector.cache",
+            "inspector.cache",
+            Text::CacheTimeline,
+            true,
+            false,
+            |panel, ui| panel.cache_controls(ui),
+        );
+    }
+
+    fn cache_controls(&mut self, ui: &mut egui::Ui) {
+        use crate::editor::context::{CacheAction as A, CachePhase as P};
+        let cache = &self.cx.cache;
+        if cache.phase == P::Idle && cache.checked.is_none() {
+            self.actions.push(Action::Cache(A::Refresh));
+        }
+        let busy = matches!(cache.phase, P::Inspecting | P::Clearing | P::Cancelling);
+        if busy {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(30));
+        }
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::CacheSize));
+        let size = if cache.phase == P::Unavailable
+            || cache.report.as_ref().is_some_and(|r| r.root_unavailable)
+        {
+            self.tr(Text::CacheUnavailable).to_owned()
+        } else if let Some(report) = &cache.report {
+            // Exact bytes, never budget/RSS, and never an unavailable false zero.
+            i18n::format(
+                self.cx.locale,
+                if report.failed == 0 {
+                    Text::CacheBytes
+                } else {
+                    Text::CacheIncomplete
+                },
+                &[("bytes", &i18n::number(self.cx.locale, report.disk_bytes))],
+            )
+        } else if cache.phase == P::Failed {
+            self.tr(Text::CacheUnavailable).to_owned()
+        } else {
+            self.tr(Text::Loading).to_owned()
+        };
+        let response = value_ui
+            .label(size)
+            .on_hover_text(self.tr(Text::CacheScope));
+        self.remember("inspector.cache.size", &response);
+        let (_, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        value_ui.horizontal(|ui| {
+            let actions: &[(&str, Text, A)] = if busy {
+                &[("inspector.cache.cancel", Text::Cancel, A::Cancel)]
+            } else {
+                &[
+                    ("inspector.cache.refresh", Text::CacheRefresh, A::Refresh),
+                    ("inspector.cache.clear", Text::CacheClear, A::Clear),
+                    ("inspector.cache.retry", Text::Retry, A::Retry),
+                ]
+            };
+            for &(id, text, action) in actions {
+                if action == A::Retry && cache.phase != P::Failed && cache.cause.is_none() {
+                    continue;
+                }
+                let enabled = cache.phase != P::Unavailable && cache.phase != P::Cancelling;
+                let glyph = match action {
+                    A::Clear => kit::Icon::Trash,
+                    A::Cancel => kit::Icon::X,
+                    A::Retry => kit::Icon::ArrowCounterClockwise,
+                    A::Refresh => kit::Icon::ArrowClockwise,
+                };
+                let response = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        kit::icon_button(ui, id, glyph, self.tr(text), false)
+                    })
+                    .inner;
+                self.remember_with_icon(id, Some(glyph.name()), &response);
+                if response.clicked() {
+                    self.actions.push(Action::Cache(action));
+                }
+            }
+        });
+        let status = match cache.phase {
+            P::Inspecting => self.tr(Text::CacheInspecting).to_owned(),
+            P::Clearing => self.tr(Text::CacheClearing).to_owned(),
+            P::Cancelling => self.tr(Text::CacheCancelling).to_owned(),
+            P::Unavailable => self.tr(Text::CacheUnavailable).to_owned(),
+            _ => cache.checked.map_or_else(String::new, |checked| {
+                i18n::format(
+                    self.cx.locale,
+                    Text::CacheChecked,
+                    &[("seconds", &checked.elapsed().as_secs().to_string())],
+                )
+            }),
+        };
+        let response = ui.label(egui::RichText::new(status).small().color(self.secondary()));
+        self.remember("inspector.cache.status", &response);
+        if let Some(report) = &cache.report {
+            let summary = i18n::format(
+                self.cx.locale,
+                Text::CacheResult,
+                &[
+                    ("removed", &report.removed_bytes.to_string()),
+                    ("entries", &report.entries.to_string()),
+                    ("pinned", &report.in_use.to_string()),
+                    ("failed", &report.failed.to_string()),
+                    ("missing", &report.missing.to_string()),
+                ],
+            );
+            let response = ui.label(egui::RichText::new(summary).small().color(self.secondary()));
+            self.remember("inspector.cache.result", &response);
+        }
+        let cause = cache.cause.as_deref().or_else(|| {
+            cache
+                .report
+                .as_ref()
+                .and_then(|report| report.cause.as_ref())
+        });
+        if let Some(cause) = cause {
+            let key = if cache
+                .report
+                .as_ref()
+                .is_some_and(|report| report.root_unavailable)
+            {
+                Text::CacheRestart
+            } else {
+                match cause {
+                    engine::EditError::Cancelled => Text::CacheCancelled,
+                    engine::EditError::Runtime(engine::RuntimeError::CacheCorrupt) => {
+                        Text::CacheCorrupt
+                    }
+                    engine::EditError::CacheBusy => Text::CacheBusy,
+                    engine::EditError::Unsupported(_) => Text::CacheUnavailable,
+                    _ => Text::CacheFailed,
+                }
+            };
+            let response = ui.label(
+                egui::RichText::new(self.tr(key))
+                    .small()
+                    .color(theme::warning(self.cx.dark)),
+            );
+            self.remember("inspector.cache.error", &response);
+        }
     }
 
     fn preset_text(&self, preset: AspectPreset) -> &'static str {

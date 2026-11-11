@@ -368,6 +368,7 @@ impl Rig {
             scope: crate::selection::SelectionScope::None,
             keyframes: &keyframes,
             visuals: &self.visuals,
+            cache: crate::editor::context::CacheUi::default(),
             disabled: self.disabled.clone(),
             effect_targets: None,
             key_color_pick: None,
@@ -666,9 +667,80 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
     );
     // A second owner would have to refuse: the desktop keeps the only open.
     assert!(matches!(
-        engine::control::MediaAccess::open_in(cache.path(), budget),
+        engine::control::MediaAccess::open_in(cache.path(), budget.clone()),
         Err(engine::EditError::CacheBusy)
     ));
+    let history = session.history_len();
+    let source_bytes = std::fs::read(asset.path()).unwrap();
+    let path = cache.path().join("waveform").join(
+        engine::waveform::WaveformRequest::new(asset.clone())
+            .unwrap()
+            .cache_key()
+            .filename(),
+    );
+    std::fs::remove_file(&path).unwrap();
+    assert!(matches!(
+        media.waveform(&asset, &item, visible, 16),
+        WaveState::Pending
+    ));
+    let requests = media.take_requests();
+    assert_eq!(requests.len(), 1, "one automatic corruption recovery");
+    assert!(matches!(
+        media.cache_ui().cause.as_deref(),
+        Some(engine::EditError::Runtime(
+            engine::RuntimeError::CacheCorrupt
+        ))
+    ));
+    for request in requests {
+        media.generate(&mut session, request).unwrap();
+    }
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        media.tick(&mut session).unwrap();
+        if matches!(
+            media.waveform(&asset, &item, visible, 16),
+            WaveState::Ready(_)
+        ) {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        assert!(
+            media.take_requests().is_empty(),
+            "no retry per frame while pending"
+        );
+        std::thread::yield_now();
+    }
+    std::fs::remove_file(&path).unwrap();
+    for _ in 0..3 {
+        assert!(matches!(
+            media.waveform(&asset, &item, visible, 16),
+            WaveState::Failed
+        ));
+    }
+    assert!(
+        media.take_requests().is_empty(),
+        "second corruption stays sticky"
+    );
+    media.request_cache(crate::editor::context::CacheAction::Retry);
+    assert!(matches!(
+        media.waveform(&asset, &item, visible, 16),
+        WaveState::Pending
+    ));
+    assert_eq!(media.take_requests().len(), 1);
+    // Polling/worker join never requires MediaAccess: hold it through completion.
+    let guard = shared.lock().unwrap();
+    while matches!(
+        media.cache_ui().phase,
+        crate::editor::context::CachePhase::Inspecting
+    ) {
+        media.tick(&mut session).unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    drop(guard);
+    assert!(Arc::ptr_eq(&before, session.project()));
+    assert_eq!(history, session.history_len());
+    assert_eq!(std::fs::read(asset.path()).unwrap(), source_bytes);
 }
 
 #[test]
@@ -1280,4 +1352,130 @@ fn zoom_steps_and_a_restored_view_replace_the_viewport() {
     assert!(state.zoom() > 10.0, "zooming in raises the scale");
     state.restore_view(40.0, 0.0);
     assert_eq!((state.zoom(), state.scroll()), (40.0, 0.0));
+}
+
+#[test]
+fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
+    use crate::editor::context::{CacheAction, CachePhase};
+    use egui_kittest::kittest::{By, Queryable};
+    let dir = tempfile::tempdir().unwrap();
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let (mut artifacts, _) =
+        engine::cache::ArtifactCache::open(&dir.path().join("waveform"), budget.clone(), 128)
+            .unwrap();
+    let asset = source(1, 7, TrackKind::Audio);
+    let key = engine::waveform::WaveformRequest::new(asset)
+        .unwrap()
+        .cache_key();
+    artifacts.put(key, &[7; 28]).unwrap();
+    let pinned = artifacts.get(key).unwrap().unwrap();
+    let thumbnails = engine::thumbnails::ThumbnailCache::open(
+        &dir.path().join("thumbnails"),
+        budget.clone(),
+        128,
+    )
+    .unwrap();
+    let shared = Arc::new(Mutex::new(engine::control::MediaAccess::new(
+        artifacts, thumbnails,
+    )));
+    let rig = Rig::new();
+    let mut editor = crate::Editor::new(rig.session, rig.playback, rig.preferences);
+    editor.set_media(shared.clone());
+    for section in ["inspector.canvas", "inspector.background"] {
+        editor.preferences.sections.insert(section.into(), false);
+    }
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(|ui, editor: &mut crate::Editor| editor.ui(ui), editor);
+    harness.run_steps(3);
+    let wait = |h: &mut Harness<crate::Editor>| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            h.run_steps(2);
+            if !matches!(
+                h.state().media.cache_ui().phase,
+                CachePhase::Inspecting | CachePhase::Clearing | CachePhase::Cancelling
+            ) {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+    };
+    wait(&mut harness);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.cache.clear")))
+        .click();
+    harness.run_steps(2);
+    wait(&mut harness);
+    let report = harness.state().media.cache_ui().report.unwrap();
+    assert_eq!(
+        (report.in_use, report.in_use_bytes, report.removed_bytes),
+        (1, 100, 0)
+    );
+    assert_eq!(pinned.bytes(), &[7; 28]);
+    for (locale, language) in [(Locale::En, "en"), (Locale::Vi, "vi")] {
+        harness.state_mut().preferences.locale = locale;
+        for scale in [1.0, 2.0] {
+            harness
+                .input_mut()
+                .viewports
+                .get_mut(&egui::ViewportId::ROOT)
+                .unwrap()
+                .native_pixels_per_point = Some(scale);
+            harness.ctx.set_zoom_factor(1.0);
+            harness.run_steps(3);
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                "../../target/398-settings-pinned-{language}-{scale}x.png"
+            ));
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let image = harness.render().unwrap();
+            assert_eq!(
+                image.dimensions(),
+                ((1727.0 * scale) as u32, (1029.0 * scale) as u32)
+            );
+            assert_eq!(
+                harness.ctx.content_rect().size(),
+                egui::vec2(1727.0, 1029.0)
+            );
+            image.save(path).unwrap();
+        }
+    }
+    let guard = shared.lock().unwrap();
+    harness
+        .state_mut()
+        .media
+        .request_cache(CacheAction::Refresh);
+    assert!(matches!(
+        harness.state().media.cache_ui().cause.as_deref(),
+        Some(engine::EditError::CacheBusy)
+    ));
+    assert_eq!(
+        harness.state().media.cache_ui().report.unwrap().disk_bytes,
+        100,
+        "busy admission retains last measured size"
+    );
+    drop(guard);
+    drop(pinned);
+    harness.state_mut().media.request_cache(CacheAction::Retry);
+    wait(&mut harness);
+    assert_eq!(harness.state().media.cache_ui().report.unwrap().in_use, 0);
+    harness.state_mut().media.request_cache(CacheAction::Clear);
+    wait(&mut harness);
+    assert_eq!(
+        harness
+            .state()
+            .media
+            .cache_ui()
+            .report
+            .unwrap()
+            .removed_bytes,
+        100
+    );
+    let mut detached = Media::new(budget);
+    detached.request_cache(CacheAction::Refresh);
+    assert!(matches!(
+        detached.cache_ui().cause.as_deref(),
+        Some(engine::EditError::Unsupported(_))
+    ));
 }

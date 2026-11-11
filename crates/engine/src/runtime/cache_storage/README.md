@@ -58,3 +58,16 @@ Independently complete ASR chunks commit as checkpoints, so a restart executes o
 chunks. Encoded-export resume returns a typed refusal in render: it would need independently
 finalized segments and matching manifest, codec and source identity, and no partial encoded file
 is a reusable artifact.
+
+## Desktop maintenance
+
+`maintenance` captures at most 256 registered ordinary entries and retains the root lock,
+without IO or reader pins. `CacheMaintenance::run` measures file lengths including envelopes,
+reading at most each header; unknown files, native bundles and substituted non-files remain
+untouched. Clear shares atomic eviction with budget reclamation, skips live pins and retains
+charges on failed unlink. Reports preserve prior removals, survivors and the first typed cause
+on partial failure or cancellation; a missing pinned file has zero disk bytes but keeps its
+charge and immutable read bytes until release and a later pass. Generation can repopulate a
+snapshot. Root/lock identity checks refuse settled deletion or replacement, including writes
+through a stale owner, without recreating it. These checks do **not** prevent hostile concurrent
+ancestor replacement; directory-relative filesystem custody is outside this contract.

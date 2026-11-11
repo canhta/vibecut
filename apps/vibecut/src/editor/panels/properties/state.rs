@@ -23,6 +23,7 @@ pub(in crate::editor) enum Action {
     },
     /// Switch the Project/Details strip through the action registry.
     Activate(&'static str),
+    Cache(crate::editor::context::CacheAction),
     SetField {
         item: ItemId,
         field: String,

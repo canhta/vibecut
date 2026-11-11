@@ -5,6 +5,7 @@ use crate::i18n;
 impl Editor {
     /// Advance jobs and the device clock even when the OS suppresses painting.
     pub fn tick(&mut self) {
+        self.drain_requests();
         if let Some(autosave) = self.session.autosave()
             && let Err(e) = autosave.tick()
         {

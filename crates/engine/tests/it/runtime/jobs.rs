@@ -1679,3 +1679,217 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }
+
+#[test]
+fn cache_maintenance_counts_envelopes_pins_missing_and_snapshot_replacement() {
+    use engine::cache::CacheOperation::{Clear, Inspect};
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(8192).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+    assert_eq!(
+        cache
+            .maintenance()
+            .unwrap()
+            .run(Inspect, || false)
+            .disk_bytes,
+        0
+    );
+    cache.put(key(1), &[1; 28]).unwrap();
+    cache.put(key(2), &[2; 28]).unwrap();
+    let lease = cache.get(key(1)).unwrap().unwrap();
+    let snapshot = cache.maintenance().unwrap();
+    let report = cache.maintenance().unwrap().run(Inspect, || false);
+    assert_eq!(
+        (report.disk_bytes, report.in_use_bytes, report.entries),
+        (200, 100, 2)
+    );
+    assert_eq!(budget.snapshot().unwrap().used, 300); // disk + immutable read
+    let report = snapshot.run(Clear, || false);
+    assert_eq!(
+        (report.removed_bytes, report.disk_bytes, report.in_use),
+        (100, 100, 1)
+    );
+    std::fs::remove_file(dir.path().join(key(1).filename())).unwrap();
+    let report = cache.maintenance().unwrap().run(Inspect, || false);
+    assert_eq!(
+        (report.disk_bytes, report.missing, report.in_use_bytes),
+        (0, 1, 100)
+    );
+    assert!(matches!(
+        report.cause,
+        Some(EditError::Runtime(B::CacheCorrupt))
+    ));
+    assert_eq!(lease.bytes(), &[1; 28]);
+    assert_eq!(budget.snapshot().unwrap().used, 200);
+    drop(lease);
+    let report = cache.maintenance().unwrap().run(Inspect, || false);
+    assert_eq!(report.missing, 1);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    cache.put(key(3), b"old").unwrap();
+    let stale = cache.maintenance().unwrap();
+    cache.put(key(3), b"new").unwrap();
+    assert_eq!(stale.run(Clear, || false).removed_bytes, 0);
+    assert_eq!(cache.get(key(3)).unwrap().unwrap().bytes(), b"new");
+    drop(cache);
+    let (cache, _) = ArtifactCache::open(dir.path(), budget, 8).unwrap();
+    assert_eq!(
+        cache
+            .maintenance()
+            .unwrap()
+            .run(Inspect, || false)
+            .disk_bytes,
+        75
+    );
+}
+
+#[test]
+fn cache_maintenance_cancel_keeps_prior_removals_and_independent_roots() {
+    use engine::cache::CacheOperation::{Clear, Inspect};
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(8192).unwrap();
+    let (mut a, _) = ArtifactCache::open(&dir.path().join("a"), budget.clone(), 8).unwrap();
+    let (mut b, _) = ArtifactCache::open(&dir.path().join("b"), budget.clone(), 8).unwrap();
+    for n in 1..=3 {
+        a.put(key(n), &[n; 28]).unwrap();
+    }
+    b.put(key(1), b"other root").unwrap();
+    let calls = std::cell::Cell::new(0);
+    let report = a.maintenance().unwrap().run(Clear, || {
+        calls.set(calls.get() + 1);
+        calls.get() > 1
+    });
+    assert!(matches!(report.cause, Some(EditError::Cancelled)));
+    assert_eq!(
+        (report.removed_bytes, report.disk_bytes, report.entries),
+        (100, 200, 2)
+    );
+    assert_eq!(b.get(key(1)).unwrap().unwrap().bytes(), b"other root");
+    let snapshots = [a.maintenance().unwrap(), b.maintenance().unwrap()];
+    let result = std::thread::spawn(move || {
+        let mut report = engine::cache::CacheMaintenanceReport::default();
+        for snapshot in snapshots {
+            report.merge(snapshot.run(Inspect, || false));
+        }
+        report
+    })
+    .join()
+    .unwrap();
+    assert_eq!(result.disk_bytes, 282);
+    assert_eq!(budget.snapshot().unwrap().used, 282);
+}
+
+#[test]
+fn cache_maintenance_preserves_unknown_and_hostile_substitutions() {
+    use engine::cache::CacheOperation::Clear;
+    for fault in 0..5 {
+        let dir = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(8192).unwrap();
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+        cache.put(key(1), &[1; 28]).unwrap();
+        cache.put(key(2), &[2; 28]).unwrap();
+        let path = dir.path().join(key(1).filename());
+        let original = std::fs::read(&path).unwrap();
+        let sentinel = dir.path().join("project-or-model");
+        std::fs::write(&sentinel, b"personal source").unwrap();
+        match fault {
+            0 => std::fs::write(&path, b"truncated").unwrap(),
+            1 | 2 => {
+                let mut bytes = original.clone();
+                bytes[if fault == 1 { 0 } else { 8 }] ^= 1;
+                std::fs::write(&path, bytes).unwrap();
+            }
+            3 => {
+                std::fs::remove_file(&path).unwrap();
+                std::fs::create_dir(&path).unwrap();
+            }
+            _ => {
+                #[cfg(unix)]
+                {
+                    std::fs::remove_file(&path).unwrap();
+                    std::os::unix::fs::symlink(&sentinel, &path).unwrap();
+                }
+                #[cfg(not(unix))]
+                {
+                    std::fs::write(&path, b"size mismatch").unwrap();
+                }
+            }
+        }
+        let report = cache.maintenance().unwrap().run(Clear, || false);
+        assert_eq!(
+            (report.failed, report.removed_bytes, report.entries),
+            (1, 100, 1)
+        );
+        assert!(matches!(
+            report.cause,
+            Some(EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert_eq!(budget.snapshot().unwrap().used, 100);
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"personal source");
+        assert!(std::fs::symlink_metadata(&path).is_ok());
+        if fault == 3 {
+            std::fs::remove_dir(&path).unwrap();
+        } else {
+            std::fs::remove_file(&path).unwrap();
+        }
+        std::fs::write(path, original).unwrap();
+        assert_eq!(
+            cache
+                .maintenance()
+                .unwrap()
+                .run(Clear, || false)
+                .removed_bytes,
+            100
+        );
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+fn cache_maintenance_deleted_or_replaced_root_refuses_without_recreating() {
+    use engine::cache::CacheOperation::Clear;
+    for fault in 0..3 {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("cache");
+        let moved = dir.path().join("retained");
+        let budget = ByteBudget::new(8192).unwrap();
+        let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 8).unwrap();
+        cache.put(key(1), b"original").unwrap();
+        std::fs::rename(&root, &moved).unwrap();
+        if fault == 1 {
+            std::fs::create_dir(&root).unwrap();
+            std::fs::write(root.join(".cache.lock"), b"").unwrap();
+        }
+        if fault == 2 {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&moved, &root).unwrap();
+        }
+        let report = cache.maintenance().unwrap().run(Clear, || false);
+        assert!(report.root_unavailable);
+        assert!(matches!(
+            report.cause,
+            Some(EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert!(matches!(
+            cache.put(key(2), b"no recreate"),
+            Err(EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert!(matches!(
+            cache.get(key(1)),
+            Err(EditError::Runtime(B::CacheCorrupt))
+        ));
+        assert!(moved.join(key(1).filename()).is_file());
+        if fault == 0 {
+            assert!(!root.exists());
+        }
+        drop(cache);
+        if fault == 1 {
+            std::fs::remove_file(root.join(".cache.lock")).unwrap();
+            std::fs::remove_dir(&root).unwrap();
+        }
+        #[cfg(unix)]
+        if fault == 2 {
+            std::fs::remove_file(&root).unwrap();
+        }
+        assert!(ArtifactCache::open(&root, budget, 8).is_ok());
+    }
+}

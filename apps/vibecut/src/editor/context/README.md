@@ -10,3 +10,7 @@ The one read-only context and the one write context every editor area receives.
 
 The write context can adopt a fully validated preference candidate after its related
 project command succeeds, without making an independent preference-history entry.
+
+`CacheUi` projects typed maintenance results and visual failures into Settings. `CacheAction`
+travels through `Request` to the frame; cache custody and worker lifetime remain with Media.
+These human desktop requests neither edit the session nor enter the agent command registry.
