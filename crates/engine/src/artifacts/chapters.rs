@@ -124,7 +124,8 @@ fn write_with_fs(
     json_publication.admit()?;
     text_publication.write(
         overwrite,
-        u64::try_from(text.len()).map_err(|_| EditError::Limit)?,
+        u64::try_from(text.len())
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
         |writer| {
             writer.write_all(text.as_bytes())?;
@@ -133,7 +134,8 @@ fn write_with_fs(
     )?;
     json_publication.write(
         overwrite,
-        u64::try_from(json.len()).map_err(|_| EditError::Limit)?,
+        u64::try_from(json.len())
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
         fs,
         |writer| {
             writer.write_all(&json)?;

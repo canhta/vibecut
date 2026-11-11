@@ -157,9 +157,12 @@ impl DetectionRequest {
                     return Ok(bytes.clone());
                 }
                 let result = request.analyze(ctx)?;
-                let bytes = serde_json::to_vec(&result).map_err(|_| EditError::Limit)?;
+                let bytes = serde_json::to_vec(&result)
+                    .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
                 if bytes.len() > MAX_BYTES {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 Ok(bytes)
             },
@@ -318,7 +321,9 @@ pub fn apply_reviewed(
     selected: &[usize],
 ) -> Result<(), EditError> {
     if selected.len() > MAX_MARKERS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let data = session.project().data();
     let target = data

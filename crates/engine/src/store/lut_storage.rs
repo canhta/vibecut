@@ -99,7 +99,9 @@ fn usage(root: &Path) -> Result<(u64, usize, usize)> {
             let entry = entry?;
             count += 1;
             if count > 4096 {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             let meta = plain(&entry.path())?;
             if meta.is_dir() {
@@ -111,7 +113,9 @@ fn usage(root: &Path) -> Result<(u64, usize, usize)> {
                 }
                 dirs.push((entry.path(), depth + 1));
             } else if meta.is_file() {
-                bytes = bytes.checked_add(meta.len()).ok_or(EditError::Limit)?;
+                bytes = bytes.checked_add(meta.len()).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
             } else {
                 return Err(EditError::Invalid("LUT store entry"));
             }
@@ -130,7 +134,9 @@ impl LutStore {
         let lease = project::WriterLease::acquire(&root.join("store.vibecut"))?;
         let (bytes, _, bundles) = usage(&root)?;
         if bytes > QUOTA || bundles > 1024 {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         Ok(Self(Arc::new(Store {
             root,
@@ -162,7 +168,9 @@ impl LutStore {
                 .saturating_add(MAX_BUNDLE)
                 > QUOTA
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         state.pending += MAX_BUNDLE;
         Ok(Pending {
@@ -192,7 +200,9 @@ impl LutStore {
         parents(source)?;
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let source_name = source
             .file_name()
@@ -204,7 +214,9 @@ impl LutStore {
                 .is_some_and(|s| s.as_str().is_empty() || s.as_str().len() > 256)
             || licence.as_ref().is_some_and(|s| s.as_str().len() > 1024)
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let mut pending = self.reserve()?;
         let parent = self.0.root.join(project.0.to_string());
@@ -229,11 +241,15 @@ impl LutStore {
             if n == 0 {
                 break;
             }
-            copied = copied.checked_add(n as u64).ok_or(EditError::Limit)?;
+            copied = copied.checked_add(n as u64).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             if copied > metadata.len() {
                 return Err(EditError::Invalid("LUT source changed"));
             }
-            output.write_all(buffer.get(..n).ok_or(EditError::Limit)?)?;
+            output.write_all(buffer.get(..n).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?)?;
         }
         output.sync_all()?;
         drop(output);
@@ -257,7 +273,9 @@ impl LutStore {
         drop(output);
         drop(cube);
         if plain(&canonical)?.len() > render::lut::MAX_CUBE_CANONICAL {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let id = LutId::new(hash_file(
             &canonical,
@@ -348,7 +366,10 @@ impl LutStore {
             }
             match verify_bundle(&existing, || context.cancelled()) {
                 Ok(()) => return Ok(existing),
-                Err(EditError::Invalid(_) | EditError::Limit) => {}
+                Err(
+                    EditError::Invalid(_)
+                    | EditError::Control(crate::session::wire::ControlError::Limit),
+                ) => {}
                 Err(EditError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
             }
@@ -407,9 +428,13 @@ fn hash_file(path: &Path, limit: u64, cancelled: &dyn Fn() -> bool) -> Result<me
         }
         count += n as u64;
         if count > limit {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
-        hash.update(buffer.get(..n).ok_or(EditError::Limit)?);
+        hash.update(buffer.get(..n).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?);
     }
     Ok(media::ContentHash(*hash.finalize().as_bytes()))
 }
@@ -436,7 +461,9 @@ fn read_provenance(directory: &Path) -> Result<Provenance> {
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
     if bytes.len() > 16384 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     serde_json::from_slice(&bytes).map_err(|_| EditError::Invalid("LUT provenance"))
 }
@@ -500,9 +527,13 @@ pub(crate) fn copy_bundle(
             }
             count += n as u64;
             if count > MAX_BUNDLE {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
-            output.write_all(buffer.get(..n).ok_or(EditError::Limit)?)?;
+            output.write_all(buffer.get(..n).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?)?;
         }
         output.sync_all()?;
     }

@@ -127,7 +127,7 @@ fn captions_import(args: Vec<OsString>) -> Result<Output, CliError> {
                 .max()
                 .unwrap_or(0)
                 .checked_add(1)
-                .ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
             let report = engine::prepare_ass_import(&engine::AssImportRequest {
                 path: file,
                 language,

@@ -13,7 +13,9 @@ impl Session {
     }
 
     pub(crate) fn invalidate_revision(&mut self, committed: bool) -> Result<()> {
-        self.generation = self.generation.checked_add(1).ok_or(EditError::Limit)?;
+        self.generation = self.generation.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         self.revision = Arc::new(Revision(format!("{}:{}", self.identity.0, self.generation)));
         self.ledger.push(
             &self.identity.0,

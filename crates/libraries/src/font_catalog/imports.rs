@@ -145,7 +145,7 @@ fn records(root: &Path) -> Result<Vec<Imported>> {
             return Err(FontError::Integrity.into());
         }
         if out.len() == MAX_IMPORTS {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(engine::control::ControlError::Limit));
         }
         let bytes = read_bounded(&entry.path().join(RECORD), MAX_RECORD_BYTES, None)?;
         let record: Imported = serde_json::from_slice(&bytes).map_err(|_| FontError::Integrity)?;
@@ -172,13 +172,15 @@ fn records(root: &Path) -> Result<Vec<Imported>> {
     let mut total = 0u64;
     let mut families = BTreeMap::new();
     for record in &out {
-        total = total.checked_add(record.size).ok_or(EditError::Limit)?;
+        total = total
+            .checked_add(record.size)
+            .ok_or(EditError::Control(engine::control::ControlError::Limit))?;
         let count = families
             .entry(record.family.to_lowercase())
             .or_insert(0usize);
         *count += 1;
         if total > MAX_STORED_BYTES || *count > MAX_FAMILY_FACES {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(engine::control::ControlError::Limit));
         }
     }
     out.sort_by_cached_key(|record| (record.family.to_lowercase(), record.weight, record.italic));
@@ -194,7 +196,7 @@ fn read_bounded(path: &Path, max: u64, context: Option<&JobContext>) -> Result<V
     }
     let mut file = fs::File::open(path)?;
     if !file.metadata()?.is_file() || file.metadata()?.len() > max {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     let mut bytes = Vec::new();
     let mut input = Read::by_ref(&mut file).take(max + 1);
@@ -210,7 +212,7 @@ fn read_bounded(path: &Path, max: u64, context: Option<&JobContext>) -> Result<V
         bytes.extend_from_slice(&buffer[..count]);
     }
     if bytes.len() as u64 > max {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     Ok(bytes)
 }
@@ -252,7 +254,7 @@ fn import(
     ctx.check_cancelled()?;
     let original = file.read(path, text::MAX_FONT_BYTES as u64, ctx)?;
     if original.len() > text::MAX_FONT_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     let original_sha256 = hex(&Sha256::digest(&original));
     let bytes = super::formats::decode(original)?;
@@ -321,12 +323,12 @@ fn import(
             .try_fold(record.size, |sum, item| sum.checked_add(item.size))
             .is_none_or(|total| total > MAX_STORED_BYTES)
     {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     let mut staging = Staging::create(root, "custom")?;
     let metadata = serde_json::to_vec(&record).map_err(|_| FontError::InvalidImport)?;
     if metadata.len() as u64 > MAX_RECORD_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(engine::control::ControlError::Limit));
     }
     for (name, data) in [(FONT, bytes), (RECORD, metadata)] {
         ctx.check_cancelled()?;

@@ -117,7 +117,9 @@ mod exit_codes {
             row!(E::Runtime(engine::RuntimeError::Poisoned), "job", 7),
             row!(E::Session(engine::SessionError::StaleResult), "job", 7),
             row!(
-                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Limit))),
+                E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Control(
+                    engine::control::ControlError::Limit
+                )))),
                 "usage",
                 2
             ),
@@ -126,8 +128,16 @@ mod exit_codes {
             row!(E::Ai(ai::Error::Auth), "ai", 4),
             row!(E::Sounds(S::NoCredentials), "setup", 4),
             row!(E::Io(io::Error::other("io")), "io", 7),
-            row!(E::UnknownCommand, "usage", 2),
-            row!(E::InvalidParams, "usage", 2),
+            row!(
+                E::Control(engine::control::ControlError::UnknownCommand),
+                "usage",
+                2
+            ),
+            row!(
+                E::Control(engine::control::ControlError::InvalidParams),
+                "usage",
+                2
+            ),
             row!(E::EmptyProject, "rejected", 5),
             row!(E::Panicked, "rejected", 5),
             row!(E::TransactionActive, "rejected", 5),

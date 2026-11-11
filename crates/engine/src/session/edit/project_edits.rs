@@ -27,7 +27,9 @@ pub(super) fn execute_delete_scenes(
     scenes: Vec<project::SceneId>,
 ) -> Result<ProjectData> {
     if scenes.len() > 256 {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let count = scenes.len();
     let ids: BTreeSet<_> = scenes.into_iter().collect();

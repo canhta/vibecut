@@ -553,7 +553,11 @@ impl Session {
                     Command::ExportSubtitles { path, .. } | Command::BurnSubtitles { path, .. } => {
                         path.clone()
                     }
-                    _ => return Err(EditError::InvalidParams),
+                    _ => {
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::InvalidParams,
+                        ));
+                    }
                 };
                 let (job, _) = self.submit_export_command(
                     runner,

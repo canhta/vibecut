@@ -324,7 +324,10 @@ fn caption_bank_refusals_roll_back_history_sources_and_global_allocator() {
                 "locked" => matches!(error, EditError::Locked(TrackId(1))),
                 "scene" => matches!(error, EditError::SceneBoundary),
                 "missing" | "batch" => matches!(error, EditError::NoItem(ItemId(999))),
-                "cap" => matches!(error, EditError::Limit),
+                "cap" => matches!(
+                    error,
+                    EditError::Control(engine::control::ControlError::Limit)
+                ),
                 "exhausted" => matches!(error, EditError::IdExhausted),
                 _ => matches!(error, EditError::Invalid(_)),
             },
@@ -1478,11 +1481,15 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     let untouched = fresh.project().clone();
     assert!(matches!(
         fresh.apply(make_unique_styles(captions::MAX_CUE_STYLES + 1)),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
     assert_eq!(fresh.project(), &untouched);
     assert!(matches!(
         session().apply(make(captions::ass::MAX_ASS_CUES + 1, Tick(0))),
-        Err(engine::EditError::Limit)
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
     ));
 }

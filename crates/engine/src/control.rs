@@ -121,9 +121,12 @@ pub struct Caller<'a> {
 }
 
 /// Fills the request envelope from the running session and parses one command.
-pub fn build_request(session: &Session, mut value: serde_json::Value) -> Result<Request> {
+pub fn build_request(
+    session: &Session,
+    mut value: serde_json::Value,
+) -> std::result::Result<Request, ControlError> {
     let serde_json::Value::Object(fields) = &mut value else {
-        return Err(crate::EditError::InvalidParams);
+        return Err(ControlError::InvalidParams);
     };
     fields
         .entry("api_version")
@@ -134,7 +137,7 @@ pub fn build_request(session: &Session, mut value: serde_json::Value) -> Result<
     fields
         .entry("session_id")
         .or_insert_with(|| serde_json::json!(session.session_id()));
-    serde_json::from_value(value).map_err(|_| crate::EditError::InvalidParams)
+    serde_json::from_value(value).map_err(|_| ControlError::InvalidParams)
 }
 
 #[cfg(test)]
@@ -211,7 +214,9 @@ mod tests {
             session.apply(Command::RenameProject {
                 name: "never".into()
             }),
-            Err(EditError::Limit)
+            Err(EditError::Control(
+                crate::session::wire::ControlError::Limit
+            ))
         ));
         assert_eq!(session.project(), &before);
         session.generation = u64::MAX - 2;
@@ -223,7 +228,12 @@ mod tests {
                 name: "never".into(),
             })
         });
-        assert!(matches!(result, Err(EditError::Limit)));
+        assert!(matches!(
+            result,
+            Err(EditError::Control(
+                crate::session::wire::ControlError::Limit
+            ))
+        ));
         assert_eq!(session.project(), &before);
         assert_eq!(session.history_len(), (0, 0));
         assert_eq!(session.generation, u64::MAX);

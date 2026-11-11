@@ -197,9 +197,12 @@ impl FillerRequest {
             )?;
             context.progress(crate::jobs::JobStage::Process, 0.9)?;
             let candidates = resolve(&findings, &words)?;
-            let bytes = serde_json::to_vec(&candidates).map_err(|_| EditError::Limit)?;
+            let bytes = serde_json::to_vec(&candidates)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_RESULT_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         })?;
@@ -268,12 +271,16 @@ fn resolve(
 /// Decode retained job bytes as the exact candidate list.
 pub fn decode(bytes: &[u8]) -> Result<Vec<FillerCandidate>, EditError> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let candidates: Vec<FillerCandidate> =
         serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("filler result"))?;
     if candidates.len() > crate::session::wire::MAX_COLLECTION {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     for candidate in &candidates {
         if candidate.id.as_str().trim().is_empty()

@@ -75,7 +75,9 @@ impl TryFrom<Payload> for KeyframeClipboard {
     type Error = EditError;
     fn try_from(value: Payload) -> Result<Self> {
         if value.version != 1 {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
         Self::new(
             value.origin,
@@ -108,7 +110,9 @@ fn channels_mut(param: &mut Param) -> &mut [Channel] {
 }
 fn exact(time: Tick) -> Result<Tick> {
     if !(-super::wire::MAX_SAFE_INTEGER..=super::wire::MAX_SAFE_INTEGER).contains(&time.0) {
-        return Err(EditError::InvalidParams);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ));
     }
     Ok(time)
 }
@@ -122,7 +126,9 @@ struct Selection<'a> {
 impl<'a> Selection<'a> {
     fn admit(data: &'a ProjectData, refs: &'a [KeyframeRef]) -> Result<Option<Self>> {
         if refs.len() > MAX_CLIPBOARD_KEYS {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let Some(first) = refs.first() else {
             return Ok(None);
@@ -150,7 +156,9 @@ impl<'a> Selection<'a> {
                 ColorComponent::A => 3,
             });
             if !selected.keys.insert((&r.path, component, r.time)) {
-                return Err(EditError::InvalidParams);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ));
             }
             let param = source
                 .animations
@@ -168,15 +176,16 @@ impl<'a> Selection<'a> {
             }
             selected.paths.insert(&r.path, param);
             if selected.paths.len() > MAX_CLIPBOARD_PATHS {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             selected.origin = selected.origin.min(r.time);
         }
         for (_, _, time) in &selected.keys {
-            exact(
-                time.checked_sub(selected.origin)
-                    .ok_or(EditError::InvalidParams)?,
-            )?;
+            exact(time.checked_sub(selected.origin).ok_or(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))?)?;
         }
         // Stream borrowed bases and selected keys through the real JSON escaping rules.
         // No text/key/base is cloned, and no serialized payload buffer is allocated.
@@ -336,13 +345,16 @@ fn compact_size(value: &impl Serialize) -> Result<usize> {
         }
     }
     let mut counter = Counter(0);
-    serde_json::to_writer(&mut counter, value).map_err(|_| EditError::Limit)?;
+    serde_json::to_writer(&mut counter, value)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     Ok(counter.0)
 }
 impl KeyframeClipboard {
     pub fn new(origin: Tick, params: Vec<(AnimationPath, Param)>) -> Result<Self> {
         if params.len() > MAX_CLIPBOARD_PATHS {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         exact(origin)?;
         let mut previous = None;
@@ -350,25 +362,31 @@ impl KeyframeClipboard {
         let mut count = 0usize;
         for (path, param) in &params {
             if previous.is_some_and(|p| p >= path) {
-                return Err(EditError::InvalidParams);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ));
             }
             previous = Some(path);
             let mut participating = false;
             for c in channels(param) {
-                count = count.checked_add(c.keys().len()).ok_or(EditError::Limit)?;
+                count = count.checked_add(c.keys().len()).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 if count > MAX_CLIPBOARD_KEYS {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 for key in c.keys() {
                     participating = true;
                     exact(key.time)?;
-                    let offset = exact(
-                        key.time
-                            .checked_sub(origin)
-                            .ok_or(EditError::InvalidParams)?,
-                    )?;
+                    let offset = exact(key.time.checked_sub(origin).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ))?)?;
                     if offset < Tick::ZERO {
-                        return Err(EditError::InvalidParams);
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::InvalidParams,
+                        ));
                     }
                     for handle in [key.incoming, key.outgoing].into_iter().flatten() {
                         exact(handle.dt)?;
@@ -377,11 +395,15 @@ impl KeyframeClipboard {
                 }
             }
             if !participating {
-                return Err(EditError::InvalidParams);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ));
             }
         }
         if minimum != Some(origin) {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
         let value = Self {
             version: 1,
@@ -448,13 +470,14 @@ impl KeyframeClipboard {
     }
     pub(super) fn admit_paste(&self, target: &project::Item, at: Tick) -> Result<Tick> {
         if at < Tick::ZERO {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
         exact(at)?;
-        let anchor = exact(
-            at.checked_sub(target.start)
-                .ok_or(EditError::InvalidParams)?,
-        )?;
+        let anchor = exact(at.checked_sub(target.start).ok_or(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ))?)?;
         for p in &self.params {
             let destination = target
                 .animations
@@ -474,7 +497,9 @@ impl KeyframeClipboard {
                 for key in source.keys() {
                     let time = self.pasted_time(anchor, key.time)?;
                     if dest.keys().binary_search_by_key(&time, |k| k.time).is_err() {
-                        count = count.checked_add(1).ok_or(EditError::Limit)?;
+                        count = count.checked_add(1).ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
                     }
                 }
                 if count > project::MAX_CHANNEL_KEYS {
@@ -485,10 +510,12 @@ impl KeyframeClipboard {
         Ok(anchor)
     }
     fn pasted_time(&self, anchor: Tick, time: Tick) -> Result<Tick> {
-        let offset = time
-            .checked_sub(self.origin)
-            .ok_or(EditError::InvalidParams)?;
-        exact(anchor.checked_add(offset).ok_or(EditError::InvalidParams)?)
+        let offset = time.checked_sub(self.origin).ok_or(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ))?;
+        exact(anchor.checked_add(offset).ok_or(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ))?)
     }
     pub(super) fn paste(&self, target: &mut project::Item, at: Tick) -> Result<()> {
         // Availability and the edit share borrowed admission before any target key clone.

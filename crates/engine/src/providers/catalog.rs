@@ -343,7 +343,9 @@ impl ModelInfo {
             .files
             .iter()
             .try_fold(0u64, |sum, file| sum.checked_add(file.size))
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         Ok(Self {
             id: model.id.clone(),
             license: model.license.clone(),

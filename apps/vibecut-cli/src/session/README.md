@@ -14,3 +14,8 @@ The control and headless MCP roots lend optional local `CaptionAccess` with `Den
 Their shared runtime construction retains setup refusals for caption commands without stopping
 ordinary control work; provider setup and checkpoint ownership follow the
 [caption contract](../../../../crates/engine/src/subtitles/README.md#caption-workflow-commands).
+
+Control JSON parsing and request-envelope construction return the wire owner's
+`ControlError`. The CLI retains their typed category for framed diagnostics and
+composes them into the engine error only at mixed workflow boundaries; command and
+batch byte limits retain their existing labels and exit policies.

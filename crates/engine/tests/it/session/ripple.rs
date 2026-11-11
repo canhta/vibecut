@@ -411,7 +411,7 @@ fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
                 ],
                 ripple: true,
             }),
-            Err(EditError::Limit)
+            Err(EditError::Control(engine::control::ControlError::Limit))
         ));
         assert_eq!(project::encode(s.project(), false).unwrap(), before);
         for command in ["batch", "timeline.edit"] {

@@ -142,9 +142,12 @@ impl PauseCandidatesRequest {
             context.check_cancelled()?;
             let result = request.analyze(context)?;
             context.check_cancelled()?;
-            let bytes = serde_json::to_vec(&result).map_err(|_| EditError::Limit)?;
+            let bytes = serde_json::to_vec(&result)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         })?;
@@ -216,7 +219,9 @@ pub fn decode(bytes: &[u8]) -> Result<PauseCandidates, EditError> {
     let result: PauseCandidates =
         serde_json::from_slice(bytes).map_err(|_| EditError::Invalid("pause candidates result"))?;
     if result.spans.len() > MAX_PAUSE_SPANS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let mut previous = Tick::ZERO;
     for span in &result.spans {
@@ -383,7 +388,9 @@ fn assemble(
     let spans = subtract(merge(spans), &word_spans(data)?);
     let spans = merge(spans);
     if spans.len() > MAX_PAUSE_SPANS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     Ok(PauseCandidates {
         spans,

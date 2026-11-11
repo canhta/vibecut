@@ -80,13 +80,16 @@ pub fn prepare_ass_import(request: &AssImportRequest) -> Result<AssImportReport,
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, EditError> {
-    let limit = u64::try_from(captions::ass::MAX_ASS_BYTES).map_err(|_| EditError::Limit)?;
+    let limit = u64::try_from(captions::ass::MAX_ASS_BYTES)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)?;
     if bytes.len() > captions::ass::MAX_ASS_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     Ok(bytes)
 }

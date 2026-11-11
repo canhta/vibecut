@@ -305,7 +305,7 @@ fn timeline_groups_refuse_hostile_inputs_atomically() {
             delta: Tick(0),
             placement: None
         }),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     assert!(
         s.apply(Command::TimelineMoveItems {

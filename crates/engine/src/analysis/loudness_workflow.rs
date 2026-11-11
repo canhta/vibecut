@@ -75,9 +75,12 @@ pub fn submit_loudness(
                 master: report.master.map(Into::into),
             };
             context.check_cancelled()?;
-            let bytes = serde_json::to_vec(&result).map_err(|_| EditError::Limit)?;
+            let bytes = serde_json::to_vec(&result)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         },

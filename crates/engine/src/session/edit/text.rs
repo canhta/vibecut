@@ -78,7 +78,9 @@ pub(super) fn save_caption_preset(
         .clone();
     check_preset_name(&data, &name, None)?;
     if data.caption_presets.len() >= project::MAX_CAPTION_PRESETS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let id = project::CaptionPresetId(super::alloc(next)?);
     data.caption_presets
@@ -150,13 +152,17 @@ pub(super) fn import_captions(
     copied_text_bytes: &mut usize,
 ) -> Result<ProjectData> {
     if cues.is_empty() || cues.len() > captions::ass::MAX_ASS_CUES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     if styles.iter().any(|style| !style.is_valid()) {
         return Err(EditError::Invalid("imported cue style"));
     }
     if styles.len() > captions::MAX_CUE_STYLES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     if start < Tick::ZERO {
         return Err(EditError::Invalid("negative output start"));
@@ -263,7 +269,8 @@ pub(super) fn import_captions(
     .into_data();
     // Imported content must survive a save: a result that cannot be encoded
     // could not be saved or re-opened, so refuse it before the session accepts it.
-    project::encode(&project::Project::new(data.clone())?, false).map_err(|_| EditError::Limit)?;
+    project::encode(&project::Project::new(data.clone())?, false)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     Ok(data)
 }
 #[allow(clippy::too_many_arguments)]

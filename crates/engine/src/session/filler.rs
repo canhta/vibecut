@@ -106,7 +106,9 @@ fn item_candidates(
                 continue;
             };
             if occurrences.len() >= super::wire::MAX_COLLECTION {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             let Some(range) = cue.word_ranges.get(first.index) else {
                 continue;

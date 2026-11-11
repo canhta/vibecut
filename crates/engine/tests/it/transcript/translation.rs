@@ -448,7 +448,7 @@ fn operation_budget_covers_all_attempts_before_any_translation_starts() {
     ));
     assert!(matches!(
         try_run(&s, selected(&s, false), 0, 0, 1_000_000),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
 }
 

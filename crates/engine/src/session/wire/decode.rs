@@ -23,12 +23,16 @@ pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
         })
         .as_ref()
         .map_err(|_| super::ControlError::SchemaMismatch)?;
-    let validator = validators.get(id).ok_or(EditError::UnknownCommand)?;
+    let validator = validators.get(id).ok_or(EditError::Control(
+        crate::session::wire::ControlError::UnknownCommand,
+    ))?;
     if !validator.is_valid(&params) {
-        return Err(EditError::InvalidParams);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ));
     }
     let command: Command = serde_json::from_value(json!({"command":id,"params":params}))
-        .map_err(|_| EditError::InvalidParams)?;
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?;
     // Includes nested publications/session controls, before any first child effect.
     if matches!(
         command,

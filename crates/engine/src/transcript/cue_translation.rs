@@ -127,7 +127,9 @@ pub fn translate_selected(
             .len()
             != selection.ids.len()
     {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     progress.stage(Stage::Translate);
     let translator = adapter.translator.as_ref();

@@ -9,18 +9,22 @@ use crate::{EditError, Result};
 pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOutput>> {
     let retained = || bytes.ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained));
     Ok(Some(match kind {
-        JobKind::ImportLut => JobOutput::Lut(
-            serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
-        ),
+        JobKind::ImportLut => {
+            JobOutput::Lut(serde_json::from_slice(retained()?).map_err(|_| {
+                EditError::Control(crate::session::wire::ControlError::InvalidParams)
+            })?)
+        }
         JobKind::Transcribe => {
             JobOutput::Captions(Box::new(crate::subtitles::decode_captions(retained()?)?))
         }
         JobKind::Translate => JobOutput::Translations(Box::new(
             crate::subtitles::decode_translations(retained()?)?,
         )),
-        JobKind::Preview => JobOutput::Preview(
-            serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
-        ),
+        JobKind::Preview => {
+            JobOutput::Preview(serde_json::from_slice(retained()?).map_err(|_| {
+                EditError::Control(crate::session::wire::ControlError::InvalidParams)
+            })?)
+        }
         JobKind::AnalyzePauses => JobOutput::Pauses(crate::pause_candidates::decode(retained()?)?),
         JobKind::GenerateChapters => {
             JobOutput::Chapters(Box::new(crate::chapters::decode(retained()?)?))

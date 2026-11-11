@@ -81,7 +81,9 @@ impl Session {
     /// Candidates copy metadata; no media payload is copied.
     pub fn new(project: Project, history_limit: usize) -> Result<Self> {
         if !(1..=1000).contains(&history_limit) {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let data = project.data();
         let next_id = data
@@ -182,7 +184,9 @@ impl Session {
                 .iter()
                 .any(|path| path.as_os_str().len() > super::wire::MAX_PATH_BYTES)
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         self.protected = paths;
         Ok(())
@@ -212,7 +216,9 @@ impl Session {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }
-        self.generation.checked_add(1).ok_or(EditError::Limit)?;
+        self.generation.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         self.end_merge();
         self.invalidate_revision(false)?;
         Ok(())
@@ -276,7 +282,9 @@ impl Session {
             return Err(EditError::TransactionActive);
         }
         if selection.len() > super::wire::MAX_COLLECTION {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let existing: BTreeSet<_> = self
             .project()
@@ -358,7 +366,9 @@ impl Session {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }
-        self.generation.checked_add(1).ok_or(EditError::Limit)?;
+        self.generation.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         let before = self.state.clone();
         self.state.trim_sources.clear();
         self.grouping = true;
@@ -382,7 +392,9 @@ impl Session {
     }
     fn squash(&mut self, before: State) -> Result<Outcome> {
         // Close the preview lifetime even for a net-zero group/gesture.
-        self.generation.checked_add(1).ok_or(EditError::Limit)?;
+        self.generation.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         let identity_changed = before.project.data().id != self.state.project.data().id
             || before.project.data().current_scene_id != self.state.project.data().current_scene_id;
         let project = self.state.project.clone();
@@ -560,9 +572,13 @@ impl Session {
             } else {
                 1
             })
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         if key.is_some_and(|k| k.is_empty() || k.len() > 256) {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
         if command.lifecycle().is_some() {
             return Err(EditError::Invalid(
@@ -817,7 +833,15 @@ mod tests {
                 Exit::Refusal => assert!(matches!(result, Err(EditError::Invalid(_))), "{exit:?}"),
                 Exit::Unwind => assert!(matches!(result, Err(EditError::Panicked)), "{exit:?}"),
                 Exit::RevisionExhausted => {
-                    assert!(matches!(result, Err(EditError::Limit)), "{exit:?}")
+                    assert!(
+                        matches!(
+                            result,
+                            Err(EditError::Control(
+                                crate::session::wire::ControlError::Limit
+                            ))
+                        ),
+                        "{exit:?}"
+                    )
                 }
             }
             assert!(

@@ -142,12 +142,15 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     }
     assert!(matches!(
         crate::wire::run(&mut s, "batch", nested),
-        Err(EditError::Limit)
+        Err(EditError::Control(engine::control::ControlError::Limit))
     ));
     let command = Command::Batch {
         commands: vec![Command::Delete { items: vec![] }; 1025],
     };
-    assert!(matches!(s.apply(command), Err(EditError::Limit)));
+    assert!(matches!(
+        s.apply(command),
+        Err(EditError::Control(engine::control::ControlError::Limit))
+    ));
     assert!(Session::new(project(), 0).is_err());
     assert!(Session::new(project(), 1001).is_err());
     let mut data = project().into_data();

@@ -248,7 +248,9 @@ fn download(
         return Ok(());
     }
     let total = model.files.iter().try_fold(0u64, |sum, file| {
-        sum.checked_add(file.size).ok_or(EditError::Limit)
+        sum.checked_add(file.size).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))
     })?;
     // Existing checkpoint bytes can be reused, or reclaimed before a full restart.
     let needed = cache.remaining_model(model)?;
@@ -373,18 +375,20 @@ fn download(
                         .saturating_add(1)
                         .min(BUFFER as u64),
                 )
-                .map_err(|_| EditError::Limit)?;
-                let read = match reply
-                    .body
-                    .read(buffer.get_mut(..limit).ok_or(EditError::Limit)?)
-                {
-                    Ok(n) => n,
-                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(_) => {
-                        durable(&mut edit, &file, index, offset)?;
-                        return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
-                    }
-                };
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+                let read =
+                    match reply
+                        .body
+                        .read(buffer.get_mut(..limit).ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?) {
+                        Ok(n) => n,
+                        Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(_) => {
+                            durable(&mut edit, &file, index, offset)?;
+                            return Err(EditError::Runtime(crate::RuntimeError::NetworkTransient));
+                        }
+                    };
                 if read == 0 {
                     durable(&mut edit, &file, index, offset)?;
                     if offset != expected.size {
@@ -402,10 +406,16 @@ fn download(
                 }
                 edit.report_length(
                     index,
-                    offset.checked_add(read as u64).ok_or(EditError::Limit)?,
+                    offset.checked_add(read as u64).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?,
                 )?;
-                if let Err(error) = io.write(&mut file, buffer.get(..read).ok_or(EditError::Limit)?)
-                {
+                if let Err(error) = io.write(
+                    &mut file,
+                    buffer.get(..read).ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?,
+                ) {
                     let _ = file.set_len(offset);
                     if let Ok(meta) = file.metadata() {
                         let _ = edit.report_length(index, meta.len());
@@ -413,7 +423,9 @@ fn download(
                     let _ = durable(&mut edit, &file, index, offset);
                     return Err(storage(error));
                 }
-                offset = offset.checked_add(read as u64).ok_or(EditError::Limit)?;
+                offset = offset.checked_add(read as u64).ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
                 let saved = edit
                     .state
                     .parts

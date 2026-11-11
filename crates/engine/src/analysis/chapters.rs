@@ -135,9 +135,12 @@ impl ChapterRequest {
                 context,
             )?;
             context.progress(crate::jobs::JobStage::Process, 0.9)?;
-            let bytes = serde_json::to_vec(&document).map_err(|_| EditError::Limit)?;
+            let bytes = serde_json::to_vec(&document)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_RESULT_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         })?;
@@ -177,7 +180,9 @@ impl ChapterJob {
 /// Decode retained job bytes through the versioned document validator.
 pub fn decode(bytes: &[u8]) -> Result<ChapterDocument, EditError> {
     if bytes.len() > MAX_RESULT_BYTES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     ChapterDocument::from_json(bytes).map_err(EditError::Ai)
 }

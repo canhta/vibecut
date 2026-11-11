@@ -130,23 +130,36 @@ impl ThumbnailStripRequest {
             vec![Tick::ZERO]
         } else {
             let count = tile_count(span.duration(), interval)?;
-            let source_end = item
-                .source_range
-                .end()
-                .checked_sub(Tick(1))
-                .ok_or(EditError::Limit)?;
+            let source_end =
+                item.source_range
+                    .end()
+                    .checked_sub(Tick(1))
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
             let first = clip_position(item, span.start(), source_end, interval)?;
             let offset = i64::try_from(count - 1)
-                .map_err(|_| EditError::Limit)?
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?
                 .checked_mul(interval.0)
-                .ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
             let last = clip_position(
                 item,
-                Tick(span.start().0.checked_add(offset).ok_or(EditError::Limit)?),
+                Tick(
+                    span.start()
+                        .0
+                        .checked_add(offset)
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?,
+                ),
                 source_end,
                 interval,
             )?;
-            let end = last.checked_add(interval).ok_or(EditError::Limit)?;
+            let end = last.checked_add(interval).ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
             sample_positions(SourceRange::new(first, end)?, interval)?
         };
         Ok(Self {
@@ -377,20 +390,29 @@ pub fn display(
         .source_range
         .end()
         .checked_sub(Tick(1))
-        .ok_or(EditError::Limit)?;
+        .ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
     let mut tiles = Vec::with_capacity(count);
     let mut fetched: BTreeMap<Tick, RetainedThumbnail> = BTreeMap::new();
     for index in 0..count {
         let offset = i64::try_from(index)
-            .map_err(|_| EditError::Limit)?
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?
             .checked_mul(interval.0)
-            .ok_or(EditError::Limit)?;
-        let start = Tick(span.start().0.checked_add(offset).ok_or(EditError::Limit)?);
-        let end = Tick(
-            span.end()
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
+        let start = Tick(
+            span.start()
                 .0
-                .min(start.0.checked_add(interval.0).ok_or(EditError::Limit)?),
+                .checked_add(offset)
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?,
         );
+        let end = Tick(span.end().0.min(start.0.checked_add(interval.0).ok_or(
+            EditError::Control(crate::session::wire::ControlError::Limit),
+        )?));
         let output = TimeRange::new(start, end)?;
         let at = if asset.is_image() {
             Tick::ZERO
@@ -450,18 +472,27 @@ fn clip_position(
 }
 
 fn sample_positions(range: SourceRange, interval: Tick) -> Result<Vec<Tick>, EditError> {
-    let last = range.end().checked_sub(Tick(1)).ok_or(EditError::Limit)?;
+    let last = range.end().checked_sub(Tick(1)).ok_or(EditError::Control(
+        crate::session::wire::ControlError::Limit,
+    ))?;
     let first = floor(range.start(), interval)?;
     let last = floor(last, interval)?;
     let count = last
         .0
         .checked_sub(first.0)
-        .ok_or(EditError::Limit)?
+        .ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?
         .checked_div(interval.0)
-        .ok_or(EditError::Limit)?
+        .ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?
         .checked_add(1)
-        .ok_or(EditError::Limit)?;
-    let count = usize::try_from(count).map_err(|_| EditError::Limit)?;
+        .ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
+    let count = usize::try_from(count)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     if count == 0 || count > MAX_TILES {
         return Err(EditError::Invalid("thumbnail strip tiles"));
     }
@@ -469,7 +500,9 @@ fn sample_positions(range: SourceRange, interval: Tick) -> Result<Vec<Tick>, Edi
     let mut at = first;
     for _ in 0..count {
         positions.push(at);
-        at = at.checked_add(interval).ok_or(EditError::Limit)?;
+        at = at.checked_add(interval).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
     }
     Ok(positions)
 }
@@ -479,7 +512,8 @@ fn tile_count(duration: Tick, interval: Tick) -> Result<usize, EditError> {
         return Err(EditError::Invalid("thumbnail strip tiles"));
     }
     let count = duration.0.saturating_sub(1) / interval.0 + 1;
-    let count = usize::try_from(count).map_err(|_| EditError::Limit)?;
+    let count = usize::try_from(count)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     if count == 0 || count > MAX_TILES {
         return Err(EditError::Invalid("thumbnail strip tiles"));
     }
@@ -490,25 +524,35 @@ fn tile_count(duration: Tick, interval: Tick) -> Result<usize, EditError> {
 fn floor(at: Tick, interval: Tick) -> Result<Tick, EditError> {
     let step = i128::from(interval.0);
     let value = i128::from(at.0).div_euclid(step);
-    let floored = value.checked_mul(step).ok_or(EditError::Limit)?;
-    Ok(Tick(i64::try_from(floored).map_err(|_| EditError::Limit)?))
+    let floored = value.checked_mul(step).ok_or(EditError::Control(
+        crate::session::wire::ControlError::Limit,
+    ))?;
+    Ok(Tick(i64::try_from(floored).map_err(|_| {
+        EditError::Control(crate::session::wire::ControlError::Limit)
+    })?))
 }
 
 fn encode(samples: &[(Tick, Thumbnail)]) -> Result<Vec<u8>, EditError> {
-    let count = u32::try_from(samples.len()).map_err(|_| EditError::Limit)?;
+    let count = u32::try_from(samples.len())
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     let mut bytes = Vec::new();
     bytes.extend_from_slice(MAGIC);
     bytes.extend_from_slice(&count.to_le_bytes());
     for (at, image) in samples {
         let payload = image.encode();
-        let length = u32::try_from(payload.len()).map_err(|_| EditError::Limit)?;
+        let length = u32::try_from(payload.len())
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
         let next = bytes
             .len()
             .checked_add(16)
             .and_then(|value| value.checked_add(payload.len()))
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         if next > MAX_BYTES {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         bytes.extend_from_slice(&at.0.to_le_bytes());
         bytes.extend_from_slice(&length.to_le_bytes());

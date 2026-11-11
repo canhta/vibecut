@@ -28,7 +28,9 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
             WritePolicy::Always,
             |_session| {
                 if params != json!({}) {
-                    return Err(EditError::InvalidParams.into());
+                    return Err(
+                        EditError::Control(engine::control::ControlError::InvalidParams).into(),
+                    );
                 }
                 Ok(Edit {
                     value: (),

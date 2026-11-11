@@ -96,12 +96,6 @@ pub enum EditError {
     Transcript(#[from] transcript::Error),
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),
-    #[error("unknown command")]
-    UnknownCommand,
-    #[error("invalid command parameters")]
-    InvalidParams,
-    #[error("command limit exceeded")]
-    Limit,
     #[error("missing track {0:?}")]
     NoTrack(project::TrackId),
     #[error("missing media asset {0:?}")]
@@ -155,9 +149,6 @@ impl EditError {
     fn classification(&self) -> (ErrorCode, bool) {
         use ErrorCode as C;
         let code = match self {
-            Self::UnknownCommand => C::UnknownCommand,
-            Self::InvalidParams => C::InvalidParams,
-            Self::Limit => C::Limit,
             Self::TransactionActive | Self::NoGesture => C::TransactionActive,
             Self::EmptyProject => C::EmptyProject,
             Self::Panicked => C::Failed,

@@ -1,9 +1,8 @@
 //! Bounds JSON frames, wire integers and schema closing.
 use super::{
-    MAX_COLLECTION, MAX_DEPTH, MAX_FRAME_BYTES, MAX_NODES, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER,
-    MAX_TEXT_BYTES,
+    ControlError, MAX_COLLECTION, MAX_DEPTH, MAX_FRAME_BYTES, MAX_NODES, MAX_RESPONSE_BYTES,
+    MAX_SAFE_INTEGER, MAX_TEXT_BYTES,
 };
-use crate::{EditError, Result};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::io::Write;
@@ -19,25 +18,25 @@ struct JsonSeed<'a> {
 }
 
 // The caller already owns Value; this caps additional processing, not its creation.
-pub(crate) fn budget(value: &Value) -> Result<()> {
+pub(crate) fn budget(value: &Value) -> std::result::Result<(), ControlError> {
     let mut stack = vec![(value, 0)];
     let mut nodes = 0usize;
     let mut bytes = 0usize;
     while let Some((value, depth)) = stack.pop() {
         nodes += 1;
         if nodes > MAX_NODES || depth > MAX_DEPTH {
-            return Err(EditError::Limit);
+            return Err(ControlError::Limit);
         }
         match value {
             Value::Array(a) => {
                 if a.len() > MAX_COLLECTION || nodes + stack.len() + a.len() > MAX_NODES {
-                    return Err(EditError::Limit);
+                    return Err(ControlError::Limit);
                 }
                 stack.extend(a.iter().map(|v| (v, depth + 1)));
             }
             Value::Object(o) => {
                 if o.len() > MAX_COLLECTION || nodes + stack.len() + o.len() > MAX_NODES {
-                    return Err(EditError::Limit);
+                    return Err(ControlError::Limit);
                 }
                 for (k, v) in o {
                     bytes = bytes.saturating_add(k.len());
@@ -51,13 +50,13 @@ pub(crate) fn budget(value: &Value) -> Result<()> {
                     || n.as_f64()
                         .is_some_and(|v| v.abs() > MAX_SAFE_INTEGER as f64) =>
             {
-                return Err(EditError::InvalidParams);
+                return Err(ControlError::InvalidParams);
             }
             Value::String(s) => bytes = bytes.saturating_add(s.len()),
             _ => {}
         }
         if bytes > MAX_TEXT_BYTES {
-            return Err(EditError::Limit);
+            return Err(ControlError::Limit);
         }
     }
     Ok(())
@@ -65,13 +64,15 @@ pub(crate) fn budget(value: &Value) -> Result<()> {
 
 /// Validate the actual wire representation of a candidate, including generated
 /// IDs and arithmetic-derived ticks, while the edit is still reversible.
-pub(crate) fn validate_wire<T: Serialize + ?Sized>(value: &T) -> Result<()> {
+pub(crate) fn validate_wire<T: Serialize + ?Sized>(
+    value: &T,
+) -> std::result::Result<(), ControlError> {
     let bytes = bounded_json(value, MAX_RESPONSE_BYTES - 4096)?;
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| EditError::InvalidParams)?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| ControlError::InvalidParams)?;
     check_integers(&value)
 }
 
-fn check_integers(value: &Value) -> Result<()> {
+fn check_integers(value: &Value) -> std::result::Result<(), ControlError> {
     let mut stack = vec![value];
     while let Some(value) = stack.pop() {
         match value {
@@ -80,7 +81,7 @@ fn check_integers(value: &Value) -> Result<()> {
                     .is_some_and(|v| !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&v))
                     || n.as_u64().is_some_and(|v| v > MAX_SAFE_INTEGER as u64) =>
             {
-                return Err(EditError::InvalidParams);
+                return Err(ControlError::InvalidParams);
             }
             Value::Array(values) => stack.extend(values),
             Value::Object(values) => stack.extend(values.values()),
@@ -138,18 +139,21 @@ impl Write for Capped {
         Ok(())
     }
 }
-pub fn bounded_json<T: Serialize + ?Sized>(value: &T, max: usize) -> Result<Vec<u8>> {
+pub fn bounded_json<T: Serialize + ?Sized>(
+    value: &T,
+    max: usize,
+) -> std::result::Result<Vec<u8>, ControlError> {
     let mut writer = Capped {
         bytes: Vec::new(),
         max: max.min(MAX_RESPONSE_BYTES),
     };
-    serde_json::to_writer(&mut writer, value).map_err(|_| EditError::Limit)?;
+    serde_json::to_writer(&mut writer, value).map_err(|_| ControlError::Limit)?;
     Ok(writer.bytes)
 }
 
-pub fn parse_frame(bytes: &[u8]) -> Result<Value> {
+pub fn parse_frame(bytes: &[u8]) -> std::result::Result<Value, ControlError> {
     if bytes.len() > MAX_FRAME_BYTES {
-        return Err(EditError::Limit);
+        return Err(ControlError::Limit);
     }
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let value = serde::de::DeserializeSeed::deserialize(
@@ -160,8 +164,10 @@ pub fn parse_frame(bytes: &[u8]) -> Result<Value> {
         },
         &mut deserializer,
     )
-    .map_err(|_| EditError::InvalidParams)?;
-    deserializer.end().map_err(|_| EditError::InvalidParams)?;
+    .map_err(|_| ControlError::InvalidParams)?;
+    deserializer
+        .end()
+        .map_err(|_| ControlError::InvalidParams)?;
     Ok(value)
 }
 impl<'de> serde::de::DeserializeSeed<'de> for JsonSeed<'_> {

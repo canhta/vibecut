@@ -17,7 +17,8 @@ impl Session {
         runner: &mut JobRunner,
     ) -> Result<Response> {
         let value = parse_frame(bytes)?;
-        let request = serde_json::from_value(value).map_err(|_| EditError::InvalidParams)?;
+        let request = serde_json::from_value(value)
+            .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?;
         self.control_request(request, caller, runner)
     }
 }
@@ -70,7 +71,9 @@ impl Session {
             || caller.principal.is_empty()
             || caller.principal.len() > MAX_KEY_BYTES
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let before = self.revision();
         match self.admit_and_run(&request, &caller, runner) {
@@ -111,12 +114,12 @@ impl Session {
     ) -> Result<(Response, Option<EditError>)> {
         if request.api_version != API_VERSION {
             return Err(EditError::Control(
-                crate::control::ControlError::SchemaMismatch,
+                crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         if request.session_id != self.session_id() {
             return Err(EditError::Control(
-                crate::control::ControlError::SessionGone,
+                crate::session::wire::ControlError::SessionGone,
             ));
         }
         let command = decode_command(&request.command, request.params.clone())?;
@@ -125,7 +128,7 @@ impl Session {
             && request.registry_hash.as_deref() != Some(registry_hash())
         {
             return Err(EditError::Control(
-                crate::control::ControlError::SchemaMismatch,
+                crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         if caller.external
@@ -139,7 +142,9 @@ impl Session {
                     | Command::TimelineDiscardPreview {}
             )
         {
-            return Err(EditError::Control(crate::control::ControlError::Permission));
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Permission,
+            ));
         }
         // A generic run and every nested child get the same trusted policy.
         let mut pending = vec![&command];
@@ -158,12 +163,13 @@ impl Session {
             bounded_json(path, MAX_PATH_BYTES)?;
         }
         let key = if effectful {
-            let key = request
-                .idempotency_key
-                .as_ref()
-                .ok_or(EditError::InvalidParams)?;
+            let key = request.idempotency_key.as_ref().ok_or(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))?;
             if key.is_empty() || key.len() > MAX_KEY_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             let key = (caller.principal.to_owned(), key.clone());
             if let Some(response) = self.replay_receipt(&key, fingerprint, &request.request_id)? {
@@ -172,7 +178,7 @@ impl Session {
             self.check_receipt_capacity()?;
             if request.base_rev.as_ref() != Some(&self.revision()) {
                 return Err(EditError::Control(
-                    crate::control::ControlError::StaleRevision,
+                    crate::session::wire::ControlError::StaleRevision,
                 ));
             }
             if self.transaction_active() && caller.external {
@@ -254,7 +260,9 @@ impl Session {
             || caller.principal.is_empty()
             || caller.principal.len() > MAX_KEY_BYTES
         {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let before = self.revision();
         match self.admit_lifecycle_save(&request, &caller, publish) {
@@ -292,31 +300,34 @@ impl Session {
     ) -> Result<Response> {
         if request.api_version != API_VERSION {
             return Err(EditError::Control(
-                crate::control::ControlError::SchemaMismatch,
+                crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         if request.session_id != self.session_id() {
             return Err(EditError::Control(
-                crate::control::ControlError::SessionGone,
+                crate::session::wire::ControlError::SessionGone,
             ));
         }
         let command = decode_command(&request.command, request.params.clone())?;
         if !matches!(command, Command::SaveProject {}) {
-            return Err(EditError::InvalidParams);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
         }
         if request.registry_hash.as_deref() != Some(registry_hash()) {
             return Err(EditError::Control(
-                crate::control::ControlError::SchemaMismatch,
+                crate::session::wire::ControlError::SchemaMismatch,
             ));
         }
         caller.policy.authorize(&command, self.project())?;
         let fingerprint = control_fingerprint(request)?;
-        let key = request
-            .idempotency_key
-            .as_ref()
-            .ok_or(EditError::InvalidParams)?;
+        let key = request.idempotency_key.as_ref().ok_or(EditError::Control(
+            crate::session::wire::ControlError::InvalidParams,
+        ))?;
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         let key = (caller.principal.to_owned(), key.clone());
         if let Some(response) = self.replay_receipt(&key, fingerprint, &request.request_id)? {
@@ -325,7 +336,7 @@ impl Session {
         self.check_receipt_capacity()?;
         if request.base_rev.as_ref() != Some(&self.revision()) {
             return Err(EditError::Control(
-                crate::control::ControlError::StaleRevision,
+                crate::session::wire::ControlError::StaleRevision,
             ));
         }
         if self.transaction_active() {

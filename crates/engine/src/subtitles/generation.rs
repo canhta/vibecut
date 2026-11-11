@@ -84,9 +84,12 @@ pub(crate) fn generate(
                 model: config.model().clone(),
             };
             if result.cues.len() > super::outputs::MAX_CUES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
+                .map_err(crate::EditError::from)
         },
     )?;
     Ok(id)

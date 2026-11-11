@@ -337,9 +337,15 @@ fn error_for(code: ErrorCode) -> EditError {
         ErrorCode::EmptyProject => EditError::EmptyProject,
         ErrorCode::TransactionActive => EditError::TransactionActive,
         ErrorCode::Permission => EditError::Control(engine::control::ControlError::Permission),
-        ErrorCode::Limit | ErrorCode::Budget => EditError::Limit,
-        ErrorCode::InvalidParams => EditError::InvalidParams,
-        ErrorCode::UnknownCommand => EditError::UnknownCommand,
+        ErrorCode::Limit | ErrorCode::Budget => {
+            EditError::Control(engine::control::ControlError::Limit)
+        }
+        ErrorCode::InvalidParams => {
+            EditError::Control(engine::control::ControlError::InvalidParams)
+        }
+        ErrorCode::UnknownCommand => {
+            EditError::Control(engine::control::ControlError::UnknownCommand)
+        }
         ErrorCode::SessionGone => EditError::Control(engine::control::ControlError::SessionGone),
         ErrorCode::StaleRevision | ErrorCode::StaleResult => {
             EditError::Control(engine::control::ControlError::StaleRevision)

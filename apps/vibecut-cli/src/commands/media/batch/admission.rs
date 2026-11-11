@@ -39,10 +39,14 @@ pub(super) fn load(
         .take((MAX_JOB_FILE_BYTES as u64) + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() > MAX_JOB_FILE_BYTES {
-        return Err(CliError::Engine(EditError::Limit));
+        return Err(CliError::Engine(EditError::Control(
+            engine::control::ControlError::Limit,
+        )));
     }
     let value = control::parse_frame(&bytes).map_err(|error| match error {
-        EditError::Limit => CliError::Engine(EditError::Limit),
+        control::ControlError::Limit => {
+            CliError::Engine(EditError::Control(engine::control::ControlError::Limit))
+        }
         _ => invalid_job_file(),
     })?;
     let file: JobFile = serde_json::from_value(value).map_err(|_| invalid_job_file())?;
@@ -55,7 +59,9 @@ pub(super) fn load(
         ));
     }
     if file.jobs.len() > MAX_BATCH_JOBS {
-        return Err(CliError::Engine(EditError::Limit));
+        return Err(CliError::Engine(EditError::Control(
+            engine::control::ControlError::Limit,
+        )));
     }
     if file.jobs.iter().any(|job| job.overwrite) && !allow_overwrite {
         return Err(CliError::Rejected(
@@ -76,7 +82,7 @@ pub(super) fn load(
     let job_file_target = destination_key(path)?;
     let mut jobs = Vec::new();
     jobs.try_reserve_exact(file.jobs.len())
-        .map_err(|_| CliError::Engine(EditError::Limit))?;
+        .map_err(|_| CliError::Engine(EditError::Control(engine::control::ControlError::Limit)))?;
     let mut destinations = BTreeSet::new();
     for entry in file.jobs {
         let project = resolve_path(&base, &entry.project, "project")?;
@@ -187,7 +193,9 @@ pub(super) fn add_project_bytes(total: u64, size: u64) -> Result<u64, CliError> 
     total
         .checked_add(size)
         .filter(|total| *total <= MAX_BATCH_PROJECT_BYTES)
-        .ok_or(CliError::Engine(EditError::Limit))
+        .ok_or(CliError::Engine(EditError::Control(
+            engine::control::ControlError::Limit,
+        )))
 }
 
 fn same_file(left: &Path, right: &Path) -> bool {
@@ -215,7 +223,9 @@ fn resolve_path(base: &Path, raw: &str, what: &str) -> Result<PathBuf, CliError>
         )));
     }
     if raw.len() > MAX_JOB_PATH_BYTES {
-        return Err(CliError::Engine(EditError::Limit));
+        return Err(CliError::Engine(EditError::Control(
+            engine::control::ControlError::Limit,
+        )));
     }
     if raw.contains('\0') {
         return Err(CliError::Usage(format!(

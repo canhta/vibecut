@@ -189,9 +189,12 @@ impl SpeechActivityRequest {
             }
             let result = request.analyze(context)?;
             context.check_cancelled()?;
-            let bytes = serde_json::to_vec(&result).map_err(|_| EditError::Limit)?;
+            let bytes = serde_json::to_vec(&result)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             if bytes.len() > MAX_BYTES {
-                return Err(EditError::Limit);
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
             }
             Ok(bytes)
         })?;
@@ -401,9 +404,13 @@ impl Detector {
             return Ok(());
         }
         let expected = match self.pending_start {
-            Some(start) => start
-                .checked_add(ticks_of(self.pending.len())?)
-                .ok_or(EditError::Limit)?,
+            Some(start) => {
+                start
+                    .checked_add(ticks_of(self.pending.len())?)
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?
+            }
             None => window.start(),
         };
         if expected != window.start() {
@@ -428,7 +435,9 @@ impl Detector {
             .ok_or(EditError::Invalid("speech activity frame clock"))?;
         let end = start
             .checked_add(ticks_of(FRAME_SAMPLES)?)
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         self.record(db, start)?;
         self.pending.drain(..FRAME_SAMPLES);
         self.pending_start = Some(end);
@@ -440,7 +449,9 @@ impl Detector {
             return Err(EditError::Invalid("speech activity energy"));
         }
         if self.frames_db.len() >= MAX_FRAMES {
-            return Err(EditError::Limit);
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
         }
         self.first_start.get_or_insert(start);
         let value = db as f32;
@@ -454,7 +465,9 @@ impl Detector {
             .histogram
             .get_mut(bin)
             .ok_or(EditError::Invalid("speech activity histogram"))?;
-        *count = count.checked_add(1).ok_or(EditError::Limit)?;
+        *count = count.checked_add(1).ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
         self.block_min = Some(self.block_min.map_or(value, |min| min.min(value)));
         self.block_frames += 1;
         if self.block_frames == NOISE_BLOCK_FRAMES {
@@ -508,7 +521,9 @@ impl Detector {
             };
             let end = start
                 .checked_add(ticks_of(samples)?)
-                .ok_or(EditError::Limit)?;
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ))?;
             let (activity, speech_confidence, pause_confidence) = classify_db(f64::from(*db), gate);
             merge_run(
                 &mut runs,
@@ -593,9 +608,14 @@ fn classify_db(db: f64, gate: f64) -> (Activity, f64, f64) {
 }
 
 fn frame_start(first: Tick, step: Tick, index: usize) -> Result<Tick, EditError> {
-    let index = i64::try_from(index).map_err(|_| EditError::Limit)?;
-    let offset = step.0.checked_mul(index).ok_or(EditError::Limit)?;
-    Ok(Tick(first.0.checked_add(offset).ok_or(EditError::Limit)?))
+    let index = i64::try_from(index)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
+    let offset = step.0.checked_mul(index).ok_or(EditError::Control(
+        crate::session::wire::ControlError::Limit,
+    ))?;
+    Ok(Tick(first.0.checked_add(offset).ok_or(
+        EditError::Control(crate::session::wire::ControlError::Limit),
+    )?))
 }
 
 fn percentile_sorted(values: &mut [f32], percentile: f64) -> Result<f64, EditError> {
@@ -615,7 +635,9 @@ fn histogram_percentile(histogram: &[u32; 121], percentile: f64) -> Result<f64, 
     let total = histogram
         .iter()
         .try_fold(0u64, |total, count| total.checked_add(u64::from(*count)))
-        .ok_or(EditError::Limit)?;
+        .ok_or(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ))?;
     if total == 0 {
         return Err(EditError::Unsupported("speech activity has no frames"));
     }
@@ -624,7 +646,9 @@ fn histogram_percentile(histogram: &[u32; 121], percentile: f64) -> Result<f64, 
     for (index, count) in histogram.iter().enumerate() {
         cumulative = cumulative
             .checked_add(u64::from(*count))
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         if cumulative > rank {
             return Ok(index as f64 - 120.0);
         }
@@ -671,7 +695,9 @@ fn finalize(
         return Err(EditError::Unsupported("speech activity has no spans"));
     }
     if without_dips.len() > MAX_SPANS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     let mut spans = Vec::with_capacity(without_dips.len());
     for run in without_dips {
@@ -703,20 +729,25 @@ fn merge_run(runs: &mut Vec<Run>, run: Run) -> Result<(), EditError> {
         last.frames = last
             .frames
             .checked_add(run.frames)
-            .ok_or(EditError::Limit)?;
+            .ok_or(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ))?;
         last.speech_confidence += run.speech_confidence;
         last.pause_confidence += run.pause_confidence;
         return Ok(());
     }
     if runs.len() >= MAX_RUNS {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     runs.push(run);
     Ok(())
 }
 
 fn ticks_of(samples: usize) -> Result<Tick, EditError> {
-    let samples = i64::try_from(samples).map_err(|_| EditError::Limit)?;
+    let samples = i64::try_from(samples)
+        .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     Ok(Tick::from_units(
         samples,
         i64::from(SPEECH_SAMPLE_RATE),

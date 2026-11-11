@@ -1862,7 +1862,9 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         (
             || {
                 E::Runtime(engine::RuntimeError::Failed(Arc::new(E::Runtime(
-                    engine::RuntimeError::Failed(Arc::new(E::Limit)),
+                    engine::RuntimeError::Failed(Arc::new(E::Control(
+                        engine::control::ControlError::Limit,
+                    ))),
                 ))))
             },
             C::Limit,

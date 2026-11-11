@@ -491,11 +491,15 @@ impl crate::Session {
                             )
                         })
                     })
-                    .ok_or(EditError::Limit)?;
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
                 let bytes = text_bytes
                     .checked_mul(16)
                     .and_then(|n| n.checked_add(4096))
-                    .ok_or(EditError::Limit)?;
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ))?;
                 Ok(runner.submit(
                     JobSpec {
                         kind: JobKind::Export,

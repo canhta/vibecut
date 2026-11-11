@@ -78,7 +78,9 @@ impl Identities {
             }
             if tracks.iter().any(|t| t.id == id && t.identity.is_none()) {
                 if self.anchors.len() == MAX_ANCHORS {
-                    return Err(EditError::Limit);
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::Limit,
+                    ));
                 }
                 self.anchors.push((SpeakerRef { shot, track: id }, samples));
             }
@@ -235,7 +237,9 @@ mod tests {
                 vec![(0, vec![sample(0., 1.)])],
                 &Hooks(false)
             ),
-            Err(EditError::Limit)
+            Err(EditError::Control(
+                crate::session::wire::ControlError::Limit
+            ))
         ));
     }
 

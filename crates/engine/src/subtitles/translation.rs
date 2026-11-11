@@ -48,7 +48,9 @@ pub(crate) fn translate(
     };
     let ids = ids.unwrap_or_else(|| params.cues.cues.iter().map(|c| c.id.clone()).collect());
     if ids.is_empty() || ids.len() > MAX_CUES {
-        return Err(EditError::Limit);
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
     }
     if ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
         return Err(EditError::Invalid("duplicate translation selection"));
@@ -207,8 +209,10 @@ pub(crate) fn translate(
             };
             crate::session::budget(&apply.params)?;
             let frame = crate::session::wire::bounded_json(&apply, MAX_FRAME_BYTES)?;
-            parse_frame(&frame).map_err(|_| EditError::Limit)?;
+            parse_frame(&frame)
+                .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
             crate::session::wire::bounded_json(&result, MAX_RESULT_BYTES)
+                .map_err(crate::EditError::from)
         },
     )?;
     Ok(id)
