@@ -87,6 +87,21 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     write_video(&video);
     let media = Mutex::new(media_access(root.path()));
     let chapters = fixture_chapters();
+    let (cache, _) = engine::cache::ArtifactCache::open(
+        &root.path().join("captions-cache"),
+        ByteBudget::new(512 << 20).unwrap(),
+        16,
+    )
+    .unwrap();
+    let captions = engine::subtitles::CaptionAccess::new(
+        Arc::new(crate::subtitles::workflow::providers(
+            Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            false,
+            true,
+        )),
+        Arc::new(engine::providers::AllowAll),
+        Arc::new(Mutex::new(cache)),
+    );
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -118,6 +133,23 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
             Fixture::Video => s = with_video(&s, &video),
             Fixture::Loudness => s = with_loudness(&s, &wav),
+            Fixture::Captions => {
+                s = with_waveform(&s, &wav);
+                let req = request(
+                    &s,
+                    "captions.generate",
+                    json!({"asset":97,"source_language":"en"}),
+                    "generate",
+                );
+                let mut access = caller(&Allow);
+                access.captions = Some(&captions);
+                let ControlResult::JobAccepted { job, .. } =
+                    ok(s.control_request(req, access, &mut r).unwrap())
+                else {
+                    panic!("caption job");
+                };
+                finish(&mut r, job);
+            }
             Fixture::Words => s = with_words(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
@@ -204,6 +236,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     sounds: Some(&sounds),
                     media: Some(&media),
                     chapters: Some(&chapters),
+                    captions: Some(&captions),
                 },
                 &mut r,
             )
@@ -302,6 +335,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
         job_control,
         [
             "audio.measure_loudness",
+            "captions.generate",
+            "captions.translate",
             "chapters.generate",
             "fillers.classify",
             "fonts.download",

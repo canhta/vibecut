@@ -13,6 +13,8 @@ pub const MAX_DEPTH: usize = 32;
 pub const MAX_NODES: usize = 200_000;
 pub const MAX_COLLECTION: usize = 100_000;
 pub const MAX_TEXT_BYTES: usize = 4 << 20;
+/// Complete translation edit bound, independent of one provider request window.
+pub const MAX_TRANSLATION_CUES: usize = 10_000;
 pub const MAX_BATCH_COMMANDS: usize = 1024;
 pub const MAX_BATCH_DEPTH: usize = 16;
 pub const MAX_KEY_BYTES: usize = 128;

@@ -11,3 +11,9 @@ pub enum Error {
     #[error("{0}")]
     Rejected(&'static str),
 }
+
+impl From<engine::RuntimeError> for Error {
+    fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}

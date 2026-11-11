@@ -11,6 +11,10 @@ accept. Auto is the default; a project's explicit choice is stored in
 language detector first and passes the detected tag explicitly to every recognition
 request.
 
+Generate declares the [engine transcript working ceiling](../../../../crates/engine/src/transcript/README.md)
+in its outer job alongside the existing 32 MiB result reservation. Shared budget pressure
+prevents the workflow from starting, and the synchronous pipeline adds no second charge.
+
 A silent clip returns `NoSpeech`; a mean recognized-word confidence below the engine
 floor returns `LowConfidence`. Both name the likely wrong language, and an
 explicit-language run offers one click to retry the same source with Auto (Auto never

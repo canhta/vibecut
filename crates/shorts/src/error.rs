@@ -33,3 +33,9 @@ impl Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<engine::RuntimeError> for Error {
+    fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}

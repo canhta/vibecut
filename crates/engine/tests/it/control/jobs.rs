@@ -37,6 +37,7 @@ fn submit_media(
         sounds: None,
         media: Some(media),
         chapters: None,
+        captions: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::JobAccepted { job, .. } => job,
@@ -59,6 +60,7 @@ fn media_status(
         sounds: None,
         media: Some(media),
         chapters: None,
+        captions: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::Job { snapshot } => snapshot,
@@ -218,6 +220,20 @@ fn job_acceptance_precedes_events_cancel_and_result_eviction_never_resubmit() {
     assert!(terminal.iter().any(|e|matches!(&e.payload,Payload::JobChanged{snapshot} if snapshot.state==JobState::Completed)));
     s.observe_jobs(&r);
     assert!(s.events(&mut snapshot.cursor).unwrap().is_empty());
+    r.cancel_job(job).unwrap();
+    drop(r.take_output(job).unwrap());
+    assert_eq!(r.snapshot(job).unwrap().state, JobState::Completed);
+    error(
+        run(
+            &mut s,
+            &mut r,
+            "job_status",
+            json!({"job":job.0}),
+            "missing-output",
+        ),
+        ErrorCode::JobNotRetained,
+    );
+    r.cancel_job(job).unwrap();
     for _ in 0..20 {
         let id = submit(&mut r);
         finish(&mut r, id);
@@ -275,6 +291,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -299,6 +316,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: Some(&chapters),
+                captions: None,
             },
             &mut r,
         )
@@ -319,6 +337,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: Some(&chapters),
+                captions: None,
             },
             &mut r,
         )
@@ -364,6 +383,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -405,6 +425,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -808,6 +829,7 @@ fn scene_detection_returns_candidates_warms_the_cache_and_refuses_bad_input() {
         sounds: None,
         media,
         chapters: None,
+        captions: None,
     };
     for (key, id, params, with_media) in [
         ("missing", "media.detect_scenes", json!({"asset":99}), true),
@@ -1108,6 +1130,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         sounds: None,
         media: Some(&media),
         chapters: None,
+        captions: None,
     };
     error(
         wave_session
@@ -1130,6 +1153,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             sounds: None,
             media: Some(&media),
             chapters: None,
+            captions: None,
         };
         error(
             thumbnail_session

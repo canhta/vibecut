@@ -128,6 +128,7 @@ fn run(
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             runner,
         )

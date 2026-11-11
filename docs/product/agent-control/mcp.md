@@ -27,7 +27,7 @@ A visible desktop request may carry `project_id` (the project's decimal string) 
 
 Mutations require `base_rev` and `idempotency_key`. A retry keeps the original Session, revision and key. The engine keeps receipts for the running Session and reconnecting attach processes share the ledger; it never retries a mutation itself. A new Session epoch refuses the old request, capacity exhaustion refuses before effects, and changed parameters under an accepted key return `idempotency_conflict`. Generic calls and nested batches use the same admission and grants as curated tools. External gestures and imported source paths are refused. MCP cannot create, duplicate, move to Trash, restore, purge or thumbnail projects: the project library belongs to the person, and each of those is a Human-granted command.
 
-`structuredContent` carries the engine response unchanged, except preview JPEG arrays become MCP image blocks that keep the frame/clip/revision metadata. `media.generate_waveform`, `media.generate_clip_thumbnails` and `media.detect_scenes` run against the same process caches the CLI control session lends, opened at the default cache roots; they admit no new source path. `audio.measure_loudness {}` measures the project's loudness targets without a cache. A job-start command returns `job` and `revision`; `job_status` carries the finished data in one tagged `output` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`, `scenes`), and the agent applies the result with `base_rev` = that `revision`. A job never edits the project by itself. Engine limits govern preview count, size, quality and burned-in labels. Export results carry file paths. Engine refusals set `isError` and keep the engine code. Adapter errors use `error.code`, including `queue_full`, `limit`, `timeout_unknown_outcome`, `cancelled_unknown_outcome` and `session_gone_unknown_outcome`. After an uncertain outcome, retry only the original key and request; a fresh key is a new operation. Cancellation discards queued work; an already committed atomic edit stays committed and receipted. Accepted jobs survive an attach disconnect and can be inspected or cancelled after reconnect.
+`structuredContent` carries the engine response unchanged, except preview JPEG arrays become MCP image blocks that keep the frame/clip/revision metadata. `media.generate_waveform`, `media.generate_clip_thumbnails` and `media.detect_scenes` run against the same process caches the CLI control session lends, opened at the default cache roots; they admit no new source path. `audio.measure_loudness {}` measures the project's loudness targets without a cache. A job-start command returns `job` and `revision`; `job_status` carries the finished data in one tagged `output` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`, `scenes`, `captions`, `translations`), and the agent applies the result with `base_rev` = that `revision`. A job never edits the project by itself. Engine limits govern preview count, size, quality and burned-in labels. Export results carry file paths. Engine refusals set `isError` and keep the engine code. Adapter errors use `error.code`, including `queue_full`, `limit`, `timeout_unknown_outcome`, `cancelled_unknown_outcome` and `session_gone_unknown_outcome`. After an uncertain outcome, retry only the original key and request; a fresh key is a new operation. Cancellation discards queued work; an already committed atomic edit stays committed and receipted. Accepted jobs survive an attach disconnect and can be inspected or cancelled after reconnect.
 
 ## Transport and file permissions
 
@@ -69,6 +69,15 @@ Sources: [Claude Code](https://code.claude.com/docs/en/mcp), [Codex](https://lea
 in request JSON never grants an agent permission to read arbitrary files. Existing
 font listing and loading grants are unchanged; font store custody and format bounds
 are owned by the [font catalog](../../../crates/libraries/src/font_catalog/README.md#custom-import).
+
+Caption generation and translation use the [engine caption workflows](../../../crates/engine/src/subtitles/README.md#caption-workflow-commands).
+An attached composition lends `CaptionAccess` through `Inbox::attach_captions`; its prompt owns
+human upload approval. Headless MCP lends local speech resources and `DenyUploads`: missing
+optional ASR setup refuses caption work without preventing ordinary inspection or edits.
+`captions.generate` names an existing asset, `captions.apply` names its retained completed job,
+and `captions.translate` names an existing caption item. Apply with the accepted revision, then
+publish with `export_subtitles` under the existing output grant. A remote run without approved
+consent fails before that window's upload; a client cannot add consent or source paths.
 
 The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
 `clipboard.paste_keyframes` run through `command_run` (and their generated all-tools

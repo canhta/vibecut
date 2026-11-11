@@ -214,7 +214,9 @@ impl FillerJob {
         &self,
         runner: &mut JobRunner,
     ) -> Result<Option<Vec<FillerCandidate>>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -223,11 +225,11 @@ impl FillerJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let candidates = decode(bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(candidates))
             }
             _ => Ok(None),

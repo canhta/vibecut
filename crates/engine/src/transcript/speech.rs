@@ -4,34 +4,47 @@ use super::error::Error as TranscriptError;
 use super::operation::{Cancellation, Progress, Stage, Transcription};
 use crate::EditError;
 use crate::cache::ArtifactCache;
-use crate::jobs::JobRunner;
-use crate::providers::{ConsentPrompt, Cost, Error as ProviderError, IdleHooks, Providers};
+use crate::providers::{ConsentPrompt, Cost, Error as ProviderError, Providers};
 use ai::SampleRange;
 use captions::LanguageTag;
 use captions::{Cue, NfcText, SegmentRules, SegmentedCue, Transcript};
 use media::{SourceAsset, SpeechExtractSettings, SpeechWindow};
+use std::{borrow::BorrowMut, sync::Mutex};
 use std::{path::Path, time::Instant};
 use time::{FrameRate, Rounding, SourceRange, Tick};
 pub(crate) const MIN_CAPTION_SECONDS: i64 = 30;
 pub(crate) const MAX_CAPTION_SECONDS: i64 = 300;
-pub(crate) const WORK_BYTES: u64 = 64 * 1024 * 1024;
+/// Working-memory ceiling for synchronous speech extraction, ASR and alignment.
+/// Blocking composition roots reserve this from their process budget before execution;
+/// a workflow job declares it in its JobSpec instead.
+pub const WORK_BYTES: u64 = 64 * 1024 * 1024;
+/// Recognition/result ceiling retained alongside synchronous ASR working memory.
+/// A composition already holding a larger result lease must not charge it twice.
+pub const RESULT_BYTES: u64 = 16 * 1024 * 1024;
 /// Below this mean word confidence the run is reported as a likely wrong
 /// language instead of inserting cues a creator would have to delete.
 const MIN_MEAN_CONFIDENCE: f64 = 0.5;
 
 /// Run the shared ASR-to-cue stage. The caller has already imported and validated
-/// media and resolved the source language; jobs, cache and consent stay caller-owned.
+/// media and resolved the source language. Range is in source ticks (None means full).
+/// The cache may be owned or borrowed behind its mutex; no lock spans provider IO.
+/// Progress and execution hooks observe the same operation cancellation flag.
+/// The composition root must already hold WORK_BYTES plus RESULT_BYTES in the
+/// shared ByteBudget (or its workflow job's equivalent work/result reservations).
+/// Invalid ranges/languages, provider failures, missing speech, low confidence and
+/// cancellation return typed errors without partial cues; completed raw checkpoints remain.
 #[allow(clippy::too_many_arguments)]
-pub fn transcribe(
+pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     asset: &SourceAsset,
     duration: Tick,
     source_language: &LanguageTag,
     providers: &Providers,
-    runner: &mut JobRunner,
-    cache: &mut ArtifactCache,
+    range: Option<SourceRange>,
+    cache: &Mutex<C>,
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
     cancel: &Cancellation,
+    hooks: &dyn ai::ExecutionHooks,
 ) -> Result<Transcription, EditError> {
     if !["vi", "en", "zh"]
         .iter()
@@ -56,12 +69,16 @@ pub fn transcribe(
         )?,
         overlap: Tick::ZERO,
     };
-    let full_range = SourceRange::new(Tick::ZERO, duration)?;
+    let full_range = range.unwrap_or(SourceRange::new(Tick::ZERO, duration)?);
+    if full_range.start() < Tick::ZERO || full_range.end() > duration {
+        return Err(EditError::Invalid("transcription range outside asset"));
+    }
     let fingerprint = NfcText::from(hex(&asset.content_hash().0));
     let mut recognitions = Vec::new();
     let mut checkpoints = 0usize;
     let mut cost = Cost::Free;
     let mut failure = None;
+    let mut recognition_bytes = 0usize;
     cancel.checkpoint()?;
     progress.stage(Stage::Extract);
     let extraction = media::extract_speech_windows_with_cancel(
@@ -70,7 +87,7 @@ pub fn transcribe(
         &speech_settings,
         cancel.media_flag(),
         |window| {
-            if cancel.cancelled() {
+            if cancel.cancelled() || hooks.cancelled() {
                 return Err(media::MediaError::Cancelled);
             }
             if !window.speech_detected {
@@ -79,11 +96,10 @@ pub fn transcribe(
             progress.stage(Stage::Transcribe);
             match transcribe_window(
                 providers,
-                runner,
                 cache,
                 consent,
                 progress,
-                cancel,
+                hooks,
                 source_language,
                 &fingerprint,
                 window,
@@ -91,6 +107,14 @@ pub fn transcribe(
                 &mut checkpoints,
             ) {
                 Ok(recognition) => {
+                    recognition_bytes = recognition_bytes.saturating_add(
+                        crate::session::wire::bounded_json(&recognition, 16 << 20)
+                            .map_or(usize::MAX, |bytes| bytes.len()),
+                    );
+                    if recognition_bytes > 16 << 20 {
+                        failure = Some(EditError::Limit);
+                        return Err(media::MediaError::Cancelled);
+                    }
                     recognitions.push(recognition);
                     Ok(())
                 }
@@ -118,7 +142,8 @@ pub fn transcribe(
 
     cancel.checkpoint()?;
     progress.stage(Stage::Assemble);
-    let recognition = ai::assemble(recognitions, &IdleHooks)?;
+    let recognition =
+        ai::assemble(recognitions, hooks).map_err(super::checkpoints::provider_error)?;
     let transcript = recognition.to_transcript()?;
     if mean_confidence(&transcript).is_some_and(|mean| mean < MIN_MEAN_CONFIDENCE) {
         return Err(TranscriptError::LowConfidence.into());
@@ -168,6 +193,16 @@ impl Providers {
         duration: Tick,
         cancel: &Cancellation,
     ) -> Result<LanguageTag, EditError> {
+        self.detect_language_with_hooks(asset, duration, cancel, cancel)
+    }
+
+    pub(crate) fn detect_language_with_hooks(
+        &self,
+        asset: &SourceAsset,
+        duration: Tick,
+        cancel: &Cancellation,
+        hooks: &dyn ai::ExecutionHooks,
+    ) -> Result<LanguageTag, EditError> {
         cancel.checkpoint()?;
         let end = duration.min(Tick::from_seconds_f64(
             MIN_CAPTION_SECONDS as f64,
@@ -197,10 +232,13 @@ impl Providers {
                                 range,
                                 sample_rate: media::SPEECH_SAMPLE_RATE,
                             },
-                            &IdleHooks,
+                            hooks,
                         )
                         .map_err(|error| match error {
                             ai::Error::Unsupported => ProviderError::AutoLanguageUnsupported.into(),
+                            ai::Error::Cancelled => {
+                                EditError::Runtime(crate::RuntimeError::Cancelled)
+                            }
                             error => EditError::Ai(error),
                         })
                 }) {

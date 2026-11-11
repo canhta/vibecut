@@ -128,6 +128,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut r,
         )
@@ -826,7 +827,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::IdempotencyConflict, IdempotencyConflict, false),
         row!(E::ReceiptCapacity, ReceiptCapacity, false),
         row!(E::ResyncRequired, ResyncRequired, false),
-        row!(E::JobNotRetained, JobNotRetained, false),
+        row!(
+            E::Runtime(engine::RuntimeError::JobNotRetained),
+            JobNotRetained,
+            false
+        ),
         row!(E::ControlIdentity, Refused, false),
         row!(E::Runtime(B::CacheBusy), Refused, false),
         row!(
@@ -944,6 +949,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::NoGesture, TransactionActive, false),
         row!(E::NoHistory, Refused, false),
         row!(E::IdExhausted, Refused, false),
+        row!(E::Runtime(B::IdExhausted), Refused, false),
         row!(E::Project(project::Error::Busy), Busy, false),
         row!(E::Time(time::TimeError::Overflow), Refused, false),
         row!(E::Captions(captions::Error::TooLarge), Refused, false),
@@ -1042,6 +1048,8 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::JobNotRetained), C::JobNotRetained),
+        (E::Runtime(B::IdExhausted), C::Refused),
         (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::NetworkTransient), C::Job),
         (E::Runtime(B::CacheCorrupt), C::Job),
@@ -1068,6 +1076,8 @@ fn owner_failures_classify_publication_receipts_and_events() {
         (E::Runtime(B::ModelResponse), C::Refused),
         (E::Runtime(B::StorageFull), C::Refused),
         (E::Runtime(B::LoudnessStale), C::Refused),
+        (E::Runtime(B::JobNotRetained), C::JobNotRetained),
+        (E::Runtime(B::IdExhausted), C::Refused),
         (E::Runtime(B::Cancelled), C::Cancelled),
         (E::Runtime(B::CacheCorrupt), C::Job),
         (E::Limit, C::Limit),

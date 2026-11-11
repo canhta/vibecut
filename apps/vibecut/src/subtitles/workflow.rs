@@ -105,7 +105,6 @@ impl Workflow for LocalWorkflow {
                     &credentials,
                     &runtime,
                 )?;
-                let mut runner = runner(budget)?;
                 let duration = asset
                     .probe()
                     .duration
@@ -126,10 +125,11 @@ impl Workflow for LocalWorkflow {
                     duration,
                     &language,
                     &providers,
-                    &mut runner,
-                    &mut cache,
+                    Some(range),
+                    &std::sync::Mutex::new(&mut cache),
                     events,
                     events,
+                    cancel,
                     cancel,
                 )?;
                 let cues = captions::clip_track(
@@ -197,7 +197,7 @@ impl Workflow for LocalWorkflow {
     }
 }
 fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
-    JobRunner::new(
+    Ok(JobRunner::new(
         RunnerConfig {
             concurrency: [2, 1, 1],
             queue: 8,
@@ -208,7 +208,7 @@ fn runner(budget: ByteBudget) -> engine::Result<JobRunner> {
         },
         budget,
         Arc::new(SystemClock::default()),
-    )
+    )?)
 }
 fn insert(
     cues: CueTrack,

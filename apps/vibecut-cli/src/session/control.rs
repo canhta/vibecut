@@ -83,6 +83,7 @@ fn control_with(
     let media = MediaAccess::open(context.budget()?)
         .ok()
         .map(std::sync::Mutex::new);
+    let captions = super::caption_access(context.budget()?);
     let policy = ControlPolicy { allow_overwrite };
     let stdin = io::stdin();
     let mut input = stdin.lock();
@@ -150,6 +151,7 @@ fn control_with(
             sounds: None,
             media: media.as_ref(),
             chapters: None,
+            captions: Some(&captions),
         };
         // The engine owns save admission and its receipt; the closure only
         // publishes the bytes through the project owner.

@@ -183,3 +183,9 @@ fn reason_name(reason: render::UnavailableReason) -> &'static str {
         render::UnavailableReason::Audio => "audio",
     }
 }
+
+impl From<engine::RuntimeError> for CliError {
+    fn from(error: engine::RuntimeError) -> Self {
+        Self::Engine(error.into())
+    }
+}

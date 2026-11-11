@@ -285,7 +285,9 @@ impl DetectionJob {
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
     ) -> Result<Option<DetectionResult>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -294,7 +296,7 @@ impl DetectionJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 Ok(Some(result))

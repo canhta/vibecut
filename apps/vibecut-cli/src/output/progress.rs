@@ -58,6 +58,8 @@ pub(crate) fn progress_percent(progress: f32) -> u32 {
 
 pub(crate) fn stage_name(stage: JobStage) -> &'static str {
     match stage {
+        JobStage::Extract => "extract",
+        JobStage::Segment => "segment",
         JobStage::Queued => "queued",
         JobStage::Starting => "starting",
         JobStage::Preparing => "preparing",

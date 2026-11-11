@@ -82,7 +82,7 @@ impl FontStore {
             clip_range: [0; 32],
             translation: [0; 32],
         })?;
-        runner.submit::<EditError>(
+        Ok(runner.submit::<EditError>(
             JobSpec {
                 kind: JobKind::Import,
                 class: ResourceClass::Cpu,
@@ -97,7 +97,7 @@ impl FontStore {
                 import(&root, &path, &reserved, file.as_ref(), ctx)?;
                 Ok(Vec::new())
             },
-        )
+        )?)
     }
 
     pub(super) fn imported(&self) -> Result<Vec<Imported>> {
@@ -335,7 +335,7 @@ fn import(
         file.write_all(&data)?;
         file.sync_all()?;
     }
-    ctx.commit_publication(|| {
+    ctx.commit_publication(|| -> Result<()> {
         fs::rename(&staging.path, target)?;
         staging.published = true;
         Ok(())

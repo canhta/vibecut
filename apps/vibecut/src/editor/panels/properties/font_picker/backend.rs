@@ -118,6 +118,7 @@ impl EngineBackend {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             runner,
         )?;
@@ -135,7 +136,7 @@ impl EngineBackend {
 }
 impl Backend for EngineBackend {
     fn bind_budget(&mut self, budget: ByteBudget) -> crate::Result<bool> {
-        if self.runner.uses_budget(&budget) {
+        if self.runner.memory_budget().same_policy(&budget) {
             return Ok(false);
         }
         self.runner.shutdown();

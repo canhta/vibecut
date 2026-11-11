@@ -7,8 +7,14 @@ use crate::{EditError, Result};
 /// every [`JobKind`], so a new kind does not compile until it states what it returns.
 /// A kind that returns data and has lost its bytes refuses `JobNotRetained`.
 pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOutput>> {
-    let retained = || bytes.ok_or(EditError::JobNotRetained);
+    let retained = || bytes.ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained));
     Ok(Some(match kind {
+        JobKind::Transcribe => {
+            JobOutput::Captions(Box::new(crate::subtitles::decode_captions(retained()?)?))
+        }
+        JobKind::Translate => JobOutput::Translations(Box::new(
+            crate::subtitles::decode_translations(retained()?)?,
+        )),
         JobKind::Preview => JobOutput::Preview(
             serde_json::from_slice(retained()?).map_err(|_| EditError::InvalidParams)?,
         ),
@@ -21,9 +27,7 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         },
         JobKind::MeasureLoudness => JobOutput::Loudness(crate::loudness::decode(retained()?)?),
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
-        JobKind::Transcribe
-        | JobKind::Translate
-        | JobKind::SuggestClips
+        JobKind::SuggestClips
         | JobKind::AnalyzeShots
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform

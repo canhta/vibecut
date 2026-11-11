@@ -39,6 +39,7 @@ pub struct Inbox {
     /// inbox without them refuses `chapters.generate` and `fillers.classify` with
     /// `consent_required`.
     chapters: Option<Arc<TextAccess>>,
+    captions: Option<Arc<engine::subtitles::CaptionAccess>>,
 }
 impl Inbox {
     /// Build an inbox with its own media cache; without a usable cache the
@@ -81,6 +82,7 @@ impl Inbox {
                 grants,
                 media,
                 chapters: None,
+                captions: None,
             },
         ))
     }
@@ -94,6 +96,11 @@ impl Inbox {
     /// Without them an agent cannot start a chapter or filler upload.
     pub fn attach_text(&mut self, text: Arc<TextAccess>) {
         self.chapters = Some(text);
+    }
+
+    /// Lend resolved providers, human consent and the process checkpoint cache.
+    pub fn attach_captions(&mut self, captions: Arc<engine::subtitles::CaptionAccess>) {
+        self.captions = Some(captions);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -209,6 +216,7 @@ impl Inbox {
             media,
             grants,
             chapters,
+            captions,
             ..
         } = self;
         let runner = projects.get_mut(&id).ok_or(EditError::SessionGone)?;
@@ -218,6 +226,7 @@ impl Inbox {
             grants,
             media.as_deref(),
             chapters.as_deref(),
+            captions.as_deref(),
             session,
             value,
             publish,
@@ -235,6 +244,7 @@ impl Inbox {
             media,
             grants,
             chapters,
+            captions,
             ..
         } = self;
         Self::execute_with(
@@ -242,6 +252,7 @@ impl Inbox {
             grants,
             media.as_deref(),
             chapters.as_deref(),
+            captions.as_deref(),
             session,
             value,
             publish,
@@ -252,6 +263,7 @@ impl Inbox {
         grants: &Grants,
         media: Option<&Mutex<MediaAccess>>,
         chapters: Option<&TextAccess>,
+        captions: Option<&engine::subtitles::CaptionAccess>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
@@ -265,6 +277,7 @@ impl Inbox {
             sounds: None,
             media,
             chapters,
+            captions,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;

@@ -49,6 +49,15 @@ pub fn run(
         return Err(EditError::Unsupported("burn-in requires a video stream"));
     }
     let duration = media_duration(&asset)?;
+    // This retained blocking path owns admission; registry jobs declare the same
+    // memory in their outer JobSpec and never enter this composition.
+    let work = runner
+        .memory_budget()
+        .reserve(crate::ByteOwner::Compositor, crate::transcript::WORK_BYTES)?;
+    let _result = runner.memory_budget().reserve(
+        crate::ByteOwner::JobResults,
+        crate::transcript::RESULT_BYTES,
+    )?;
     let source_language = match &request.source_language {
         Some(language) => language.clone(),
         None => providers.detect_language(&asset, duration, cancel)?,
@@ -73,12 +82,14 @@ pub fn run(
         duration,
         &source_language,
         providers,
-        runner,
-        cache,
+        None,
+        &std::sync::Mutex::new(cache),
         consent,
         progress,
         cancel,
+        cancel,
     )?;
+    drop(work);
     let cues = transcription.cues;
     let transcription_cost = transcription.cost;
     let checkpoints = transcription.checkpoints;

@@ -861,6 +861,337 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
     );
 }
 
+struct CaptionAsr {
+    config: ai::ProviderConfig,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl ai::Transcriber for CaptionAsr {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: "transcribe".into(),
+            operation: ai::Operation::Transcribe,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: [ai::TimingUnit::Segment].into_iter().collect(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: None,
+            max_duration_micros: None,
+            evidence: ai::Evidence::FixtureVerified,
+            revision: "mcp-offline".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn transcribe(
+        &self,
+        audio: ai::AudioWindow<'_>,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<Vec<ai::RecognitionSegment>, ai::Error> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Ok(vec![ai::RecognitionSegment {
+            id: "mcp-cue".into(),
+            text: "Hello from MCP".into(),
+            range: Some(audio.range),
+            timing: Vec::new(),
+            raw_tokens: Vec::new(),
+        }])
+    }
+}
+struct CaptionTranslator {
+    config: ai::ProviderConfig,
+}
+impl ai::Translator for CaptionTranslator {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: "context-window".into(),
+            operation: ai::Operation::Translate,
+            languages: vec![scope.source_language.clone()],
+            target_languages: scope.target_language.iter().cloned().collect(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: None,
+            max_duration_micros: None,
+            evidence: ai::Evidence::FixtureVerified,
+            revision: "mcp-offline".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn translate(
+        &self,
+        window: &ai::TranslationWindow,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::Translation, ai::Error> {
+        Ok(ai::Translation {
+            source_language: window.source_language.clone(),
+            target_language: window.target_language.clone(),
+            texts: window
+                .segments
+                .iter()
+                .map(|s| (s.id.clone(), "Xin chao".into()))
+                .collect(),
+            number_warnings: Vec::new(),
+        })
+    }
+}
+#[test]
+fn caption_jobs_generate_apply_and_export_over_mcp_and_deny_unapproved_uploads() {
+    use engine::providers::{Providers, TranscriptionProvider};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    for allow in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let media = root.path().join("caption-source.mp4");
+        crate::media_fixture::generate_av(&media, 3);
+        let path = root.path().join("caption-project.vibecut");
+        crate::media_fixture::media_project(&path, &media, None);
+        let source_bytes = std::fs::read(&media).unwrap();
+        let project_bytes = std::fs::read(&path).unwrap();
+        let mut session = engine::Session::new(project::load(&path).unwrap().project, 100).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let config = ai::ProviderConfig::new(
+            "offline-asr".into(),
+            "offline-model".into(),
+            "mcp-v1".into(),
+            ai::Location::Remote {
+                backend: "fixture".into(),
+                base_url: "https://fixture.invalid".into(),
+                auth_ref: "fixture".into(),
+            },
+        )
+        .unwrap();
+        let providers = Providers::from_parts(
+            TranscriptionProvider::ElevenLabs {
+                model: "offline-model".into(),
+            },
+            Arc::new(CaptionAsr {
+                config,
+                calls: calls.clone(),
+            }),
+            None,
+            Some(engine::providers::TranslationProvider::OpenAi {
+                model: "offline-translation-model".into(),
+            }),
+            Some(Arc::new(CaptionTranslator {
+                config: ai::ProviderConfig::new(
+                    "offline-translator".into(),
+                    "offline-translation-model".into(),
+                    "mcp-v1".into(),
+                    ai::Location::Remote {
+                        backend: "fixture".into(),
+                        base_url: "https://fixture.invalid".into(),
+                        auth_ref: "fixture".into(),
+                    },
+                )
+                .unwrap(),
+            })),
+        )
+        .unwrap();
+        let (cache, _) = engine::cache::ArtifactCache::open(
+            &root.path().join("cache"),
+            engine::ByteBudget::new(512 << 20).unwrap(),
+            16,
+        )
+        .unwrap();
+        let prompt: Arc<dyn engine::providers::ConsentPrompt + Send + Sync> = if allow {
+            Arc::new(engine::providers::AllowAll)
+        } else {
+            Arc::new(engine::providers::DenyUploads)
+        };
+        let access = engine::subtitles::CaptionAccess::new(
+            Arc::new(providers),
+            prompt,
+            Arc::new(std::sync::Mutex::new(cache)),
+        );
+        let endpoint = if cfg!(windows) {
+            PathBuf::from(format!("vibecut-captions-{}-{allow}", std::process::id()))
+        } else {
+            root.path().join("private/captions.sock")
+        };
+        let mut server = mcp::Server::bind(
+            &endpoint,
+            mcp::Grants::output(root.path()).unwrap(),
+            engine::ByteBudget::new(2 << 30).unwrap(),
+        )
+        .unwrap();
+        server.inbox.attach_captions(Arc::new(access));
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = stop.clone();
+        let worker = std::thread::spawn(move || {
+            while !stopping.load(Ordering::Acquire) {
+                server.inbox.poll(&mut session, |_, _| Ok(())).unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            session
+        });
+        let mut client = Client::start(&[
+            "mcp".as_ref(),
+            "--attach".as_ref(),
+            "--socket".as_ref(),
+            endpoint.as_os_str(),
+        ]);
+        let initial = client.call("inspect", json!({}), None, None);
+        let rev = initial["rev_after"].clone();
+        let bad = client.rpc(
+            2,
+            "tools/call",
+            json!({"name":"command_run","arguments":{
+                "request_id":"self-consent", "command":"captions.generate",
+                "params":{"asset":1,"source_language":"en","consent":true},
+                "base_rev":rev, "idempotency_key":"self-consent"
+            }}),
+        );
+        assert_eq!(bad["result"]["isError"], true);
+        assert_eq!(
+            bad["result"]["structuredContent"]["value"]["value"],
+            "invalid_params"
+        );
+        let accepted = client.call(
+            "captions.generate",
+            json!({"asset":1,"source_language":"en"}),
+            Some(&rev),
+            Some("generate"),
+        );
+        assert_eq!(accepted["value"]["status"], "result", "{accepted}");
+        assert_eq!(accepted["rev_after"], rev);
+        let job = accepted["value"]["value"]["job"].clone();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let status = loop {
+            let status = client.call("job_status", json!({"job":job}), None, None);
+            if matches!(
+                status["value"]["value"]["snapshot"]["state"].as_str(),
+                Some("completed" | "failed" | "cancelled")
+            ) {
+                break status;
+            }
+            assert!(Instant::now() < deadline, "{status}");
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        let output = root.path().join("captions.srt");
+        if allow {
+            assert_eq!(
+                status["value"]["value"]["snapshot"]["state"], "completed",
+                "{status}"
+            );
+            assert_eq!(
+                status["value"]["value"]["snapshot"]["output"]["kind"],
+                "captions"
+            );
+            let applied = client.call(
+                "captions.apply",
+                json!({"job":job}),
+                Some(&rev),
+                Some("apply"),
+            );
+            assert_eq!(
+                applied["value"]["value"]["outcome"]["changed"], true,
+                "{applied}"
+            );
+            let track = applied["value"]["value"]["outcome"]["created"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find_map(|id| id.get("track"))
+                .unwrap();
+            let item = applied["value"]["value"]["outcome"]["created"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find_map(|id| id.get("item"))
+                .unwrap();
+            let accepted_translation = client.call(
+                "captions.translate",
+                json!({"item":item,"target_language":"vi"}),
+                Some(&applied["rev_after"]),
+                Some("translate"),
+            );
+            let translated =
+                wait_for_media_job(&mut client, &accepted_translation["value"]["value"]["job"]);
+            let translated = &translated["value"]["value"]["snapshot"]["output"];
+            assert_eq!(translated["kind"], "translations");
+            let retranslated=client.call("retranslate",json!({"item":item,"target_language":translated["target_language"],"texts":translated["texts"],"translation_ref":translated["translation_ref"],"force":false}),Some(&applied["rev_after"]),Some("apply-translation"));
+            assert_eq!(
+                retranslated["value"]["value"]["outcome"]["changed"], true,
+                "{retranslated}"
+            );
+            let exported=client.call("export_subtitles",json!({"track":track,"format":"srt","languages":["en","vi"],"path":output,"overwrite":false}),Some(&retranslated["rev_after"]),Some("export"));
+            let export_job = exported["value"]["value"]["job"].clone();
+            wait_for_media_job(&mut client, &export_job);
+            assert!(
+                std::fs::read_to_string(&output)
+                    .unwrap()
+                    .contains("Hello from MCP")
+            );
+            assert_eq!(calls.load(Ordering::Acquire), 1);
+        } else {
+            assert_eq!(
+                status["value"]["value"]["snapshot"]["state"], "failed",
+                "{status}"
+            );
+            assert_eq!(status["value"]["value"]["snapshot"]["error"], "permission");
+            assert!(status["value"]["value"]["snapshot"]["output"].is_null());
+            assert!(!output.exists());
+            assert_eq!(calls.load(Ordering::Acquire), 0);
+        }
+        drop(client);
+        stop.store(true, Ordering::Release);
+        let session = worker.join().unwrap();
+        assert_eq!(std::fs::read(&media).unwrap(), source_bytes);
+        assert_eq!(std::fs::read(&path).unwrap(), project_bytes);
+        assert_eq!(session.history_len().0, 2 * usize::from(allow));
+    }
+}
+
+#[test]
+fn optional_asr_setup_refusal_keeps_headless_mcp_inspection_and_edits_usable() {
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let media = root.path().join("clip.mp4");
+    crate::media_fixture::generate_av(&media, 3);
+    let path = root.path().join("optional-asr.vibecut");
+    crate::media_fixture::media_project(&path, &media, None);
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let initial = client.call("inspect", json!({}), None, None);
+    let rejected = client.call(
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        Some(&initial["rev_after"]),
+        Some("missing-asr"),
+    );
+    assert_eq!(rejected["value"]["value"], "setup", "{rejected}");
+    assert_eq!(rejected["rev_after"], initial["rev_after"]);
+    let edit = client.call(
+        "project.rename",
+        json!({"name":"still usable"}),
+        Some(&initial["rev_after"]),
+        Some("rename"),
+    );
+    assert_eq!(edit["value"]["value"]["outcome"]["changed"], true, "{edit}");
+}
+
 #[test]
 fn clipboard_command_run_freezes_keys_replays_once_and_shares_only_one_session() {
     let root = tempfile::tempdir().unwrap();

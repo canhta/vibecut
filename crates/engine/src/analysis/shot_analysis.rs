@@ -519,7 +519,9 @@ impl AnalysisJob {
         runner: &mut JobRunner,
         cache: &mut ArtifactCache,
     ) -> Result<Option<AnalysisResult>, EditError> {
-        let snapshot = runner.snapshot(self.id).ok_or(EditError::JobNotRetained)?;
+        let snapshot = runner
+            .snapshot(self.id)
+            .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
         match snapshot.state {
             JobState::Cancelled => Err(EditError::Runtime(crate::RuntimeError::Cancelled)),
             JobState::Failed => Err(EditError::Runtime(crate::RuntimeError::Failed(
@@ -528,12 +530,12 @@ impl AnalysisJob {
             JobState::Completed => {
                 let bytes = runner
                     .output_bytes(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
                 runner
                     .take_output(self.id)
-                    .ok_or(EditError::JobNotRetained)?;
+                    .ok_or(EditError::Runtime(crate::RuntimeError::JobNotRetained))?;
                 Ok(Some(result))
             }
             _ => Ok(None),

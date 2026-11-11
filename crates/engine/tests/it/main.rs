@@ -31,7 +31,7 @@ pub(crate) mod wire {
     }
 
     fn runner() -> Result<JobRunner> {
-        JobRunner::new(
+        Ok(JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
                 queue: 4,
@@ -42,7 +42,7 @@ pub(crate) mod wire {
             },
             ByteBudget::new(16 << 20)?,
             Arc::new(SystemClock::default()),
-        )
+        )?)
     }
 
     /// Run one command by id and JSON through admission, mapping the typed
@@ -71,6 +71,7 @@ pub(crate) mod wire {
                 sounds: None,
                 media: None,
                 chapters: None,
+                captions: None,
             },
             &mut runner,
         )?;
