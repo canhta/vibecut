@@ -655,7 +655,7 @@ impl Drop for ProjectLibrary {
 pub(super) struct DirectoryGuard(pub(super) Option<PathBuf>);
 pub(super) fn staging_directory(parent: &Path, prefix: &str) -> Result<PathBuf> {
     let mut bytes = [0; 16];
-    getrandom::fill(&mut bytes).map_err(|_| EditError::ControlIdentity)?;
+    crate::session::identity_entropy(&mut bytes)?;
     let path = parent.join(format!(".{prefix}-{}", blake3::hash(&bytes).to_hex()));
     private_directory(&path, false)?;
     Ok(path)
