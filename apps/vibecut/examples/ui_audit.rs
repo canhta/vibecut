@@ -4187,6 +4187,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn readme_capture_refuses_unknown_slots_before_touching_final_or_staging() -> Result<(), Failure>
+    {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let media = root.join("docs/assets/readme");
+        fs::create_dir_all(&media)?;
+        fs::write(media.join("hero.jpg"), b"keep")?;
+        let error = readme_media(root, &root.join("target"), "unknown").unwrap_err();
+        assert!(error.to_string().contains("unknown README slot"));
+        assert_eq!(fs::read(media.join("hero.jpg"))?, b"keep");
+        assert!(!root.join("target/readme-media").exists());
+        Ok(())
+    }
+
+    #[test]
     fn mixed_selection_preview_matches_its_edited_timeline() -> Result<(), Failure> {
         let app = inspector_mixed_vi(Theme::Light, 1.0)?;
         let App::Editor(editor) = &app.state().app else {

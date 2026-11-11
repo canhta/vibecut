@@ -1,0 +1,8 @@
+asset: hero.jpg
+title: VibeCut editor with a multitrack project
+author: VibeCut contributors
+source: apps/vibecut/examples/ui_audit.rs --readme hero at 52c3c5ef21404a8b1c1bc5b024ac2142720d6e78; testsrc2 1280x720 30fps 12s plus 997Hz sine, source SHA256 934a2e686af6368649353ef74e775d3d0c5693d0e6c06ce9dd6e550f308468bd
+license: GPL-3.0-only
+license-file: ../../../LICENSE
+added: p0-core/22
+notes: original offscreen VibeCut capture of a generated synthetic project; authored Vietnamese/English caption, no recognition or translation was run; bundled Inter/Noto font and icon licences are recorded in docs/assets/readme/README.md; capture: The editor with file-backed video, audio, an authored title and bilingual caption.

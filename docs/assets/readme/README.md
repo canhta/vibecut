@@ -24,10 +24,14 @@ authored Vietnamese/English cue text, not recognized or translated speech.
 
 | File | Bytes | SHA-256 | Content |
 |---|---:|---|---|
-| `hero.jpg` | 83466 | `d0ad60da7b8580eb5294d7061e3e6f139cb7ba22b8115577dfc91ac0fbb4ed66` | 960x600 editor still with file-backed video, sine audio, title and bilingual caption |
-| `timeline.gif` | 72004 | `570d8367999e6498759894894a6491e388befbc6b69c2a3cafb7d08cc5a1e78a` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
-| `timeline.jpg` | 85749 | `db12b25d87bb8db7b39032197dfe89b91645e70ffd787ccbd3903eeabc10507a` | 960x600 poster at the trimmed state (frame 40) |
+| `hero.jpg` | 83954 | `8b40781996611531e9a3d4271e15bbaf4a070cf715d34612564018c7d2e781f8` | 960x600 editor still with file-backed video, sine audio, title and bilingual caption |
+| `timeline.gif` | 67442 | `f04cd4946ab5fa590d5034b6df062ef71dcf922b6a7a112c1aa6bfd3562d3ae6` | 960x600, 80 frames at 10 fps, 100 ms each, 8.00 s, forever loop |
+| `timeline.jpg` | 84120 | `d50df8b93b8ae985fa1a65fb7a698c858e25884359c9f0eaac77d363349c800e` | 960x600 poster at the trimmed state (frame 40) |
 
+Generated at source commit `52c3c5ef21404a8b1c1bc5b024ac2142720d6e78` with source
+fixture SHA-256 `934a2e686af6368649353ef74e775d3d0c5693d0e6c06ce9dd6e550f308468bd`.
+Measured source-vs-decoded RGB mean/max absolute error was 0.714/29 for `hero.jpg`,
+0.717/29 for `timeline.jpg`, and 0.376/132 for the palette-optimized GIF frame 40.
 These values are refreshed by the regeneration command below; the per-run
 manifest is the authoritative receipt for a particular capture.
 
