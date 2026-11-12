@@ -3179,6 +3179,17 @@ fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
         0,
         "shared budget must admit before source read/decode"
     );
+    // The replaced Playback primes its first preview frame asynchronously under
+    // the same budget; that transient compositor lease is not the refused import.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while h.state().playback.budget().snapshot().unwrap().owners[1] != 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "preview compositor lease never drained"
+        );
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
     assert_eq!(budget.snapshot().unwrap().owners[1], 0);
     assert_eq!(previous.snapshot().unwrap().owners[1], 0);
     assert!(Arc::ptr_eq(h.state().session.project(), &snapshot));
