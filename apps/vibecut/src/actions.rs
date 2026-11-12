@@ -208,6 +208,8 @@ pub enum EngineAction {
     ToggleBookmark,
     CreateScene,
     DeleteScenes,
+    /// Toggle one reflection axis over the current item selection.
+    Flip(project::FlipAxis),
 }
 impl EngineAction {
     pub const fn command(self, ripple: bool) -> engine::CommandKind {
@@ -229,6 +231,7 @@ impl EngineAction {
             Self::ToggleBookmark => K::ToggleBookmark,
             Self::CreateScene => K::CreateScene,
             Self::DeleteScenes => K::DeleteScenes,
+            Self::Flip(_) => K::SetItemsFlipped,
         }
     }
 }

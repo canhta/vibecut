@@ -1,6 +1,46 @@
 //! Units and editor bounds for the existing transform animation channels.
 use crate::{AnimationPath, Animations, BuiltinPath, Error, ParamValue, Result};
+use serde::{Deserialize, Serialize};
 use time::Tick;
+
+/// One reflected local axis. A flip mirrors the placed item about its centre
+/// before clockwise rotation and keeps scale magnitudes positive.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FlipAxis {
+    Horizontal,
+    Vertical,
+}
+
+impl FlipAxis {
+    pub const ALL: [Self; 2] = [Self::Horizontal, Self::Vertical];
+    pub const fn builtin(self) -> BuiltinPath {
+        match self {
+            Self::Horizontal => BuiltinPath::TransformFlipX,
+            Self::Vertical => BuiltinPath::TransformFlipY,
+        }
+    }
+    /// The held Boolean at real item-local time; an absent channel is not flipped.
+    pub fn value_at(self, animations: &Animations, at: Tick) -> Result<bool> {
+        match animations.value_at(&AnimationPath::from(self.builtin()), at)? {
+            None => Ok(false),
+            Some(ParamValue::Bool(value)) => Ok(value),
+            _ => Err(Error::Invalid("flip value")),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransformField {

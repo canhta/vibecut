@@ -10,7 +10,9 @@ Persisted visual item properties: transform, blend selection, masks, effects, vi
 ## Transform
 
 
-`TransformField` owns units, defaults and finite clamps for the five transform channels: position X/Y in project-canvas pixels (−100,000..=100,000, default 0), independent X/Y scale ratios (0.01..=10, default 1) and clockwise rotation in degrees (−360..=360, default 0). The command adapter refuses out-of-bounds input; animated evaluation clamps overshooting curves to these bounds.
+`TransformField` owns units, defaults and finite clamps for the five numeric transform channels: position X/Y in project-canvas pixels (−100,000..=100,000, default 0), independent X/Y scale ratios (0.01..=10, default 1) and clockwise rotation in degrees (−360..=360, default 0). The command adapter refuses out-of-bounds input; animated evaluation clamps overshooting curves to these bounds.
+
+`FlipAxis::{Horizontal, Vertical}` persists as the held Boolean `transform.flipX` / `transform.flipY` channels; absence means not flipped. A reflection reverses that local axis about the placed item centre before clockwise rotation and keeps the numeric scale magnitudes positive, so it is not a negative scale. Video, image, text, overlay and graphic items carry it; audio and caption items refuse it in whole-project validation and in the command reducer.
 
 ## Blend selection and opacity
 

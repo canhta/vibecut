@@ -420,6 +420,14 @@ fn validate(data: &ProjectData) -> Result<()> {
                 }
             }
             item.animations.validate()?;
+            if item
+                .animations
+                .iter()
+                .any(|(path, _)| path.builtin().is_some_and(crate::BuiltinPath::is_flip))
+                && !item.content.supports_flip()
+            {
+                return Err(Error::Invalid("flip on unsupported item"));
+            }
             crate::Crop::validate_animations(
                 match &item.content {
                     ItemParams::Video(p) => p.crop.as_ref(),

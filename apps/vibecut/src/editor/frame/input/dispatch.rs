@@ -228,6 +228,37 @@ impl Editor {
             .collect()
     }
 
+    /// The whole current selection when every item can reflect on `axis`, with
+    /// whether they are all already flipped. Any locked, unsupported or keyed-axis
+    /// target refuses the list instead of silently skipping it.
+    fn flip_targets(&self, axis: project::FlipAxis) -> Option<(Vec<ItemId>, bool)> {
+        let selected = self.selected_items();
+        if selected.is_empty() {
+            return None;
+        }
+        let path = project::AnimationPath::from(axis.builtin());
+        let mut items = Vec::with_capacity(selected.len());
+        let mut all_flipped = true;
+        for (locked, item) in selected {
+            if locked || !item.content.supports_flip() {
+                return None;
+            }
+            if item
+                .animations
+                .get(&path)
+                .is_some_and(|param| match param.channel(None) {
+                    Ok(channel) => !channel.keys().is_empty(),
+                    Err(_) => true,
+                })
+            {
+                return None;
+            }
+            all_flipped &= axis.value_at(&item.animations, Tick::ZERO).unwrap_or(false);
+            items.push(item.id);
+        }
+        Some((items, all_flipped))
+    }
+
     fn item_hidden(&self, item: ItemId) -> bool {
         self.session
             .project()
@@ -349,6 +380,7 @@ impl Editor {
                                     == crate::selection::SelectionScope::Keyframes
                         }
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
+                        EngineAction::Flip(axis) => self.flip_targets(axis).is_some(),
                         EngineAction::InsertMedia => {
                             !self.importing() && !self.media_selection.is_empty()
                         }
@@ -459,6 +491,14 @@ impl Editor {
             EngineAction::DeleteScenes => vec![Command::DeleteScenes {
                 scenes: self.timeline.scenes.selected().iter().copied().collect(),
             }],
+            EngineAction::Flip(axis) => match self.flip_targets(axis) {
+                Some((items, all_flipped)) => vec![Command::SetItemsFlipped {
+                    items,
+                    axis,
+                    flipped: !all_flipped,
+                }],
+                None => Vec::new(),
+            },
         })
     }
 
@@ -503,7 +543,8 @@ impl Editor {
             | EngineAction::SetMuted
             | EngineAction::ExtractAudio
             | EngineAction::RecoverAudio
-            | EngineAction::ToggleBookmark => self.prune_selection(),
+            | EngineAction::ToggleBookmark
+            | EngineAction::Flip(_) => self.prune_selection(),
         }
         if route == EngineAction::SplitLeft
             && self.preferences.ripple

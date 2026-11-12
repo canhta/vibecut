@@ -222,7 +222,7 @@ impl ItemGeometry {
     /// Feed the resulting ratios through the existing transform parameter commands.
     pub fn scale_at(&self, handle: Handle, canvas: [f64; 2]) -> Result<[f64; 2]> {
         finite(&canvas)?;
-        let [x, y] = self.transform.unrotate(canvas, self.center());
+        let [x, y] = self.transform.local_axis(canvas, self.center());
         let [dx, dy] = handle.direction();
         let [sx, sy] = self.transform.scale();
         Ok([

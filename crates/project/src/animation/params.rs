@@ -22,6 +22,8 @@ pub enum BuiltinPath {
     TransformScaleX,
     TransformScaleY,
     TransformRotate,
+    TransformFlipX,
+    TransformFlipY,
     Opacity,
     Volume,
     Muted,
@@ -37,12 +39,14 @@ pub enum BuiltinPath {
     CropAuto,
 }
 impl BuiltinPath {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 20] = [
         Self::TransformPositionX,
         Self::TransformPositionY,
         Self::TransformScaleX,
         Self::TransformScaleY,
         Self::TransformRotate,
+        Self::TransformFlipX,
+        Self::TransformFlipY,
         Self::Opacity,
         Self::Volume,
         Self::Muted,
@@ -64,6 +68,8 @@ impl BuiltinPath {
             Self::TransformScaleX => "transform.scaleX",
             Self::TransformScaleY => "transform.scaleY",
             Self::TransformRotate => "transform.rotate",
+            Self::TransformFlipX => "transform.flipX",
+            Self::TransformFlipY => "transform.flipY",
             Self::Opacity => "opacity",
             Self::Volume => "volume",
             Self::Muted => "muted",
@@ -81,6 +87,10 @@ impl BuiltinPath {
     }
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|path| path.as_str() == value)
+    }
+    /// Reflection channels hold a step Boolean; they are never numeric scale signs.
+    pub const fn is_flip(self) -> bool {
+        matches!(self, Self::TransformFlipX | Self::TransformFlipY)
     }
 }
 
@@ -148,7 +158,10 @@ impl AnimationPath {
             Param::Color(_) => None,
         };
         match builtin {
-            BuiltinPath::Muted | BuiltinPath::CropAuto => matches!(base, Some(ParamValue::Bool(_))),
+            BuiltinPath::Muted
+            | BuiltinPath::CropAuto
+            | BuiltinPath::TransformFlipX
+            | BuiltinPath::TransformFlipY => matches!(base, Some(ParamValue::Bool(_))),
             BuiltinPath::Color | BuiltinPath::BackgroundColor => {
                 matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
             }

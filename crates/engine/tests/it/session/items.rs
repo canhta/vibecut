@@ -4,7 +4,10 @@ use crate::support::session::{
 };
 use engine::{Command, CreatedId, EditError, Move, NewItem, Session, registry};
 use media::{AssetId, ContentHash};
-use project::{Color, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
+use project::{
+    AnimationPath, BuiltinPath, Color, FlipAxis, Item, ItemId, ItemParams, Keyframe, Param,
+    ParamValue, Project, ProjectId, Segment, Track, TrackId, TrackKind,
+};
 use proptest::prelude::*;
 use std::sync::Arc;
 use time::Tick;
@@ -238,6 +241,144 @@ fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
     assert_eq!(loaded.project.data(), s.project().data());
     assert!(get_project_id(&loaded.project, clip).hidden);
     assert_eq!(video, s.project().data().scene().timeline.overlays[0].id);
+}
+#[test]
+fn flip_sets_one_boolean_axis_per_list_and_refuses_unsupported_keyed_locked_and_missing() {
+    let mut s = crate::support::control::seed();
+    let path = AnimationPath::from(BuiltinPath::TransformFlipX);
+    let flipped = |project: &Project, item: ItemId, axis: FlipAxis| {
+        axis.value_at(&get_project_id(project, item).animations, Tick::ZERO)
+            .unwrap()
+    };
+    s.apply(Command::SetItemsFlipped {
+        items: vec![ItemId(1), ItemId(5)],
+        axis: FlipAxis::Horizontal,
+        flipped: true,
+    })
+    .unwrap();
+    assert!(flipped(s.project(), ItemId(1), FlipAxis::Horizontal));
+    assert!(flipped(s.project(), ItemId(5), FlipAxis::Horizontal));
+    assert!(!flipped(s.project(), ItemId(1), FlipAxis::Vertical));
+    let bytes = project::encode(s.project(), false).unwrap();
+    s.apply(Command::SetItemsFlipped {
+        items: vec![ItemId(1), ItemId(5)],
+        axis: FlipAxis::Horizontal,
+        flipped: true,
+    })
+    .unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    s.undo().unwrap();
+    assert!(!flipped(s.project(), ItemId(1), FlipAxis::Horizontal));
+    assert!(!flipped(s.project(), ItemId(5), FlipAxis::Horizontal));
+    s.redo().unwrap();
+    assert!(flipped(s.project(), ItemId(1), FlipAxis::Horizontal));
+    let loaded = project::decode(&project::encode(s.project(), false).unwrap()).unwrap();
+    assert!(flipped(&loaded.project, ItemId(1), FlipAxis::Horizontal));
+
+    let before = s.project().clone();
+    for command in [
+        Command::SetItemsFlipped {
+            items: Vec::new(),
+            axis: FlipAxis::Horizontal,
+            flipped: true,
+        },
+        Command::SetItemsFlipped {
+            items: vec![ItemId(1), ItemId(1)],
+            axis: FlipAxis::Horizontal,
+            flipped: true,
+        },
+    ] {
+        assert!(matches!(s.apply(command), Err(EditError::Invalid(_))));
+        assert_eq!(s.project(), &before);
+    }
+    assert!(matches!(
+        s.apply(Command::SetItemsFlipped {
+            items: vec![ItemId(999)],
+            axis: FlipAxis::Horizontal,
+            flipped: true,
+        }),
+        Err(EditError::NoItem(id)) if id == ItemId(999)
+    ));
+    assert_eq!(s.project(), &before);
+    // A caption owns its cue layout, so the whole list refuses without a partial write.
+    assert!(matches!(
+        s.apply(Command::SetItemsFlipped {
+            items: vec![ItemId(5), ItemId(4)],
+            axis: FlipAxis::Vertical,
+            flipped: true,
+        }),
+        Err(EditError::Invalid("flip on unsupported item"))
+    ));
+    assert_eq!(s.project(), &before);
+    let (mut audio, _, _, clip) = audible_session();
+    let audio_clip = audio
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .id;
+    assert!(matches!(
+        audio.apply(Command::SetItemsFlipped {
+            items: vec![clip, audio_clip],
+            axis: FlipAxis::Horizontal,
+            flipped: true,
+        }),
+        Err(EditError::Invalid("flip on unsupported item"))
+    ));
+    // A keyed axis keeps its curve; the static command refuses rather than erasing it.
+    let mut param = Param::new(ParamValue::Bool(true)).unwrap();
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put({
+            let mut key = Keyframe::new(Tick::ZERO, ParamValue::Bool(false));
+            key.segment = Segment::Step;
+            key
+        })
+        .unwrap();
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(5),
+        path: path.clone(),
+        param,
+    })
+    .unwrap();
+    assert!(matches!(
+        s.apply(Command::SetItemsFlipped {
+            items: vec![ItemId(5)],
+            axis: FlipAxis::Horizontal,
+            flipped: false,
+        }),
+        Err(EditError::Invalid("flip axis is keyed"))
+    ));
+    assert!(
+        !get_id(&s, ItemId(5))
+            .animations
+            .get(&path)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .is_empty()
+    );
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
+    assert!(matches!(
+        s.apply(Command::SetItemsFlipped {
+            items: vec![ItemId(1)],
+            axis: FlipAxis::Vertical,
+            flipped: true,
+        }),
+        Err(EditError::Locked(id)) if id == TrackId(1)
+    ));
 }
 #[test]
 fn extract_and_recover_source_audio_reuse_the_source_range() {

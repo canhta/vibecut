@@ -682,6 +682,7 @@ commands! {
     RecoverAudio, "timeline.recover_audio", "Recover source audio", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = VideoItem;
     RemoveFillers, "timeline.remove_fillers", "Remove reviewed fillers", Edit { ids: Vec<NfcText>, confirm_edited: bool } => Words, serde_json::json!({"ids":["filler:4:cue-1:0"],"confirm_edited":false}), available = CaptionItem;
     RemovePauses, "timeline.remove_pauses", "Remove reviewed pauses", Edit { spans: Vec<OutputSpan>, crossfade_ms: i64 } => Timeline, serde_json::json!({"spans":[{"start":63504000000_i64,"end":127008000000_i64}],"crossfade_ms":20});
+    SetItemsFlipped, "timeline.set_flipped", "Flip items", Edit { items: Vec<ItemId>, axis: project::FlipAxis, flipped: bool } => Timeline, serde_json::json!({"items":[1],"axis":"horizontal","flipped":true}), available = UnlockedItem;
     SetItemsHidden, "timeline.set_hidden", "Hide items", Edit { items: Vec<ItemId>, hidden: bool } => Timeline, serde_json::json!({"items":[1],"hidden":true}), available = UnlockedItem;
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}}), available = UnlockedItem;
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});

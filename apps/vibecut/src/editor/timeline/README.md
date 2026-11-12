@@ -53,6 +53,15 @@ Right-clicking the ruler opens its
 [bookmark navigation menu](view/ruler/README.md); the lookup policy is owned by the
 [action registry](../../actions/README.md#bookmark-navigation).
 
+## Reflection
+
+The toolbar carries horizontal and vertical reflection buttons after Crop, bound to
+`timeline.flip_horizontal` / `timeline.flip_vertical` with no default chord. They activate
+the same registered commands as the Properties Transform toggles and keep the selection.
+With several items selected the policy is all-flipped-to-false, otherwise all-to-true; a
+locked, unsupported or keyed-axis target disables the button rather than editing part of
+the list.
+
 ## Track controls
 
 Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#density),

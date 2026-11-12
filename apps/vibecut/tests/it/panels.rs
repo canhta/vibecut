@@ -670,6 +670,69 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
             .unwrap(),
         0.01
     );
+    let axis = |harness: &Harness<Editor>, axis: project::FlipAxis| {
+        axis.value_at(&item(harness, fixture.video).animations, Tick::ZERO)
+            .unwrap()
+    };
+    click(&mut harness, "inspector.transform.flip_horizontal");
+    assert!(axis(&harness, project::FlipAxis::Horizontal));
+    assert!(!axis(&harness, project::FlipAxis::Vertical));
+    // The timeline toolbar runs the same registered command and selection survives.
+    click(&mut harness, "timeline.flip_horizontal");
+    assert!(!axis(&harness, project::FlipAxis::Horizontal));
+    assert_eq!(
+        harness
+            .state()
+            .selection
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![fixture.video]
+    );
+    click(&mut harness, "inspector.transform.flip_vertical");
+    assert!(axis(&harness, project::FlipAxis::Vertical));
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert!(!axis(&harness, project::FlipAxis::Vertical));
+    click(&mut harness, "inspector.section.transform.reset");
+    assert!(!axis(&harness, project::FlipAxis::Horizontal));
+    assert!(!axis(&harness, project::FlipAxis::Vertical));
+    // A keyed reflection axis keeps its curve and disables both toggles.
+    let path = project::AnimationPath::from(project::BuiltinPath::TransformFlipX);
+    let mut param = project::Param::new(project::ParamValue::Bool(true)).unwrap();
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put({
+            let mut key = project::Keyframe::new(Tick::ZERO, project::ParamValue::Bool(false));
+            key.segment = project::Segment::Step;
+            key
+        })
+        .unwrap();
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: fixture.video,
+            path,
+            param,
+        })
+        .unwrap();
+    harness.run_steps(2);
+    for id in [
+        "inspector.transform.flip_horizontal",
+        "inspector.transform.flip_vertical",
+    ] {
+        assert!(
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some(id)))
+                .accesskit_node()
+                .is_disabled(),
+            "{id} must be disabled while the axis carries keys"
+        );
+    }
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
     let prior = harness.state().session.project().clone();
     drag_to(
         &mut harness,

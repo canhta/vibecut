@@ -94,20 +94,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
             } => canvas::set_canvas(desk, width, height, preset),
             Action::SetFps { num, den } => canvas::set_canvas_fps(desk, num, den),
             Action::SetBackground(color) => canvas::set_canvas_background(desk, color),
-            Action::ResetTransform(item) => {
-                let mut result = Ok(());
-                for field in project::TransformField::ALL {
-                    if let Err(error) = commands::set_item_field(
-                        desk,
-                        item,
-                        field.builtin().as_str(),
-                        &field.default_value().to_string(),
-                    ) {
-                        result = Err(error);
-                    }
-                }
-                result
-            }
+            Action::ResetTransform(item) => commands::reset_transform(desk, item),
             Action::ToggleKeyframe { item, fields, time } => {
                 commands::toggle_keyframes(desk, item, &fields, time)
             }

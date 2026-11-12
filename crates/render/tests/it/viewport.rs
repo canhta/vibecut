@@ -39,6 +39,19 @@ fn transformed() -> Project {
     }
     Project::new(data).unwrap()
 }
+fn flipped(axes: &[project::FlipAxis]) -> Project {
+    let mut data = transformed().into_data();
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    for axis in axes {
+        item.animations
+            .set(
+                AnimationPath::from(axis.builtin()),
+                Param::new(ParamValue::Bool(true)).unwrap(),
+            )
+            .unwrap();
+    }
+    Project::new(data).unwrap()
+}
 fn settings(project: &Project) -> RenderSettings {
     let mut settings = RenderSettings::from_project(project);
     settings.placements.insert(
@@ -241,6 +254,73 @@ fn rotated_handles_and_per_axis_scaling_share_render_geometry() {
         .unwrap();
     assert!(image.pixels()[35 * 200 + 90][0] > 0.9);
     assert_eq!(image.pixels()[35 * 200 + 45][0], 0.);
+}
+
+#[test]
+fn reflected_handles_scaling_and_hit_bounds_share_the_composed_geometry() {
+    let viewport = Viewport::new(screen(), [200, 100], 1., [0., 0.]).unwrap();
+    use project::FlipAxis::{Horizontal, Vertical};
+    for (axes, top_left) in [
+        (&[Horizontal][..], [110., 55.]),
+        (&[Vertical][..], [70., 15.]),
+        (&[Horizontal, Vertical][..], [70., 55.]),
+    ] {
+        let project = flipped(axes);
+        let renderer = Renderer::new(&project, settings(&project)).unwrap();
+        let geometry = renderer
+            .item_geometry(ItemId(0), Tick::ZERO)
+            .unwrap()
+            .unwrap();
+        near(
+            geometry
+                .handle_position(&viewport, Handle::TopLeft)
+                .unwrap(),
+            viewport.canvas_to_screen(top_left).unwrap(),
+        );
+        // The canvas-axis envelope is unchanged by a centred reflection.
+        let mut xs = [f64::MAX, f64::MIN];
+        let mut ys = [f64::MAX, f64::MIN];
+        for handle in [
+            Handle::TopLeft,
+            Handle::TopRight,
+            Handle::BottomLeft,
+            Handle::BottomRight,
+        ] {
+            let canvas = viewport
+                .screen_to_canvas(geometry.handle_position(&viewport, handle).unwrap())
+                .unwrap();
+            xs = [xs[0].min(canvas[0]), xs[1].max(canvas[0])];
+            ys = [ys[0].min(canvas[1]), ys[1].max(canvas[1])];
+        }
+        near([xs[0], ys[0]], [70., 15.]);
+        near([xs[1], ys[1]], [110., 55.]);
+        // Logical Right follows the reflected side: visual left on H, visual top on V.
+        let right = if axes == [Vertical] {
+            [90., 55.]
+        } else {
+            [90., 15.]
+        };
+        near(
+            geometry.handle_position(&viewport, Handle::Right).unwrap(),
+            viewport.canvas_to_screen(right).unwrap(),
+        );
+        // Dragging it outward keeps a positive magnitude and the reflection.
+        if axes == [Horizontal] {
+            near(
+                geometry.scale_at(Handle::Right, [90., 5.]).unwrap(),
+                [0.75, 2.],
+            );
+            near(
+                geometry.scale_at(Handle::Right, [90., 45.]).unwrap(),
+                [0.01, 2.],
+            );
+        }
+        let centre = viewport.canvas_to_screen([90., 35.]).unwrap();
+        assert_eq!(
+            renderer.hit_test(&viewport, centre, Tick::ZERO).unwrap(),
+            Some(ItemId(0))
+        );
+    }
 }
 
 #[test]

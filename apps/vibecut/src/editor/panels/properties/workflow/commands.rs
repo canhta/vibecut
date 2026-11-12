@@ -157,6 +157,27 @@ pub(super) fn set_keyframe_at(
     Ok(())
 }
 
+/// Reset every authored transform channel, reflections included, as one atomic
+/// batch. A keyed reflection axis refuses the batch before any channel changes.
+pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
+    let mut commands = Vec::with_capacity(project::TransformField::ALL.len() + 2);
+    for field in project::TransformField::ALL {
+        commands.push(engine::Command::SetItemField {
+            item,
+            patch: item_patch(field.builtin().as_str(), &field.default_value().to_string())?,
+        });
+    }
+    for axis in project::FlipAxis::ALL {
+        commands.push(engine::Command::SetItemsFlipped {
+            items: vec![item],
+            axis,
+            flipped: false,
+        });
+    }
+    desk.apply_result(engine::Command::Batch { commands }, false)?;
+    Ok(())
+}
+
 /// One element's committed field edit, through the singular registered command.
 pub(in crate::editor) fn set_item_field(
     desk: &mut Desk<'_>,

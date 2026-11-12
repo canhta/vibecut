@@ -2,6 +2,7 @@
 use super::{
     BTreeSet, EditError, Item, ItemId, ItemParams, ProjectData, Result, TrimSources, item,
 };
+use time::Tick;
 
 pub(super) fn apply_patch(
     target: &mut Item,
@@ -261,6 +262,62 @@ pub(super) fn execute_set_item_param_many(
                 return Err(EditError::Locked(track.id));
             }
             apply_patch(target, &patch, copied_text_bytes)?;
+        }
+    }
+    if let Some(id) = remaining.into_iter().next() {
+        return Err(EditError::NoItem(id));
+    }
+
+    Ok(data)
+}
+
+/// Set one reflection axis on every listed item as one candidate change. All
+/// targets are resolved before any write; an axis carrying keys, a locked track,
+/// a missing/other-scene ID or an unsupported kind refuses the whole list.
+pub(super) fn execute_set_items_flipped(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    axis: project::FlipAxis,
+    flipped: bool,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty item selection"));
+    }
+    let mut remaining: BTreeSet<_> = items.iter().copied().collect();
+    if remaining.len() != items.len() {
+        return Err(EditError::Invalid("duplicate item selection"));
+    }
+    let path = project::AnimationPath::from(axis.builtin());
+    for track in data.scene_mut().timeline.iter_mut() {
+        for target in &mut track.items {
+            if !remaining.remove(&target.id) {
+                continue;
+            }
+            if track.locked {
+                return Err(EditError::Locked(track.id));
+            }
+            if !target.content.supports_flip() {
+                return Err(EditError::Invalid("flip on unsupported item"));
+            }
+            match target.animations.get(&path) {
+                Some(param) => {
+                    if !param.channel(None)?.keys().is_empty() {
+                        return Err(EditError::Invalid("flip axis is keyed"));
+                    }
+                    match param.value_at(Tick::ZERO)? {
+                        project::ParamValue::Bool(current) if current == flipped => continue,
+                        project::ParamValue::Bool(_) => {}
+                        _ => return Err(EditError::Invalid("flip value")),
+                    }
+                }
+                // An absent channel already means `false`.
+                None if !flipped => continue,
+                None => {}
+            }
+            target.animations.set(
+                path.clone(),
+                project::Param::new(project::ParamValue::Bool(flipped))?,
+            )?;
         }
     }
     if let Some(id) = remaining.into_iter().next() {

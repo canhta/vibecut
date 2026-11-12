@@ -22,6 +22,13 @@ volume) carry a diamond toggle right of the label that adds or removes a key at 
 playhead through `keyframes.toggle_at`. It is disabled when the playhead is outside
 the item and filled when a key exists.
 
+The Transform section also carries two reflection toggles below Rotate. They activate
+`timeline.flip_horizontal` / `timeline.flip_vertical`, the same registered commands as
+the timeline toolbar, so a Properties click and a toolbar click share one typed edit,
+one undo step and the retained selection. Both toggles are disabled while their axis
+carries keys; Reset writes the five numeric channels and both reflections as one
+atomic batch and refuses entirely if an axis is keyed.
+
 The multi-selection inspector shows audio gain and mute plus text content, font, size,
 colour, background and position for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs: Text (content, font,

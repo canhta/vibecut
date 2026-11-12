@@ -568,6 +568,143 @@ fn all_kinds_roundtrip_missing_unicode_media_and_caption_identity() {
     assert_eq!(load(&path).unwrap().project, project);
 }
 #[test]
+fn reflection_channels_hold_step_booleans_on_visual_items_and_survive_save() {
+    let horizontal = AnimationPath::new("transform.flipX").unwrap();
+    let vertical = AnimationPath::new("transform.flipY").unwrap();
+    assert_eq!(horizontal.builtin(), Some(BuiltinPath::TransformFlipX));
+    assert_eq!(vertical.builtin(), Some(BuiltinPath::TransformFlipY));
+    for axis in FlipAxis::ALL {
+        assert_eq!(
+            AnimationPath::from(axis.builtin()).builtin(),
+            Some(axis.builtin())
+        );
+    }
+    // Reflection holds a Boolean; scale magnitudes stay numeric.
+    let mut animations = Animations::default();
+    assert!(
+        animations
+            .set(
+                horizontal.clone(),
+                Param::new(ParamValue::Scalar(1.0)).unwrap()
+            )
+            .is_err()
+    );
+    assert!(
+        animations
+            .set(
+                vertical.clone(),
+                Param::new(ParamValue::Bool(true)).unwrap()
+            )
+            .is_ok()
+    );
+    assert!(
+        FlipAxis::Vertical
+            .value_at(&animations, Tick::ZERO)
+            .unwrap()
+    );
+    assert!(
+        !FlipAxis::Horizontal
+            .value_at(&animations, Tick::ZERO)
+            .unwrap()
+    );
+    // A fresh key is Linear and a discrete channel must hold.
+    let mut param = Param::new(ParamValue::Bool(false)).unwrap();
+    assert!(
+        param
+            .channel_mut(None)
+            .unwrap()
+            .put(Keyframe::new(Tick::ZERO, ParamValue::Bool(true)))
+            .is_err()
+    );
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put({
+            let mut key = Keyframe::new(Tick::ZERO, ParamValue::Bool(true));
+            key.segment = project::Segment::Step;
+            key
+        })
+        .unwrap();
+    assert!(animations.set(horizontal.clone(), param).is_ok());
+
+    let dir = tempfile::tempdir().unwrap();
+    let base = populated(dir.path().join("clip.mp4"));
+    let unacceptable = |ids: &[u64]| {
+        let mut data = base.data().clone();
+        for id in ids {
+            let item = data
+                .scene_mut()
+                .timeline
+                .iter_mut()
+                .flat_map(|track| &mut track.items)
+                .find(|item| item.id == ItemId(*id))
+                .unwrap();
+            item.animations
+                .set(
+                    horizontal.clone(),
+                    Param::new(ParamValue::Bool(true)).unwrap(),
+                )
+                .unwrap();
+        }
+        Project::new(data)
+    };
+    // Audio and captions own no reflected layer; video, text and overlay do.
+    for id in [1, 3] {
+        assert!(matches!(
+            unacceptable(&[id]),
+            Err(Error::Invalid("flip on unsupported item"))
+        ));
+    }
+    for id in [0, 2, 4] {
+        assert!(unacceptable(&[id]).is_ok());
+    }
+    for pretty in [false, true] {
+        let mut data = base.data().clone();
+        for id in [0, 2, 4] {
+            let item = data
+                .scene_mut()
+                .timeline
+                .iter_mut()
+                .flat_map(|track| &mut track.items)
+                .find(|item| item.id == ItemId(id))
+                .unwrap();
+            for axis in FlipAxis::ALL {
+                item.animations
+                    .set(
+                        AnimationPath::from(axis.builtin()),
+                        Param::new(ParamValue::Bool(axis == FlipAxis::Horizontal)).unwrap(),
+                    )
+                    .unwrap();
+            }
+        }
+        let project = Project::new(data).unwrap();
+        let loaded = decode(&encode(&project, pretty).unwrap()).unwrap();
+        assert_eq!(loaded.schema_version, SCHEMA_VERSION);
+        assert_eq!(loaded.project, project);
+        for id in [0, 2, 4] {
+            let item = loaded
+                .project
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find(|item| item.id == ItemId(id))
+                .unwrap();
+            assert!(
+                FlipAxis::Horizontal
+                    .value_at(&item.animations, Tick::ZERO)
+                    .unwrap()
+            );
+            assert!(
+                !FlipAxis::Vertical
+                    .value_at(&item.animations, Tick::ZERO)
+                    .unwrap()
+            );
+        }
+    }
+}
+#[test]
 fn invalid_candidates_are_refused_without_changing_original() {
     let initial = empty();
     let cases: Vec<Vec<Item>> = vec![

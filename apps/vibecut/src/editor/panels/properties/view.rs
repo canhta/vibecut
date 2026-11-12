@@ -377,6 +377,67 @@ impl<'a, 'c> Panel<'a, 'c> {
             Err(e) => self.fail(e),
         }
     }
+    /// Two reflection toggles under Rotate. They run the same registered actions
+    /// as the timeline toolbar, so one typed command owns the item edit.
+    fn transform_flips(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(target) = read::item(self.cx.session.project(), item) else {
+            return;
+        };
+        if !target.content.supports_flip() {
+            return;
+        }
+        let horizontal =
+            project::FlipAxis::Horizontal.value_at(&target.animations, time::Tick::ZERO);
+        let vertical = project::FlipAxis::Vertical.value_at(&target.animations, time::Tick::ZERO);
+        let (Ok(horizontal), Ok(vertical)) = (horizontal, vertical) else {
+            return;
+        };
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        let label = self.tr(Text::Flip);
+        self.row_label(ui, row, label);
+        value_ui.spacing_mut().item_spacing.x = 4.0;
+        let (horizontal_label, vertical_label) = (
+            self.tr(Text::ActionFlipHorizontal),
+            self.tr(Text::ActionFlipVertical),
+        );
+        // The panel's context is not the timeline's disabled set; decide here from
+        // the same lock and keyed-axis rule the registered action uses.
+        let locked = read::item_locked(self.cx.session.project(), item);
+        let keyed = |axis: project::FlipAxis| {
+            let path = project::AnimationPath::from(axis.builtin());
+            target
+                .animations
+                .get(&path)
+                .is_some_and(|param| match param.channel(None) {
+                    Ok(channel) => !channel.keys().is_empty(),
+                    Err(_) => true,
+                })
+        };
+        let horizontal_enabled = !locked && !keyed(project::FlipAxis::Horizontal);
+        let vertical_enabled = !locked && !keyed(project::FlipAxis::Vertical);
+        if self.icon_only(
+            &mut value_ui,
+            "inspector.transform.flip_horizontal",
+            kit::Icon::ArrowsInLineHorizontal,
+            horizontal_label,
+            Some(horizontal),
+            horizontal_enabled,
+        ) {
+            self.actions
+                .push(Action::Activate("timeline.flip_horizontal"));
+        }
+        if self.icon_only(
+            &mut value_ui,
+            "inspector.transform.flip_vertical",
+            kit::Icon::ArrowsInLineVertical,
+            vertical_label,
+            Some(vertical),
+            vertical_enabled,
+        ) {
+            self.actions
+                .push(Action::Activate("timeline.flip_vertical"));
+        }
+    }
     fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.cx.locale, key)
     }
@@ -897,6 +958,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                             ],
                         );
                         panel.scrub_field(ui, item, super::transform_scrub(F::Rotate));
+                        panel.transform_flips(ui, item);
                     },
                 );
                 if reset {

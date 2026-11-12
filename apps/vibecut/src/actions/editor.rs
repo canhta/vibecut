@@ -591,6 +591,20 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         UiAction::Crop,
         &[],
     ),
+    ActionSpec::engine(
+        "timeline.flip_horizontal",
+        Text::ActionFlipHorizontal,
+        ActionCategory::Edit,
+        EngineAction::Flip(project::FlipAxis::Horizontal),
+        &[],
+    ),
+    ActionSpec::engine(
+        "timeline.flip_vertical",
+        Text::ActionFlipVertical,
+        ActionCategory::Edit,
+        EngineAction::Flip(project::FlipAxis::Vertical),
+        &[],
+    ),
     ActionSpec::ui(
         "scene.open",
         Text::ActionSceneOpen,

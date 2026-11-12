@@ -79,6 +79,8 @@
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |
 | `timeline.bookmark` — Toggle bookmark | Timeline | M | `bookmark.toggle` | — |
 | `timeline.crop` — Crop | Edit | — | — | crop dialog |
+| `timeline.flip_horizontal` — Flip horizontal | Edit | — | `timeline.set_flipped` | — |
+| `timeline.flip_vertical` — Flip vertical | Edit | — | `timeline.set_flipped` | — |
 | `scene.open` — Open scenes | Timeline | — | — | scene switcher |
 | `scene.close` — Close scenes | Timeline | — | — | scene switcher |
 | `scene.create` — Create scene | Timeline | — | `scene.create` | — |

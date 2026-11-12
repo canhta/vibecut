@@ -147,6 +147,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::TimelineSplitRight { items, .. }
             | Command::DuplicateItems { items }
             | Command::SetItemsHidden { items, .. }
+            | Command::SetItemsFlipped { items, .. }
             | Command::SetItemsMuted { items, .. }
             | Command::ExtractAudio { items }
             | Command::RecoverAudio { items }
@@ -541,6 +542,13 @@ pub(crate) fn apply(
         }
         EditCommand::SetItemsHidden { items, hidden } => {
             data = clips::execute_set_items_hidden(data, items, hidden)?;
+        }
+        EditCommand::SetItemsFlipped {
+            items,
+            axis,
+            flipped,
+        } => {
+            data = parameters::execute_set_items_flipped(data, items, axis, flipped)?;
         }
         EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;

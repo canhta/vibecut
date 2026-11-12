@@ -118,6 +118,7 @@ pub(super) fn copy_plan<'a>(
         || item.end()? < range.end()
         || item.animations.iter().any(|(path, _)| {
             path.builtin() == Some(project::BuiltinPath::Opacity)
+                || path.builtin().is_some_and(project::BuiltinPath::is_flip)
                 || project::TransformField::ALL
                     .into_iter()
                     .any(|field| path.builtin() == Some(field.builtin()))

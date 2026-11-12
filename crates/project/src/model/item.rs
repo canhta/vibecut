@@ -467,6 +467,14 @@ impl ItemParams {
             Self::Overlay(_) | Self::Graphic(_) => TrackKind::Video,
         }
     }
+    /// Visual kinds that carry a placed raster layer a reflection can mirror.
+    /// Captions own their saved cue layout and audio has no picture.
+    pub fn supports_flip(&self) -> bool {
+        matches!(
+            self,
+            Self::Video(_) | Self::Text(_) | Self::Overlay(_) | Self::Graphic(_)
+        )
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -1936,6 +1936,20 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `timeline.set_flipped` — Flip items
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "axis": "horizontal",
+  "flipped": true,
+  "items": [
+    1
+  ]
+}
+```
+
 ## `timeline.set_hidden` — Hide items
 
 Effect: `Edit`. Fixture: `Timeline`.

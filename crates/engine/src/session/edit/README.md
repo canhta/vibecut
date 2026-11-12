@@ -44,6 +44,8 @@ command tree, including nested batches. The single-item command refuses an incom
 the many-item command skips incompatible kinds. Missing IDs, duplicates, invalid values and
 locked compatible items refuse the whole edit ([`parameters.rs`](parameters.rs)).
 
+`timeline.set_flipped` sets `transform.flipX` or `transform.flipY` on every listed active-scene item as one candidate. Every target is resolved before any write: an empty/duplicate list, missing or other-scene ID, locked track, audio/caption item or an axis carrying keys refuses the whole edit without a partial change. Video, image, text, overlay and graphic items are admitted. Absent and equal-false states are exact no-ops; the held Boolean is an ordinary zero-key parameter, so duplicates and splits clone it, trims/splits translate its keys and save/reopen preserves it.
+
 `Session::set_selection` validates existing IDs, breaks merge continuity and changes no project
 content, revision or history length; a change during a gesture or group refuses. Undo and redo
 restore the selection that produced each snapshot, and deleted IDs are pruned. Scope selections
