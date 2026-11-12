@@ -28,7 +28,8 @@ fn sfnt_bounds(bytes: &[u8]) -> Result<()> {
         .get(12..directory_end)
         .ok_or(FontError::InvalidImport)?;
     let mut tags = std::collections::BTreeSet::new();
-    for table in directory.chunks_exact(16) {
+    let (tables, _) = directory.as_chunks::<16>();
+    for table in tables {
         let tag: [u8; 4] = table
             .get(..4)
             .ok_or(FontError::InvalidImport)?

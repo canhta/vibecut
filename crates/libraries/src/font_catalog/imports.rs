@@ -1,7 +1,20 @@
 //! Publishes validated user fonts in the font store.
-use super::*;
+use super::{Active, BUFFER, MAX_FAMILY_FACES, Staging, hex, loading};
+use crate::fonts::FontStore;
+use engine::FontError;
+use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
+use engine::control::Error as EngineError;
+use engine::control::{FontEntry, FontOrigin, FontState, Result};
+use engine::jobs::{
+    CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
+};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use skrifa::{MetadataProvider, string::StringId};
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 use unicode_normalization::UnicodeNormalization;
 
 const MAX_IMPORTS: usize = 128;
@@ -211,7 +224,10 @@ fn read_bounded(path: &Path, max: u64, context: Option<&JobContext>) -> Result<V
         if count == 0 {
             break;
         }
-        bytes.extend_from_slice(&buffer[..count]);
+        let filled = buffer
+            .get(..count)
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
+        bytes.extend_from_slice(filled);
     }
     if bytes.len() as u64 > max {
         return Err(EngineError::Control(engine::control::ControlError::Limit));

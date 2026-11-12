@@ -279,6 +279,10 @@ impl Inbox {
             publish,
         )
     }
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one control execution carrying the runner, every lent access and the caller"
+    )]
     fn execute_with(
         runner: &mut JobRunner,
         grants: &Grants,

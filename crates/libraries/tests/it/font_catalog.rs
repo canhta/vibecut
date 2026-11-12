@@ -278,7 +278,7 @@ fn woff2(bytes: &[u8]) -> Vec<u8> {
     let tables = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
     let mut directory = Vec::new();
     let mut body = Vec::new();
-    for table in bytes[12..12 + tables * 16].chunks_exact(16) {
+    for table in bytes[12..12 + tables * 16].as_chunks::<16>().0 {
         let tag = &table[..4];
         directory.push(if tag == b"glyf" || tag == b"loca" {
             255
