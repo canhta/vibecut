@@ -67,15 +67,13 @@ impl State {
             desk.end_merge();
         }
     }
-    /// Escape: abandon an open marquee, clearing a selection it never moved.
+    /// Escape: abandon an open marquee and the selection it was building.
     pub(in crate::editor) fn cancel_media_marquee(&mut self) -> bool {
-        let Some(marquee) = self.media_marquee.take() else {
+        if self.media_marquee.take().is_none() {
             return false;
-        };
-        if !marquee.moved {
-            self.media_selection.clear();
-            self.media_anchor = None;
         }
+        self.media_selection.clear();
+        self.media_anchor = None;
         true
     }
     pub(in crate::editor) fn clear_media_selection(&mut self) {
