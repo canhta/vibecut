@@ -238,6 +238,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             }
             Fixture::Loudness => s = with_loudness(&s, &wav),
             Fixture::MaskPath => s = crate::support::control::with_mask_path(&s),
+            Fixture::Keyframes => s = crate::support::control::with_keyframes(&s),
             Fixture::Captions => {
                 s = with_waveform(&s, &wav);
                 let req = request(
@@ -558,12 +559,14 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "clipboard.paste_keyframes",
                 "delete",
                 "keyframes.add",
+                "keyframes.apply_preset",
                 "keyframes.delete_selection",
                 "keyframes.remove",
                 "keyframes.retime",
                 "keyframes.scale_time",
                 "keyframes.set_extrapolation",
                 "keyframes.set_handle",
+                "keyframes.set_handles",
                 "keyframes.set_param",
                 "keyframes.toggle_at",
                 "move_item",

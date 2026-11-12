@@ -766,6 +766,12 @@ pub(crate) fn apply(
         EditCommand::DeleteKeyframes { keys } => {
             data = keyframes::execute_delete_keyframes(data, keys)?;
         }
+        EditCommand::ApplyEasingPreset { keys, preset } => {
+            data = keyframes::execute_set_easing(data, keys, preset.curve())?;
+        }
+        EditCommand::SetKeyframeCurve { keys, curve } => {
+            data = keyframes::execute_set_easing(data, keys, curve)?;
+        }
         EditCommand::SetKeyframeExtrapolation {
             item: id,
             path,

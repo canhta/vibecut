@@ -609,6 +609,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("keyframes.remove", Effect::Edit, true, true),
         ("keyframes.retime", Effect::Edit, true, true),
         ("keyframes.set_handle", Effect::Edit, true, true),
+        ("keyframes.set_handles", Effect::Edit, true, true),
+        ("keyframes.apply_preset", Effect::Edit, true, true),
         ("keyframes.scale_time", Effect::Edit, true, true),
         ("keyframes.toggle_at", Effect::Edit, true, true),
         ("keyframes.delete_selection", Effect::Edit, true, true),

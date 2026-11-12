@@ -902,6 +902,24 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `keyframes.apply_preset` — Apply easing preset
+
+Effect: `Edit`. Fixture: `Keyframes`.
+
+```json
+{
+  "keys": [
+    {
+      "component": null,
+      "item": 1,
+      "path": "opacity",
+      "time": 0
+    }
+  ],
+  "preset": "ease_out"
+}
+```
+
 ## `keyframes.delete_selection` — Delete selected keyframes
 
 Effect: `Edit`. Fixture: `Timeline`.
@@ -985,6 +1003,29 @@ Effect: `Edit`. Fixture: `Timeline`.
   "side": "out",
   "tangent": "broken",
   "time": 0
+}
+```
+
+## `keyframes.set_handles` — Set keyframe curve
+
+Effect: `Edit`. Fixture: `Keyframes`.
+
+```json
+{
+  "curve": [
+    0.25,
+    0.1,
+    0.25,
+    1.0
+  ],
+  "keys": [
+    {
+      "component": null,
+      "item": 1,
+      "path": "opacity",
+      "time": 0
+    }
+  ]
 }
 ```
 

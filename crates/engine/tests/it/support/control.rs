@@ -405,6 +405,29 @@ pub(crate) fn with_mask_path(seed: &Session) -> Session {
     };
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The seed whose item 1 opacity gains a second key at 1 s: one easable segment.
+pub(crate) fn with_keyframes(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == ItemId(1))
+        .and_then(|item| {
+            item.animations
+                .get_mut(&project::AnimationPath::new("opacity").unwrap())
+                .ok()
+        })
+        .expect("seed opacity")
+        .channel_mut(None)
+        .unwrap()
+        .put(project::Keyframe::new(
+            Tick(time::TICKS_PER_SECOND),
+            project::ParamValue::Scalar(0.0),
+        ))
+        .unwrap();
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed plus one real mono audio asset (id 97) for waveform command examples.
 pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();

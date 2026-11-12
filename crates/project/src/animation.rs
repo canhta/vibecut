@@ -1,11 +1,13 @@
 //! Validated item-relative channels. Rendering and editing share this evaluator.
 
 mod bezier;
+mod easing;
 mod fade;
 mod keyframes;
 mod params;
 mod retime;
 
+pub use easing::{EasingCurve, EasingPreset};
 pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
 pub use keyframes::{
     Channel, CurveHandle, Extrapolation, HandleSide, Keyframe, MAX_CHANNEL_KEYS, Segment,

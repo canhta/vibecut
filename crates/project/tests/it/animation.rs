@@ -77,6 +77,124 @@ fn source_handle_fixtures_modes_and_absolute_value_overshoot() {
         value(channel(vec![a, b], Extrapolation::Hold, Extrapolation::Hold).value_at(Tick(600))),
         1.75,
     );
+    easing_presets_expand_to_explicit_handles_that_evaluate_as_the_normalized_curve();
+}
+/// Independent CSS-style solver: bisect x(s) = x, then return y(s).
+fn css_bezier(curve: [f64; 4], x: f64) -> f64 {
+    let at = |s: f64, p1: f64, p2: f64| {
+        3.0 * (1.0 - s) * (1.0 - s) * s * p1 + 3.0 * (1.0 - s) * s * s * p2 + s * s * s
+    };
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..80 {
+        let mid = (lo + hi) / 2.0;
+        if at(mid, curve[0], curve[2]) < x {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    at((lo + hi) / 2.0, curve[1], curve[3])
+}
+fn easing_presets_expand_to_explicit_handles_that_evaluate_as_the_normalized_curve() {
+    // Source table: easing-presets.ts lines 13-18, in popover order.
+    let table = [
+        (EasingPreset::Smooth, [0.25, 0.1, 0.25, 1.0]),
+        (EasingPreset::EaseOut, [0.0, 0.0, 0.2, 1.0]),
+        (EasingPreset::EaseIn, [0.8, 0.0, 1.0, 1.0]),
+        (EasingPreset::InOut, [0.4, 0.0, 0.2, 1.0]),
+        (EasingPreset::Pop, [0.175, 0.885, 0.32, 1.275]),
+        (EasingPreset::Linear, [0.0, 0.0, 1.0, 1.0]),
+    ];
+    assert_eq!(
+        EasingPreset::ALL.map(EasingPreset::curve).map(|c| c.0),
+        table.map(|(_, c)| c)
+    );
+    let flat = |c: &Channel| c.keys().iter().all(|k| k.tangent == TangentMode::Flat);
+    for (preset, curve) in table {
+        assert_eq!(EasingPreset::from_id(preset.id()), Some(preset));
+        let mut c = channel(
+            vec![
+                key(0, 2.0, Segment::Linear),
+                key(1200, 6.0, Segment::Linear),
+                key(2400, 6.0, Segment::Linear),
+            ],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        );
+        c.set_easing(Tick(0), preset.curve()).unwrap();
+        // Endpoints are exact and every sampled tick follows the curve (value = 2 + 4 * y).
+        assert_eq!(value(c.value_at(Tick(0))), 2.0);
+        assert_eq!(value(c.value_at(Tick(1200))), 6.0);
+        let mut previous = 2.0;
+        for t in (0..=1200).step_by(10) {
+            let got = value(c.value_at(Tick(t)));
+            assert!(
+                (got - (2.0 + 4.0 * css_bezier(curve, t as f64 / 1200.0))).abs() < 1e-6,
+                "{preset:?} at {t}"
+            );
+            if preset != EasingPreset::Pop {
+                assert!(got >= previous - 1e-9, "{preset:?} is monotone");
+            }
+            previous = got;
+        }
+        let back = c.segment_curve(Tick(0)).unwrap().0;
+        for (a, b) in back.into_iter().zip(curve) {
+            assert!((a - b).abs() < 1e-3, "{preset:?} round trip");
+        }
+        let (first, second) = (&c.keys()[0], &c.keys()[1]);
+        if preset == EasingPreset::Linear {
+            assert_eq!(
+                (first.segment, first.outgoing, second.incoming),
+                (Segment::Linear, None, None)
+            );
+            assert!(flat(&c));
+        } else {
+            assert_eq!(first.segment, Segment::Bezier);
+            assert!(first.outgoing.is_some() && second.incoming.is_some());
+            assert_eq!(
+                (first.tangent, second.tangent),
+                (TangentMode::Broken, TangentMode::Broken)
+            );
+        }
+        // The neighbouring segment is untouched.
+        assert_eq!(c.keys()[2].incoming, None);
+    }
+    // Overshoot: Pop passes the end value before settling.
+    let mut pop = channel(
+        vec![
+            key(0, 0.0, Segment::Linear),
+            key(1200, 1.0, Segment::Linear),
+        ],
+        Extrapolation::Hold,
+        Extrapolation::Hold,
+    );
+    pop.set_easing(Tick(0), EasingPreset::Pop.curve()).unwrap();
+    assert!(value(pop.value_at(Tick(900))) > 1.0);
+    // A flat segment borrows the nearest non-flat span as its vertical scale.
+    let mut flat_segment = channel(
+        vec![
+            key(0, 0.0, Segment::Linear),
+            key(1200, 4.0, Segment::Linear),
+            key(2400, 4.0, Segment::Linear),
+        ],
+        Extrapolation::Hold,
+        Extrapolation::Hold,
+    );
+    flat_segment
+        .set_easing(Tick(1200), EasingCurve([0.25, 0.5, 0.75, 1.0]))
+        .unwrap();
+    assert_eq!(flat_segment.keys()[1].outgoing.map(|h| h.dv), Some(2.0));
+    // Refusals leave the channel unchanged.
+    let before = pop.clone();
+    for (time, curve) in [
+        (Tick(1200), EasingPreset::Smooth.curve()),
+        (Tick(7), EasingPreset::Smooth.curve()),
+        (Tick(0), EasingCurve([1.5, 0.0, 1.0, 1.0])),
+        (Tick(0), EasingCurve([0.0, f64::NAN, 1.0, 1.0])),
+    ] {
+        assert!(pop.set_easing(time, curve).is_err());
+        assert_eq!(pop, before);
+    }
 }
 #[test]
 fn independent_linear_rgba_components_and_discrete_fallback_hold() {

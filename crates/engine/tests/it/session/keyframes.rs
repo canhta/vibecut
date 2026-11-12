@@ -771,6 +771,63 @@ fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
     assert_ne!(s.project(), &changed);
     s.redo().unwrap();
     assert_eq!(s.project(), &changed);
+    // Easing: one curve over two selected segments is one undo step; the last
+    // key has no segment and refuses the whole selection untouched.
+    let at = |n: i64| engine::KeyframeRef {
+        item: ItemId(2),
+        path: path(),
+        component: None,
+        time: frame(n),
+    };
+    let steps = s.history_len().0;
+    assert!(
+        s.apply(Command::ApplyEasingPreset {
+            keys: vec![at(0), at(120)],
+            preset: EasingPreset::Pop,
+        })
+        .is_err()
+    );
+    assert_eq!((s.project(), s.history_len().0), (&changed, steps));
+    s.apply(Command::ApplyEasingPreset {
+        keys: vec![at(0), at(80)],
+        preset: EasingPreset::Smooth,
+    })
+    .unwrap();
+    assert_eq!(s.history_len().0, steps + 1);
+    let channel = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .clone();
+    for time in [0, 80] {
+        // Handles round to whole ticks, so compare within a thousandth of the span.
+        let got = channel.segment_curve(frame(time)).unwrap();
+        assert!(
+            got.0
+                .iter()
+                .zip(EasingPreset::Smooth.curve().0)
+                .all(|(a, b)| (a - b).abs() < 1e-3)
+        );
+    }
+    s.apply(Command::SetKeyframeCurve {
+        keys: vec![at(80)],
+        curve: EasingCurve::LINEAR,
+    })
+    .unwrap();
+    let linear = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()[1]
+        .clone();
+    assert_eq!((linear.segment, linear.outgoing), (Segment::Linear, None));
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &changed);
     s.apply(Command::RemoveKeyframe {
         item: ItemId(2),
         path: path(),

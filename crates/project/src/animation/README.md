@@ -36,6 +36,12 @@ Moving one key leaves explicit handles unchanged and clamps them at evaluation.
 
 Handles hold relative signed `dt` ticks and `dv` in scalar value units. Incoming dt <= 0, outgoing dt >= 0. At evaluation dt is clamped to the adjacent span. Missing handles use (span/3, delta/3) secants. The cubic time curve is inverted before evaluating the value curve, including nonzero handles between equal endpoint values. Scalar extrapolation before and after is independently Hold or the edge or neighbor Linear secant. A single key holds.
 
+## Easing
+
+`EasingCurve([x1, y1, x2, y2])` is a normalized cubic Bezier over one segment: x is the fraction of the segment time (`0..=1`), y the fraction of its value change (overshoot allowed). `Channel::set_easing(time, curve)` expands it into the explicit outgoing handle of the key at `time` and incoming handle of the next key, `dt = x * span` rounded to whole ticks and `dv = y * delta`. A flat segment borrows the nearest non-flat segment's span (else 1) as `delta`. The straight line stores `Segment::Linear` and no handles; every other curve stores `Segment::Bezier`. Both keys' tangent label becomes `Broken` while they hold a handle, else `Flat`. A last key, a non-scalar channel or an invalid curve refuses and leaves the channel unchanged. `Channel::segment_curve(time)` reads the segment back as a normalized curve (`None` for hold or the last key).
+
+`EasingPreset` names the six built-ins (smooth, ease_out, ease_in, in_out, pop, linear). The control points are the permitted implementation reference's table (`graph-editor/easing-presets.ts` lines 13-18) stored as data in `EasingPreset::curve`.
+
 ## Clip fades
 
 Audio and video items carry `fades {fade_in, fade_out}` (default none). Each is a `Fade {duration, offset, curve}`: the whole fade length in ticks from the edge it was set on, the ticks of it a split cut away beyond this clip's edge (`0..=duration`, default 0), and a `FadeCurve` (`equal_power` default, `linear`, `exponential`). Only the window `duration - offset` is audible; that window, not the stored `duration`, is what the clip length clamps. A fade without `offset` loads as uncut.

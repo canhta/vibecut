@@ -7,7 +7,7 @@ mod visual;
 
 pub use animation::{
     AnimationPath, Animations, BuiltinPath, Channel, ColorComponent, CurveHandle, Cut,
-    Extrapolation, Fade, FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe,
+    EasingCurve, EasingPreset, Extrapolation, Fade, FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe,
     MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Retime,
     RetimeWindow, Segment, TangentMode,
 };

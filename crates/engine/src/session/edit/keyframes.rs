@@ -350,3 +350,24 @@ pub(super) fn execute_scale_keyframe_time(
 
     Ok(data)
 }
+/// Give the segment leaving every addressed key the same curve, atomically: a
+/// stale key or a key with no outgoing segment refuses the whole selection.
+pub(super) fn execute_set_easing(
+    mut data: ProjectData,
+    keys: Vec<crate::KeyframeRef>,
+    curve: project::EasingCurve,
+) -> Result<ProjectData> {
+    if keys.is_empty() {
+        return Err(crate::session::EditError::Invalid(
+            "empty keyframe selection",
+        ));
+    }
+    for key in keys {
+        item(&mut data, key.item)?
+            .animations
+            .get_mut(&key.path)?
+            .channel_mut(key.component)?
+            .set_easing(key.time, curve)?;
+    }
+    Ok(data)
+}
