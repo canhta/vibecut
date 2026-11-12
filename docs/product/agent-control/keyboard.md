@@ -28,6 +28,7 @@
 | `subtitles.style.box` — Use boxed captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.style.save` — Save caption style | Edit | — | — | subtitle editor workflow |
 | `subtitles.style.manage` — Manage caption styles | Edit | — | — | subtitle editor workflow |
+| `subtitles.style.overrides` — Overrides | Edit | — | — | subtitle editor workflow |
 | `subtitles.consent.approve` — Allow caption upload | Edit | — | — | subtitle editor workflow |
 | `subtitles.consent.deny` — Keep captions on this computer | Edit | — | — | subtitle editor workflow |
 | `subtitles.generate` — Create captions | Edit | — | — | subtitle editor workflow |
