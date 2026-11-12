@@ -484,7 +484,9 @@ mod tests {
         assert!(lifted.get(13, 22) > 0.0 && lifted.get(30, 20) > 0.99);
         let halo = glow(&mask, 8.0).expect("glow");
         assert!(halo.get(5, 20) > 0.0 && halo.get(20, 20) > 0.99);
-        assert!(halo.get(1, 1) < 0.05);
+        // The 4 px box blur window of (0, 0) reaches only pixel (4, 4) of the
+        // 8.5 px spread, so about 1/81 of the halo; (1, 1) would see six.
+        assert!(halo.get(0, 0) < 0.05);
         for invalid in [-1.0, f32::NAN, f32::INFINITY] {
             assert!(blur(&mask, invalid).is_err());
             assert!(glow(&mask, invalid).is_err());
