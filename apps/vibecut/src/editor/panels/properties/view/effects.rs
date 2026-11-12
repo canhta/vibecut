@@ -601,6 +601,7 @@ impl Panel<'_, '_> {
     ) {
         self.effect_scrub_value(ui, item, effect, kind, parameter, current, false);
     }
+    #[allow(clippy::too_many_arguments)]
     fn effect_scrub_value(
         &mut self,
         ui: &mut egui::Ui,

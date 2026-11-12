@@ -1,7 +1,12 @@
 //! Builds timeline, playhead, track, scene, placement audit scenes.
 use super::super::Failure;
-use super::super::application::*;
-use super::super::fixture::*;
+use super::super::application::{
+    App, AppHarness, SECOND, Theme, WINDOW, harness_sized, preferences,
+};
+use super::super::fixture::{
+    SyntheticSources, app_editor, empty_editor, empty_session, insert, media_editor, range,
+    source_asset, track, wait_for_frame, wait_for_presented, widget_rect,
+};
 use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;
 use engine::Command;

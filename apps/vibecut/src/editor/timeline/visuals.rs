@@ -34,7 +34,7 @@ impl CacheWorker {
             .spawn(move || {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(flag))).unwrap_or_else(
                     |_| CacheMaintenanceReport {
-                        cause: Some(engine::RuntimeError::WorkerPanicked.into()),
+                        cause: Some(engine::RuntimeError::WorkerPanicked),
                         failed: 1,
                         ..Default::default()
                     },
@@ -382,7 +382,7 @@ impl Media {
                 .handle
                 .join()
                 .unwrap_or_else(|_| CacheMaintenanceReport {
-                    cause: Some(engine::RuntimeError::WorkerPanicked.into()),
+                    cause: Some(engine::RuntimeError::WorkerPanicked),
                     ..Default::default()
                 });
             self.finish_cache(report);

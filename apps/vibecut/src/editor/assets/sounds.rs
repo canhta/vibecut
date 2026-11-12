@@ -583,27 +583,26 @@ impl Sounds {
             if let Some(worker) = self.preview_worker.take() {
                 let _ = worker.join(); // Entry catches panics into the terminal result.
             }
-            if let Some(rx) = self.preview_rx.take() {
-                if self
+            if let Some(rx) = self.preview_rx.take()
+                && self
                     .preview_cancel
                     .take()
                     .is_some_and(|cancel| !cancel.load(Ordering::Acquire))
-                {
-                    match rx.try_recv() {
-                        Ok(result) => {
-                            self.previewing = None;
-                            if let Err(error) = result
-                                && !matches!(error, SoundError::Cancelled)
-                            {
-                                self.preview_problem = Some(SoundsProblem::from_error(&error));
-                            }
+            {
+                match rx.try_recv() {
+                    Ok(result) => {
+                        self.previewing = None;
+                        if let Err(error) = result
+                            && !matches!(error, SoundError::Cancelled)
+                        {
+                            self.preview_problem = Some(SoundsProblem::from_error(&error));
                         }
-                        Err(TryRecvError::Disconnected) => {
-                            self.previewing = None;
-                            self.preview_problem = Some(SoundsProblem::NoAudioDevice);
-                        }
-                        Err(TryRecvError::Empty) => {}
                     }
+                    Err(TryRecvError::Disconnected) => {
+                        self.previewing = None;
+                        self.preview_problem = Some(SoundsProblem::NoAudioDevice);
+                    }
+                    Err(TryRecvError::Empty) => {}
                 }
             }
             self.start_preview();

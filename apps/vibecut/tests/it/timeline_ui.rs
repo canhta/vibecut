@@ -4788,7 +4788,7 @@ fn fade_handles_split_offsets_reverse_without_history_and_abort_exactly() {
                 "fullscreen" => {
                     h.state_mut().activate("preview.fullscreen").unwrap();
                 }
-                _ => unreachable!(),
+                _ => panic!("unknown case"),
             }
             h.run_steps(2);
             assert!(

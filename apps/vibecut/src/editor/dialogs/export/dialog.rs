@@ -129,17 +129,20 @@ pub struct ExportInspection {
 pub struct SaveRequest {
     pub name: String,
 }
+/// One pending export plus the word-warning refusal its dialog reports.
+type WordWarnings = (
+    Arc<project::Project>,
+    ExportOptions,
+    usize,
+    u64,
+    std::result::Result<project::CaptionWordWarnings, Arc<Error>>,
+);
+
 pub struct ExportDialog {
     pub(crate) open: bool,
     consent: bool,
     unavailable: Vec<render::Unavailable>,
-    word_warnings: Option<(
-        Arc<project::Project>,
-        ExportOptions,
-        usize,
-        u64,
-        std::result::Result<project::CaptionWordWarnings, Arc<Error>>,
-    )>,
+    word_warnings: Option<WordWarnings>,
     refused: Option<(Arc<project::Project>, bool)>,
     empty: bool,
     error: Option<Arc<Error>>,

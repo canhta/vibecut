@@ -345,7 +345,8 @@ mod exit_codes {
                 assert_eq!(value["exit_code"], expected.1);
             }
         }
-        let edits: [(fn() -> engine::EditError, (&str, u8), &str); 8] = [
+        type EditRow = (fn() -> engine::EditError, (&'static str, u8), &'static str);
+        let edits: [EditRow; 8] = [
             (
                 || engine::EditError::NoItem(project::ItemId(999)),
                 ("rejected", 5),
@@ -465,7 +466,8 @@ mod exit_codes {
             ))));
             assert_eq!(CliError::Job(Arc::new(inner)).code(), *expected);
         }
-        let messages: [(fn() -> E, &str); 4] = [
+        type MessageRow<E> = (fn() -> E, &'static str);
+        let messages: [MessageRow<E>; 4] = [
             (
                 || E::Runtime(engine::RuntimeError::NetworkTransient),
                 "transient network failure",
@@ -521,7 +523,8 @@ mod exit_codes {
         let stale = CliError::Engine(E::Session(engine::SessionError::StaleResult));
         assert_eq!(stale.code(), ("job", 7));
         assert_eq!(stale.value()["message"], "job result is stale");
-        let refusals: [(fn() -> engine::RuntimeError, &str); 6] = [
+        type RefusalRow = (fn() -> engine::RuntimeError, &'static str);
+        let refusals: [RefusalRow; 6] = [
             (|| engine::RuntimeError::CacheBusy, "cache is in use"),
             (
                 || engine::RuntimeError::JobNotRetained,

@@ -191,10 +191,12 @@ fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) 
             below: image,
         };
         let cpu = CpuEffects
-            .apply(image, &[pass.clone()], inputs(), &Hooks)
+            .apply(image, std::slice::from_ref(&pass), inputs(), &Hooks)
             .unwrap();
         // Direct adapter execution: Unsupported cannot be hidden by CPU retry.
-        let actual = gpu.apply(image, &[pass.clone()], inputs(), &Hooks).unwrap();
+        let actual = gpu
+            .apply(image, std::slice::from_ref(&pass), inputs(), &Hooks)
+            .unwrap();
         let max = max_error(&cpu, &actual);
         assert!(max <= 2e-5, "{label} {pass:?} max_abs={max}");
         for (out, src) in actual.pixels().iter().zip(image.pixels()) {
@@ -326,7 +328,12 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         below: &primaries,
     };
     assert!(matches!(
-        gpu.apply(&primaries, &[curve.clone()], curve_inputs(), &Hooks),
+        gpu.apply(
+            &primaries,
+            std::slice::from_ref(&curve),
+            curve_inputs(),
+            &Hooks
+        ),
         Err(Error::Unsupported(_))
     ));
     let mixed = [
@@ -912,8 +919,10 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             assert!(
                 output
                     .bytes()
-                    .chunks_exact(4)
-                    .all(|p| p == [255, 0, 0, 255])
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .all(|p| *p == [255, 0, 0, 255])
             );
         } else if frame != 3 {
             assert!(
@@ -1002,7 +1011,7 @@ fn pixel_effects_native_1080p_measurement() {
         assert!(gpu.supports(pass.entry_point()));
         // Oracle remains outside timed/charged work; every timed result is verified.
         let expected = CpuEffects
-            .apply(&input, &[pass.clone()], inputs(), &Hooks)
+            .apply(&input, std::slice::from_ref(&pass), inputs(), &Hooks)
             .unwrap();
         for run in 0..9 {
             let cpu: &dyn EffectCompositor = &CpuEffects;
@@ -1017,7 +1026,7 @@ fn pixel_effects_native_1080p_measurement() {
                 meter.peak.store(bytes, Ordering::Relaxed);
                 let start = std::time::Instant::now();
                 let output = adapter
-                    .apply(&input, &[pass.clone()], inputs(), &meter)
+                    .apply(&input, std::slice::from_ref(&pass), inputs(), &meter)
                     .unwrap();
                 let ms = start.elapsed().as_secs_f64() * 1000.0;
                 let error = max_error(&expected, &output);
@@ -1159,13 +1168,13 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     {
         let original = source.pixels().to_vec();
         let out = gpu
-            .apply(&source, &[pass.clone()], inputs(), &meter)
+            .apply(&source, std::slice::from_ref(&pass), inputs(), &meter)
             .unwrap();
         resources(meter.take(), bytes, 1, false);
         parity(
             &out,
             &CpuEffects
-                .apply(&source, &[pass.clone()], inputs(), &Hooks)
+                .apply(&source, std::slice::from_ref(&pass), inputs(), &Hooks)
                 .unwrap(),
         );
         drop(out);
@@ -1174,7 +1183,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         assert!(matches!(
             gpu.apply(
                 &source,
-                &[pass.clone()],
+                std::slice::from_ref(&pass),
                 EffectInputs {
                     input: &bad,
                     ..inputs()
@@ -1186,7 +1195,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         assert!(meter.take().is_empty(), "geometry before allocation");
         let tight = Meter::new(1);
         assert!(matches!(
-            gpu.apply(&source, &[pass.clone()], inputs(), &tight),
+            gpu.apply(&source, std::slice::from_ref(&pass), inputs(), &tight),
             Err(Error::Budget { .. })
         ));
         assert_eq!(tight.budget.snapshot().unwrap().used, 0);

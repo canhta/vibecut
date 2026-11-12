@@ -966,9 +966,9 @@ mod tests {
             assert_eq!(pcm.samples.len(), frames * 2);
             assert_eq!(budget.snapshot().unwrap().used, pcm_bytes as u64);
             assert!(pcm.samples.capacity() * size_of::<f32>() <= pcm_bytes);
-            for (frame, stereo) in pcm.samples.chunks_exact(2).enumerate() {
+            for (frame, stereo) in pcm.samples.as_chunks::<2>().0.iter().enumerate() {
                 let expected = if frame < 119 * 8_000 { 0.25 } else { 0.5 };
-                assert_eq!(stereo, [expected, -expected / 2.0], "prefix frame {frame}");
+                assert_eq!(stereo, &[expected, -expected / 2.0], "prefix frame {frame}");
             }
             eprintln!(
                 "excerpt {seconds}s: {frames} stereo frames, {} decoder checkpoints, {} PCM bytes",
@@ -1023,10 +1023,8 @@ mod tests {
             let error = pcm
                 .samples
                 .iter()
-                .zip(reference.stdout.chunks_exact(4))
-                .map(|(actual, expected)| {
-                    (*actual - f32::from_le_bytes(expected.try_into().unwrap())).abs()
-                })
+                .zip(reference.stdout.as_chunks::<4>().0)
+                .map(|(actual, expected)| (*actual - f32::from_le_bytes(*expected)).abs())
                 .fold(0.0_f32, f32::max);
             assert!(
                 error < 1e-5,
@@ -1078,7 +1076,9 @@ mod tests {
                 for block in 0..7500 {
                     let data = pump.fill(block * 16, 100 + block * 16);
                     assert!(
-                        data.chunks_exact(2)
+                        data.as_chunks::<2>()
+                            .0
+                            .iter()
                             .all(|pair| pair[0] > 0.0 && pair[1] < 0.0)
                     );
                 }

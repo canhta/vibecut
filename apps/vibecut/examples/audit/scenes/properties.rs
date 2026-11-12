@@ -1,7 +1,12 @@
 //! Builds properties, inspector, import, text, close-prompt scenes.
 use super::super::Failure;
-use super::super::application::*;
-use super::super::fixture::*;
+use super::super::application::{
+    App, AppHarness, SECOND, Theme, harness, harness_sized, preferences,
+};
+use super::super::fixture::{
+    CompletedProbe, app_editor, empty_editor, insert, media_editor, range, wait_for_frame,
+    wait_for_presented, widget_rect,
+};
 use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;
 use engine::Command;

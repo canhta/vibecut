@@ -88,6 +88,7 @@ fn target(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn show(
     state: &mut State,
     cx: &Context<'_>,
@@ -208,7 +209,7 @@ pub(super) fn show(
                     });
                 } else {
                     let points = if selected(index) {
-                        selection(&cx.mask_points, &target)
+                        selection(cx.mask_points, &target)
                     } else {
                         actions.push(Action::MaskPointSelect {
                             target: point_target(&target, index),
@@ -309,24 +310,23 @@ fn clamp(value: f64) -> f64 {
 
 fn cubic(p: [[f64; 2]; 4], t: f64) -> [f64; 2] {
     let u = 1.0 - t;
-    std::array::from_fn(|k| {
-        u * u * u * p[0][k]
-            + 3.0 * u * u * t * p[1][k]
-            + 3.0 * u * t * t * p[2][k]
-            + t * t * t * p[3][k]
-    })
+    let [w0, w1, w2, w3] = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+    let [(x0, y0), (x1, y1), (x2, y2), (x3, y3)] = p.map(|[x, y]| (x, y));
+    [
+        w0 * x0 + w1 * x1 + w2 * x2 + w3 * x3,
+        w0 * y0 + w1 * y1 + w2 * y2 + w3 * y3,
+    ]
 }
 
-fn controls(path: &MaskPath, segment: usize) -> [[f64; 2]; 4] {
-    let next = (segment + 1) % path.vertices.len();
-    let a = &path.vertices[segment];
-    let b = &path.vertices[next];
-    [
+fn controls(path: &MaskPath, segment: usize) -> Option<[[f64; 2]; 4]> {
+    let a = path.vertices.get(segment)?;
+    let b = path.vertices.get((segment + 1) % path.vertices.len())?;
+    Some([
         a.p,
         [a.p[0] + a.t_out[0], a.p[1] + a.t_out[1]],
         [b.p[0] + b.t_in[0], b.p[1] + b.t_in[1]],
         b.p,
-    ]
+    ])
 }
 
 /// Nearest cubic parameter in logical screen pixels, or `None` beyond the
@@ -336,18 +336,18 @@ fn nearest_segment(
     viewport: &Viewport,
     screen: [f64; 2],
 ) -> Option<(usize, f64, f64)> {
-    let distance = |segment: usize, t: f64| -> Option<f64> {
-        let point = target
-            .geometry
-            .point(viewport, cubic(controls(&target.path, segment), t))
-            .ok()?;
+    let distance = |control: [[f64; 2]; 4], t: f64| -> Option<f64> {
+        let point = target.geometry.point(viewport, cubic(control, t)).ok()?;
         Some((point[0] - screen[0]).hypot(point[1] - screen[1]))
     };
     let mut best: Option<(usize, f64, f64)> = None;
     for segment in 0..target.path.vertices.len() {
+        let Some(control) = controls(&target.path, segment) else {
+            continue;
+        };
         for sample in 0..=SAMPLES {
             let t = sample as f64 / SAMPLES as f64;
-            let Some(value) = distance(segment, t) else {
+            let Some(value) = distance(control, t) else {
                 continue;
             };
             if best.is_none_or(|(_, _, nearest)| value < nearest) {
@@ -356,6 +356,7 @@ fn nearest_segment(
         }
     }
     let (segment, t, _) = best?;
+    let control = controls(&target.path, segment)?;
     let step = 1.0 / SAMPLES as f64;
     let mut low = (t - step).max(0.0);
     let mut high = (t + step).min(1.0);
@@ -364,7 +365,7 @@ fn nearest_segment(
         let b = high - (high - low) / 3.0;
         // Bind the distances under their own names: shadowing `a`/`b` here would
         // narrow the bracket to a distance instead of a curve parameter.
-        match (distance(segment, a), distance(segment, b)) {
+        match (distance(control, a), distance(control, b)) {
             (Some(near_a), Some(near_b)) if near_a < near_b => high = b,
             (Some(_), Some(_)) => low = a,
             _ => break,
@@ -372,7 +373,7 @@ fn nearest_segment(
     }
     // The engine splits only strictly inside a segment (2^-20..=1-2^-20).
     let t = ((low + high) / 2.0).clamp(1.0 / 1_048_576.0, 1.0 - 1.0 / 1_048_576.0);
-    let value = distance(segment, t)?;
+    let value = distance(control, t)?;
     (value <= SEGMENT_HIT).then_some((segment, t, value))
 }
 
@@ -388,7 +389,9 @@ fn paint(
     let stroke = egui::Stroke::new(kit::size::TRANSFORM_STROKE, kit::accent(dark));
     let mut curve = Vec::with_capacity(target.path.vertices.len() * 24);
     for segment in 0..target.path.vertices.len() {
-        let control = controls(&target.path, segment);
+        let Some(control) = controls(&target.path, segment) else {
+            continue;
+        };
         for step in 0..24 {
             let t = step as f64 / 24.0;
             if let Ok([x, y]) = target.geometry.point(viewport, cubic(control, t)) {

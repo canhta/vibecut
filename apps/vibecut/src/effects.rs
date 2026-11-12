@@ -731,10 +731,10 @@ impl FrameEffects<'_> {
                 .map_err(|_| Error::Unsupported("GPU mapping"))?;
         }
         #[cfg(test)]
-        if let Some(boundary) = &self.boundary {
-            if boundary.fault == tests::Fault::Cancel {
-                boundary.cancel.store(true, Ordering::Release);
-            }
+        if let Some(boundary) = &self.boundary
+            && boundary.fault == tests::Fault::Cancel
+        {
+            boundary.cancel.store(true, Ordering::Release);
         }
         if self.hooks.cancelled() {
             return Err(Error::Cancelled);

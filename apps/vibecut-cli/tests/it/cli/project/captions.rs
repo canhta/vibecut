@@ -323,7 +323,14 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 .unwrap();
             let mse = frames[1]
                 .iter()
-                .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+                .zip(
+                    expected
+                        .bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .flat_map(|p| p[..3].iter()),
+                )
                 .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
                 .sum::<f64>()
                 / frames[1].len() as f64;
@@ -604,7 +611,9 @@ fn cli_native_word_opt_in_survives_save_and_paints_the_encoded_source_word() {
         );
         let decoded = crate::cli::fixtures::decoded_rgb(&movie, 360, 640, &[1]);
         let gold = decoded[0]
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .filter(|pixel| pixel[0] > 150 && pixel[1] > 70 && pixel[2] < 80)
             .count();
         if enabled {

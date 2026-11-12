@@ -1,4 +1,8 @@
 //! Supervises bounded external tools through capture files, deadlines, child teardown.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "an offline audit capture indexes its own manifest and fixed-size frame buffers; a panic aborts the tool, never a person's project"
+)]
 use super::super::Failure;
 use super::source::TOOL_METADATA_TIMEOUT;
 use super::source::TOOL_STDERR_CAP;

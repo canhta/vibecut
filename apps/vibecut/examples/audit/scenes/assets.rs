@@ -1,7 +1,7 @@
 //! Builds the assets-window audit scene, thumbnail fixture.
 use super::super::Failure;
-use super::super::application::*;
-use super::super::fixture::*;
+use super::super::application::{App, AppHarness, Theme, harness_sized};
+use super::super::fixture::{CompletedProbe, ProgressProbe, empty_editor};
 use egui_kittest::kittest::{By, Queryable};
 use media::MediaError;
 use media::SourceAsset;

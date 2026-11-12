@@ -101,7 +101,7 @@ impl TaskEvents {
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(true) => return Ok(()),
                 Ok(false) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(engine::providers::Error::ConsentRequired.into());
+                    return Err(engine::providers::Error::ConsentRequired);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }

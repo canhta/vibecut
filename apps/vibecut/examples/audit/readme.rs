@@ -1,6 +1,10 @@
 //! Drives README capture staging, manifest verification, publication transfer.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "an offline audit capture indexes its own manifest and fixed-size frame buffers; a panic aborts the tool, never a person's project"
+)]
 use super::Failure;
-use super::application::*;
+use super::application::{App, SECOND, harness_sized};
 use engine::Command;
 use engine::CreatedId;
 use engine::TrimEdge;
@@ -130,13 +134,13 @@ pub(super) fn readme_media_run(
         readme_capture(&mut app, &raw)?;
         let jpg = stage.join("hero.jpg");
         let jpg_report = encode_jpg(&raw, &jpg)?;
-        let details = readme_boundary(&mut app, &run, 0, "settled multitrack project")?;
+        let details = readme_boundary(&mut app, run, 0, "settled multitrack project")?;
         manifest["boundary"] = details;
         manifest["outputs"] = serde_json::json!({"hero.jpg": jpg_report});
     } else {
         let boundaries = vec![readme_boundary(
             &mut app,
-            &run,
+            run,
             0,
             "initial multitrack project",
         )?];
@@ -214,7 +218,7 @@ pub(super) fn readme_media_run(
         };
         let boundaries = {
             let mut all = boundaries;
-            all.push(readme_boundary(&mut app, &run, 1, "split at 4s")?);
+            all.push(readme_boundary(&mut app, run, 1, "split at 4s")?);
             all
         };
         let boundaries = {
@@ -265,7 +269,7 @@ pub(super) fn readme_media_run(
             let mut all = boundaries;
             all.push(readme_boundary(
                 &mut app,
-                &run,
+                run,
                 2,
                 "right end trimmed by 0.5s",
             )?);
@@ -314,7 +318,7 @@ pub(super) fn readme_media_run(
             let mut all = boundaries;
             all.push(readme_boundary(
                 &mut app,
-                &run,
+                run,
                 3,
                 "undo restores the split",
             )?);
@@ -331,9 +335,9 @@ pub(super) fn readme_media_run(
             entry["boundary"] = serde_json::json!(boundary);
             frames.push(entry);
         }
-        let gif_report = encode_gif(&run, &stage.join("timeline.gif"))?;
+        let gif_report = encode_gif(run, &stage.join("timeline.gif"))?;
         let jpg_report = encode_jpg(&run.join("boundary-2.png"), &stage.join("timeline.jpg"))?;
-        manifest["snapshot_verification"] = verify_snapshots(&run, first, split)?;
+        manifest["snapshot_verification"] = verify_snapshots(run, first, split)?;
         manifest["commands"] = serde_json::json!(commands);
         manifest["boundaries"] = serde_json::json!(boundaries);
         manifest["frames"] = serde_json::json!(frames);
@@ -407,10 +411,16 @@ mod process;
 mod project;
 mod publication;
 mod source;
-use media::*;
+use media::{encode_gif, encode_jpg};
 #[cfg(test)]
 pub(crate) use process::run_tool;
-use process::*;
-use project::*;
+use process::{free_bytes, git_head, tool_identity};
+use project::{
+    readme_boundary, readme_capture, readme_editor, readme_frame_digest, readme_project,
+    readme_seek, verify_snapshots,
+};
 pub(crate) use publication::{finish_publication, publish_outputs};
-use source::*;
+use source::{
+    BBB_CREDIT, BBB_SOURCE_BYTES, BBB_SOURCE_SHA256, BBB_SOURCE_URL, README_GIF_FRAMES,
+    README_SCRATCH, README_WINDOW, stream_sha256,
+};

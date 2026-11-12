@@ -571,6 +571,7 @@ const FADE_CURVE_SAMPLES: usize = 96;
 
 impl State {
     /// Paint an audio clip's two fade handles and their gain curves.
+    #[allow(clippy::too_many_arguments)]
     fn paint_fades(
         &mut self,
         cx: &Context<'_>,
@@ -656,6 +657,7 @@ impl State {
     }
 
     /// The fade's gain curve, sampled through the project's own curve evaluation.
+    #[allow(clippy::too_many_arguments)]
     fn paint_fade_curve(
         &self,
         painter: &egui::Painter,

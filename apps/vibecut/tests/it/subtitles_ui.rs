@@ -312,7 +312,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                     .unwrap();
                 assert!(h.state().importing());
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case"),
         }
         let before = h.state().session.project().clone();
         let history = h.state().session.history_len();
@@ -502,7 +502,7 @@ fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
                 h.event(egui::Event::PointerMoved(at + egui::vec2(20.0, 10.0)));
                 h.run_steps(2);
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case"),
         }
         let before = h.state().session.project().clone();
         let history = h.state().session.history_len();

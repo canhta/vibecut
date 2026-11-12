@@ -526,7 +526,14 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
             .unwrap();
         let mse = frame
             .iter()
-            .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+            .zip(
+                expected
+                    .bytes
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| p[..3].iter()),
+            )
             .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
             .sum::<f64>()
             / frame.len() as f64;
@@ -1500,7 +1507,14 @@ fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
                 .unwrap();
             let mse = frame
                 .iter()
-                .zip(expected.bytes.chunks_exact(4).flat_map(|p| p[..3].iter()))
+                .zip(
+                    expected
+                        .bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .flat_map(|p| p[..3].iter()),
+                )
                 .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
                 .sum::<f64>()
                 / frame.len() as f64;

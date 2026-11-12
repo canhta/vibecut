@@ -14,21 +14,19 @@ impl Panel<'_, '_> {
             key,
             time,
         } = &draft.target
+            && key != "key_color"
+            && (super::super::read::item_locked(self.cx.session.project(), *item)
+                || super::super::read::item(self.cx.session.project(), *item)
+                    .is_none_or(|i| self.cx.playhead.saturating_sub(i.start) != *time)
+                || !self
+                    .state
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == format!("effects.{effect}.param.{key}")))
         {
-            if key != "key_color"
-                && (super::super::read::item_locked(self.cx.session.project(), *item)
-                    || super::super::read::item(self.cx.session.project(), *item)
-                        .is_none_or(|i| self.cx.playhead.saturating_sub(i.start) != *time)
-                    || !self
-                        .state
-                        .widgets
-                        .iter()
-                        .any(|w| w.id == format!("effects.{effect}.param.{key}")))
-            {
-                self.state.color_base = None;
-                self.actions.push(Action::SyncPreview);
-                return;
-            }
+            self.state.color_base = None;
+            self.actions.push(Action::SyncPreview);
+            return;
         }
         let picker = &mut draft.picker;
         let event = picker.ui(ctx, self.cx.locale, &self.cx.preferences.recent_colors);

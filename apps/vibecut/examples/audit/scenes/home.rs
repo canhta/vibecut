@@ -1,6 +1,6 @@
 //! Builds Home project-library audit scenes.
 use super::super::Failure;
-use super::super::application::*;
+use super::super::application::{App, AppHarness, Theme, harness, harness_sized, preferences};
 use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;
 use engine::Command;

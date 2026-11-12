@@ -1,6 +1,6 @@
 //! Builds the Shorts-window audit scene, generation fixture.
 use super::super::Failure;
-use super::super::application::*;
+use super::super::application::{App, AppHarness, AuditApp, Theme, preferences};
 use crate::shorts_fixture;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{By, Queryable};

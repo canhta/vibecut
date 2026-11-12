@@ -1171,6 +1171,10 @@ fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Recei
     playback.set_device_available(true);
     (session, playback, receive)
 }
+#[allow(
+    clippy::expect_used,
+    reason = "test helper waiting on the controlled source channel; a timeout is the test failure"
+)]
 fn next_preview_work(receive: &std::sync::mpsc::Receiver<PreviewWork>) -> PreviewWork {
     receive
         .recv_timeout(Duration::from_secs(10))
@@ -1270,7 +1274,7 @@ fn preview_axis_playing_hover_preserves_prefilled_pcm_source_cursor_and_dsp() {
         &Hooks,
     )
     .unwrap();
-    for (n, pair) in actual.chunks_exact(2).enumerate() {
+    for (n, pair) in actual.as_chunks::<2>().0.iter().enumerate() {
         for (channel, sample) in pair.iter().enumerate() {
             assert!((*sample - expected.planes()[channel][n]).abs() < 1e-6);
         }

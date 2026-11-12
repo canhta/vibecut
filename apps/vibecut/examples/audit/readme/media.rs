@@ -1,4 +1,8 @@
 //! Encodes, decodes, probes, measures README media outputs.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "an offline audit capture indexes its own manifest and fixed-size frame buffers; a panic aborts the tool, never a person's project"
+)]
 use super::super::Failure;
 use super::process::run_tool;
 use super::publication::publish;

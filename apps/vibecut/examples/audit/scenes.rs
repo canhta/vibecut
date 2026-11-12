@@ -1,6 +1,6 @@
 //! Owns the scene registry, theme selection, scene-name dispatch.
 use super::Failure;
-use super::application::*;
+use super::application::{AppHarness, SECOND, Theme};
 use std::collections::BTreeSet;
 use time::Tick;
 use vibecut::i18n::Locale;
@@ -833,11 +833,23 @@ mod home;
 mod properties;
 mod shorts;
 mod timeline;
-use assets::*;
-use editor::*;
-use home::*;
-#[cfg(test)]
+use assets::assets_scene;
+use editor::{
+    ai_preferences, caption_word_scene, captions_scene, editor_empty, editor_frame_state,
+    editor_media, editor_transitions, export_dialog, export_resolution, import_progress, models,
+    models_vi, player_scene, player_variant,
+};
+use home::{home, home_projects, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;
-use properties::*;
-use shorts::*;
-use timeline::*;
+use properties::{
+    close_prompt, close_prompt_vi, import_complete_vi, inspector_audio, inspector_audio_vi,
+    inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
+    inspector_speed, inspector_text, inspector_transform, inspector_video, inspector_video_blend,
+    inspector_video_tab, text_item, text_item_vi,
+};
+use shorts::shorts_scene;
+use timeline::{
+    placement, preview_axis, preview_axis_ends, preview_axis_reference, scene_create, scene_delete,
+    scene_rename, timeline_fades, timeline_main, timeline_multi, timeline_selection,
+    timeline_selection_vi, timeline_zoom, tracks,
+};

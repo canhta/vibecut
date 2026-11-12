@@ -57,7 +57,8 @@ fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool 
 #[test]
 fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
     use vibecut::i18n::Locale;
-    let rows: &[(&str, &str, &str, &[(&str, &str, &str)])] = &[
+    type Row<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str, &'a str)]);
+    let rows: &[Row] = &[
         (
             "directional_blur",
             "Streak Blur",
@@ -2624,7 +2625,7 @@ fn discrete_effect_controls_commit_once_and_restore_with_undo_redo() {
                         harness.key_press(egui::Key::Escape);
                         harness.run_steps(2);
                     }
-                    _ => unreachable!(),
+                    _ => panic!("unknown case"),
                 }
                 harness.state_mut().activate("edit.redo").unwrap();
                 harness.run_steps(2);
@@ -3166,7 +3167,7 @@ fn effect_rgb_picker_cancels_stale_gestures_and_disables_keyed_edits_outside() {
                     .set("properties_tabs", serde_json::json!({"video":"transform"}))
                     .unwrap();
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case"),
         }
         let expected = h.state().session.project().clone();
         let expected_history = h.state().session.history_len();

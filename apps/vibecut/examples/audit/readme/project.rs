@@ -1,7 +1,7 @@
 //! Captures README editor frames, edits, snapshots through the real Editor path.
 use super::super::Failure;
-use super::super::application::*;
-use super::super::fixture::*;
+use super::super::application::{App, AppHarness, SECOND, Theme, preferences};
+use super::super::fixture::{insert, range, settle, track};
 use super::super::report::opaque;
 use super::source::ReadmeClock;
 use super::source::hex;

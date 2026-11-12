@@ -46,12 +46,11 @@ pub(crate) fn run_job_with(
             word_highlight_warnings,
             ..
         } => {
-            if !word_highlight_warnings.warnings.is_empty()
-                || word_highlight_warnings.additional > 0
+            if (!word_highlight_warnings.warnings.is_empty()
+                || word_highlight_warnings.additional > 0)
+                && let Ok(value) = serde_json::to_string(&word_highlight_warnings)
             {
-                if let Ok(value) = serde_json::to_string(&word_highlight_warnings) {
-                    eprintln!("{value}");
-                }
+                eprintln!("{value}");
             }
             job
         }

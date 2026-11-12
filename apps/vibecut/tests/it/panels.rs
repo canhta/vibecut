@@ -2089,7 +2089,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
                 let empty = Project::empty(ProjectId(388), "other".into()).unwrap();
                 h.state_mut().session = Memory(Box::new(Session::new(empty, 10).unwrap()));
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case"),
         }
         let before = h.state().session.project().clone();
         let history = h.state().session.history_len();
@@ -2730,7 +2730,7 @@ impl Backend for FakeFonts {
         Box::pin(std::future::ready(None))
     }
     fn import(&mut self, _: &mut Session, _: std::path::PathBuf) -> vibecut::Result<JobId> {
-        unreachable!("a cancelled picker never submits an import")
+        panic!("a cancelled picker never submits an import")
     }
     fn list(&mut self, _: &mut Session, _: Option<&str>) -> vibecut::Result<Vec<FontEntry>> {
         let mut inner = self.inner.lock().unwrap();
@@ -3098,7 +3098,7 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
             }
             "backend" => h.state_mut().set_font_backend(Box::new(FakeFonts::new())),
             "editor" => *h.state_mut() = self::fixture().editor,
-            _ => unreachable!(),
+            _ => panic!("unknown case"),
         }
         let snapshot = h.state().session.project().clone();
         ready.store(true, Ordering::Release);
@@ -4217,7 +4217,7 @@ fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
                             serde_json::json!({"graphic":"transform"}),
                         )
                         .unwrap(),
-                    _ => unreachable!(),
+                    _ => panic!("unknown case"),
                 }
                 None
             };

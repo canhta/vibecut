@@ -355,6 +355,7 @@ impl Visual {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn show(
     state: &mut State,
     mask_path: &mut super::mask_path::State,

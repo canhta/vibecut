@@ -1,7 +1,11 @@
 //! Builds editor, player, captions, model-manager, export, import-progress scenes.
 use super::super::Failure;
-use super::super::application::*;
-use super::super::fixture::*;
+use super::super::application::{App, AppHarness, SECOND, Theme, harness_sized, preferences};
+use super::super::fixture::{
+    LoadingSources, NoTransfer, ProgressProbe, SyntheticSources, app_editor, empty_editor,
+    empty_session, insert, media_editor, source_asset, source_stream, wait_for_frame,
+    wait_for_presented,
+};
 use crate::subtitles_fixture;
 use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;

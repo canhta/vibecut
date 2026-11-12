@@ -801,6 +801,7 @@ pub struct EditorWindow {
     saved_as: Option<(project::ProjectId, project::ProjectId)>,
 }
 impl EditorWindow {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         root: PathBuf,
         preferences: Preferences,
