@@ -464,6 +464,7 @@ fn control_music(
             media: None,
             chapters: None,
             captions: None,
+            vision: None,
         },
         r,
     )
