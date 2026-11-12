@@ -576,7 +576,11 @@ mod tests {
     ) -> ai::Capabilities {
         ai::Capabilities {
             model: config.model().clone(),
-            mode: "fixture".into(),
+            // The engine requests these exact modes; a mismatch refuses Unsupported.
+            mode: match operation {
+                ai::Operation::Transcribe => "transcribe".into(),
+                _ => ai::openai::TRANSLATION_MODE.into(),
+            },
             operation,
             languages: vec![scope.source_language.clone()],
             target_languages: scope.target_language.iter().cloned().collect(),
