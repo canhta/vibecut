@@ -83,11 +83,13 @@ pub(crate) fn run(
         let mut saved_project = session.project().as_ref().clone();
         let mut saved_metadata = session.metadata().clone();
         let (mut handler, mut inbox) = Inbox::new(grants, context.budget()?).map_err(cli_error)?;
-        inbox.attach_captions(std::sync::Arc::new(crate::session::caption_access(
-            context.budget()?,
-        )));
+        let captions = crate::session::caption_access(context.budget()?);
+        // One models-cache owner per process: vision reuses the captions handle.
+        let shared = captions.cache().ok().cloned();
+        inbox.attach_captions(std::sync::Arc::new(captions));
         inbox.attach_vision(std::sync::Arc::new(crate::session::vision_access(
             context.budget()?,
+            shared,
         )));
         if full {
             handler.all_tools();

@@ -68,13 +68,29 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
 
 /// The local YuNet detector behind `reframe.generate`. Model files are read from
 /// the shared verified cache and never downloaded here: a missing bundle returns
-/// the typed setup refusal that names `model download yunet-2026may`.
-pub(crate) fn vision_access(budget: ByteBudget) -> engine::control::VisionAccess {
+/// the typed setup refusal that names `model download yunet-2026may`. A root that
+/// already holds the models cache (through `CaptionAccess::cache`) passes it as
+/// `shared`, because that root is opened once per process; otherwise each load
+/// opens the cache for the duration of the lookup.
+pub(crate) fn vision_access(
+    budget: ByteBudget,
+    shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
+) -> engine::control::VisionAccess {
     engine::control::VisionAccess::new(move || {
-        let (transfers, _) = engine::models::ModelTransfers::open_native(budget.clone(), 128)?;
         let model = engine::models::catalog_model("yunet-2026may")?;
         let hooks = VisionHooks;
-        let lease = transfers.installed(&model, &hooks)?.ok_or_else(|| {
+        let lease = match &shared {
+            Some(cache) => cache
+                .lock()
+                .map_err(|_| engine::RuntimeError::Poisoned)?
+                .model(&model, &hooks)?,
+            None => {
+                let (transfers, _) =
+                    engine::models::ModelTransfers::open_native(budget.clone(), 128)?;
+                transfers.installed(&model, &hooks)?
+            }
+        }
+        .ok_or_else(|| {
             engine::control::Error::Providers(engine::providers::Error::ModelMissing(
                 "yunet-2026may",
             ))
