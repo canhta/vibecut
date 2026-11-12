@@ -861,6 +861,103 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
 }
 
 #[test]
+fn caption_style_override_popup_applies_resets_and_escape_cancels_one_undo() {
+    fn caption(h: &Harness<Editor>, item: project::ItemId) -> project::CaptionParams {
+        let ItemParams::Caption(params) = &h
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item)
+            .unwrap()
+            .content
+        else {
+            panic!("caption")
+        };
+        params.clone()
+    }
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    h.state_mut().activate("subtitles.style.outline").unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SaveCaptionPreset {
+            item,
+            name: "Look".into(),
+        })
+        .unwrap();
+    h.run_steps(3);
+    let preset = h.state().session.project().data().caption_presets[0].id;
+    click(&mut h, "subtitles.style");
+    click(&mut h, &format!("subtitles.style.saved.{}", preset.0));
+    let selected = h.state().session.project().clone();
+    let cue_values = track(h.state()).styles.clone();
+    let history = h.state().session.history_len().0;
+    fn field(h: &Harness<Editor>, id: &str, value: f64) {
+        h.get(By::new().predicate(move |n| n.author_id() == Some(id)))
+            .set_value_accesskit(value);
+    }
+
+    // The real Overrides popup commits one sparse patch as one undo step.
+    click(&mut h, "subtitles.style.overrides");
+    field(&h, "subtitles.style.size", 64.0);
+    h.run_steps(2);
+    click(&mut h, "subtitles.style.apply");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(
+        track(h.state()).styles,
+        cue_values,
+        "an override never rewrites cue values"
+    );
+    let patched = caption(&h, item);
+    assert_eq!(patched.preset, Some(preset));
+    assert_eq!(patched.overrides.size, Some(64.0));
+    assert!(
+        patched.overrides.max_lines.is_none(),
+        "only the edited field is stored"
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &selected);
+
+    // Reset clears the patch instead of copying preset values into the item.
+    click(&mut h, "subtitles.style.overrides");
+    field(&h, "subtitles.style.size", 64.0);
+    h.run_steps(2);
+    click(&mut h, "subtitles.style.apply");
+    click(&mut h, "subtitles.style.overrides");
+    click(&mut h, "subtitles.style.reset");
+    let reset = caption(&h, item);
+    assert_eq!(reset.preset, Some(preset));
+    assert!(reset.overrides.is_empty());
+    assert_eq!(track(h.state()).styles, cue_values);
+    assert_eq!(h.state().session.project(), &selected);
+
+    // Escape drops the draft without a command or history entry.
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.style.overrides");
+    field(&h, "subtitles.style.size", 72.0);
+    h.run_steps(2);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len().0, history);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.apply")))
+            .next()
+            .is_none(),
+        "Escape closes the popup"
+    );
+}
+
+#[test]
 fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     let mut h = harness(editor("vi"), 1.0);
     h.run_steps(3);

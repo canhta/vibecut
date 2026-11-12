@@ -252,6 +252,18 @@ fn style_row(ui: &mut egui::Ui, label: &str, value: impl FnOnce(&mut egui::Ui)) 
         value(ui);
     });
 }
+/// One labelled style control whose response receives a stable automation id.
+fn style_control(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: impl FnOnce(&mut egui::Ui) -> egui::Response,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(theme::type_size::BODY));
+        value(ui)
+    })
+    .inner
+}
 
 impl Subtitles {
     /// The assets-panel mount is one call. Engine edits remain in this module.
@@ -1066,33 +1078,36 @@ impl Subtitles {
                             egui::RichText::new(c.tr(Text::SubStyleOverrides))
                                 .size(theme::type_size::BODY),
                         );
-                        style_row(ui, c.tr(Text::SubStyleFont), |ui| {
+                        let r = style_control(ui, c.tr(Text::SubStyleFont), |ui| {
                             ui.add_sized(
                                 egui::vec2(160.0, theme::size::FIELD),
                                 egui::TextEdit::singleline(&mut edit.draft.font)
                                     .font(egui::FontId::proportional(theme::type_size::BODY)),
-                            );
+                            )
                         });
-                        style_row(ui, c.tr(Text::SubStyleFontStyle), |ui| {
+                        c.remember("subtitles.style.font", &r);
+                        let r = style_control(ui, c.tr(Text::SubStyleFontStyle), |ui| {
                             ui.add_sized(
                                 egui::vec2(160.0, theme::size::FIELD),
                                 egui::TextEdit::singleline(&mut edit.draft.font_style)
                                     .font(egui::FontId::proportional(theme::type_size::BODY)),
-                            );
+                            )
                         });
-                        style_row(ui, c.tr(Text::SubStyleSize), |ui| {
+                        c.remember("subtitles.style.font_style", &r);
+                        let r = style_control(ui, c.tr(Text::SubStyleSize), |ui| {
                             ui.add(
                                 egui::DragValue::new(&mut edit.draft.size)
                                     .range(4.0..=256.0)
                                     .speed(1.0),
-                            );
+                            )
                         });
+                        c.remember("subtitles.style.size", &r);
                         style_row(ui, c.tr(Text::BlendColor), |ui| {
                             for channel in edit.draft.color.iter_mut() {
                                 ui.add(egui::DragValue::new(channel).range(0..=255));
                             }
                         });
-                        style_row(ui, c.tr(Text::Position), |ui| {
+                        let r = style_control(ui, c.tr(Text::Position), |ui| {
                             egui::ComboBox::from_id_salt(egui::Id::unique(
                                 "subtitles.style.position",
                             ))
@@ -1113,27 +1128,30 @@ impl Subtitles {
                                         c.tr(text),
                                     );
                                 }
-                            });
+                            })
+                            .response
                         });
-                        style_row(ui, c.tr(Text::SubStyleSafeArea), |ui| {
+                        c.remember("subtitles.style.position", &r);
+                        let r = style_control(ui, c.tr(Text::SubStyleSafeArea), |ui| {
                             ui.add(
                                 egui::DragValue::new(&mut edit.draft.safe_area_percent)
                                     .range(0.0..=40.0)
                                     .speed(0.5),
-                            );
-                        });
-                        style_row(ui, c.tr(Text::SubStyleMaxLines), |ui| {
-                            ui.add(egui::DragValue::new(&mut edit.draft.max_lines).range(1..=16));
-                        });
-                        let mut outline = edit.draft.outline.is_some();
-                        if ui
-                            .checkbox(
-                                &mut outline,
-                                egui::RichText::new(c.tr(Text::SubStyleOutline))
-                                    .size(theme::type_size::BODY),
                             )
-                            .changed()
-                        {
+                        });
+                        c.remember("subtitles.style.safe_area", &r);
+                        let r = style_control(ui, c.tr(Text::SubStyleMaxLines), |ui| {
+                            ui.add(egui::DragValue::new(&mut edit.draft.max_lines).range(1..=16))
+                        });
+                        c.remember("subtitles.style.max_lines", &r);
+                        let mut outline = edit.draft.outline.is_some();
+                        let r = ui.checkbox(
+                            &mut outline,
+                            egui::RichText::new(c.tr(Text::SubStyleOutline))
+                                .size(theme::type_size::BODY),
+                        );
+                        c.remember("subtitles.style.outline", &r);
+                        if r.changed() {
                             let base_outline = edit.base.outline.clone();
                             let replacement = outline.then(|| {
                                 base_outline.unwrap_or(captions::CaptionOutline {
@@ -1144,13 +1162,14 @@ impl Subtitles {
                             edit.draft.outline = replacement;
                         }
                         if let Some(value) = &mut edit.draft.outline {
-                            style_row(ui, c.tr(Text::SubStyleOutlineWidth), |ui| {
+                            let r = style_control(ui, c.tr(Text::SubStyleOutlineWidth), |ui| {
                                 ui.add(
                                     egui::DragValue::new(&mut value.width)
                                         .range(0.0..=64.0)
                                         .speed(0.5),
-                                );
+                                )
                             });
+                            c.remember("subtitles.style.outline_width", &r);
                             style_row(ui, c.tr(Text::BlendColor), |ui| {
                                 for channel in value.color.iter_mut() {
                                     ui.add(egui::DragValue::new(channel).range(0..=255));
@@ -1158,14 +1177,13 @@ impl Subtitles {
                             });
                         }
                         let mut background = edit.draft.background.is_some();
-                        if ui
-                            .checkbox(
-                                &mut background,
-                                egui::RichText::new(c.tr(Text::SubStyleBox))
-                                    .size(theme::type_size::BODY),
-                            )
-                            .changed()
-                        {
+                        let r = ui.checkbox(
+                            &mut background,
+                            egui::RichText::new(c.tr(Text::SubStyleBox))
+                                .size(theme::type_size::BODY),
+                        );
+                        c.remember("subtitles.style.background", &r);
+                        if r.changed() {
                             let base_background = edit.base.background.clone();
                             let replacement = background.then(|| {
                                 base_background.unwrap_or(captions::CaptionBackground {
@@ -1177,12 +1195,14 @@ impl Subtitles {
                             edit.draft.background = replacement;
                         }
                         if let Some(value) = &mut edit.draft.background {
-                            style_row(ui, c.tr(Text::SubStylePadding), |ui| {
-                                ui.add(egui::DragValue::new(&mut value.padding).range(0.0..=128.0));
+                            let r = style_control(ui, c.tr(Text::SubStylePadding), |ui| {
+                                ui.add(egui::DragValue::new(&mut value.padding).range(0.0..=128.0))
                             });
-                            style_row(ui, c.tr(Text::SubStyleRadius), |ui| {
-                                ui.add(egui::DragValue::new(&mut value.radius).range(0.0..=128.0));
+                            c.remember("subtitles.style.padding", &r);
+                            let r = style_control(ui, c.tr(Text::SubStyleRadius), |ui| {
+                                ui.add(egui::DragValue::new(&mut value.radius).range(0.0..=128.0))
                             });
+                            c.remember("subtitles.style.radius", &r);
                             style_row(ui, c.tr(Text::BlendColor), |ui| {
                                 for channel in value.color.iter_mut() {
                                     ui.add(egui::DragValue::new(channel).range(0..=255));
