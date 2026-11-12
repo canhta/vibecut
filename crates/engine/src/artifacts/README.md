@@ -114,8 +114,10 @@ passed as protected paths.
 `effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail` jobs through
 the runner. Callers supply an accounted, downsampled working-space source image and registered
 an `EffectInstance`, owned `Animations` and nonnegative item-local `Tick`; negative time
-refuses with Invalid. The shared evaluator receives those exact inputs with fine=true;
-malformed animated values fail through its typed admission. The result is straight
+refuses with Invalid. The shared evaluator receives those exact inputs with
+fine=false, because a thumbnail is interactive preview; that may lower sample
+counts but never geometry, colour mapping or which pixels are affected
+([`EffectFrame::fine`](../../../render/src/scene/effects.rs)). Malformed animated values fail through its typed admission. The result is straight
 sRGB RGBA8 at the input dimensions. `MAX_THUMBNAIL_EDGE`
 bounds the edge and `MAX_THUMBNAILS` the cache, charged to the runner's shared byte budget. The
 cache belongs to one adapter lifetime. Version3 keys bind source pixels/geometry, the full

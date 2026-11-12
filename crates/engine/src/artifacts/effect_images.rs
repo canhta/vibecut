@@ -143,7 +143,9 @@ impl EffectThumbnails {
                     &effect,
                     local,
                     geometry,
-                    true,
+                    // A thumbnail is interactive preview: coarse sampling only, so
+                    // heavy glows stay off the panel's critical path.
+                    false,
                     &render::lut::LutResources::default(),
                 )?;
                 let owned = render::Image::from_working_pixels(

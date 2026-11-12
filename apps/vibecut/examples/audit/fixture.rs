@@ -234,7 +234,7 @@ pub(super) fn wait_for_presented(app: &mut AppHarness) -> Result<(), Failure> {
 /// Capture settled pixels: wait for every async effect preview, then load the
 /// finished textures and paint the frame the audit reads.
 pub(super) fn settle(app: &mut AppHarness) -> Result<(), Failure> {
-    let timeout = Duration::from_secs(10);
+    let timeout = vibecut::effect_previews::SETTLE_BUDGET;
     match &mut app.state_mut().app {
         App::Editor(editor) | App::Player(editor) | App::Assets(editor) => {
             editor.settle_previews(timeout)?;

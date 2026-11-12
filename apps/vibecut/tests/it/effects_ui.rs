@@ -16,7 +16,7 @@ use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    effect_previews::EffectPreviewStatus,
+    effect_previews::{EffectPreviewStatus, SETTLE_BUDGET},
     egui,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
@@ -567,11 +567,9 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
     for ms in [0, 100, 1900, 2000] {
         clock.set(ms);
         h.run_steps(1);
-        h.state_mut()
-            .settle_previews(std::time::Duration::from_secs(10))
-            .unwrap();
+        h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
         h.run_steps(1);
-        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 15);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 43);
         assert!(
             h.state()
                 .inspect()
@@ -621,9 +619,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
         "hidden panel requests no work"
     );
     click(&mut h, "assets.tab.effects");
-    h.state_mut()
-        .settle_previews(std::time::Duration::from_secs(10))
-        .unwrap();
+    h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
     h.run_steps(1);
     assert_eq!(
         uploaded(&uploads, texture.unwrap()).unwrap(),
@@ -635,11 +631,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
     h.run_steps(2);
     let (state, timeout) = adapter
         .changed
-        .wait_timeout_while(
-            adapter.state.lock().unwrap(),
-            std::time::Duration::from_secs(10),
-            |s| s.2 == 0,
-        )
+        .wait_timeout_while(adapter.state.lock().unwrap(), SETTLE_BUDGET, |s| s.2 == 0)
         .unwrap();
     assert!(!timeout.timed_out());
     drop(state);
@@ -652,9 +644,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
         "replacing source/cache owner cancels and joins the old generation"
     );
     h.run_steps(1);
-    h.state_mut()
-        .settle_previews(std::time::Duration::from_secs(10))
-        .unwrap();
+    h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
     h.run_steps(1);
     assert!(
         h.state()
@@ -683,22 +673,21 @@ fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_b
     {
         previews.ensure(d.id, &d.instance(d.id), &project::Animations::default());
     }
-    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    previews.settle(SETTLE_BUDGET).unwrap();
     let initial_calls = gate.state.lock().unwrap().1;
     gate.state.lock().unwrap().0 = false;
     previews.update(true, std::time::Duration::from_millis(100));
-    previews.tick().unwrap();
-    previews.tick().unwrap();
-    let (state, timeout) = gate
-        .changed
-        .wait_timeout_while(
-            gate.state.lock().unwrap(),
-            std::time::Duration::from_secs(10),
-            |s| s.2 == 0,
-        )
-        .unwrap();
-    assert!(!timeout.timed_out());
-    drop(state);
+    // Identity kinds emit no pass and never reach the adapter, so pump until the
+    // one admitted worker is actually blocked inside it.
+    let deadline = std::time::Instant::now() + SETTLE_BUDGET;
+    while gate.state.lock().unwrap().2 == 0 {
+        previews.tick().unwrap();
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no worker reached the blocked adapter"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
     let mut peak = 0;
     for ms in (101..=2200).step_by(33) {
         previews.update(true, std::time::Duration::from_millis(ms));
@@ -724,7 +713,7 @@ fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_b
         "Ready refresh still belongs to settle target"
     );
     gate.release();
-    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    previews.settle(SETTLE_BUDGET).unwrap();
     assert!(
         previews
             .statuses()
@@ -732,8 +721,10 @@ fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_b
             .all(|s| *s == EffectPreviewStatus::Ready)
     );
     let completed_calls = gate.state.lock().unwrap().1;
+    // The one blocked worker plus at most one coalesced latest frame per kind;
+    // the clock updates above never queue a job each.
     assert!(
-        completed_calls <= initial_calls + 24,
+        completed_calls <= initial_calls + previews.statuses().len() + 1,
         "coalesced latest frame, not one queued job per clock update"
     );
     eprintln!(
@@ -760,7 +751,7 @@ fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_b
         .unwrap();
     previews.ensure("blur", &effect, &animation);
     gate.release();
-    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    previews.settle(SETTLE_BUDGET).unwrap();
     assert_eq!(gate.cancelled.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(previews.status("blur"), Some(EffectPreviewStatus::Ready));
     let mut expected = EffectPreviews::cpu().unwrap();
@@ -772,7 +763,7 @@ fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_b
             .unwrap(),
         &project::Animations::default(),
     );
-    expected.settle(std::time::Duration::from_secs(10)).unwrap();
+    expected.settle(SETTLE_BUDGET).unwrap();
     assert_eq!(
         previews.image("blur").unwrap(),
         expected.image("blur").unwrap(),
@@ -1372,7 +1363,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
                 .all(|s| *s == EffectPreviewStatus::Pending),
             "queue pressure must defer requests, not fail them: {statuses:?}"
         );
-        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        previews.settle(SETTLE_BUDGET).unwrap();
         for definition in definitions.iter().take(count) {
             assert_eq!(
                 previews.status(definition.id),
@@ -1415,7 +1406,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
             .values()
             .all(|s| *s == EffectPreviewStatus::Pending)
     );
-    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    previews.settle(SETTLE_BUDGET).unwrap();
     assert!(
         previews
             .statuses()
@@ -1455,7 +1446,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                 .values()
                 .filter(|s| **s == EffectPreviewStatus::Pending)
                 .count(),
-            15
+            43
         );
         if retry {
             let replacement = blur
@@ -1470,8 +1461,8 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             previews.retry("extract", &extract, &project::Animations::default());
             previews.ensure("blur", &replacement, &project::Animations::default());
             gate.release();
-            previews.settle(std::time::Duration::from_secs(10)).unwrap();
-            assert_eq!(previews.statuses().len(), 15);
+            previews.settle(SETTLE_BUDGET).unwrap();
+            assert_eq!(previews.statuses().len(), 43);
             assert!(
                 previews
                     .statuses()
@@ -1480,7 +1471,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             );
             let mut expected = EffectPreviews::cpu().unwrap();
             expected.ensure("blur", &replacement, &project::Animations::default());
-            expected.settle(std::time::Duration::from_secs(10)).unwrap();
+            expected.settle(SETTLE_BUDGET).unwrap();
             assert_eq!(
                 previews.image("blur").unwrap(),
                 expected.image("blur").unwrap(),
@@ -1551,11 +1542,31 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
             "failure {failure}, retry {retry}"
         );
         assert_eq!(previews.failure("tint"), Some(refusal.as_str()));
-        previews.settle(std::time::Duration::from_secs(10)).unwrap();
+        previews.settle(SETTLE_BUDGET).unwrap();
+        // The gate fails every list that needs the shared gaussian, which is Blur
+        // plus each whole-image glow, shadow and torn-edge entry. Ask the real
+        // evaluator instead of keeping a second, hand-maintained list of those.
+        let blurs = |kind: &str| {
+            render::effects::evaluate_effect(
+                &project::Animations::default(),
+                &project::effect_definition(kind).unwrap().instance(kind),
+                Tick::ZERO,
+                EffectGeometry::new(
+                    vibecut::effect_previews::PREVIEW_SIZE,
+                    vibecut::effect_previews::PREVIEW_SCALE,
+                )
+                .unwrap(),
+                false,
+                &render::lut::LutResources::default(),
+            )
+            .unwrap()
+            .iter()
+            .any(|pass| pass.entry_point() == "gaussian")
+        };
         for (kind, status) in previews.statuses() {
             assert_eq!(
                 status,
-                if kind == "blur" || kind == "tint" {
+                if kind == "tint" || blurs(&kind) {
                     EffectPreviewStatus::Failed
                 } else {
                     EffectPreviewStatus::Ready
@@ -1575,7 +1586,7 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
         assert!(previews.failure("blur").is_some());
         if retry {
             previews.retry("tint", &tint, &project::Animations::default());
-            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            previews.settle(SETTLE_BUDGET).unwrap();
             let last_good = previews.image("tint").unwrap();
             // Refuse the same malformed retry with a last-good image present,
             // behind four queued valid refreshes and an older deferred head.
@@ -1596,11 +1607,11 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
             assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Failed));
             assert_eq!(previews.failure("tint"), Some(refusal.as_str()));
             assert!(Arc::ptr_eq(&last_good, &previews.image("tint").unwrap()));
-            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            previews.settle(SETTLE_BUDGET).unwrap();
             // No refused generation retains a desired frame/job after draining.
             previews.settle(std::time::Duration::ZERO).unwrap();
             previews.retry("tint", &tint, &project::Animations::default());
-            previews.settle(std::time::Duration::from_secs(10)).unwrap();
+            previews.settle(SETTLE_BUDGET).unwrap();
             assert_eq!(previews.status("tint"), Some(EffectPreviewStatus::Ready));
             assert!(previews.failure("tint").is_none());
             assert_eq!(previews.image("tint").unwrap(), last_good);
@@ -1664,7 +1675,7 @@ fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
         )
     );
     drop(pressure);
-    previews.settle(std::time::Duration::from_secs(10)).unwrap();
+    previews.settle(SETTLE_BUDGET).unwrap();
     drop(previews);
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
@@ -1778,12 +1789,9 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
     let mut harness = build(settled.editor);
     harness.run_steps(3);
     click(&mut harness, "assets.tab.effects");
-    harness
-        .state_mut()
-        .settle_previews(std::time::Duration::from_secs(10))
-        .unwrap();
+    harness.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert_eq!(statuses.len(), 15);
+    assert_eq!(statuses.len(), 43);
     assert!(
         statuses
             .values()
@@ -3419,9 +3427,7 @@ fn edge_relief_tile_presets_change_the_actual_demo_picture() {
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
     h.run_steps(3);
     click(&mut h, "assets.tab.effects");
-    h.state_mut()
-        .settle_previews(std::time::Duration::from_secs(10))
-        .unwrap();
+    h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
     let mut captured = std::collections::BTreeMap::new();
     for _ in 0..12 {
         h.run_steps(1);
@@ -3437,7 +3443,7 @@ fn edge_relief_tile_presets_change_the_actual_demo_picture() {
         .with("intensity", EffectValue::Scalar(0.0))
         .unwrap();
     base.ensure("blur", &plain, &project::Animations::default());
-    base.settle(std::time::Duration::from_secs(10)).unwrap();
+    base.settle(SETTLE_BUDGET).unwrap();
     let plain = base.image("blur").unwrap();
     let mut tiles = Vec::new();
     for kind in ["find_edges", "color_emboss"] {

@@ -16,6 +16,22 @@ use std::{
 const PREVIEW_WIDTH: u32 = 320;
 const PREVIEW_HEIGHT: u32 = 180;
 const PREVIEW_BUDGET: u64 = 16 << 20;
+/// Tiles stand in for this reference clip at [`PREVIEW_WIDTH`] scale. Spatial
+/// effect parameters are authored in full-resolution clip pixels, so the tile
+/// must shrink their geometry by the same ratio as the picture.
+const REFERENCE_WIDTH: u32 = 1920;
+const REFERENCE_HEIGHT: u32 = 1080;
+/// The working size every tile renders at.
+pub const PREVIEW_SIZE: [u32; 2] = [PREVIEW_WIDTH, PREVIEW_HEIGHT];
+/// One preview pixel in reference-clip pixels on each axis.
+pub const PREVIEW_SCALE: [f64; 2] = [
+    PREVIEW_WIDTH as f64 / REFERENCE_WIDTH as f64,
+    PREVIEW_HEIGHT as f64 / REFERENCE_HEIGHT as f64,
+];
+/// Budget for one settle of the whole library on the CPU reference. Every
+/// library kind renders once, and a debug build's unoptimised kernels need far
+/// longer than the release panel the person actually sees.
+pub const SETTLE_BUDGET: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectPreviewStatus {
@@ -89,10 +105,7 @@ impl EffectPreviews {
             runner,
             cache,
             source,
-            geometry: render::effects::EffectGeometry::new(
-                [PREVIEW_WIDTH, PREVIEW_HEIGHT],
-                [1.0, 1.0],
-            )?,
+            geometry: render::effects::EffectGeometry::new(PREVIEW_SIZE, PREVIEW_SCALE)?,
             entries: BTreeMap::new(),
             deferred: VecDeque::new(),
             visible: true,
