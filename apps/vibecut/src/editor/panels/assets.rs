@@ -68,6 +68,13 @@ struct Model {
     music_credits_failed: bool,
 }
 
+impl Model {
+    /// Tooltip text from the action's first effective persisted chord.
+    fn shortcut(&self, action: &str) -> Option<String> {
+        crate::editor::context::shortcut_text(&self.preferences.keybindings, action)
+    }
+}
+
 pub(in crate::editor) fn show(
     state: &mut State,
     cx: &crate::editor::Context<'_>,

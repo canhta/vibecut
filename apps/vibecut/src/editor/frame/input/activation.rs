@@ -127,6 +127,7 @@ impl Editor {
                         self.session.apply(engine::Command::CopyItems { items })?;
                     }
                     crate::selection::SelectionScope::MaskPoints
+                    | crate::selection::SelectionScope::Transition
                     | crate::selection::SelectionScope::None => {
                         return Err(Error::Invalid("clipboard scope"));
                     }
@@ -150,6 +151,7 @@ impl Editor {
                             })?
                         }
                         crate::selection::SelectionScope::MaskPoints
+                        | crate::selection::SelectionScope::Transition
                         | crate::selection::SelectionScope::None => {
                             return Err(Error::Invalid("clipboard scope"));
                         }

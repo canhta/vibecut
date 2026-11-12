@@ -4485,6 +4485,7 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
     assert!(
         freeze
             .tooltip
+            .as_ref()
             .is_some_and(|tooltip| tooltip.contains("Not available yet")),
         "{:?}",
         freeze.tooltip

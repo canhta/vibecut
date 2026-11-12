@@ -93,7 +93,9 @@ impl Editor {
                 SelectionScope::Items => self
                     .session
                     .can_copy_items(&self.selection.iter().copied().collect::<Vec<_>>()),
-                SelectionScope::MaskPoints | SelectionScope::None => false,
+                SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
+                    false
+                }
             }
         } else {
             let Ok(at) = self.playback.position() else {
@@ -106,7 +108,9 @@ impl Editor {
                     })
                 }
                 SelectionScope::Items => self.session.can_paste_items(at),
-                SelectionScope::MaskPoints | SelectionScope::None => false,
+                SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
+                    false
+                }
             }
         }
     }

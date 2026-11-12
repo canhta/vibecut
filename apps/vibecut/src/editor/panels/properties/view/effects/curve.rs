@@ -111,7 +111,7 @@ pub(super) fn apply(curve: ToneCurve, edit: Edit) -> Result<ToneCurve> {
             points.remove(index);
         }
     }
-    ToneCurve::new(&points)
+    Ok(ToneCurve::new(&points)?)
 }
 
 /// Nearest exact input grid tick; a half-tick tie moves up, off-grid input refuses.

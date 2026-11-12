@@ -113,7 +113,10 @@ pub(in crate::editor) struct View<'a> {
 }
 
 /// Tooltip text from an action's first effective chord.
-fn shortcut_text(bindings: &actions::KeybindingPreferences, action: &str) -> Option<String> {
+pub(in crate::editor) fn shortcut_text(
+    bindings: &actions::KeybindingPreferences,
+    action: &str,
+) -> Option<String> {
     let spec = actions::action(action)?;
     let chords = bindings.effective_chords(spec);
     let chord = actions::Chord::parse(chords.first()?).ok()?;

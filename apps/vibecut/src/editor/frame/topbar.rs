@@ -37,7 +37,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             egui::TextEdit::singleline(&mut name)
                 .id_salt("project.rename.input")
                 .hint_text(tr(Text::ProjectsRenameTitle))
-                .font(font)
+                .font(font.clone())
                 .align(Align2::CENTER_CENTER),
         );
         state
@@ -61,7 +61,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             .add_sized(
                 title.size(),
                 egui::Button::new(
-                    egui::RichText::new(cx.session.project().data().name.as_str()).font(font),
+                    egui::RichText::new(cx.session.project().data().name.as_str()).font(font.clone()),
                 )
                 .frame(false)
                 .truncate(),
