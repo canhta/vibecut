@@ -1515,6 +1515,60 @@ fn music_serde_normalizes_provenance_text_and_rejects_unknown_fields() {
     assert!(serde_json::from_value::<Project>(raw).is_err());
 }
 #[test]
+fn music_credits_cover_used_project_items_and_dedupe_full_records() {
+    let music = music_record();
+    let mut other = music.clone();
+    other.id = "track-2".into();
+    other.attribution = "Other track".into();
+    let mut data = music_candidate(music.clone());
+    let mut second = data.scene().timeline.audio[0].items[0].clone();
+    second.id = ItemId(2);
+    second.start = Tick(10);
+    second.hidden = true;
+    let ItemParams::Audio(params) = &mut second.content else {
+        panic!("audio item");
+    };
+    params.source = AudioSource::Music {
+        music: other.clone(),
+    };
+    data.scene_mut().timeline.audio[0].items.push(second);
+    let mut duplicate = data.scene().timeline.audio[0].items[0].clone();
+    duplicate.id = ItemId(3);
+    duplicate.start = Tick(20);
+    data.scene_mut().timeline.audio[0].items.push(duplicate);
+    let project = Project::new(data).unwrap();
+    assert_eq!(
+        project.music_credits().unwrap(),
+        vec![music.attribution_record(), other.attribution_record()]
+    );
+}
+
+#[test]
+fn music_credits_refuse_more_than_one_mib_without_partial_output() {
+    let mut data = music_candidate(music_record());
+    let base = data.scene().timeline.audio[0].items[0].clone();
+    for index in 0..90u64 {
+        let mut item = base.clone();
+        item.id = ItemId(index + 2);
+        item.start = Tick(i64::try_from(index + 1).unwrap() * 10);
+        let ItemParams::Audio(params) = &mut item.content else {
+            panic!("audio item");
+        };
+        let AudioSource::Music { music } = &mut params.source else {
+            panic!("music source");
+        };
+        music.attribution = "a".repeat(4096).into();
+        music.source_url = format!("https://example.com/{index}/{}", "x".repeat(8000));
+        data.scene_mut().timeline.audio[0].items.push(item);
+    }
+    let project = Project::new(data).unwrap();
+    assert!(matches!(
+        project.music_credits(),
+        Err(Error::TooLarge("music credits"))
+    ));
+}
+
+#[test]
 fn fades_without_an_offset_load_as_uncut_fades() {
     // A fade without `offset` is uncut.
     let fades: Fades = serde_json::from_str(

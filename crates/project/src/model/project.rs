@@ -157,6 +157,39 @@ impl Project {
     pub fn data(&self) -> &ProjectData {
         &self.0
     }
+    /// Attribution records for every music item used in any scene, including
+    /// muted, hidden and unsaved clips. Records are the full canonical provenance
+    /// and dedupe by that whole record, never by source id alone. The aggregate
+    /// UTF-8 text is bounded at 1 MiB; exceeding it returns `TooLarge` before any
+    /// growth or truncation. No lookup, cache or network access is performed.
+    pub fn music_credits(&self) -> Result<Vec<String>> {
+        const MAX_CREDIT_BYTES: usize = 1 << 20;
+        let mut records = BTreeSet::new();
+        let mut bytes = 0usize;
+        for item in self
+            .0
+            .scenes
+            .iter()
+            .flat_map(|scene| scene.timeline.iter().flat_map(|track| track.items.iter()))
+        {
+            if let ItemParams::Audio(params) = &item.content
+                && let AudioSource::Music { music } = &params.source
+            {
+                let record = music.attribution_record();
+                if records.contains(&record) {
+                    continue;
+                }
+                bytes = bytes
+                    .checked_add(record.len() + usize::from(!records.is_empty()))
+                    .ok_or(Error::TooLarge("music credits"))?;
+                if bytes > MAX_CREDIT_BYTES {
+                    return Err(Error::TooLarge("music credits"));
+                }
+                records.insert(record);
+            }
+        }
+        Ok(records.into_iter().collect())
+    }
     /// Copy this document under a fresh identity, retaining all editable content.
     /// Entropy failure leaves this snapshot untouched.
     pub fn fork(&self) -> Result<Self> {
