@@ -136,7 +136,9 @@ pub fn emit(analysis: &ReframeAnalysis, item: &Item) -> Result<ReframeKeys> {
         .enumerate()
         {
             let kept = simplify(&times, &values, eps);
-            counts[channel] = kept.len();
+            if let Some(slot) = counts.get_mut(channel) {
+                *slot = kept.len();
+            }
             let out = if channel == 0 { &mut xs } else { &mut ys };
             for (n, i) in kept.iter().enumerate() {
                 let (Some(time), Some(value)) = (times.get(*i), values.get(*i)) else {

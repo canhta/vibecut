@@ -608,7 +608,7 @@ mod tests {
                     ));
                     assert!(matches!(budget.snapshot(), Err(Error::Poisoned)));
                 }
-                _ => unreachable!(),
+                _ => panic!("unknown budget case"),
             }
             if let Some((path, bytes)) = repair {
                 std::fs::remove_dir(&path).unwrap();

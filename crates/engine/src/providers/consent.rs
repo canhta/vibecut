@@ -169,7 +169,7 @@ impl From<&CostEstimate> for Cost {
 }
 impl ConsentPrompt for DenyUploads {
     fn approve(&self, _: &UploadRequest) -> Result<()> {
-        Err(Error::ConsentRequired.into())
+        Err(Error::ConsentRequired)
     }
 }
 impl ConsentPrompt for AllowAll {

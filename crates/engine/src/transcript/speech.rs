@@ -140,7 +140,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
     }
     cancel.checkpoint()?;
     if recognitions.is_empty() {
-        return Err(TranscriptError::NoSpeech.into());
+        return Err(TranscriptError::NoSpeech);
     }
 
     cancel.checkpoint()?;
@@ -149,7 +149,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
         ai::assemble(recognitions, hooks).map_err(super::checkpoints::provider_error)?;
     let transcript = recognition.to_transcript()?;
     if mean_confidence(&transcript).is_some_and(|mean| mean < MIN_MEAN_CONFIDENCE) {
-        return Err(TranscriptError::LowConfidence.into());
+        return Err(TranscriptError::LowConfidence);
     }
     cancel.checkpoint()?;
     progress.stage(Stage::Segment);
@@ -161,7 +161,7 @@ pub fn transcribe<C: BorrowMut<ArtifactCache>>(
         .map(|SegmentedCue { cue, .. }| cue)
         .collect();
     if cues.is_empty() {
-        return Err(TranscriptError::LowConfidence.into());
+        return Err(TranscriptError::LowConfidence);
     }
     Ok(Transcription {
         source_language: source_language.clone(),
@@ -263,7 +263,7 @@ impl Providers {
             Err(error) => return Err(error.into()),
         }
         cancel.checkpoint()?;
-        Ok(detected.ok_or(TranscriptError::NoSpeech)?)
+        detected.ok_or(TranscriptError::NoSpeech)
     }
 }
 

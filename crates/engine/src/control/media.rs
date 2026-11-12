@@ -230,6 +230,10 @@ impl MediaAccess {
     /// opening the source or calling the detector; the entry is published when
     /// `job_status` first sees the job complete. The item is retained so
     /// `reframe.apply { job }` can name it without reopening the job payload.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one control admission carrying the runner, session and authored request pieces"
+    )]
     pub(crate) fn generate_reframe(
         &mut self,
         runner: &mut JobRunner,

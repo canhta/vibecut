@@ -644,7 +644,7 @@ pub struct CacheMaintenance {
     entries: Vec<(CacheKey, Arc<StoredArtifact>)>,
 }
 fn corrupt() -> RuntimeError {
-    RuntimeError::CacheCorrupt.into()
+    RuntimeError::CacheCorrupt
 }
 fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     #[cfg(unix)]

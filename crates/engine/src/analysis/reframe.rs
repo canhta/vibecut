@@ -345,7 +345,10 @@ impl ReframeRequest {
             if shot.range.start() != start
                 || shot.range.end() > self.range.end()
                 || shot.samples.len() as i64 != count
-                || shot.reasons.windows(2).any(|w| w[0] >= w[1])
+                || shot
+                    .reasons
+                    .windows(2)
+                    .any(|w| matches!((w.first(), w.get(1)), (Some(a), Some(b)) if a >= b))
             {
                 return Err(RuntimeError::CacheCorrupt);
             }

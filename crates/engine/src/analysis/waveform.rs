@@ -238,7 +238,7 @@ pub fn display(
         Err(AnalysisError::Edit(crate::session::EditError::Unsupported(_))) => {
             return Ok(WaveformState::Unsupported);
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error),
     };
     let clip = TimeRange::new(item.start, item.end()?)?;
     let span =

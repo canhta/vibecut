@@ -170,7 +170,10 @@ impl<'a> Selection<'a> {
                 .keys()
                 .binary_search_by_key(&r.time, |k| k.time)
                 .map_err(|_| EditError::Invalid("stale keyframe selection"))?;
-            let key = &channel.keys()[index];
+            let key = channel
+                .keys()
+                .get(index)
+                .ok_or(EditError::Invalid("stale keyframe selection"))?;
             exact(key.time)?;
             for handle in [key.incoming, key.outgoing].into_iter().flatten() {
                 exact(handle.dt)?;
@@ -309,9 +312,16 @@ impl Serialize for SelectedParams<'_> {
                 Param::Value(c) => {
                     ParamProjection::Value(ChannelProjection::new(self.0, path, c, None))
                 }
-                Param::Color(c) => ParamProjection::Color(std::array::from_fn(|i| {
-                    ChannelProjection::new(self.0, path, &c[i], Some(i))
-                })),
+                Param::Color(c) => {
+                    let channels: &[project::Channel; 4] = c.as_ref();
+                    let [c0, c1, c2, c3] = channels;
+                    ParamProjection::Color([
+                        ChannelProjection::new(self.0, path, c0, Some(0)),
+                        ChannelProjection::new(self.0, path, c1, Some(1)),
+                        ChannelProjection::new(self.0, path, c2, Some(2)),
+                        ChannelProjection::new(self.0, path, c3, Some(3)),
+                    ])
+                }
             };
             seq.serialize_element(&Entry { path, param })?;
         }
@@ -447,7 +457,7 @@ impl KeyframeClipboard {
                 let keys = c
                     .keys()
                     .iter()
-                    .filter(|k| unique.contains(&(&path, selector, k.time)))
+                    .filter(|k| unique.contains(&(path, selector, k.time)))
                     .cloned()
                     .collect();
                 let (before, after) = c.extrapolation();

@@ -1,9 +1,8 @@
 //! Persists managed projects across session lifetimes.
 mod lut_storage;
 mod projects;
-/// Durable user-imported LUT bundles.
 pub mod luts {
-    //! Owns copied LUT source assets.
+    //! Durable user-imported LUT bundles, owning copied source assets.
     pub use super::lut_storage::{Error, LutStore, Result};
 }
 pub mod library {

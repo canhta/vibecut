@@ -112,7 +112,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
     }
     progress.stage(Stage::Align);
     let scope = providers.alignment_scope(language, samples, fingerprint)?;
-    Ok(ai::align(
+    ai::align(
         raw,
         aligner.as_ref(),
         ai::AudioWindow {
@@ -125,7 +125,7 @@ pub(crate) fn transcribe_window<C: BorrowMut<ArtifactCache>>(
         unit,
         hooks,
     )
-    .map_err(provider_error)?)
+    .map_err(provider_error)
 }
 
 pub(super) fn provider_error(error: ai::Error) -> TranscriptError {

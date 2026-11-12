@@ -156,7 +156,7 @@ pub fn submit_export_with_sources(
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
 ) -> Result<(JobId, CancelToken)> {
     super::loudness_admission::admit(&project)?;
-    Ok(runner.submit::<RuntimeError>(
+    runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -174,7 +174,7 @@ pub fn submit_export_with_sources(
             )?;
             Ok(Vec::new())
         },
-    )?)
+    )
 }
 
 /// One cancellable job finalizes every scene privately before publication.
@@ -239,7 +239,7 @@ pub fn submit_scene_exports_with_sources(
             sources,
         );
     }
-    Ok(runner.submit::<RuntimeError>(
+    runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::GpuEncoder,
@@ -326,7 +326,7 @@ pub fn submit_scene_exports_with_sources(
             }
             Ok(Vec::new())
         },
-    )?)
+    )
 }
 
 struct SceneExportStaging(PathBuf);
@@ -361,7 +361,7 @@ pub fn submit_export_publication(
     protected: Vec<PathBuf>,
     fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 ) -> Result<(JobId, CancelToken)> {
-    Ok(runner.submit::<RuntimeError>(
+    runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
             class: ResourceClass::Cpu,
@@ -410,7 +410,7 @@ pub fn submit_export_publication(
             )?;
             Ok(Vec::new())
         },
-    )?)
+    )
 }
 
 impl crate::Session {

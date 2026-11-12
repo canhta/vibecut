@@ -496,7 +496,7 @@ fn hash_file(
     let mut count = 0u64;
     loop {
         if cancelled() {
-            return Err(crate::RuntimeError::Cancelled.into());
+            return Err(crate::RuntimeError::Cancelled);
         }
         let n = file.read(&mut buffer)?;
         if n == 0 {
@@ -591,7 +591,7 @@ pub(crate) fn copy_bundle(
         let mut count = 0u64;
         loop {
             if cancelled() {
-                return Err(crate::RuntimeError::Cancelled.into());
+                return Err(crate::RuntimeError::Cancelled);
             }
             let n = input.read(&mut buffer)?;
             if n == 0 {

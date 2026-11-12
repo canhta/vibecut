@@ -437,6 +437,10 @@ macro_rules! edit_commands {
     (@collect [$($variants:tt)*] [$($arms:tt)*];) => {
         pub(super) enum EditCommand { $($variants)* }
         impl Command {
+            #[allow(
+                clippy::result_large_err,
+                reason = "the refusal returns the original public command so callers can keep it; boxing would change the API"
+            )]
             pub(super) fn into_edit(self) -> Result<EditCommand, Self> {
                 match self { $($arms)* }
             }

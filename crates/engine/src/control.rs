@@ -224,26 +224,23 @@ pub struct SoundQuery {
     pub page_size: u32,
     pub commercial_only: bool,
 }
+/// A loaded detector with its adapter's complete `VisionFingerprint`.
+type LoadedVision = (Box<dyn ai::vision::VisionDetector>, [u8; 32]);
+
 /// The local detector factory behind `reframe.generate`. The composition root
 /// owns the pinned model files and the user-initiated download; engine owns the
 /// analysis job and its artifact cache. A call returns a ready detector and the
 /// loaded adapter's complete `VisionFingerprint`, so no model name enters the key.
 pub struct VisionAccess {
-    detector:
-        Box<dyn Fn() -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])> + Send + Sync>,
+    detector: Box<dyn Fn() -> Result<LoadedVision> + Send + Sync>,
 }
 impl VisionAccess {
-    pub fn new(
-        detector: impl Fn() -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])>
-        + Send
-        + Sync
-        + 'static,
-    ) -> Self {
+    pub fn new(detector: impl Fn() -> Result<LoadedVision> + Send + Sync + 'static) -> Self {
         Self {
             detector: Box::new(detector),
         }
     }
-    pub(crate) fn load(&self) -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])> {
+    pub(crate) fn load(&self) -> Result<LoadedVision> {
         (self.detector)()
     }
 }

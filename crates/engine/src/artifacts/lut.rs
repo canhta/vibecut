@@ -4,6 +4,10 @@ use crate::{
     jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
     store::luts::LutStore,
 };
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one import admission carrying the runner, store, identity and expected record"
+)]
 pub(crate) fn submit(
     runner: &mut JobRunner,
     store: LutStore,

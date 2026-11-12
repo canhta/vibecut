@@ -131,6 +131,10 @@ impl std::fmt::Debug for Request {
             .finish_non_exhaustive()
     }
 }
+#[allow(
+    clippy::large_enum_variant,
+    reason = "wire responses stay a plain tag/content enum; boxing the control result would change every adapter's response type"
+)]
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "status", content = "value", rename_all = "snake_case")]
 pub enum ResponseValue {
