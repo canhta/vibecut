@@ -426,9 +426,22 @@ fn color_grade_controls_on_the_chart() {
         ("lift_g", EffectValue::Scalar(100.0)),
         ("lift_b", EffectValue::Scalar(100.0)),
     ]);
+    // Lift -100 maps straight x to x - (1 - x) = 2x - 1, so everything at or
+    // below middle grey goes black and brighter values keep their excess.
     for (pixel, source) in black.iter().zip(&source) {
         assert_eq!(pixel[3], source[3]);
-        assert!(pixel[..3].iter().all(|v| *v == 0.0));
+        for k in 0..3 {
+            let straight = if source[3] > 0.0 {
+                source[k] / source[3]
+            } else {
+                0.0
+            };
+            let expected = (2.0 * straight - 1.0).clamp(0.0, 1.0) * source[3];
+            assert!(
+                near(pixel[k], expected),
+                "lift -100 {pixel:?} from {source:?}"
+            );
+        }
     }
     for (pixel, source) in white.iter().zip(&source) {
         assert_eq!(pixel[3], source[3]);
@@ -714,7 +727,15 @@ fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
         }],
     });
     let project = Project::new(data).unwrap();
-    let item = &project.data().scene().timeline.main.items[0];
+    // The overlay lives on the inserted track 1, not on the main track.
+    let item = project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == project::ItemId(1))
+        .unwrap();
     let resources =
         render::lut::LutResources::resolve(&project, item.effects.iter(), &hooks).unwrap();
     let geometry = EffectGeometry::new([4, 1], [1.0, 1.0]).unwrap();
@@ -4395,9 +4416,10 @@ fn pixelate_matches_independent_tile_lattice_rows() {
 #[test]
 fn pixelate_parameters_change_the_picture_and_refuse_hostile_values() {
     let size = [8, 8];
+    // A ramp along both axes, so horizontal and vertical block counts each show.
     let pixels: Vec<[f64; 4]> = (0..64)
         .map(|i| {
-            let v = if (i % 8) < 4 { 0.75 } else { 0.25 };
+            let v = 0.1 + 0.05 * f64::from(i % 8) + 0.05 * f64::from(i / 8);
             [v, 0.5 * v, 0.0, 1.0]
         })
         .collect();
@@ -4801,6 +4823,17 @@ fn whole_fixture(kind: &str) -> Vec<[f32; 4]> {
                 ]
             })
             .collect()
+    } else if kind == "roughen_edges" {
+        // Torn Edges works on the coverage boundary: cut a transparent corner
+        // into the chart so there is an edge for border, scale and complexity.
+        whole_chart()
+            .into_iter()
+            .enumerate()
+            .map(|(i, pixel)| {
+                let (x, y) = (i % 24, i / 24);
+                if x >= 14 && y >= 8 { [0.0; 4] } else { pixel }
+            })
+            .collect()
     } else {
         whole_chart()
     }
@@ -4819,6 +4852,11 @@ fn whole_time(kind: &str) -> time::Tick {
 /// 360-degree aliases and Corner Pin stays a valid quad.
 fn whole_changed_value(kind: &str, param: &project::EffectParamDefinition) -> EffectValue {
     use project::{EffectParamKind, EffectValue};
+    // Magnifier sizes at or beyond the 24x18 chart (the 100 px default and the
+    // 4000 px bound) all cover every pixel; a 7 px lens leaves most of it outside.
+    if (kind, param.id) == ("magnify", "size") {
+        return EffectValue::Scalar(7.0);
+    }
     match param.kind {
         EffectParamKind::Float { min, max, .. } => {
             let current = param.default.scalar().unwrap();
@@ -4843,8 +4881,10 @@ fn whole_changed_value(kind: &str, param: &project::EffectParamDefinition) -> Ef
                 Color([255, 0, 0, 255])
             })
         }
+        // A corner moved to the centre lies on a quad diagonal, which is a
+        // singular homography; [0.3, 0.2] is off both diagonals for every corner.
         EffectParamKind::Point => EffectValue::Point(if kind == "corner_pin" {
-            [0.5, 0.5]
+            [0.3, 0.2]
         } else {
             [1.0, 1.0]
         }),
@@ -4866,6 +4906,13 @@ fn whole_base_params(
     match (kind, param.id) {
         ("spherize", _) => vec![("radius", S(250.0))],
         ("lens_distortion", _) => vec![("curvature", S(60.0))],
+        // The default 100 px lens covers the whole 24x18 chart in either shape;
+        // a 7 px lens leaves the square's corners outside the circle.
+        ("magnify", "shape") => vec![("size", S(7.0))],
+        // Sparkle tints its rays only in proportion to Colorize (default 0).
+        ("glint", "color") => vec![("colorize", S(100.0))],
+        // Bloom tints with its colour only when "Use glow colour" is on.
+        ("wonder_glow", "color") => vec![("use_color", EffectValue::Bool(true))],
         ("rgb_split", "center") => vec![("mode", EffectValue::Choice(1))],
         ("rgb_split", "angle") => vec![("mode", EffectValue::Choice(0))],
         ("color_key", _) => vec![("tolerance", S(80.0))],
