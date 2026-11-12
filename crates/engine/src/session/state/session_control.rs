@@ -24,6 +24,31 @@ impl Session {
         ripple: bool,
     ) -> Result<Outcome> {
         match command {
+            Command::CopyItems { items } => {
+                if self.transaction_active() {
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                if let Some(payload) = crate::session::clipboard::ItemClipboard::capture(
+                    self.project().data(),
+                    &items,
+                )? {
+                    let same = self
+                        .item_clipboard
+                        .as_deref()
+                        .map(|stored| stored.same_bytes(&payload))
+                        .transpose()?
+                        .unwrap_or(false);
+                    if !same {
+                        self.item_clipboard = Some(Arc::new(payload));
+                        self.clipboard = None;
+                        self.end_merge();
+                        self.invalidate_revision(false)?;
+                    }
+                }
+                Ok(outcome(false))
+            }
             Command::CopyKeyframes { keys } => {
                 if self.transaction_active() {
                     return Err(EditError::Session(
@@ -42,6 +67,7 @@ impl Session {
                         .unwrap_or(false);
                     if !same {
                         self.clipboard = Some(Arc::new(payload));
+                        self.item_clipboard = None;
                         self.end_merge();
                         self.invalidate_revision(false)?;
                     }

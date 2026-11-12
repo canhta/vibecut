@@ -64,6 +64,7 @@ pub struct JobTarget {
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
     clipboard: Option<Arc<super::KeyframeClipboard>>,
+    item_clipboard: Option<Arc<super::ItemClipboard>>,
     metadata: project::Metadata,
     protected: Vec<std::path::PathBuf>,
     pub(crate) identity: Arc<super::wire::Revision>,
@@ -111,6 +112,7 @@ impl Session {
         ));
         Ok(Self {
             clipboard: None,
+            item_clipboard: None,
             metadata: project::Metadata::default(),
             protected: Vec::new(),
             revision: Arc::new(super::wire::Revision(format!("{}:0", identity.0))),
@@ -143,9 +145,25 @@ impl Session {
             _ => Err(EditError::Invalid("expected project.create")),
         }
     }
-    /// Whether this Session holds a bounded keyframe snapshot for desktop actions.
+    /// Whether this Session holds a bounded item or keyframe snapshot for desktop actions.
     pub fn clipboard_has_entry(&self) -> bool {
-        self.clipboard.is_some()
+        self.clipboard.is_some() || self.item_clipboard.is_some()
+    }
+    /// Current committed selection admission for the desktop Copy action; no state changes.
+    pub fn can_copy_items(&self, items: &[ItemId]) -> bool {
+        !self.transaction_active()
+            && !items.is_empty()
+            && super::ItemClipboard::can_capture(self.project().data(), items)
+    }
+    /// Current playhead/track admission for the desktop item Paste action.
+    pub fn can_paste_items(&self, at: Tick) -> bool {
+        if self.transaction_active() {
+            return false;
+        }
+        let Some(payload) = &self.item_clipboard else {
+            return false;
+        };
+        payload.can_paste(self.project().data(), at)
     }
     /// Current committed selection admission for the desktop Copy action; no state changes.
     pub fn can_copy_keyframes(&self, keys: &[crate::KeyframeRef]) -> bool {
@@ -271,6 +289,7 @@ impl Session {
             || self.project().data().current_scene_id != project.data().current_scene_id
         {
             self.clipboard = None;
+            self.item_clipboard = None;
         }
         self.state.project = project;
         self.state.change = Some(self.state.project.clone());
@@ -419,6 +438,7 @@ impl Session {
         self.invalidate_revision(changed)?;
         if identity_changed {
             self.clipboard = None;
+            self.item_clipboard = None;
         }
         Ok(Outcome {
             changed,
@@ -484,6 +504,7 @@ impl Session {
             checkpoint.restore(self);
         } else if !self.transaction_active() && checkpoint.identity_changed(self) {
             self.clipboard = None;
+            self.item_clipboard = None;
         }
         result
     }
@@ -540,6 +561,24 @@ impl Session {
             created,
             placements,
         })
+    }
+
+    /// End of the last item Paste in this command tree, for repeated-paste advance.
+    fn pasted_span_end(&self, command: &Command) -> Option<Tick> {
+        match command {
+            Command::PasteItems { at, source } => {
+                let payload = match source {
+                    crate::ItemPasteSource::Stored => self.item_clipboard.as_deref(),
+                    crate::ItemPasteSource::Payload { payload } => Some(payload),
+                }?;
+                at.checked_add(payload.span())
+            }
+            Command::Batch { commands } => commands
+                .iter()
+                .rev()
+                .find_map(|child| self.pasted_span_end(child)),
+            _ => None,
+        }
     }
 
     fn commit(
@@ -625,6 +664,7 @@ impl Session {
         if ripple {
             edit::lift_ripple_deletes(&mut command);
         }
+        let pasted_end = self.pasted_span_end(&command);
         let candidate = self.state.project.data().clone();
         let mut created = Vec::new();
         let mut next_id = self.state.next_id;
@@ -643,7 +683,10 @@ impl Session {
             &mut next_id,
             &mut sources,
             &mut copied_text_bytes,
-            self.clipboard.as_deref(),
+            edit::ClipboardRefs {
+                keyframes: self.clipboard.as_deref(),
+                items: self.item_clipboard.as_deref(),
+            },
         )?;
         let next = if ripple {
             edit::ripple(self.state.project.data(), next)?
@@ -677,6 +720,9 @@ impl Session {
             self.end_merge();
         } else {
             self.publish(next, key);
+            if let Some(end) = pasted_end {
+                self.metadata.view.playhead = end;
+            }
         }
         if self.transaction_active() || key.is_some() {
             self.state.trim_sources = sources;

@@ -27,12 +27,18 @@ disabled.
 
 ## Clipboard actions
 
-Copy requires a current single-item key selection. Paste requires a single selected
-item with compatible existing channels and an entry in its Session. The shared current
-eligibility check runs before draft flushing or selection/view writes, and before the
-timeline temporarily takes area state. Busy/save/transaction/inline edits, dirty or
-focused Properties/caption drafts, recording and blocking modals refuse. A menu popup
-alone does not block its action. Accepted Paste reads the current output playhead once,
-uses one typed command and clears nested scopes only on change; refusal/no-op preserves
-them. Engine [transfer semantics](../../../../../../crates/engine/src/session/README.md#keyframe-clipboard)
+Copy and Paste follow the active scope. Items scope copies the whole selected item
+snapshot with its track kind/index and group-relative offsets; Keyframes scope copies
+the selected keys for one item. Paste needs one in-app entry: keyframes paste into the
+single selected item, items paste at the playhead on the relative track (falling back to
+the last track of that kind), overwrite overlapped ranges and advance the playhead to the
+pasted span's end. A mask-point scope is unavailable.
+
+The shared current eligibility check runs before draft flushing or selection/view writes,
+and before the timeline temporarily takes area state. Busy/save/transaction/inline edits,
+dirty or focused Properties/caption drafts, recording and blocking modals refuse. A menu
+popup alone does not block its action. Accepted Paste reads the current output playhead
+once, uses one typed command and clears nested scopes only on change; item Paste selects
+the created items. Refusal/no-op preserves them. Engine
+[transfer semantics](../../../../../../crates/engine/src/session/README.md#clipboard)
 remain authoritative for all transports.

@@ -366,6 +366,71 @@ fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
 }
 
 #[test]
+fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("clipboard-items.vibecut");
+    overlay_project_color(
+        &project,
+        64,
+        64,
+        Tick(time::TICKS_PER_SECOND * 3),
+        [255, 255, 255, 255],
+    );
+    let pasted = project::Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: project::ItemId(0),
+        source_asset: None,
+        source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+        start: Tick::ZERO,
+        retime: Default::default(),
+        content: project::ItemParams::Overlay(project::OverlayParams {
+            color: project::Color([0, 0, 255, 255]),
+        }),
+    };
+    let payload = json!({
+        "version": 1,
+        "span": time::TICKS_PER_SECOND,
+        "items": [{
+            "trackKind": "video",
+            "trackIndex": 0,
+            "item": pasted,
+        }],
+    });
+    let out = exec(
+        &project,
+        "clipboard.paste",
+        json!({
+            "at": time::TICKS_PER_SECOND,
+            "source": {"kind": "payload", "payload": payload},
+        }),
+    );
+    assert_eq!(out["created"].as_array().unwrap().len(), 1);
+    let saved = project::load(&project).unwrap().project;
+    let track = &saved.data().scene().timeline.overlays[0];
+    let starts: Vec<i64> = track.items.iter().map(|item| item.start.0).collect();
+    assert_eq!(
+        starts,
+        [
+            0,
+            time::TICKS_PER_SECOND,
+            time::TICKS_PER_SECOND * 2
+        ]
+    );
+    let inserted = &track.items[1];
+    assert_eq!(inserted.start, Tick(time::TICKS_PER_SECOND));
+    assert_eq!(
+        inserted.content,
+        project::ItemParams::Overlay(project::OverlayParams {
+            color: project::Color([0, 0, 255, 255]),
+        })
+    );
+}
+
+#[test]
 fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     assert!(tools());
     let dir = tempfile::tempdir().unwrap();

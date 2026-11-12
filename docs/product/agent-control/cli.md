@@ -239,13 +239,15 @@ use that composition's model and consent, with no client override fields.
 
 Rectangle and ellipse items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
 
-## Keyframe clipboard
+## Clipboard
 
-A long-lived `control` session supports `clipboard.copy_keyframes`, `clipboard.read` and
-`clipboard.paste_keyframes`. Read returns `{kind:"clipboard", payload:...}`; a client may
-send that version-one payload explicitly with `source:{kind:"payload",payload:...}`.
-Use `source:{kind:"stored"}` within the same Session. Effectful calls use ordinary
-revision/idempotency admission; Copy advances revision without dirtying the project.
-One-shot `exec` can paste explicit serialized payloads but a second process inherits no
-store, and `exec` does not execute reads. Exact shape: [commands](commands.md).
-Transfer and lifetime: [clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).
+A long-lived `control` session supports `clipboard.copy`, `clipboard.copy_keyframes`,
+`clipboard.read`, `clipboard.paste` and `clipboard.paste_keyframes`. Read returns
+`{kind:"clipboard", payload:...}` for the keyframe slot; a client may send that
+version-one payload explicitly with `source:{kind:"payload",payload:...}`. Item paste
+also accepts an explicit version-one item payload. Use `source:{kind:"stored"}` within
+the same Session. Effectful calls use ordinary revision/idempotency admission; Copy
+advances revision without dirtying the project. One-shot `exec` can paste explicit
+serialized payloads but a second process inherits no store, and `exec` does not execute
+reads. Exact shape: [commands](commands.md).
+Transfer and lifetime: [clipboard](../../../crates/engine/src/session/README.md#clipboard).

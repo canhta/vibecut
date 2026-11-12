@@ -90,9 +90,10 @@ retained completed suggestion job and starts one export job per selected short u
 existing output directory grant (never overwriting); an optional `item` names the caption item
 (source cues plus any `captions.translate` result) whose languages are burned.
 
-The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
-`clipboard.paste_keyframes` run through `command_run` (and their generated all-tools
-names). Read returns the bounded payload in structuredContent. Attached UI and MCP
-share the selected Editor's Session store; other editors and headless processes start
-empty. No keyframe data is written to the system clipboard. Transfer and lifetime:
-[clipboard](../../../crates/engine/src/session/README.md#keyframe-clipboard).
+The five noncurated Agent commands `clipboard.copy`, `clipboard.copy_keyframes`,
+`clipboard.read`, `clipboard.paste` and `clipboard.paste_keyframes` run through
+`command_run` (and their generated all-tools names). Read returns the bounded keyframe
+payload in structuredContent. Attached UI and MCP share the selected Editor's Session
+store; other editors and headless processes start empty. No item or keyframe payload is
+written to the system clipboard. Transfer and lifetime:
+[clipboard](../../../crates/engine/src/session/README.md#clipboard).

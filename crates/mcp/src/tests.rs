@@ -520,11 +520,18 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.rename_preset", Effect::Edit, true, true),
         ("captions.delete_preset", Effect::Edit, true, true),
         (
+            "clipboard.copy",
+            Effect::SessionControl,
+            true,
+            true,
+        ),
+        (
             "clipboard.copy_keyframes",
             Effect::SessionControl,
             true,
             true,
         ),
+        ("clipboard.paste", Effect::Edit, true, true),
         ("clipboard.paste_keyframes", Effect::Edit, true, true),
         ("clipboard.read", Effect::Read, true, true),
         ("text.apply_animation", Effect::Edit, true, true),

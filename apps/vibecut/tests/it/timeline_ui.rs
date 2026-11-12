@@ -4986,12 +4986,12 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
                 h.run_steps(2);
-                h.render()
-                    .unwrap()
-                    .save(
-                        directory.join(format!("p1-20-clipboard-{language}-{scale}x-{state}.png")),
-                    )
-                    .unwrap();
+                let path =
+                    directory.join(format!("p1-20-clipboard-{language}-{scale}x-{state}.png"));
+                h.render().unwrap().save(&path).unwrap();
+                if state == "items" && language == "en" && scale == 1.0 {
+                    std::fs::copy(&path, directory.join("p1-20-clipboard.png")).unwrap();
+                }
             };
             capture(&mut h, "before");
             let before = h.state().session.project().clone();
@@ -5103,6 +5103,55 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
             h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
             h.run_steps(2);
             assert_eq!(h.state().session.project(), &before);
+            // Item scope: Ctrl+C copies the selected item, Ctrl+V pastes at the
+            // playhead on its relative track, selects the new item and advances.
+            h.state_mut()
+                .dispatch(AppCommand::Seek(Tick(13 * SECOND)))
+                .unwrap();
+            h.run_steps(2);
+            click_item(&mut h, source);
+            let items_before = h.state().session.project().clone();
+            let item_history = h.state().session.history_len().0;
+            let source_item = item(h.state(), source).clone();
+            assert!(h.state().action_enabled("edit.copy"));
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::C);
+            h.step();
+            assert!(
+                !h.output().platform_output.commands.iter().any(|c| matches!(
+                    c,
+                    egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_)
+                )),
+                "item payloads never reach the OS clipboard"
+            );
+            h.run_steps(2);
+            assert!(h.state().session.clipboard_has_entry());
+            assert_eq!(h.state().session.project(), &items_before);
+            assert_eq!(h.state().session.history_len().0, item_history);
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+            h.run_steps(2);
+            assert_eq!(h.state().session.history_len().0, item_history + 1);
+            assert_eq!(h.state().selection.len(), 1);
+            let pasted = *h.state().selection.iter().next().unwrap();
+            assert_eq!(item(h.state(), pasted).start, Tick(13 * SECOND));
+            assert_eq!(item(h.state(), pasted).content, source_item.content);
+            assert_eq!(h.state().playback.position().unwrap(), Tick(19 * SECOND));
+            capture(&mut h, "items");
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+            h.run_steps(2);
+            assert_eq!(h.state().session.project(), &items_before);
+            // The item context menu dispatches the same Paste command.
+            click_item(&mut h, target);
+            h.state_mut()
+                .dispatch(AppCommand::Seek(Tick(22 * SECOND)))
+                .unwrap();
+            h.run_steps(2);
+            assert!(h.state().action_enabled("edit.paste"));
+            open_item_menu(&mut h, target, "paste");
+            assert_ne!(h.state().session.project(), &items_before);
+            assert_eq!(h.state().session.history_len().0, item_history + 1);
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+            h.run_steps(2);
+            assert_eq!(h.state().session.project(), &items_before);
             h.state_mut()
                 .session
                 .apply(Command::SetTrackLocked {

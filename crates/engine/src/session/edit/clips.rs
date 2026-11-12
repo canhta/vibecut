@@ -168,6 +168,110 @@ pub(super) fn execute_insert_item(
 
     Ok(data)
 }
+/// Paste copied items at `at`, clearing every overlapped target range first.
+/// Each item resolves its source track kind/index, falling back to the last
+/// track of that kind; fresh identities and sorted starts keep one undo step.
+pub(super) fn execute_paste_items(
+    mut data: ProjectData,
+    at: Tick,
+    payload: Option<&crate::ItemClipboard>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let Some(payload) = payload else {
+        return Ok(data);
+    };
+    let destinations = payload.destinations(&data, at)?;
+    if destinations.is_empty() {
+        return Ok(data);
+    }
+    let mut spans: BTreeMap<TrackId, Vec<(Tick, Tick)>> = BTreeMap::new();
+    for destination in &destinations {
+        spans
+            .entry(destination.track)
+            .or_default()
+            .push((destination.start, destination.end));
+    }
+    for (track_id, spans) in spans {
+        for (start, end) in merge_spans(spans) {
+            let ids: Vec<ItemId> = data
+                .scene()
+                .timeline
+                .iter()
+                .find(|item_track| item_track.id == track_id)
+                .map(|item_track| item_track.items.iter().map(|item| item.id).collect())
+                .unwrap_or_default();
+            for id in ids {
+                data = clear_overlap(data, id, start, end, created, next, sources)?;
+            }
+        }
+    }
+    for destination in destinations {
+        let id = ItemId(alloc(next)?);
+        let item = destination.item(id);
+        let target = track(&mut data, destination.track)?;
+        unlocked(target)?;
+        let index = target
+            .items
+            .partition_point(|existing| existing.start <= item.start);
+        target.items.insert(index, item);
+        created.push(CreatedId::Item(id));
+    }
+    Ok(data)
+}
+
+fn merge_spans(mut spans: Vec<(Tick, Tick)>) -> Vec<(Tick, Tick)> {
+    spans.sort();
+    let mut merged: Vec<(Tick, Tick)> = Vec::new();
+    for (start, end) in spans {
+        match merged.last_mut() {
+            Some((_, last_end)) if start <= *last_end => *last_end = (*last_end).max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
+}
+
+/// Clear one existing range that a paste overwrites, splitting a containing
+/// item so both surviving heads keep their source, retime, fades and cues.
+fn clear_overlap(
+    mut data: ProjectData,
+    id: ItemId,
+    start: Tick,
+    end: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let Some((item_start, item_end)) = find_item(&data, id)
+        .map(|(_, item)| (item.start, item.end()))
+        .transpose()?
+    else {
+        return Ok(data);
+    };
+    if item_end <= start || item_start >= end {
+        return Ok(data);
+    }
+    if item_start < start && item_end > end {
+        let mark = created.len();
+        data = execute_split_at(data, id, start, created, next, sources)?;
+        let right = match created.get(mark).copied() {
+            Some(CreatedId::Item(right)) => right,
+            _ => return Err(EditError::Invalid("clipboard overwrite split")),
+        };
+        created.truncate(mark);
+        data = execute_trim_start(data, right, end, sources)?;
+    } else if item_start < start {
+        data = execute_trim_end(data, id, start, sources)?;
+    } else if item_end > end {
+        data = execute_trim_start(data, id, end, sources)?;
+    } else {
+        data = execute_delete(data, vec![id])?;
+    }
+    Ok(data)
+}
+
 pub(super) fn execute_move_item(
     mut data: ProjectData,
     item: ItemId,

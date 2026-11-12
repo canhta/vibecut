@@ -150,9 +150,10 @@ The Captions Style chooser lists Saved in project as live selections, retaining 
 
 The Stickers tab now contains a local Shapes shelf with Rectangle and Ellipse only. The adopted composition uses existing kit tokens,39px Properties rows,22px fields,12px labels and4px corners, with English/Vietnamese labels. Graphic Properties expose alpha-capable fill/stroke, stroke width/alignment and rectangle corner radius with ordinary key controls. Captures are source-backed new composition; no matching reference screenshot is available, so they are noncomparable rather than a metric pass. Placement and transform limits are owned by [render](../../../crates/render/src/scene/README.md#generated-graphic-geometry).
 
-The keyframe-lane Copy/Paste menu and selected-item Paste row adopt the current menu
-pattern, localized labels, existing icons and 20 px lanes as a new composition. Copy
-uses selected keys; Paste can target an existing zero-key Param. Scope/draft admission:
+The keyframe-lane Copy/Paste menu, selected-item Paste row and item-scope Ctrl+C/Ctrl+V
+adopt the current menu pattern, localized labels, existing icons and 20 px lanes as a new
+composition. Copy uses the active scope: selected items or selected keys; Paste targets
+the playhead, an existing zero-key Param or the relative item track. Scope/draft admission:
 [frame input](../../../apps/vibecut/src/editor/frame/input/README.md#clipboard-actions).
 No comparable captured menu reference exists; product/native parity remains unverified.
 

@@ -34,9 +34,10 @@ make a wrapper transient: only direct network and selected AI failures qualify, 
 runtime's existing retry/publication gates. Refined failure classes change envelopes and the
 catalog digest within the current API; consumers use the current digest.
 
-`ControlResult::Clipboard` returns the nullable bounded snapshot only on read responses.
-Static catalog limits include clipboard keys, paths and compact bytes; the aggregate
-explicit payload bytes in an edit tree share the same cap before candidate cloning.
-Copy revision and lifetime rules: [clipboard](../README.md#keyframe-clipboard).
+`ControlResult::Clipboard` returns the nullable bounded keyframe snapshot only on read
+responses. Static catalog limits include clipboard keys, paths, items and compact bytes;
+the aggregate explicit payload bytes in an edit tree share the keyframe or item cap
+before candidate cloning.
+Copy revision and lifetime rules: [clipboard](../README.md#clipboard).
 
 Job admission carries bounded `word_highlight_warnings` from the captured project and selected caption languages. Preview and burn use render’s shared eligibility and shaped layout; warning entries expose only numeric item/cue positions, a language tag and safe reason, never caption text. Disabled or repaired state recomputes to an empty list. Project persistence and caption correspondence belong to their lower owners.

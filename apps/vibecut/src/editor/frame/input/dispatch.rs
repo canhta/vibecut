@@ -85,15 +85,28 @@ impl Editor {
         use crate::selection::SelectionScope;
         let scope = self.selection_scopes.active(&self.selection);
         if copy {
-            scope == SelectionScope::Keyframes
-                && self.session.can_copy_keyframes(&self.clipboard_keys())
+            match scope {
+                SelectionScope::Keyframes => {
+                    self.session.can_copy_keyframes(&self.clipboard_keys())
+                }
+                SelectionScope::Items => self
+                    .session
+                    .can_copy_items(&self.selection.iter().copied().collect::<Vec<_>>()),
+                SelectionScope::MaskPoints | SelectionScope::None => false,
+            }
         } else {
-            matches!(scope, SelectionScope::Items | SelectionScope::Keyframes)
-                && crate::editor::context::single(&self.selection).is_some_and(|item| {
-                    self.playback
-                        .position()
-                        .is_ok_and(|at| self.session.can_paste_keyframes(item, at))
-                })
+            let Ok(at) = self.playback.position() else {
+                return false;
+            };
+            match scope {
+                SelectionScope::Keyframes => {
+                    crate::editor::context::single(&self.selection).is_some_and(|item| {
+                        self.session.can_paste_keyframes(item, at)
+                    })
+                }
+                SelectionScope::Items => self.session.can_paste_items(at),
+                SelectionScope::MaskPoints | SelectionScope::None => false,
+            }
         }
     }
 
@@ -336,11 +349,11 @@ impl Editor {
                 ..
             } => self.graphic_insertion_available(),
             ActionTarget::Ui {
-                action: UiAction::CopyKeyframes,
+                action: UiAction::Copy,
                 ..
             } => self.clipboard_available(true),
             ActionTarget::Ui {
-                action: UiAction::PasteKeyframes,
+                action: UiAction::Paste,
                 ..
             } => self.clipboard_available(false),
             ActionTarget::Ui {

@@ -122,8 +122,8 @@ pub enum UiAction {
     ConfirmDeleteMedia,
     RevealMedia,
     InsertText,
-    CopyKeyframes,
-    PasteKeyframes,
+    Copy,
+    Paste,
     ApplyTextAnimation(engine::TextAnimationPreset),
     Subtitles,
     SubtitleCue,
@@ -294,7 +294,7 @@ impl ActionSpec {
             category,
             target: ActionTarget::Ui { owner, action },
             defaults,
-            requires_clipboard: matches!(action, UiAction::PasteKeyframes),
+            requires_clipboard: matches!(action, UiAction::Paste),
         }
     }
 

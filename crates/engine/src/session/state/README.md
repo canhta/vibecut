@@ -24,9 +24,9 @@ Commands declared `SessionControl` (ripple policy, timeline preview, scene switc
 
 `commit` keeps three admission steps because they choose the input of the edit pipeline: `timeline.edit` unwraps into a batch with its own ripple policy, a reviewed span cut (`remove_pauses`, `transcript.delete_range`, `remove_fillers`, also nested in a batch) forces ripple, and `sounds.add_to_timeline` runs as a transaction of two edits.
 
-The Session clipboard snapshot is restored by `Checkpoint` alongside the revision,
+The Session clipboard snapshot (items or keyframes) is restored by `Checkpoint` alongside the revision,
 but deliberately excluded from `State` and history snapshots. Committed identity
-changes clear it under the [clipboard contract](../README.md#keyframe-clipboard).
+changes clear it under the [clipboard contract](../README.md#clipboard).
 
 Pure state, selection, history and command operations return the edit owner's Result.
 The existing `transaction` seam is generic over the actual caller error with

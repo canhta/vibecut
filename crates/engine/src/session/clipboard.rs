@@ -1,4 +1,4 @@
-//! Transfers bounded snapshots of selected item-local animation keys.
+//! Transfers bounded snapshots through the in-app clipboard.
 use crate::KeyframeRef;
 use crate::session::{EditError, Result};
 use project::{AnimationPath, Channel, ColorComponent, Param, ProjectData};
@@ -9,6 +9,8 @@ use time::Tick;
 pub const MAX_CLIPBOARD_KEYS: usize = 4096;
 pub const MAX_CLIPBOARD_PATHS: usize = 64;
 pub const MAX_CLIPBOARD_BYTES: usize = 1 << 20;
+pub const MAX_CLIPBOARD_ITEMS: usize = 1024;
+pub const MAX_ITEM_CLIPBOARD_BYTES: usize = 4 << 20;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -342,23 +344,29 @@ impl Serialize for Selection<'_> {
     }
 }
 fn compact_size(value: &impl Serialize) -> Result<usize> {
-    struct Counter(usize);
+    bounded_size(value, MAX_CLIPBOARD_BYTES)
+}
+fn bounded_size(value: &impl Serialize, limit: usize) -> Result<usize> {
+    struct Counter {
+        bytes: usize,
+        limit: usize,
+    }
     impl std::io::Write for Counter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if bytes.len() > MAX_CLIPBOARD_BYTES - self.0 {
+            if bytes.len() > self.limit - self.bytes {
                 return Err(std::io::Error::other("clipboard byte limit"));
             }
-            self.0 += bytes.len();
+            self.bytes += bytes.len();
             Ok(bytes.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
     }
-    let mut counter = Counter(0);
+    let mut counter = Counter { bytes: 0, limit };
     serde_json::to_writer(&mut counter, value)
         .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
-    Ok(counter.0)
+    Ok(counter.bytes)
 }
 impl KeyframeClipboard {
     pub fn new(origin: Tick, params: Vec<(AnimationPath, Param)>) -> Result<Self> {
@@ -555,5 +563,302 @@ impl KeyframeClipboard {
             }
         }
         Ok(())
+    }
+}
+
+/// One copied item snapshot with its source track identity and group-relative start.
+#[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CopiedItem {
+    #[serde(rename = "trackKind")]
+    kind: project::TrackKind,
+    /// Zero-based position among tracks of `kind` in top-to-bottom screen order.
+    #[serde(rename = "trackIndex")]
+    track: u32,
+    /// A full item snapshot with a zero placeholder id and group-relative start.
+    item: project::Item,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ItemPayload {
+    #[schemars(range(min = 1, max = 1))]
+    version: u8,
+    #[schemars(length(min = 1, max = 1024))]
+    items: Vec<CopiedItem>,
+    #[schemars(range(min = 0, max = 9007199254740991i64))]
+    span: Tick,
+}
+/// Version-one immutable item snapshot; at most 1024 items and 4 MiB compact JSON.
+/// Each item keeps its content, source window, retime, effects, masks and animation
+/// parameters with a group-relative start; the payload never carries a source id.
+#[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(try_from = "ItemPayload")]
+pub struct ItemClipboard {
+    #[schemars(range(min = 1, max = 1))]
+    version: u8,
+    #[schemars(length(min = 1, max = 1024))]
+    items: Vec<CopiedItem>,
+    #[schemars(range(min = 0, max = 9007199254740991i64))]
+    span: Tick,
+}
+impl std::fmt::Debug for ItemClipboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ItemClipboard")
+            .field("items", &self.items.len())
+            .field("span", &self.span)
+            .finish()
+    }
+}
+impl TryFrom<ItemPayload> for ItemClipboard {
+    type Error = EditError;
+    fn try_from(value: ItemPayload) -> Result<Self> {
+        if value.version != 1 {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        let clipboard = Self::assemble(value.items)?;
+        if clipboard.span != value.span {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        Ok(clipboard)
+    }
+}
+/// Stored sources share the Session snapshot; explicit payloads travel only over control IO.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ItemPasteSource {
+    Stored,
+    Payload { payload: ItemClipboard },
+}
+/// Tracks of one kind in top-to-bottom screen order: overlays, main, then audio.
+fn kind_tracks(timeline: &project::Timeline, kind: project::TrackKind) -> Vec<&project::Track> {
+    let mut tracks: Vec<&project::Track> = timeline
+        .overlays
+        .iter()
+        .filter(|track| track.kind == kind)
+        .collect();
+    if timeline.main.kind == kind {
+        tracks.push(&timeline.main);
+    }
+    tracks.extend(timeline.audio.iter().filter(|track| track.kind == kind));
+    tracks
+}
+/// Borrowed admission of one copy selection: item count, identity, kinds and
+/// exact group offsets, without cloning an item.
+struct ItemSelection<'a> {
+    origin: Tick,
+    entries: Vec<(&'a project::Track, &'a project::Item)>,
+}
+impl<'a> ItemSelection<'a> {
+    fn admit(data: &'a ProjectData, ids: &[project::ItemId]) -> Result<Option<Self>> {
+        if ids.len() > MAX_CLIPBOARD_ITEMS {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
+        if ids.is_empty() {
+            return Ok(None);
+        }
+        let mut seen = BTreeSet::new();
+        let mut entries = Vec::with_capacity(ids.len());
+        let mut origin = None;
+        for id in ids {
+            if !seen.insert(*id) {
+                return Err(EditError::Invalid("duplicate clipboard item"));
+            }
+            let (track, item) = data
+                .scene()
+                .timeline
+                .iter()
+                .find_map(|track| {
+                    track
+                        .items
+                        .iter()
+                        .find(|item| item.id == *id)
+                        .map(|item| (track, item))
+                })
+                .ok_or(EditError::NoItem(*id))?;
+            if track.kind != item.content.kind() {
+                return Err(EditError::Invalid("clipboard item track kind"));
+            }
+            exact(item.start)?;
+            exact(
+                item.start
+                    .checked_add(item.duration()?)
+                    .ok_or(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ))?,
+            )?;
+            origin = Some(origin.map_or(item.start, |time: Tick| time.min(item.start)));
+            entries.push((track, item));
+        }
+        let Some(origin) = origin else {
+            return Ok(None);
+        };
+        for (_, item) in &entries {
+            exact(item.start.checked_sub(origin).ok_or(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))?)?;
+        }
+        Ok(Some(Self { origin, entries }))
+    }
+}
+/// One admitted paste destination: resolved track, absolute start and end.
+pub(super) struct Destination<'a> {
+    pub(super) track: project::TrackId,
+    pub(super) start: Tick,
+    pub(super) end: Tick,
+    entry: &'a CopiedItem,
+}
+impl Destination<'_> {
+    pub(super) fn item(&self, id: project::ItemId) -> project::Item {
+        let mut item = self.entry.item.clone();
+        item.id = id;
+        item.start = self.start;
+        item
+    }
+}
+impl ItemClipboard {
+    fn assemble(items: Vec<CopiedItem>) -> Result<Self> {
+        if items.is_empty() {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        if items.len() > MAX_CLIPBOARD_ITEMS {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
+        let mut minimum = None;
+        let mut span = Tick::ZERO;
+        for entry in &items {
+            if entry.item.id != project::ItemId(0) || entry.item.start < Tick::ZERO {
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ));
+            }
+            exact(entry.item.start)?;
+            let end = exact(entry.item.start.checked_add(entry.item.duration()?).ok_or(
+                EditError::Control(crate::session::wire::ControlError::InvalidParams),
+            )?)?;
+            span = span.max(end);
+            minimum =
+                Some(minimum.map_or(entry.item.start, |time: Tick| time.min(entry.item.start)));
+        }
+        if minimum != Some(Tick::ZERO) {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        let value = Self {
+            version: 1,
+            items,
+            span,
+        };
+        value.compact_bytes()?;
+        Ok(value)
+    }
+    pub(super) fn same_bytes(&self, other: &Self) -> Result<bool> {
+        Ok(bounded_size(self, MAX_ITEM_CLIPBOARD_BYTES)?
+            == bounded_size(other, MAX_ITEM_CLIPBOARD_BYTES)?)
+    }
+    pub(super) fn compact_bytes(&self) -> Result<usize> {
+        bounded_size(self, MAX_ITEM_CLIPBOARD_BYTES)
+    }
+    pub(super) fn span(&self) -> Tick {
+        self.span
+    }
+    pub(super) fn can_capture(data: &ProjectData, ids: &[project::ItemId]) -> bool {
+        ItemSelection::admit(data, ids).is_ok()
+    }
+    pub(super) fn capture(data: &ProjectData, ids: &[project::ItemId]) -> Result<Option<Self>> {
+        let Some(selection) = ItemSelection::admit(data, ids)? else {
+            return Ok(None);
+        };
+        let timeline = &data.scene().timeline;
+        let mut items = Vec::with_capacity(selection.entries.len());
+        for (track, item) in selection.entries {
+            let index = kind_tracks(timeline, track.kind)
+                .iter()
+                .position(|candidate| candidate.id == track.id)
+                .ok_or(EditError::Invalid("clipboard track"))?;
+            let mut copy = item.clone();
+            copy.id = project::ItemId(0);
+            copy.start = item
+                .start
+                .checked_sub(selection.origin)
+                .ok_or(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ))?;
+            items.push(CopiedItem {
+                kind: track.kind,
+                track: u32::try_from(index)
+                    .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?,
+                item: copy,
+            });
+        }
+        Self::assemble(items).map(Some)
+    }
+    pub(super) fn can_paste(&self, data: &ProjectData, at: Tick) -> bool {
+        self.destinations(data, at).is_ok()
+    }
+    /// Resolve every copied item to its relative track, or the last track of that
+    /// kind, before any edit. A locked target or a kind with no track refuses.
+    pub(super) fn destinations(
+        &self,
+        data: &ProjectData,
+        at: Tick,
+    ) -> Result<Vec<Destination<'_>>> {
+        if at < Tick::ZERO {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        exact(at)?;
+        let timeline = &data.scene().timeline;
+        let mut destinations = Vec::with_capacity(self.items.len());
+        for entry in &self.items {
+            if entry.item.id != project::ItemId(0) {
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::InvalidParams,
+                ));
+            }
+            if entry.item.content.kind() != entry.kind {
+                return Err(EditError::Invalid("clipboard item kind"));
+            }
+            let tracks = kind_tracks(timeline, entry.kind);
+            let index = usize::try_from(entry.track).map_err(|_| {
+                EditError::Control(crate::session::wire::ControlError::InvalidParams)
+            })?;
+            let target = tracks
+                .get(index)
+                .or_else(|| tracks.last())
+                .ok_or(EditError::Invalid("clipboard track kind"))?;
+            if target.locked {
+                return Err(EditError::Locked(target.id));
+            }
+            if let Some(asset) = entry.item.source_asset
+                && data.assets.iter().all(|candidate| candidate.id() != asset)
+            {
+                return Err(EditError::NoAsset(asset));
+            }
+            let start = exact(at.checked_add(entry.item.start).ok_or(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ))?)?;
+            let end = exact(start.checked_add(entry.item.duration()?).ok_or(
+                EditError::Control(crate::session::wire::ControlError::InvalidParams),
+            )?)?;
+            destinations.push(Destination {
+                track: target.id,
+                start,
+                end,
+                entry,
+            });
+        }
+        Ok(destinations)
     }
 }

@@ -164,10 +164,16 @@ publication and worker failures follow the sticky error policy.
 
 Named caption preset IDs share the existing allocator and loaded maximum with scene, track, item, transition and bookmark IDs. Successful then cancelled previews/groups retire these IDs; failed atomic batches consume none. Bank metadata participates in ordinary snapshots, undo/redo and recovery; cue-table style IDs remain local to each cue track.
 
-## Keyframe clipboard
+## Clipboard
 
-`clipboard.rs` owns `KeyframeClipboard` and `KeyframePasteSource`, consumed by
-`clipboard.copy_keyframes`, `clipboard.read` and `clipboard.paste_keyframes`.
+`clipboard.rs` owns `KeyframeClipboard`, `ItemClipboard` and their `Stored | Payload`
+paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.read`,
+`clipboard.paste` and `clipboard.paste_keyframes`. One Session slot holds the most recent
+copy of either kind; a successful copy of one clears the other. Copy of an empty or
+already-identical scope preserves the store.
+
+### Keyframe clipboard
+
 The version-one closed snapshot contains a minimum original item-local output tick
 and strictly ordered path/Param pairs containing only selected keys. It admits one
 source item, 64 paths, 4096 refs/keys and 1 MiB compact UTF-8 JSON. Every time,
@@ -193,6 +199,30 @@ without cloning any target channel or unrelated value. Actual Paste shares this 
 before constructing participating channels in the ordinary atomic edit candidate. Stored-empty Paste is a no-op without target lookup. Changed Paste is one undo
 step and does not move the playhead; equal content preserves redo.
 
+### Item clipboard
+
+The version-one item snapshot holds at most 1024 full `Item` snapshots, each with its
+source track kind and zero-based index among tracks of that kind in top-to-bottom screen
+order. Every item carries a zero placeholder id and a nonnegative group-relative start;
+the group origin is the earliest copied start and `span` is the latest relative end.
+Content, body parameters, trims (`source_range`), retime, effects, masks, animations,
+blend mode, hidden flag and source-asset identity therefore survive the closed payload.
+Compact UTF-8 JSON is capped at 4 MiB; every time and derived end fits ±(2^53−1).
+Copy refuses duplicate or missing items, a track whose kind differs from the item kind,
+and captures from locked tracks. It never edits project, selection, playhead or history.
+
+Paste resolves each item against the active scene by kind/index and falls back to the
+last track of that kind when the index is gone; a kind with no track, a locked target or
+a missing source asset refuses the whole paste before any change. It clears every
+overlapped range on those tracks first, splitting a containing item so both surviving
+heads keep source, retime, fades and cues, then inserts fresh ids in start order. Normal
+Paste overwrites at the playhead and moves the metadata playhead to the pasted span end
+so repeated Paste advances; Paste Insert ripple remains future work. Stored-empty Paste
+is an exact no-op. A changed Paste is one undo step and reports only the freshly inserted
+items as created, not overwrite split pieces.
+
+### Custody and transports
+
 The Session holds one immutable Arc snapshot outside project/history/persistence.
 Changed Copy advances the control revision and ends merging, with `Outcome.changed`
 false and no project event or dirty save. Identical Copy is a no-op. Receipt replay
@@ -201,5 +231,6 @@ Copy/read refuse transactions and batches, while Paste supports atomic batches/g
 Undo/redo and same-scene edits preserve the store. Successful effective project/scene
 identity changes, including acknowledged Save As, clear it at committed completion;
 failed or staged changes preserve it. New sessions and other windows start empty.
-Read returns the bounded payload only in its response, never subscription events.
-The clipboard has no system-text/image or media-file IO capability.
+Read returns the bounded keyframe payload only in its response, never subscription
+events. The clipboard has no system-text/image or media-file IO capability; text stays
+on the OS clipboard and media-file paste belongs to the import owner.

@@ -8,13 +8,16 @@
 use crate::support::session::{
     get, get_id, get_project, get_project_id, new_item, project, range, session,
 };
-use engine::{Command, CreatedId, EditError, Move, NewItem, Session, registry};
+use engine::{
+    Command, CreatedId, EditError, ItemClipboard, ItemPasteSource, Move, NewItem, Session, registry,
+};
 use media::{AssetId, ContentHash};
 use project::{
     AnimationPath, BuiltinPath, Color, FlipAxis, Item, ItemId, ItemParams, Keyframe, Param,
     ParamValue, Project, ProjectId, Segment, Track, TrackId, TrackKind,
 };
 use proptest::prelude::*;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use time::Tick;
 
@@ -1725,4 +1728,249 @@ fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
         s.apply(insert(graphic)).unwrap();
         assert_ne!(s.project().data().scene().timeline.main.items[0].id, id);
     }
+}
+
+/// One-item clipboard payload with a group-relative start and a zero placeholder id.
+fn item_payload(item: &Item, kind: &str, track: u32) -> Value {
+    let mut canonical = item.clone();
+    canonical.id = ItemId(0);
+    canonical.start = Tick::ZERO;
+    json!({
+        "version": 1,
+        "span": canonical.duration().unwrap().0,
+        "items": [{
+            "trackKind": kind,
+            "trackIndex": track,
+            "item": canonical,
+        }],
+    })
+}
+
+fn payload_clipboard(payload: Value) -> ItemClipboard {
+    serde_json::from_value(payload).unwrap()
+}
+
+fn paste(out: &engine::Outcome) -> Vec<ItemId> {
+    out.created
+        .iter()
+        .filter_map(|id| match id {
+            CreatedId::Item(item) => Some(*item),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
+    let mut s = session();
+    let item = ItemId(10);
+    s.apply(Command::SetAnimatedParam {
+        item,
+        path: BuiltinPath::Opacity.into(),
+        param: Param::new(ParamValue::Scalar(0.4)).unwrap(),
+    })
+    .unwrap();
+    s.apply(Command::AddKeyframe {
+        item,
+        path: BuiltinPath::Opacity.into(),
+        component: None,
+        key: Keyframe::new(Tick(2), ParamValue::Scalar(0.5)),
+    })
+    .unwrap();
+    s.apply(Command::AddEffect {
+        item,
+        effect: project::effect_definition("blur").unwrap().instance("blur1"),
+    })
+    .unwrap();
+    s.apply(Command::AddMask {
+        item,
+        mask: project::Mask::new("mask1", project::MaskShape::Rectangle),
+    })
+    .unwrap();
+    s.apply(Command::TrimStart {
+        item,
+        at: Tick(5),
+    })
+    .unwrap();
+    let source = get(&s, 10).clone();
+    let span = source.duration().unwrap();
+    let payload = item_payload(&source, "video", 0);
+    let raw = json!({
+        "command": "clipboard.paste",
+        "params": {
+            "at": 200,
+            "source": {"kind": "payload", "payload": payload.clone()},
+        },
+    });
+    let command: Command = serde_json::from_value(raw).unwrap();
+    let round_trip = serde_json::to_value(&command).unwrap();
+    assert_eq!(
+        round_trip["params"]["source"]["payload"], payload,
+        "trims, effects, masks, animations, retime and content survive serde"
+    );
+    let before = s.project().clone();
+    let out = s.apply(command).unwrap();
+    let created = paste(&out);
+    assert_eq!(created.len(), 1);
+    let pasted = get(&s, created[0].0);
+    assert_eq!(pasted.start, Tick(200));
+    assert_eq!(pasted.source_range, source.source_range);
+    assert_eq!(pasted.retime, source.retime);
+    assert_eq!(pasted.effects, source.effects);
+    assert_eq!(pasted.masks, source.masks);
+    assert_eq!(pasted.animations, source.animations);
+    assert_eq!(pasted.content, source.content);
+    assert_eq!(pasted.hidden, source.hidden);
+    assert_eq!(s.metadata().view.playhead, Tick(200 + span.0));
+    let after = s.project().clone();
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()), "one paste is one undo");
+    s.redo().unwrap();
+    assert!(Arc::ptr_eq(&after, s.project()));
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = Session::new(project::decode(&bytes).unwrap().project, 10).unwrap();
+    assert!(!loaded.clipboard_has_entry(), "clipboard is not persisted");
+}
+
+#[test]
+fn clipboard_items_paste_offsets_overwrite_and_split_on_the_relative_track() {
+    let mut s = session();
+    let before = s.project().clone();
+    assert!(
+        !s.apply(Command::CopyItems {
+            items: vec![ItemId(10), ItemId(11)],
+        })
+        .unwrap()
+        .changed
+    );
+    let out = s
+        .apply(Command::PasteItems {
+            at: Tick(20),
+            source: ItemPasteSource::Stored,
+        })
+        .unwrap();
+    let created = paste(&out);
+    assert_eq!(created.len(), 2);
+    assert_eq!(get(&s, created[0].0).start, Tick(20));
+    assert_eq!(get(&s, created[1].0).start, Tick(80));
+    assert_eq!(get(&s, created[0].0).source_range, range(100, 140));
+    assert_eq!(get(&s, created[1].0).source_range, range(200, 240));
+    assert_eq!(get(&s, 10).start, Tick::ZERO);
+    assert_eq!(get(&s, 10).source_range, range(100, 120));
+    assert_eq!(get(&s, 11).start, Tick(60));
+    assert_eq!(get(&s, 11).source_range, range(200, 220));
+    assert_eq!(s.metadata().view.playhead, Tick(120));
+    assert_eq!(s.history_len().0, 1);
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()));
+
+    // A pasted span strictly inside one item keeps both surviving heads.
+    let mut s = session();
+    let mut short = get(&s, 10).clone();
+    short.source_range = range(100, 120);
+    let payload = payload_clipboard(item_payload(&short, "video", 0));
+    s.apply(Command::PasteItems {
+        at: Tick(10),
+        source: ItemPasteSource::Payload { payload },
+    })
+    .unwrap();
+    let track = &s.project().data().scene().timeline.overlays[0];
+    assert_eq!(track.items.len(), 3);
+    assert_eq!(get(&s, 10).source_range, range(100, 110));
+    let right = track
+        .items
+        .iter()
+        .find(|candidate| candidate.start == Tick(30))
+        .unwrap();
+    assert_eq!(right.source_range, range(130, 140));
+    let pasted = track
+        .items
+        .iter()
+        .find(|candidate| candidate.start == Tick(10))
+        .unwrap();
+    assert_eq!(pasted.source_range, range(100, 120));
+}
+
+#[test]
+fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
+    let mut s = Session::new(Project::empty(ProjectId(9), "Clip".into()).unwrap(), 10).unwrap();
+    let before = s.project().clone();
+    let revision = s.revision();
+    let history = s.history_len();
+    assert!(
+        !s.apply(Command::PasteItems {
+            at: Tick::ZERO,
+            source: ItemPasteSource::Stored,
+        })
+        .unwrap()
+        .changed
+    );
+    assert!(Arc::ptr_eq(&before, s.project()));
+    assert_eq!(s.revision(), revision);
+    assert_eq!(s.history_len(), history);
+
+    // A missing relative index falls back to the last track of that kind.
+    let source = get(&session(), 10).clone();
+    let payload = payload_clipboard(item_payload(&source, "video", 5));
+    let out = s
+        .apply(Command::PasteItems {
+            at: Tick::ZERO,
+            source: ItemPasteSource::Payload { payload },
+        })
+        .unwrap();
+    let created = paste(&out);
+    assert_eq!(created.len(), 1);
+    let main = &s.project().data().scene().timeline.main;
+    assert_eq!(main.items.len(), 1);
+    assert_eq!(main.items[0].id, created[0]);
+
+    // A payload whose content kind does not match its stored track kind refuses.
+    let empty = Project::empty(ProjectId(9), "Clip".into()).unwrap();
+    let mut s = Session::new(empty, 10).unwrap();
+    let before = s.project().clone();
+    let payload = payload_clipboard(item_payload(&source, "audio", 0));
+    assert!(matches!(
+        s.apply(Command::PasteItems {
+            at: Tick::ZERO,
+            source: ItemPasteSource::Payload { payload },
+        }),
+        Err(EditError::Invalid("clipboard item kind"))
+    ));
+    assert!(Arc::ptr_eq(&before, s.project()));
+
+    // An absent source asset refuses before any item or history change.
+    let mut unlinked = source.clone();
+    unlinked.source_asset = Some(AssetId(99));
+    let payload = payload_clipboard(item_payload(&unlinked, "video", 0));
+    assert!(matches!(
+        s.apply(Command::PasteItems {
+            at: Tick::ZERO,
+            source: ItemPasteSource::Payload { payload },
+        }),
+        Err(EditError::NoAsset(AssetId(99)))
+    ));
+    assert!(Arc::ptr_eq(&before, s.project()));
+
+    // A locked relative target refuses the stored paste atomically.
+    let mut s = session();
+    s.apply(Command::CopyItems {
+        items: vec![ItemId(10)],
+    })
+    .unwrap();
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let history = s.history_len();
+    assert!(matches!(
+        s.apply(Command::PasteItems {
+            at: Tick(200),
+            source: ItemPasteSource::Stored,
+        }),
+        Err(EditError::Locked(TrackId(1)))
+    ));
+    assert!(Arc::ptr_eq(&before, s.project()));
+    assert_eq!(s.history_len(), history);
 }

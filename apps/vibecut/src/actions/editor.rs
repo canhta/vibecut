@@ -312,7 +312,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionEditCopy,
         ActionCategory::Edit,
         "clipboard",
-        UiAction::CopyKeyframes,
+        UiAction::Copy,
         &["Ctrl+C"],
     ),
     ActionSpec::ui(
@@ -320,7 +320,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionEditPaste,
         ActionCategory::Edit,
         "clipboard",
-        UiAction::PasteKeyframes,
+        UiAction::Paste,
         &["Ctrl+V"],
     ),
     ActionSpec::engine(

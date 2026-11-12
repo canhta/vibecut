@@ -116,21 +116,56 @@ impl Editor {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
             ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
             ActionTarget::Ui { action, .. } => match action {
-                UiAction::CopyKeyframes => {
-                    let keys = self.clipboard_keys();
-                    self.session
-                        .apply(engine::Command::CopyKeyframes { keys })?;
-                }
-                UiAction::PasteKeyframes => {
-                    let item = crate::editor::context::single(&self.selection)
-                        .ok_or(Error::Invalid("clipboard target"))?;
-                    let outcome = self.session.apply(engine::Command::PasteKeyframes {
-                        item,
-                        at,
-                        source: engine::KeyframePasteSource::Stored,
-                    })?;
+                UiAction::Copy => match self.selection_scopes.active(&self.selection) {
+                    crate::selection::SelectionScope::Keyframes => {
+                        let keys = self.clipboard_keys();
+                        self.session
+                            .apply(engine::Command::CopyKeyframes { keys })?;
+                    }
+                    crate::selection::SelectionScope::Items => {
+                        let items = self.selection.iter().copied().collect();
+                        self.session.apply(engine::Command::CopyItems { items })?;
+                    }
+                    crate::selection::SelectionScope::MaskPoints
+                    | crate::selection::SelectionScope::None => {
+                        return Err(Error::Invalid("clipboard scope"));
+                    }
+                },
+                UiAction::Paste => {
+                    let scope = self.selection_scopes.active(&self.selection);
+                    let outcome = match scope {
+                        crate::selection::SelectionScope::Keyframes => {
+                            let item = crate::editor::context::single(&self.selection)
+                                .ok_or(Error::Invalid("clipboard target"))?;
+                            self.session.apply(engine::Command::PasteKeyframes {
+                                item,
+                                at,
+                                source: engine::KeyframePasteSource::Stored,
+                            })?
+                        }
+                        crate::selection::SelectionScope::Items => {
+                            self.session.apply(engine::Command::PasteItems {
+                                at,
+                                source: engine::ItemPasteSource::Stored,
+                            })?
+                        }
+                        crate::selection::SelectionScope::MaskPoints
+                        | crate::selection::SelectionScope::None => {
+                            return Err(Error::Invalid("clipboard scope"));
+                        }
+                    };
                     if outcome.changed {
                         self.selection_scopes = SelectionScopes::default();
+                        if scope == crate::selection::SelectionScope::Items {
+                            self.selection = outcome
+                                .created
+                                .iter()
+                                .filter_map(|id| match id {
+                                    engine::CreatedId::Item(item) => Some(*item),
+                                    _ => None,
+                                })
+                                .collect();
+                        }
                     }
                 }
                 UiAction::MediaView => {

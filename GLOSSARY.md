@@ -76,6 +76,7 @@ Language for the editor's privacy and execution boundaries.
 
 - **Music track**: An openly licensed audio record from the aggregator, carrying title, author, canonical licence name and deed URL, attribution, source page and audio URL. Its licence identity is admitted by [project Music provenance](crates/project/src/model/README.md#music-provenance); only public-domain-dedication and attribution-only families are shown.
 
-**Keyframe clipboard** — A bounded immutable snapshot of selected animation keys held
-by one Session, separate from project/history and system text. Transfer and lifetime:
-[Session](crates/engine/src/session/README.md#keyframe-clipboard).
+**In-app clipboard** - A bounded immutable snapshot of selected items or selected
+animation keys held by one Session, separate from project/history and system text.
+One slot holds the latest copy; transfer and lifetime:
+[Session](crates/engine/src/session/README.md#clipboard).

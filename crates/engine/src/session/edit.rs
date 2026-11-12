@@ -94,10 +94,18 @@ impl Failure for EditError {
 
 pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 
+/// Immutable clipboard snapshots available to one edit candidate.
+#[derive(Clone, Copy)]
+pub(crate) struct ClipboardRefs<'a> {
+    pub(crate) keyframes: Option<&'a crate::KeyframeClipboard>,
+    pub(crate) items: Option<&'a crate::ItemClipboard>,
+}
+
 pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut stack = vec![(command, 0)];
     let mut count = 0;
     let mut clipboard_bytes = 0usize;
+    let mut item_clipboard_bytes = 0usize;
     while let Some((command, depth)) = stack.pop() {
         count += 1;
         if count > super::wire::MAX_BATCH_COMMANDS || depth > super::wire::MAX_BATCH_DEPTH {
@@ -119,6 +127,25 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                             crate::session::wire::ControlError::Limit,
                         ))?;
                     if clipboard_bytes > super::clipboard::MAX_CLIPBOARD_BYTES {
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ));
+                    }
+                }
+            }
+            Command::PasteItems { at, source } => {
+                if *at < Tick::ZERO || at.0 > super::wire::MAX_SAFE_INTEGER {
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ));
+                }
+                if let crate::ItemPasteSource::Payload { payload } = source {
+                    item_clipboard_bytes = item_clipboard_bytes
+                        .checked_add(payload.compact_bytes()?)
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
+                    if item_clipboard_bytes > super::clipboard::MAX_ITEM_CLIPBOARD_BYTES {
                         return Err(EditError::Control(
                             crate::session::wire::ControlError::Limit,
                         ));
@@ -270,7 +297,7 @@ pub(crate) fn apply(
     next: &mut Option<u64>,
     sources: &mut TrimSources,
     copied_text_bytes: &mut usize,
-    clipboard: Option<&crate::KeyframeClipboard>,
+    clipboards: ClipboardRefs<'_>,
 ) -> Result<project::Project> {
     let previous_cuts = (!data.scene().timeline.transitions.is_empty()
         && !matches!(
@@ -327,12 +354,19 @@ pub(crate) fn apply(
             source,
         } => {
             let payload = match &source {
-                crate::KeyframePasteSource::Stored => clipboard,
+                crate::KeyframePasteSource::Stored => clipboards.keyframes,
                 crate::KeyframePasteSource::Payload { payload } => Some(payload),
             };
             if let Some(payload) = payload {
                 payload.paste(item(&mut data, id)?, at)?;
             }
+        }
+        EditCommand::PasteItems { at, source } => {
+            let payload = match &source {
+                crate::ItemPasteSource::Stored => clipboards.items,
+                crate::ItemPasteSource::Payload { payload } => Some(payload),
+            };
+            data = clips::execute_paste_items(data, at, payload, created, next, sources)?;
         }
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;
@@ -823,7 +857,7 @@ pub(crate) fn apply(
                     next,
                     sources,
                     copied_text_bytes,
-                    clipboard,
+                    clipboards,
                 )?
                 .into_data();
             }

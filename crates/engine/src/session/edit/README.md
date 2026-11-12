@@ -151,8 +151,10 @@ Generated rectangles and ellipses insert through `timeline.insert` and ordinary 
 
 `masks.set_path` replaces one existing mask's shape with a closed 3..=4096-anchor path and preserves every other field and its animations; an equal path is an exact no-op. `masks.add_point` inserts one de Casteljau anchor on a closed segment at `2^-20..=1-2^-20`, appending on the closing edge, and `masks.remove_point` removes unique current indices in one undo step while refusing fewer than three survivors. These commands refuse a non-path target, an open saved path or out-of-range input without publishing.
 
-Keyframe Paste uses this same candidate/validation/one-undo path. Transfer and refusal
-rules belong to the [clipboard contract](../README.md#keyframe-clipboard).
+Keyframe Paste uses this same candidate/validation/one-undo path. Item Paste resolves
+relative tracks, clears overlapped ranges with owner-side split/trim edits and inserts
+fresh ids in the same candidate. Transfer and refusal
+rules belong to the [clipboard contract](../README.md#clipboard).
 
 The private edit allocator returns `SessionError` directly. Callers compose it into
 mixed edit results; it neither wraps the counter nor changes allocation admission.

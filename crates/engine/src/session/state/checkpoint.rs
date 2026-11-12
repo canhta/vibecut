@@ -18,6 +18,7 @@ use std::{collections::VecDeque, sync::Arc};
 /// because their children already returned IDs to the caller.
 pub(super) struct Checkpoint {
     clipboard: Option<Arc<crate::KeyframeClipboard>>,
+    item_clipboard: Option<Arc<crate::ItemClipboard>>,
     metadata: project::Metadata,
     revision: Arc<Revision>,
     ledger_sequence: u64,
@@ -32,6 +33,7 @@ impl Checkpoint {
     pub(super) fn take(session: &Session) -> Self {
         let Session {
             clipboard,
+            item_clipboard,
             metadata,
             protected: _,
             identity: _,
@@ -47,6 +49,7 @@ impl Checkpoint {
         } = session;
         Self {
             clipboard: clipboard.clone(),
+            item_clipboard: item_clipboard.clone(),
             metadata: metadata.clone(),
             revision: revision.clone(),
             ledger_sequence: ledger.sequence,
@@ -72,6 +75,7 @@ impl Checkpoint {
     pub(super) fn restore(self, session: &mut Session) {
         let Session {
             clipboard,
+            item_clipboard,
             metadata,
             protected: _,
             identity: _,
@@ -86,6 +90,7 @@ impl Checkpoint {
             ripple,
         } = session;
         *clipboard = self.clipboard;
+        *item_clipboard = self.item_clipboard;
         *metadata = self.metadata;
         *revision = self.revision;
         ledger.sequence = self.ledger_sequence;
