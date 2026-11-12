@@ -416,12 +416,240 @@ const ORACLE: &[(&str, [&str; 3])] = &[
             "444d52444d52444d52444d529cadb39cadb39fadb39cadb39cadb39cadb39dadb39cadb3444d52444d52444d52444d52",
         ],
     ),
+    (
+        "push",
+        [
+            "896e7bb9675fd4675fec675f838378b97e5fd47e5fec7e5f879483b9915fd4915fec915f85a285b9a25fd4a25feca25f",
+            "5791b44d80af9e6a6ec16762badcc95a96c09b8070c17e626fb6db4f9bd29d9274c191623fa4eb4aa4e19ca276c1a262",
+            "3f82b44284b4528fb4597ba53f8fc965a6c9a7d2c9528aac3f9adb479fdb66b2db5798c03fa4eb3fa4eb3fa4eb55a4ca",
+        ],
+    ),
+    (
+        "slide",
+        [
+            "8a6e6ec1675ddb675df1675d8e8380c07e5dda7e5df07e5d8b947dc1915ddb915df1915d8ca286c0a25ddba25df1a25d",
+            "5791b45380add06a65f1675dbadcc96696c2d18070f07e5d6fb6db579bd2d0926ef1915d3fa4eb54a4e2d1a273f1a25d",
+            "3f82b44284b4528fb4707b9b3f8fc965a6c9a7d2c9738ab33f9adb479fdb66b2db7198bb3fa4eb3fa4eb3fa4eb72a4cb",
+        ],
+    ),
+    (
+        "roll",
+        [
+            "704e4ab56961cd645fd05955716245b5805ed17e5ee97b60777549b79360d39160ea8e606f7445b39e5cd4a15eeb9f5f",
+            "3f83b60d1e2a1d1a109e69664b95c9225274554b3ca37e6265add8378cc97d8849aa8f5f43a3e625648f63633db59c60",
+            "38739f4785b1518fb72d5f853f8cc577b2c898c9cb2f6d993f98d84da2da5cacdd317aae3fa2e83fa4eb3da0e52c75a8",
+        ],
+    ),
+    (
+        "split",
+        [
+            "a5675eb36a67c96a6cef675ea57e5eb4806ed48b6aee7e5ea5915eb3926dc9946fee915ea5a25eb4a271c7a270eea25e",
+            "bc68654981b05f8fb2d76866bc7f674a8ec5cbe5c4d67f66bc92684999d676b6d7d79268bca2694aa4e64aa4e6d6a269",
+            "527ea73f82b45390b4547eac548cbe3f8fc9c7e8c9528cba5299cb3f9adb6bb6db5499cd53a4db3fa4eb3fa4eb53a4da",
+        ],
+    ),
+    (
+        "stretch",
+        [
+            "8a6f77bb675cd8675cf0675c8c8875bc7e5ed87e5ef07e5e8a967ebb915cd8915cf0915c85a280bca25dd8a25df0a25d",
+            "3f82b44989b4b1675de6675d3f8fc983bcc9b07e5de57e5d3f9adb55a8dbb1915de6915d3fa4eb3fa4ebb0a25de6a25d",
+            "3f82b43f82b4528fb4627b9f3f8fc94e99c9afd8c9628aae3f9adb409bdb67b4db6298bb3fa4eb3fa4eb3fa4eb62a4c8",
+        ],
+    ),
+    (
+        "film_roll",
+        [
+            "734a4db6675fd2675fea675f6d5d40b77e5fd27e5fea7e5f726a4ab7915fd2915fea915f6e7443b7a25fd2a25feaa25f",
+            "4888b42d4f69604146ae67627cb3c941678569604bae7e6253a5db416d8e6e6954ae91623fa4eb2d61875a603caea262",
+            "3f82b44486b44f8db42e5d813f8fc971afc99bcac93068913f9adb4da2db61afdb30709e3fa4eb3fa4eb3fa4eb2e76a7",
+        ],
+    ),
+    (
+        "spring_motion",
+        [
+            "3f82b4508cb44888b480728c3f8fc99fcac97fb5c977858f3f9adb61aedb54a6db7d959d3fa4eb3fa4eb3fa4eb7aa3a3",
+            "356e983f82b4538fb44183b43578a93f8fc9aad4c961a4c93582b93f9adb67b3db469edb358ac63fa4eb3fa4eb3fa4eb",
+            "3f82b43f82b45390b44181b33f8fc94190c9c6e7c9408ec73f9adb3f9adb6cb6db409ad93fa4eb3fa4eb3fa4eb40a4e9",
+        ],
+    ),
+    (
+        "wave",
+        [
+            "736c94b06061d86659f1675d697c91b17960da7e60f07e5d6f90a3b58e5bda915cf1915d6fa1a5bea160dba25ef1a25d",
+            "3f81b34a7dacc96361ee66593f8dc74787bbbf7564ef7d643f99d94592cbb78669eb8f593fa3e9459cdbb09667eca05f",
+            "3f82b43f83b55595bba9829d3f8fc94a96c98bc3cda48f953f9adb3f9adb56aadda89aa93fa4eb3fa4eb3fa4eca6a3ad",
+        ],
+    ),
+    (
+        "slice",
+        [
+            "9d6862bd6761d96960d56c6f9e7f5dc17f5eda7e5de28068a1915dc1915ddb925eed9261a0a25dc0a25ddaa25deea25f",
+            "977977777a8da27a903f82b5738686c8825fd77b61a67b83999570c09065d6905f8594b189a179bea166bfa37abf9e80",
+            "7887a53f82b55692b53f82b55b91b83f8fc9caeac93f8fc97a9fba469ad870b6d94497d43fa4eb40a4ea47a2e27c8c95",
+        ],
+    ),
+    (
+        "louver",
+        [
+            "774d448f4d44a24d44b34d449f7e5dc07e5dda7e5df07e5da1915dc1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "3f82b43f82b45390b43f82b42e69942e699492ab942e69942825173025173725173c25179e9f5bbe9f5bd79f5bed9f5b",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3ea2e83ea2e83ea2e83ea2e8",
+        ],
+    ),
+    (
+        "frame",
+        [
+            "f0ebedead2cff7d2d4f5ebe9dcd5cdb8785fe1785df5d5cfdcdccdb8965fe1965df5dccff0f0edeae6cff7e6d4f5f0e9",
+            "e7ebeed4ebfbd4ebfbe7ebee8484848d8d8d8d8d8d8484848484848d8d8d8d8d8d848484ebe8e9eedbd9f9dbdceee8e7",
+            "e9eef1c9dbe8c9dbe8e9eef1c7dae83f8bc37eb4c3c7dae8c7deef3f9de051a8e0c7deefe9f0f6c9e6fbc9e6fbe9f0f6",
+        ],
+    ),
+    (
+        "roll_3d",
+        [
+            "58373a99544bb2544bc15149625238ba7d5fd87d5fe8795c66603fb9925cd7925ce88e5a5459339a874db3874dc1834b",
+            "285272326489844d4c8c403c5393b866a0b99b7352cb72564093cc4898cb9e8757cb8856286a98307eb5817c478c693c",
+            "326890346b953d71952246623d89c1559cc8a1cec8295d833d95d5429cdc60afdc2965903285be3489c53489c5225a81",
+        ],
+    ),
+    (
+        "flip_motion",
+        [
+            "8e5a55b45f56c45a55b44b42927655bf7d5eda7d5bcb6951958858bf915ddb915ecb7b4d8b8f52b49958c39053b47945",
+            "0000001e191f1f26330000000000001c1f262831380000000000001c232a24303d0000000000001d24261e3143000000",
+            "356f993b7aa9457ca03268913981b53f8ec8bde1c83981b5398cc63f9adb67b4db398cc7358dca3b9cdf3893d23284be",
+        ],
+    ),
+    (
+        "fold_motion",
+        [
+            "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5d3f9adb3f9adbdb915df1915d3fa4eb3fa4ebdba25df1a25d",
+            "3f82b43f82b4db675df1675d3f8fc93f8fc9da7e5df07e5d3f9adb3f9adbdb915df1915d3fa4eb3fa4ebdba25df1a25d",
+            "3f82b43f82b4d46861ef675c3f8fc93f8fc9d78160ef7e5d3f9adb3f9adbd49162ef915d3fa4eb3fa4ebd4a162efa15d",
+        ],
+    ),
+    (
+        "spin_motion",
+        [
+            "5b4d36b66e63813c381307077e774abd8661d8755cdb5c5299965ec1985adf8b61c5654f0e0e087e663ae39c5c985b39",
+            "000000000000000000000000000000050607050606000000000000070404040406000000000000000000000000000000",
+            "050a0e284f6d5c99bb27587c3976a44c92c1a8d7d0327db23272a13f96d548a4e23998d92760883ea1e6276794050e14",
+        ],
+    ),
+    (
+        "spin_3d",
+        [
+            "50313287483f97434364292269553dbd7c5fdb7c5a984d3d6c6440bc925cdc925d975b394d502e887543956e40644426",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "1a35492a5778305e801f3f5827587b3f8dc6aad3c62b61882760893f9adc5eaedb2b6a971a44622a70a02d77aa1f5175",
+        ],
+    ),
+    (
+        "spinback_3d",
+        [
+            "3d2527713c35883c3c5b251f5f4c37bd7b5fdc7b5a974c3d5c5737bc935ddd935d90573733351f685a337b5a354f351d",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "142a3a234662234662142a3a2553753f8cc5a0ccc52553752760893f9bdc5bacdc276089183f5a266590266590183f5a",
+        ],
+    ),
+    (
+        "page_peel",
+        [
+            "a1675dc1675ddb675de9645ca07e5dc07e5dda7e5dde795aa1915dc1915dd9905cd28760a0a25dc0a25dd79f5cb48f6b",
+            "a1675dbd645cca5f575f637ca07e5db87957c0735138719da0905cb68958988270327eb49d9f5ca3925f52839e338ac6",
+            "d7b8af758fa64579983773a0b6a58a3c78a4aac8ad3780b57d8979327eb45d9fbf388cc747839c3389c63691d13997d8",
+        ],
+    ),
+    (
+        "mirror_transition",
+        [
+            "9e6861c1675ddb675df1675d9d7f68c07e5dda7e5df07e5d9e9266c1915ddb915df1915d9da26ac0a25ddba25df1a25d",
+            "3f82b43f82b4ab7489f0675e3f8fc93f8fc9ad869bef7f603f9adb3f9adbac95a2f092603fa4eb3fa4ebaca3aeefa261",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "block_motion",
+        [
+            "a1675dc1675dda675ee06764a07e5dc07e5dd87e5ec97e5fa1915dc1915dd6915ace9164a0a25dc0a25dd8a25deaa260",
+            "7d738b5a8bb1587eab3f82b4948467b2c2af9cc6c43f8fc98e938187abac6cb4d93f9ada64a3bc67a3ba46a4e541a4e9",
+            "3f82b43f82b45390b43f82b44e97c93f8fc9c7e8c93f8fc9459ddb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "whip",
+        [
+            "976d79be6763d86763ed675f92827abe7e63d87e63ef7e65959382be9163d89163ee916193a286bea263d8a263eea263",
+            "558fb45780ac9c6b75bd675bb9dcc96b9bbc998175c27e676bb2db5b9dce9b937dbf915f3fa4eb50a4dc9aa27fc0a263",
+            "3f82b44485b45590b4587eaa3f8fc966a4c9b3d6c95f93b83f9adb4ba0db6cb3db589acb3fa4eb3fa4eb3fa4eb53a4d8",
+        ],
+    ),
+    (
+        "motion_camera",
+        [
+            "a56b5ec26a5dda6a60ef6a61a68061c2805fd97f5cee7f5ea5915ec1915cda9160ef9161a6a062c3a061d9a05deea05e",
+            "837b96947b96bc9a97b37e988489a29689a2d4c3a1ba95a18294aa9394aabaacadb496ad869fb5979fb6a29fb3b09fb3",
+            "3f84b73f84b76ba0b83f84b83f8fca3f8fcacfeeca4b96ca3f99da3f99da77bcda409ada3fa3e93fa3e93fa3e93fa3e9",
+        ],
+    ),
+    (
+        "travel_motion",
+        [
+            "1f2a3a4525255425243113114d7fa0b0795fda795e8140334c91b4b0965eda965e814f321e3b4b454025544024322211",
+            "0e1b260e1b262614172f1415609fc2609ec1a67763d7776249a3e04aa2dfa69763d797620e25350e25352625182f2515",
+            "0d1a2418314318314331242a214a685197c474aec47f756e215376439fdf4fa7df7f8e740d223118415d18415d313b2f",
+        ],
+    ),
+    (
+        "motion_tween",
+        [
+            "9e6966bc6966d56966eb69669c7f69bb7f69d98769ea7f699d926dbc926dd6946dea926d9da270bca270d5a270eaa270",
+            "7e7691937691a97b91b476917f87a09387a0ceb89fb3879f7e96ad9396adb2a4adb496ad7fa3b993a3b9a4a3b9b4a3b9",
+            "4b80b05080b0668db05980b04b8ec4508ec4c8e3c4588ec44b99d65099d67ab4d65999d64ba4e650a4e654a4e658a4e6",
+        ],
+    ),
+    (
+        "pull_motion",
+        [
+            "2c1a216d3c39813c368536313e3623b37b60d77b61da7057414029b3945fd6945eda8655282b1a6d643a826439855a33",
+            "1f405819344842282e5e31319dc6c63372a07a6449bc7b635cacde337eb47d784ebc94621f53771943603f42295e5231",
+            "224662264e6c274e6c10222f3980b460a2c685bbc61b3d57398dc847a0dd55a9dd1b4460225b83266591266591102c3f",
+        ],
+    ),
+    (
+        "pop_motion",
+        [
+            "9c635bc0665ddb665eea635a9a7a5a898291ae9094e97a5b9b8d5b8a99aba19da6ea8d5a9b9d5ac0a25edba25eea9d5a",
+            "31648b38739f41799f31648b377caf3f8ec8b8dec8377caf3787c03f9adc65b2dc3787c03180b83893d23893d23180b8",
+            "3f82b53f82b55893b53f82b53f8fc93f8fc9cbebc93f8fc93f9adb3f9adb6fb8db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
+    (
+        "shape_dissolve",
+        [
+            "a1675dc1675ddb675df1675da07e5db2806dd98462f07e5da1915d5298ce96a6a6f1915d9fa25f41a4ea6aa4c9f1a25d",
+            "8a6c774580b26b8ca6e56964508aaa3f8fc9c7e8c99d869d419ad93f9adb6bb6db7097b73fa4eb3fa4eb3fa4eb6da4c9",
+            "3f82b43f82b45390b46b7b993f8fc93f8fc9c7e8c96e8ab23f9adb3f9adb6bb6db5a99c83fa4eb3fa4eb3fa4eb50a4e0",
+        ],
+    ),
+    (
+        "shape_flow",
+        [
+            "a1675dc1675ddb675df1675d94806dc07e5dda7e5df07e5d9f9262c1915ddb915df1915da0a25dc0a25ddba25df1a25d",
+            "78728e3f82b490858df1675d568aa43f8fc9d2e2c0f07e5d5c97b73f9adb81b5cdf1915d77a3923fa4eb86a3b0f1a25d",
+            "3f82b43f82b45390b43f82b43f8fc93f8fc9c7e8c93f8fc93f9adb3f9adb6bb6db3f9adb3fa4eb3fa4eb3fa4eb3fa4eb",
+        ],
+    ),
 ];
 
-/// Kinds whose `ORACLE` row is not recorded yet. This slice was not allowed to run the product
-/// suite, and `print_oracle_rows` is the only row writer, so whoever first runs the suite records
-/// these rows and empties this list. Every kind must then have a row.
-const ORACLE_PENDING: &[&str] = &[
+/// Kinds whose `ORACLE` row is not recorded yet; `print_oracle_rows` is the only row writer.
+/// Whoever adds a kind without a row lists it here until the suite has been run once.
+const ORACLE_PENDING: &[&str] = &[];
+
+/// Card-engine kinds: their cards may leave an uncovered or antialiased edge mid-transition
+/// (a flip is edge-on at its midpoint), so they are pinned by their oracle row and the
+/// endpoint contract instead of the per-tick opacity check.
+const CARD_KINDS: &[&str] = &[
     "push",
     "slide",
     "roll",
@@ -643,6 +871,118 @@ const MIDPOINTS: &[(&str, &str)] = &[
         "screen_off",
         "b6cbd6b9cfdab9cfdab6cbd6b9cfdabfd6e1bfd6e1b9cfdab9cfdabfd6e1bfd6e1b9cfdab6cbd6b9cfdab9cfdab6cbd6",
     ),
+    (
+        "push",
+        "0000ff3000fcf2005eff00000000ff3000fcf2005eff00000000ff3000fcf2005eff00000000ff3000fcf2005eff0000",
+    ),
+    (
+        "slide",
+        "0000ff3000fcf2005eff00000000ff3000fcf2005eff00000000ff3000fcf2005eff00000000ff3000fcf2005eff0000",
+    ),
+    (
+        "roll",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "split",
+        "fe00144200f94200f9fe0014fe00144200f94200f9fe0014fe00144200f94200f9fe0014fe00144200f94200f9fe0014",
+    ),
+    (
+        "stretch",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "film_roll",
+        "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc080808080808080808080808080808080808080808080808",
+    ),
+    (
+        "spring_motion",
+        "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff",
+    ),
+    (
+        "wave",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "slice",
+        "0000ffd5009c7100eb0000ff0000ffff0000d5009cff0000ff0000ff0000ff00000000ffd5009cff0000ff0000bc00bc",
+    ),
+    (
+        "louver",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "frame",
+        "ffffffffffffffffffffffff000000000000000000000000000000000000000000000000ffffffffffffffffffffffff",
+    ),
+    (
+        "roll_3d",
+        "0000ec0000ecec0000ec00000000ec0000ecec0000ec00000000ec0000ecec0000ec00000000ec0000ecec0000ec0000",
+    ),
+    (
+        "flip_motion",
+        "0000000000000000c40000000000000000000000c40000000000000000000000c40000000000000000000000c4000000",
+    ),
+    (
+        "fold_motion",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "spin_motion",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "spin_3d",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "spinback_3d",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "page_peel",
+        "eb0000ea00000000c40000c4ea0000ea00000000c40000c40000c40000c40000c40000c40000c40000c40000c40000c4",
+    ),
+    (
+        "mirror_transition",
+        "0000ff0000ffc600b1ff00000000ff0000ffc600b1ff00000000ff0000ffc600b1ff00000000ff0000ffc600b1ff0000",
+    ),
+    (
+        "block_motion",
+        "ff00000000ffbc00bc0000ff0000ff0000ff8900e10000ffff0000ff00000000ff0000ffff00000000ff0000ff0000ff",
+    ),
+    (
+        "whip",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "motion_camera",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "travel_motion",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "motion_tween",
+        "bc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bcbc00bc",
+    ),
+    (
+        "pull_motion",
+        "0000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff00000000ff0000ffff0000ff0000",
+    ),
+    (
+        "pop_motion",
+        "5000f65000f65000f65000f65000f60000ff0000ff5000f65000f60000ff0000ff5000f65000f65000f65000f65000f6",
+    ),
+    (
+        "shape_dissolve",
+        "ff0000ff0007eb0072be00b9ff0007eb0073bc00bb7500eaeb0072bc00bb7300eb0800ffbe00b97500ea0800ff0000ff",
+    ),
+    (
+        "shape_flow",
+        "0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0000ff0300ff0000ff0000ff0000ff3d00fa",
+    ),
 ];
 
 /// Kinds whose `MIDPOINTS` row is not recorded yet, for the same reason as `ORACLE_PENDING`.
@@ -795,7 +1135,7 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
         // edge (a flip is edge-on at its midpoint), so those are pinned by their oracle row and
         // the endpoint contract instead. Adjacent-frame smoothness is meaningful only for a
         // per-pixel mix.
-        let uncovered = ORACLE_PENDING.contains(&def.kind);
+        let uncovered = CARD_KINDS.contains(&def.kind);
         let mut previous = None;
         for at in 79..=121 {
             let im = r.render_frame(Tick(at), &mut Empty, &h).unwrap();
