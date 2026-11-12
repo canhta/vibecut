@@ -20,7 +20,13 @@ impl Editor {
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
             mask_points: &self.selection_scopes.mask_points,
-            transition: self.selection_scopes.transition,
+            transition: self
+                .selection_scopes
+                .transition
+                .filter(|_| {
+                    self.selection_scopes.active(&self.selection)
+                        == crate::selection::SelectionScope::Transition
+                }),
             visuals: &self.media,
             cache: self.media.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
