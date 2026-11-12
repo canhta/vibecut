@@ -5,6 +5,7 @@ use crate::editor::timeline::{
     MIN_ZOOM_FLOOR, Rect, Rounding, SourceRange, Tick, TrackId, egui,
     workflow::{anchored_scroll, fit_zoom},
 };
+use crate::editor::timeline::graph::GraphPopover;
 use crate::services::color_picker::Picker;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,6 +212,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) refusal: Option<String>,
     pub(in crate::editor::timeline) bookmark_drag: Option<BookmarkDrag>,
     pub(in crate::editor::timeline) bookmark_popover: Option<BookmarkPopover>,
+    /// The keyframe graph popover; its edits live in one engine gesture.
+    pub(in crate::editor::timeline) graph_popover: Option<GraphPopover>,
     pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
     /// Preview-axis pointer time; transient and never part of the project.
     pub(in crate::editor::timeline) hover: Option<Tick>,
@@ -253,6 +256,7 @@ impl State {
             refusal: None,
             bookmark_drag: None,
             bookmark_popover: None,
+            graph_popover: None,
             snap_indicator: None,
             hover: None,
             marquee: None,
@@ -286,6 +290,20 @@ impl State {
     }
     pub(in crate::editor) fn clear_hover(&mut self) {
         self.hover = None;
+    }
+    /// The graph popover is open.
+    pub(in crate::editor) fn graph_popover_open(&self) -> bool {
+        self.graph_popover.is_some()
+    }
+    /// Escape and Cancel: close the graph popover and discard its staged previews.
+    pub(in crate::editor) fn escape_graph(&mut self) -> bool {
+        let Some(open) = self.graph_popover.take() else {
+            return false;
+        };
+        if open.staged {
+            self.outbox.push(Action::DiscardGesture);
+        }
+        true
     }
     /// The bookmark whose editor is open, if any.
     pub(in crate::editor) fn bookmark_popover(&self) -> Option<BookmarkId> {
@@ -453,6 +471,14 @@ impl State {
         });
         if cancel_fade || !session.gesture_active() {
             self.fade_drag = None;
+        }
+        // Another interaction took the gesture: the popover's previews are gone.
+        if self
+            .graph_popover
+            .as_ref()
+            .is_some_and(|popover| popover.staged && !session.gesture_active())
+        {
+            self.graph_popover = None;
         }
         if self.bookmark_popover.as_ref().is_some_and(|popover| {
             !data

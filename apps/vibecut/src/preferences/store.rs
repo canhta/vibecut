@@ -1,7 +1,7 @@
 //! Bounded preference file IO and the startup repair warning.
 
 use super::{
-    DEFAULT_PANELS, FontPickerPreferences, MAX_PREFERENCES_BYTES, MAX_TIMELINE_LANES,
+    DEFAULT_PANELS, EasingPreferences, FontPickerPreferences, MAX_PREFERENCES_BYTES, MAX_TIMELINE_LANES,
     PREFERENCES_VERSION, Preferences, validate_panels,
 };
 use crate::{Error, Result};
@@ -90,6 +90,10 @@ impl PreferenceStore {
             value.font_picker = FontPickerPreferences::default();
             issue = Some(PreferenceIssue::Layout);
         }
+        if value.easing.validate().is_err() {
+            value.easing = EasingPreferences::default();
+            issue = Some(PreferenceIssue::Layout);
+        }
         (value, issue)
     }
     fn read(&self) -> Result<Preferences> {
@@ -136,7 +140,7 @@ mod tests {
     use super::*;
     use crate::editor::AssetsTab;
     use crate::i18n::Locale;
-    use crate::preferences::FontTab;
+    use crate::preferences::{EasingTab, FontTab, SavedEasing};
     use crate::preferences::{
         PANEL_MAX, PANEL_MIN, PREFERENCE_KEYS, PREVIEW_MAX, PREVIEW_MIN, TIMELINE_MAX,
         TIMELINE_MIN, WindowGeometry, drag_panel,
@@ -229,6 +233,13 @@ mod tests {
             (
                 "font_picker",
                 serde_json::json!({"tab": "favorites", "favorites": ["Anton", "Inter"]}),
+            ),
+            (
+                "easing",
+                serde_json::json!({
+                    "tab": "saved",
+                    "saved": [{"name": "Custom 1", "curve": [0.1, 0.2, 0.3, 1.4]}]
+                }),
             ),
             (
                 "export",
@@ -492,6 +503,60 @@ mod tests {
         let (loaded, issue) = store.load_with_warning();
         assert_eq!(issue, Some(PreferenceIssue::Layout));
         assert_eq!(loaded.font_picker, FontPickerPreferences::default());
+    }
+
+    #[test]
+    fn easing_preferences_validate_saved_curves_atomically_and_repair_on_load() {
+        let mut preferences = Preferences::default();
+        preferences
+            .set(
+                "easing",
+                serde_json::json!({
+                    "tab": "saved",
+                    "saved": [
+                        {"name": "Custom 1", "curve": [0.1, 0.2, 0.3, 1.4]},
+                        {"name": "Custom 3", "curve": [0.0, -0.5, 1.0, 1.0]}
+                    ]
+                }),
+            )
+            .expect("valid easing preferences");
+        assert_eq!(preferences.easing.tab, EasingTab::Saved);
+        assert_eq!(preferences.easing.next_name(), "Custom 4");
+        for value in [
+            serde_json::json!({"tab": "unknown", "saved": []}),
+            serde_json::json!({"tab": "saved", "saved": [{"name": "", "curve": [0, 0, 1, 1]}]}),
+            serde_json::json!({"tab": "saved", "saved": [{"name": "x".repeat(65), "curve": [0, 0, 1, 1]}]}),
+            serde_json::json!({"tab": "saved", "saved": [
+                {"name": "A", "curve": [0, 0, 1, 1]}, {"name": "A", "curve": [0, 0, 1, 1]}]}),
+            serde_json::json!({"tab": "saved", "saved": [{"name": "A", "curve": [1.5, 0, 1, 1]}]}),
+            serde_json::json!({"tab": "saved", "saved": [{"name": "A", "curve": [0, 0, 1]}]}),
+            serde_json::json!({"tab": "saved", "saved": (0..65).map(|n| serde_json::json!({"name": format!("P{n}"), "curve": [0, 0, 1, 1]})).collect::<Vec<_>>()}),
+            serde_json::json!({"tab": "saved", "saved": [], "extra": true}),
+        ] {
+            let before = preferences.clone();
+            assert!(preferences.set("easing", value).is_err());
+            assert_eq!(preferences, before);
+        }
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            serde_json::to_vec(&Preferences {
+                easing: EasingPreferences {
+                    tab: EasingTab::Saved,
+                    saved: vec![SavedEasing {
+                        name: String::new(),
+                        curve: [0.0, 0.0, 1.0, 1.0],
+                    }],
+                },
+                ..Default::default()
+            })
+            .expect("encode preferences"),
+        )
+        .expect("write preferences");
+        let (loaded, issue) = store.load_with_warning();
+        assert_eq!(issue, Some(PreferenceIssue::Layout));
+        assert_eq!(loaded.easing, EasingPreferences::default());
     }
 
     #[test]

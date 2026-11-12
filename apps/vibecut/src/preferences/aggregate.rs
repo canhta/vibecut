@@ -1,6 +1,6 @@
 //! The versioned preference document composed from its feature-owned sections.
 
-use super::{AdjustmentPreset, FontPickerPreferences, WindowGeometry};
+use super::{AdjustmentPreset, EasingPreferences, FontPickerPreferences, WindowGeometry};
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 9;
+pub const PREFERENCES_VERSION: u32 = 10;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -58,6 +58,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "timeline_lanes",
     "font_picker",
     "adjustment_presets",
+    "easing",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -149,6 +150,8 @@ pub struct Preferences {
     pub font_picker: FontPickerPreferences,
     /// Named colour-adjustment presets stored with the app.
     pub adjustment_presets: Vec<AdjustmentPreset>,
+    /// Graph editor tab and saved easing curves; user data, never project state.
+    pub easing: EasingPreferences,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -179,6 +182,7 @@ impl Default for Preferences {
             timeline_lanes: BTreeMap::new(),
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
+            easing: EasingPreferences::default(),
         }
     }
 }
@@ -233,6 +237,7 @@ impl Preferences {
         }
         self.font_picker.validate()?;
         super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
+        self.easing.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -326,6 +331,7 @@ impl Preferences {
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
+            "easing" => Ok(serde_json::to_value(&self.easing)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -364,6 +370,7 @@ impl Preferences {
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
+            "easing" => self.easing = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

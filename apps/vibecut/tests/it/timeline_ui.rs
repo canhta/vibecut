@@ -3963,6 +3963,175 @@ fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
 }
 
 #[test]
+fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.2);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.9);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let by =
+        |author: &'static str| By::new().predicate(move |node| node.author_id() == Some(author));
+    let curve_of = |harness: &Harness<'_, Editor>| {
+        item(harness.state(), id)
+            .animations
+            .get(&project::AnimationPath::new("opacity").unwrap())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .segment_curve(Tick(2 * SECOND))
+            .unwrap()
+            .0
+    };
+    let select = |harness: &mut Harness<'_, Editor>| {
+        harness.state_mut().selection_scopes.keyframes.insert(
+            vibecut::selection::KeyframeSelection {
+                item: id,
+                path: project::AnimationPath::new("opacity").unwrap(),
+                component: None,
+                time: Tick(2 * SECOND),
+            },
+        );
+        harness.run_steps(3);
+    };
+    let bytes = |harness: &Harness<'_, Editor>| {
+        project::encode(harness.state().session.project(), false).unwrap()
+    };
+    assert!(
+        harness
+            .get(by("timeline.graph"))
+            .accesskit_node()
+            .is_disabled(),
+        "no keyframe is selected"
+    );
+    select(&mut harness);
+    assert!(
+        !harness
+            .get(by("timeline.graph"))
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    // Opening and previewing never mutate the committed project or its history.
+    let start = bytes(&harness);
+    let history = harness.state().session.history_len().0;
+    harness.get(by("timeline.graph")).click();
+    harness.run_steps(3);
+    assert_eq!(
+        curve_of(&harness),
+        [0.0, 0.0, 1.0, 1.0],
+        "a linear segment opens as the line"
+    );
+    harness.get(by("timeline.graph.preset.pop")).click();
+    harness.run_steps(3);
+    // Source table value for Pop (easing-presets.ts line 17), within whole-tick rounding.
+    for (got, want) in curve_of(&harness)
+        .into_iter()
+        .zip([0.175, 0.885, 0.32, 1.275])
+    {
+        assert!((got - want).abs() < 1e-3, "{got} != {want}");
+    }
+    assert_eq!(
+        bytes(&harness),
+        start,
+        "live preview does not mutate the project"
+    );
+    assert_eq!(harness.state().session.history_len().0, history);
+
+    // Dragging the outgoing handle updates the preview curve live.
+    let plot = widget(&harness, "timeline.graph.plot").shrink(14.0);
+    let at = |x: f64, y: f64| {
+        egui::pos2(
+            plot.left() + x as f32 * plot.width(),
+            plot.bottom() - ((y + 0.5) / 2.0) as f32 * plot.height(),
+        )
+    };
+    drag(&mut harness, at(0.175, 0.885), at(0.5, 1.0));
+    let dragged = curve_of(&harness);
+    assert!(
+        (dragged[0] - 0.5).abs() < 0.02 && (dragged[1] - 1.0).abs() < 0.02,
+        "{dragged:?}"
+    );
+    assert!((dragged[2] - 0.32).abs() < 1e-3, "the other handle stays");
+    assert_eq!(bytes(&harness), start);
+
+    // Apply publishes everything staged as one undo step.
+    harness.get(by("timeline.graph.apply")).click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let applied = bytes(&harness);
+    assert_ne!(applied, start);
+    assert!(
+        harness.query(by("timeline.graph.plot")).is_none(),
+        "Apply closes the popover"
+    );
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(bytes(&harness), start);
+    harness.state_mut().session.redo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(bytes(&harness), applied);
+    let applied_curve = curve_of(&harness);
+
+    // Cancel and Escape restore the pre-open state exactly, with no history.
+    for escape in [false, true] {
+        select(&mut harness);
+        harness.get(by("timeline.graph")).click();
+        harness.run_steps(3);
+        harness.get(by("timeline.graph.preset.ease_in")).click();
+        harness.run_steps(3);
+        assert_ne!(curve_of(&harness), applied_curve, "the preset previews");
+        if escape {
+            harness.key_press(egui::Key::Escape);
+        } else {
+            harness.get(by("timeline.graph.cancel")).click();
+        }
+        harness.run_steps(3);
+        assert!(harness.query(by("timeline.graph.plot")).is_none());
+        assert_eq!(bytes(&harness), applied, "cancel restores the project");
+        assert_eq!(curve_of(&harness), applied_curve);
+        assert_eq!(harness.state().session.history_len().0, history + 1);
+        assert!(harness.state().session.preview_project().is_none());
+    }
+
+    // A saved curve persists with the popover tab and applies from the Saved tab.
+    select(&mut harness);
+    harness.get(by("timeline.graph")).click();
+    harness.run_steps(3);
+    harness.get(by("timeline.graph.save")).click();
+    harness.run_steps(3);
+    harness.get(by("timeline.graph.tab.saved")).click();
+    harness.run_steps(3);
+    let easing = harness.state().preferences.easing.clone();
+    assert_eq!(easing.tab, vibecut::preferences::EasingTab::Saved);
+    assert_eq!(easing.saved.len(), 1);
+    assert_eq!(easing.saved[0].name, "Custom 1");
+    let mut restored = vibecut::preferences::Preferences::default();
+    restored
+        .set("easing", harness.state().preferences.get("easing").unwrap())
+        .unwrap();
+    assert_eq!(restored.easing, easing, "saved presets and tab round-trip");
+    harness.get(by("timeline.graph.saved.0")).click();
+    harness.run_steps(3);
+    assert_eq!(
+        curve_of(&harness),
+        applied_curve,
+        "the saved curve is the applied one"
+    );
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-40-graph.png");
+    image.save(&path).unwrap();
+    eprintln!("graph screenshot: {}", path.display());
+    assert!(path.is_file());
+    harness.get(by("timeline.graph.cancel")).click();
+    harness.run_steps(3);
+    assert_eq!(bytes(&harness), applied);
+}
+
+#[test]
 fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
     for enabled in [false, true] {
         let fixture = fixture();

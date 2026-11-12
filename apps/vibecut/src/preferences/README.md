@@ -5,7 +5,8 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 `PANEL_MIN`, `PANEL_MAX`, `PREVIEW_MIN`, `PREVIEW_MAX`, `TIMELINE_MIN`, `TIMELINE_MAX`,
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WindowGeometry`,
 `FontPickerPreferences`, `FontTab`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
-`MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`.
+`MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`, `EasingPreferences`, `EasingTab`,
+`SavedEasing`, `MAX_SAVED_EASINGS`.
 
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:
@@ -21,6 +22,12 @@ and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo
 never touch project JSON. Ripple mode and keyframe lane visibility persist outside
 undo history, so entering an editing mode or opening its lanes cannot shadow the
 project edit's next Undo.
+
+`EasingPreferences` stores the keyframe graph popover's tab (`presets` or `saved`) and up to
+64 saved easing curves, each a unique name of at most 64 bytes with a normalized
+`[x1, y1, x2, y2]` whose `x` values lie in 0..1. A damaged section falls back to its
+defaults with the layout warning. Saving a curve is a `ui.prefs.set` edit of the `easing`
+key, so agents save presets the same way the popover does and it joins preference undo.
 
 `AiPreferences` is the one persisted remote provider/feature model map. It stores
 bounded custom IDs and four recent IDs per pair, using AI's shipped table for defaults.

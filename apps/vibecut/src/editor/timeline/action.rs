@@ -110,6 +110,12 @@ pub(in crate::editor) enum Action {
     Preview(Box<engine::Command>),
     /// Publish the open gesture as one undo step.
     EndGesture,
+    /// Discard the open gesture and show the project it started from.
+    DiscardGesture,
+    /// Persist the graph popover's tab.
+    SetEasingTab(crate::preferences::EasingTab),
+    /// Save a normalized curve as the next user easing preset.
+    SaveEasing([f64; 4]),
     /// Arm the group-preview contract: the next `PreviewGesture` starts it.
     BeginPreview { select: Option<ItemId> },
     /// Replace the whole staged candidate with this group command.

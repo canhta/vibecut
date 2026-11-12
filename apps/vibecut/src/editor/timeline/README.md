@@ -25,6 +25,22 @@ target restores the entry project. The stored window clamps to the clip and agai
 other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a
 handle re-shapes that edge as one `audio.set_fade` command.
 
+## Graph popover
+
+The toolbar graph button (right of the flip buttons, glyph is the keyframe diamond until the
+icon catalog gains a curve) is enabled while the selected keyframes include one with an
+outgoing segment. It opens a popover below the button with a 200 pt plot of the segment's
+normalized cubic Bezier (`x` is time, `y` the value fraction, so `y` may leave 0..1), two
+draggable handles, per-component tabs when the selection spans several colour components,
+a Presets/Saved tab, Save preset, Apply and Cancel. Every change (handle drag, preset or
+saved click) is staged as `keyframes.set_handles` or `keyframes.apply_preset` previews
+inside one engine gesture, so the committed project and history stay untouched until
+Apply publishes one undo step; Cancel and Escape discard the gesture and restore the
+pre-open project exactly. A handle drag edits the active component tab; a preset click
+applies to every selected key. Presets and the saved list live in `preferences.easing`
+(see [preferences](../../preferences/README.md)); Save preset appends the working curve as
+the next free `Custom N` through the preference store, and the tab choice persists.
+
 ## Preview axis
 
 The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as `preview_axis`,

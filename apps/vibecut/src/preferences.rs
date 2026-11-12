@@ -4,6 +4,7 @@
 //! module only composes them in the document the app saves.
 mod adjustment;
 mod aggregate;
+mod easing;
 mod font_picker;
 mod geometry;
 mod store;
@@ -18,6 +19,7 @@ pub use aggregate::{
     PREFERENCE_KEYS, PREFERENCES_VERSION, PREVIEW_MAX, PREVIEW_MIN, Preferences, TIMELINE_MAX,
     TIMELINE_MIN, drag_panel, validate_panels,
 };
+pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
 pub use font_picker::{FontPickerPreferences, FontTab};
 pub use geometry::WindowGeometry;
 pub use store::{PreferenceIssue, PreferenceStore};

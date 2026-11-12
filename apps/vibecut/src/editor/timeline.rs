@@ -6,6 +6,7 @@
 //! selection or the transport; the frame applies each [`Action`].
 mod action;
 mod audio;
+mod graph;
 mod layout;
 mod state;
 mod view;

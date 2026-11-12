@@ -160,6 +160,8 @@ impl State {
             let rect = left.cell(CELL);
             self.toolbar_button(cx, ui, rect, id, icon, label, None);
         }
+        let graph = left.cell(CELL);
+        self.toolbar_graph(cx, ui, graph);
 
         // Right group, placed from the right edge inwards.
         let mut right = bar.right() - EDGE;
@@ -312,6 +314,35 @@ impl State {
             return false;
         }
         clicked
+    }
+
+    /// The keyframe graph button: enabled while the selection has an easable
+    /// segment, and a toggle for the popover below it. The glyph is the keyframe
+    /// diamond until the catalog gains a curve icon.
+    fn toolbar_graph(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect) {
+        let open = self.graph_popover_open();
+        let enabled = open || self.graph_available(cx);
+        let tooltip = tr(cx, Text::GraphEditor);
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    crate::kit::icon_button(ui, "timeline.graph", Icon::Diamond, tooltip, open)
+                })
+                .inner
+            })
+            .inner;
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, open, tooltip)
+        });
+        self.remember_with(
+            "timeline.graph",
+            Some(Icon::Diamond.name()),
+            Some(tooltip.to_owned()),
+            &response,
+        );
+        if enabled && response.clicked() {
+            self.toggle_graph(cx, egui::pos2(rect.left(), rect.bottom() + theme::space::XS));
+        }
     }
 
     /// A visible toolbar cell whose action is not available yet; its tooltip

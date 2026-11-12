@@ -54,6 +54,12 @@ impl Editor {
             }
             return;
         }
+        if self.timeline.graph_popover_open() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.timeline.escape_graph();
+            }
+            return;
+        }
         if self.timeline.marquee_active() || self.assets.media_marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();

@@ -2,6 +2,7 @@
 use crate::i18n;
 mod bookmark;
 mod clips;
+mod easing;
 mod hover;
 mod lanes;
 mod ruler;
@@ -103,6 +104,7 @@ pub(in crate::editor) fn show(
         );
     }
     state.show_bookmark_popover(cx, ui.ctx());
+    state.show_graph_popover(cx, ui.ctx());
     for request in cx.visuals.take_requests() {
         state.push(Action::Generate(request));
     }

@@ -1373,6 +1373,19 @@ catalog! {
     Hsl { key: "hsl", en: "HSL", vi: "HSL" },
     Lightness { key: "lightness", en: "Lightness", vi: "Độ sáng" },
     SaveAsPreset { key: "save_as_preset", en: "Save as preset", vi: "Lưu thành mẫu" },
+
+    // Timeline graph popover.
+    EasingEaseIn { key: "easing_ease_in", en: "Ease in", vi: "Nhanh dần" },
+    EasingEaseOut { key: "easing_ease_out", en: "Ease out", vi: "Chậm dần" },
+    EasingInOut { key: "easing_in_out", en: "In out", vi: "Vào ra" },
+    EasingLinear { key: "easing_linear", en: "Linear", vi: "Tuyến tính" },
+    EasingPop { key: "easing_pop", en: "Pop", vi: "Nảy" },
+    EasingSmooth { key: "easing_smooth", en: "Smooth", vi: "Mượt" },
+    GraphApply { key: "graph_apply", en: "Apply", vi: "Áp dụng" },
+    GraphEditor { key: "graph_editor", en: "Edit curve", vi: "Chỉnh đường cong" },
+    GraphPresets { key: "graph_presets", en: "Presets", vi: "Có sẵn" },
+    GraphSavePreset { key: "graph_save_preset", en: "Save preset", vi: "Lưu cài đặt" },
+    GraphSaved { key: "graph_saved", en: "Saved", vi: "Đã lưu" },
 }
 
 /// The message for `key` in `locale`.

@@ -67,6 +67,7 @@ impl Editor {
             || self.timeline.renaming_track()
             || self.timeline.scenes.is_open()
             || self.timeline.bookmark_popover().is_some()
+            || self.timeline.graph_popover_open()
             || self.frame.recording_active
             || self.frame.shortcuts_open
             || self

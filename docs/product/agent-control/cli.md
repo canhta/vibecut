@@ -35,6 +35,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
 | `vibecut-cli music search\|save\|unsave\|add` | Search the open music aggregator anonymously or read saved music; save, unsave and add a cached track |
 | `vibecut-cli fonts list\|resolve\|download\|import` | Search bundled, system and catalog fonts, resolve a family, or download a catalog font |
+| `vibecut-cli exec <project> keyframes.apply_preset '{"keys":[{"item":1,"path":"opacity","component":null,"time":0}],"preset":"ease_out"}'` | Ease the segment leaving each listed key with a named preset (`smooth`, `ease_out`, `ease_in`, `in_out`, `pop`, `linear`) as one undo step; `keyframes.set_handles` takes `"curve":[x1,y1,x2,y2]` instead |
 | `vibecut-cli commands` | Print the generated command registry |
 | `vibecut-cli schema` | Print the generated control request/response/event schema |
 

@@ -1363,6 +1363,40 @@ fn escape_hooks_cancel_only_what_is_in_progress() {
     assert!(state.escape_bookmark());
     assert_eq!(state.bookmark_popover(), None);
     assert!(!state.escape_bookmark());
+
+    // The graph popover maps curve space to the plot and back, clamps a dragged
+    // handle to the plot, and Escape discards a gesture only when one is staged.
+    let plot = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(200.0, 200.0));
+    for (x, y) in [(0.0, 0.0), (1.0, 1.0), (0.25, 0.1), (0.8, 1.275)] {
+        let (rx, ry) = graph::from_point(plot, graph::to_point(plot, x, y));
+        assert!((rx - x).abs() < 1e-5 && (ry - y).abs() < 1e-5, "({x}, {y})");
+    }
+    let curve = project::EasingCurve([0.25, 0.1, 0.25, 1.0]);
+    let near = |x, y| graph::to_point(plot, x, y) + egui::vec2(3.0, 2.0);
+    assert_eq!(
+        graph::nearest(plot, curve, near(0.25, 0.1)),
+        Some(graph::Handle::Out)
+    );
+    assert_eq!(
+        graph::nearest(plot, curve, near(0.25, 1.0)),
+        Some(graph::Handle::In)
+    );
+    assert_eq!(graph::nearest(plot, curve, plot.right_top()), None);
+    let moved = graph::dragged(plot, curve, graph::Handle::In, egui::pos2(-500.0, -500.0));
+    assert_eq!(moved.0, [0.25, 0.1, 0.0, 1.5]);
+    for staged in [false, true] {
+        state.graph_popover = Some(graph::GraphPopover {
+            anchor: egui::Pos2::ZERO,
+            keys: Vec::new(),
+            tab: 0,
+            grab: None,
+            staged,
+        });
+        state.outbox.clear();
+        assert!(state.escape_graph());
+        assert_eq!(state.outbox.len(), usize::from(staged));
+        assert!(!state.graph_popover_open());
+    }
 }
 
 #[test]

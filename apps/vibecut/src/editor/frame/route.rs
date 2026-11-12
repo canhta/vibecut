@@ -130,6 +130,14 @@ impl Editor {
                 Action::BeginGesture { select } => self.begin_drag_gesture(select),
                 Action::Preview(command) => self.preview_gesture(*command),
                 Action::EndGesture => self.end_drag_gesture(),
+                Action::DiscardGesture => self.discard_gesture(),
+                Action::SetEasingTab(tab) => {
+                    let mut easing = self.preferences.easing.clone();
+                    easing.tab = tab;
+                    self.desk()
+                        .set_preference("easing", serde_json::json!(easing));
+                }
+                Action::SaveEasing(curve) => self.save_easing(curve),
                 Action::BeginPreview { select } => self.begin_timeline_preview(select),
                 Action::PreviewGesture(gesture) => self.preview_timeline(*gesture),
                 Action::EndPreview => self.end_timeline_preview(),
@@ -179,6 +187,21 @@ impl Editor {
         }
         self.desk()
             .set_preference("timeline_lanes", serde_json::json!(lanes));
+    }
+    /// Append `curve` to the saved easing presets under the next free name.
+    fn save_easing(&mut self, curve: [f64; 4]) {
+        let mut easing = self.preferences.easing.clone();
+        if easing.saved.len() >= crate::preferences::MAX_SAVED_EASINGS
+            || easing.saved.iter().any(|saved| saved.curve == curve)
+        {
+            return;
+        }
+        let name = easing.next_name();
+        easing
+            .saved
+            .push(crate::preferences::SavedEasing { name, curve });
+        self.desk()
+            .set_preference("easing", serde_json::json!(easing));
     }
     /// Delete every selected keyframe as one undo step.
     pub(in crate::editor) fn delete_keyframes(
