@@ -22,7 +22,7 @@ Assignee: <ide>/<model> | human | -
 Blocked by: - | NN, <milestone>/NN
 ```
 
-`Assignee` names the agent tool and model that implement the ticket as `ide/model`, for example `opencode/deepseek-v4.1-flash`, `codex/gpt-6.1-sol` or `claudecode/claude-sonnet-5-5`. `Blocked by` holds ticket ids only; put any condition or note in the body.
+`Assignee` is the exact model id the coordinator passes to the worker's `--model`, for example `opencode-go/deepseek-v4.1-flash` (run by opencode) or `claude-sonnet-5-5` (run by Claude Code). Older resolved tickets keep their historical values. `Blocked by` holds ticket ids only; put any condition or note in the body.
 
 `claimed` means the current active assignment, including explicitly admitted planning or source work whose checks await build capacity; it is not a lifetime claim on a worker, checkout or parent feature. Keep a broad parent `open` with its acceptance retained while a source leaf is active. A paused assignment records its precise condition in the body and is `blocked` when intervention is needed; a queued but otherwise ready leaf is `open`. Only unmerged code/contract tickets go in `Blocked by`; resource admission, scheduling and human evidence conditions stay in the body. Record unrun checks as unverified, independently of source progress.
 
