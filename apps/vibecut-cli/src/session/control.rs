@@ -152,6 +152,7 @@ fn control_with(
             policy: &policy,
             fonts,
             sounds: None,
+            music: None,
             media: media.as_ref(),
             chapters: None,
             captions: Some(&captions),

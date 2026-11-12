@@ -8,16 +8,16 @@ pub use crate::session::wire::{
     JobView, LIMITS, Limits, MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH,
     MAX_EVENTS, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS,
     MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES,
-    MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER, MAX_TEXT_BYTES, OutputSpan,
-    PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView,
-    RECEIPT_RESERVATION, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request,
-    Response, ResponseValue, Revision, SavedSoundEntry, Snapshot, SoundEntry, SoundPage,
-    SoundSource, TranslationsResult, bounded_json, contract_schema, parse_frame,
-    reference_markdown, registry_hash,
+    MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER, MAX_TEXT_BYTES, MusicEntry, MusicPage,
+    MusicSource, OutputSpan, PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame,
+    PreviewResult, ProviderView, RECEIPT_RESERVATION, ReframeReason, ReframeReport,
+    ReframeShotReport, ReframeTarget, Request, Response, ResponseValue, Revision, SavedMusicEntry,
+    SavedSoundEntry, Snapshot, SoundEntry, SoundPage, SoundSource, TranslationsResult,
+    bounded_json, contract_schema, parse_frame, reference_markdown, registry_hash,
 };
 
 use crate::{
-    AnalysisError, ArtifactError, EditError, FontError, JobFailurePolicy, RuntimeError,
+    AnalysisError, ArtifactError, EditError, FontError, JobFailurePolicy, MusicError, RuntimeError,
     SessionError, SoundError, library, luts, models, providers, recovery, subtitles, transcript,
 };
 
@@ -49,6 +49,8 @@ pub enum Error {
     Ai(#[from] ai::Error),
     #[error("sound library failed: {0}")]
     Sounds(#[from] SoundError),
+    #[error("music library failed: {0}")]
+    Music(#[from] MusicError),
     #[error("font catalog operation failed")]
     Font(#[from] FontError),
     #[error(transparent)]
@@ -80,6 +82,7 @@ impl Error {
             Self::Control(inner) => return (inner.code(), inner.transient()),
             Self::Recovery(inner) => return (inner.code(), inner.transient()),
             Self::Sounds(inner) => inner.code(),
+            Self::Music(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
             Self::Providers(inner) => return (inner.code(), inner.transient()),
             Self::Transcript(inner) => return (inner.code(), inner.transient()),
@@ -244,7 +247,41 @@ impl VisionAccess {
         (self.detector)()
     }
 }
-
+/// The three music-library operations the process lends to control commands. The
+/// access object owns the library root and the optional user credential, so the
+/// command carries neither; it chooses remote or local search by the request and
+/// the approval, never by a self-granted consent in JSON.
+#[derive(Clone, Copy)]
+pub struct MusicAccess<'a> {
+    search: &'a dyn Fn(&MusicQuery) -> Result<MusicPage>,
+    save: &'a dyn Fn(&MusicEntry) -> Result<SavedMusicEntry>,
+    unsave: &'a dyn Fn(&str) -> Result<bool>,
+}
+impl<'a> MusicAccess<'a> {
+    /// `search` serves `music.search` and reads the saved local library when the
+    /// request asks for it, `save` serves `music.save`, and `unsave` serves
+    /// `music.unsave`, returning whether an entry was removed.
+    pub fn new(
+        search: &'a dyn Fn(&MusicQuery) -> Result<MusicPage>,
+        save: &'a dyn Fn(&MusicEntry) -> Result<SavedMusicEntry>,
+        unsave: &'a dyn Fn(&str) -> Result<bool>,
+    ) -> Self {
+        Self {
+            search,
+            save,
+            unsave,
+        }
+    }
+}
+/// One bounded music-search request in the form the lent library takes.
+#[derive(Clone, Debug)]
+pub struct MusicQuery {
+    pub query: String,
+    pub tag: Option<String>,
+    pub page: u32,
+    pub page_size: u32,
+    pub saved: bool,
+}
 pub struct Caller<'a> {
     pub principal: &'a str,
     pub external: bool,
@@ -255,6 +292,9 @@ pub struct Caller<'a> {
     /// The process sound library behind `sounds.search`, `sounds.save` and
     /// `sounds.unsave`. Without it those commands refuse `Unsupported`.
     pub sounds: Option<&'a SoundAccess<'a>>,
+    /// The process music library behind `music.search`, `music.save` and
+    /// `music.unsave`. Without it those commands refuse `Unsupported`.
+    pub music: Option<&'a MusicAccess<'a>>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
     /// One mutex instance is shared by the desktop timeline display and the
@@ -347,6 +387,7 @@ mod tests {
                     policy: &Allow,
                     fonts: None,
                     sounds: None,
+                    music: None,
                     media: None,
                     chapters: None,
                     captions: None,

@@ -23,7 +23,8 @@ pub use results::{ControlResult, JobOutput, JobView, ProviderView};
 pub use views::{
     CaptionsResult, ChangeKind, ChapterSidecars, CostView, DetectionResult, FillerCandidate,
     FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState,
-    LoudnessResult, Measured, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult,
-    ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, SavedSoundEntry,
-    SceneCandidate, SnapshotResult, SoundEntry, SoundPage, SoundSource, TranslationsResult,
+    LoudnessResult, Measured, MusicEntry, MusicPage, MusicSource, OutputSpan, PauseCandidates,
+    PreviewFrame, PreviewResult, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget,
+    SavedMusicEntry, SavedSoundEntry, SceneCandidate, SnapshotResult, SoundEntry, SoundPage,
+    SoundSource, TranslationsResult,
 };

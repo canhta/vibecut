@@ -279,6 +279,7 @@ fn sounds_call(
             &mut runner,
             Lent {
                 sounds: Some(sounds),
+                music: None,
                 ..Lent::default()
             },
             command,

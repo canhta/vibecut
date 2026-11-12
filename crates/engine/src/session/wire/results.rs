@@ -1,7 +1,8 @@
 //! Defines the typed results a control command returns.
 use super::{
-    ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState,
-    PauseCandidates, PreviewResult, Revision, SavedSoundEntry, SnapshotResult, SoundPage,
+    ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState, MusicPage,
+    PauseCandidates, PreviewResult, Revision, SavedMusicEntry, SavedSoundEntry, SnapshotResult,
+    SoundPage,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -38,6 +39,16 @@ pub enum ControlResult {
     },
     SoundUnsaved {
         id: u64,
+        removed: bool,
+    },
+    MusicSearch {
+        page: MusicPage,
+    },
+    MusicSaved {
+        saved: SavedMusicEntry,
+    },
+    MusicUnsaved {
+        id: String,
         removed: bool,
     },
     Fillers {
@@ -85,6 +96,9 @@ impl std::fmt::Debug for ControlResult {
             Self::SoundSearch { .. } => "sound_search",
             Self::SoundSaved { .. } => "sound_saved",
             Self::SoundUnsaved { .. } => "sound_unsaved",
+            Self::MusicSearch { .. } => "music_search",
+            Self::MusicSaved { .. } => "music_saved",
+            Self::MusicUnsaved { .. } => "music_unsaved",
             Self::Fillers { .. } => "fillers",
             Self::ChapterSidecars { .. } => "chapter_sidecars",
             Self::JobAccepted { .. } => "job_accepted",

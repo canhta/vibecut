@@ -37,6 +37,11 @@ fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::So
         "sound library unavailable",
     ))
 }
+fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::MusicAccess<'a>> {
+    caller.music.ok_or(crate::session::EditError::Unsupported(
+        "music library unavailable",
+    ))
+}
 
 impl Session {
     pub(super) fn run_control(
@@ -201,6 +206,28 @@ impl Session {
                 id,
                 removed: (sound_access(caller)?.unsave)(id)?,
             }),
+            Command::MusicSearch {
+                query,
+                tag,
+                page,
+                page_size,
+                saved,
+            } => Ok(ControlResult::MusicSearch {
+                page: (music_access(caller)?.search)(&super::MusicQuery {
+                    query,
+                    tag,
+                    page,
+                    page_size,
+                    saved,
+                })?,
+            }),
+            Command::MusicSave { music } => Ok(ControlResult::MusicSaved {
+                saved: (music_access(caller)?.save)(&music)?,
+            }),
+            Command::MusicUnsave { id } => {
+                let removed = (music_access(caller)?.unsave)(&id)?;
+                Ok(ControlResult::MusicUnsaved { id, removed })
+            }
             Command::JobStatus { job } => {
                 let mut snapshot = JobView::from(
                     runner

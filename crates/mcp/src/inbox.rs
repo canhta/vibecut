@@ -297,6 +297,7 @@ impl Inbox {
             policy: grants,
             fonts: None,
             sounds: None,
+            music: None,
             media,
             chapters,
             captions,

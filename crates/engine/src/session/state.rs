@@ -5,7 +5,7 @@ mod checkpoint;
 mod session_control;
 use crate::{Command, NewItem, Outcome, Placement};
 use checkpoint::Checkpoint;
-use project::{AudioParams, AudioSource, ItemId, ItemParams, LibrarySound, Project};
+use project::{AudioParams, AudioSource, ItemId, ItemParams, Project};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::{
@@ -490,19 +490,19 @@ impl Session {
     /// One undo step: the asset and its audio item commit or roll back together.
     /// The caller supplies an already cached, probed media file and provider
     /// metadata; no network or cache IO happens while a project transaction is open.
-    fn add_library_sound(
+    fn add_library_audio(
         &mut self,
         placement: Placement,
         start: Tick,
         asset: media::SourceAsset,
-        sound: LibrarySound,
+        source: AudioSource,
     ) -> Result<Outcome> {
         let duration = asset
             .probe()
             .duration
-            .ok_or(EditError::Invalid("library sound duration"))?;
+            .ok_or(EditError::Invalid("library audio duration"))?;
         if duration <= Tick::ZERO {
-            return Err(EditError::Invalid("library sound duration"));
+            return Err(EditError::Invalid("library audio duration"));
         }
         let source_asset = asset.id();
         let mut created = Vec::new();
@@ -527,7 +527,7 @@ impl Session {
                         fades: Default::default(),
                         volume: 0.0,
                         muted: false,
-                        source: AudioSource::Library { sound },
+                        source: source.clone(),
                     }),
                 },
             })?;
@@ -563,7 +563,27 @@ impl Session {
                 start,
                 asset,
                 sound,
-            } => return self.add_library_sound(placement, start, asset, sound),
+            } => {
+                return self.add_library_audio(
+                    placement,
+                    start,
+                    asset,
+                    AudioSource::Library { sound },
+                );
+            }
+            Command::AddLibraryMusic {
+                placement,
+                start,
+                asset,
+                music,
+            } => {
+                return self.add_library_audio(
+                    placement,
+                    start,
+                    asset,
+                    AudioSource::Music { music },
+                );
+            }
             command => command,
         };
         // A reviewed span cut always closes its vacated tails; the caller cannot

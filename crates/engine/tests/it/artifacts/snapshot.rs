@@ -126,6 +126,7 @@ fn run(
                 policy: &Allow,
                 fonts: None,
                 sounds: None,
+                music: None,
                 media: None,
                 chapters: None,
                 captions: None,

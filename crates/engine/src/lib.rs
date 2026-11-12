@@ -4,7 +4,7 @@ pub mod control;
 mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
-pub use session::{AssetUsage, EditError, FontError, JobTarget, Session, SessionError, SoundError};
+pub use session::{AssetUsage, EditError, FontError, JobTarget, MusicError, Session, SessionError, SoundError};
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
     CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,

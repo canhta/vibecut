@@ -483,13 +483,8 @@ pub(crate) fn apply(
             )?;
         }
         // Session commits this as one grouped transaction before reaching edit.
-        EditCommand::AddLibrarySound {
-            placement: _placement,
-            start: _start,
-            asset: _asset,
-            sound: _sound,
-        } => {
-            return Err(EditError::Invalid("library sound requires a session"));
+        EditCommand::AddLibrarySound { .. } | EditCommand::AddLibraryMusic { .. } => {
+            return Err(EditError::Invalid("library audio requires a session"));
         }
         EditCommand::InsertItem {
             placement,

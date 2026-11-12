@@ -116,6 +116,7 @@ impl EngineBackend {
                 policy: &Allow,
                 fonts: Some(&access),
                 sounds: None,
+                music: None,
                 media: None,
                 chapters: None,
                 captions: None,

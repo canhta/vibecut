@@ -118,6 +118,51 @@ pub struct SavedSoundEntry {
     pub licence: String,
 }
 
+/// Where a music search page came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MusicSource {
+    Remote,
+    Local,
+}
+
+/// One music search result; also the record `music.save` upserts. Attribution and
+/// the admitted licence identity are precomputed by the library so every surface
+/// and export shows the same text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MusicEntry {
+    pub id: String,
+    pub title: String,
+    pub author: String,
+    pub licence: String,
+    pub licence_url: String,
+    pub attribution: String,
+    pub source_url: String,
+    pub audio_url: String,
+    pub duration_ms: u64,
+}
+
+/// One bounded page of music search results.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MusicPage {
+    pub source: MusicSource,
+    pub count: u64,
+    pub page: u32,
+    pub page_size: u32,
+    pub has_next: bool,
+    pub results: Vec<MusicEntry>,
+}
+
+/// The record a `music.save` upsert produced.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedMusicEntry {
+    pub music: MusicEntry,
+    pub saved_at_unix_ms: u64,
+}
+
 /// Published snapshot receipt; the PNG itself stays in `SnapshotImage`.
 #[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct SnapshotResult {

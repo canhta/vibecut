@@ -43,6 +43,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         policy,
         fonts: None,
         sounds: None,
+        music: None,
         media: None,
         chapters: None,
         captions: None,
@@ -860,6 +861,33 @@ pub(crate) fn vision_access() -> VisionAccess {
             [9; 32],
         ))
     })
+}
+pub(crate) fn fake_music_search(
+    query: &engine::control::MusicQuery,
+) -> engine::control::Result<engine::control::MusicPage> {
+    Ok(engine::control::MusicPage {
+        source: engine::control::MusicSource::Local,
+        count: 0,
+        page: query.page,
+        page_size: query.page_size,
+        has_next: false,
+        results: Vec::new(),
+    })
+}
+pub(crate) fn fake_music_save(
+    music: &engine::control::MusicEntry,
+) -> engine::control::Result<engine::control::SavedMusicEntry> {
+    Ok(engine::control::SavedMusicEntry {
+        music: music.clone(),
+        saved_at_unix_ms: 0,
+    })
+}
+pub(crate) fn fake_music_unsave(_: &str) -> engine::control::Result<bool> {
+    Ok(true)
+}
+/// Synthetic capability for registry dispatch; real-library coverage lives in `libraries`.
+pub(crate) fn music_access() -> engine::control::MusicAccess<'static> {
+    engine::control::MusicAccess::new(&fake_music_search, &fake_music_save, &fake_music_unsave)
 }
 pub(crate) fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     for _ in 0..10000 {

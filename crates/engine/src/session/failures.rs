@@ -103,6 +103,83 @@ impl From<transport::Error> for SoundError {
     }
 }
 
+/// Music library failures.
+#[derive(Debug, thiserror::Error)]
+pub enum MusicError {
+    #[error("music source credential was rejected")]
+    Auth,
+    #[error("music source quota is exhausted")]
+    Quota,
+    #[error("music source rate limit reached; retry after {retry_after_seconds:?} seconds")]
+    RateLimit { retry_after_seconds: Option<u32> },
+    #[error("music source network request failed")]
+    Network,
+    #[error("music source server failed")]
+    Server,
+    #[error("music source response is invalid")]
+    InvalidResponse,
+    #[error("music response exceeds the configured limit")]
+    Limit,
+    #[error("music audio device is unavailable")]
+    NoAudioDevice,
+    #[error("music audio is not cached")]
+    NotCached,
+    #[error("music library file is corrupt or unsupported")]
+    LibraryCorrupt,
+    #[error("music operation cancelled")]
+    Cancelled,
+    #[error("music IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("music media failed")]
+    Media(#[from] media::MediaError),
+    #[error("music library persistence failed")]
+    Project(#[from] project::Error),
+    #[error("invalid music input: {0}")]
+    Invalid(&'static str),
+}
+impl From<ai::Error> for MusicError {
+    fn from(error: ai::Error) -> Self {
+        match error {
+            ai::Error::Auth => Self::Auth,
+            ai::Error::Quota => Self::Quota,
+            ai::Error::RateLimit {
+                retry_after_seconds,
+            } => Self::RateLimit {
+                retry_after_seconds,
+            },
+            ai::Error::Network | ai::Error::Timeout => Self::Network,
+            ai::Error::Server => Self::Server,
+            ai::Error::Payload => Self::Limit,
+            ai::Error::Cancelled => Self::Cancelled,
+            _ => Self::InvalidResponse,
+        }
+    }
+}
+impl From<SoundError> for MusicError {
+    fn from(error: SoundError) -> Self {
+        match error {
+            SoundError::NoCredentials | SoundError::Auth => Self::Auth,
+            SoundError::Quota => Self::Quota,
+            SoundError::RateLimit {
+                retry_after_seconds,
+            } => Self::RateLimit {
+                retry_after_seconds,
+            },
+            SoundError::Network => Self::Network,
+            SoundError::Server => Self::Server,
+            SoundError::Limit => Self::Limit,
+            SoundError::NoAudioDevice => Self::NoAudioDevice,
+            SoundError::NotCached => Self::NotCached,
+            SoundError::LibraryCorrupt => Self::LibraryCorrupt,
+            SoundError::Cancelled => Self::Cancelled,
+            SoundError::Io(error) => Self::Io(error),
+            SoundError::Media(error) => Self::Media(error),
+            SoundError::Project(error) => Self::Project(error),
+            SoundError::Invalid(_) | SoundError::InvalidResponse => Self::InvalidResponse,
+        }
+    }
+}
+
 impl Failure for FontError {
     fn code(&self) -> ErrorCode {
         match self {
@@ -123,6 +200,24 @@ impl Failure for SoundError {
     fn code(&self) -> ErrorCode {
         match self {
             Self::NoCredentials => ErrorCode::Setup,
+            Self::Auth => ErrorCode::Auth,
+            Self::Quota => ErrorCode::Quota,
+            Self::RateLimit { .. } => ErrorCode::RateLimit,
+            Self::Network | Self::Server => ErrorCode::Network,
+            Self::NoAudioDevice => ErrorCode::AudioDevice,
+            Self::Cancelled => ErrorCode::SoundCancelled,
+            Self::Limit => ErrorCode::SoundLimit,
+            Self::InvalidResponse | Self::NotCached | Self::LibraryCorrupt | Self::Invalid(_) => {
+                ErrorCode::Sounds
+            }
+            Self::Io(_) | Self::Project(_) => ErrorCode::SoundIo,
+            Self::Media(_) => ErrorCode::Media,
+        }
+    }
+}
+impl Failure for MusicError {
+    fn code(&self) -> ErrorCode {
+        match self {
             Self::Auth => ErrorCode::Auth,
             Self::Quota => ErrorCode::Quota,
             Self::RateLimit { .. } => ErrorCode::RateLimit,

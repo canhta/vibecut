@@ -12,6 +12,7 @@ use crate::support::control::finish;
 use crate::support::control::fixture_chapters;
 use crate::support::control::font_access;
 use crate::support::control::media_access;
+use crate::support::control::music_access;
 use crate::support::control::ok;
 use crate::support::control::request;
 use crate::support::control::runner;
@@ -266,6 +267,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         let req = request(&s, spec.id, params, "example");
         let fonts = font_access();
         let sounds = sound_access();
+        let music = music_access();
         let result = s
             .control_request(
                 req,
@@ -275,6 +277,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     policy: &Allow,
                     fonts: Some(&fonts),
                     sounds: Some(&sounds),
+                    music: Some(&music),
                     media: Some(&media),
                     chapters: Some(&chapters),
                     captions: Some(&captions),
@@ -524,6 +527,10 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "fonts.download",
             "fonts.import",
             "import.add_asset",
+            "music.add_to_timeline",
+            "music.save",
+            "music.search",
+            "music.unsave",
             "project.create",
             "project.delete",
             "project.duplicate",

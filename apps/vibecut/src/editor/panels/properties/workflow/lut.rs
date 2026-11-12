@@ -89,6 +89,7 @@ impl LutWorkflow {
                 policy: &Human,
                 fonts: None,
                 sounds: None,
+                music: None,
                 media: Some(access.as_ref()),
                 chapters: None,
                 captions: None,
