@@ -29,6 +29,12 @@ struct Layer<'a> {
     clip: [f32; 4],
     shade: bool,
     opacity: f32,
+    /// Sort-only depth offset (negative = nearer): orders coplanar cards without
+    /// moving them, which a geometric offset would do under perspective.
+    depth_bias: f32,
+    /// The card replaces what lies behind it by its coverage, not by its pixel
+    /// alpha, so a partly transparent frame never shows the other frame through it.
+    occludes: bool,
 }
 
 impl<'a> Layer<'a> {
@@ -41,6 +47,8 @@ impl<'a> Layer<'a> {
             clip: [0., 0., front.width() as f32, front.height() as f32],
             shade: false,
             opacity: 1.,
+            depth_bias: 0.,
+            occludes: false,
         }
     }
     fn with_back(mut self, back: &'a Image, mirror_y: bool) -> Self {
@@ -56,12 +64,21 @@ impl<'a> Layer<'a> {
         self.shade = true;
         self
     }
+    fn biased(mut self, depth_bias: f32) -> Self {
+        self.depth_bias = depth_bias;
+        self
+    }
+    fn occluding(mut self) -> Self {
+        self.occludes = true;
+        self
+    }
 }
 
 /// Composite the layers seen through screen pixel (x, y), nearest last.
 fn composite(layers: &[Layer], eye: V3, x: f32, y: f32) -> [f32; 4] {
     const MAX: usize = 8;
-    let mut hits = [(0.0f32, [0.0f32; 4]); MAX];
+    // (depth, premultiplied colour, fraction of what lies behind that it hides)
+    let mut hits = [(0.0f32, [0.0f32; 4], 0.0f32); MAX];
     let mut count = 0;
     for layer in layers {
         let Some((lx, ly, depth, front)) = layer.card.hit(eye, x, y) else {
@@ -96,8 +113,10 @@ fn composite(layers: &[Layer], eye: V3, x: f32, y: f32) -> [f32; 4] {
             pixel = [r * light, g * light, b * light, a];
         }
         opacity = opacity.clamp(0., 1.);
+        let color = scale4(pixel, opacity);
+        let hidden = if layer.occludes { opacity } else { color[3] };
         if let Some(slot) = hits.get_mut(count) {
-            *slot = (depth, scale4(pixel, opacity));
+            *slot = (depth + layer.depth_bias, color, hidden);
             count += 1;
         }
     }
@@ -107,7 +126,9 @@ fn composite(layers: &[Layer], eye: V3, x: f32, y: f32) -> [f32; 4] {
     hits.get(..count)
         .unwrap_or(&[])
         .iter()
-        .fold([0.; 4], |accumulated, &(_, color)| over(accumulated, color))
+        .fold([0.; 4], |accumulated, &(_, color, hidden)| {
+            std::array::from_fn(|k| color[k] + accumulated[k] * (1. - hidden))
+        })
 }
 
 /// Render one card scene, averaged over the motion-blur time samples.
@@ -276,15 +297,23 @@ fn push(t: &Tx, out: &mut Out) -> Result<()> {
 fn slide(t: &Tx, out: &mut Out) -> Result<()> {
     let (dx, dy) = dir(t)?;
     let travel = travel(t, dx, dy);
-    let far = focal_for(t.width as f32, t.height as f32, 0.);
+    let (w, h) = (t.width as f32, t.height as f32);
+    let far = focal_for(w, h, 0.);
     scene_into(t, out, far, shutter(t, 0.12)?, move |q| {
         let e = ease_in_out(q);
+        let (ox, oy) = (dx * travel * (e - 1.), dy * travel * (e - 1.));
+        // B replaces A where it has arrived: the static outgoing card is clipped
+        // to the part B has not covered yet, so a partly transparent B never
+        // shows A beneath it and the end of the slide is exactly B.
+        let uncovered = [
+            if dx > 0. { ox + w } else { 0. },
+            if dy > 0. { oy + h } else { 0. },
+            if dx < 0. { ox } else { w },
+            if dy < 0. { oy } else { h },
+        ];
         vec![
-            Layer::new(Card::flat(), t.outgoing),
-            Layer::new(
-                Card::flat().translate([dx * travel * (e - 1.), dy * travel * (e - 1.), 0.]),
-                t.incoming,
-            ),
+            Layer::new(Card::flat(), t.outgoing).clipped(uncovered),
+            Layer::new(Card::flat().translate([ox, oy, 0.]), t.incoming),
         ]
     })
 }
@@ -300,7 +329,11 @@ fn roll(t: &Tx, out: &mut Out) -> Result<()> {
     } else {
         [w / 2. - radius, h / 2., 0.]
     };
-    let gap = (if horizontal { w } else { h }) * 1.15 / radius;
+    // The cards' widest angular extent is at the wheel's inner edge, half the
+    // frame closer to the hub; spacing them by that extent (plus a margin) keeps
+    // B fully off-frame at the start and A fully off-frame at the end.
+    let (span, depth) = if horizontal { (w, h) } else { (h, w) };
+    let gap = 2. * ((span / 2.) / (radius - depth / 2.)).atan() * 1.15;
     let sign = if horizontal { dx.signum() } else { dy.signum() };
     let far = focal_for(w, h, 0.);
     scene_into(t, out, far, shutter(t, 0.1)?, move |q| {
@@ -316,25 +349,39 @@ fn split(t: &Tx, out: &mut Out) -> Result<()> {
     let (w, h) = (t.width as f32, t.height as f32);
     let vertical_cut = t.params.choice("orientation")? == 0;
     let far = focal_for(w, h, 0.);
+    // Cut on a pixel boundary: every pixel belongs to exactly one half, so the
+    // halves never overlap (a partly transparent A would double up) and an odd
+    // size leaves no half-covered seam column at p = 0.
+    let cut = if vertical_cut {
+        (w / 2.).floor()
+    } else {
+        (h / 2.).floor()
+    };
     scene_into(t, out, far, shutter(t, 0.12)?, move |q| {
         let e = ease_in_out(q);
-        // A shrinking one-pixel overlap keeps the outgoing frame whole near p = 0 without
-        // leaving an incoming column at the far edge near p = 1.
-        let overlap = 1. - e;
         let (left, right) = if vertical_cut {
-            ([0., 0., w / 2. + overlap, h], [w / 2. - overlap, 0., w, h])
+            ([0., 0., cut, h], [cut, 0., w, h])
         } else {
-            ([0., 0., w, h / 2. + overlap], [0., h / 2. - overlap, w, h])
+            ([0., 0., w, cut], [0., cut, w, h])
         };
-        let (ox, oy) = if vertical_cut {
-            (w / 2. * e, 0.)
+        // Each half travels exactly its own extent, so both leave the frame at e = 1.
+        let (before, after) = (cut * e, ((if vertical_cut { w } else { h }) - cut) * e);
+        let (first, second) = if vertical_cut {
+            ([-before, 0., -0.01], [after, 0., -0.01])
         } else {
-            (0., h / 2. * e)
+            ([0., -before, -0.01], [0., after, -0.01])
+        };
+        // B shows only through the opening between the halves, so a partly
+        // transparent A never reveals it at the start and the end is exactly B.
+        let opening = if vertical_cut {
+            [cut - before, 0., cut + after, h]
+        } else {
+            [0., cut - before, w, cut + after]
         };
         vec![
-            Layer::new(Card::flat(), t.incoming),
-            Layer::new(Card::flat().translate([-ox, -oy, -0.01]), t.outgoing).clipped(left),
-            Layer::new(Card::flat().translate([ox, oy, -0.01]), t.outgoing).clipped(right),
+            Layer::new(Card::flat(), t.incoming).clipped(opening),
+            Layer::new(Card::flat().translate(first), t.outgoing).clipped(left),
+            Layer::new(Card::flat().translate(second), t.outgoing).clipped(right),
         ]
     })
 }
@@ -606,17 +653,24 @@ fn fold_motion(t: &Tx, out: &mut Out) -> Result<()> {
     let horizontal = dx != 0.;
     let focal = focal_for(w, h, t.params.fraction("perspective")?);
     let sign = if dx > 0. || dy > 0. { 1. } else { -1. };
+    // Hinge on a pixel boundary: the flap and the base never overlap while flat,
+    // so neither doubles a partly transparent A nor leaves a half-covered seam.
+    let cut = if horizontal {
+        (w / 2.).floor()
+    } else {
+        (h / 2.).floor()
+    };
     let (entry, mid_axis, exit_axis): ([f32; 4], V3, V3) = match (horizontal, sign > 0.) {
-        (true, true) => ([0., 0., w / 2. + 1., h], [w / 2., 0., 0.], [w, 0., 0.]),
-        (true, false) => ([w / 2. - 1., 0., w, h], [w / 2., 0., 0.], [0., 0., 0.]),
-        (false, true) => ([0., 0., w, h / 2. + 1.], [0., h / 2., 0.], [0., h, 0.]),
-        (false, false) => ([0., h / 2. - 1., w, h], [0., h / 2., 0.], [0., 0., 0.]),
+        (true, true) => ([0., 0., cut, h], [cut, 0., 0.], [w, 0., 0.]),
+        (true, false) => ([cut, 0., w, h], [cut, 0., 0.], [0., 0., 0.]),
+        (false, true) => ([0., 0., w, cut], [0., cut, 0.], [0., h, 0.]),
+        (false, false) => ([0., cut, w, h], [0., cut, 0.], [0., 0., 0.]),
     };
     let exit = match (horizontal, sign > 0.) {
-        (true, true) => [w / 2. - 1., 0., w, h],
-        (true, false) => [0., 0., w / 2. + 1., h],
-        (false, true) => [0., h / 2. - 1., w, h],
-        (false, false) => [0., 0., w, h / 2. + 1.],
+        (true, true) => [cut, 0., w, h],
+        (true, false) => [0., 0., cut, h],
+        (false, true) => [0., cut, w, h],
+        (false, false) => [0., 0., w, cut],
     };
     scene_into(t, out, focal, (0., 1), move |q| {
         let phi = PI * ease_in_out((q * 2.).min(1.)) * sign;
@@ -628,21 +682,24 @@ fn fold_motion(t: &Tx, out: &mut Out) -> Result<()> {
                 card.rot_x(axis, -angle)
             }
         };
-        let flap = rotate(
-            rotate(Card::flat().translate([0., 0., -0.5]), mid_axis, phi),
-            exit_axis,
-            psi,
-        );
+        let flap = rotate(rotate(Card::flat(), mid_axis, phi), exit_axis, psi);
         let base = rotate(Card::flat(), exit_axis, psi);
         // The outgoing side is edge-on by q = 1; fade its last sliver so the frame reaches the
         // incoming endpoint exactly instead of leaving a one-pixel card line.
         let fade = 1. - smoothstep(0.9, 1., q);
-        let mut base = Layer::new(base, t.outgoing).clipped(exit).shaded();
+        let mut base = Layer::new(base, t.outgoing)
+            .clipped(exit)
+            .shaded()
+            .occluding();
         base.opacity = fade;
+        // Folded flat onto the base, the flap is coplanar with it: a sort-only bias
+        // keeps it in front without the perspective shift a geometric offset causes.
         let mut flap = Layer::new(flap, t.outgoing)
             .with_back(t.outgoing, !horizontal)
             .clipped(entry)
-            .shaded();
+            .shaded()
+            .occluding()
+            .biased(-0.5);
         flap.opacity = fade;
         vec![Layer::new(Card::flat(), t.incoming), base, flap]
     })
@@ -1098,7 +1155,9 @@ fn slice(t: &Tx, out: &mut Out) -> Result<()> {
                     .floor()
                     .clamp(0., n - 1.);
                 if j == i {
-                    return over(incoming, pixel_clamped(t.outgoing, sx, sy));
+                    // A's band replaces B where it still lies; compositing it over B
+                    // would show B through a partly transparent A at the start.
+                    return pixel_clamped(t.outgoing, sx, sy);
                 }
             }
             incoming
