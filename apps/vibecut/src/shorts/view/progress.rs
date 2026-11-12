@@ -74,12 +74,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         vec2(BAR[0].min(width), BAR[1]),
     );
     painter.rect_filled(bar, corner(4.0), skeleton);
-    let fraction = state
-        .generating
-        .as_ref()
-        .and_then(|job| job.events.state.lock().ok().and_then(|s| s.fraction))
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
+    let fraction = state.generation_progress().unwrap_or(0.0);
     if fraction > 0.0 {
         let fill = Rect::from_min_size(bar.min, vec2(bar.width() * fraction, bar.height()));
         painter.rect_filled(fill, corner(4.0), kit::accent(dark).gamma_multiply(0.35));

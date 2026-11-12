@@ -5,6 +5,7 @@ use crate::{
     egui,
     i18n::{self, Locale, Text},
     services::{
+        ai_access::{self, Choice, Opener},
         crop,
         playback::{Files, Playback, Sources, Transport},
         preview,
@@ -12,15 +13,14 @@ use crate::{
 };
 use engine::ClipSourceSegment;
 use engine::{
-    ByteBudget, Command, NewItem, Session,
-    cache::{ArtifactKind, CacheKey, KeyInputs},
-    jobs::{
-        CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
-        SystemClock,
-    },
+    ByteBudget, Command, Session,
+    control::{ClipExportShort, ControlResult},
+    jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock},
+    subtitles::CaptionAccess,
     transcript::Cancellation,
 };
 pub use shorts::ClipCandidate as Candidate;
+use project::ItemParams;
 use shorts::{
     ClipBatch, ClipBatchRequest, ClipShort,
     clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries},
@@ -88,24 +88,11 @@ pub struct GenerationRequest {
     pub max_seconds: u32,
     pub max_segments: usize,
 }
-/// Injectable composition boundary. Production calls the shared shorts workflow;
-/// tests inject bounded results/failures while using the same job and widget paths.
-pub trait Generator: Send + Sync + 'static {
-    fn run(
-        &self,
-        request: GenerationRequest,
-        budget: ByteBudget,
-        events: &TaskEvents,
-        cancel: &Cancellation,
-    ) -> engine::control::Result<ReviewSource>;
-}
 pub use crate::services::ai_task::TaskEvents;
 pub(super) struct Generating {
     pub(super) id: JobId,
-    pub(super) runner_cancel: CancelToken,
     pub(super) cancel: Cancellation,
     pub(super) events: Arc<TaskEvents>,
-    pub(super) receive: mpsc::Receiver<Result<ReviewSource>>,
 }
 #[derive(Clone, Copy)]
 pub(super) enum Pick {
@@ -151,11 +138,20 @@ pub struct State {
     pub(super) preview_dirty: bool,
     pub(super) preview_index: Option<usize>,
     pub(super) preview_sources: Arc<dyn Sources>,
-    pub(super) generator: Arc<dyn Generator>,
+    /// Builds the access one run lends to the registry; tests inject fixture providers.
+    pub(super) access: Opener,
     pub(super) generating: Option<Generating>,
+    /// The source session suggestion and export commands run in, with its caption item.
+    pub(super) session: Option<Session>,
+    pub(super) asset: Option<media::SourceAsset>,
+    pub(super) duration: Tick,
+    pub(super) run_access: Option<CaptionAccess>,
+    /// The retained `clips.suggest` job the export command decodes.
+    pub(super) suggestion: Option<JobId>,
     // Cancellation in Drop runs before runner joins an approval-waiting worker.
     pub(super) runner: JobRunner,
-    pub(super) batch: Option<ClipBatch>,
+    /// One entry per accepted short: its own export job and published paths.
+    pub(super) exports: Option<Vec<ClipExportShort>>,
     pub(super) budget: ByteBudget,
     pub(super) picker: Option<Picker>,
     pub(super) error: Option<Error>,
@@ -233,13 +229,7 @@ impl Thumbs {
 impl Drop for State {
     fn drop(&mut self) {
         self.thumbs.stop();
-        if let Some(job) = &self.generating {
-            job.cancel.cancel();
-            job.runner_cancel.cancel();
-        }
-        if let Some(batch) = &self.batch {
-            batch.cancel_all();
-        }
+        self.cancel();
     }
 }
 impl State {
@@ -272,17 +262,18 @@ impl State {
         }
     }
     pub fn new(preferences: Look, budget: ByteBudget) -> Result<Self> {
-        Self::with_generator(
+        Self::with_access(
             preferences,
-            budget,
-            Arc::new(super::workflow::LocalVideoWorkflow),
+            budget.clone(),
+            ai_access::desktop_opener(budget),
             Arc::new(Files),
         )
     }
-    pub fn with_generator(
+    /// Tests inject the opener at the lent-access seam; the window still sends registry commands.
+    pub fn with_access(
         preferences: Look,
         budget: ByteBudget,
-        generator: Arc<dyn Generator>,
+        access: Opener,
         preview_sources: Arc<dyn Sources>,
     ) -> Result<Self> {
         Ok(Self {
@@ -314,8 +305,13 @@ impl State {
             preview_dirty: false,
             preview_index: None,
             preview_sources,
-            generator,
+            access,
             generating: None,
+            session: None,
+            asset: None,
+            duration: Tick::ZERO,
+            run_access: None,
+            suggestion: None,
             runner: JobRunner::new(
                 RunnerConfig {
                     concurrency: [2, 1, 1],
@@ -328,7 +324,7 @@ impl State {
                 budget.clone(),
                 Arc::new(SystemClock::default()),
             )?,
-            batch: None,
+            exports: None,
             budget,
             picker: None,
             error: None,
@@ -441,13 +437,20 @@ impl State {
         })
     }
     pub fn exporting(&self) -> bool {
-        self.batch.as_ref().is_some_and(|batch| {
-            (0..batch.len()).any(|i| {
-                batch
-                    .snapshot(&self.runner, i)
+        self.exports.as_ref().is_some_and(|exports| {
+            exports.iter().any(|short| {
+                self.runner
+                    .snapshot(short.job)
                     .is_some_and(|s| !terminal(s.state))
             })
         })
+    }
+    /// Progress of the running suggestion job, 0..=1.
+    pub fn generation_progress(&self) -> Option<f32> {
+        let job = self.generating.as_ref()?;
+        self.runner
+            .snapshot(job.id)
+            .map(|snapshot| snapshot.progress.clamp(0.0, 1.0))
     }
     /// Picker and drop injection share this path; replacement refuses during work.
     pub fn pick_video(&mut self, path: PathBuf) -> Result<()> {
@@ -458,6 +461,11 @@ impl State {
             return Err(Error::Invalid("video path"));
         }
         self.request.path = path;
+        self.reset_source();
+        self.cancelled = false;
+        Ok(())
+    }
+    fn reset_source(&mut self) {
         self.crop_entry = None;
         self.crop_cancelled = false;
         self.crop_focused = false;
@@ -466,14 +474,18 @@ impl State {
         self.editing = false;
         self.thumbs.stop();
         self.preview = None;
-        self.batch = None;
+        self.exports = None;
+        self.session = None;
+        self.asset = None;
+        self.duration = Tick::ZERO;
+        self.run_access = None;
+        self.suggestion = None;
         self.undo.clear();
         self.redo.clear();
         self.trim_drafts.clear();
         self.error = None;
-        self.cancelled = false;
-        Ok(())
     }
+    /// One registry job: import the picked source, then ask `clips.suggest` for candidates.
     pub fn generate(&mut self) -> Result<()> {
         if self.busy() || self.request.path.as_os_str().is_empty() {
             return Err(Error::Invalid("pick a video before generating"));
@@ -487,71 +499,53 @@ impl State {
             return Err(Error::Invalid("shorts duration or count"));
         }
         self.preview = None;
+        let asset = media::SourceAsset::import(media::AssetId(1), self.request.path.clone())
+            .map_err(|error| Error::Engine(engine::control::Error::Media(error)))?;
+        let duration = asset
+            .probe()
+            .duration
+            .filter(|duration| *duration > Tick::ZERO)
+            .ok_or(Error::Invalid("shorts source duration"))?;
+        let mut session = engine::transcript::source_session(&asset, duration, true, None)?;
         let cancel = Cancellation::new();
         let events = Arc::new(TaskEvents::new(cancel.clone()));
-        let worker_events = events.clone();
-        let worker_cancel = cancel.clone();
-        let request = self.request.clone();
-        let generator = self.generator.clone();
-        let budget = self.budget.clone();
-        let (send, receive) = mpsc::sync_channel(1);
-        let key = CacheKey::new(KeyInputs {
-            kind: ArtifactKind::Preview,
-            source: [0; 32],
-            provider: "desktop",
-            model: "shorts-workflow",
-            version: "1",
-            settings: &[],
-            transcript: [0; 32],
-            cues: [0; 32],
-            clip_range: [0; 32],
-            translation: [0; 32],
-        })?;
-        let (id, runner_cancel) = self.runner.submit(
-            JobSpec {
-                kind: JobKind::SuggestClips,
-                class: ResourceClass::Cpu,
-                input: key,
-                bytes: Default::default(),
+        let access = (self.access)(
+            Choice::Transcribe {
+                provider: &self.request.transcription_provider,
+                model: &self.request.transcription_model,
             },
-            move |ctx| {
-                ctx.check_cancelled()?;
-                if worker_cancel.cancelled() {
-                    return Err(engine::control::Error::Runtime(
-                        engine::RuntimeError::Cancelled,
-                    ));
-                }
-                match generator.run(
-                    request.clone(),
-                    budget.clone(),
-                    &worker_events,
-                    &worker_cancel,
-                ) {
-                    Ok(source) => {
-                        send.send(Ok(source)).map_err(|_| {
-                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Ok(Vec::new())
-                    }
-                    Err(error) => {
-                        let error = Arc::new(error);
-                        send.send(Err(Error::Worker(error.clone()))).map_err(|_| {
-                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Err(engine::control::Error::Runtime(
-                            engine::RuntimeError::Failed(error),
-                        ))
-                    }
-                }
-            },
+            events.clone(),
         )?;
-        self.generating = Some(Generating {
-            id,
-            runner_cancel,
-            cancel,
-            events,
-            receive,
-        });
+        let language = engine::providers::parse_language(&self.request.language)?;
+        let min = Tick(i64::from(self.request.min_seconds) * TICKS_PER_SECOND);
+        let max = Tick(i64::from(self.request.max_seconds) * TICKS_PER_SECOND);
+        let (id, _) = ai_access::accepted(ai_access::run(
+            &mut session,
+            &mut self.runner,
+            Some(&access),
+            None,
+            "clips.suggest",
+            serde_json::json!({
+                "asset": asset.id(),
+                "source_language": language,
+                "provider": self.request.suggestion_provider,
+                "model": self.request.suggestion_model,
+                "count": self.request.count,
+                "min_duration": min,
+                "max_duration": max,
+                "max_segments": self.request.max_segments,
+                "min_segment_duration": Tick(TICKS_PER_SECOND),
+                "overlap_tolerance": 0.2,
+                "keywords": Vec::<String>::new(),
+            }),
+        )?)?;
+        self.session = Some(session);
+        self.asset = Some(asset);
+        self.duration = duration;
+        self.run_access = Some(access);
+        self.suggestion = Some(id);
+        self.exports = None;
+        self.generating = Some(Generating { id, cancel, events });
         self.error = None;
         self.cancelled = false;
         Ok(())
@@ -559,10 +553,12 @@ impl State {
     pub fn cancel(&mut self) {
         if let Some(job) = &self.generating {
             job.cancel.cancel();
-            job.runner_cancel.cancel();
+            let _ = self.runner.cancel_job(job.id);
         }
-        if let Some(batch) = &self.batch {
-            batch.cancel_all();
+        if let Some(exports) = &self.exports {
+            for short in exports {
+                let _ = self.runner.cancel_job(short.job);
+            }
         }
     }
     pub fn approve_upload(&mut self, approve: bool) -> Result<()> {
@@ -588,27 +584,24 @@ impl State {
             .and_then(|job| self.runner.snapshot(job.id))
             .is_some_and(|s| terminal(s.state));
         if done && let Some(job) = self.generating.take() {
-            if job.cancel.cancelled() {
+            let snapshot = self.runner.snapshot(job.id);
+            let state = snapshot.as_ref().map_or(JobState::Failed, |s| s.state);
+            if job.cancel.cancelled() || state == JobState::Cancelled {
                 self.cancelled = true;
-            } else {
-                let result = job.receive.try_recv().unwrap_or_else(|_| {
-                    Err(self
-                        .runner
-                        .snapshot(job.id)
-                        .and_then(|s| s.error)
-                        .map(Error::Worker)
-                        .unwrap_or(Error::Invalid("missing shorts result")))
-                });
-                match result {
-                    Ok(source) => {
-                        if let Err(e) = self.install(source) {
-                            self.fail(e, Text::ShortsError);
-                        }
-                    }
-                    Err(e) => self.fail(e, Text::ShortsError),
+                let _ = self.runner.take_output(job.id);
+            } else if state == JobState::Completed {
+                // Keep the retained suggestion: `clips.export` decodes the same job.
+                if let Err(e) = self.finish_suggestion(job.id) {
+                    self.fail(e, Text::ShortsError);
                 }
+            } else {
+                let error = snapshot
+                    .and_then(|s| s.error)
+                    .map(Error::Worker)
+                    .unwrap_or_else(|| Error::Invalid("missing shorts result"));
+                self.fail(error, Text::ShortsError);
+                let _ = self.runner.take_output(job.id);
             }
-            let _ = self.runner.take_output(job.id);
         }
         if self.preview_dirty {
             self.preview_dirty = false;
@@ -621,6 +614,43 @@ impl State {
         {
             self.fail(e, Text::ShortsError);
         }
+    }
+    /// Decode the retained suggestion, rebuild the source session with its caption item and
+    /// install the review. The job output stays retained for `clips.export`.
+    fn finish_suggestion(&mut self, id: JobId) -> Result<()> {
+        let bytes = self
+            .runner
+            .output_bytes(id)
+            .ok_or(Error::Invalid("shorts suggestion missing"))?;
+        let result = engine::control::decode_clips(bytes).map_err(Error::Engine)?;
+        let asset = self.asset.clone().ok_or(Error::Invalid("no shorts source"))?;
+        let duration = self.duration;
+        let session =
+            engine::transcript::build_session(&asset, &result.cues, duration, true, None)?;
+        let project = session.project().as_ref().clone();
+        let transcript = transcript_from(&result);
+        let boundaries = review_boundaries(&asset, duration, &self.request)?;
+        let cues = captions::CueTrack {
+            styles: Vec::new(),
+            cues: result.cues.clone(),
+        };
+        let candidates = result
+            .clips
+            .iter()
+            .map(candidate_from_view)
+            .collect::<Result<Vec<_>>>()?;
+        self.session = Some(session);
+        self.install(ReviewSource {
+            project,
+            asset: result.asset,
+            transcript,
+            cues,
+            // ponytail: clips.suggest does not carry the RMS hint; word/segment snapping
+            // remains exact. Add a review field to the wire when trim needs silence hints.
+            energy: Vec::new(),
+            boundaries,
+            candidates,
+        })
     }
     pub(super) fn install(&mut self, source: ReviewSource) -> Result<()> {
         if source.candidates.len() > 32 {
@@ -686,7 +716,7 @@ impl State {
         self.selected = 0;
         self.undo.clear();
         self.redo.clear();
-        self.batch = None;
+        self.exports = None;
         self.error = None;
         self.reset_drafts();
         self.preview_dirty = true;
@@ -913,7 +943,7 @@ impl State {
         self.preview_index = Some(self.selected);
         Ok(())
     }
-    /// Accept only explicitly approved shorts. /05 owns jobs, names and output admission.
+    /// Accept only explicitly approved shorts: one `clips.export` command starts their jobs.
     pub fn export_to(&mut self, directory: PathBuf) -> Result<()> {
         if self.busy() {
             return Err(Error::Invalid("shorts operation in progress"));
@@ -928,24 +958,98 @@ impl State {
         if indices.is_empty() {
             return Err(Error::Invalid("no accepted shorts"));
         }
-        let mut batch = self.prepare(&indices, None, directory)?;
-        let result = batch.submit(&mut self.runner);
-        self.batch = Some(batch); // Retain partial admission so every job remains cancellable.
-        result?;
+        self.exports = Some(self.submit_export(&indices, directory, false)?);
         self.error = None;
         Ok(())
     }
-    pub fn batch(&self) -> Option<&ClipBatch> {
-        self.batch.as_ref()
+    /// Submit `clips.export` for exactly these candidates; the runner bounds the selection.
+    fn submit_export(
+        &mut self,
+        indices: &[usize],
+        directory: PathBuf,
+        overwrite: bool,
+    ) -> Result<Vec<ClipExportShort>> {
+        let suggestion = self.suggestion.ok_or(Error::Invalid("no clip suggestion"))?;
+        let access = self
+            .run_access
+            .clone()
+            .ok_or(Error::Invalid("no clip access"))?;
+        let source = self.source.as_ref().ok_or(Error::Invalid("no source"))?;
+        let languages = if self.captions {
+            vec![source.transcript.source_lang.clone()]
+        } else {
+            Vec::new()
+        };
+        let formats = if self.captions {
+            vec![captions::Format::Srt]
+        } else {
+            Vec::new()
+        };
+        let item = if self.captions {
+            caption_item(&self.session)?
+        } else {
+            None
+        };
+        let params = serde_json::json!({
+            "job": suggestion,
+            "select": indices,
+            "item": item,
+            "languages": languages,
+            "formats": formats,
+            "directory": directory,
+            "overwrite": overwrite,
+            "allow_degraded": false,
+        });
+        let session = self.session.as_mut().ok_or(Error::Invalid("no source"))?;
+        match ai_access::run(
+            session,
+            &mut self.runner,
+            Some(&access),
+            None,
+            "clips.export",
+            params,
+        )? {
+            ControlResult::ClipExports { shorts, .. } => Ok(shorts),
+            _ => Err(Error::Invalid("clip export was not accepted")),
+        }
     }
-    pub fn batch_snapshot(&self, index: usize) -> Option<engine::jobs::JobSnapshot> {
-        self.batch.as_ref()?.snapshot(&self.runner, index)
+    pub fn export_snapshot(&self, index: usize) -> Option<engine::jobs::JobSnapshot> {
+        let short = self.exports.as_ref()?.get(index)?;
+        self.runner.snapshot(short.job)
+    }
+    pub fn export(&self, index: usize) -> Option<&ClipExportShort> {
+        self.exports.as_ref()?.get(index)
+    }
+    pub fn export_count(&self) -> usize {
+        self.exports.as_ref().map_or(0, Vec::len)
     }
     pub fn retry_export(&mut self, index: usize) -> Result<()> {
-        self.batch
-            .as_mut()
-            .ok_or(Error::Invalid("no export batch"))?
-            .retry(&mut self.runner, index)?;
+        let candidate = self
+            .exports
+            .as_ref()
+            .and_then(|exports| exports.get(index))
+            .map(|short| short.candidate)
+            .ok_or(Error::Invalid("no export batch"))?;
+        let directory = self
+            .exports
+            .as_ref()
+            .and_then(|exports| exports.get(index))
+            .map(|short| {
+                short
+                    .video
+                    .parent()
+                    .map_or_else(std::env::temp_dir, std::path::Path::to_path_buf)
+            })
+            .ok_or(Error::Invalid("no export batch"))?;
+        let submitted = self.submit_export(&[candidate], directory, false)?;
+        let Some(exports) = self.exports.as_mut() else {
+            return Err(Error::Invalid("no export batch"));
+        };
+        if let Some(short) = submitted.into_iter().next()
+            && let Some(slot) = exports.get_mut(index)
+        {
+            *slot = short;
+        }
         Ok(())
     }
     /// A fresh portrait project, with all segments/captions inserted by one command
@@ -1043,6 +1147,128 @@ impl State {
         Ok((session, settings))
     }
 }
+/// The suggested source's caption item, which `clips.export` burns and maps.
+fn caption_item(session: &Option<Session>) -> Result<Option<ItemId>> {
+    Ok(session.as_ref().and_then(|session| {
+        session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|item| matches!(item.content, ItemParams::Caption(_)))
+            .map(|item| item.id)
+    }))
+}
+
+/// Rebuild the recognition context from the suggestion's source cues. Cues carry the
+/// exact native word proof the suggestion was snapped from; no ASR runs again.
+fn transcript_from(result: &engine::control::ClipsResult) -> captions::Transcript {
+    let segments = result
+        .cues
+        .iter()
+        .filter_map(|cue| {
+            let text = cue.texts.get(&cue.source_lang)?;
+            let words = match &cue.word_timing {
+                captions::CueWordTiming::Words { text, records, .. } => records
+                    .iter()
+                    .filter_map(|record| {
+                        let word = text.as_str().get(record.bytes.clone())?;
+                        Some(captions::Word {
+                            provenance: Some(record.provenance),
+                            text: word.into(),
+                            range: Some(record.source_range),
+                            speaker: None,
+                            confidence: None,
+                        })
+                    })
+                    .collect(),
+                captions::CueWordTiming::Unverified => Vec::new(),
+            };
+            Some(captions::Segment {
+                id: cue.id.clone(),
+                range: cue.range,
+                text: text.text.clone(),
+                words,
+                spans: None,
+            })
+        })
+        .collect();
+    captions::Transcript {
+        source_lang: result.source_language.clone(),
+        fingerprint: captions::Fingerprint {
+            provider: result.transcription_provider.clone().into(),
+            model: result.transcription_model.clone().into(),
+            settings: "clips.suggest".into(),
+        },
+        segments,
+    }
+}
+
+/// Boundary settings of the suggestion command; the same values `clips.suggest` applied.
+fn review_boundaries(
+    asset: &media::SourceAsset,
+    duration: Tick,
+    request: &GenerationRequest,
+) -> Result<ClipBoundarySettings> {
+    let frame_rate = asset
+        .probe()
+        .streams
+        .iter()
+        .find(|stream| stream.kind == media::StreamKind::Video)
+        .and_then(|stream| stream.frame_rate)
+        .unwrap_or(time::FrameRate::FPS_30);
+    Ok(ClipBoundarySettings {
+        source_range: SourceRange::new(Tick::ZERO, duration)?,
+        frame_rate,
+        tolerance: Tick(TICKS_PER_SECOND),
+        silence_rms: 0.01,
+        min_duration: Tick(i64::from(request.min_seconds) * TICKS_PER_SECOND),
+        max_duration: Tick(i64::from(request.max_seconds) * TICKS_PER_SECOND),
+        min_segment_duration: Tick(TICKS_PER_SECOND),
+        max_segments: request.max_segments,
+    })
+}
+
+fn candidate_from_view(
+    view: &engine::control::ClipCandidateView,
+) -> Result<Candidate> {
+    let role = |name: &str| match name {
+        "hook" => Ok(engine::ClipRole::Hook),
+        "context" => Ok(engine::ClipRole::Context),
+        "payoff" => Ok(engine::ClipRole::Payoff),
+        _ => Err(Error::Invalid("clip piece role")),
+    };
+    let source = match view.source.as_str() {
+        "llm" => engine::ClipSource::Llm,
+        "heuristic" => engine::ClipSource::Heuristic,
+        _ => return Err(Error::Invalid("clip source")),
+    };
+    let mut pieces = Vec::with_capacity(view.pieces.len());
+    for piece in &view.pieces {
+        pieces.push(ai::clips::ClipPiece {
+            start_segment_id: piece.start_segment_id.clone(),
+            end_segment_id: piece.end_segment_id.clone(),
+            role: role(piece.role.as_str())?,
+        });
+    }
+    Ok(Candidate {
+        proposal: engine::ClipProposal {
+            segments: pieces,
+            title: view.title.clone(),
+            hook_text: view.hook_text.clone(),
+            reason: view.reason.clone(),
+            score: view.score,
+        },
+        segments: shorts::suggestion::segments_from_view(view)?,
+        // Editors never read the edge deltas; the snapped segments are authoritative.
+        adjustments: Vec::new(),
+        duration: view.duration,
+        source,
+    })
+}
+
 pub(super) fn terminal(state: JobState) -> bool {
     matches!(
         state,

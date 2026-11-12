@@ -29,8 +29,9 @@ pub enum Choice<'a> {
 
 /// Builds the access one run lends to the registry. Injected at the lent-access seam:
 /// tests return an access over fixture providers, the app opens the real ones.
-pub type Opener =
-    Arc<dyn Fn(Choice<'_>, Consent) -> engine::control::Result<CaptionAccess> + Send + Sync>;
+pub type Opener = Arc<
+    dyn for<'a> Fn(Choice<'a>, Consent) -> engine::control::Result<CaptionAccess> + Send + Sync,
+>;
 
 /// The shipped opener: credentials from the process environment, local ASR resources, the
 /// process models cache opened once, and the clip workflow over the same providers.
