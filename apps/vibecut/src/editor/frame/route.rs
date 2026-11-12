@@ -19,6 +19,7 @@ impl Editor {
             keybindings: &self.preferences.keybindings,
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
+            mask_points: &self.selection_scopes.mask_points,
             visuals: &self.media,
             cache: self.media.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
@@ -257,6 +258,107 @@ impl Editor {
         self.end_preview_transform(commit);
         true
     }
+    /// Select one mask point without leaving the item selection.
+    pub(in crate::editor) fn select_mask_point(
+        &mut self,
+        target: crate::selection::MaskPointSelection,
+        toggle: bool,
+    ) {
+        if toggle {
+            if !self.selection_scopes.mask_points.remove(&target) {
+                self.selection_scopes.mask_points.insert(target.clone());
+            }
+        } else {
+            self.selection_scopes.mask_points.clear();
+            self.selection_scopes.mask_points.insert(target.clone());
+        }
+        if self.selection.len() != 1 || !self.selection.contains(&target.item) {
+            self.selection.clear();
+            self.selection.insert(target.item);
+        }
+        self.properties.clear_drafts();
+        self.desk().select();
+    }
+    /// Drop the mask-point scope and keep the item selected.
+    pub(in crate::editor) fn clear_mask_points(&mut self) {
+        if self.selection_scopes.mask_points.is_empty() {
+            return;
+        }
+        self.selection_scopes.mask_points.clear();
+        self.desk().select();
+    }
+    /// Stage one absolute mask path from a completed gesture origin.
+    pub(in crate::editor) fn preview_mask_path(
+        &mut self,
+        item: ItemId,
+        mask: &str,
+        path: &project::MaskPath,
+    ) {
+        let commands = vec![Command::SetMaskPath {
+            item,
+            mask: mask.to_owned(),
+            path: path.clone(),
+        }];
+        self.desk()
+            .preview(Command::TimelinePreview { commands }, false);
+    }
+    /// Insert one point at the nearest cubic parameter, then select it.
+    pub(in crate::editor) fn add_mask_point(
+        &mut self,
+        item: ItemId,
+        mask: &str,
+        segment: usize,
+        t: f64,
+    ) {
+        if self.session.gesture_active() {
+            self.end_preview_transform(false);
+        }
+        let command = Command::AddMaskPoint {
+            item,
+            mask: mask.to_owned(),
+            segment,
+            t,
+        };
+        match self.desk().apply_result(command, false) {
+            Ok(outcome) if outcome.changed => {
+                self.selection_scopes.mask_points.clear();
+                self.selection_scopes
+                    .mask_points
+                    .insert(crate::selection::MaskPointSelection {
+                        item,
+                        mask: mask.to_owned(),
+                        point: segment + 1,
+                    });
+                self.desk().select();
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+    /// Delete the selected mask points as one undo step, never the item.
+    pub(in crate::editor) fn delete_mask_points(&mut self) {
+        let mut groups: std::collections::BTreeMap<(ItemId, String), Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for target in &self.selection_scopes.mask_points {
+            groups
+                .entry((target.item, target.mask.clone()))
+                .or_default()
+                .push(target.point);
+        }
+        if groups.is_empty() {
+            return;
+        }
+        let commands = groups
+            .into_iter()
+            .map(|((item, mask), points)| Command::RemoveMaskPoint { item, mask, points })
+            .collect();
+        if let Ok(outcome) = self.desk().apply_result(Command::Batch { commands }, false)
+            && outcome.changed
+        {
+            self.selection_scopes.mask_points.clear();
+            self.prune_selection();
+        }
+    }
     /// Escape during a preview transform drops the candidate without a history entry.
     fn cancel_preview_transform(&mut self) -> bool {
         if !self.player.transform.cancel() {
@@ -463,6 +565,19 @@ impl Editor {
             return;
         }
         if self.cancel_preview_transform() {
+            return;
+        }
+        // Mask gestures and the point scope pop before the item scope.
+        if self.player.mask_path.cancel() {
+            if self.session.gesture_active()
+                && let Err(error) = self.session.apply(Command::TimelineDiscardPreview {})
+            {
+                self.desk().fail(error.to_string());
+            }
+            return;
+        }
+        if !self.selection_scopes.mask_points.is_empty() {
+            self.clear_mask_points();
             return;
         }
         if self.assets.transition_drag.take().is_some() {

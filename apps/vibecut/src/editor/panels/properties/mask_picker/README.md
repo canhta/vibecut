@@ -7,11 +7,13 @@ because the Basic Mask row is its only entry. `State` owns the seven shape choic
 typed field drafts; `show` draws the grid and fields and returns actions for the
 properties owner.
 
-The tile order is None, Horizontal, Mirror, Circle, Rectangle, Heart, Stars. Horizontal
-is the engine split at a default -90° so it keeps the top half; Mirror is the
-cinematic-bars band; the rest map straight to ellipse, rectangle, heart and star.
-Adding uses `masks.add`, changing a shape keeps centre, size and rotation through
-`masks.update`, and None runs `masks.remove`. A locked track disables every edit.
+The tile order is None, Horizontal, Mirror, Circle, Rectangle, Heart, Stars, Path.
+Horizontal is the engine split at a default -90° so it keeps the top half; Mirror is
+the cinematic-bars band; the rest map straight to ellipse, rectangle, heart and star.
+Path seeds a closed unit ellipse. Choosing Path again on an existing path keeps its
+customized anchors instead of reseeding. Adding uses `masks.add`, changing a shape
+keeps centre, size and rotation through `masks.update`, and None runs `masks.remove`.
+A locked track disables every edit.
 
 Feather is 0–100 px (default 0) and commits on release; size W/H and position X/Y are
 per cent of the placed item with size independent per axis; rotation is in degrees

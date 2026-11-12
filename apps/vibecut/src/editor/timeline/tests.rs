@@ -351,7 +351,9 @@ impl Rig {
         }
         crate::kit::install_theme(ui.ctx(), true);
         crate::kit::install_editor_density(ui.ctx());
-        let keyframes = crate::selection::SelectionScopes::default().keyframes;
+        let scopes = crate::selection::SelectionScopes::default();
+        let keyframes = scopes.keyframes;
+        let mask_points = scopes.mask_points;
         let cx = Context {
             session: &self.session,
             selection: &self.selection,
@@ -367,6 +369,7 @@ impl Rig {
             keybindings: &self.preferences.keybindings,
             scope: crate::selection::SelectionScope::None,
             keyframes: &keyframes,
+            mask_points: &mask_points,
             visuals: &self.visuals,
             cache: crate::editor::context::CacheUi::default(),
             disabled: self.disabled.clone(),

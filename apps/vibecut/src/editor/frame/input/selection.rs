@@ -48,9 +48,28 @@ impl Editor {
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
         self.selection.retain(|id| existing.contains(id));
-        self.selection_scopes
-            .mask_points
-            .retain(|target| self.selection.contains(&target.item));
+        let session = &self.session;
+        self.selection_scopes.mask_points.retain(|target| {
+            self.selection.contains(&target.item)
+                && session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| track.items.iter())
+                    .find(|item| item.id == target.item)
+                    .is_some_and(|item| {
+                        item.masks.iter().any(|mask| {
+                            mask.id == target.mask
+                                && matches!(
+                                    &mask.shape,
+                                    project::MaskShape::Path { path }
+                                        if target.point < path.vertices.len()
+                                )
+                        })
+                    })
+        });
         let selected = self.selection.clone();
         let session = &self.session;
         self.selection_scopes

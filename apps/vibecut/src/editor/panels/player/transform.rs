@@ -357,6 +357,7 @@ impl Visual {
 
 pub(super) fn show(
     state: &mut State,
+    mask_path: &mut super::mask_path::State,
     cx: &Context<'_>,
     ui: &mut egui::Ui,
     frame: Rect,
@@ -420,6 +421,11 @@ pub(super) fn show(
         return;
     }
 
+    // A path mask owns the pointer before item handles: anchors, tangents,
+    // curve insertion and background clearing.
+    let mask_handled =
+        super::mask_path::show(mask_path, cx, ui, &viewport, frame, canvas, at, actions);
+
     // Register the handle targets before reading this frame's presses.
     let mut responses = Vec::with_capacity(SCALE_HANDLES.len() + 1);
     if let Some((_, _, visual)) = &visual {
@@ -470,6 +476,7 @@ pub(super) fn show(
             state.drag = Some(drag);
         }
     } else if !opened
+        && !mask_handled
         && pressed
         && let Some(pointer) = pointer
     {
@@ -537,6 +544,7 @@ pub(super) fn show(
             response,
         });
     }
+    super::mask_path::remember(ui, cx, &viewport, at, actions);
 }
 
 /// A double click on a visible text item opens one inline edit session.

@@ -4149,3 +4149,170 @@ fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
         }
     }
 }
+
+fn pointer_drag(harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(from));
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerMoved(to));
+    harness.run_steps(2);
+    harness.event(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run_steps(2);
+}
+
+fn point_target(harness: &mut Harness<Editor>, id: &str, modifiers: egui::Modifiers) {
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click_modifiers(modifiers);
+    harness.run_steps(2);
+}
+
+fn path_of(harness: &Harness<Editor>, item: ItemId) -> project::MaskPath {
+    let mask = mask_of(harness, item).expect("mask");
+    match mask.shape {
+        project::MaskShape::Path { path } => path,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, video);
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick::ZERO, false, project)
+        .unwrap();
+    harness.run_steps(2);
+
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.path");
+    let mask = mask_of(&harness, video).unwrap();
+    assert_eq!(
+        mask.shape,
+        project::MaskShape::Path {
+            path: project::MaskPath::ellipse()
+        }
+    );
+    click(&mut harness, "inspector.mask.done");
+    harness.run_steps(2);
+    for point in 0..4 {
+        assert!(
+            has_widget(&harness, &format!("preview.mask.point.{point}")),
+            "anchor {point} exposes a target"
+        );
+    }
+
+    // Click selects one point; Shift toggles the second.
+    point_target(
+        &mut harness,
+        "preview.mask.point.0",
+        egui::Modifiers::default(),
+    );
+    assert_eq!(
+        harness.state().inspect().unwrap().selection_scope,
+        vibecut::selection::SelectionScope::MaskPoints
+    );
+    point_target(&mut harness, "preview.mask.point.2", egui::Modifiers::SHIFT);
+    assert_eq!(harness.state().selection_scopes.mask_points.len(), 2);
+
+    // One completed drag is one undo step, even through many pointer moves.
+    let before = harness.state().session.history_len();
+    let start = widget_rect(&harness, "preview.mask.point.1").center();
+    pointer_drag(&mut harness, start, start + egui::vec2(14.0, -9.0));
+    assert_eq!(harness.state().session.history_len().0, before.0 + 1);
+    let dragged = path_of(&harness, video);
+    assert_ne!(dragged, project::MaskPath::ellipse());
+    assert_eq!(dragged.vertices.len(), 4);
+
+    // Escape pops the point scope first and keeps the item selected.
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(harness.state().selection_scopes.mask_points.is_empty());
+    assert_eq!(harness.state().selection, [video].into_iter().collect());
+    assert!(
+        mask_of(&harness, video).is_some(),
+        "Escape never removes the mask"
+    );
+
+    // Insertion through the same command the segment click emits; the pointer
+    // hit itself is recorded as unverified on the ticket without a build.
+    harness
+        .state_mut()
+        .session
+        .apply(Command::AddMaskPoint {
+            item: video,
+            mask: "mask1".into(),
+            segment: 0,
+            t: 0.5,
+        })
+        .unwrap();
+    harness.state_mut().selection_scopes.mask_points.clear();
+    harness.state_mut().selection_scopes.mask_points.insert(
+        vibecut::selection::MaskPointSelection {
+            item: video,
+            mask: "mask1".into(),
+            point: 1,
+        },
+    );
+    harness.run_steps(2);
+    assert_eq!(path_of(&harness, video).vertices.len(), 5);
+    assert!(has_widget(&harness, "preview.mask.point.4"));
+    assert_eq!(
+        harness.state().inspect().unwrap().selection_scope,
+        vibecut::selection::SelectionScope::MaskPoints
+    );
+    assert_eq!(
+        harness
+            .state()
+            .selection_scopes
+            .mask_points
+            .iter()
+            .map(|point| point.point)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+
+    // Delete removes the selected point, never the item.
+    harness.key_press(egui::Key::Delete);
+    harness.run_steps(2);
+    assert_eq!(path_of(&harness, video).vertices.len(), 4);
+    assert!(
+        item(&harness, video)
+            .masks
+            .iter()
+            .any(|mask| mask.id == "mask1")
+    );
+    assert!(harness.state().selection_scopes.mask_points.is_empty());
+
+    // Offscreen evidence of the real edited state.
+    point_target(
+        &mut harness,
+        "preview.mask.point.0",
+        egui::Modifiers::default(),
+    );
+    point_target(&mut harness, "preview.mask.point.2", egui::Modifiers::SHIFT);
+    let screenshot =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-37-freeform.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    harness.render().unwrap().save(&screenshot).unwrap();
+    assert!(screenshot.exists());
+}

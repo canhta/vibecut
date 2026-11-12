@@ -363,6 +363,22 @@ pub(crate) fn with_text_presets(seed: &Session) -> Session {
     }];
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// Only this copied seed gets a closed cubic path on item 1's existing mask.
+pub(crate) fn with_mask_path(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let mask = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == ItemId(1))
+        .and_then(|item| item.masks.first_mut())
+        .expect("seed mask");
+    mask.shape = project::MaskShape::Path {
+        path: project::MaskPath::ellipse(),
+    };
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed plus one real mono audio asset (id 97) for waveform command examples.
 pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();

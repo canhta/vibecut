@@ -134,6 +134,8 @@ owns the admitted kinds, parameter definitions and the invariant mathematics. `t
 
 Generated rectangles and ellipses insert through `timeline.insert` and ordinary Video placement, without initializing source canvas/FPS. Graphic fill/stroke/width/alignment/radius patches update stored fallbacks only; they preserve any authoritative animation Param. Ellipses refuse radius. Ordinary parameter commands validate every graphic base and key through the project candidate before publication. Generic masks, effects, trim/split/move/duplicate and key-time scaling retain their normal history and refusal rules; media speed remains unsupported.
 
+`masks.set_path` replaces one existing mask's shape with a closed 3..=4096-anchor path and preserves every other field and its animations; an equal path is an exact no-op. `masks.add_point` inserts one de Casteljau anchor on a closed segment at `2^-20..=1-2^-20`, appending on the closing edge, and `masks.remove_point` removes unique current indices in one undo step while refusing fewer than three survivors. These commands refuse a non-path target, an open saved path or out-of-range input without publishing.
+
 Keyframe Paste uses this same candidate/validation/one-undo path. Transfer and refusal
 rules belong to the [clipboard contract](../README.md#keyframe-clipboard).
 

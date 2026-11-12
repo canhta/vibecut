@@ -2149,7 +2149,7 @@ fn marquee_reversal_and_escape_scopes_leave_project_unchanged() {
     harness.state_mut().selection_scopes.mask_points.insert(
         vibecut::selection::MaskPointSelection {
             item: a,
-            mask: 0,
+            mask: "mask1".into(),
             point: 0,
         },
     );

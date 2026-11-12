@@ -173,6 +173,13 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                     crate::session::wire::ControlError::Limit,
                 ));
             }
+            Command::RemoveMaskPoint { points, .. }
+                if points.len() > super::wire::MAX_COLLECTION =>
+            {
+                return Err(EditError::Control(
+                    crate::session::wire::ControlError::Limit,
+                ));
+            }
             Command::RemoveFillers { ids, .. } if ids.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Control(
                     crate::session::wire::ControlError::Limit,
@@ -596,6 +603,28 @@ pub(crate) fn apply(
         }
         EditCommand::ReorderMasks { item: id, order } => {
             data = masks::execute_reorder_masks(data, id, order)?;
+        }
+        EditCommand::SetMaskPath {
+            item: id,
+            mask,
+            path,
+        } => {
+            data = masks::execute_set_mask_path(data, id, mask, path)?;
+        }
+        EditCommand::AddMaskPoint {
+            item: id,
+            mask,
+            segment,
+            t,
+        } => {
+            data = masks::execute_add_mask_point(data, id, mask, segment, t)?;
+        }
+        EditCommand::RemoveMaskPoint {
+            item: id,
+            mask,
+            points,
+        } => {
+            data = masks::execute_remove_mask_point(data, id, mask, points)?;
         }
         EditCommand::RegisterLut { record } => {
             record.validate()?;

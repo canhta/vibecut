@@ -1519,3 +1519,74 @@ fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
         assert_eq!(control.finish().0, 0);
     }
 }
+
+#[test]
+fn exec_freeform_mask_path_round_trips_through_save_and_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("freeform.vibecut");
+    new_project(&path);
+    let track = add_track(&path, "Overlay")["created"][0]["track"]
+        .as_u64()
+        .unwrap();
+    let inserted = exec(
+        &path,
+        "timeline.insert",
+        json!({"placement":{"mode":"track","track":track},"item":{"source_range":{"start":0,"end":1000},"start":0,"animations":{},"content":{"kind":"overlay","params":{"color":[40,80,120,255]}}}}),
+    );
+    let item = inserted["placements"][0]["item"].as_u64().unwrap();
+    exec(
+        &path,
+        "masks.add",
+        json!({"item":item,"mask":project::Mask::new("p",project::MaskShape::Path{path:project::MaskPath::ellipse()})}),
+    );
+    let mut dragged = project::MaskPath::ellipse();
+    dragged.vertices[1].t_out = [0.0, 0.5];
+    let expected = dragged.split(1, 0.5).unwrap();
+    exec(
+        &path,
+        "masks.set_path",
+        json!({"item":item,"mask":"p","path":dragged}),
+    );
+    exec(
+        &path,
+        "masks.add_point",
+        json!({"item":item,"mask":"p","segment":1,"t":0.5}),
+    );
+    let added = project::load(&path).unwrap().project;
+    let stored = added
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == project::ItemId(item))
+        .and_then(|item| item.masks.first())
+        .unwrap();
+    assert!(matches!(&stored.shape, project::MaskShape::Path { .. }));
+    let project::MaskShape::Path { path: stored_path } = &stored.shape else {
+        return;
+    };
+    assert_eq!(stored_path, &expected);
+    assert!(stored_path.closed);
+    exec(
+        &path,
+        "masks.remove_point",
+        json!({"item":item,"mask":"p","points":[2]}),
+    );
+    let reloaded = project::load(&path).unwrap().project;
+    let stored = reloaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == project::ItemId(item))
+        .and_then(|item| item.masks.first())
+        .unwrap();
+    assert!(matches!(&stored.shape, project::MaskShape::Path { .. }));
+    let project::MaskShape::Path { path: stored_path } = &stored.shape else {
+        return;
+    };
+    assert_eq!(stored_path.vertices.len(), 4);
+    assert_eq!(stored_path.vertices[1].t_out, [0.0, 0.5]);
+}

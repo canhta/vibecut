@@ -42,10 +42,11 @@ impl PartialOrd for KeyframeSelection {
         Some(self.cmp(other))
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MaskPointSelection {
     pub item: ItemId,
-    pub mask: usize,
+    /// Stable `Mask::id`, never the vector index; reorder cannot retarget it.
+    pub mask: String,
     pub point: usize,
 }
 /// Nested selections are owned by the app; future lanes/handles use these same sets.
@@ -148,7 +149,7 @@ mod tests {
         let mut scopes = SelectionScopes::default();
         scopes.mask_points.insert(MaskPointSelection {
             item: ItemId(1),
-            mask: 0,
+            mask: "mask1".into(),
             point: 0,
         });
         for path in ["opacity", "transform.scaleX"] {

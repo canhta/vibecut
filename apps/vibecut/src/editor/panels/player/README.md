@@ -22,6 +22,18 @@ for the gesture, the same rule the timeline uses. A dashed accent guide is paint
 each active target and cleared on release, so the committed project and its undo history
 stay untouched until the drop.
 
+`mask_path` edits the single selected item's active closed path mask. Anchors and the
+selected anchors' in/out tangents are drawn through `render::viewport::MaskGeometry`,
+the same mask-box, item and viewport affine that draws the contour, so handles stay on
+the rendered curve under mask and item rotation and scale. Clicking an anchor selects
+it, Shift toggles it, dragging a selected anchor moves the canonical point set by one
+mask-local delta and dragging a tangent changes only that side. Clicking the curve
+within 6 logical pixels inserts one anchor at the nearest cubic parameter; Delete
+removes the selected anchors through `masks.remove_point` as one undo step and never
+deletes the item. Escape cancels a live drag, then clears the point scope, then falls
+through to the item scope. A completed drag stages `masks.set_path` inside
+`timeline.preview` and publishes one undo step.
+
 A double click on a visible text item opens one inline session over its rendered box.
 Transparent input glyphs leave the preview visible; the caret and selection are painted at
 the text crate's layout positions for the item's own font, size, letter spacing, line

@@ -609,6 +609,24 @@ fn glyph(ui: &egui::Ui, tile: Rect, choice: Choice, dark: bool) {
         Choice::Stars => {
             painter.add(egui::Shape::closed_line(star(center), stroke));
         }
+        Choice::Path => {
+            painter.add(egui::Shape::closed_line(
+                [
+                    center + Vec2::new(-12.0, 8.0),
+                    center + Vec2::new(-4.0, -12.0),
+                    center + Vec2::new(10.0, -6.0),
+                    center + Vec2::new(12.0, 10.0),
+                ]
+                .to_vec(),
+                stroke,
+            ));
+            for point in [
+                center + Vec2::new(-12.0, 8.0),
+                center + Vec2::new(10.0, -6.0),
+            ] {
+                painter.circle_filled(point, 2.5, theme::secondary(dark));
+            }
+        }
     }
 }
 

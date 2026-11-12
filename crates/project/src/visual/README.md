@@ -28,7 +28,7 @@ Opacity is owned by the scalar `opacity` animation channel. A missing channel me
 
 Shapes: split, cinematic band, rectangle, ellipse, heart, diamond, star, text and a cubic `MaskPath`. Text masks persist content, font family, weight, italic, font size, letter spacing and line height; `MaskShape::text` defaults to bundled Inter Regular. Normalized centers are offsets from the placed item center, width/height are item fractions, rotation is degrees and uniform scale multiplies shape size. Path positions and tangent offsets follow the [MaskVertex contract](mask.rs); fill closes open paths. Feather, expansion, stroke width and text size use project-canvas pixels. Color is sRGB RGBA8 `Color`; opacity is 0..1.
 
-Paths admit 4,096 vertices and bounded normalized coordinates. Text admits 4 KiB and 1..4096-pixel font sizes. `masks.ID.params.KEY` animates center_x/center_y, width/height, rotation, scale, feather, expansion, opacity and stroke_width through `Animations`, in item-local time. `Mask::at` clamps animated overshoot to the static admissible range.
+`MaskPath::ellipse`, `rectangle` and `polygon` build closed editable seeds. `MaskPath::split` performs a de Casteljau split on one segment for `t` in `2^-20..=1-2^-20`; `without` removes anchors while keeping at least three. Both leave the stored anchors and tangent offsets exact, so only rendering flattens. Paths admit 4,096 vertices and bounded normalized coordinates. Text admits 4 KiB and 1..4096-pixel font sizes. `masks.ID.params.KEY` animates center_x/center_y, width/height, rotation, scale, feather, expansion, opacity and stroke_width through `Animations`, in item-local time. `Mask::at` clamps animated overshoot to the static admissible range.
 
 ## Item effects
 

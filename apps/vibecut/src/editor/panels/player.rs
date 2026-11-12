@@ -1,5 +1,6 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
+mod mask_path;
 mod snap;
 mod state;
 mod text;
@@ -43,6 +44,30 @@ pub(crate) enum Action {
     /// Close the inline text session; `commit` publishes one undo step.
     TextEnd {
         commit: bool,
+    },
+    /// Select one mask point, toggling it when `toggle`.
+    MaskPointSelect {
+        target: crate::selection::MaskPointSelection,
+        toggle: bool,
+    },
+    /// Leave the mask-point scope without changing the item selection.
+    MaskPointClear,
+    /// Stage one absolute mask path candidate from a handle drag.
+    MaskPathPreview {
+        item: ItemId,
+        mask: String,
+        path: project::MaskPath,
+    },
+    /// Close a mask path gesture, publishing one undo step when `commit`.
+    MaskPathEnd {
+        commit: bool,
+    },
+    /// Insert one point on the nearest cubic segment.
+    MaskPointAdd {
+        item: ItemId,
+        mask: String,
+        segment: usize,
+        t: f64,
     },
     /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
     PickKeyColor(project::Color),

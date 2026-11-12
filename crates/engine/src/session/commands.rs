@@ -362,6 +362,8 @@ pub enum Fixture {
     TransitionCut,
     Transition,
     Timeline,
+    /// Timeline whose item 1 carries one closed cubic path mask, `mask1`.
+    MaskPath,
     /// Timeline plus one audible clip, item 5.
     Audio,
     /// Timeline whose item 5 is a video with an audible source asset.
@@ -623,8 +625,11 @@ commands! {
     SetAnimatedParam, "keyframes.set_param", "Set animated parameter", Edit { item: ItemId, path: project::AnimationPath, param: project::Param } => Timeline, serde_json::json!({"item":1,"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.5},"keys":[],"before":"hold","after":"hold"}}}), available = UnlockedItem;
     ToggleKeyframe, "keyframes.toggle_at", "Toggle keyframe at time", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, time: Tick, value: project::ParamValue } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"time":8467200000_i64,"value":{"kind":"scalar","value":0.5}}), available = UnlockedItem;
     AddMask, "masks.add", "Add mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask2",project::MaskShape::Rectangle)}), available = VisualItem;
+    AddMaskPoint, "masks.add_point", "Add mask point", Edit { item: ItemId, mask: String, segment: usize, t: f64 } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","segment":0,"t":0.5}), available = VisualItem;
     RemoveMask, "masks.remove", "Remove mask", Edit { item: ItemId, mask: String } => Timeline, serde_json::json!({"item":1,"mask":"mask1"}), available = VisualItem;
+    RemoveMaskPoint, "masks.remove_point", "Remove mask points", Edit { item: ItemId, mask: String, points: Vec<usize> } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","points":[0]}), available = VisualItem;
     ReorderMasks, "masks.reorder", "Reorder masks", Edit { item: ItemId, order: Vec<String> } => Timeline, serde_json::json!({"item":1,"order":["mask1"]}), available = VisualItem;
+    SetMaskPath, "masks.set_path", "Set mask path", Edit { item: ItemId, mask: String, path: project::MaskPath } => Timeline, serde_json::json!({"item":1,"mask":"mask1","path":{"closed":true,"vertices":[{"p":[0.5,0.0],"t_in":[-0.2761423749153967,0.0],"t_out":[0.2761423749153967,0.0]},{"p":[1.0,0.5],"t_in":[0.0,-0.2761423749153967],"t_out":[0.0,0.2761423749153967]},{"p":[0.5,1.0],"t_in":[0.2761423749153967,0.0],"t_out":[-0.2761423749153967,0.0]},{"p":[0.0,0.5],"t_in":[0.0,0.2761423749153967],"t_out":[0.0,-0.2761423749153967]}]}}), available = VisualItem;
     UpdateMask, "masks.update", "Update mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask1",project::MaskShape::Ellipse)}), available = VisualItem;
     DetectScenes, "media.detect_scenes", "Detect scene changes", JobControl { asset: AssetId, #[serde(default)] settings: crate::scene_detection::DetectionSettings } => Video, serde_json::json!({"asset":97,"settings":{"hard_threshold":0.28,"fade_threshold":0.2,"fade_step":0.005,"min_scene":127008000000_i64}}), grant = Agent;
     GenerateClipThumbnails, "media.generate_clip_thumbnails", "Generate clip thumbnails", JobControl { item: ItemId, visible: TimeRange, pixels_per_second: f64 } => Thumbnails, serde_json::json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}), grant = Agent;

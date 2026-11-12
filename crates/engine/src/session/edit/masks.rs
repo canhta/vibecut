@@ -49,6 +49,73 @@ pub(super) fn execute_update_mask(
 
     Ok(data)
 }
+/// Replace one mask's shape with an editable closed path, preserving every
+/// other field and its animations. An equal path is a silent no-op.
+pub(super) fn execute_set_mask_path(
+    mut data: ProjectData,
+    id: ItemId,
+    mask_id: String,
+    path: project::MaskPath,
+) -> Result<ProjectData> {
+    path.editable()?;
+    let target = item(&mut data, id)?;
+    let mask = target
+        .masks
+        .iter_mut()
+        .find(|m| m.id == mask_id)
+        .ok_or(EditError::Invalid("missing mask"))?;
+    if let project::MaskShape::Path { path: current } = &mask.shape
+        && current == &path
+    {
+        return Ok(data);
+    }
+    mask.shape = project::MaskShape::Path { path };
+
+    Ok(data)
+}
+/// Insert one anchor into an editable closed path at parameter `t`.
+pub(super) fn execute_add_mask_point(
+    mut data: ProjectData,
+    id: ItemId,
+    mask_id: String,
+    segment: usize,
+    t: f64,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let mask = target
+        .masks
+        .iter_mut()
+        .find(|m| m.id == mask_id)
+        .ok_or(EditError::Invalid("missing mask"))?;
+    let project::MaskShape::Path { path } = &mask.shape else {
+        return Err(EditError::Invalid("mask is not a path"));
+    };
+    let next = path.split(segment, t)?;
+    mask.shape = project::MaskShape::Path { path: next };
+
+    Ok(data)
+}
+/// Remove the given anchors from an editable closed path in one undo step.
+pub(super) fn execute_remove_mask_point(
+    mut data: ProjectData,
+    id: ItemId,
+    mask_id: String,
+    points: Vec<usize>,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let mask = target
+        .masks
+        .iter_mut()
+        .find(|m| m.id == mask_id)
+        .ok_or(EditError::Invalid("missing mask"))?;
+    let project::MaskShape::Path { path } = &mask.shape else {
+        return Err(EditError::Invalid("mask is not a path"));
+    };
+    let next = path.without(&points)?;
+    mask.shape = project::MaskShape::Path { path: next };
+
+    Ok(data)
+}
 pub(super) fn execute_reorder_masks(
     mut data: ProjectData,
     id: ItemId,

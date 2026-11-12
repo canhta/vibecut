@@ -60,6 +60,8 @@ pub(crate) struct Context<'a> {
     pub(crate) scope: crate::selection::SelectionScope,
     /// The selected keyframes, flat across items and channels.
     pub(crate) keyframes: &'a std::collections::BTreeSet<crate::selection::KeyframeSelection>,
+    /// The selected mask points; the app owns this one canonical set.
+    pub(crate) mask_points: &'a std::collections::BTreeSet<crate::selection::MaskPointSelection>,
     pub(crate) save_status: Text,
     /// Playback position of the shared transport.
     pub(crate) playhead: time::Tick,

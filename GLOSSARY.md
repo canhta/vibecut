@@ -56,6 +56,8 @@ Language for the editor's privacy and execution boundaries.
 - **Keyframe**: One timed value inside a Param, with an interpolation segment and optional in/out handles.
 - **Text animation preset**: A built-in recipe expanded once into ordinary editable item-relative Params and Keyframes, with no runtime preset identity.
 - **Mask**: An item-relative shape that limits where the item draws, with feather, expansion, stroke and an ordered add/subtract list.
+- **Mask path**: A mask's closed cubic contour: anchors in normalized mask-box coordinates with anchor-relative incoming and outgoing tangents; saved exactly and flattened only for rendering.
+- **Mask point**: One indexed anchor of a mask path, identified by the mask's stable id and its position in that path.
 - **Revision**: An opaque Session-local token that advances on every accepted mutation and that effectful control requests must supply as `base_rev`.
 - **Receipt**: The stored terminal outcome of an effectful control request, keyed by principal, Session and idempotency key, replayed instead of re-executing a retry.
 - **Writer lease**: An exclusive OS lock on the sidecar beside a project file, held from load through save so only one process may write that project.

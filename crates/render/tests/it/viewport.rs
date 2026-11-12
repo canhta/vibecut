@@ -484,3 +484,117 @@ fn graphic_hit_testing_uses_centered_bounds_and_evaluated_fill_or_stroke_alpha()
     renderer.render_frame(Tick(10), &mut Empty, &h).unwrap();
     assert_eq!(renderer.text_cache_stats().entries, 0);
 }
+
+#[test]
+fn mask_geometry_matches_the_compositor_affine_under_mask_and_item_rotation() {
+    let mut data = transformed().into_data();
+    let mut mask = project::Mask::new(
+        "path",
+        project::MaskShape::Path {
+            path: project::MaskPath::ellipse(),
+        },
+    );
+    mask.center_x = 0.0;
+    mask.center_y = 0.0;
+    mask.width = 0.4;
+    mask.height = 0.4;
+    mask.rotation = 90.0;
+    data.scene_mut().timeline.overlays[0].items[0]
+        .masks
+        .push(mask);
+    let project = Project::new(data).unwrap();
+    let mut settings = RenderSettings::from_project(&project);
+    settings.placements.insert(
+        ItemId(0),
+        Placement {
+            destination: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            ..Default::default()
+        },
+    );
+    let viewport = Viewport::new(
+        Rect {
+            x: 10.,
+            y: 20.,
+            width: 400.,
+            height: 200.,
+        },
+        [200, 100],
+        1.0,
+        [0., 0.],
+    )
+    .unwrap();
+    let renderer = Renderer::new(&project, settings).unwrap();
+    let geometry = renderer
+        .mask_geometry(ItemId(0), "path", Tick::ZERO)
+        .unwrap()
+        .unwrap();
+    // Literal oracle: anchor (0,0) and its (0.25,0) outgoing handle endpoint.
+    near(
+        geometry.point(&viewport, [0.0, 0.0]).unwrap(),
+        [390.0, 130.0],
+    );
+    near(
+        geometry.point(&viewport, [0.25, 0.0]).unwrap(),
+        [310.0, 130.0],
+    );
+    for local in [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0], [0.25, 0.75]] {
+        near(
+            geometry
+                .inverse(&viewport, geometry.point(&viewport, local).unwrap())
+                .unwrap(),
+            local,
+        );
+    }
+    // The default placement spans the canvas; the same point round-trips.
+    let mut data = transformed().into_data();
+    let mask = project::Mask::new(
+        "path",
+        project::MaskShape::Path {
+            path: project::MaskPath::ellipse(),
+        },
+    );
+    data.scene_mut().timeline.overlays[0].items[0]
+        .masks
+        .push(mask);
+    let project = Project::new(data).unwrap();
+    let renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let geometry = renderer
+        .mask_geometry(ItemId(0), "path", Tick::ZERO)
+        .unwrap()
+        .unwrap();
+    near(
+        geometry
+            .inverse(&viewport, geometry.point(&viewport, [0.25, 0.75]).unwrap())
+            .unwrap(),
+        [0.25, 0.75],
+    );
+    // Hidden tracks expose no target.
+    let mut settings = RenderSettings::from_project(&project);
+    settings.placements.insert(
+        ItemId(0),
+        Placement {
+            destination: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            ..Default::default()
+        },
+    );
+    let mut data = project.data().clone();
+    data.scene_mut().timeline.overlays[0].hidden = true;
+    let hidden = Project::new(data).unwrap();
+    let renderer = Renderer::new(&hidden, settings).unwrap();
+    assert!(
+        renderer
+            .mask_geometry(ItemId(0), "path", Tick::ZERO)
+            .unwrap()
+            .is_none()
+    );
+}

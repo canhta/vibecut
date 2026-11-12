@@ -59,6 +59,154 @@ pub struct MaskPath {
     pub vertices: Vec<MaskVertex>,
     pub closed: bool,
 }
+/// A freeform path the point editor can modify: closed, and with at least the
+/// three anchors that bound an area. Saved open or short paths stay readable.
+impl MaskPath {
+    /// Unit ellipse seed: four anchors on the box edges with mirrored handles
+    /// `k/2` long, `k = 4/3 * tan(pi/8)`. Anchors are top, right, bottom, left.
+    pub fn ellipse() -> Self {
+        let k = 0.5 * 4.0 / 3.0 * (std::f64::consts::PI / 8.0).tan();
+        Self {
+            vertices: vec![
+                MaskVertex {
+                    p: [0.5, 0.0],
+                    t_in: [-k, 0.0],
+                    t_out: [k, 0.0],
+                },
+                MaskVertex {
+                    p: [1.0, 0.5],
+                    t_in: [0.0, -k],
+                    t_out: [0.0, k],
+                },
+                MaskVertex {
+                    p: [0.5, 1.0],
+                    t_in: [k, 0.0],
+                    t_out: [-k, 0.0],
+                },
+                MaskVertex {
+                    p: [0.0, 0.5],
+                    t_in: [0.0, k],
+                    t_out: [0.0, -k],
+                },
+            ],
+            closed: true,
+        }
+    }
+    /// Unit rectangle with straight edges.
+    pub fn rectangle() -> Self {
+        Self {
+            vertices: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                .into_iter()
+                .map(|p| MaskVertex {
+                    p,
+                    t_in: [0.0; 2],
+                    t_out: [0.0; 2],
+                })
+                .collect(),
+            closed: true,
+        }
+    }
+    /// Closed straight polygon from unit-box anchors; 3..=4096 finite points
+    /// with |coordinate| <= 100, matching the persisted path bounds.
+    pub fn polygon(points: &[[f64; 2]]) -> Result<Self> {
+        if !(3..=4096).contains(&points.len())
+            || points
+                .iter()
+                .flatten()
+                .any(|v| !v.is_finite() || v.abs() > 100.0)
+        {
+            return Err(Error::Invalid("mask polygon"));
+        }
+        Ok(Self {
+            vertices: points
+                .iter()
+                .map(|p| MaskVertex {
+                    p: *p,
+                    t_in: [0.0; 2],
+                    t_out: [0.0; 2],
+                })
+                .collect(),
+            closed: true,
+        })
+    }
+    /// Whether the point editor may modify this path.
+    pub fn editable(&self) -> Result<()> {
+        if !self.closed || !(3..=4096).contains(&self.vertices.len()) {
+            return Err(Error::Invalid("mask path not editable"));
+        }
+        Ok(())
+    }
+    /// Split one cubic segment at `t`, keeping the curve exactly. `segment` i
+    /// joins anchor i to `(i + 1) % len`; `t` is 2^-20..=1-2^-20.
+    pub fn split(&self, segment: usize, t: f64) -> Result<Self> {
+        self.editable()?;
+        let count = self.vertices.len();
+        if segment >= count
+            || !t.is_finite()
+            || !(1.0 / 1_048_576.0..=1.0 - 1.0 / 1_048_576.0).contains(&t)
+        {
+            return Err(Error::Invalid("mask path split"));
+        }
+        let next = (segment + 1) % count;
+        let a = self.vertices[segment].clone();
+        let b = self.vertices[next].clone();
+        let p0 = a.p;
+        let c1 = [a.p[0] + a.t_out[0], a.p[1] + a.t_out[1]];
+        let c2 = [b.p[0] + b.t_in[0], b.p[1] + b.t_in[1]];
+        let p3 = b.p;
+        let lerp = |x: [f64; 2], y: [f64; 2]| [x[0] + (y[0] - x[0]) * t, x[1] + (y[1] - x[1]) * t];
+        let l0 = lerp(p0, c1);
+        let l1 = lerp(c1, c2);
+        let l2 = lerp(c2, p3);
+        let m0 = lerp(l0, l1);
+        let m1 = lerp(l1, l2);
+        let q = lerp(m0, m1);
+        let sub = |x: [f64; 2], y: [f64; 2]| [x[0] - y[0], x[1] - y[1]];
+        let vertex = MaskVertex {
+            p: q,
+            t_in: sub(m0, q),
+            t_out: sub(m1, q),
+        };
+        let mut out = self.clone();
+        out.vertices[segment].t_out = sub(l0, p0);
+        out.vertices[next].t_in = sub(l2, p3);
+        out.vertices.insert(segment + 1, vertex);
+        if out.vertices.len() > 4096 {
+            return Err(Error::TooLarge("mask vertices"));
+        }
+        if out
+            .vertices
+            .iter()
+            .flat_map(|v| v.p.iter().chain(&v.t_in).chain(&v.t_out))
+            .any(|n| !n.is_finite() || n.abs() > 100.0)
+        {
+            return Err(Error::Invalid("mask vertex"));
+        }
+        Ok(out)
+    }
+    /// Remove anchors by index, keeping at least three. Survivors keep their
+    /// positions and tangent offsets; neighbors reconnect by their handles.
+    pub fn without(&self, points: &[usize]) -> Result<Self> {
+        self.editable()?;
+        if points.is_empty() || points.len() > self.vertices.len() {
+            return Err(Error::Invalid("mask point selection"));
+        }
+        let mut remove = points.to_vec();
+        remove.sort_unstable();
+        remove.dedup();
+        if remove.len() != points.len() || remove.iter().any(|i| *i >= self.vertices.len()) {
+            return Err(Error::Invalid("mask point selection"));
+        }
+        if self.vertices.len() - remove.len() < 3 {
+            return Err(Error::Invalid("mask path minimum"));
+        }
+        let mut out = self.clone();
+        for index in remove.into_iter().rev() {
+            out.vertices.remove(index);
+        }
+        Ok(out)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MaskShape {

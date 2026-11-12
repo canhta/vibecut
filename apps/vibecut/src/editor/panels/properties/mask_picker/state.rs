@@ -13,10 +13,11 @@ pub enum Choice {
     Rectangle,
     Heart,
     Stars,
+    Path,
 }
 
 impl Choice {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::None,
         Self::Horizontal,
         Self::Mirror,
@@ -24,6 +25,7 @@ impl Choice {
         Self::Rectangle,
         Self::Heart,
         Self::Stars,
+        Self::Path,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -35,6 +37,7 @@ impl Choice {
             Self::Rectangle => "rectangle",
             Self::Heart => "heart",
             Self::Stars => "stars",
+            Self::Path => "path",
         }
     }
 
@@ -47,6 +50,7 @@ impl Choice {
             Self::Rectangle => Text::MaskRectangle,
             Self::Heart => Text::MaskHeart,
             Self::Stars => Text::MaskStars,
+            Self::Path => Text::MaskPath,
         }
     }
 
@@ -60,7 +64,16 @@ impl Choice {
             Self::Rectangle => MaskShape::Rectangle,
             Self::Heart => MaskShape::Heart,
             Self::Stars => MaskShape::Star,
+            Self::Path => MaskShape::Path {
+                path: project::MaskPath::ellipse(),
+            },
         })
+    }
+
+    /// Whether choosing this tile keeps an already-customized path instead of
+    /// replacing it with the unit seed.
+    pub fn keeps(self, shape: &MaskShape) -> bool {
+        self == Self::Path && matches!(shape, MaskShape::Path { .. })
     }
 
     /// The tile that shows `shape`, or `None` for shapes the grid does not list.
@@ -72,6 +85,7 @@ impl Choice {
             MaskShape::Rectangle => Some(Self::Rectangle),
             MaskShape::Heart => Some(Self::Heart),
             MaskShape::Star => Some(Self::Stars),
+            MaskShape::Path { .. } => Some(Self::Path),
             _ => None,
         }
     }
@@ -176,8 +190,12 @@ mod tests {
             Choice::of(&MaskShape::Path {
                 path: Default::default()
             }),
-            None
+            Some(Choice::Path)
         );
+        assert!(Choice::Path.keeps(&MaskShape::Path {
+            path: project::MaskPath::ellipse()
+        }));
+        assert!(!Choice::Path.keeps(&MaskShape::Ellipse));
     }
 
     #[test]

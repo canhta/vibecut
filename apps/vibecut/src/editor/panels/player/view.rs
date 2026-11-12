@@ -760,6 +760,7 @@ fn canvas(
     } else {
         super::transform::show(
             &mut state.transform,
+            &mut state.mask_path,
             cx,
             ui,
             displayed,

@@ -38,7 +38,9 @@ fn choose_mask(desk: &mut Desk<'_>, item: ItemId, shape: Option<MaskShape>) -> R
             )?;
         }
         (Some(shape), Some(mut mask)) => {
-            if mask.shape == shape {
+            if mask.shape == shape
+                || Choice::of(&shape).is_some_and(|choice| choice.keeps(&mask.shape))
+            {
                 return Ok(());
             }
             mask.shape = shape;

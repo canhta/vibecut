@@ -247,6 +247,54 @@ impl ItemGeometry {
     }
 }
 
+/// A mask's normalized cubic coordinates mapped through the evaluated mask
+/// box, the item transform and the preview viewport. The same affine the
+/// compositor uses, so point handles stay on the rendered contour.
+#[derive(Clone, Copy, Debug)]
+pub struct MaskGeometry {
+    /// Mask-box centre in project canvas pixels.
+    centre: [f64; 2],
+    /// Evaluated mask-box size in project canvas pixels.
+    size: [f64; 2],
+    /// Clockwise radians.
+    rotation: f64,
+    item: ItemGeometry,
+}
+impl MaskGeometry {
+    /// Normalized mask-local point (0..1 spans the evaluated mask box) to
+    /// logical screen pixels.
+    pub fn point(&self, viewport: &Viewport, local: [f64; 2]) -> Result<[f64; 2]> {
+        finite(&local)?;
+        let (sin, cos) = self.rotation.sin_cos();
+        let x = (local[0] - 0.5) * self.size[0];
+        let y = (local[1] - 0.5) * self.size[1];
+        self.item.point(
+            viewport,
+            [
+                self.centre[0] + cos * x - sin * y,
+                self.centre[1] + sin * x + cos * y,
+            ],
+        )
+    }
+    /// Logical screen point to normalized mask-local coordinates; refuses a
+    /// degenerate mask box or an unrepresentable result.
+    pub fn inverse(&self, viewport: &Viewport, screen: [f64; 2]) -> Result<[f64; 2]> {
+        if self.size.iter().any(|v| *v == 0.0 || !v.is_finite()) {
+            return Err(Error::Invalid("mask geometry"));
+        }
+        let canvas = self.item.inverse(viewport, screen)?;
+        let (sin, cos) = self.rotation.sin_cos();
+        let dx = canvas[0] - self.centre[0];
+        let dy = canvas[1] - self.centre[1];
+        let local = [
+            (dx * cos + dy * sin) / self.size[0] + 0.5,
+            (-dx * sin + dy * cos) / self.size[1] + 0.5,
+        ];
+        finite(&local)?;
+        Ok(local)
+    }
+}
+
 impl Renderer<'_> {
     /// Active, selectable item bounds at output `at`. Hidden/locked tracks,
     /// audio, empty text, zero opacity and inactive caption cues are excluded.
@@ -268,6 +316,68 @@ impl Renderer<'_> {
             return self.geometry_at(item, at);
         }
         Ok(None)
+    }
+    /// One active mask's normalized-to-screen affine at output `at`. Returns
+    /// `None` when the item or mask is inactive, hidden or locked.
+    pub fn mask_geometry(
+        &self,
+        item: ItemId,
+        mask: &str,
+        at: Tick,
+    ) -> Result<Option<MaskGeometry>> {
+        if at < Tick::ZERO {
+            return Err(Error::Invalid("negative frame time"));
+        }
+        let Some(base) = self.item_geometry(item, at)? else {
+            return Ok(None);
+        };
+        let Some(source) = self
+            .project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == item)
+        else {
+            return Ok(None);
+        };
+        let local = at
+            .checked_sub(source.start)
+            .ok_or(Error::Invalid("item time"))?;
+        let Some(mask) = source
+            .masks
+            .iter()
+            .find(|candidate| candidate.id == mask && candidate.active())
+        else {
+            return Ok(None);
+        };
+        let evaluated = mask.at(&source.animations, local)?;
+        let placement = self.placement_at(source, local)?;
+        let canvas = &self.project.data().canvas;
+        let r = placement.destination;
+        let dw = f64::from(canvas.width) * r.width;
+        let dh = f64::from(canvas.height) * r.height;
+        let centre = [
+            f64::from(canvas.width) * r.x + dw * (0.5 + evaluated.center_x),
+            f64::from(canvas.height) * r.y + dh * (0.5 + evaluated.center_y),
+        ];
+        let size = [
+            dw * evaluated.width * evaluated.scale,
+            dh * evaluated.height * evaluated.scale,
+        ];
+        if size.iter().any(|v| !v.is_finite() || *v == 0.0)
+            || centre.iter().any(|v| !v.is_finite())
+            || !evaluated.rotation.is_finite()
+        {
+            return Err(Error::Invalid("mask geometry"));
+        }
+        Ok(Some(MaskGeometry {
+            centre,
+            size,
+            rotation: evaluated.rotation.to_radians(),
+            item: base,
+        }))
     }
     fn geometry_at(&self, item: &project::Item, at: Tick) -> Result<Option<ItemGeometry>> {
         let local = at

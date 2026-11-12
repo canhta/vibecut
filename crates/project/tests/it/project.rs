@@ -1215,3 +1215,131 @@ fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_chan
     let ellipse = serde_json::json!({"definitionId":"ellipse","params":{"fill":[255,255,255,255],"stroke":[0,0,0,255],"strokeWidth":0,"strokeAlign":"center","cornerRadius":0}});
     assert!(serde_json::from_value::<GraphicParams>(ellipse).is_err());
 }
+
+fn cubic(points: [[f64; 2]; 4], t: f64) -> [f64; 2] {
+    let u = 1.0 - t;
+    std::array::from_fn(|k| {
+        u * u * u * points[0][k]
+            + 3.0 * u * u * t * points[1][k]
+            + 3.0 * u * t * t * points[2][k]
+            + t * t * t * points[3][k]
+    })
+}
+
+#[test]
+fn freeform_path_constructors_and_edits_keep_cubic_geometry() {
+    let ellipse = MaskPath::ellipse();
+    assert!(ellipse.closed);
+    assert_eq!(ellipse.vertices.len(), 4);
+    let k = 0.5 * 4.0 / 3.0 * (std::f64::consts::PI / 8.0).tan();
+    let anchors = [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]];
+    let outs = [[k, 0.0], [0.0, k], [-k, 0.0], [0.0, -k]];
+    for ((vertex, p), out) in ellipse.vertices.iter().zip(anchors).zip(outs) {
+        assert_eq!(vertex.p, p);
+        assert_eq!(vertex.t_out, out);
+        assert_eq!(vertex.t_in, [-out[0], -out[1]]);
+    }
+    let rectangle = MaskPath::rectangle();
+    assert!(rectangle.closed);
+    assert_eq!(rectangle.vertices.len(), 4);
+    assert!(
+        rectangle
+            .vertices
+            .iter()
+            .all(|v| v.t_in == [0.0; 2] && v.t_out == [0.0; 2])
+    );
+    let polygon = MaskPath::polygon(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]).unwrap();
+    assert!(polygon.editable().is_ok());
+    for points in [
+        vec![[0.0, 0.0], [1.0, 0.0]],
+        vec![[0.0, 0.0], [f64::NAN, 0.0], [1.0, 1.0]],
+        vec![[0.0, 0.0], [101.0, 0.0], [1.0, 1.0]],
+    ] {
+        assert!(MaskPath::polygon(&points).is_err());
+    }
+    assert!(
+        MaskPath {
+            closed: false,
+            ..ellipse.clone()
+        }
+        .editable()
+        .is_err()
+    );
+
+    // The de Casteljau split keeps both halves on the original cubic.
+    let mut source = MaskPath::rectangle();
+    source.vertices[0] = MaskVertex {
+        p: [0.0, 0.0],
+        t_in: [0.0; 2],
+        t_out: [0.0, 1.0],
+    };
+    source.vertices[1] = MaskVertex {
+        p: [1.0, 0.0],
+        t_in: [0.0, 1.0],
+        t_out: [0.0; 2],
+    };
+    let split = source.split(0, 0.5).unwrap();
+    assert_eq!(split.vertices.len(), 5);
+    let inserted = &split.vertices[1];
+    assert_eq!(inserted.p, [0.5, 0.75]);
+    assert_eq!(source.vertices[0].t_out, [0.0, 1.0], "source unchanged");
+    assert_eq!(split.vertices[0].t_out, [0.0, 0.5]);
+    assert_eq!(inserted.t_in, [-0.25, 0.0]);
+    assert_eq!(inserted.t_out, [0.25, 0.0]);
+    assert_eq!(split.vertices[2].t_in, [0.0, 0.5]);
+    let controls = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
+    let left = [[0.0, 0.0], [0.0, 0.5], [0.25, 0.75], [0.5, 0.75]];
+    let right = [[0.5, 0.75], [0.75, 0.75], [1.0, 0.5], [1.0, 0.0]];
+    for u in [0.0, 0.25, 0.5, 1.0] {
+        assert_eq!(cubic(left, u), cubic(controls, 0.5 * u));
+        assert_eq!(cubic(right, u), cubic(controls, 0.5 + 0.5 * u));
+    }
+    for (segment, t) in [(9, 0.5), (0, 0.0), (0, 1.0), (0, f64::NAN)] {
+        assert!(source.split(segment, t).is_err(), "{segment} {t}");
+    }
+
+    let removed = split.without(&[1]).unwrap();
+    let mut expected = split.clone();
+    expected.vertices.remove(1);
+    assert_eq!(removed, expected, "survivors keep their handles");
+    for points in [vec![], vec![0, 0], vec![7], vec![0, 1, 2]] {
+        assert!(removed.without(&points).is_err(), "{points:?}");
+    }
+}
+
+#[test]
+fn freeform_path_round_trips_through_the_writer_without_flattening() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut data = empty().into_data();
+    let mut glyphs = item(1, 0);
+    let mut path = MaskPath::ellipse();
+    path.vertices[1].t_out = [0.0, 0.5];
+    glyphs.masks[0].shape = MaskShape::Path { path: path.clone() };
+    data.scene_mut().timeline.insert_track(track(vec![glyphs]));
+    let project = Project::new(data).unwrap();
+    let bytes = encode(&project, false).unwrap();
+    let loaded = decode(&bytes).unwrap().project;
+    assert_eq!(loaded, project);
+    let shape = &loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .next()
+        .unwrap()
+        .masks[0]
+        .shape;
+    assert!(matches!(shape, MaskShape::Path { .. }));
+    let MaskShape::Path { path: stored } = shape else {
+        return;
+    };
+    assert_eq!(
+        stored, &path,
+        "stored points, tangents and closed survive exactly"
+    );
+    assert_eq!(stored.vertices.len(), 4, "no flattening at save");
+    let file = dir.path().join("mask.vibecut");
+    save_fixture(&file, &project).unwrap();
+    assert_eq!(load(&file).unwrap().project, project);
+}

@@ -325,6 +325,20 @@ impl Editor {
                 Action::TextBegin { item } => self.begin_text_edit(item),
                 Action::TextPreview { item, content } => self.preview_text(item, &content),
                 Action::TextEnd { commit } => self.end_preview_transform(commit),
+                Action::MaskPointSelect { target, toggle } => {
+                    self.select_mask_point(target, toggle)
+                }
+                Action::MaskPointClear => self.clear_mask_points(),
+                Action::MaskPathPreview { item, mask, path } => {
+                    self.preview_mask_path(item, &mask, &path)
+                }
+                Action::MaskPathEnd { commit } => self.end_preview_transform(commit),
+                Action::MaskPointAdd {
+                    item,
+                    mask,
+                    segment,
+                    t,
+                } => self.add_mask_point(item, &mask, segment, t),
                 Action::CommitTimecode => self.commit_timecode(),
                 Action::Retry => {
                     self.player.timecode_error = None;

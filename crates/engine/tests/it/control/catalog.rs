@@ -140,6 +140,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
             Fixture::Video => s = with_video(&s, &video),
             Fixture::Loudness => s = with_loudness(&s, &wav),
+            Fixture::MaskPath => s = crate::support::control::with_mask_path(&s),
             Fixture::Captions => {
                 s = with_waveform(&s, &wav);
                 let req = request(
@@ -421,8 +422,11 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "effects.toggle",
                 "effects.update_param",
                 "masks.add",
+                "masks.add_point",
                 "masks.remove",
+                "masks.remove_point",
                 "masks.reorder",
+                "masks.set_path",
                 "masks.update",
             ],
         ),
