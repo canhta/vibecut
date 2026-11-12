@@ -5476,9 +5476,9 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
             assert_eq!(h.state().session.project(), &before);
             // Item scope: Ctrl+C copies the selected item, Ctrl+V pastes at the
             // playhead on its relative track, selects the new item and advances.
-            h.state_mut()
-                .dispatch(AppCommand::Seek(Tick(13 * SECOND)))
-                .unwrap();
+            // Seek clamps to the project end, so paste there: free of any clip.
+            let end = h.state().session.project().duration();
+            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
             h.run_steps(2);
             click_item(&mut h, source);
             let items_before = h.state().session.project().clone();
@@ -5503,18 +5503,19 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
             assert_eq!(h.state().session.history_len().0, item_history + 1);
             assert_eq!(h.state().selection.len(), 1);
             let pasted = *h.state().selection.iter().next().unwrap();
-            assert_eq!(item(h.state(), pasted).start, Tick(13 * SECOND));
+            assert_eq!(item(h.state(), pasted).start, end);
             assert_eq!(item(h.state(), pasted).content, source_item.content);
-            assert_eq!(h.state().playback.position().unwrap(), Tick(19 * SECOND));
+            assert_eq!(
+                h.state().playback.position().unwrap(),
+                (end + source_item.duration().unwrap()).min(h.state().session.project().duration())
+            );
             capture(&mut h, "items");
             h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
             h.run_steps(2);
             assert_eq!(h.state().session.project(), &items_before);
             // The item context menu dispatches the same Paste command.
             click_item(&mut h, target);
-            h.state_mut()
-                .dispatch(AppCommand::Seek(Tick(22 * SECOND)))
-                .unwrap();
+            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
             h.run_steps(2);
             assert!(h.state().action_enabled("edit.paste"));
             open_item_menu(&mut h, target, "paste");

@@ -134,7 +134,22 @@ impl Editor {
                 },
                 UiAction::Paste => {
                     let scope = self.selection_scopes.active(&self.selection);
+                    let mut pasted_items = false;
                     let outcome = match scope {
+                        crate::selection::SelectionScope::Items
+                            if !self.session.can_paste_items(at)
+                                && crate::editor::context::single(&self.selection).is_some_and(
+                                    |item| self.session.can_paste_keyframes(item, at),
+                                ) =>
+                        {
+                            let item = crate::editor::context::single(&self.selection)
+                                .ok_or(Error::Invalid("clipboard target"))?;
+                            self.session.apply(engine::Command::PasteKeyframes {
+                                item,
+                                at,
+                                source: engine::KeyframePasteSource::Stored,
+                            })?
+                        }
                         crate::selection::SelectionScope::Keyframes => {
                             let item = crate::editor::context::single(&self.selection)
                                 .ok_or(Error::Invalid("clipboard target"))?;
@@ -145,6 +160,7 @@ impl Editor {
                             })?
                         }
                         crate::selection::SelectionScope::Items => {
+                            pasted_items = true;
                             self.session.apply(engine::Command::PasteItems {
                                 at,
                                 source: engine::ItemPasteSource::Stored,
@@ -158,7 +174,7 @@ impl Editor {
                     };
                     if outcome.changed {
                         self.selection_scopes = SelectionScopes::default();
-                        if scope == crate::selection::SelectionScope::Items {
+                        if pasted_items {
                             self.selection = outcome
                                 .created
                                 .iter()
