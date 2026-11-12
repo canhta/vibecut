@@ -7,14 +7,13 @@
 
 mod state;
 mod view;
-mod workflow;
 
 use crate::egui;
 
 pub use state::{
-    Candidate, Decision, GenerationRequest, Generator, Review, ReviewSource, State, TaskEvents,
+    Candidate, Decision, GenerationRequest, Importer, Review, ReviewSource, State, TaskEvents,
+    desktop_importer,
 };
-pub use workflow::LocalVideoWorkflow;
 
 /// The window the shorts viewport opens at; Home and the editor own their own sizes.
 pub const WINDOW: [f32; 2] = [1718.0, 989.0];

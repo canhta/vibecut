@@ -1,11 +1,11 @@
 //! Converts clip candidates to and from the wire views a `clips.suggest` job returns.
-use super::{ClipCandidate, ClipSuggestionOutcome, RejectedClip};
+use super::{ClipCandidate, RejectedClip};
 use crate::clip_boundaries::{BoundaryAdjustment, BoundaryFailure, BoundaryKind};
 use crate::error::Error;
 use ai::clips::{ClipDropReason, ClipRole, ClipSource, ClipSourceSegment, DroppedClip};
 use engine::control::{
     ClipAdjustment, ClipCandidateView, ClipEdge, ClipPieceRange, ClipPieceSpan, ClipRefusal,
-    ClipsResult, CostView,
+    CostView,
 };
 use engine::providers::Cost;
 
@@ -146,27 +146,6 @@ pub fn segments_from_view(view: &ClipCandidateView) -> Result<Vec<ClipSourceSegm
             })
         })
         .collect()
-}
-
-/// The `clips.suggest` output of a blocking outcome, for callers that hold one.
-pub fn clips_result(outcome: &ClipSuggestionOutcome) -> ClipsResult {
-    ClipsResult {
-        asset: outcome.asset.id(),
-        source_language: outcome.source_language.clone(),
-        transcription_provider: outcome.transcription_provider.clone(),
-        transcription_model: outcome.transcription_model.clone(),
-        provider: outcome.provider.clone(),
-        model: outcome.model.clone(),
-        clips: outcome.clips.iter().map(candidate_view).collect(),
-        rejected: rejected_views(&outcome.rejected),
-        dropped: dropped_views(&outcome.dropped),
-        cues: outcome.source_cues.clone(),
-        transcript_segments: outcome.transcript_segments,
-        checkpoints: outcome.checkpoints,
-        transcription_cost: cost_view(&outcome.transcription_cost),
-        suggestion_cost: cost_view(&outcome.suggestion_cost),
-        elapsed_seconds: outcome.elapsed.as_secs_f64(),
-    }
 }
 
 pub(super) fn cost_view(cost: &Cost) -> CostView {

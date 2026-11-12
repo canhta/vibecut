@@ -14,13 +14,11 @@ use crate::{
 use engine::ClipSourceSegment;
 use engine::{
     ByteBudget, Command, Session,
-    control::{ClipExportShort, ControlResult},
     jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock},
-    subtitles::CaptionAccess,
     transcript::Cancellation,
 };
 pub use shorts::ClipCandidate as Candidate;
-use project::ItemParams;
+
 use shorts::{
     ClipBatch, ClipBatchRequest, ClipShort,
     clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries},
@@ -88,6 +86,17 @@ pub struct GenerationRequest {
     pub max_seconds: u32,
     pub max_segments: usize,
 }
+/// Probes the picked video into a source asset. Injected at the media boundary so tests
+/// supply a described asset instead of a decodable file.
+pub type Importer =
+    Arc<dyn Fn(&std::path::Path) -> engine::control::Result<media::SourceAsset> + Send + Sync>;
+/// The shipped importer: FFmpeg probe of the picked file as asset 1 of the source session.
+pub fn desktop_importer() -> Importer {
+    Arc::new(|path| {
+        media::SourceAsset::import(media::AssetId(1), path.to_path_buf())
+            .map_err(engine::control::Error::Media)
+    })
+}
 pub use crate::services::ai_task::TaskEvents;
 pub(super) struct Generating {
     pub(super) id: JobId,
@@ -140,18 +149,16 @@ pub struct State {
     pub(super) preview_sources: Arc<dyn Sources>,
     /// Builds the access one run lends to the registry; tests inject fixture providers.
     pub(super) access: Opener,
+    /// Probes the picked video; tests describe the asset instead of decoding a file.
+    pub(super) importer: Importer,
     pub(super) generating: Option<Generating>,
-    /// The source session suggestion and export commands run in, with its caption item.
+    /// The source session the suggestion command ran in; it stays alive with its job.
     pub(super) session: Option<Session>,
     pub(super) asset: Option<media::SourceAsset>,
     pub(super) duration: Tick,
-    pub(super) run_access: Option<CaptionAccess>,
-    /// The retained `clips.suggest` job the export command decodes.
-    pub(super) suggestion: Option<JobId>,
     // Cancellation in Drop runs before runner joins an approval-waiting worker.
     pub(super) runner: JobRunner,
-    /// One entry per accepted short: its own export job and published paths.
-    pub(super) exports: Option<Vec<ClipExportShort>>,
+    pub(super) batch: Option<ClipBatch>,
     pub(super) budget: ByteBudget,
     pub(super) picker: Option<Picker>,
     pub(super) error: Option<Error>,
@@ -266,6 +273,7 @@ impl State {
             preferences,
             budget.clone(),
             ai_access::desktop_opener(budget),
+            desktop_importer(),
             Arc::new(Files),
         )
     }
@@ -274,6 +282,7 @@ impl State {
         preferences: Look,
         budget: ByteBudget,
         access: Opener,
+        importer: Importer,
         preview_sources: Arc<dyn Sources>,
     ) -> Result<Self> {
         Ok(Self {
@@ -306,12 +315,11 @@ impl State {
             preview_index: None,
             preview_sources,
             access,
+            importer,
             generating: None,
             session: None,
             asset: None,
             duration: Tick::ZERO,
-            run_access: None,
-            suggestion: None,
             runner: JobRunner::new(
                 RunnerConfig {
                     concurrency: [2, 1, 1],
@@ -324,7 +332,7 @@ impl State {
                 budget.clone(),
                 Arc::new(SystemClock::default()),
             )?,
-            exports: None,
+            batch: None,
             budget,
             picker: None,
             error: None,
@@ -437,10 +445,10 @@ impl State {
         })
     }
     pub fn exporting(&self) -> bool {
-        self.exports.as_ref().is_some_and(|exports| {
-            exports.iter().any(|short| {
-                self.runner
-                    .snapshot(short.job)
+        self.batch.as_ref().is_some_and(|batch| {
+            (0..batch.len()).any(|i| {
+                batch
+                    .snapshot(&self.runner, i)
                     .is_some_and(|s| !terminal(s.state))
             })
         })
@@ -474,12 +482,10 @@ impl State {
         self.editing = false;
         self.thumbs.stop();
         self.preview = None;
-        self.exports = None;
+        self.batch = None;
         self.session = None;
         self.asset = None;
         self.duration = Tick::ZERO;
-        self.run_access = None;
-        self.suggestion = None;
         self.undo.clear();
         self.redo.clear();
         self.trim_drafts.clear();
@@ -499,8 +505,7 @@ impl State {
             return Err(Error::Invalid("shorts duration or count"));
         }
         self.preview = None;
-        let asset = media::SourceAsset::import(media::AssetId(1), self.request.path.clone())
-            .map_err(|error| Error::Engine(engine::control::Error::Media(error)))?;
+        let asset = (self.importer)(&self.request.path)?;
         let duration = asset
             .probe()
             .duration
@@ -542,9 +547,7 @@ impl State {
         self.session = Some(session);
         self.asset = Some(asset);
         self.duration = duration;
-        self.run_access = Some(access);
-        self.suggestion = Some(id);
-        self.exports = None;
+        self.batch = None;
         self.generating = Some(Generating { id, cancel, events });
         self.error = None;
         self.cancelled = false;
@@ -555,10 +558,8 @@ impl State {
             job.cancel.cancel();
             let _ = self.runner.cancel_job(job.id);
         }
-        if let Some(exports) = &self.exports {
-            for short in exports {
-                let _ = self.runner.cancel_job(short.job);
-            }
+        if let Some(batch) = &self.batch {
+            batch.cancel_all();
         }
     }
     pub fn approve_upload(&mut self, approve: bool) -> Result<()> {
@@ -590,10 +591,10 @@ impl State {
                 self.cancelled = true;
                 let _ = self.runner.take_output(job.id);
             } else if state == JobState::Completed {
-                // Keep the retained suggestion: `clips.export` decodes the same job.
                 if let Err(e) = self.finish_suggestion(job.id) {
                     self.fail(e, Text::ShortsError);
                 }
+                let _ = self.runner.take_output(job.id);
             } else {
                 let error = snapshot
                     .and_then(|s| s.error)
@@ -615,8 +616,8 @@ impl State {
             self.fail(e, Text::ShortsError);
         }
     }
-    /// Decode the retained suggestion, rebuild the source session with its caption item and
-    /// install the review. The job output stays retained for `clips.export`.
+    /// Decode the retained suggestion, rebuild the source project from its cues and install
+    /// the review. The caller releases the job output afterwards.
     fn finish_suggestion(&mut self, id: JobId) -> Result<()> {
         let bytes = self
             .runner
@@ -639,14 +640,14 @@ impl State {
             .iter()
             .map(candidate_from_view)
             .collect::<Result<Vec<_>>>()?;
-        self.session = Some(session);
+        self.session = None;
         self.install(ReviewSource {
             project,
             asset: result.asset,
             transcript,
             cues,
-            // ponytail: clips.suggest does not carry the RMS hint; word/segment snapping
-            // remains exact. Add a review field to the wire when trim needs silence hints.
+            // The suggestion result carries no silence hints, so trim snaps to word and
+            // segment edges only.
             energy: Vec::new(),
             boundaries,
             candidates,
@@ -716,7 +717,7 @@ impl State {
         self.selected = 0;
         self.undo.clear();
         self.redo.clear();
-        self.exports = None;
+        self.batch = None;
         self.error = None;
         self.reset_drafts();
         self.preview_dirty = true;
@@ -943,7 +944,7 @@ impl State {
         self.preview_index = Some(self.selected);
         Ok(())
     }
-    /// Accept only explicitly approved shorts: one `clips.export` command starts their jobs.
+    /// Accept only explicitly approved shorts. /05 owns jobs, names and output admission.
     pub fn export_to(&mut self, directory: PathBuf) -> Result<()> {
         if self.busy() {
             return Err(Error::Invalid("shorts operation in progress"));
@@ -958,98 +959,24 @@ impl State {
         if indices.is_empty() {
             return Err(Error::Invalid("no accepted shorts"));
         }
-        self.exports = Some(self.submit_export(&indices, directory, false)?);
+        let mut batch = self.prepare(&indices, None, directory)?;
+        let result = batch.submit(&mut self.runner);
+        self.batch = Some(batch); // Retain partial admission so every job remains cancellable.
+        result?;
         self.error = None;
         Ok(())
     }
-    /// Submit `clips.export` for exactly these candidates; the runner bounds the selection.
-    fn submit_export(
-        &mut self,
-        indices: &[usize],
-        directory: PathBuf,
-        overwrite: bool,
-    ) -> Result<Vec<ClipExportShort>> {
-        let suggestion = self.suggestion.ok_or(Error::Invalid("no clip suggestion"))?;
-        let access = self
-            .run_access
-            .clone()
-            .ok_or(Error::Invalid("no clip access"))?;
-        let source = self.source.as_ref().ok_or(Error::Invalid("no source"))?;
-        let languages = if self.captions {
-            vec![source.transcript.source_lang.clone()]
-        } else {
-            Vec::new()
-        };
-        let formats = if self.captions {
-            vec![captions::Format::Srt]
-        } else {
-            Vec::new()
-        };
-        let item = if self.captions {
-            caption_item(&self.session)?
-        } else {
-            None
-        };
-        let params = serde_json::json!({
-            "job": suggestion,
-            "select": indices,
-            "item": item,
-            "languages": languages,
-            "formats": formats,
-            "directory": directory,
-            "overwrite": overwrite,
-            "allow_degraded": false,
-        });
-        let session = self.session.as_mut().ok_or(Error::Invalid("no source"))?;
-        match ai_access::run(
-            session,
-            &mut self.runner,
-            Some(&access),
-            None,
-            "clips.export",
-            params,
-        )? {
-            ControlResult::ClipExports { shorts, .. } => Ok(shorts),
-            _ => Err(Error::Invalid("clip export was not accepted")),
-        }
+    pub fn batch(&self) -> Option<&ClipBatch> {
+        self.batch.as_ref()
     }
-    pub fn export_snapshot(&self, index: usize) -> Option<engine::jobs::JobSnapshot> {
-        let short = self.exports.as_ref()?.get(index)?;
-        self.runner.snapshot(short.job)
-    }
-    pub fn export(&self, index: usize) -> Option<&ClipExportShort> {
-        self.exports.as_ref()?.get(index)
-    }
-    pub fn export_count(&self) -> usize {
-        self.exports.as_ref().map_or(0, Vec::len)
+    pub fn batch_snapshot(&self, index: usize) -> Option<engine::jobs::JobSnapshot> {
+        self.batch.as_ref()?.snapshot(&self.runner, index)
     }
     pub fn retry_export(&mut self, index: usize) -> Result<()> {
-        let candidate = self
-            .exports
-            .as_ref()
-            .and_then(|exports| exports.get(index))
-            .map(|short| short.candidate)
-            .ok_or(Error::Invalid("no export batch"))?;
-        let directory = self
-            .exports
-            .as_ref()
-            .and_then(|exports| exports.get(index))
-            .map(|short| {
-                short
-                    .video
-                    .parent()
-                    .map_or_else(std::env::temp_dir, std::path::Path::to_path_buf)
-            })
-            .ok_or(Error::Invalid("no export batch"))?;
-        let submitted = self.submit_export(&[candidate], directory, false)?;
-        let Some(exports) = self.exports.as_mut() else {
-            return Err(Error::Invalid("no export batch"));
-        };
-        if let Some(short) = submitted.into_iter().next()
-            && let Some(slot) = exports.get_mut(index)
-        {
-            *slot = short;
-        }
+        self.batch
+            .as_mut()
+            .ok_or(Error::Invalid("no export batch"))?
+            .retry(&mut self.runner, index)?;
         Ok(())
     }
     /// A fresh portrait project, with all segments/captions inserted by one command
@@ -1147,21 +1074,6 @@ impl State {
         Ok((session, settings))
     }
 }
-/// The suggested source's caption item, which `clips.export` burns and maps.
-fn caption_item(session: &Option<Session>) -> Result<Option<ItemId>> {
-    Ok(session.as_ref().and_then(|session| {
-        session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|item| matches!(item.content, ItemParams::Caption(_)))
-            .map(|item| item.id)
-    }))
-}
-
 /// Rebuild the recognition context from the suggestion's source cues. Cues carry the
 /// exact native word proof the suggestion was snapped from; no ASR runs again.
 fn transcript_from(result: &engine::control::ClipsResult) -> captions::Transcript {
@@ -1261,7 +1173,7 @@ fn candidate_from_view(
             reason: view.reason.clone(),
             score: view.score,
         },
-        segments: shorts::suggestion::segments_from_view(view)?,
+        segments: shorts::clip_suggest::segments_from_view(view)?,
         // Editors never read the edge deltas; the snapped segments are authoritative.
         adjustments: Vec::new(),
         duration: view.duration,

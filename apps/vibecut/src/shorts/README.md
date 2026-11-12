@@ -1,14 +1,16 @@
 # Long video to shorts
 
-Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `LocalVideoWorkflow`,
-`Candidate`, `Decision`, `GenerationRequest`, `Generator`, `Review`, `ReviewSource`,
-`TaskEvents`.
+Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `Candidate`, `Decision`,
+`GenerationRequest`, `Importer`, `desktop_importer`, `Review`, `ReviewSource`, `TaskEvents`.
 
 The Home `home.shorts` card opens a separate native viewport. `show` draws the whole
 window and returns the `Action` values the workspace must carry out; `State` owns
-bounded presentation and review history. `LocalVideoWorkflow` composes the
-[shorts workflow](../../../../crates/shorts/README.md) through `clip_suggest::suggest`
-on the picked or dropped local video. Provider and model pickers use offline capability
+bounded presentation and review history. Generating sends the registry command `clips.suggest`
+through `services::ai_access` (the [shorts workflow](../../../../crates/shorts/README.md) runs
+it as a runner job) on the picked or dropped local video, imported through the injectable
+`Importer`; the retained result is decoded into the review. The
+window owns no credentials, cache, `Providers` or workflow trait: tests inject the access
+opener. Provider and model pickers use offline capability
 data; local heuristics are an explicit choice.
 
 Remote ASR and suggestions stop at an exact per-upload disclosure (provider, model,

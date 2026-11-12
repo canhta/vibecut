@@ -8,16 +8,14 @@ use egui_kittest::{
 use engine::{
     ByteBudget,
     providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest},
-    transcript::Cancellation,
 };
-use fixture::{Once, Pixels, range, ready, source, tick, wait};
+use fixture::{Pixels, once, range, ready, source, staged, state, tick, wait};
 use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     egui,
     i18n::Locale,
     shorts::{
-        Action, Context, Decision, GenerationRequest, Generator, ReviewSource, State as Shorts,
-        TaskEvents,
+        Action, Context, Decision, State as Shorts,
     },
 };
 fn by(id: &str) -> By<'_> {
@@ -334,16 +332,14 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert!(h.state().error().is_some());
     assert_eq!(h.state().reviews()[0], before);
     for (locale, out) in [(Locale::En, "1,014.000"), (Locale::Vi, "1.014,000")] {
-        let mut app = Shorts::with_generator(
+        let mut app = state(
             vibecut::appearance::Look {
                 locale,
                 ..Default::default()
             },
-            ByteBudget::new(512 << 20).unwrap(),
-            Arc::new(Once(Mutex::new(Some(fixture::source_at(1000))))),
-            Arc::new(Pixels),
-        )
-        .unwrap();
+            once(fixture::source_at(1000)).0,
+            1000,
+        );
         app.captions = false;
         app.pick_video(std::env::temp_dir().join("long-video.mp4"))
             .unwrap();
@@ -495,20 +491,15 @@ fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {
         engine::jobs::JobState::Cancelled | engine::jobs::JobState::Failed
     ));
 }
-struct ApprovalGenerator {
+/// A suggestion that asks the run's consent for one exact upload before it finishes.
+fn approval(
     unknown_price: bool,
-    entered: Mutex<mpsc::SyncSender<()>>,
+    entered: mpsc::SyncSender<()>,
     approved: Arc<std::sync::atomic::AtomicBool>,
-}
-impl Generator for ApprovalGenerator {
-    fn run(
-        &self,
-        _: GenerationRequest,
-        _: ByteBudget,
-        events: &TaskEvents,
-        _: &Cancellation,
-    ) -> engine::control::Result<ReviewSource> {
-        self.entered.lock().unwrap().send(()).unwrap();
+) -> vibecut::services::ai_access::Opener {
+    let entered = Mutex::new(entered);
+    staged(move |consent: &dyn ConsentPrompt, _| {
+        entered.lock().unwrap().send(()).unwrap();
         let request = UploadRequest {
             config: ai::ProviderConfig::new(
                 "injected".into(),
@@ -527,33 +518,26 @@ impl Generator for ApprovalGenerator {
             languages: "vi".into(),
             audio_seconds: 0.0,
             upload_bytes: 123,
-            cost: if self.unknown_price {
+            cost: if unknown_price {
                 Cost::Unknown
             } else {
                 Cost::Free
             },
             terms: vec![],
         };
-        if self.unknown_price {
-            events.approve_unknown_price(&request)?;
+        if unknown_price {
+            consent.approve_unknown_price(&request)?;
         } else {
-            events.approve(&request)?;
+            consent.approve(&request)?;
         }
-        self.approved
-            .store(true, std::sync::atomic::Ordering::Release);
+        approved.store(true, std::sync::atomic::Ordering::Release);
         Ok(source())
-    }
+    })
 }
 #[test]
 fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_prompt() {
-    let queued = Arc::new(Once(Mutex::new(Some(source()))));
-    let mut app = Shorts::with_generator(
-        Default::default(),
-        ByteBudget::new(512 << 20).unwrap(),
-        queued.clone(),
-        Arc::new(Pixels),
-    )
-    .unwrap();
+    let (opener, queued) = once(source());
+    let mut app = state(Default::default(), opener, 0);
     app.pick_video(std::env::temp_dir().join("queued.mp4"))
         .unwrap();
     app.generate().unwrap();
@@ -561,7 +545,7 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
     wait(&mut app);
     assert!(app.source().is_none());
     assert!(
-        queued.0.lock().unwrap().is_some(),
+        queued.lock().unwrap().is_some(),
         "queued cancellation must not call the generator"
     );
 
@@ -575,17 +559,11 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
         for decision in [Some(true), Some(false), None] {
             let (send, receive) = mpsc::sync_channel(1);
             let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let mut app = Shorts::with_generator(
+            let mut app = state(
                 Default::default(),
-                ByteBudget::new(512 << 20).unwrap(),
-                Arc::new(ApprovalGenerator {
-                    unknown_price,
-                    entered: Mutex::new(send),
-                    approved: approved.clone(),
-                }),
-                Arc::new(Pixels),
-            )
-            .unwrap();
+                approval(unknown_price, send, approved.clone()),
+                0,
+            );
             app.preferences.locale = locale;
             app.captions = false;
             app.pick_video(std::env::temp_dir().join("video.mp4"))

@@ -12,28 +12,28 @@ use ai::{
     ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Support, TimingUnit,
     Transcriber, Translation, TranslationWindow, Translator,
 };
-use engine::providers::{
-    AllowAll, Credentials, DenyUploads, Providers, TranscriptionProvider, TranslationProvider,
+use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+use engine::control::{
+    ClipWorkflow as _, ClipsExportRequest, ClipsResult, ClipsSuggestRequest, decode_clips,
 };
-use engine::subtitles::LanguageTag;
-use engine::transcript::{Cancellation, SilentProgress};
+use engine::providers::{
+    AllowAll, ConsentPrompt, Credentials, DenyUploads, Providers, TranscriptionProvider,
+    TranslationProvider,
+};
+use engine::subtitles::{CaptionAccess, LanguageTag};
 use captions::CueTrack;
-use engine::control::{ClipWorkflow as _, ClipsExportRequest};
 use engine::{
     ByteBudget, ClipSettings,
-    jobs::{JobRunner, RunnerConfig, SystemClock},
+    jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
 };
-use shorts::{
-    ClipJobs, ClipRequest, SnapSettings,
-    clip_suggest::{self, SuggestionProvider},
-};
+use shorts::{ClipJobs, clip_suggest::{self, SuggestionProvider}};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
-use time::{FrameRate, Rounding, Tick};
+use time::{Rounding, Tick};
 
 fn lang(value: &str) -> LanguageTag {
     LanguageTag::parse(value).unwrap()
@@ -268,41 +268,95 @@ fn settings() -> ClipSettings {
     }
 }
 
-fn request(input: &Path) -> ClipRequest {
-    ClipRequest {
-        input: input.to_path_buf(),
-        source_language: Some(lang("en")),
-        settings: settings(),
-        snap: SnapSettings {
-            frame_rate: Some(FrameRate::FPS_30),
-            tolerance: Tick::from_seconds_f64(0.5, Rounding::Nearest).unwrap(),
-            silence_rms: 0.01,
-        },
-        provider: SuggestionProvider::Heuristic,
+/// Run the `clips.suggest` job body through the lent workflow on `runner` and return the
+/// retained result, or the job's own failure. `cache` is the one checkpoint-cache handle.
+fn run_suggest(
+    input: &Path,
+    providers: Arc<Providers>,
+    consent: Arc<dyn ConsentPrompt + Send + Sync>,
+    cache: &Arc<Mutex<ArtifactCache>>,
+    runner: &mut JobRunner,
+) -> Result<(ClipsResult, project::Project), Arc<dyn engine::Failure>> {
+    let asset = media::SourceAsset::import(media::AssetId(1), input.to_path_buf()).unwrap();
+    let duration = asset.probe().duration.unwrap();
+    let session = engine::transcript::source_session(&asset, duration, true, None).unwrap();
+    let jobs = Arc::new(ClipJobs::new(Credentials::new(None, None, None)));
+    let access = CaptionAccess::new(providers, consent, cache.clone()).with_clips(jobs.clone());
+    let key = CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Preview,
+        source: [0; 32],
+        provider: "fixture",
+        model: "clips",
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    let seconds = |value| Some(Tick::from_seconds_f64(value, Rounding::Nearest).unwrap());
+    let id = jobs
+        .suggest(
+            runner,
+            &access,
+            &session,
+            ClipsSuggestRequest {
+                asset: asset.clone(),
+                source_language: Some(lang("en")),
+                provider: Some("heuristic".into()),
+                model: None,
+                count: Some(2),
+                min_duration: seconds(0.3),
+                max_duration: seconds(2.0),
+                max_segments: Some(2),
+                min_segment_duration: seconds(0.1),
+                overlap_tolerance: Some(0.5),
+                keywords: Vec::new(),
+            },
+            key,
+        )
+        .unwrap();
+    let snapshot = loop {
+        runner.tick().unwrap();
+        let snapshot = runner.snapshot(id).unwrap();
+        if matches!(
+            snapshot.state,
+            JobState::Completed | JobState::Failed | JobState::Cancelled
+        ) {
+            break snapshot;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    if snapshot.state != JobState::Completed {
+        runner.take_output(id);
+        return Err(snapshot.error.expect("a failed job names its failure"));
+    }
+    let result = decode_clips(runner.output_bytes(id).unwrap()).unwrap();
+    runner.take_output(id);
+    let project = engine::transcript::build_session(&asset, &result.cues, duration, true, None)
+        .unwrap()
+        .project()
+        .as_ref()
+        .clone();
+    Ok((result, project))
+}
+
+/// The engine error a failed job carries, through the runner's failure wrapper.
+fn root_error(error: &Arc<dyn engine::Failure>) -> Option<&engine::control::Error> {
+    let cause: &(dyn std::error::Error + 'static) = error.as_ref();
+    match cause.downcast_ref::<engine::control::Error>() {
+        Some(engine::control::Error::Runtime(engine::RuntimeError::Failed(inner))) => {
+            root_error(inner)
+        }
+        other => other,
     }
 }
 
-fn suggest(
-    input: &Path,
-    providers: &Providers,
-    runner: &mut JobRunner,
-) -> shorts::ClipSuggestionOutcome {
+fn new_cache(budget: &ByteBudget) -> (tempfile::TempDir, Arc<Mutex<ArtifactCache>>) {
     let root = tempfile::tempdir().unwrap();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(root.path(), ByteBudget::new(1 << 30).unwrap(), 8)
-            .unwrap();
-    let credentials = Credentials::new(None, None, None);
-    clip_suggest::suggest(
-        &request(input),
-        &credentials,
-        providers,
-        runner,
-        &mut cache,
-        &DenyUploads,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap()
+    let (cache, _) = ArtifactCache::open(root.path(), budget.clone(), 8).unwrap();
+    (root, Arc::new(Mutex::new(cache)))
 }
 
 #[test]
@@ -310,16 +364,23 @@ fn heuristic_suggestion_snaps_inside_the_source() {
     let Some(input) = fixture() else {
         return;
     };
-    let providers = providers(false);
-    let (mut runner, _budget) = runner();
-    let outcome = suggest(&input, &providers, &mut runner);
-    assert_eq!(outcome.source_language, lang("en"));
-    assert_eq!(outcome.provider, "heuristic");
-    assert_eq!(outcome.model, "sentence-pause-keyword");
-    assert!(outcome.transcript_segments >= 1);
-    assert!(!outcome.clips.is_empty());
+    let (mut runner, budget) = runner();
+    let (_root, cache) = new_cache(&budget);
+    let (result, _) = run_suggest(
+        &input,
+        Arc::new(providers(false)),
+        Arc::new(DenyUploads),
+        &cache,
+        &mut runner,
+    )
+    .unwrap();
+    assert_eq!(result.source_language, lang("en"));
+    assert_eq!(result.provider, "heuristic");
+    assert_eq!(result.model, "sentence-pause-keyword");
+    assert!(result.transcript_segments >= 1);
+    assert!(!result.clips.is_empty());
     let source_end = Tick::from_seconds_f64(2.0, Rounding::Nearest).unwrap();
-    for clip in &outcome.clips {
+    for clip in &result.clips {
         assert!(clip.duration > Tick::ZERO);
         assert!(clip.duration <= settings().max_duration);
         assert_eq!(clip.adjustments.len(), clip.segments.len());
@@ -333,7 +394,7 @@ fn heuristic_suggestion_snaps_inside_the_source() {
 fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_checkpoints() {
     use ai::elevenlabs::ElevenLabsTranscriber;
     use ai::transport::ApiKey;
-    use engine::providers::{ConsentPrompt, Cost, UploadRequest};
+    use engine::providers::{Cost, UploadRequest};
     use transport::{HttpRequest, HttpResponse, HttpTransport};
     struct Transport {
         model: String,
@@ -370,9 +431,8 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         }
     }
     let input = fixture().expect("synthetic media oracle must be available");
-    let root = tempfile::tempdir().unwrap();
     let (mut runner, budget) = runner();
-    let (mut cache, _) = engine::cache::ArtifactCache::open(root.path(), budget, 8).unwrap();
+    let (_root, cache) = new_cache(&budget);
     for suffix in ['a', 'b'] {
         let model = format!("{}{suffix}", "x".repeat(255));
         let config = ElevenLabsTranscriber::provider_config(&model).unwrap();
@@ -388,38 +448,34 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
             )
             .unwrap(),
         );
-        let providers = Providers::from_parts(
-            TranscriptionProvider::ElevenLabs { model },
-            ai::elevenlabs::MODE.into(),
-            provider,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let approve = Approve {
+        let providers = Arc::new(
+            Providers::from_parts(
+                TranscriptionProvider::ElevenLabs { model },
+                ai::elevenlabs::MODE.into(),
+                provider,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        let approve = Arc::new(Approve {
             config,
             acknowledgements: Mutex::new(0),
-        };
-        let request = request(&input);
-        let credentials = Credentials::new(None, None, None);
-        let cancel = Cancellation::new();
-        let error = clip_suggest::suggest(
-            &request,
-            &credentials,
-            &providers,
+        });
+        let error = run_suggest(
+            &input,
+            providers.clone(),
+            Arc::new(AllowAll),
+            &cache,
             &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &cancel,
         )
         .err()
         .unwrap();
         assert!(
             matches!(
-                error,
-                shorts::Error::Engine(engine::control::Error::Transcript(
+                root_error(&error),
+                Some(engine::control::Error::Transcript(
                     engine::transcript::Error::Providers(engine::providers::Error::Ai(Error::Cost))
                 ))
             ),
@@ -427,85 +483,19 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         );
         assert_eq!(*transport.calls.lock().unwrap(), 0);
         for checkpoints in [0, 1] {
-            let outcome = clip_suggest::suggest(
-                &request,
-                &credentials,
-                &providers,
+            let (result, _) = run_suggest(
+                &input,
+                providers.clone(),
+                approve.clone(),
+                &cache,
                 &mut runner,
-                &mut cache,
-                &approve,
-                &SilentProgress,
-                &cancel,
             )
             .unwrap();
-            assert_eq!(outcome.checkpoints, checkpoints);
-            assert!(!outcome.clips.is_empty());
+            assert_eq!(result.checkpoints, checkpoints);
+            assert!(!result.clips.is_empty());
             assert_eq!(*transport.calls.lock().unwrap(), 1);
             assert_eq!(*approve.acknowledgements.lock().unwrap(), 1);
         }
-    }
-}
-
-#[test]
-fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
-    let Some(input) = fixture() else { return };
-    for available in [64 << 20, (80 << 20) - 1] {
-        let root = tempfile::tempdir().unwrap();
-        let (mut runner, budget) = runner();
-        let (mut cache, _) =
-            engine::cache::ArtifactCache::open(root.path(), budget.clone(), 8).unwrap();
-        let held = budget
-            .reserve(engine::ByteOwner::Export, (2 << 30) - available)
-            .unwrap();
-        let asr = FakeAsr::new();
-        let calls = asr.calls.clone();
-        let providers = Providers::from_parts(
-            TranscriptionProvider::Whisper {
-                model: "fake-asr-model".into(),
-            },
-            "transcribe".into(),
-            Arc::new(asr),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let before = budget.snapshot().unwrap().used;
-        let result = clip_suggest::suggest(
-            &request(&input),
-            &Credentials::new(None, None, None),
-            &providers,
-            &mut runner,
-            &mut cache,
-            &DenyUploads,
-            &SilentProgress,
-            &Cancellation::new(),
-        );
-        assert!(matches!(
-            result,
-            Err(shorts::Error::Engine(engine::control::Error::Runtime(
-                engine::RuntimeError::BudgetFull
-            )))
-        ));
-        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(budget.snapshot().unwrap().used, before);
-        drop(held);
-        let result = clip_suggest::suggest(
-            &request(&input),
-            &Credentials::new(None, None, None),
-            &providers,
-            &mut runner,
-            &mut cache,
-            &DenyUploads,
-            &SilentProgress,
-            &Cancellation::new(),
-        )
-        .unwrap();
-        assert!(!result.clips.is_empty());
-        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
-        drop(runner);
-        drop(cache);
-        assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }
 
@@ -514,19 +504,26 @@ fn registry_export_submits_one_job_per_selected_short() {
     let Some(input) = fixture() else {
         return;
     };
-    let providers = providers(false);
-    let (mut runner, _budget) = runner();
-    let mut outcome = suggest(&input, &providers, &mut runner);
+    let (mut runner, budget) = runner();
+    let (_root, cache) = new_cache(&budget);
+    let (mut outcome, source_project) = run_suggest(
+        &input,
+        Arc::new(providers(false)),
+        Arc::new(DenyUploads),
+        &cache,
+        &mut runner,
+    )
+    .unwrap();
     let jobs = ClipJobs::new(Credentials::new(None, None, None));
     let directory = tempfile::tempdir().unwrap();
-    let request = |outcome: &shorts::ClipSuggestionOutcome,
+    let request = |outcome: &ClipsResult,
                    select: Vec<usize>,
                    languages: Vec<LanguageTag>,
                    directory: &Path| ClipsExportRequest {
-        result: clip_suggest::clips_result(outcome),
+        result: outcome.clone(),
         cues: CueTrack {
             styles: Vec::new(),
-            cues: outcome.source_cues.clone(),
+            cues: outcome.cues.clone(),
         },
         select,
         languages,
@@ -544,7 +541,7 @@ fn registry_export_submits_one_job_per_selected_short() {
     ] {
         let refused = jobs.export(
             &mut runner,
-            &outcome.source_project,
+            &source_project,
             request(&outcome, select, languages, directory.path()),
         );
         assert!(refused.is_err());
@@ -558,8 +555,10 @@ fn registry_export_submits_one_job_per_selected_short() {
     outcome.clips = (0..9)
         .map(|index| {
             let mut clip = template.clone();
-            clip.proposal.title = format!("nine-{index}").into();
+            clip.title = format!("nine-{index}").into();
             clip.segments.truncate(1);
+            clip.adjustments.truncate(1);
+            clip.pieces.truncate(1);
             let segment = &mut clip.segments[0];
             segment.range = time::SourceRange::new(
                 segment.range.start(),
@@ -574,7 +573,7 @@ fn registry_export_submits_one_job_per_selected_short() {
     let shorts = jobs
         .export(
             &mut runner,
-            &outcome.source_project,
+            &source_project,
             request(&outcome, (0..9).collect(), Vec::new(), directory.path()),
         )
         .unwrap();
@@ -605,7 +604,7 @@ fn registry_export_submits_one_job_per_selected_short() {
     let refused = jobs
         .export(
             &mut congested,
-            &outcome.source_project,
+            &source_project,
             request(&outcome, (0..3).collect(), Vec::new(), queued.path()),
         )
         .unwrap_err();

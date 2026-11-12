@@ -80,7 +80,7 @@ fn models_cache(budget: &ByteBudget) -> engine::control::Result<Arc<Mutex<Artifa
 }
 
 /// The desktop is the trusted composition root of its own session: consent, not policy,
-/// guards remote calls, and no workflow here publishes a file.
+/// guards remote calls; the one file-publishing command is the user-started `clips.export`.
 struct Trusted;
 impl Policy for Trusted {
     fn authorize(&self, _: &Command, _: &project::Project) -> engine::control::Result<()> {

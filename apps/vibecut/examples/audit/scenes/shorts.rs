@@ -7,33 +7,12 @@ use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;
 use media::AssetId;
 use media::SourceAsset;
-use project::Project;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use vibecut::egui;
 use vibecut::i18n::Locale;
 use vibecut::services::playback::Files;
-
-/// A generation that never finishes, so the audit can draw the working state.
-pub(super) struct Hold;
-impl vibecut::shorts::Generator for Hold {
-    fn run(
-        &self,
-        _request: vibecut::shorts::GenerationRequest,
-        _budget: ByteBudget,
-        _events: &vibecut::shorts::TaskEvents,
-        cancel: &engine::transcript::Cancellation,
-    ) -> engine::control::Result<vibecut::shorts::ReviewSource> {
-        while !cancel.cancelled() {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        Err(engine::control::Error::Runtime(
-            engine::RuntimeError::Cancelled,
-        ))
-    }
-}
 
 /// Shared fixture, real widget path; no provider calls or visible native window.
 pub(super) fn shorts_scene(
@@ -44,36 +23,43 @@ pub(super) fn shorts_scene(
 ) -> Result<AppHarness, Failure> {
     use vibecut::{
         services::playback::Sources,
-        shorts::{Decision, State as Shorts},
+        shorts::{Decision, Importer, State as Shorts},
     };
     static ASSET: std::sync::OnceLock<SourceAsset> = std::sync::OnceLock::new();
-    let mut source = shorts_fixture::source();
-    let preview: Arc<dyn Sources> = if let Some(path) = std::env::var_os("SHORTS_AUDIT_VIDEO") {
-        let asset = match ASSET.get() {
-            Some(asset) => asset.clone(),
-            None => {
-                let asset = SourceAsset::import(AssetId(1), PathBuf::from(path))?;
-                let _ = ASSET.set(asset.clone());
-                asset
-            }
+    let source = shorts_fixture::source();
+    let (preview, importer): (Arc<dyn Sources>, Importer) =
+        if let Some(path) = std::env::var_os("SHORTS_AUDIT_VIDEO") {
+            let asset = match ASSET.get() {
+                Some(asset) => asset.clone(),
+                None => {
+                    let asset = SourceAsset::import(AssetId(1), PathBuf::from(path))?;
+                    let _ = ASSET.set(asset.clone());
+                    asset
+                }
+            };
+            (Arc::new(Files), Arc::new(move |_| Ok(asset.clone())))
+        } else {
+            (Arc::new(shorts_fixture::Pixels), shorts_fixture::importer_at(0))
         };
-        let mut data = source.project.into_data();
-        data.assets = vec![asset];
-        source.project = Project::new(data)?;
-        Arc::new(Files)
-    } else {
-        Arc::new(shorts_fixture::Pixels)
-    };
     let prefs = preferences(theme, locale);
-    let generator: Arc<dyn vibecut::shorts::Generator> = if scene == "generating" {
-        Arc::new(Hold)
+    let opener = if scene == "generating" {
+        // A generation that never finishes, so the audit can draw the working state.
+        shorts_fixture::staged(|_, hooks| {
+            while !hooks.cancelled() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(engine::control::Error::Runtime(
+                engine::RuntimeError::Cancelled,
+            ))
+        })
     } else {
-        Arc::new(shorts_fixture::Once(Mutex::new(Some(source))))
+        shorts_fixture::once(source).0
     };
-    let mut shorts = Shorts::with_generator(
+    let mut shorts = Shorts::with_access(
         prefs.look(),
         ByteBudget::new(768 << 20)?,
-        generator,
+        opener,
+        importer,
         preview,
     )?;
     shorts.captions = false;
