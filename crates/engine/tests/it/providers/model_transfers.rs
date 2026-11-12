@@ -1263,12 +1263,13 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
     }
     // The transport refuses with one of its three categories, which the engine
     // bridge maps back onto the existing AI variants.
-    for error in [
-        transport::Error::Network,
-        transport::Error::Payload,
-        transport::Error::Invalid("model transfer"),
-    ] {
-        let error = ai::Error::from(error);
+    let refusals: [fn() -> transport::Error; 3] = [
+        || transport::Error::Network,
+        || transport::Error::Payload,
+        || transport::Error::Invalid("model transfer"),
+    ];
+    for refusal in refusals {
+        let error = ai::Error::from(refusal());
         use engine::control::{ErrorCode, Failure};
         let code = if error.is_transient() {
             ErrorCode::Job
@@ -1279,7 +1280,7 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
         let expected = error.to_string();
         let dir = tempfile::tempdir().unwrap();
         let http = Arc::new(Http::default());
-        http.fail(error);
+        http.fail(refusal());
         let (_, model) = specimen(11);
         let io = Io::healthy();
         let (_, store, mut runner, clock) = setup(dir.path(), http.clone(), io.clone(), 1);
