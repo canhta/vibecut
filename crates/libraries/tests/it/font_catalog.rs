@@ -1362,10 +1362,11 @@ fn native_cache_child() {
         return;
     };
     if mode == "unavailable" {
+        // CacheRoot::discover composes the refusal through the runtime owner.
         assert!(matches!(
             FontStore::native(),
-            Err(EngineError::Edit(engine::EditError::Unsupported(
-                "OS cache location unavailable"
+            Err(EngineError::Runtime(engine::RuntimeError::Edit(
+                engine::EditError::Unsupported("OS cache location unavailable")
             )))
         ));
         return;
