@@ -34,6 +34,8 @@ pub enum CatalogOperation {
     GenerateChapters,
     /// Timed-word transcript upload for filler classification.
     ClassifyFillers,
+    /// Verified-word cue upload for caption keyword emphasis.
+    SelectEmphasis,
 }
 /// Offline capability data used by CLI and UI pickers. No provider is constructed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,6 +228,26 @@ pub fn provider_options() -> Vec<ProviderOption> {
             target_languages: Vec::new(),
             native_timing: false,
         },
+        ProviderOption {
+            id: "openai",
+            label: "OpenAI (emphasis)",
+            operation: CatalogOperation::SelectEmphasis,
+            local: false,
+            models: vec![ai::defaults::model("openai", ai::Operation::SelectEmphasis).into()],
+            languages: tags(&TEXT_LANGUAGES),
+            target_languages: Vec::new(),
+            native_timing: false,
+        },
+        ProviderOption {
+            id: "anthropic",
+            label: "Anthropic (emphasis)",
+            operation: CatalogOperation::SelectEmphasis,
+            local: false,
+            models: vec![ai::defaults::model("anthropic", ai::Operation::SelectEmphasis).into()],
+            languages: tags(&TEXT_LANGUAGES),
+            target_languages: Vec::new(),
+            native_timing: false,
+        },
     ]
 }
 pub fn provider_options_for(
@@ -316,6 +338,9 @@ pub fn choose_chapter(provider: &str, model: Option<&str>) -> Result<TextProvide
 }
 pub fn choose_filler(provider: &str, model: Option<&str>) -> Result<TextProvider> {
     choose_text(CatalogOperation::ClassifyFillers, provider, model)
+}
+pub fn choose_emphasis(provider: &str, model: Option<&str>) -> Result<TextProvider> {
+    choose_text(CatalogOperation::SelectEmphasis, provider, model)
 }
 fn choose_text(
     operation: CatalogOperation,

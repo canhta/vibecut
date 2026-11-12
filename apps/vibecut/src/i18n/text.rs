@@ -35,6 +35,7 @@ catalog! {
     // Remote model settings (explicit advanced choices)
     ModelRemoteChapters { key: "ai_chapters", en: "Chapters", vi: "Chương" },
     ModelRemoteCustom { key: "ai_custom", en: "Custom model ID", vi: "Mã mô hình tùy chỉnh" },
+    ModelRemoteEmphasis { key: "ai_emphasis", en: "Caption keyword emphasis", vi: "Nhấn mạnh từ khóa phụ đề" },
     ModelRemoteEmpty { key: "ai_empty", en: "This key returned no models. You can enter an ID below.", vi: "Khóa này không trả về mô hình. Bạn có thể nhập mã bên dưới." },
     ModelRemoteFillers { key: "ai_fillers", en: "Filler classification", vi: "Phân loại từ đệm" },
     ModelRemoteInvalid { key: "ai_invalid", en: "Enter a model ID of 1–256 bytes without control characters.", vi: "Nhập mã mô hình từ 1–256 byte, không có ký tự điều khiển." },

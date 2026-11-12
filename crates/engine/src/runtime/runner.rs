@@ -206,6 +206,7 @@ impl From<ai::Stage> for JobStage {
             ai::Stage::SuggestClips => Self::SuggestClips,
             ai::Stage::GenerateChapters => Self::Process,
             ai::Stage::ClassifyFillers => Self::Process,
+            ai::Stage::SelectEmphasis => Self::Process,
             ai::Stage::Vision => Self::Process,
             ai::Stage::Assemble => Self::Assemble,
         }
@@ -431,6 +432,7 @@ impl JobRunner {
                         | JobKind::SuggestClips
                         | JobKind::GenerateChapters
                         | JobKind::ClassifyFillers
+                        | JobKind::SelectEmphasis
                         | JobKind::DownloadModel
                         | JobKind::SoundDownload
                         | JobKind::DownloadFont

@@ -25,9 +25,10 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
                     "clips" => CatalogOperation::SuggestClips,
                     "chapters" => CatalogOperation::GenerateChapters,
                     "fillers" => CatalogOperation::ClassifyFillers,
+                    "emphasis" => CatalogOperation::SelectEmphasis,
                     _ => {
                         return Err(CliError::Usage(
-                            "--operation must be transcribe, translate, clips, chapters or fillers"
+                            "--operation must be transcribe, translate, clips, chapters, fillers or emphasis"
                                 .into(),
                         ));
                     }
@@ -103,6 +104,7 @@ fn provider_option_json(option: &ProviderOption) -> Value {
             CatalogOperation::SuggestClips => "suggest_clips",
             CatalogOperation::GenerateChapters => "generate_chapters",
             CatalogOperation::ClassifyFillers => "classify_fillers",
+            CatalogOperation::SelectEmphasis => "select_emphasis",
         },
         "location": if option.local { "local" } else { "remote" },
         "models": option.models,

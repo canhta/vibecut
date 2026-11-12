@@ -82,6 +82,15 @@ pub struct CaptionStyle {
     pub safe_area_percent: f32,
     /// Total lines across both languages; wrapped text shrinks to fit without dropping text.
     pub max_lines: usize,
+    /// RGB of the word-highlight overlay: the active spoken word and the keyword-emphasis
+    /// words. Alpha stays the caption colour's alpha.
+    #[serde(default = "default_word_highlight_color")]
+    pub word_highlight_color: [u8; 3],
+}
+
+/// Gold, the word-highlight colour before it became part of the style.
+fn default_word_highlight_color() -> [u8; 3] {
+    [255, 215, 0]
 }
 
 impl Default for CaptionStyle {
@@ -99,6 +108,7 @@ impl Default for CaptionStyle {
             position: CaptionPosition::Bottom,
             safe_area_percent: 5.0,
             max_lines: 2,
+            word_highlight_color: default_word_highlight_color(),
         }
     }
 }
@@ -156,6 +166,8 @@ pub struct CaptionOverrides {
     pub safe_area_percent: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_lines: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_highlight_color: Option<[u8; 3]>,
 }
 
 impl CaptionOverrides {
@@ -191,6 +203,9 @@ impl CaptionOverrides {
         }
         if let Some(value) = self.max_lines {
             style.max_lines = value;
+        }
+        if let Some(value) = self.word_highlight_color {
+            style.word_highlight_color = value;
         }
     }
 

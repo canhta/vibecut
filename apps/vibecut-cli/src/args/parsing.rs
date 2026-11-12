@@ -48,7 +48,7 @@ Usage:
   vibecut-cli fillers <project> --language vi|en|zh|zh-Hans|zh-Hant --llm
                      [--include-markers] [--provider openai|anthropic] [--model <id>]
                      [--yes-upload]
-  vibecut-cli providers [--operation transcribe|translate|clips|chapters|fillers] [--language <tag>]
+  vibecut-cli providers [--operation transcribe|translate|clips|chapters|fillers|emphasis] [--language <tag>]
   vibecut-cli sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]
   vibecut-cli sounds save <library> <sound-json>
   vibecut-cli sounds unsave <library> <id>

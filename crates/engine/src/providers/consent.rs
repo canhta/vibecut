@@ -102,6 +102,7 @@ pub fn approve_upload(
         CatalogOperation::SuggestClips => ai::Operation::SuggestClips,
         CatalogOperation::GenerateChapters => ai::Operation::GenerateChapters,
         CatalogOperation::ClassifyFillers => ai::Operation::ClassifyFillers,
+        CatalogOperation::SelectEmphasis => ai::Operation::SelectEmphasis,
     };
     if request.config != scope.provider
         || operation != scope.operation

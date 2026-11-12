@@ -1,6 +1,6 @@
 # Analysis
 
-Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapters`, `fillers`,
+Interface: `scene_detection`, `speech_activity`, `waveform`, `loudness`, `chapters`, `fillers`, `emphasis`,
 `AnalysisRequest`, `AnalysisJob`.
 
 Every workflow here measures source media, never mutates a project, and returns a typed
@@ -164,3 +164,21 @@ sorted by output start, bounded at 1 MiB, and an ID that does not exist in the s
 fails the job with the typed `InvalidSegments` reason. `job_status` publishes `JobView.output` (`fillers`);
 `timeline.remove_fillers` consumes the same IDs. A caller without a lent access refuses
 `ConsentRequired`. No artifact cache is used and the project is never mutated.
+
+## Caption emphasis
+
+`emphasis::EmphasisRequest::new(project, item, cues)` reads one caption item's cues that carry
+verified word timing (`captions::validate_selection`), builds the `<item>:<cue>` segments with one
+`{position, text}` per verified word and sends the exact bounded `ai::emphasis::EmphasisInput`.
+`cues` of `None` covers every eligible cue; a named cue that is missing or lacks verified timing
+refuses with `captions::Error::NoWordTiming` (or `Invalid`), and an item with no eligible cue
+refuses `EmptyTranscript`, all before any job or provider work. The local lexicon is
+`captions.select_emphasis`; this job is the opt-in network path and never falls back to it.
+
+`submit` asks the lent `TextAccess::prepare_emphasis` for the exact consent token and queues one
+network `SelectEmphasis` job. A caller without a lent emphasis adapter, or without consent, refuses
+`ConsentRequired`. Returned positions that are not words of the cue they came with fail the job with
+`InvalidSegments`; a provider failure fails it with its typed reason, with no result. The result is
+a list of `EmphasisSuggestion {item, cue, word_ids}` (`job_status` output `emphasis`), bounded at
+1 MiB, that `captions.set_emphasis` applies. The project is never mutated and no artifact cache is
+used.

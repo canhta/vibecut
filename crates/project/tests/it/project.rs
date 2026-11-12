@@ -24,6 +24,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
         position: captions::CaptionPosition::Bottom,
         safe_area_percent: 5.0,
         max_lines: 2,
+        word_highlight_color: [255, 215, 0],
     };
     let mut data = Project::empty(ProjectId(99), "Bank".into())
         .unwrap()

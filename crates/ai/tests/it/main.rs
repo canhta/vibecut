@@ -8,6 +8,7 @@ mod conformance;
 mod conversation;
 mod elevenlabs;
 mod elevenlabs_speech;
+mod emphasis;
 mod fillers;
 mod local_gipformer;
 mod local_whisper;

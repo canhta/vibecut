@@ -8,6 +8,7 @@ pub mod clips;
 mod contracts;
 pub mod conversation;
 pub mod elevenlabs;
+pub mod emphasis;
 pub mod fillers;
 #[cfg(feature = "gipformer")]
 pub mod gipformer;
@@ -108,6 +109,8 @@ pub enum Error {
     Chapters(#[from] chapters::ChapterRefusal),
     #[error("filler classification refused: {0}")]
     Fillers(#[from] fillers::FillerRefusal),
+    #[error("caption emphasis refused: {0}")]
+    Emphasis(#[from] emphasis::EmphasisRefusal),
 }
 
 impl Error {

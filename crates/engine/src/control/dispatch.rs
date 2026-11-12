@@ -16,6 +16,7 @@ impl From<ProviderOption> for ProviderView {
                 CatalogOperation::SuggestClips => "suggest_clips",
                 CatalogOperation::GenerateChapters => "generate_chapters",
                 CatalogOperation::ClassifyFillers => "classify_fillers",
+                CatalogOperation::SelectEmphasis => "select_emphasis",
             }
             .into(),
             provider: p.id.into(),
@@ -457,6 +458,28 @@ impl Session {
                     .ok_or(crate::providers::Error::ConsentRequired)?;
                 let request =
                     crate::fillers::FillerRequest::new(self.project(), language, include_markers)?;
+                let job = request.submit(runner, access)?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job: job.id,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::CaptionsSuggestEmphasis { item, cue_ids } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let access = caller
+                    .chapters
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
+                let request = crate::emphasis::EmphasisRequest::new(
+                    self.project(),
+                    item,
+                    cue_ids.as_deref(),
+                )?;
                 let job = request.submit(runner, access)?;
                 Ok(ControlResult::JobAccepted {
                     word_highlight_warnings: project::CaptionWordWarnings::default(),

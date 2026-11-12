@@ -1088,9 +1088,60 @@ impl ai::fillers::FillerClassifier for FixtureFillers {
         Ok(ai::fillers::FillerProposal { fillers })
     }
 }
+/// Offline emphasis adapter: picks the last word of every cue.
+pub(crate) struct FixtureEmphasis {
+    config: ai::ProviderConfig,
+}
+impl ai::emphasis::EmphasisSelector for FixtureEmphasis {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::emphasis::MODE.into(),
+            operation: ai::Operation::SelectEmphasis,
+            languages: vec![scope.source_language.clone()],
+            target_languages: Vec::new(),
+            timing: Default::default(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: Some(ai::emphasis::MAX_WIRE),
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "emphasis-v1".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn select(
+        &self,
+        input: &ai::emphasis::EmphasisInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::emphasis::EmphasisProposal, ai::Error> {
+        let selections = input
+            .segments
+            .iter()
+            .filter_map(|segment| {
+                segment
+                    .words
+                    .last()
+                    .map(|word| ai::emphasis::EmphasisSelection {
+                        segment: segment.id.clone(),
+                        positions: vec![word.position],
+                    })
+            })
+            .collect();
+        Ok(ai::emphasis::EmphasisProposal { selections })
+    }
+}
 pub(crate) fn fixture_chapters() -> engine::providers::TextAccess {
     let chapter = ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
     let filler = ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
+    let emphasis = ai::emphasis::OpenAiEmphasisSelector::provider_config("gpt-6-luna").unwrap();
     engine::providers::TextAccess::new(
         Arc::new(FixtureChapters {
             config: chapter.clone(),
@@ -1101,8 +1152,10 @@ pub(crate) fn fixture_chapters() -> engine::providers::TextAccess {
         Box::new(engine::providers::StoredConsent::grant([
             (chapter, ai::Money::new("USD", 0).unwrap()),
             (filler, ai::Money::new("USD", 0).unwrap()),
+            (emphasis.clone(), ai::Money::new("USD", 0).unwrap()),
         ])),
     )
+    .with_emphasis(Arc::new(FixtureEmphasis { config: emphasis }))
 }
 pub(crate) fn fillers(
     s: &mut Session,

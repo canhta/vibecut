@@ -505,6 +505,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "captions.select_emphasis",
                 "captions.set_emphasis",
                 "captions.set_word_highlight",
+                "captions.suggest_emphasis",
                 "export_subtitles",
                 "fillers.classify",
                 "timeline.filler_candidates",

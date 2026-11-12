@@ -199,6 +199,7 @@ pub enum JobKind {
     SuggestClips,
     GenerateChapters,
     ClassifyFillers,
+    SelectEmphasis,
     AnalyzeShots,
     AnalyzeReframe,
     DetectScenes,
@@ -335,6 +336,18 @@ pub struct FillerCandidate {
     pub kind: captions::FillerKind,
     /// Whether the cue's source text was edited, so removal needs confirmation.
     pub edited_cue: bool,
+}
+
+/// One cue's model-chosen emphasis words. `captions.suggest_emphasis` produces these;
+/// `captions.set_emphasis` consumes `item`, `cue` and `word_ids`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EmphasisSuggestion {
+    pub item: ItemId,
+    /// The cue the words belong to.
+    pub cue: NfcText,
+    /// Ascending indices into the cue's verified word records.
+    pub word_ids: Vec<u32>,
 }
 
 /// Integrated loudness and true peak of one measured signal; `None` is silence.

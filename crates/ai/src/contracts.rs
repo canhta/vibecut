@@ -15,6 +15,7 @@ pub enum Operation {
     SuggestClips,
     GenerateChapters,
     ClassifyFillers,
+    SelectEmphasis,
     Synthesize,
 }
 /// Absolute source-audio sample coordinates, half-open and nonnegative.
@@ -137,6 +138,7 @@ pub enum Stage {
     SuggestClips,
     GenerateChapters,
     ClassifyFillers,
+    SelectEmphasis,
     Vision,
     Assemble,
 }

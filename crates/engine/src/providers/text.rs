@@ -6,11 +6,12 @@
 //! input, cost and provider configuration into the token an adapter receives.
 //! Without an affirmative approval it refuses before any adapter or credential
 //! is used.
-use super::adapters::{Credentials, open_chapter, open_filler};
+use super::adapters::{Credentials, open_chapter, open_emphasis, open_filler};
 use super::catalog::{CatalogOperation, TextProvider};
 use super::consent::{ConsentPrompt, Cost, UploadRequest, approve_upload};
 use super::error::{Error, Result};
 use ai::chapters::{ChapterGenerator, ChapterInput};
+use ai::emphasis::{EmphasisInput, EmphasisSelector};
 use ai::fillers::{FillerClassifier, FillerInput};
 use ai::{Consent, CostEstimate, Money, ProviderConfig, Scope, UploadDisclosure};
 use captions::NfcText;
@@ -20,6 +21,8 @@ use std::sync::Arc;
 pub struct TextAccess {
     chapter: Arc<dyn ChapterGenerator>,
     filler: Arc<dyn FillerClassifier>,
+    /// Absent unless the composition root lent an emphasis adapter; the lexicon never stands in.
+    emphasis: Option<Arc<dyn EmphasisSelector>>,
     consent: Box<dyn ConsentPrompt + Send + Sync>,
 }
 
@@ -32,6 +35,13 @@ pub(crate) struct PreparedChapter {
 /// The consent token and filler adapter one validated input runs with.
 pub(crate) struct PreparedFillers {
     pub(crate) classifier: Arc<dyn FillerClassifier>,
+    pub(crate) scope: Scope,
+    pub(crate) consent: Consent,
+}
+
+/// The consent token and emphasis adapter one validated input runs with.
+pub(crate) struct PreparedEmphasis {
+    pub(crate) selector: Arc<dyn EmphasisSelector>,
     pub(crate) scope: Scope,
     pub(crate) consent: Consent,
 }
@@ -82,8 +92,15 @@ impl TextAccess {
         Self {
             chapter,
             filler,
+            emphasis: None,
             consent,
         }
+    }
+
+    /// Lend an emphasis adapter too; it is covered by the same consent prompt.
+    pub fn with_emphasis(mut self, emphasis: Arc<dyn EmphasisSelector>) -> Self {
+        self.emphasis = Some(emphasis);
+        self
     }
 
     /// Build the selected provider's adapters and lend them with `consent`.
@@ -96,7 +113,8 @@ impl TextAccess {
             open_chapter(&provider, credentials)?,
             open_filler(&provider, credentials)?,
             consent,
-        ))
+        )
+        .with_emphasis(open_emphasis(&provider, credentials)?))
     }
 
     /// The exact provider configuration chapter requests are bound to.
@@ -107,6 +125,34 @@ impl TextAccess {
     /// The exact provider configuration filler requests are bound to.
     pub fn filler_provider(&self) -> &ProviderConfig {
         self.filler.config()
+    }
+
+    /// The exact provider configuration emphasis requests are bound to, when one is lent.
+    pub fn emphasis_provider(&self) -> Option<&ProviderConfig> {
+        self.emphasis.as_ref().map(|emphasis| emphasis.config())
+    }
+
+    /// Bind the complete emphasis input to a fresh consent token; no token, no adapter call.
+    /// Without a lent adapter this refuses and the caller never falls back to the lexicon.
+    pub(crate) fn prepare_emphasis(&self, input: &EmphasisInput) -> Result<PreparedEmphasis> {
+        let selector = self.emphasis.clone().ok_or(Error::ConsentRequired)?;
+        let scope = Scope::emphasis(
+            selector.config().clone(),
+            input,
+            fingerprint(&input.consent_text()?),
+        )?;
+        let estimate = selector.estimate(&scope);
+        let consent = self.approve(
+            CatalogOperation::SelectEmphasis,
+            &scope,
+            selector.disclosure(&scope)?,
+            &estimate,
+        )?;
+        Ok(PreparedEmphasis {
+            selector,
+            scope,
+            consent,
+        })
     }
 
     /// Bind the complete chapter input to a fresh consent token; no token, no adapter call.

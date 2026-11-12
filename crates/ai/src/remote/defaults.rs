@@ -143,6 +143,26 @@ pub const DEFAULTS: &[ModelDefault] = &[
     },
     ModelDefault {
         provider: "openai",
+        feature: Operation::SelectEmphasis,
+        model: "gpt-6-luna",
+        price: Price::Text {
+            input: 100_000,
+            output: 500_000,
+        },
+        shipped_default: true,
+    },
+    ModelDefault {
+        provider: "anthropic",
+        feature: Operation::SelectEmphasis,
+        model: "claude-sonnet-5-5",
+        price: Price::Text {
+            input: 2_000_000,
+            output: 10_000_000,
+        },
+        shipped_default: true,
+    },
+    ModelDefault {
+        provider: "openai",
         feature: Operation::Synthesize,
         model: "gpt-audio-1.5",
         price: Price::Speech {

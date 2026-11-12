@@ -31,6 +31,7 @@ fn feature_text(feature: Operation) -> Text {
         Operation::SuggestClips => Text::ShortsSuggester,
         Operation::GenerateChapters => Text::ModelRemoteChapters,
         Operation::ClassifyFillers => Text::ModelRemoteFillers,
+        Operation::SelectEmphasis => Text::ModelRemoteEmphasis,
         Operation::Synthesize => Text::ModelRemoteSpeech,
         Operation::Align => Text::ShortsTranscriber,
     }

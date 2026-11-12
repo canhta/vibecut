@@ -32,6 +32,9 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         JobKind::ClassifyFillers => JobOutput::Fillers {
             candidates: crate::fillers::decode(retained()?)?,
         },
+        JobKind::SelectEmphasis => JobOutput::Emphasis {
+            suggestions: crate::emphasis::decode(retained()?)?,
+        },
         JobKind::MeasureLoudness => JobOutput::Loudness(crate::loudness::decode(retained()?)?),
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
         JobKind::AnalyzeReframe => JobOutput::Reframe(reframe_report(retained()?)?),

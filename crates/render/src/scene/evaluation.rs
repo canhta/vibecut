@@ -880,8 +880,10 @@ impl<'a> Renderer<'a> {
         };
         let size = size * scale;
         let font_style = caption.map_or(face.style, |s| s.font_style.as_str());
+        let highlight = caption.map_or([0; 3], |style| style.word_highlight_color);
         Ok(TextKey {
             value: value.to_owned(),
+            highlight_rgb: highlight,
             word_spans: word_plan.map_or_else(Vec::new, |(plan, _)| {
                 plan.spans
                     .iter()
@@ -896,7 +898,7 @@ impl<'a> Renderer<'a> {
                     .find(|(range, _, _)| {
                         range.is_some_and(|range| range.start() <= at && at < range.end())
                     })
-                    .map(|&(_, start, end)| (start, end, [255, 215, 0]))
+                    .map(|&(_, start, end)| (start, end, highlight))
             }),
             size: size.to_bits(),
             fill,

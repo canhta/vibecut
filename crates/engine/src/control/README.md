@@ -81,7 +81,7 @@ reads refuse instead of truncating or mixing revisions.
 Commands that need process state declare it. `fonts.*` needs the attached font store, the media
 generation commands and their display reads need the attached `MediaAccess`, `sounds.*` needs
 the attached sound library, and `chapters.generate`, `chapters.export_sidecars` and
-`fillers.classify` need the lent
+`fillers.classify` and `captions.suggest_emphasis` need the lent
 [`TextAccess`](../providers/README.md#transcript-text-generation) that owns the chosen adapters
 and the human approval. A caller without them refuses `Unsupported` or `Permission` before any
 input, adapter or network work. `MediaAccess::open` / `open_in` create the waveform and thumbnail
@@ -102,7 +102,7 @@ reads cues from the optional caption `item` and returns `ClipExports`: one job p
 
 A command that starts a job is `JobControl`, declares `grant` explicitly and returns
 `JobAccepted { job, revision, paths }`. `job_status` returns a `JobView` whose single
-`output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`,
+`output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `emphasis`, `loudness`,
 `scenes`, `captions`, `translations`, `reframe`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
 the runner's retained bytes with one exhaustive `match` on `JobKind`, so a new kind does not
 compile until it names its output or states it has none. Reading does not consume the output; a

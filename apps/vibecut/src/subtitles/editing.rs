@@ -910,6 +910,8 @@ fn overrides_from(
         safe_area_percent: (draft.safe_area_percent != base.safe_area_percent)
             .then_some(draft.safe_area_percent),
         max_lines: (draft.max_lines != base.max_lines).then_some(draft.max_lines),
+        word_highlight_color: (draft.word_highlight_color != base.word_highlight_color)
+            .then_some(draft.word_highlight_color),
     }
 }
 

@@ -453,6 +453,27 @@ pub(crate) fn open_filler(
         )?),
     })
 }
+/// Build the selected emphasis selector; it shares the approved text model, provider
+/// configuration and credential with chapters and fillers.
+pub(crate) fn open_emphasis(
+    emphasis: &TextProvider,
+    credentials: &Credentials,
+) -> Result<Arc<dyn ai::emphasis::EmphasisSelector>> {
+    Ok(match emphasis {
+        TextProvider::OpenAi { model } => Arc::new(ai::emphasis::OpenAiEmphasisSelector::new(
+            ai::emphasis::OpenAiEmphasisSelector::provider_config(model)?,
+            credentials.openai()?,
+            Arc::new(UreqTransport::new()),
+        )?),
+        TextProvider::Anthropic { model } => {
+            Arc::new(ai::emphasis::AnthropicEmphasisSelector::new(
+                ai::emphasis::AnthropicEmphasisSelector::provider_config(model)?,
+                credentials.anthropic()?,
+                Arc::new(UreqTransport::new()),
+            )?)
+        }
+    })
+}
 fn load_aligner(
     cache: &mut ArtifactCache,
     leases: &mut Vec<ModelLease>,

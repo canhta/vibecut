@@ -298,6 +298,7 @@ fn caption_preset_overrides_patch_every_full_style_field() {
         position: Some(captions::CaptionPosition::Top),
         safe_area_percent: Some(12.0),
         max_lines: Some(3),
+        word_highlight_color: None,
     };
     let mut patched = base.data().clone();
     for item in patched
@@ -908,6 +909,7 @@ fn imported_cue_style_paints_preview_and_export_like_the_equivalent_caption_styl
         position: CaptionPosition::Top,
         safe_area_percent: 6.25,
         max_lines: 2,
+        word_highlight_color: [255, 215, 0],
     };
     let expected = Renderer::new(&plain, expected)
         .unwrap()
@@ -1270,6 +1272,19 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
                 .pixels(),
             first.pixels(),
             "ids that outlived their words paint nothing: {tag}"
+        );
+        // The emphasis colour is the style's word-highlight colour, not a renderer constant:
+        // the default is the gold of the active word, and a style change recolours it.
+        let mut recoloured_settings = s.clone();
+        recoloured_settings.caption_style.word_highlight_color = [0, 200, 80];
+        let recoloured = Renderer::new(&emphasised, recoloured_settings)
+            .unwrap()
+            .render_frame(tick(1, 2), &mut Empty, &h)
+            .unwrap();
+        assert_ne!(
+            recoloured.pixels(),
+            em_first.pixels(),
+            "word_highlight_color drives emphasis: {tag}"
         );
         // Word activity follows the content clock, not the real-local opacity clock.
         let mut held = p.data().clone();

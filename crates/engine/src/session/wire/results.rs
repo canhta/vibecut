@@ -1,8 +1,8 @@
 //! Defines the typed results a control command returns.
 use super::{
-    ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState, MusicPage,
-    PauseCandidates, PreviewResult, Revision, SavedMusicEntry, SavedSoundEntry, SnapshotResult,
-    SoundPage,
+    EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage,
+    JobState, MusicPage, PauseCandidates, PreviewResult, Revision, SavedMusicEntry,
+    SavedSoundEntry, SnapshotResult, SoundPage,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -152,6 +152,10 @@ pub enum JobOutput {
     /// Classified occurrences of `fillers.classify`.
     Fillers {
         candidates: Vec<FillerCandidate>,
+    },
+    /// Model-chosen emphasis words of `captions.suggest_emphasis`.
+    Emphasis {
+        suggestions: Vec<EmphasisSuggestion>,
     },
     /// Measured values and the gains `audio.apply_loudness` takes.
     Loudness(super::LoudnessResult),

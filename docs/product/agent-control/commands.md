@@ -451,6 +451,16 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `captions.suggest_emphasis` — Suggest caption emphasis with the lent provider
+
+Effect: `JobControl`. Fixture: `VerifiedWords`.
+
+```json
+{
+  "item": 4
+}
+```
+
 ## `captions.translate` — Translate captions
 
 Effect: `JobControl`. Fixture: `Timeline`.

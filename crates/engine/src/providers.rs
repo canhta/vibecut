@@ -8,9 +8,9 @@ pub(crate) use adapters::build_translator;
 pub use adapters::{Credentials, Providers, Runtime};
 pub use catalog::{
     CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
-    TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter, choose_filler,
-    choose_transcription, choose_translation, local_asr_runner, model_info, model_infos,
-    normalize_target_tag, parse_language, provider_options, provider_options_for,
+    TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter, choose_emphasis,
+    choose_filler, choose_transcription, choose_translation, local_asr_runner, model_info,
+    model_infos, normalize_target_tag, parse_language, provider_options, provider_options_for,
 };
 pub(crate) use consent::estimate_money;
 pub use consent::{AllowAll, ConsentPrompt, Cost, DenyUploads, UploadRequest, approve_upload};

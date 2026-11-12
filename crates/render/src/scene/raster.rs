@@ -4,16 +4,14 @@ use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, c
 use project::{TextAlign, TextDecoration};
 use std::sync::Arc;
 
-/// Fixed keyword-emphasis fill, distinct from the gold active-word fill. No measured reference
-/// exists yet, so it is not user-configurable.
-pub(super) const EMPHASIS_RGB: [u8; 3] = [255, 64, 129];
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct TextKey {
     pub(super) value: String,
     pub(super) word_spans: Vec<(usize, usize)>,
-    /// Keyword-emphasis subset of `word_spans`, painted in `EMPHASIS_RGB`.
+    /// Keyword-emphasis subset of `word_spans`, painted in `highlight_rgb`.
     pub(super) emphasis: Vec<(usize, usize)>,
+    /// The caption style's word-highlight colour, shared by the active word and emphasis.
+    pub(super) highlight_rgb: [u8; 3],
     pub(super) active_word: Option<(usize, usize, [u8; 3])>,
     pub(super) size: u32,
     pub(super) fill: [u8; 4],
@@ -242,7 +240,7 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
                     text::EmphasisFill {
                         spans,
                         len: key.emphasis.len().min(text::MAX_EMPHASIS_SPANS),
-                        rgb: EMPHASIS_RGB,
+                        rgb: key.highlight_rgb,
                     }
                 },
             ),
