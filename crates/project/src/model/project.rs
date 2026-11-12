@@ -421,10 +421,10 @@ fn validate(data: &ProjectData) -> Result<()> {
             for effect in &item.effects {
                 effect.validate()?;
                 for value in effect.params.values() {
-                    if let crate::EffectValue::Lut(Some(id)) = value {
-                        if !luts.contains(id) {
-                            return Err(Error::Invalid("unregistered LUT"));
-                        }
+                    if let crate::EffectValue::Lut(Some(id)) = value
+                        && !luts.contains(id)
+                    {
+                        return Err(Error::Invalid("unregistered LUT"));
                     }
                 }
                 if !effect_ids.insert(&effect.id) {

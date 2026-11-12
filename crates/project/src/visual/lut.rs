@@ -43,8 +43,9 @@ impl<'de> Deserialize<'de> for LutId {
         {
             return Err(serde::de::Error::custom("invalid LUT identity"));
         }
+        let (pairs, _) = text.as_bytes().as_chunks::<2>();
         let mut bytes = [0; 32];
-        for (out, pair) in bytes.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+        for (out, pair) in bytes.iter_mut().zip(pairs) {
             let digit = |b: u8| {
                 if b.is_ascii_digit() {
                     b - b'0'

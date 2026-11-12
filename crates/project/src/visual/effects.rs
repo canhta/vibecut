@@ -40,6 +40,10 @@ pub const PACKED_COLOR_MAX: f64 = 0xFF_FFFF as f64;
 
 /// One typed parameter value. The definition's kind decides which variant a
 /// parameter holds; `Scalar` carries both float and angle kinds.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "parameter values stay Copy and inline: boxing the curve would make every effect value an allocation and remove Copy from animation samples"
+)]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
     tag = "kind",
@@ -97,6 +101,10 @@ impl EffectValue {
 
 /// Disjoint scalar, curve and imported-resource domains of
 /// `effects.update_param`; one command family covers every control.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "updates stay Copy and inline like the values they replace; boxing the curve would allocate on every single-parameter edit"
+)]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum EffectParamUpdate {

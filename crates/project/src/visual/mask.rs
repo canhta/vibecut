@@ -148,8 +148,9 @@ impl MaskPath {
             return Err(Error::Invalid("mask path split"));
         }
         let next = (segment + 1) % count;
-        let a = self.vertices[segment].clone();
-        let b = self.vertices[next].clone();
+        let split = || Error::Invalid("mask path split");
+        let a = self.vertices.get(segment).cloned().ok_or_else(split)?;
+        let b = self.vertices.get(next).cloned().ok_or_else(split)?;
         let p0 = a.p;
         let c1 = [a.p[0] + a.t_out[0], a.p[1] + a.t_out[1]];
         let c2 = [b.p[0] + b.t_in[0], b.p[1] + b.t_in[1]];
@@ -168,8 +169,8 @@ impl MaskPath {
             t_out: sub(m1, q),
         };
         let mut out = self.clone();
-        out.vertices[segment].t_out = sub(l0, p0);
-        out.vertices[next].t_in = sub(l2, p3);
+        out.vertices.get_mut(segment).ok_or_else(split)?.t_out = sub(l0, p0);
+        out.vertices.get_mut(next).ok_or_else(split)?.t_in = sub(l2, p3);
         out.vertices.insert(segment + 1, vertex);
         if out.vertices.len() > 4096 {
             return Err(Error::TooLarge("mask vertices"));

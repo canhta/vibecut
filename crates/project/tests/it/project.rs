@@ -68,7 +68,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
             }
             "style" => invalid.caption_presets[0].style.size = 1.0,
             "nan" => invalid.caption_presets[0].style.size = f32::NAN,
-            _ => unreachable!(),
+            _ => panic!("unknown case {case}"),
         }
         assert!(Project::new(invalid).is_err(), "{case}");
     }
@@ -143,7 +143,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                     ..Default::default()
                 });
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case {case}"),
         }
         assert!(Project::new(invalid).is_err(), "{case}");
     }
@@ -173,7 +173,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                     .unwrap()
                     .remove("style");
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case {case}"),
         }
         assert!(
             decode(&serde_json::to_vec(&value).unwrap()).is_err(),
@@ -208,7 +208,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                     .unwrap()
                     .remove("style");
             }
-            _ => unreachable!(),
+            _ => panic!("unknown case {case}"),
         }
         assert!(
             decode(&serde_json::to_vec(&value).unwrap()).is_err(),
@@ -1842,12 +1842,12 @@ fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_chan
 
 fn cubic(points: [[f64; 2]; 4], t: f64) -> [f64; 2] {
     let u = 1.0 - t;
-    std::array::from_fn(|k| {
-        u * u * u * points[0][k]
-            + 3.0 * u * u * t * points[1][k]
-            + 3.0 * u * t * t * points[2][k]
-            + t * t * t * points[3][k]
-    })
+    let [w0, w1, w2, w3] = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+    let [(x0, y0), (x1, y1), (x2, y2), (x3, y3)] = points.map(|[x, y]| (x, y));
+    [
+        w0 * x0 + w1 * x1 + w2 * x2 + w3 * x3,
+        w0 * y0 + w1 * y1 + w2 * y2 + w3 * y3,
+    ]
 }
 
 #[test]

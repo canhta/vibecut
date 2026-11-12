@@ -219,13 +219,12 @@ fn music_url(value: &str) -> Result<()> {
         }
         port
     };
-    if let Some(port) = port {
-        if port.is_empty()
+    if let Some(port) = port
+        && (port.is_empty()
             || !port.bytes().all(|b| b.is_ascii_digit())
-            || port.parse::<u16>().is_err()
-        {
-            return Err(invalid());
-        }
+            || port.parse::<u16>().is_err())
+    {
+        return Err(invalid());
     }
     let mut bytes = value.bytes();
     while let Some(byte) = bytes.next() {

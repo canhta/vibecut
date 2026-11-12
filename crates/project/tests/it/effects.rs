@@ -993,7 +993,7 @@ fn whole_image_catalogue_defines_the_26_entries_on_their_shelves() {
         assert_eq!(definition.shelf, shelf, "{kind} shelf");
         let parameter = definition.param(param).unwrap();
         match param_kind {
-            EffectParamKind::Choice { options } if options.is_empty() => {
+            EffectParamKind::Choice { options: [] } => {
                 assert!(matches!(parameter.kind, EffectParamKind::Choice { .. }));
             }
             expected => assert_eq!(parameter.kind, expected, "{kind}.{param}"),
