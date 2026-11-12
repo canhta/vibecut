@@ -1,12 +1,11 @@
 # Subtitles
 
-Interface: `run`, `prepare_ass_import`, `SubtitleRequest`, `SubtitleOutcome`, `AssImportRequest`,
-`AssImportReport`, `Error`, `Result`, `CaptionAccess`, `decode_captions`, `decode_translations`; `LanguageTag` is re-exported. Selected providers come from
+Interface: `prepare_ass_import`, `AssImportRequest`, `AssImportReport`, `Error`, `Result`, `CaptionAccess`, `decode_captions`, `decode_translations`; `LanguageTag` is re-exported. Selected providers come from
 [`providers`](../providers/README.md).
 
 ## Failures
 
-The complete subtitle workflows and registered caption jobs return this owner's `Error` and
+Registered caption jobs return this owner's `Error` and
 `Result`, retaining only consumed Kernel Edit, Runtime, Transcript, Providers, Media, AI and IO
 causes. Higher workflows compose them through `engine::control::Error::Subtitles`; lower owners never
 name this feature. Foreign AI/Media classification is borrowed from their existing execution
@@ -20,37 +19,31 @@ or terminal-cancellation policy. Optional setup does not disable unrelated comma
 
 ## Subtitle workflow
 
-`run` composes the file-to-subtitle workflow: speech-window extraction, explicit
-transcription and translation provider choice, checkpointed ASR chunks, optional local
-alignment, cue segmentation, translation application and the SRT/burn export jobs. It never
-reimplements captions, render, provider consent or cost, or cache and checkpoint primitives;
-speech windows, ASR checkpoints and cue translation live in [transcript](../transcript/README.md).
+The file-to-subtitle workflow is not an engine entry: a composition root runs the registered
+commands below over a project holding the input as an asset ([CLI `subtitle`](../../../../apps/vibecut-cli/src/commands/ai/README.md)
+is the one such root). `transcript::source_session` builds that project; `captions.generate` and
+`captions.apply` produce the caption item, `captions.translate` and `retranslate` fill its target
+language, and `export_subtitles`/`burn_subtitles` publish. Speech-window extraction, ASR
+checkpoints, alignment and cue translation live in [transcript](../transcript/README.md); this
+owner reimplements no captions, render, provider consent, cost or cache primitive.
 
 Provider setup, credentials and capability refusals belong to
 [providers](../providers/README.md#failures).
 
-`run(request, providers, runner, cache, consent, progress, cancellation)` imports the input,
-extracts mono 16 kHz windows at speech-safe boundaries, reuses complete raw `AsrChunk` cache
-entries keyed by source content, exact sample range, language and provider/model/settings, and
-executes missing windows synchronously through execution hooks. Text-only recognition applies
-the selected local aligner on that same thread; raw recognition is committed to the checkpoint cache
-before alignment, so an alignment failure preserves completed ASR work. The workflow assembles
-with `ai::assemble`, segments through captions, applies translation windows through
-`TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the job runner.
-Silent windows are skipped; no speech returns `NoSpeech`, mean word confidence below the fixed
-floor returns `LowConfidence`, and unknown duration or burn without video return typed refusals.
+Generation extracts mono 16 kHz windows at speech-safe boundaries, reuses complete raw `AsrChunk`
+cache entries keyed by source content, exact sample range, language and provider/model/settings,
+and executes missing windows synchronously through execution hooks. Text-only recognition applies
+the selected local aligner on that same thread; raw recognition is committed to the checkpoint
+cache before alignment, so an alignment failure preserves completed ASR work. The job assembles
+with `ai::assemble`, segments through captions and applies translation windows through
+`TranslationRun`. Silent windows are skipped; no speech returns `NoSpeech`, mean word confidence
+below the fixed floor returns `LowConfidence`, and unknown duration returns a typed refusal.
 No project file is written.
 
-The retained blocking composition admits speech work through the runner's shared budget
-before detection/extraction, using the [transcript memory ceilings](../transcript/README.md).
-Pressure refuses before provider work and releases partial reservations on every exit.
-
-`Cancellation` is the operation-wide cooperative signal; `run` checks it at every stage and
-window boundary and cancels the active submitted job. Cancellation after a completed ASR window
-keeps the checkpoint. Export keeps render's publication fence: once publication is sealed a late
-cancel cannot turn the completed file into `Cancelled`, and cancellation before the fence
-preserves the existing destination. The CLI has no signal-driven cancel, so process interruption
-has crash semantics.
+Cancellation is the job token: it is checked at every stage and window boundary. Cancellation
+after a completed ASR window keeps the checkpoint. Export keeps render's publication fence: once
+publication is sealed a late cancel cannot turn the completed file into `Cancelled`, and
+cancellation before the fence preserves the existing destination.
 
 Remote uploads are prompted through `ConsentPrompt` before every request; `UploadRequest` carries
 provider and model, languages, audio seconds, payload bytes, cost estimate and the adapter's

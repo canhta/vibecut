@@ -5,11 +5,10 @@ use captions::{Cue, CueTrack};
 use media::SourceAsset;
 use project::{Animations, CaptionParams, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use time::{SourceRange, Tick};
-/// Build a source-timed caption session through the edit registry.
-/// Duration is in ticks; invalid source ranges or project geometry refuse atomically.
-pub fn build_session(
+/// Build a session holding only `asset` and, with video, its source clip on the main track.
+/// Burn-in takes the canvas from the video stream; `portrait` overrides only its orientation.
+pub fn source_session(
     asset: &SourceAsset,
-    cues: &[Cue],
     duration: Tick,
     with_video: bool,
     portrait: Option<bool>,
@@ -59,6 +58,19 @@ pub fn build_session(
             },
         })?;
     }
+    Ok(session)
+}
+
+/// Build a source-timed caption session through the edit registry.
+/// Duration is in ticks; invalid source ranges or project geometry refuse atomically.
+pub fn build_session(
+    asset: &SourceAsset,
+    cues: &[Cue],
+    duration: Tick,
+    with_video: bool,
+    portrait: Option<bool>,
+) -> Result<Session, EditError> {
+    let mut session = source_session(asset, duration, with_video, portrait)?;
     let captions = track_id(session.apply(Command::AddTrack {
         placement: crate::TrackPlacement::Auto,
         name: "Captions".into(),

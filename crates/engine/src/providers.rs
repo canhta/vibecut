@@ -6,7 +6,6 @@ mod error;
 mod text;
 pub(crate) use adapters::build_translator;
 pub use adapters::{Credentials, Providers, Runtime};
-pub(crate) use catalog::normalize_target;
 pub use catalog::{
     CatalogOperation, ModelFileInfo, ModelInfo, ProviderOption, TextProvider,
     TranscriptionProvider, TranslationProvider, catalog_model, choose_chapter, choose_filler,

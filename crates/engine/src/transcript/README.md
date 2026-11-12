@@ -30,7 +30,7 @@ direct Runtime cancellation. The blocking
 `Failed`, direct cancellation stays direct, and missing snapshots or completed output retain
 Kernel Session `StaleResult` through Runtime Edit composition.
 
-The blocking composition root reserves `WORK_BYTES` (64 MiB) and `RESULT_BYTES` (16 MiB)
+A blocking composition root (clips, desktop Generate) reserves `WORK_BYTES` (64 MiB) and `RESULT_BYTES` (16 MiB)
 from the runner's shared `ByteBudget` before extraction/detection or provider work. Work
 leases cover recognition and alignment and release before subsequent jobs; result leases
 cover the retained transcript/cues through the composition. A workflow already admitted by

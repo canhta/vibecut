@@ -6,15 +6,12 @@ mod error;
 mod operation;
 mod speech;
 mod translation_run;
-pub(crate) use checkpoints::hex;
 pub use checkpoints::wait_for_job;
-pub(crate) use cue_translation::translate_cues;
 pub use cue_translation::translate_track;
 pub use cue_translation::{
     SubtitleTranslator, TRANSLATE_ATTEMPTS, TranslationSelection, translate_selected,
 };
-pub use cues::build_session;
-pub(crate) use cues::caption_item_id;
+pub use cues::{build_session, source_session};
 pub use error::{Error, Result};
 pub use operation::{Cancellation, Progress, SilentProgress, Stage, Transcription};
 pub(crate) use speech::media_duration;

@@ -13,7 +13,7 @@ pub(crate) use control::{control, save_control_state};
 #[cfg(test)]
 use export::export_project_with;
 pub(crate) use export::{Aspect, export_job_key, export_project, export_settings};
-pub(crate) use job::run_job;
+pub(crate) use job::{run_job, run_job_with};
 pub(crate) use leased::{Edit, History, WritePolicy, run_leased};
 pub(crate) use libraries::{prepare_project_fonts, with_fonts, with_sounds};
 pub(crate) use media_cache::{thumbnail_cache, waveform_cache};

@@ -18,7 +18,7 @@ pub(crate) fn run_job(
     command: &str,
     params: Value,
 ) -> Result<JobView, CliError> {
-    let job = match registry::run(
+    run_job_with(
         session,
         runner,
         Lent {
@@ -27,8 +27,18 @@ pub(crate) fn run_job(
         },
         command,
         params,
-        true,
-    )? {
+    )
+}
+
+/// `run_job` with every access object the composition root lends to the request.
+pub(crate) fn run_job_with(
+    session: &mut Session,
+    runner: &mut JobRunner,
+    lent: Lent<'_>,
+    command: &str,
+    params: Value,
+) -> Result<JobView, CliError> {
+    let job = match registry::run(session, runner, lent, command, params, true)? {
         ControlResult::JobAccepted {
             job,
             word_highlight_warnings,
@@ -49,10 +59,7 @@ pub(crate) fn run_job(
     match registry::run(
         session,
         runner,
-        Lent {
-            media,
-            ..Lent::default()
-        },
+        Lent::default(),
         "job_status",
         serde_json::json!({"job": job}),
         false,

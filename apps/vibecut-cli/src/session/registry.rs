@@ -4,6 +4,7 @@ use engine::control::{
     API_VERSION, Caller, ControlResult, FontAccess, MediaAccess, Policy, Request, SoundAccess,
     registry_hash,
 };
+use engine::subtitles::CaptionAccess;
 use engine::jobs::JobRunner;
 use engine::{Command, Session};
 use serde_json::Value;
@@ -15,6 +16,9 @@ pub(crate) struct Lent<'a> {
     pub(crate) fonts: Option<&'a FontAccess<'a>>,
     pub(crate) sounds: Option<&'a SoundAccess<'a>>,
     pub(crate) media: Option<&'a Mutex<MediaAccess>>,
+    pub(crate) captions: Option<&'a CaptionAccess>,
+    /// Narrower trusted admission than the default allow-all of a one-shot session.
+    pub(crate) policy: Option<&'a dyn Policy>,
 }
 
 /// The adapter is the trusted composition root of its own one-shot session.
@@ -58,12 +62,12 @@ pub(crate) fn run(
     let caller = Caller {
         principal: "vibecut-cli",
         external: false,
-        policy: &Trusted,
+        policy: lent.policy.unwrap_or(&Trusted),
         fonts: lent.fonts,
         sounds: lent.sounds,
         media: lent.media,
         chapters: None,
-        captions: None,
+        captions: lent.captions,
     };
     session
         .control_typed(request, caller, runner)

@@ -18,7 +18,7 @@ use engine::{
         AllowAll, Credentials, DenyUploads, Providers, Runtime, TranscriptionProvider,
         TranslationProvider,
     },
-    subtitles::{self, LanguageTag, SubtitleRequest},
+    subtitles::{self, LanguageTag},
     transcript::{Cancellation, Progress, SilentProgress},
 };
 use std::{
@@ -278,23 +278,181 @@ fn runner_with_limit(limit: u64) -> (JobRunner, ByteBudget) {
     )
 }
 
-fn request(
+/// One subtitle run as the CLI composes it: generate, apply, translate, retranslate, export.
+struct Run {
+    input: PathBuf,
+    source: LanguageTag,
+    target: LanguageTag,
+    bilingual: bool,
+    srt: Option<PathBuf>,
+    burn: Option<PathBuf>,
+    overwrite: bool,
+}
+
+struct Outcome {
+    cues: usize,
+    checkpoints: usize,
+    cost: engine::control::CostView,
+    translated: bool,
+}
+
+type Cause = Arc<dyn engine::Failure + 'static>;
+
+fn run(
     input: &Path,
     source: &str,
     target: &str,
     directory: &Path,
     burn: bool,
-) -> SubtitleRequest {
-    SubtitleRequest {
+) -> Run {
+    Run {
         input: input.to_path_buf(),
-        source_language: Some(lang(source)),
-        target_language: lang(target),
+        source: lang(source),
+        target: lang(target),
         bilingual: false,
         srt: Some(directory.join(format!("{source}-{target}.srt"))),
         burn: burn.then(|| directory.join(format!("{source}-{target}.mp4"))),
-        portrait: None,
         overwrite: false,
     }
+}
+
+fn cause(error: &Cause) -> &engine::subtitles::Error {
+    (error.as_ref() as &(dyn std::error::Error + 'static))
+        .downcast_ref::<engine::subtitles::Error>()
+        .expect("subtitle workflow cause")
+}
+
+fn consent_refused(error: &Cause) -> bool {
+    matches!(
+        cause(error),
+        engine::subtitles::Error::Providers(engine::providers::Error::ConsentRequired)
+            | engine::subtitles::Error::Transcript(engine::transcript::Error::Providers(
+                engine::providers::Error::ConsentRequired
+            ))
+    )
+}
+
+/// Wait for a job; a failed job returns the cause it retained.
+fn settle(runner: &mut JobRunner, job: engine::jobs::JobId) -> Result<(), Cause> {
+    crate::support::control::finish(runner, job);
+    let snapshot = runner.snapshot(job).unwrap();
+    match snapshot.state {
+        engine::jobs::JobState::Completed => Ok(()),
+        engine::jobs::JobState::Failed => Err(snapshot.error.clone().expect("failure cause")),
+        state => panic!("unexpected job state {state:?}"),
+    }
+}
+
+fn workflow(
+    run: &Run,
+    access: &subtitles::CaptionAccess,
+    runner: &mut JobRunner,
+) -> Result<Outcome, Cause> {
+    use serde_json::json;
+    let asset = media::SourceAsset::import(media::AssetId(1), run.input.clone()).unwrap();
+    let duration = asset.probe().duration.unwrap();
+    let mut session =
+        engine::transcript::source_session(&asset, duration, run.burn.is_some(), None).unwrap();
+    let generated = caption_submit(
+        &mut session,
+        runner,
+        access,
+        "captions.generate",
+        json!({"asset": 1, "source_language": run.source}),
+        "generate",
+    );
+    settle(runner, generated)?;
+    let captions = subtitles::decode_captions(runner.output_bytes(generated).unwrap()).unwrap();
+    crate::support::control::ok(caption_command(
+        &mut session,
+        runner,
+        access,
+        "captions.apply",
+        json!({"job": generated}),
+        "apply",
+    ));
+    let (track, item) = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find_map(|track| {
+            track
+                .items
+                .iter()
+                .find(|item| matches!(item.content, project::ItemParams::Caption(_)))
+                .map(|item| (track.id, item.id))
+        })
+        .unwrap();
+    let translated = run.source != run.target;
+    if translated {
+        let job = caption_submit(
+            &mut session,
+            runner,
+            access,
+            "captions.translate",
+            json!({"item": item, "target_language": run.target}),
+            "translate",
+        );
+        settle(runner, job)?;
+        let result = subtitles::decode_translations(runner.output_bytes(job).unwrap()).unwrap();
+        crate::support::control::ok(caption_command(
+            &mut session,
+            runner,
+            access,
+            "retranslate",
+            json!({
+                "item": result.item,
+                "target_language": result.target_language,
+                "texts": result.texts,
+                "translation_ref": result.translation_ref,
+                "force": false,
+            }),
+            "retranslate",
+        ));
+    }
+    let languages = if translated && run.bilingual {
+        vec![run.source.clone(), run.target.clone()]
+    } else {
+        vec![run.target.clone()]
+    };
+    if let Some(path) = &run.srt {
+        let job = caption_submit(
+            &mut session,
+            runner,
+            access,
+            "export_subtitles",
+            json!({"track": track, "format": "srt", "languages": languages,
+                "path": path, "overwrite": run.overwrite}),
+            "export",
+        );
+        settle(runner, job)?;
+    }
+    if let Some(path) = &run.burn {
+        let job = caption_submit(
+            &mut session,
+            runner,
+            access,
+            "burn_subtitles",
+            json!({
+                "range": time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
+                "languages": languages,
+                "style": render::CaptionStyle::default(),
+                "portrait": false,
+                "path": path,
+                "overwrite": run.overwrite,
+            }),
+            "burn",
+        );
+        settle(runner, job)?;
+    }
+    Ok(Outcome {
+        cues: captions.cues.len(),
+        checkpoints: captions.checkpoints,
+        cost: captions.cost,
+        translated,
+    })
 }
 
 #[test]
@@ -304,10 +462,12 @@ fn six_directions_and_every_bilingual_pair() {
     };
     let directory = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls.clone(), false, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(calls.clone(), false, true),
+        Arc::new(AllowAll),
+    );
+    let (mut runner, _) = runner();
     let pairs = [
         ("vi", "en"),
         ("en", "vi"),
@@ -318,27 +478,16 @@ fn six_directions_and_every_bilingual_pair() {
     ];
     for (source, target) in pairs {
         for bilingual in [false, true] {
-            let mut request = request(&input, source, target, directory.path(), false);
-            request.bilingual = bilingual;
-            request.srt = Some(
+            let mut run = run(&input, source, target, directory.path(), false);
+            run.bilingual = bilingual;
+            run.srt = Some(
                 directory
                     .path()
                     .join(format!("{source}-{target}-{bilingual}.srt")),
             );
-            let outcome = subtitles::run(
-                &request,
-                &providers,
-                &mut runner,
-                &mut cache,
-                &AllowAll,
-                &SilentProgress,
-                &engine::transcript::Cancellation::new(),
-            )
-            .unwrap();
-            assert_eq!(outcome.source_language.as_str(), source);
-            assert_eq!(outcome.target_language.as_str(), target);
+            let outcome = workflow(&run, &access, &mut runner).unwrap();
             assert!(outcome.cues > 0);
-            let text = std::fs::read_to_string(request.srt.as_ref().unwrap()).unwrap();
+            let text = std::fs::read_to_string(run.srt.as_ref().unwrap()).unwrap();
             let source_text = match source {
                 "vi" => "xin chào",
                 "zh" => "你好",
@@ -365,25 +514,17 @@ fn output_languages_are_distinct() {
         return;
     };
     let directory = tempfile::tempdir().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls, false, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let mut request = request(&input, "vi", "en", directory.path(), false);
-    request.bilingual = true;
-    let outcome = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &engine::transcript::Cancellation::new(),
-    )
-    .unwrap();
-    assert!(outcome.translation.is_some());
-    let text = std::fs::read_to_string(request.srt.as_ref().unwrap()).unwrap();
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, true),
+        Arc::new(AllowAll),
+    );
+    let (mut runner, _) = runner();
+    let mut run = run(&input, "vi", "en", directory.path(), false);
+    run.bilingual = true;
+    let outcome = workflow(&run, &access, &mut runner).unwrap();
+    assert!(outcome.translated);
+    let text = std::fs::read_to_string(run.srt.as_ref().unwrap()).unwrap();
     assert!(text.contains("xin chào"));
     assert!(text.contains("[en]"));
 }
@@ -394,32 +535,17 @@ fn srt_and_burn_are_produced_from_one_run() {
         return;
     };
     let directory = tempfile::tempdir().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls, false, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "vi", "en", directory.path(), true);
-    let outcome = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &engine::transcript::Cancellation::new(),
-    )
-    .unwrap();
-    assert!(outcome.srt.is_some());
-    assert!(outcome.burn.is_some());
-    let srt = std::fs::read_to_string(request.srt.as_ref().unwrap()).unwrap();
-    assert!(srt.contains("xin chào"));
-    assert!(
-        std::fs::metadata(request.burn.as_ref().unwrap())
-            .unwrap()
-            .len()
-            > 0
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, true),
+        Arc::new(AllowAll),
     );
+    let (mut runner, _) = runner();
+    let run = run(&input, "vi", "en", directory.path(), true);
+    workflow(&run, &access, &mut runner).unwrap();
+    let srt = std::fs::read_to_string(run.srt.as_ref().unwrap()).unwrap();
+    assert!(srt.contains("xin chào"));
+    assert!(std::fs::metadata(run.burn.as_ref().unwrap()).unwrap().len() > 0);
 }
 
 #[test]
@@ -429,118 +555,21 @@ fn second_run_reuses_completed_asr_chunks() {
     };
     let directory = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls.clone(), false, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let mut request = request(&input, "vi", "en", directory.path(), false);
-    request.srt = Some(directory.path().join("first.srt"));
-    let first = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &engine::transcript::Cancellation::new(),
-    )
-    .unwrap();
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(calls.clone(), false, true),
+        Arc::new(AllowAll),
+    );
+    let (mut runner, _) = runner();
+    let mut run = run(&input, "vi", "en", directory.path(), false);
+    run.srt = Some(directory.path().join("first.srt"));
+    let first = workflow(&run, &access, &mut runner).unwrap();
     assert_eq!(first.checkpoints, 0);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    request.srt = Some(directory.path().join("second.srt"));
-    let second = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &engine::transcript::Cancellation::new(),
-    )
-    .unwrap();
+    run.srt = Some(directory.path().join("second.srt"));
+    let second = workflow(&run, &access, &mut runner).unwrap();
     assert_eq!(second.checkpoints, 1);
     assert_eq!(calls.load(Ordering::Relaxed), 1, "ASR was not re-executed");
-}
-
-#[test]
-fn blocking_generation_refuses_shared_budget_pressure_before_asr_and_releases_admission() {
-    let Some(input) = fixture() else { return };
-    for (limit, occupied, alignment) in [
-        ((64 << 20) - 1, 0, false),
-        ((80 << 20) - 1, 0, false),
-        (2 << 30, (2 << 30) - (64 << 20) + 1, false),
-        (2 << 30, (2 << 30) - (80 << 20) + 1, false),
-        (2 << 30, (2 << 30) - (80 << 20) + 1, true),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let (mut runner, budget) = runner_with_limit(limit);
-        let held = budget.reserve(engine::ByteOwner::Export, occupied).unwrap();
-        let (mut cache, _) =
-            engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget.clone(), 16)
-                .unwrap();
-        let calls = Arc::new(AtomicUsize::new(0));
-        let align_calls = Arc::new(AtomicUsize::new(0));
-        let providers = if alignment {
-            text_only_providers(
-                TranscriptionProvider::OpenAi {
-                    model: "fake-asr-model".into(),
-                },
-                calls.clone(),
-                Arc::new(ProbeAligner::new(align_calls.clone())),
-            )
-        } else {
-            providers(calls.clone(), true, false)
-        };
-        let req = request(&input, "en", "en", directory.path(), false);
-        let before = budget.snapshot().unwrap().used;
-        let result = subtitles::run(
-            &req,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &Cancellation::new(),
-        );
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            0,
-            "pressure must refuse before upload"
-        );
-        assert!(matches!(
-            result,
-            Err(engine::subtitles::Error::Runtime(
-                engine::RuntimeError::BudgetFull | engine::RuntimeError::ArtifactTooLarge
-            ))
-        ));
-        assert!(!req.srt.as_ref().unwrap().exists());
-        assert_eq!(align_calls.load(Ordering::Relaxed), 0);
-        assert_eq!(
-            budget.snapshot().unwrap().used,
-            before,
-            "partial admission must roll back"
-        );
-        drop(held);
-        if limit < 80 << 20 {
-            continue;
-        }
-        let outcome = subtitles::run(
-            &req,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &Cancellation::new(),
-        )
-        .unwrap();
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
-        assert_eq!(outcome.checkpoints, 0);
-        assert_eq!(align_calls.load(Ordering::Relaxed), usize::from(alignment));
-        drop(runner);
-        drop(cache);
-        assert_eq!(budget.snapshot().unwrap().used, 0);
-    }
 }
 
 #[test]
@@ -595,28 +624,17 @@ fn remote_upload_is_refused_without_consent() {
     };
     let directory = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls.clone(), true, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "vi", "en", directory.path(), false);
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &DenyUploads,
-        &SilentProgress,
-        &engine::transcript::Cancellation::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        engine::subtitles::Error::Transcript(engine::transcript::Error::Providers(
-            engine::providers::Error::ConsentRequired
-        ))
-    ));
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(calls.clone(), true, true),
+        Arc::new(DenyUploads),
+    );
+    let (mut runner, _) = runner();
+    let run = run(&input, "vi", "en", directory.path(), false);
+    let error = workflow(&run, &access, &mut runner).err().unwrap();
+    assert!(consent_refused(&error));
     assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert!(!run.srt.unwrap().exists());
 }
 
 #[test]
@@ -626,22 +644,22 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
     };
     let dir = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls.clone(), true, false);
+    let providers = Arc::new(providers(calls.clone(), true, false));
     let (mut runner, budget) = runner();
     let root = dir.path().join("cache");
-    let (mut cache, _) = engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
-    let mut req = request(&input, "en", "en", dir.path(), false);
-    let first = subtitles::run(
-        &req,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    assert_eq!(first.transcription_cost, engine::providers::Cost::Free);
+    let open = |budget: &ByteBudget| {
+        let (cache, diagnostics) =
+            engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
+        (Arc::new(std::sync::Mutex::new(cache)), diagnostics)
+    };
+    let access = |cache: &Arc<std::sync::Mutex<engine::cache::ArtifactCache>>,
+                  consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>| {
+        subtitles::CaptionAccess::new(providers.clone(), consent, cache.clone())
+    };
+    let (cache, _) = open(&budget);
+    let mut req = run(&input, "en", "en", dir.path(), false);
+    let first = workflow(&req, &access(&cache, Arc::new(AllowAll)), &mut runner).unwrap();
+    assert_eq!(first.cost, engine::control::CostView::Free);
     let old_output = req.srt.clone().unwrap();
     let preserved = std::fs::read(&old_output).unwrap();
     let path = std::fs::read_dir(&root)
@@ -653,37 +671,15 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
     bytes[72] ^= 1;
     std::fs::write(&path, bytes).unwrap();
     req.srt = Some(dir.path().join("regenerated.srt"));
-    assert!(matches!(
-        subtitles::run(
-            &req,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &DenyUploads,
-            &SilentProgress,
-            &Cancellation::new()
-        ),
-        Err(engine::subtitles::Error::Transcript(
-            engine::transcript::Error::Providers(engine::providers::Error::ConsentRequired)
-        ))
-    ));
+    let refused = workflow(&req, &access(&cache, Arc::new(DenyUploads)), &mut runner)
+        .err()
+        .unwrap();
+    assert!(consent_refused(&refused));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!req.srt.as_ref().unwrap().exists());
-    let regenerated = subtitles::run(
-        &req,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
+    let regenerated = workflow(&req, &access(&cache, Arc::new(AllowAll)), &mut runner).unwrap();
     assert_eq!(regenerated.checkpoints, 0);
-    assert_eq!(
-        regenerated.transcription_cost,
-        engine::providers::Cost::Free
-    );
+    assert_eq!(regenerated.cost, engine::control::CostView::Free);
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     drop(cache);
     let second_output = req.srt.clone().unwrap();
@@ -693,24 +689,16 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
     envelope[40..72].copy_from_slice(blake3::hash(b"not JSON").as_bytes());
     envelope.extend_from_slice(b"not JSON");
     std::fs::write(&path, &envelope).unwrap();
-    let (mut cache, diagnostics) =
-        engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
+    let (cache, diagnostics) = open(&budget);
     assert_eq!(diagnostics, 0);
     req.srt = Some(dir.path().join("must-not-publish.srt"));
+    let malformed = workflow(&req, &access(&cache, Arc::new(AllowAll)), &mut runner)
+        .err()
+        .unwrap();
     assert!(matches!(
-        subtitles::run(
-            &req,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &Cancellation::new()
-        ),
-        Err(engine::subtitles::Error::Transcript(
-            engine::transcript::Error::Edit(engine::EditError::Invalid(
-                "cached recognition is malformed"
-            ))
+        cause(&malformed),
+        engine::subtitles::Error::Transcript(engine::transcript::Error::Edit(
+            engine::EditError::Invalid("cached recognition is malformed")
         ))
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 2);
@@ -718,24 +706,7 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
     assert_eq!(std::fs::read(old_output).unwrap(), preserved);
     assert_eq!(std::fs::read(second_output).unwrap(), second_preserved);
     assert!(!req.srt.as_ref().unwrap().exists());
-    let cancel = Cancellation::new();
-    cancel.cancel();
-    assert!(matches!(
-        subtitles::run(
-            &req,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &cancel
-        ),
-        Err(engine::subtitles::Error::Runtime(
-            engine::RuntimeError::Cancelled
-        ))
-    ));
-    assert_eq!(calls.load(Ordering::Relaxed), 2);
-    assert_eq!(cache.clear().unwrap(), 0);
+    assert_eq!(cache.lock().unwrap().clear().unwrap(), 0);
     drop(runner);
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
@@ -923,9 +894,9 @@ fn text_only_asr_runs_the_local_aligner() {
     let directory = tempfile::tempdir().unwrap();
     let asr_calls = Arc::new(AtomicUsize::new(0));
     let align_calls = Arc::new(AtomicUsize::new(0));
-    let (mut runner, budget) = runner();
-    let mut request = request(&input, "en", "en", directory.path(), false);
-    request.overwrite = true;
+    let (mut runner, _) = runner();
+    let mut run = run(&input, "en", "en", directory.path(), false);
+    run.overwrite = true;
     for transcription in [
         TranscriptionProvider::OpenAi {
             model: "fake-asr-model".into(),
@@ -934,30 +905,19 @@ fn text_only_asr_runs_the_local_aligner() {
             model: "fake-asr-model".into(),
         },
     ] {
-        let (mut cache, _) = engine::cache::ArtifactCache::open(
+        let access = caption_access(
             &directory
                 .path()
                 .join(format!("cache-{}", transcription.id())),
-            budget.clone(),
-            16,
-        )
-        .unwrap();
-        let providers = text_only_providers(
-            transcription,
-            asr_calls.clone(),
-            Arc::new(ProbeAligner::new(align_calls.clone())),
+            text_only_providers(
+                transcription,
+                asr_calls.clone(),
+                Arc::new(ProbeAligner::new(align_calls.clone())),
+            ),
+            Arc::new(AllowAll),
         );
-        let outcome = subtitles::run(
-            &request,
-            &providers,
-            &mut runner,
-            &mut cache,
-            &AllowAll,
-            &SilentProgress,
-            &Cancellation::new(),
-        )
-        .unwrap();
-        assert!(outcome.srt.is_some());
+        workflow(&run, &access, &mut runner).unwrap();
+        assert!(run.srt.as_ref().unwrap().exists());
     }
     assert_eq!(asr_calls.load(Ordering::Relaxed), 2);
     assert_eq!(align_calls.load(Ordering::Relaxed), 2);
@@ -978,36 +938,21 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
         asr_calls.clone(),
         Arc::new(ProbeAligner::failing_once(align_calls.clone())),
     );
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "en", "en", directory.path(), false);
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap_err();
+    let (mut runner, _) = runner();
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers,
+        Arc::new(AllowAll),
+    );
+    let run = run(&input, "en", "en", directory.path(), false);
+    let error = workflow(&run, &access, &mut runner).err().unwrap();
     assert!(matches!(
-        error,
+        cause(&error),
         engine::subtitles::Error::Transcript(engine::transcript::Error::Ai(ai::Error::Inference))
     ));
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
-    let outcome = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    assert!(outcome.srt.is_some());
+    let outcome = workflow(&run, &access, &mut runner).unwrap();
+    assert!(run.srt.as_ref().unwrap().exists());
     assert_eq!(outcome.checkpoints, 1);
     assert_eq!(asr_calls.load(Ordering::Relaxed), 1);
     assert_eq!(align_calls.load(Ordering::Relaxed), 2);
@@ -1125,149 +1070,27 @@ fn alignment_failure_preserves_the_completed_asr_checkpoint() {
     assert_eq!(align_calls.load(Ordering::Relaxed), 2);
 }
 
-struct BlockingAsr {
-    config: ProviderConfig,
-    calls: Arc<AtomicUsize>,
-    entered: Arc<AtomicBool>,
-}
-impl Transcriber for BlockingAsr {
-    fn config(&self) -> &ProviderConfig {
-        &self.config
-    }
-    fn capabilities(&self, _: &Scope) -> Capabilities {
-        FakeAsr::new(Arc::new(AtomicUsize::new(0))).capabilities(&Scope {
-            provider: self.config.clone(),
-            operation: Operation::Transcribe,
-            payload_fingerprint: "probe".into(),
-            mode: "transcribe".into(),
-            texts: Vec::new(),
-            source_language: lang("en"),
-            target_language: None,
-            source_samples: ai::SampleRange::new(0, 1).unwrap(),
-            sample_rate: 1,
-            max_bytes: 1,
-        })
-    }
-    fn estimate(&self, _: &Scope) -> CostEstimate {
-        CostEstimate::Free
-    }
-    fn transcribe(
-        &self,
-        _: ai::AudioWindow<'_>,
-        _: &Request<'_>,
-        hooks: &dyn ExecutionHooks,
-    ) -> Result<Vec<RecognitionSegment>, Error> {
-        self.calls.fetch_add(1, Ordering::Relaxed);
-        self.entered.store(true, Ordering::Release);
-        while !hooks.cancelled() {
-            thread::sleep(Duration::from_millis(1));
-        }
-        Err(Error::Cancelled)
-    }
-}
-
 #[test]
-fn operation_cancellation_stops_a_running_asr_job_without_output() {
-    let Some(input) = fixture() else {
-        return;
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let entered = Arc::new(AtomicBool::new(false));
-    let transcriber = Arc::new(BlockingAsr {
-        config: config("fake-asr", "fake-asr-model"),
-        calls: calls.clone(),
-        entered: entered.clone(),
-    });
-    let providers = Providers::from_parts(
-        TranscriptionProvider::Whisper {
-            model: "fake-asr-model".into(),
-        },
-        "transcribe".into(),
-        transcriber,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "en", "en", directory.path(), false);
-    let cancel = Cancellation::new();
-    let observed = cancel.clone();
-    let thread = thread::spawn(move || {
-        while !entered.load(Ordering::Acquire) {
-            thread::sleep(Duration::from_millis(1));
-        }
-        observed.cancel();
-    });
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &cancel,
-    )
-    .unwrap_err();
-    thread.join().unwrap();
-    assert!(matches!(
-        error,
-        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
-            engine::RuntimeError::Cancelled
-        ))
-    ));
-    assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert!(!request.srt.unwrap().exists());
-}
-
-struct CancelAtExport {
-    cancel: Cancellation,
-}
-impl Progress for CancelAtExport {
-    fn stage(&self, stage: engine::transcript::Stage) {
-        if stage == engine::transcript::Stage::ExportSrt {
-            self.cancel.cancel();
-        }
-    }
-}
-
-#[test]
-fn cancellation_before_export_preserves_the_existing_output() {
+fn an_existing_output_survives_a_refused_export() {
     let Some(input) = fixture() else {
         return;
     };
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("existing.srt");
     std::fs::write(&path, "keep this file").unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls, false, true);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let mut request = request(&input, "vi", "en", directory.path(), false);
-    request.srt = Some(path.clone());
-    let cancel = Cancellation::new();
-    let progress = CancelAtExport {
-        cancel: cancel.clone(),
-    };
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &progress,
-        &cancel,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        engine::subtitles::Error::Runtime(engine::RuntimeError::Cancelled)
-    ));
-    assert_eq!(std::fs::read_to_string(path).unwrap(), "keep this file");
+    let access = caption_access(
+        &directory.path().join("cache"),
+        providers(Arc::new(AtomicUsize::new(0)), false, true),
+        Arc::new(AllowAll),
+    );
+    let (mut runner, _) = runner();
+    let mut run = run(&input, "vi", "en", directory.path(), false);
+    run.srt = Some(path.clone());
+    assert!(workflow(&run, &access, &mut runner).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep this file");
+    run.overwrite = true;
+    workflow(&run, &access, &mut runner).unwrap();
+    assert!(std::fs::read_to_string(path).unwrap().contains("xin chào"));
 }
 
 struct BlockingTranslator {
@@ -1307,110 +1130,6 @@ impl Translator for BlockingTranslator {
         }
         Err(Error::Cancelled)
     }
-}
-
-#[test]
-fn operation_cancellation_stops_a_running_translation_job() {
-    let Some(input) = fixture() else {
-        return;
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let entered = Arc::new(AtomicBool::new(false));
-    let providers = Providers::from_parts(
-        TranscriptionProvider::Whisper {
-            model: "fake-asr-model".into(),
-        },
-        "transcribe".into(),
-        Arc::new(FakeAsr::new(calls)),
-        None,
-        Some(TranslationProvider::OpenAi {
-            model: "fake-translator-model".into(),
-        }),
-        Some(Arc::new(BlockingTranslator {
-            config: remote_config("fake-translator", "fake-translator-model"),
-            entered: entered.clone(),
-        })),
-    )
-    .unwrap();
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "vi", "en", directory.path(), false);
-    let cancel = Cancellation::new();
-    let observed = cancel.clone();
-    let thread = thread::spawn(move || {
-        while !entered.load(Ordering::Acquire) {
-            thread::sleep(Duration::from_millis(1));
-        }
-        observed.cancel();
-    });
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &cancel,
-    )
-    .unwrap_err();
-    thread.join().unwrap();
-    assert!(matches!(
-        error,
-        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
-            engine::RuntimeError::Cancelled
-        ))
-    ));
-    assert!(!request.srt.unwrap().exists());
-}
-
-struct CancelAtExtract {
-    cancel: Cancellation,
-}
-impl Progress for CancelAtExtract {
-    fn stage(&self, stage: engine::transcript::Stage) {
-        if stage == engine::transcript::Stage::Extract {
-            self.cancel.cancel();
-        }
-    }
-}
-
-#[test]
-fn operation_cancellation_stops_extraction_before_any_asr() {
-    let Some(input) = fixture() else {
-        return;
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let providers = providers(calls.clone(), false, false);
-    let (mut runner, budget) = runner();
-    let (mut cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("cache"), budget, 16).unwrap();
-    let request = request(&input, "en", "en", directory.path(), false);
-    let cancel = Cancellation::new();
-    let progress = CancelAtExtract {
-        cancel: cancel.clone(),
-    };
-    let error = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut cache,
-        &AllowAll,
-        &progress,
-        &cancel,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        engine::subtitles::Error::Transcript(engine::transcript::Error::Runtime(
-            engine::RuntimeError::Cancelled
-        ))
-    ));
-    assert_eq!(calls.load(Ordering::Relaxed), 0);
-    assert!(!request.srt.unwrap().exists());
-}
 
 #[test]
 fn progress_is_presentation_only_and_optional() {
@@ -2087,24 +1806,17 @@ fn registry_generation_reuses_the_existing_subtitle_checkpoint_without_an_upload
     let calls = Arc::new(AtomicUsize::new(0));
     let providers = Arc::new(providers(calls.clone(), true, false));
     let (mut r, budget) = runner();
-    let (mut cache, _) =
+    let (cache, _) =
         engine::cache::ArtifactCache::open(&dir.path().join("cache"), budget, 16).unwrap();
-    let req = request(&input, "en", "en", dir.path(), false);
-    subtitles::run(
-        &req,
-        &providers,
-        &mut r,
-        &mut cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    let access = engine::subtitles::CaptionAccess::new(
-        providers,
-        Arc::new(DenyUploads),
-        Arc::new(std::sync::Mutex::new(cache)),
+    let cache = Arc::new(std::sync::Mutex::new(cache));
+    // The CLI workflow wrote this checkpoint; a registry job reuses it without an upload.
+    let written = engine::subtitles::CaptionAccess::new(
+        providers.clone(),
+        Arc::new(AllowAll),
+        cache.clone(),
     );
+    workflow(&run(&input, "en", "en", dir.path(), false), &written, &mut r).unwrap();
+    let access = engine::subtitles::CaptionAccess::new(providers, Arc::new(DenyUploads), cache);
     let mut s = registry_session(&input);
     let job = caption_submit(
         &mut s,
