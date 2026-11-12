@@ -206,7 +206,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     data.caption_presets.push(project::SavedCaptionPreset {
         id: project::CaptionPresetId(100),
         name: "Project look".into(),
-        style: style.clone(),
+        style: render::style_from_cue(&style),
     });
     data.luts.push(project::LutRecord {
         id: project::LutId::new(media::ContentHash::from_bytes(b"registered look")),

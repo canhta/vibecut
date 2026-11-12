@@ -115,7 +115,9 @@ Captions lives in the assets-panel tab. Generate and translation settings use co
 
 The Captions Style chooser sits below the caption-item selector, above cue tools, using the
 shared 22 px field and 12 px label system. Outline/Box and Custom/Mixed describe the current
-saved style. This uncaptured composition is new; desktop reference parity is unverified.
+saved style; a selected project preset shows its name and an edited marker plus an Overrides
+editor for the full font, size, colour, outline, box, position, safe-area and max-line values.
+This uncaptured composition is new; desktop reference parity is unverified.
 Availability and edit behavior belong to the [subtitles owner](../../../apps/vibecut/src/subtitles/README.md).
 
 The selected-Text Animation composition uses two current segmented rows in the 22 px
@@ -134,7 +136,7 @@ to [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 - Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
 
-The Captions Style chooser lists Saved in project as explicit copy actions, retaining Outline/Box/Custom/Mixed as value summaries. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.
+The Captions Style chooser lists Saved in project as live selections, retaining Outline/Box/Custom/Mixed as value summaries. A selected preset stores its ID plus a sparse override patch; the Overrides popup applies or resets the complete style in one undo step and never commits a caption draft. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target, while deleting a selected style refuses. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab, bank and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.
 
 ### Generated Shapes
 

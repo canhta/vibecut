@@ -42,7 +42,9 @@ The default canvas is 1920Ã—1080 at 30 fps, black background, 16:9 preset, 1920Ã
 
 ## Saved caption values
 
-`ProjectData.caption_presets` is a required project-wide bank of at most 64 `SavedCaptionPreset` values with stable `CaptionPresetId` identities. Every entry must have a valid complete `CueStyle` and a unique ID and name, even without captions. Names are NFC, case-sensitive, 1..=64 extended graphemes and at most 256 UTF-8 bytes, without controls or leading/trailing whitespace; invalid input is refused, never trimmed. Equal styles under different names are valid. Forks and scene snapshots retain the whole bank. Applying copies values into ordinary cue styles; no selected preset reference or override map is saved.
+`ProjectData.caption_presets` is a required project-wide bank of at most 64 `SavedCaptionPreset` values with stable `CaptionPresetId` identities. Every entry must have a valid complete `captions::CaptionStyle` and a unique ID and name, even without captions. Names are NFC, case-sensitive, 1..=64 extended graphemes and at most 256 UTF-8 bytes, without controls or leading/trailing whitespace; invalid input is refused, never trimmed. Equal styles under different names are valid. Forks and scene snapshots retain the whole bank.
+
+`CaptionParams.preset` is an optional live reference to one bank entry; `CaptionParams.overrides` is a sparse `CaptionOverrides` patch applied field by field over that value. Overrides require a selected preset, and every referenced ID must exist after complete validation. The effective style is the bank value with the patch folded in; deleting a referenced entry therefore refuses rather than leaving a dangling look. A caption item without a selection keeps its imported cue styles and the transient render settings.
 
 ## Saved text styles
 

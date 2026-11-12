@@ -684,13 +684,67 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
             h.run_steps(3);
             assert_eq!(h.state().session.project(), &before);
             assert_eq!(h.state().session.history_len(), history);
-            // Named rows apply copies without changing the existing value summary into a selected ID.
+            // Named rows select the live value instead of copying it into cue styles.
             h.state_mut().activate("subtitles.style.outline").unwrap();
             h.run_steps(3);
             let outlined = h.state().session.project().clone();
+            let cue_values = track(h.state()).styles.clone();
             click(&mut h, "subtitles.style");
             click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
-            assert_eq!(track(h.state()).styles, vec![bank[1].style.clone()]);
+            assert_eq!(track(h.state()).styles, cue_values);
+            let ItemParams::Caption(selected) = &h
+                .state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find(|item| Some(item.id) == panel(h.state()).item)
+                .unwrap()
+                .content
+            else {
+                panic!("caption")
+            };
+            assert_eq!(selected.preset, Some(bank[1].id));
+            let selected_project = h.state().session.project().clone();
+            let overrides = captions::CaptionOverrides {
+                size: Some(64.0),
+                color: Some([240, 220, 40, 220]),
+                ..Default::default()
+            };
+            let item = panel(h.state()).item.unwrap();
+            h.state_mut()
+                .session
+                .apply(Command::ApplyCaptionStyle {
+                    item,
+                    style: engine::CaptionStyleApply::Saved {
+                        preset: bank[1].id,
+                        overrides: overrides.clone(),
+                    },
+                })
+                .unwrap();
+            let ItemParams::Caption(patched) = &h
+                .state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find(|value| value.id == item)
+                .unwrap()
+                .content
+            else {
+                panic!("caption")
+            };
+            assert_eq!(patched.overrides, overrides);
+            assert_eq!(track(h.state()).styles, cue_values);
+            h.state_mut().activate("edit.undo").unwrap();
+            h.run_steps(3);
+            assert_eq!(h.state().session.project(), &selected_project);
             h.state_mut().activate("edit.undo").unwrap();
             h.run_steps(3);
             assert_eq!(h.state().session.project(), &outlined);
@@ -731,7 +785,8 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
             let ItemParams::Caption(params) = &changed.content else {
                 panic!("caption")
             };
-            assert_eq!(params.cues.styles, vec![bank[1].style.clone()]);
+            assert_eq!(params.preset, Some(bank[1].id));
+            assert!(params.overrides.is_empty());
             let original = before
                 .data()
                 .scene()
@@ -1001,6 +1056,8 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
             item: second,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: CueTrack::default(),
             }),
         })
@@ -2180,6 +2237,8 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
             item,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues,
             }),
         })
@@ -2210,6 +2269,8 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
             item,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues,
             }),
         })
@@ -2353,6 +2414,8 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
             item,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: updated,
             }),
         })

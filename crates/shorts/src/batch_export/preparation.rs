@@ -229,6 +229,8 @@ fn prepare_clip(
                 start: *start,
                 content: ItemParams::Caption(CaptionParams {
                     word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
                     cues: clipped,
                 }),
             });

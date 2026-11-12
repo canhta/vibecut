@@ -19,6 +19,9 @@ impl Subtitles {
         self.style_available(session)
             && session.project().data().caption_presets.len() < project::MAX_CAPTION_PRESETS
             && self.caption(session).is_some_and(|(_, p)| {
+                if p.preset.is_some() {
+                    return true;
+                }
                 let first = p.cues.cues.first().and_then(|cue| p.cues.style_of(cue));
                 first.is_some() && p.cues.cues.iter().all(|cue| p.cues.style_of(cue) == first)
             })
@@ -107,6 +110,103 @@ impl Subtitles {
         }
     }
 
+    pub(super) fn open_style_edit(&mut self, session: &Session, at: Tick) -> Result<()> {
+        if !self.edit_ready(session) || self.bank.is_some() {
+            return Err(Error::Invalid("caption style busy"));
+        }
+        let (item, params) = self
+            .caption(session)
+            .ok_or(Error::Invalid("caption item"))?;
+        if !self.style_available(session) {
+            return Err(Error::Invalid("caption style unavailable"));
+        }
+        let preset = params
+            .preset
+            .ok_or(Error::Invalid("caption preset selection"))?;
+        let base = session
+            .project()
+            .data()
+            .caption_presets
+            .iter()
+            .find(|value| value.id == preset)
+            .ok_or(Error::Invalid("caption preset"))?
+            .style
+            .clone();
+        let mut draft = base.clone();
+        params.overrides.apply(&mut draft);
+        self.style_edit = Some(super::StyleEdit {
+            snapshot: session.project().clone(),
+            item: item.id,
+            at,
+            preset,
+            base,
+            draft,
+        });
+        Ok(())
+    }
+
+    pub(super) fn reconcile_style_edit(
+        &mut self,
+        session: &Session,
+        at: Tick,
+        ready: bool,
+        continuous: bool,
+    ) {
+        if let Some(edit) = self.style_edit.take()
+            && ready
+            && continuous
+            && self.edit_ready(session)
+            && Arc::ptr_eq(&edit.snapshot, session.project())
+            && edit.at == at
+            && self.item == Some(edit.item)
+            && self
+                .caption(session)
+                .is_some_and(|(_, params)| params.preset == Some(edit.preset))
+        {
+            self.style_edit = Some(edit);
+        }
+    }
+
+    pub(super) fn confirm_style_edit(
+        &mut self,
+        session: &mut Session,
+        at: Tick,
+        reset: bool,
+    ) -> Result<()> {
+        let edit = self
+            .style_edit
+            .take()
+            .ok_or(Error::Invalid("caption style editor"))?;
+        if !self.edit_ready(session)
+            || !Arc::ptr_eq(&edit.snapshot, session.project())
+            || edit.at != at
+            || self.item != Some(edit.item)
+        {
+            return Err(Error::Invalid("caption style changed"));
+        }
+        let overrides = if reset {
+            captions::CaptionOverrides::default()
+        } else {
+            overrides_from(&edit.base, &edit.draft)
+        };
+        session.apply(Command::ApplyCaptionStyle {
+            item: edit.item,
+            style: engine::CaptionStyleApply::Saved {
+                preset: edit.preset,
+                overrides,
+            },
+        })?;
+        self.refresh(session);
+        Ok(())
+    }
+
+    pub(crate) fn overrides_available(&self, session: &Session) -> bool {
+        self.style_available(session)
+            && self
+                .caption(session)
+                .is_some_and(|(_, params)| params.preset.is_some())
+    }
+
     /// Style actions never implicitly commit a focused or changed caption draft.
     pub(crate) fn style_available(&self, session: &Session) -> bool {
         self.edit_ready(session)
@@ -128,6 +228,7 @@ impl Subtitles {
     pub(crate) fn edit_ready(&self, session: &Session) -> bool {
         !self.busy()
             && self.bank.is_none()
+            && self.style_edit.is_none()
             && !session.transaction_active()
             && self.text_focus.is_none()
             && !self.drafts.iter().any(|((cue, language), draft)| {
@@ -195,6 +296,7 @@ impl Subtitles {
             "subtitles.style.save" | "subtitles.style.manage" => {
                 self.open_bank(session, at, id == "subtitles.style.save")?;
             }
+            "subtitles.style.overrides" => self.open_style_edit(session, at)?,
             "subtitles.style.word_highlight" => {
                 if !self.style_available(session) {
                     return Err(Error::Invalid("caption style unavailable"));
@@ -402,15 +504,23 @@ impl Subtitles {
         if self.busy() || session.transaction_active() {
             return Err(Error::Invalid("caption edit busy"));
         }
-        let word_highlight = self
-            .caption(session)
-            .ok_or(Error::Invalid("caption item"))?
-            .1
-            .word_highlight;
+        let (word_highlight, preset, overrides) = {
+            let params = &self
+                .caption(session)
+                .ok_or(Error::Invalid("caption item"))?
+                .1;
+            (
+                params.word_highlight,
+                params.preset,
+                params.overrides.clone(),
+            )
+        };
         session.apply(Command::SetItemParam {
             item: self.item.ok_or(Error::Invalid("caption item"))?,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight,
+                preset,
+                overrides,
                 cues,
             }),
         })?;
@@ -780,6 +890,25 @@ impl Subtitles {
         Ok(count * TICKS_PER_SECOND as u128
             > cue.range.duration().0 as u128
                 * u128::from(profiles.profile(language).graphemes_per_second))
+    }
+}
+
+/// Sparse patch from a full edited draft; equal fields keep the preset value.
+fn overrides_from(
+    base: &captions::CaptionStyle,
+    draft: &captions::CaptionStyle,
+) -> captions::CaptionOverrides {
+    captions::CaptionOverrides {
+        font: (draft.font != base.font).then(|| draft.font.clone()),
+        font_style: (draft.font_style != base.font_style).then(|| draft.font_style.clone()),
+        size: (draft.size != base.size).then_some(draft.size),
+        color: (draft.color != base.color).then_some(draft.color),
+        outline: (draft.outline != base.outline).then(|| draft.outline.clone()),
+        background: (draft.background != base.background).then(|| draft.background.clone()),
+        position: (draft.position != base.position).then_some(draft.position),
+        safe_area_percent: (draft.safe_area_percent != base.safe_area_percent)
+            .then_some(draft.safe_area_percent),
+        max_lines: (draft.max_lines != base.max_lines).then_some(draft.max_lines),
     }
 }
 

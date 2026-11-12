@@ -28,29 +28,73 @@ pub(super) fn execute_apply_caption_style(
     style: crate::CaptionStyleApply,
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
-    let resolved = style.resolve(&data);
     if item_in_other_scene(&data, id) {
         return Err(EditError::SceneBoundary);
+    }
+    // The ordinary lock and kind guard precedes equality or preset lookup.
+    {
+        let item = item(&mut data, id)?;
+        if !matches!(item.content, ItemParams::Caption(_)) {
+            return Err(EditError::Invalid("style requires caption item"));
+        }
+    }
+    if let crate::CaptionStyleApply::Saved { preset, overrides } = &style {
+        let base = data
+            .caption_presets
+            .iter()
+            .find(|value| value.id == *preset)
+            .ok_or(EditError::Invalid("caption preset not found"))?
+            .style
+            .clone();
+        let mut effective = base;
+        overrides.apply(&mut effective);
+        if !effective.is_valid() {
+            return Err(EditError::Invalid("caption style"));
+        }
+        let item = item(&mut data, id)?;
+        let ItemParams::Caption(params) = &mut item.content else {
+            return Err(EditError::Invalid("style requires caption item"));
+        };
+        if sources
+            .get(&id)
+            .map_or(&params.cues, AsRef::as_ref)
+            .cues
+            .is_empty()
+        {
+            return Err(EditError::Invalid("empty caption item"));
+        }
+        if params.preset == Some(*preset) && params.overrides == *overrides {
+            return Ok(data);
+        }
+        params.preset = Some(*preset);
+        params.overrides = overrides.clone();
+        return Ok(data);
+    }
+    let style = style
+        .materialized()
+        .ok_or(EditError::Invalid("caption style kind"))?;
+    if !style.is_valid() {
+        return Err(EditError::Invalid("caption style"));
     }
     let item = item(&mut data, id)?;
     let ItemParams::Caption(params) = &mut item.content else {
         return Err(EditError::Invalid("style requires caption item"));
     };
-    let style = resolved?;
-    if !style.is_valid() {
-        return Err(EditError::Invalid("caption style"));
-    }
     let source = sources.get(&id).map_or(&params.cues, AsRef::as_ref);
     if source.cues.is_empty() {
         return Err(EditError::Invalid("empty caption item"));
     }
-    if source
-        .cues
-        .iter()
-        .all(|cue| source.style_of(cue) == Some(&style))
+    if params.preset.is_none()
+        && params.overrides.is_empty()
+        && source
+            .cues
+            .iter()
+            .all(|cue| source.style_of(cue) == Some(&style))
     {
         return Ok(data);
     }
+    params.preset = None;
+    params.overrides = captions::CaptionOverrides::default();
     let source = match sources.get_mut(&id) {
         Some(source) => Arc::make_mut(source),
         None => &mut params.cues,
@@ -74,25 +118,54 @@ pub(super) fn save_caption_preset(
     if item_in_other_scene(&data, id) {
         return Err(EditError::SceneBoundary);
     }
-    let target = item(&mut data, id)?;
-    let ItemParams::Caption(params) = &target.content else {
-        return Err(EditError::Invalid("preset requires caption item"));
-    };
-    let source = sources.get(&id).map_or(&params.cues, AsRef::as_ref);
-    let style = source
-        .cues
-        .first()
-        .and_then(|cue| source.style_of(cue))
-        .filter(|style| {
-            source
-                .cues
-                .iter()
-                .all(|cue| source.style_of(cue) == Some(*style))
+    {
+        let target = item(&mut data, id)?;
+        if !matches!(target.content, ItemParams::Caption(_)) {
+            return Err(EditError::Invalid("preset requires caption item"));
+        }
+    }
+    let params = data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| {
+            if item.id == id
+                && let ItemParams::Caption(params) = &item.content
+            {
+                Some(params)
+            } else {
+                None
+            }
         })
-        .ok_or(EditError::Invalid(
-            "preset requires uniform saved caption style",
-        ))?
-        .clone();
+        .ok_or(EditError::Invalid("preset requires caption item"))?;
+    let style = if let Some(selected) = params.preset {
+        let mut style = data
+            .caption_presets
+            .iter()
+            .find(|preset| preset.id == selected)
+            .ok_or(EditError::Invalid("caption preset not found"))?
+            .style
+            .clone();
+        params.overrides.apply(&mut style);
+        style
+    } else {
+        let source = sources.get(&id).map_or(&params.cues, AsRef::as_ref);
+        let uniform = source
+            .cues
+            .first()
+            .and_then(|cue| source.style_of(cue))
+            .filter(|style| {
+                source
+                    .cues
+                    .iter()
+                    .all(|cue| source.style_of(cue) == Some(*style))
+            })
+            .ok_or(EditError::Invalid(
+                "preset requires uniform saved caption style",
+            ))?;
+        render::style_from_cue(uniform)
+    };
     check_preset_name(&data, &name, None)?;
     if data.caption_presets.len() >= project::MAX_CAPTION_PRESETS {
         return Err(EditError::Control(
@@ -237,6 +310,16 @@ pub(super) fn delete_caption_preset(
         .iter()
         .position(|preset| preset.id == id)
         .ok_or(EditError::Invalid("caption preset not found"))?;
+    // A live selection never dangles: any caption item in any scene keeps its look.
+    if data.scenes.iter().any(|scene| {
+        scene
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .any(|item| matches!(&item.content, ItemParams::Caption(p) if p.preset == Some(id)))
+    }) {
+        return Err(EditError::Invalid("caption preset in use"));
+    }
     data.caption_presets.remove(index);
     Ok(data)
 }
@@ -368,6 +451,8 @@ pub(super) fn import_captions(
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
                     word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
                     cues: cue_track,
                 }),
             },

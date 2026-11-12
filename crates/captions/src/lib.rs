@@ -5,6 +5,7 @@ mod language;
 mod mapping;
 mod segment;
 mod span;
+mod style;
 mod timing;
 pub use filler::{FillerCandidate, FillerKind, FillerLexicon, detect_fillers};
 pub use interchange::ass;
@@ -19,6 +20,9 @@ pub use segment::{
 use serde::{Deserialize, Serialize};
 pub use span::{NormalizedText, TextSpan};
 use std::{collections::BTreeMap, fmt};
+pub use style::{
+    CaptionBackground, CaptionOutline, CaptionOverrides, CaptionPosition, CaptionStyle,
+};
 use time::{SourceRange, Tick};
 pub use timing::{
     CueWordTiming, DisplayReplacement, DisplayVariant, MappedTiming, SpanTiming, TimingGroup,

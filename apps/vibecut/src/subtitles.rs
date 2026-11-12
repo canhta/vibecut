@@ -206,6 +206,16 @@ struct BankEdit {
     focused: bool,
 }
 
+/// Snapshot-bound full-style draft over one live saved preset selection.
+struct StyleEdit {
+    snapshot: Arc<project::Project>,
+    item: ItemId,
+    at: Tick,
+    preset: project::CaptionPresetId,
+    base: captions::CaptionStyle,
+    draft: captions::CaptionStyle,
+}
+
 struct WordWarnings {
     project: Arc<project::Project>,
     item: ItemId,
@@ -220,6 +230,7 @@ struct WordWarnings {
 pub struct Subtitles {
     pub(crate) models: crate::services::remote_models::AiPreferences,
     bank: Option<BankEdit>,
+    style_edit: Option<StyleEdit>,
     bank_frame: Option<u64>,
     word_warnings: Option<WordWarnings>,
     workflow: Arc<dyn Workflow>,
@@ -276,6 +287,7 @@ impl Subtitles {
         Ok(Self {
             models: Default::default(),
             bank: None,
+            style_edit: None,
             bank_frame: None,
             word_warnings: None,
             workflow,
@@ -350,10 +362,11 @@ impl Subtitles {
         }
     }
     pub(crate) fn editing(&self, ctx: &egui::Context) -> bool {
-        (self.bank.is_some()
-            && self
-                .bank_frame
-                .is_some_and(|frame| frame + 1 >= ctx.cumulative_frame_nr()))
+        self.style_edit.is_some()
+            || (self.bank.is_some()
+                && self
+                    .bank_frame
+                    .is_some_and(|frame| frame + 1 >= ctx.cumulative_frame_nr()))
             || self
                 .text_focus
                 .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))

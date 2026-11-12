@@ -1235,6 +1235,8 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues,

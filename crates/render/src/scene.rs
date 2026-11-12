@@ -13,7 +13,8 @@ pub mod transitions;
 pub mod viewport;
 
 use crate::{Error, Image, Result};
-pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
+pub use caption::style_from_cue;
+pub use captions::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 use project::{AnimationPath, ItemId, Project};
 use raster::{TextEntry, TextKey};
 use std::collections::BTreeMap;
@@ -113,7 +114,7 @@ impl RenderSettings {
     }
     fn validate(&self, project: &Project) -> Result<()> {
         Image::bytes(self.width, self.height)?;
-        self.caption_style.validate()?;
+        caption::validate(&self.caption_style)?;
         if self.background_blur.is_some_and(|r| r > 64)
             || self.placements.len() > 100000
             || self.text_cache_bytes > 256 << 20

@@ -39,6 +39,8 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {
@@ -119,8 +121,18 @@ fn preset_scene(texts: &[(&str, &str)], boxed: bool) -> project::Project {
     data.caption_presets.push(project::SavedCaptionPreset {
         id: project::CaptionPresetId(100),
         name: "Project look".into(),
-        style,
+        style: render::style_from_cue(&style),
     });
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let project::ItemParams::Caption(params) = &mut item.content {
+            params.preset = Some(project::CaptionPresetId(100));
+        }
+    }
     project::Project::new(data).unwrap()
 }
 
@@ -143,23 +155,36 @@ fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
                 .collect();
             let mut r = Renderer::new(&p, settings.clone()).unwrap();
             let frame = r.preview_frame(tick(1, 2), &mut Empty, &h).unwrap();
-            for remove in [false, true] {
-                let mut data = p.data().clone();
-                if remove {
-                    data.caption_presets.clear();
-                } else {
-                    data.caption_presets[0].name = "Renamed".into();
-                }
-                let changed = project::Project::new(data).unwrap();
-                assert_eq!(
-                    frame.pixels(),
-                    Renderer::new(&changed, settings.clone())
-                        .unwrap()
-                        .render_frame(tick(1, 2), &mut Empty, &h)
-                        .unwrap()
-                        .pixels()
-                );
-            }
+            let mut renamed = p.data().clone();
+            renamed.caption_presets[0].name = "Renamed".into();
+            let renamed = project::Project::new(renamed).unwrap();
+            assert_eq!(
+                frame.pixels(),
+                Renderer::new(&renamed, settings.clone())
+                    .unwrap()
+                    .render_frame(tick(1, 2), &mut Empty, &h)
+                    .unwrap()
+                    .pixels(),
+                "rename never changes the selected look"
+            );
+            let mut edited = p.data().clone();
+            edited.caption_presets[0].style.size += 12.0;
+            let edited = project::Project::new(edited).unwrap();
+            assert_ne!(
+                frame.pixels(),
+                Renderer::new(&edited, settings.clone())
+                    .unwrap()
+                    .render_frame(tick(1, 2), &mut Empty, &h)
+                    .unwrap()
+                    .pixels(),
+                "the item follows the live preset value"
+            );
+            let mut removed = p.data().clone();
+            removed.caption_presets.clear();
+            assert!(
+                project::Project::new(removed).is_err(),
+                "a live selection never dangles"
+            );
             assert_eq!(
                 frame.pixels(),
                 r.render_frame(tick(1, 2), &mut Empty, &h).unwrap().pixels()
@@ -205,9 +230,11 @@ fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
                     },
                 );
             }
-            settings.caption_style.max_lines = 1;
+            let mut single = p.data().clone();
+            single.caption_presets[0].style.max_lines = 1;
+            let single = project::Project::new(single).unwrap();
             assert!(matches!(
-                Renderer::new(&p, settings)
+                Renderer::new(&single, settings.clone())
                     .unwrap()
                     .render_frame(tick(1, 2), &mut Empty, &h),
                 Err(render::Error::Unsupported(_))
@@ -242,6 +269,131 @@ fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
             );
         }
     }
+}
+
+#[test]
+fn caption_preset_overrides_patch_every_full_style_field() {
+    let texts = [
+        ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
+        ("en", "Bilingual captions"),
+    ];
+    let h = Hooks::default();
+    let at = tick(1, 2);
+    let base = preset_scene(&texts, false);
+    let overrides = captions::CaptionOverrides {
+        font: Some("Noto Serif".into()),
+        font_style: Some("Bold".into()),
+        size: Some(64.0),
+        color: Some([250, 240, 40, 220]),
+        outline: Some(Some(captions::CaptionOutline {
+            color: [10, 20, 30, 255],
+            width: 4.0,
+        })),
+        background: Some(Some(captions::CaptionBackground {
+            color: [0, 0, 90, 180],
+            padding: 10.0,
+            radius: 6.0,
+        })),
+        position: Some(captions::CaptionPosition::Top),
+        safe_area_percent: Some(12.0),
+        max_lines: Some(3),
+    };
+    let mut patched = base.data().clone();
+    for item in patched
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let project::ItemParams::Caption(params) = &mut item.content {
+            params.overrides = overrides.clone();
+        }
+    }
+    patched.caption_presets[0].style = render::style_from_cue(&captions::CueStyle {
+        font_family: "Inter".into(),
+        font_size_ratio: 48.0 / 1080.0,
+        primary_color: [255; 4],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0; 4],
+        border_style: 1,
+        alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+        margin_left_ratio: 0.05,
+        margin_right_ratio: 0.05,
+        margin_vertical_ratio: 0.05,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    });
+    let selected = project::Project::new(patched).unwrap();
+    let mut settings = RenderSettings::from_project(&selected);
+    settings.width = 360;
+    settings.height = 640;
+    settings.caption_languages = texts
+        .iter()
+        .map(|(tag, _)| captions::LanguageTag::parse(tag).unwrap())
+        .collect();
+    let mut selection = Renderer::new(&selected, settings.clone()).unwrap();
+    let frame = selection.render_frame(at, &mut Empty, &h).unwrap();
+    assert_eq!(
+        frame.pixels(),
+        selection
+            .preview_frame(at, &mut Empty, &h)
+            .unwrap()
+            .pixels(),
+        "preview and burn-in share the selected-style path"
+    );
+    // The same complete values through the transient style path paint identically.
+    let mut plain = selected.data().clone();
+    plain.caption_presets.clear();
+    for item in plain
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let project::ItemParams::Caption(params) = &mut item.content {
+            params.preset = None;
+            params.overrides = captions::CaptionOverrides::default();
+            params.cues.styles.clear();
+            for cue in &mut params.cues.cues {
+                cue.style = None;
+            }
+        }
+    }
+    let plain = project::Project::new(plain).unwrap();
+    let mut effective = render::style_from_cue(&captions::CueStyle {
+        font_family: "Inter".into(),
+        font_size_ratio: 48.0 / 1080.0,
+        primary_color: [255; 4],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0; 4],
+        border_style: 1,
+        alignment: captions::CueAlignment::from_numpad(2).unwrap(),
+        margin_left_ratio: 0.05,
+        margin_right_ratio: 0.05,
+        margin_vertical_ratio: 0.05,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    });
+    overrides.apply(&mut effective);
+    settings.caption_style = effective;
+    let expected = Renderer::new(&plain, settings)
+        .unwrap()
+        .render_frame(at, &mut Empty, &h)
+        .unwrap();
+    assert_eq!(frame.pixels(), expected.pixels());
+    assert_ne!(
+        frame.pixels(),
+        Renderer::new(&base, RenderSettings::from_project(&base))
+            .unwrap()
+            .render_frame(at, &mut Empty, &h)
+            .unwrap()
+            .pixels(),
+        "the patch changes pixels"
+    );
 }
 
 #[test]

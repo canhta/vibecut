@@ -208,6 +208,32 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
         }
         assert_eq!(control.finish().0, 0);
         assert_eq!(fs::read(&project).unwrap(), bytes);
+        let selected = project::load(&project).unwrap().project;
+        let found = selected
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == item.id)
+            .unwrap();
+        let project::ItemParams::Caption(p) = &found.content else {
+            panic!("caption")
+        };
+        assert_eq!(p.preset, Some(id));
+        // Materialize the built-in look again so the selected bank entry can be deleted.
+        let args = serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":preset}})
+            .to_string();
+        assert_eq!(
+            code(&cli(&[
+                os("exec"),
+                project.as_os_str(),
+                os("captions.apply_style"),
+                os(&args),
+                os("--json")
+            ])),
+            0
+        );
         let copied = project::load(&project).unwrap().project;
         let args = serde_json::json!({"preset":id}).to_string();
         assert_eq!(

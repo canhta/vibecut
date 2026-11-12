@@ -87,6 +87,8 @@ pub fn build_session(
             start: Tick::ZERO,
             content: ItemParams::Caption(CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: CueTrack {
                     styles: Vec::new(),
                     cues: cues.to_vec(),

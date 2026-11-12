@@ -605,7 +605,7 @@ fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() 
 }
 
 #[test]
-fn caption_bank_fixture_executes_saved_copy_and_refuses_the_previous_digest() {
+fn caption_bank_fixture_selects_live_style_and_refuses_the_previous_digest() {
     let seed = seed();
     let mut s = crate::support::control::with_caption_presets(&seed);
     assert!(seed.project().data().caption_presets.is_empty());
@@ -629,8 +629,21 @@ fn caption_bank_fixture_executes_saved_copy_and_refuses_the_previous_digest() {
         json!({"item":4,"style":{"kind":"saved","preset":100}}),
     )
     .unwrap();
-    assert_eq!(s.project(), &before);
-    assert_eq!(s.history_len(), (0, 0));
+    assert_eq!(s.history_len(), (1, 0));
+    assert_ne!(s.project(), &before);
+    let found = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == project::ItemId(4))
+        .unwrap();
+    let project::ItemParams::Caption(params) = &found.content else {
+        panic!("caption")
+    };
+    assert_eq!(params.preset, Some(project::CaptionPresetId(100)));
     let out = s
         .execute("captions.save_preset", json!({"item":4,"name":"New"}))
         .unwrap();
@@ -645,7 +658,15 @@ fn caption_bank_fixture_executes_saved_copy_and_refuses_the_previous_digest() {
     .unwrap();
     s.execute("captions.delete_preset", json!({"preset":101}))
         .unwrap();
-    assert_eq!(s.project(), &before);
+    assert_eq!(
+        s.project()
+            .data()
+            .caption_presets
+            .iter()
+            .map(|preset| preset.id.0)
+            .collect::<Vec<_>>(),
+        [100]
+    );
 }
 
 #[test]

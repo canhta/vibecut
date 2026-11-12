@@ -564,6 +564,8 @@ fn caption_project() -> project::Project {
                 start: Tick(at * time::TICKS_PER_SECOND),
                 content: ItemParams::Caption(CaptionParams {
                     word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
                     cues: CueTrack {
                         styles: Vec::new(),
                         cues: vec![cue.clone()],

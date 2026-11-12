@@ -239,6 +239,8 @@ fn insert(
             start,
             content: project::ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues,
             }),
         },

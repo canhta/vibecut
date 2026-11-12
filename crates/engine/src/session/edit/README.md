@@ -110,14 +110,16 @@ Preset names and values are new product behaviour, not reference parity. See
 
 ## Caption styles
 
-`captions.apply_style` replaces every authoritative cue's style in one active-scene caption item,
-including cues temporarily hidden by a trim. The command accepts a built-in caption preset or
-a complete `CueStyle`; it saves values in the existing cue-style table, without a preset identity.
-It preserves text, timing, provenance and animation. Explicit apply replaces imported per-cue
-differences; undo restores them. Locks refuse even an equal request, and an empty item refuses.
-If all referenced styles already equal the requested style, the exact table and history stay
-unchanged. A real change leaves one shared style entry. Input types and looks live in
-[`commands.rs`](../commands.rs); text serialization and rendering retain their existing owners.
+`captions.apply_style` chooses the whole appearance of one active-scene caption item. A built-in
+caption preset or a complete `CueStyle` materializes values into the existing cue-style table,
+including cues temporarily hidden by a trim, and clears any live selection. A saved preset instead
+stores `{preset, overrides}` on the item: the project bank stays the single source of its full
+style and a sparse patch overrides individual fields. Both forms preserve text, timing, provenance
+and animation. Explicit materialized apply replaces imported per-cue differences; undo restores
+them. Locks refuse even an equal request, and an empty item refuses a materialized value. An
+unchanged selection or an all-equal materialized table leaves history unchanged. Input types and
+looks live in [`commands.rs`](../commands.rs); text serialization and rendering retain their
+existing owners.
 
 ## Video transitions
 
@@ -128,7 +130,14 @@ longer form a contiguous chain reaching the cut. Failed edits publish neither it
 transition changes. Transitions are video-only; [project](../../../../project/src/visual/README.md#video-transitions)
 owns the admitted kinds, parameter definitions and the invariant mathematics. `transition.set_param` replaces one parameter in a single undo step and refuses an unknown id, a value of another type or an out-of-range value without publishing.
 
-`captions.save_preset` saves one uniform complete saved style from the authoritative source cues, including hidden trim sources; empty, unstyled or mixed sources refuse. Save does not style any item. `captions.rename_preset` and `captions.delete_preset` edit project metadata, including with no caption target or all tracks locked. Same-name rename is an exact no-op; duplicate names refuse. `captions.apply_style` also accepts `{"kind":"saved","preset":100}`: resolve the candidate bank and copy through the same whole-item path. Target locks precede equality or missing-preset refusal. Rename/delete never touches applied copies in any scene.
+`captions.save_preset` saves one complete full style. A selected item saves its live preset value with
+its sparse overrides folded in; otherwise the authoritative source cues, including hidden trim
+sources, must be uniform and their imported value is completed with presentation defaults. Empty,
+unstyled or mixed sources refuse. Save does not style any item. `captions.rename_preset` and
+`captions.delete_preset` edit project metadata, including with no caption target or all tracks
+locked. Same-name rename is an exact no-op; duplicate names refuse. Deletion refuses while any
+caption item in any scene selects the preset, so no live reference ever dangles; materialize a
+different style first. Rename never changes appearance.
 
 ## Graphic appearance
 

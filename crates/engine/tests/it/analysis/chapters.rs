@@ -76,6 +76,8 @@ fn project() -> Arc<Project> {
             start: second(1),
             content: ItemParams::Caption(CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![

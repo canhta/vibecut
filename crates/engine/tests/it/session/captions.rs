@@ -26,6 +26,9 @@ fn preset_style(boxed: bool) -> captions::CueStyle {
         strikeout: false,
     }
 }
+fn full_style(boxed: bool) -> captions::CaptionStyle {
+    render::style_from_cue(&preset_style(boxed))
+}
 fn apply_style(style: engine::CaptionStyleApply) -> Command {
     Command::ApplyCaptionStyle {
         item: ItemId(1),
@@ -34,13 +37,14 @@ fn apply_style(style: engine::CaptionStyleApply) -> Command {
 }
 
 #[test]
-fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
+fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
+    use engine::CaptionStyleApply;
     use project::{CaptionPresetId, SavedCaptionPreset};
     let mut data = style_source_project().into_data();
     data.caption_presets = vec![SavedCaptionPreset {
         id: CaptionPresetId(100),
         name: "Box".into(),
-        style: preset_style(true),
+        style: full_style(true),
     }];
     let mut other = data.scenes.main().clone();
     other.id = project::SceneId(50);
@@ -71,15 +75,44 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
     else {
         panic!("caption")
     };
-    params.cues.styles = vec![preset_style(true)];
-    for cue in &mut params.cues.cues {
-        cue.style = Some(captions::CueStyleId(0));
-    }
+    assert_eq!(params.preset, Some(CaptionPresetId(100)));
+    assert!(params.overrides.is_empty());
+    let unchanged = params.cues.clone();
     assert_eq!(s.project().data(), &expected);
+    assert_eq!(saved_cues(&s), &unchanged, "selection keeps cue values");
     s.undo().unwrap();
     assert_eq!(s.project(), &original);
     s.redo().unwrap();
     let styled = s.project().clone();
+    // A sparse patch re-applies over the same live reference.
+    let overrides = captions::CaptionOverrides {
+        size: Some(72.0),
+        color: Some([250, 240, 20, 200]),
+        outline: Some(None),
+        ..Default::default()
+    };
+    assert!(
+        s.apply(Command::ApplyCaptionStyle {
+            item: ItemId(1),
+            style: CaptionStyleApply::Saved {
+                preset: CaptionPresetId(100),
+                overrides: overrides.clone(),
+            },
+        })
+        .unwrap()
+        .changed
+    );
+    let patched = s.project().clone();
+    let ItemParams::Caption(p) = &get(&s, 1).content else {
+        panic!("caption")
+    };
+    assert_eq!(p.preset, Some(CaptionPresetId(100)));
+    assert_eq!(p.overrides, overrides);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &styled);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &patched);
+    // Save captures the effective full style, not the untouched cue table.
     let out = s
         .execute(
             "captions.save_preset",
@@ -90,10 +123,13 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
         out.created,
         vec![CreatedId::CaptionPreset(CaptionPresetId(101))]
     );
+    let mut effective = full_style(true);
+    overrides.apply(&mut effective);
+    expected = patched.data().clone();
     expected.caption_presets.push(SavedCaptionPreset {
         id: CaptionPresetId(101),
         name: "Tiếng Việt".into(),
-        style: preset_style(true),
+        style: effective.clone(),
     });
     assert_eq!(s.project().data(), &expected, "save changes only bank");
     let before_duplicate = s.project().clone();
@@ -135,7 +171,7 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
     assert!(
         !s.execute(
             "captions.apply_style",
-            json!({"item":1,"style":{"kind":"saved","preset":101}})
+            json!({"item":1,"style":{"kind":"saved","preset":100,"overrides":{"size":72.0,"color":[250,240,20,200],"outline":null}}})
         )
         .unwrap()
         .changed
@@ -144,9 +180,39 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
     assert_eq!(s.revision(), revision);
     assert_eq!(s.history_len(), history);
     assert!(s.take_change().is_none());
-    s.execute("captions.delete_preset", json!({"preset":100}))
+    let before_bad = s.project().clone();
+    let history = s.history_len();
+    for style in [
+        CaptionStyleApply::Saved {
+            preset: CaptionPresetId(999),
+            overrides: captions::CaptionOverrides::default(),
+        },
+        CaptionStyleApply::Saved {
+            preset: CaptionPresetId(100),
+            overrides: captions::CaptionOverrides {
+                size: Some(1.0),
+                ..Default::default()
+            },
+        },
+    ] {
+        assert!(matches!(
+            s.apply(Command::ApplyCaptionStyle {
+                item: ItemId(1),
+                style,
+            }),
+            Err(engine::EditError::Invalid(_))
+        ));
+        assert_eq!(s.project(), &before_bad);
+        assert_eq!(s.history_len(), history);
+    }
+    // A live selection is never silently detached or deleted.
+    assert!(matches!(
+        s.execute("captions.delete_preset", json!({"preset":100})),
+        Err(engine::EditError::Invalid(_))
+    ));
+    assert_eq!(s.project(), &saved);
+    s.execute("captions.delete_preset", json!({"preset":101}))
         .unwrap();
-    assert_eq!(s.project().data().scene(), styled.data().scene());
     assert_eq!(
         s.project()
             .data()
@@ -154,7 +220,7 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
             .iter()
             .map(|p| p.id.0)
             .collect::<Vec<_>>(),
-        [101, 102]
+        [102, 100]
     );
     let bytes = project::encode(s.project(), false).unwrap();
     assert_eq!(
@@ -216,10 +282,10 @@ fn caption_bank_commands_copy_complete_values_preserve_noops_and_retire_ids() {
     .unwrap();
     s.execute(
         "captions.rename_preset",
-        json!({"preset":101,"name":"Without target"}),
+        json!({"preset":102,"name":"Without target"}),
     )
     .unwrap();
-    s.execute("captions.delete_preset", json!({"preset":101}))
+    s.execute("captions.delete_preset", json!({"preset":102}))
         .unwrap();
 }
 
@@ -270,14 +336,14 @@ fn caption_bank_refusals_roll_back_history_sources_and_global_allocator() {
         data.caption_presets.push(SavedCaptionPreset {
             id: CaptionPresetId(max),
             name: "Taken".into(),
-            style: preset_style(false),
+            style: full_style(false),
         });
         if case == "cap" {
             for id in 101..164 {
                 data.caption_presets.push(SavedCaptionPreset {
                     id: CaptionPresetId(id),
                     name: format!("Look {id}").into(),
-                    style: preset_style(true),
+                    style: full_style(true),
                 });
             }
         }
@@ -384,7 +450,7 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     data.caption_presets.push(SavedCaptionPreset {
         id: CaptionPresetId(100),
         name: "Box".into(),
-        style: preset_style(true),
+        style: full_style(true),
     });
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let original = s.project().clone();
@@ -399,20 +465,20 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     );
     s.apply(apply_style(engine::CaptionStyleApply::Saved {
         preset: CaptionPresetId(100),
+        overrides: captions::CaptionOverrides::default(),
     }))
     .unwrap();
     s.apply(caption_trim(false, 1100)).unwrap();
-    assert_eq!(saved_cues(&s).styles, vec![preset_style(true)]);
-    assert!(
-        saved_cues(&s)
-            .cues
-            .iter()
-            .all(|cue| cue.style == Some(captions::CueStyleId(0)))
-    );
+    let ItemParams::Caption(selected) = &get(&s, 1).content else {
+        panic!("caption")
+    };
+    assert_eq!(selected.preset, Some(CaptionPresetId(100)));
+    assert!(selected.overrides.is_empty());
     let ItemParams::Caption(old) = &original.data().scene().timeline.overlays[0].items[0].content
     else {
         panic!("caption")
     };
+    assert_eq!(saved_cues(&s).styles, old.cues.styles);
     for (new, old) in saved_cues(&s).cues.iter().zip(&old.cues.cues) {
         assert_eq!(new.texts, old.texts);
         assert_eq!(new.word_ranges, old.word_ranges);
@@ -443,7 +509,9 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     let ItemParams::Caption(params) = &get(&s, right.0).content else {
         panic!("caption")
     };
-    assert_eq!(params.cues.styles, vec![preset_style(true)]);
+    assert_eq!(params.preset, Some(CaptionPresetId(100)));
+    assert!(params.overrides.is_empty());
+    assert_eq!(params.cues.styles, old.cues.styles);
     s.apply(Command::SetTrackLocked {
         track: TrackId(1),
         locked: true,
@@ -452,9 +520,11 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     for command in [
         apply_style(engine::CaptionStyleApply::Saved {
             preset: CaptionPresetId(999),
+            overrides: captions::CaptionOverrides::default(),
         }),
         apply_style(engine::CaptionStyleApply::Saved {
             preset: CaptionPresetId(100),
+            overrides: captions::CaptionOverrides::default(),
         }),
         Command::SaveCaptionPreset {
             item: ItemId(1),
@@ -472,11 +542,26 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
         name: "Rename only".into(),
     })
     .unwrap();
+    assert!(matches!(
+        s.apply(Command::DeleteCaptionPreset {
+            preset: CaptionPresetId(100),
+        }),
+        Err(engine::EditError::Invalid(_))
+    ));
+    assert_eq!(s.project().data().scene(), &items);
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: false,
+    })
+    .unwrap();
+    s.apply(Command::Delete {
+        items: vec![ItemId(1), right.0],
+    })
+    .unwrap();
     s.apply(Command::DeleteCaptionPreset {
         preset: CaptionPresetId(100),
     })
     .unwrap();
-    assert_eq!(s.project().data().scene(), &items);
 }
 
 #[test]
@@ -525,7 +610,7 @@ fn caption_bank_mixed_ass_import_refuses_save_and_undo_restores_exact_styles() {
     .unwrap();
     assert_eq!(
         s.project().data().caption_presets[0].style,
-        preset_style(true)
+        full_style(true)
     );
     s.undo().unwrap();
     s.undo().unwrap();
@@ -940,6 +1025,8 @@ fn caption_project() -> Project {
             start: Tick(1000),
             content: ItemParams::Caption(CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: CueTrack {
                     styles: Vec::new(),
                     cues: vec![cue.clone()],

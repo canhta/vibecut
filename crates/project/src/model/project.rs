@@ -30,13 +30,14 @@ fn valid_preset_name(name: &NfcText) -> bool {
             .is_ok_and(|text| (1..=64).contains(&text.spans().len()))
 }
 
-/// A reusable value; application copies the style into ordinary cue styles.
+/// A reusable full presentation value; a caption item may select it live and
+/// patch individual fields. Renaming never changes appearance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SavedCaptionPreset {
     pub id: CaptionPresetId,
     pub name: NfcText,
-    pub style: captions::CueStyle,
+    pub style: captions::CaptionStyle,
 }
 impl SavedCaptionPreset {
     /// Names contain 1..=64 extended graphemes, at most 256 UTF-8 bytes,
@@ -502,6 +503,12 @@ fn validate(data: &ProjectData) -> Result<()> {
                 ItemParams::Caption(p) => {
                     if asset.is_none() {
                         return Err(Error::Invalid("caption item requires source identity"));
+                    }
+                    if !p.overrides.is_valid()
+                        || (p.preset.is_none() && !p.overrides.is_empty())
+                        || p.preset.is_some_and(|id| !preset_ids.contains(&id))
+                    {
+                        return Err(Error::Invalid("caption style selection"));
                     }
                     if p.cues.cues.len() > 100000 {
                         return Err(Error::TooLarge("cues"));

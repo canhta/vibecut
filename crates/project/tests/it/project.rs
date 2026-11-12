@@ -11,14 +11,20 @@ fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<Sa
 
 #[test]
 fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
-    let style: captions::CueStyle = serde_json::from_value(serde_json::json!({
-        "font_family":"Inter", "font_size_ratio":0.05, "primary_color":[255,255,255,180],
-        "outline_color":[0,0,0,255], "background_color":[0,0,0,0], "border_style":1,
-        "alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},
-        "margin_left_ratio":0.05,"margin_right_ratio":0.05,"margin_vertical_ratio":0.05,
-        "bold":true,"italic":false,"underline":false,"strikeout":false
-    }))
-    .unwrap();
+    let style = captions::CaptionStyle {
+        font: "Inter".into(),
+        font_style: "SemiBold".into(),
+        size: 54.0,
+        color: [255, 255, 255, 180],
+        outline: Some(captions::CaptionOutline {
+            color: [0, 0, 0, 255],
+            width: 2.0,
+        }),
+        background: None,
+        position: captions::CaptionPosition::Bottom,
+        safe_area_percent: 5.0,
+        max_lines: 2,
+    };
     let mut data = Project::empty(ProjectId(99), "Bank".into())
         .unwrap()
         .into_data();
@@ -60,8 +66,8 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                 invalid.caption_presets[0].name = "Tiếng Việt".into();
                 invalid.caption_presets[1].name = "Tie\u{302}\u{301}ng Vie\u{323}\u{302}t".into();
             }
-            "style" => invalid.caption_presets[0].style.font_family = " ".into(),
-            "nan" => invalid.caption_presets[0].style.font_size_ratio = f32::NAN,
+            "style" => invalid.caption_presets[0].style.size = 1.0,
+            "nan" => invalid.caption_presets[0].style.size = f32::NAN,
             _ => unreachable!(),
         }
         assert!(Project::new(invalid).is_err(), "{case}");
@@ -221,6 +227,75 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
         });
     }
 }
+#[test]
+fn caption_selection_references_overrides_and_schema_round_trip() {
+    let style = captions::CaptionStyle::default();
+    let mut data = populated(std::env::temp_dir().join("caption-selection")).into_data();
+    data.caption_presets = vec![SavedCaptionPreset {
+        id: CaptionPresetId(7),
+        name: "Look".into(),
+        style: style.clone(),
+    }];
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            params.preset = Some(CaptionPresetId(7));
+            params.overrides = captions::CaptionOverrides {
+                size: Some(72.0),
+                outline: Some(None),
+                max_lines: Some(3),
+                ..Default::default()
+            };
+        }
+    }
+    let project = Project::new(data.clone()).unwrap();
+    let bytes = encode(&project, false).unwrap();
+    assert_eq!(decode(&bytes).unwrap().project, project);
+
+    let mut unknown = data.clone();
+    for item in unknown
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            params.preset = Some(CaptionPresetId(8));
+        }
+    }
+    assert!(Project::new(unknown).is_err());
+
+    let mut orphan = data.clone();
+    for item in orphan
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            params.preset = None;
+        }
+    }
+    assert!(Project::new(orphan).is_err());
+
+    let mut hostile = data.clone();
+    for item in hostile
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            params.overrides.size = Some(f32::NAN);
+        }
+    }
+    assert!(Project::new(hostile).is_err());
+}
+
 pub(crate) fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(Tick(start), Tick(end)).unwrap()
 }
@@ -394,6 +469,8 @@ fn populated(path: PathBuf) -> Project {
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
             word_highlight: false,
+            preset: None,
+            overrides: captions::CaptionOverrides::default(),
             cues: CueTrack {
                 styles: Vec::new(),
                 cues: vec![cue],

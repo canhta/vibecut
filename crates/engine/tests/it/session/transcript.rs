@@ -61,6 +61,8 @@ fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item
         start: Tick(start),
         content: ItemParams::Caption(CaptionParams {
             word_highlight: false,
+            preset: None,
+            overrides: captions::CaptionOverrides::default(),
             cues: CueTrack {
                 styles: Vec::new(),
                 cues,

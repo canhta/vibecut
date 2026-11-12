@@ -246,6 +246,13 @@ fn language_name(locale: Locale, tag: &str) -> String {
     };
     i18n::text(locale, key).into()
 }
+fn style_row(ui: &mut egui::Ui, label: &str, value: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(theme::type_size::BODY));
+        value(ui);
+    });
+}
+
 impl Subtitles {
     /// The assets-panel mount is one call. Engine edits remain in this module.
     #[allow(clippy::too_many_arguments)]
@@ -264,6 +271,7 @@ impl Subtitles {
         let frame = ui.ctx().cumulative_frame_nr();
         let continuous = self.bank_frame.is_none_or(|previous| frame <= previous + 1);
         self.reconcile_bank(session, at, bank_ready, continuous);
+        self.reconcile_style_edit(session, at, bank_ready, continuous);
         self.bank_frame = Some(frame);
         // The spoken-language choice belongs to the project, not the window.
         // A project without an entry starts from Auto; the first render after
@@ -569,70 +577,74 @@ impl Subtitles {
                 }
                 self.style_ui(ui, session, options, at, bank_ready, &mut controls);
                 self.text_focus = None;
-                ui.add_enabled_ui(!busy && self.bank.is_none(), |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        if controls.icon_button(
-                            ui,
-                            "subtitles.select_all",
-                            Text::SubSelectAll,
-                            Icon::Plus,
-                            true,
-                        ) && let Some((_, p)) = self.caption(session)
-                        {
-                            self.selected = p.cues.cues.iter().map(|c| c.id.clone()).collect();
-                        }
-                        if controls.icon_button(
-                            ui,
-                            "subtitles.split",
-                            Text::Split,
-                            Icon::Scissors,
-                            self.selected.len() == 1,
-                        ) {
-                            let result = self
-                                .flush_drafts(session)
-                                .and_then(|_| self.split(session, at));
-                            self.ui_result(result);
-                        }
-                        if controls.icon_button(
-                            ui,
-                            "subtitles.merge",
-                            Text::SubMerge,
-                            Icon::ArrowsInLineHorizontal,
-                            self.selected.len() > 1,
-                        ) {
-                            let result =
-                                self.flush_drafts(session).and_then(|_| self.merge(session));
-                            self.ui_result(result);
-                        }
-                        if controls.icon_button(
-                            ui,
-                            "subtitles.earlier",
-                            Text::SubEarlier,
-                            Icon::SkipBack,
-                            !self.selected.is_empty(),
-                        ) {
-                            let result = self
-                                .flush_drafts(session)
-                                .and_then(|_| self.nudge(session, false));
-                            self.ui_result(result);
-                        }
-                        if controls.icon_button(
-                            ui,
-                            "subtitles.later",
-                            Text::SubLater,
-                            Icon::SkipForward,
-                            !self.selected.is_empty(),
-                        ) {
-                            let result = self
-                                .flush_drafts(session)
-                                .and_then(|_| self.nudge(session, true));
-                            self.ui_result(result);
-                        }
-                    });
-                    self.cues_ui(ui, session, options, &mut controls, dark);
-                });
+                ui.add_enabled_ui(
+                    !busy && self.bank.is_none() && self.style_edit.is_none(),
+                    |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            if controls.icon_button(
+                                ui,
+                                "subtitles.select_all",
+                                Text::SubSelectAll,
+                                Icon::Plus,
+                                true,
+                            ) && let Some((_, p)) = self.caption(session)
+                            {
+                                self.selected = p.cues.cues.iter().map(|c| c.id.clone()).collect();
+                            }
+                            if controls.icon_button(
+                                ui,
+                                "subtitles.split",
+                                Text::Split,
+                                Icon::Scissors,
+                                self.selected.len() == 1,
+                            ) {
+                                let result = self
+                                    .flush_drafts(session)
+                                    .and_then(|_| self.split(session, at));
+                                self.ui_result(result);
+                            }
+                            if controls.icon_button(
+                                ui,
+                                "subtitles.merge",
+                                Text::SubMerge,
+                                Icon::ArrowsInLineHorizontal,
+                                self.selected.len() > 1,
+                            ) {
+                                let result =
+                                    self.flush_drafts(session).and_then(|_| self.merge(session));
+                                self.ui_result(result);
+                            }
+                            if controls.icon_button(
+                                ui,
+                                "subtitles.earlier",
+                                Text::SubEarlier,
+                                Icon::SkipBack,
+                                !self.selected.is_empty(),
+                            ) {
+                                let result = self
+                                    .flush_drafts(session)
+                                    .and_then(|_| self.nudge(session, false));
+                                self.ui_result(result);
+                            }
+                            if controls.icon_button(
+                                ui,
+                                "subtitles.later",
+                                Text::SubLater,
+                                Icon::SkipForward,
+                                !self.selected.is_empty(),
+                            ) {
+                                let result = self
+                                    .flush_drafts(session)
+                                    .and_then(|_| self.nudge(session, true));
+                                self.ui_result(result);
+                            }
+                        });
+                        self.cues_ui(ui, session, options, &mut controls, dark);
+                    },
+                );
             });
         self.bank_ui(ui, session, at, &mut controls);
+        self.style_editor_ui(ui, session, at, &mut controls);
         controls.widgets
     }
     pub(crate) fn dialogs(
@@ -774,29 +786,45 @@ impl Subtitles {
         }
         let highlighted = params.word_highlight;
         let item = item.id;
+        let selected = params.preset;
+        let patched = !params.overrides.is_empty();
         let first = params
             .cues
             .cues
             .first()
             .and_then(|cue| params.cues.style_of(cue));
-        let label = if params
+        let label = if let Some(preset) = selected {
+            let name = session
+                .project()
+                .data()
+                .caption_presets
+                .iter()
+                .find(|value| value.id == preset)
+                .map_or("", |value| value.name.as_str());
+            if patched {
+                format!("{name} · {}", c.tr(Text::SubStyleEdited))
+            } else {
+                name.to_owned()
+            }
+        } else if params
             .cues
             .cues
             .iter()
             .any(|cue| params.cues.style_of(cue) != first)
         {
-            Text::SubStyleMixed
+            c.tr(Text::SubStyleMixed).to_owned()
         } else if first.is_some_and(|style| engine::CaptionPreset::Outline.matches(style)) {
-            Text::SubStyleOutline
+            c.tr(Text::SubStyleOutline).to_owned()
         } else if first.is_some_and(|style| engine::CaptionPreset::Box.matches(style)) {
-            Text::SubStyleBox
+            c.tr(Text::SubStyleBox).to_owned()
         } else {
-            Text::SubStyleCustom
+            c.tr(Text::SubStyleCustom).to_owned()
         };
         let snapshot = session.project().clone();
         let enabled = self.style_available(session);
         let mut chosen = None;
         let mut saved = None;
+        let mut overrides_open = false;
         ui.add_enabled_ui(enabled, |ui| {
             ui.horizontal(|ui| {
                 let caption = ui
@@ -809,13 +837,13 @@ impl Subtitles {
                     item,
                     Arc::as_ptr(&snapshot),
                 ))
-                .selected_text(c.tr(label))
+                .selected_text(label.clone())
                 .show_ui(ui, |ui| {
                     for (id, text) in [
                         ("subtitles.style.outline", Text::SubStyleOutline),
                         ("subtitles.style.box", Text::SubStyleBox),
                     ] {
-                        let response = ui.selectable_label(label == text, c.tr(text));
+                        let response = ui.selectable_label(label == c.tr(text), c.tr(text));
                         c.remember(id, &response);
                         if response.clicked() {
                             chosen = Some(id);
@@ -829,8 +857,11 @@ impl Subtitles {
                                 .size(theme::type_size::BODY),
                         );
                         for preset in &snapshot.data().caption_presets {
-                            let r =
-                                ui.add_enabled(bank_ready, egui::Button::new(preset.name.as_str()));
+                            let r = ui.add_enabled(
+                                bank_ready,
+                                egui::Button::new(preset.name.as_str())
+                                    .selected(selected == Some(preset.id)),
+                            );
                             c.remember(format!("subtitles.style.saved.{}", preset.id.0), &r);
                             if r.clicked() {
                                 saved = Some(preset.id);
@@ -842,8 +873,26 @@ impl Subtitles {
                 .response
                 .labelled_by(caption.id);
                 c.remember("subtitles.style", &response);
+                if selected.is_some() {
+                    let r = ui.add_enabled(
+                        bank_ready,
+                        egui::Button::new(
+                            egui::RichText::new(c.tr(Text::SubStyleOverrides))
+                                .size(theme::type_size::BODY),
+                        )
+                        .min_size(egui::vec2(0.0, theme::size::FIELD)),
+                    );
+                    c.remember("subtitles.style.overrides", &r);
+                    if r.clicked() {
+                        overrides_open = true;
+                    }
+                }
             });
         });
+        if overrides_open {
+            let result = self.activate(session, options, None, at, "subtitles.style.overrides");
+            self.ui_result(result);
+        }
         let mut highlighted = highlighted;
         let response = ui
             .add_enabled_ui(enabled && bank_ready, |ui| {
@@ -980,10 +1029,191 @@ impl Subtitles {
             let result = session
                 .apply(Command::ApplyCaptionStyle {
                     item,
-                    style: engine::CaptionStyleApply::Saved { preset },
+                    style: engine::CaptionStyleApply::Saved {
+                        preset,
+                        overrides: captions::CaptionOverrides::default(),
+                    },
                 })
                 .map(|_| ())
                 .map_err(Error::from);
+            self.ui_result(result);
+        }
+    }
+
+    fn style_editor_ui(
+        &mut self,
+        parent: &egui::Ui,
+        session: &mut Session,
+        at: Tick,
+        c: &mut Controls,
+    ) {
+        let Some(edit) = &mut self.style_edit else {
+            return;
+        };
+        let mut apply = false;
+        let mut reset = false;
+        let mut cancel = parent.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Area::new(egui::Id::unique("subtitles.style.editor"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(parent.min_rect().min + egui::vec2(8.0, 56.0))
+            .show(parent.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .inner_margin(theme::space::SM)
+                    .show(ui, |ui| {
+                        ui.set_width(264.0);
+                        ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                        ui.label(
+                            egui::RichText::new(c.tr(Text::SubStyleOverrides))
+                                .size(theme::type_size::BODY),
+                        );
+                        style_row(ui, c.tr(Text::SubStyleFont), |ui| {
+                            ui.add_sized(
+                                egui::vec2(160.0, theme::size::FIELD),
+                                egui::TextEdit::singleline(&mut edit.draft.font)
+                                    .font(egui::FontId::proportional(theme::type_size::BODY)),
+                            );
+                        });
+                        style_row(ui, c.tr(Text::SubStyleFontStyle), |ui| {
+                            ui.add_sized(
+                                egui::vec2(160.0, theme::size::FIELD),
+                                egui::TextEdit::singleline(&mut edit.draft.font_style)
+                                    .font(egui::FontId::proportional(theme::type_size::BODY)),
+                            );
+                        });
+                        style_row(ui, c.tr(Text::SubStyleSize), |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut edit.draft.size)
+                                    .range(4.0..=256.0)
+                                    .speed(1.0),
+                            );
+                        });
+                        style_row(ui, c.tr(Text::BlendColor), |ui| {
+                            for channel in edit.draft.color.iter_mut() {
+                                ui.add(egui::DragValue::new(channel).range(0..=255));
+                            }
+                        });
+                        style_row(ui, c.tr(Text::Position), |ui| {
+                            egui::ComboBox::from_id_salt(egui::Id::unique(
+                                "subtitles.style.position",
+                            ))
+                            .selected_text(match edit.draft.position {
+                                captions::CaptionPosition::Top => c.tr(Text::SubStyleTop),
+                                captions::CaptionPosition::Middle => c.tr(Text::SubStyleMiddle),
+                                captions::CaptionPosition::Bottom => c.tr(Text::SubStyleBottom),
+                            })
+                            .show_ui(ui, |ui| {
+                                for (position, text) in [
+                                    (captions::CaptionPosition::Top, Text::SubStyleTop),
+                                    (captions::CaptionPosition::Middle, Text::SubStyleMiddle),
+                                    (captions::CaptionPosition::Bottom, Text::SubStyleBottom),
+                                ] {
+                                    ui.selectable_value(
+                                        &mut edit.draft.position,
+                                        position,
+                                        c.tr(text),
+                                    );
+                                }
+                            });
+                        });
+                        style_row(ui, c.tr(Text::SubStyleSafeArea), |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut edit.draft.safe_area_percent)
+                                    .range(0.0..=40.0)
+                                    .speed(0.5),
+                            );
+                        });
+                        style_row(ui, c.tr(Text::SubStyleMaxLines), |ui| {
+                            ui.add(egui::DragValue::new(&mut edit.draft.max_lines).range(1..=16));
+                        });
+                        let mut outline = edit.draft.outline.is_some();
+                        if ui
+                            .checkbox(
+                                &mut outline,
+                                egui::RichText::new(c.tr(Text::SubStyleOutline))
+                                    .size(theme::type_size::BODY),
+                            )
+                            .changed()
+                        {
+                            let base_outline = edit.base.outline.clone();
+                            let replacement = outline.then(|| {
+                                base_outline.unwrap_or(captions::CaptionOutline {
+                                    color: [0, 0, 0, 255],
+                                    width: 2.0,
+                                })
+                            });
+                            edit.draft.outline = replacement;
+                        }
+                        if let Some(value) = &mut edit.draft.outline {
+                            style_row(ui, c.tr(Text::SubStyleOutlineWidth), |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut value.width)
+                                        .range(0.0..=64.0)
+                                        .speed(0.5),
+                                );
+                            });
+                            style_row(ui, c.tr(Text::BlendColor), |ui| {
+                                for channel in value.color.iter_mut() {
+                                    ui.add(egui::DragValue::new(channel).range(0..=255));
+                                }
+                            });
+                        }
+                        let mut background = edit.draft.background.is_some();
+                        if ui
+                            .checkbox(
+                                &mut background,
+                                egui::RichText::new(c.tr(Text::SubStyleBox))
+                                    .size(theme::type_size::BODY),
+                            )
+                            .changed()
+                        {
+                            let base_background = edit.base.background.clone();
+                            let replacement = background.then(|| {
+                                base_background.unwrap_or(captions::CaptionBackground {
+                                    color: [0, 0, 0, 255],
+                                    padding: 8.0,
+                                    radius: 0.0,
+                                })
+                            });
+                            edit.draft.background = replacement;
+                        }
+                        if let Some(value) = &mut edit.draft.background {
+                            style_row(ui, c.tr(Text::SubStylePadding), |ui| {
+                                ui.add(egui::DragValue::new(&mut value.padding).range(0.0..=128.0));
+                            });
+                            style_row(ui, c.tr(Text::SubStyleRadius), |ui| {
+                                ui.add(egui::DragValue::new(&mut value.radius).range(0.0..=128.0));
+                            });
+                            style_row(ui, c.tr(Text::BlendColor), |ui| {
+                                for channel in value.color.iter_mut() {
+                                    ui.add(egui::DragValue::new(channel).range(0..=255));
+                                }
+                            });
+                        }
+                        ui.horizontal(|ui| {
+                            for (id, text, intent) in [
+                                ("subtitles.style.apply", Text::SubStyleApply, 0),
+                                ("subtitles.style.reset", Text::ResetValue, 1),
+                                ("subtitles.style.cancel", Text::Cancel, 2),
+                            ] {
+                                let r = ui.button(
+                                    egui::RichText::new(c.tr(text)).size(theme::type_size::BODY),
+                                );
+                                c.remember(id, &r);
+                                if r.clicked() {
+                                    match intent {
+                                        0 => apply = true,
+                                        1 => reset = true,
+                                        _ => cancel = true,
+                                    }
+                                }
+                            }
+                        });
+                    });
+            });
+        if cancel {
+            self.style_edit = None;
+        } else if apply || reset {
+            let result = self.confirm_style_edit(session, at, reset);
             self.ui_result(result);
         }
     }

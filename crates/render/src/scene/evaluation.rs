@@ -73,8 +73,10 @@ impl<'a> Renderer<'a> {
             .get(&item.id)
             .copied()
             .unwrap_or_else(|| {
-                if matches!(item.content, ItemParams::Caption(_)) {
-                    self.settings.caption_style.cue_placement(None)
+                if let ItemParams::Caption(params) = &item.content {
+                    let style = super::caption::item_style(self.project.data(), params)
+                        .unwrap_or_else(|| self.settings.caption_style.clone());
+                    super::caption::cue_placement(&style, None)
                 } else if let ItemParams::Text(params) = &item.content {
                     let width = 0.8;
                     let height = 0.25;
@@ -502,9 +504,15 @@ impl<'a> Renderer<'a> {
                                 hooks,
                             )?;
                             if !value.is_empty() {
+                                let selected = super::caption::item_style(self.project.data(), p);
                                 let cue_style = p.cues.style_of(cue);
-                                let style = self.settings.caption_style.for_cue(cue_style);
-                                let caption_placement = style.cue_placement(cue_style);
+                                let placement_style =
+                                    if selected.is_some() { None } else { cue_style };
+                                let style = selected.unwrap_or_else(|| {
+                                    super::caption::for_cue(&self.settings.caption_style, cue_style)
+                                });
+                                let caption_placement =
+                                    super::caption::cue_placement(&style, placement_style);
                                 let scale = self.settings.height as f32 / 1080.0;
                                 let background = style.background.as_ref().map(|b| {
                                     TextBox::uniform(b.padding * scale, b.radius * scale, b.color)
@@ -518,8 +526,8 @@ impl<'a> Renderer<'a> {
                                     TextFace {
                                         family: style.font.as_str(),
                                         style: style.font_style.as_str(),
-                                        align: super::caption::align(cue_style),
-                                        decoration: super::caption::decoration(cue_style),
+                                        align: super::caption::align(placement_style),
+                                        decoration: super::caption::decoration(placement_style),
                                         ..Default::default()
                                     },
                                     background,
@@ -920,20 +928,24 @@ impl<'a> Renderer<'a> {
                             &self.settings.caption_languages,
                             hooks,
                         )?;
+                        let selected = super::caption::item_style(self.project.data(), params);
                         let cue_style = params.cues.style_of(cue);
-                        let style = self.settings.caption_style.for_cue(cue_style);
+                        let placement_style = if selected.is_some() { None } else { cue_style };
+                        let style = selected.unwrap_or_else(|| {
+                            super::caption::for_cue(&self.settings.caption_style, cue_style)
+                        });
                         let scale = self.settings.height as f32 / 1080.0;
                         let key = self.text_key(
                             &value,
                             style.size,
                             style.color,
-                            style.cue_placement(cue_style),
+                            super::caption::cue_placement(&style, placement_style),
                             Some(&style),
                             TextFace {
                                 family: &style.font,
                                 style: &style.font_style,
-                                align: super::caption::align(cue_style),
-                                decoration: super::caption::decoration(cue_style),
+                                align: super::caption::align(placement_style),
+                                decoration: super::caption::decoration(placement_style),
                                 ..Default::default()
                             },
                             style.background.as_ref().map(|b| {

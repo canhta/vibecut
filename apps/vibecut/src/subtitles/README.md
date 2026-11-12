@@ -34,10 +34,19 @@ per line with no timings, serialized by captions.
 
 The Style chooser applies Outline or Box to the current caption item, independently of cue
 selection, through `captions.apply_style`. Custom and Mixed describe saved cue values rather
-than a preset identity. Locked items, active work/transactions and focused or changed text drafts
-disable the chooser and direct activation before any draft flush. Changing the item or project
-snapshot invalidates an open chooser. Applying a look is one undo step; export reads those saved
-values through the shared overlay. Named project styles save the complete uniform authoritative cue style and apply explicit copies; no live selected-ID or overrides are offered. Save requires an eligible source, while bank management works without a caption target. The snapshot-bound name editor confirms on Enter/blur and cancels on Escape or stale project, item, time, tab, lock or readiness. Editor-owned Properties/inline/save/import/modal admission is shared with direct actions; caption draft readiness remains here. Names and limits belong to the [project model](../../../../crates/project/src/model/README.md#saved-caption-values).
+than a preset identity. A saved project style is selected live: the item stores the preset ID and
+a sparse field patch, so the chooser shows the preset name (marked edited when a patch exists)
+and an Overrides editor exposes the complete font, size, colour, outline, box, position, safe-area
+and max-line values with Apply, Reset and Cancel. Locked items, active work/transactions and
+focused or changed text drafts disable style actions before any draft flush. Changing the item,
+project snapshot, playhead, tab, bank or selection invalidates an open chooser or override draft.
+Applying a look is one undo step; export reads the same live style through the shared overlay.
+Save captures a selected item's patched full style, or a uniform authoritative cue style, while
+bank management works without a caption target. Deleting a selected style refuses until another
+look is materialized. The snapshot-bound name editor confirms on Enter/blur and cancels on Escape
+or stale project, item, time, tab, lock or readiness. Editor-owned Properties/inline/save/import/
+modal admission is shared with direct actions; caption draft readiness remains here. Names and
+limits belong to the [project model](../../../../crates/project/src/model/README.md#saved-caption-values).
 
 Provider setup/refusal and direct Runtime cancellation are borrowed from the provider result
 or its explicit engine composition. Missing-model setup retains its existing download action;

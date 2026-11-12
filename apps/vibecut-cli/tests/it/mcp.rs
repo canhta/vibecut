@@ -511,7 +511,7 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     let bank = &inspected["value"]["value"]["project"]["caption_presets"];
     assert_eq!(bank[0]["id"], id);
     assert_eq!(bank[0]["name"], "Project style");
-    assert_eq!(bank[0]["style"]["primary_color"], json!([20, 240, 60, 255]));
+    assert_eq!(bank[0]["style"]["color"], json!([20, 240, 60, 255]));
     let renamed = client.call(
         "captions.rename_preset",
         json!({"preset":id,"name":"Renamed"}),
@@ -524,14 +524,31 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     );
     let copied = client.call(
         "captions.apply_style",
-        json!({"item":item,"style":{"kind":"saved","preset":id}}),
+        json!({"item":item,"style":{"kind":"saved","preset":id,"overrides":{"size":66.0,"outline":null}}}),
         Some(&renamed["rev_after"]),
         Some("bank-copy"),
     );
     assert_eq!(
-        copied["value"]["value"]["outcome"]["changed"], false,
+        copied["value"]["value"]["outcome"]["changed"], true,
         "{copied}"
     );
+    let inspected = client.call("inspect", json!({}), None, None);
+    let data: project::ProjectData =
+        serde_json::from_value(inspected["value"]["value"]["project"].clone()).unwrap();
+    let project::ItemParams::Caption(params) = &data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == item)
+        .unwrap()
+        .content
+    else {
+        panic!("caption")
+    };
+    assert_eq!(params.preset.map(|preset| preset.0), Some(id));
+    assert_eq!(params.overrides.size, Some(66.0));
+    assert_eq!(params.overrides.outline, Some(None));
     assert_eq!(
         client.call(
             "captions.delete_preset",
@@ -541,10 +558,21 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
         )["value"]["value"],
         "stale_revision"
     );
+    // A referenced live preset is not deleted; materialize first, then delete.
+    let detached = client.call(
+        "captions.apply_style",
+        json!({"item":item,"style":{"kind":"preset","preset":"outline"}}),
+        Some(&copied["rev_after"]),
+        Some("bank-detach"),
+    );
+    assert_eq!(
+        detached["value"]["value"]["outcome"]["changed"], true,
+        "{detached}"
+    );
     let deleted = client.call(
         "captions.delete_preset",
         json!({"preset":id}),
-        Some(&copied["rev_after"]),
+        Some(&detached["rev_after"]),
         Some("bank-delete"),
     );
     assert_eq!(

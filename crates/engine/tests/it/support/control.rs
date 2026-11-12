@@ -238,6 +238,8 @@ pub(crate) fn seed() -> Session {
                 start: Tick::ZERO,
                 content: ItemParams::Caption(project::CaptionParams {
                     word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
                     cues: captions::CueTrack {
                         styles: Vec::new(),
                         cues: vec![captions::Cue {
@@ -311,7 +313,7 @@ pub(crate) fn with_caption_presets(seed: &Session) -> Session {
     data.caption_presets = vec![project::SavedCaptionPreset {
         id: project::CaptionPresetId(100),
         name: "Project look".into(),
-        style,
+        style: render::style_from_cue(&style),
     }];
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }

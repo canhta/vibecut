@@ -125,6 +125,8 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
                 word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {

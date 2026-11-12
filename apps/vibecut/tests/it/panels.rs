@@ -2073,6 +2073,8 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         Some(AssetId(1)),
         ItemParams::Caption(project::CaptionParams {
             word_highlight: false,
+            preset: None,
+            overrides: captions::CaptionOverrides::default(),
             cues,
         }),
     );

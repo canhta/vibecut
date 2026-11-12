@@ -189,6 +189,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "subtitles.style.overrides",
+        Text::SubStyleOverrides,
+        ActionCategory::Edit,
+        "subtitle editor workflow",
+        UiAction::Subtitles,
+        &[],
+    ),
+    ActionSpec::ui(
         "subtitles.consent.approve",
         Text::ActionSubtitlesConsentApprove,
         ActionCategory::Edit,

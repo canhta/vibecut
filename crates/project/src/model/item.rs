@@ -1,5 +1,5 @@
 //! Item identities, typed item parameters and item timing.
-use super::project::text;
+use super::project::{CaptionPresetId, text};
 use super::settings::Color;
 use super::track::TrackKind;
 use crate::visual::DEFAULT_WEIGHT;
@@ -314,6 +314,12 @@ impl TextStyle {
 pub struct CaptionParams {
     /// Explicit source-word emphasis; new and imported caption items start disabled.
     pub word_highlight: bool,
+    /// Live saved-preset selection; absent keeps imported cue styles and project settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<CaptionPresetId>,
+    /// Sparse patch over the selected preset; requires a selection.
+    #[serde(default, skip_serializing_if = "captions::CaptionOverrides::is_empty")]
+    pub overrides: captions::CaptionOverrides,
     pub cues: CueTrack,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

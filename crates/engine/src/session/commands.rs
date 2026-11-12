@@ -63,32 +63,32 @@ impl CaptionPreset {
         }
     }
 }
-/// One whole-item replacement using a built-in look or a complete saved cue style.
+/// One whole-item style choice: a built-in or imported value materializes into
+/// cue styles, while a saved preset stays a live project reference with a
+/// sparse patch.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CaptionStyleApply {
-    Preset { preset: CaptionPreset },
-    Custom { style: captions::CueStyle },
-    Saved { preset: project::CaptionPresetId },
+    Preset {
+        preset: CaptionPreset,
+    },
+    Custom {
+        style: captions::CueStyle,
+    },
+    Saved {
+        preset: project::CaptionPresetId,
+        #[serde(default, skip_serializing_if = "captions::CaptionOverrides::is_empty")]
+        overrides: captions::CaptionOverrides,
+    },
 }
 impl CaptionStyleApply {
-    pub(super) fn resolve(
-        self,
-        data: &project::ProjectData,
-    ) -> crate::session::Result<captions::CueStyle> {
-        Ok(match self {
-            Self::Preset { preset } => preset.style(),
-            Self::Custom { style } => style,
-            Self::Saved { preset } => data
-                .caption_presets
-                .iter()
-                .find(|value| value.id == preset)
-                .ok_or(crate::session::EditError::Invalid(
-                    "caption preset not found",
-                ))?
-                .style
-                .clone(),
-        })
+    /// The materialized cue value for a built-in or imported choice.
+    pub(super) fn materialized(&self) -> Option<captions::CueStyle> {
+        match self {
+            Self::Preset { preset } => Some(preset.style()),
+            Self::Custom { style } => Some(style.clone()),
+            Self::Saved { .. } => None,
+        }
     }
 }
 

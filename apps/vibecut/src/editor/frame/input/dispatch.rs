@@ -324,6 +324,8 @@ impl Editor {
                     if matches!(id, "subtitles.style.save" | "subtitles.style.manage") {
                         self.caption_bank_ready()
                             && panel.bank_available(&self.session, id == "subtitles.style.save")
+                    } else if id == "subtitles.style.overrides" {
+                        self.caption_bank_ready() && panel.overrides_available(&self.session)
                     } else {
                         (id != "subtitles.style.word_highlight" || self.caption_bank_ready())
                             && panel.style_available(&self.session)
