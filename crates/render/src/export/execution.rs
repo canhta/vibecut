@@ -664,9 +664,9 @@ impl SourceProvider for OmittedSources<'_> {
     }
 }
 
-/// Sound-library attribution and licence records carried into the container
-/// metadata. Duplicates are collapsed by exact provider identity and URL; the
-/// combined comment is bounded by the muxer's own admission.
+/// Sound-library and music attribution and licence records carried into the
+/// container metadata. Duplicates are collapsed by exact provider identity and
+/// URL; the combined comment is bounded by the muxer's own admission.
 pub(super) fn licence_tags(project: &Project) -> media::Result<Vec<(String, String)>> {
     let mut records = BTreeSet::new();
     for item in project
@@ -675,15 +675,21 @@ pub(super) fn licence_tags(project: &Project) -> media::Result<Vec<(String, Stri
         .iter()
         .flat_map(|scene| scene.timeline.iter().flat_map(|track| track.items.iter()))
     {
-        if let ItemParams::Audio(params) = &item.content
-            && let AudioSource::Library { sound } = &params.source
-        {
-            records.insert(format!(
-                "{} — {} — {}",
-                sound.attribution.as_str(),
-                sound.licence.as_str(),
-                sound.source_url
-            ));
+        if let ItemParams::Audio(params) = &item.content {
+            match &params.source {
+                AudioSource::Library { sound } => {
+                    records.insert(format!(
+                        "{} - {} - {}",
+                        sound.attribution.as_str(),
+                        sound.licence.as_str(),
+                        sound.source_url
+                    ));
+                }
+                AudioSource::Music { music } => {
+                    records.insert(music.attribution_record());
+                }
+                AudioSource::Upload => {}
+            }
         }
     }
     if records.is_empty() {

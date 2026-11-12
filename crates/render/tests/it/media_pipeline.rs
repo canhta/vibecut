@@ -1984,6 +1984,85 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
 }
 
 #[test]
+fn music_library_attribution_and_licence_url_are_written_into_export_metadata() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("music-metadata-source.mp4");
+    av_fixture(&input);
+    let base = video_project(&input);
+    let asset = base.data().assets[0].clone();
+    let duration = asset.probe().duration.unwrap();
+    let mut data = base.into_data();
+    let music = project::LibraryMusic {
+        id: "track-1".into(),
+        title: "Night Walk".into(),
+        author: "Example Artist".into(),
+        licence: "CC BY 4.0".into(),
+        licence_url: "https://creativecommons.org/licenses/by/4.0/".into(),
+        attribution: "\"Night Walk\" by Example Artist is licensed under CC BY 4.0.".into(),
+        source_url: "https://commons.example/wiki/File:Night_Walk.ogg".into(),
+        audio_url: "https://upload.example/Night_Walk.ogg".into(),
+        duration_ms: 31_000,
+    };
+    let item = |id: u64, start: Tick| project::Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations: Default::default(),
+        id: project::ItemId(id),
+        source_asset: Some(asset.id()),
+        source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
+        start,
+        content: project::ItemParams::Audio(project::AudioParams {
+            fades: Default::default(),
+            volume: 0.0,
+            muted: false,
+            source: project::AudioSource::Music {
+                music: music.clone(),
+            },
+        }),
+    };
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(2),
+        name: "Music".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![item(1, Tick::ZERO), item(2, duration)],
+    });
+    let p = project::Project::new(data).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("music-metadata.mp4");
+    export(
+        &p,
+        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    let info = probe(&output);
+    let comment = info["format"]["tags"]["comment"]
+        .as_str()
+        .expect("licence comment tag");
+    assert!(comment.contains("\"Night Walk\" by Example Artist"));
+    assert!(comment.contains("CC BY 4.0"));
+    assert!(comment.contains("https://creativecommons.org/licenses/by/4.0/"));
+    assert!(comment.contains("https://commons.example/wiki/File:Night_Walk.ogg"));
+    assert_eq!(
+        comment.matches("Night Walk").count(),
+        1,
+        "duplicate music items collapse into one record: {comment}"
+    );
+}
+
+#[test]
 fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
     if !tools() {
         return;
