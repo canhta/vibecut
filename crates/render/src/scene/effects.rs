@@ -435,6 +435,144 @@ pub fn gain_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let mapped = zip3(c, gain, |c, g| (c * g).clamp(0.0, 1.0));
     premultiply(mapped, alpha)
 }
+/// Fade mixes linear light toward this mid grey; negative values mix away.
+pub const FADE_PIVOT: f32 = 0.18;
+/// One shared basic stage after the primary grade controls:
+/// `[temperature, highlight, shadow, shine, fade]`, each normalized to -1..=1.
+/// Temperature is a red/blue gain pair, highlight and shadow add to bright and
+/// dark linear values, shine scales highlights and fade mixes toward mid grey.
+pub fn tone_passes(
+    temperature: f64,
+    highlight: f64,
+    shadow: f64,
+    shine: f64,
+    fade: f64,
+) -> Result<Vec<EffectPass>> {
+    let range = project::GRADE_MIN..=project::GRADE_MAX;
+    if [temperature, highlight, shadow, shine, fade]
+        .iter()
+        .any(|v| !v.is_finite() || !range.contains(v))
+    {
+        return Err(Error::Invalid("grade tone control"));
+    }
+    if [temperature, highlight, shadow, shine, fade]
+        .iter()
+        .all(|v| *v == 0.0)
+    {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "tone",
+        [temperature, highlight, shadow, shine, fade]
+            .map(|v| Uniform::Float((v / 50.0) as f32))
+            .to_vec(),
+    )])
+}
+/// One pixel-local tone stage; values are normalized -1..=1.
+pub fn tone_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let temperature = uniform(values, 0);
+    let highlight = uniform(values, 1);
+    let shadow = uniform(values, 2);
+    let shine = uniform(values, 3);
+    let fade = uniform(values, 4);
+    let (c, alpha) = straight(pixel);
+    let mut c = [
+        (c[0] * (temperature / 4.0).exp2()).max(0.0),
+        c[1],
+        (c[2] * (-temperature / 4.0).exp2()).max(0.0),
+    ];
+    let y = luma(c).clamp(0.0, 1.0);
+    let dark = (1.0 - y) * (1.0 - y);
+    let bright = y * y;
+    for v in &mut c {
+        *v += highlight * 0.25 * bright;
+        *v += shadow * 0.25 * dark;
+        *v *= 1.0 + shine * 0.25 * bright;
+        let mix = fade * 0.5;
+        *v = *v * (1.0 - mix) + FADE_PIVOT * mix;
+    }
+    premultiply(c, alpha)
+}
+/// The flat HSL band layout: eight bands of `[hue, saturation, lightness]`,
+/// each normalized to -1..=1.
+pub const HSL_BAND_UNIFORMS: usize = project::HSL_BANDS.len() * project::HSL_CONTROLS.len();
+/// HSL band centres in turns, in the catalogue's band order.
+const HSL_CENTERS: [f32; 8] = [
+    0.0,
+    30.0 / 360.0,
+    60.0 / 360.0,
+    120.0 / 360.0,
+    180.0 / 360.0,
+    240.0 / 360.0,
+    300.0 / 360.0,
+    330.0 / 360.0,
+];
+/// One shared pixel stage applying per-band hue, saturation and lightness.
+pub fn hsl_bands_passes(values: &[f64; HSL_BAND_UNIFORMS]) -> Result<Vec<EffectPass>> {
+    let range = project::GRADE_MIN..=project::GRADE_MAX;
+    if values.iter().any(|v| !v.is_finite() || !range.contains(v)) {
+        return Err(Error::Invalid("HSL band control"));
+    }
+    if values.iter().all(|v| *v == 0.0) {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "hsl_bands",
+        values
+            .iter()
+            .map(|v| Uniform::Float((v / 50.0) as f32))
+            .collect(),
+    )])
+}
+/// One pixel-local HSL band stage. Encoded sRGB bands overlap with a
+/// triangular 45-degree kernel and normalize, so no hue falls between bands.
+pub fn hsl_bands_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    if values.len() != HSL_BAND_UNIFORMS {
+        return pixel;
+    }
+    let (c, alpha) = straight(pixel);
+    let encoded = encoded_color(c);
+    let [h, s, l] = hsl(encoded);
+    let mut nearest = (0usize, f32::MAX);
+    let mut second = (0usize, f32::MAX);
+    for (index, center) in HSL_CENTERS.iter().copied().enumerate() {
+        let signed = (h - center + 0.5).rem_euclid(1.0) - 0.5;
+        let distance = signed.abs();
+        if distance < nearest.1 {
+            second = nearest;
+            nearest = (index, distance);
+        } else if distance < second.1 {
+            second = (index, distance);
+        }
+    }
+    let mut weights = [0.0f32; 8];
+    let total = nearest.1 + second.1;
+    if total > 0.0 {
+        if let Some(weight) = weights.get_mut(nearest.0) {
+            *weight = second.1 / total;
+        }
+        if let Some(weight) = weights.get_mut(second.0) {
+            *weight = nearest.1 / total;
+        }
+    } else if let Some(weight) = weights.get_mut(nearest.0) {
+        *weight = 1.0;
+    }
+    let mut hue = 0.0;
+    let mut saturation = 0.0;
+    let mut lightness = 0.0;
+    for (index, weight) in weights.iter().enumerate() {
+        let base = index * project::HSL_CONTROLS.len();
+        hue += weight * uniform(values, base);
+        saturation += weight * uniform(values, base + 1);
+        lightness += weight * uniform(values, base + 2);
+    }
+    let mapped = hsl_color(
+        (h + hue / 12.0).rem_euclid(1.0),
+        (s * (1.0 + saturation * 0.5)).clamp(0.0, 1.0),
+        (l + lightness * 0.25).clamp(0.0, 1.0),
+    );
+    premultiply(decoded_color(mapped), alpha)
+}
 /// The flat curve layout: point count, then 32 ordered `x, y` pairs zero-padded.
 const CURVE_UNIFORMS: usize = 1 + 2 * project::CURVE_MAX_POINTS;
 /// One monotone piecewise-linear lookup; malformed data is the identity.
@@ -620,6 +758,14 @@ fn gamma_uniforms(values: &[f32]) -> bool {
 fn gain_uniforms(values: &[f32]) -> bool {
     three_channel(values, 0.0..=4.0)
 }
+/// The tone stage carries five normalized controls in -1..=1.
+fn tone_uniforms(values: &[f32]) -> bool {
+    values.len() == 5 && values.iter().all(|v| (-1.0..=1.0).contains(v))
+}
+/// The HSL stage carries eight bands of three normalized controls.
+fn hsl_band_uniforms(values: &[f32]) -> bool {
+    values.len() == HSL_BAND_UNIFORMS && values.iter().all(|v| (-1.0..=1.0).contains(v))
+}
 /// The flat curve shape: integer count 2..=32, ordered grid x, monotone y and
 /// zero padding. Validation never sorts or repairs a proposal.
 fn curve_uniforms_valid(values: &[f32]) -> bool {
@@ -671,7 +817,7 @@ struct PixelOp {
     valid: fn(&[f32]) -> bool,
     apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-static PIXEL_OPS: [PixelOp; 24] = [
+static PIXEL_OPS: [PixelOp; 26] = [
     PixelOp {
         entry_point: "grade",
         len: 4,
@@ -695,6 +841,18 @@ static PIXEL_OPS: [PixelOp; 24] = [
         len: 3,
         valid: gain_uniforms,
         apply: gain_pixel,
+    },
+    PixelOp {
+        entry_point: "tone",
+        len: 5,
+        valid: tone_uniforms,
+        apply: tone_pixel,
+    },
+    PixelOp {
+        entry_point: "hsl_bands",
+        len: HSL_BAND_UNIFORMS,
+        valid: hsl_band_uniforms,
+        apply: hsl_bands_pixel,
     },
     PixelOp {
         entry_point: "curve_red",
@@ -1150,7 +1308,7 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 28] = [
+static SAMPLE_OPS: [SampleOp; 30] = [
     SampleOp {
         entry_point: "pixelate",
         len: 3,
@@ -1173,6 +1331,18 @@ static SAMPLE_OPS: [SampleOp; 28] = [
                     .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
         },
         apply: detail_boost_sample,
+    },
+    SampleOp {
+        entry_point: "vignette",
+        len: 1,
+        valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
+        apply: vignette_sample,
+    },
+    SampleOp {
+        entry_point: "grain",
+        len: 1,
+        valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
+        apply: grain_sample,
     },
     SampleOp {
         entry_point: "mirror",
@@ -1485,6 +1655,39 @@ fn detail_boost_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]
         *channel += if keep { gain * difference } else { 0.0 };
     }
     out
+}
+/// A deterministic per-pixel noise value in 0..=1 from the output coordinate.
+fn grain_noise(x: u32, y: u32) -> f32 {
+    let mut hash = x
+        .wrapping_mul(374_761_393)
+        .wrapping_add(y.wrapping_mul(668_265_263));
+    hash = (hash ^ (hash >> 13)).wrapping_mul(1_274_126_177);
+    hash ^= hash >> 16;
+    (hash & 0xFFFF) as f32 / 65_535.0
+}
+/// Radial darkening or brightening in linear light; `amount` is -1..=1 and
+/// the frame centre never moves.
+fn vignette_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let amount = uniform(values, 0).clamp(-1.0, 1.0);
+    let pixel = inputs.texel_current(x, y);
+    let (width, height) = (inputs.current.width(), inputs.current.height());
+    let dx = (x as f32 + 0.5) / width.max(1) as f32 * 2.0 - 1.0;
+    let dy = (y as f32 + 0.5) / height.max(1) as f32 * 2.0 - 1.0;
+    let radius = ((dx * dx + dy * dy) * 0.5).clamp(0.0, 1.0);
+    let factor = (1.0 - amount * radius * 0.8).max(0.0);
+    [
+        pixel[0] * factor,
+        pixel[1] * factor,
+        pixel[2] * factor,
+        pixel[3],
+    ]
+}
+/// Luma grain mixed into straight linear colour; `amount` is -1..=1.
+fn grain_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let amount = uniform(values, 0).clamp(-1.0, 1.0);
+    let (c, alpha) = straight(inputs.texel_current(x, y));
+    let delta = (grain_noise(x, y) - 0.5) * amount * 0.2;
+    premultiply(c.map(|v| v + delta), alpha)
 }
 /// Clamp coordinates while still floating point, before the sampler's integer lookup.
 fn streak_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
@@ -2132,15 +2335,49 @@ fn sharpen(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectP
     });
     Ok(passes)
 }
-/// Basic grade, then lift, gamma, gain, RGB curves and the luma curve. A LUT
-/// follows the whole instance in [`evaluate_effect`].
-fn color_grade(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
+/// Basic grade, the shared tone set, sharpen or soften, lift, gamma, gain, RGB
+/// curves, the luma curve, HSL bands, vignette and grain. A LUT follows the
+/// whole instance in [`evaluate_effect`].
+fn color_grade(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
     let mut passes = grade_passes(
         frame.scalar("brightness")?,
         frame.scalar("contrast")?,
         frame.scalar("saturation")?,
         frame.scalar("hue")?,
     )?;
+    passes.extend(tone_passes(
+        frame.scalar("temperature")?,
+        frame.scalar("highlight")?,
+        frame.scalar("shadow")?,
+        frame.scalar("shine")?,
+        frame.scalar("fade")?,
+    )?);
+    let sharpness = frame.scalar("sharpness")?;
+    if sharpness != 0.0 {
+        if geometry.working_size() != [frame.width, frame.height] {
+            return Err(Error::Invalid("effect spatial geometry"));
+        }
+        let [gx, gy] = geometry.clip_pixel_scale();
+        if sharpness > 0.0 {
+            let sigma = gx.min(gy).max(0.6) as f32;
+            passes.extend(sigma_passes(sigma, frame.width, frame.height)?);
+            passes.push(EffectPass::Sample {
+                entry_point: "detail_boost",
+                uniforms: vec![
+                    // 50 is one full unit of detail gain.
+                    Uniform::Float((sharpness / 50.0) as f32),
+                    Uniform::Float(0.0),
+                ],
+            });
+        } else {
+            // A negative control softens up to five output pixels.
+            passes.extend(sigma_passes(
+                (-sharpness / 10.0) as f32,
+                frame.width,
+                frame.height,
+            )?);
+        }
+    }
     passes.extend(lift_passes(
         frame.scalar("lift_r")?,
         frame.scalar("lift_g")?,
@@ -2166,6 +2403,33 @@ fn color_grade(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass
         if !curve.is_identity() {
             passes.push(pixel(entry, curve_uniforms(&curve)));
         }
+    }
+    let mut bands = [0.0; HSL_BAND_UNIFORMS];
+    for (index, band) in project::HSL_BANDS.iter().enumerate() {
+        for (slot, control) in project::HSL_CONTROLS.iter().enumerate() {
+            let key = format!("hsl_{band}_{control}");
+            bands[index * project::HSL_CONTROLS.len() + slot] = frame.scalar(&key)?;
+        }
+    }
+    passes.extend(hsl_bands_passes(&bands)?);
+    let vignette = frame.scalar("vignette")?;
+    let grain = frame.scalar("grain")?;
+    if vignette != 0.0 || grain != 0.0 {
+        if geometry.working_size() != [frame.width, frame.height] {
+            return Err(Error::Invalid("effect spatial geometry"));
+        }
+    }
+    if vignette != 0.0 {
+        passes.push(EffectPass::Sample {
+            entry_point: "vignette",
+            uniforms: vec![Uniform::Float((vignette / 50.0) as f32)],
+        });
+    }
+    if grain != 0.0 {
+        passes.push(EffectPass::Sample {
+            entry_point: "grain",
+            uniforms: vec![Uniform::Float((grain / 50.0) as f32)],
+        });
     }
     Ok(passes)
 }

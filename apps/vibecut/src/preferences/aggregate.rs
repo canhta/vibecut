@@ -1,6 +1,6 @@
 //! The versioned preference document composed from its feature-owned sections.
 
-use super::{FontPickerPreferences, WindowGeometry};
+use super::{AdjustmentPreset, FontPickerPreferences, WindowGeometry};
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 8;
+pub const PREFERENCES_VERSION: u32 = 9;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -57,6 +57,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "recent_colors",
     "timeline_lanes",
     "font_picker",
+    "adjustment_presets",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -146,6 +147,8 @@ pub struct Preferences {
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
     /// Font picker tab and favourite families; presentation only.
     pub font_picker: FontPickerPreferences,
+    /// Named colour-adjustment presets stored with the app.
+    pub adjustment_presets: Vec<AdjustmentPreset>,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -175,6 +178,7 @@ impl Default for Preferences {
             recent_colors: Vec::new(),
             timeline_lanes: BTreeMap::new(),
             font_picker: FontPickerPreferences::default(),
+            adjustment_presets: Vec::new(),
         }
     }
 }
@@ -228,6 +232,7 @@ impl Preferences {
             return Err(Error::Invalid("timeline lanes"));
         }
         self.font_picker.validate()?;
+        super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -320,6 +325,7 @@ impl Preferences {
             "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
+            "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -357,6 +363,7 @@ impl Preferences {
             "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
+            "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

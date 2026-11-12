@@ -4,7 +4,7 @@
 
 `render::lut` owns strict bounded 3D cube parsing, canonical serialization, resource resolution and trilinear evaluation. Only UTF-8 `.cube` 3D tables with 2..65 samples per axis are admitted; 1D/combined shapers and other directives refuse. Original input is capped at 24 MiB, canonical input at 16 MiB, headers at 16 KiB and lines at 1 KiB. Quoted TITLE text admits at most 256 UTF-8 bytes after NFC; its normalization scratch is reserved before allocation. Rows are finite RGB in 0..1 with exact N³ count, red fastest; domains default to 0..1 and require each finite 0≤min<max≤1 with span at least 1e-6. No camera-log/HDR or gamut inference occurs.
 
-The grade stages run first, in the order basic, lift, gamma, gain, RGB curves and luma curve, followed by the LUT. LUT evaluation unpremultiplies once, encodes sRGB, clamps to the domain, interpolates eight corners with f64 weights, decodes to linear, blends wet/dry in linear light and re-premultiplies with unchanged alpha. None, disabled, zero strength and detected default-domain identity preserve exact working pixels; None/disabled/zero strength need no resource IO. Alpha zero produces zero RGB. Imported passes are explicit CPU `Lut3d` passes; the existing run splitter handles supported device neighbours and retries only Unsupported.
+The grade stages run first, in the order basic, tone, sharpness, lift, gamma, gain, RGB curves, luma curve, HSL bands, vignette and grain, followed by the LUT. LUT evaluation unpremultiplies once, encodes sRGB, clamps to the domain, interpolates eight corners with f64 weights, decodes to linear, blends wet/dry in linear light and re-premultiplies with unchanged alpha. None, disabled, zero strength and detected default-domain identity preserve exact working pixels; None/disabled/zero strength need no resource IO. Alpha zero produces zero RGB. Imported passes are explicit CPU `Lut3d` passes; the existing run splitter handles supported device neighbours and retries only Unsupported.
 
 Active tables resolve before decoder/device work into one closed immutable per-frame snapshot. The hash covers the same bounded bytes parsed. Input, actual sample capacity, Arc overhead and the resource map are reserved through the exact frame hooks; pass readers retain the table lease until their last drop. No uncharged global or foreign-policy table is reused. This first implementation retains no idle tables between frames; filesystem-warm frames still read/parse and are measured separately, with no realtime claim. `InvalidLut` carries bounded line/reason, `LutUnavailable` carries only identity/reason; IO keeps its typed source and never substitutes an ungraded success.
 
@@ -30,11 +30,27 @@ and uniforms cast encoded RGB to f32 without byte quantization. E1 colour operat
 use RGB only and preserve image coverage under alpha keys; chroma-key colour stays static.
 
 The existing per-instance plan reservation covers these bounded resolved values as
-well as pass storage: the catalogue's largest kind has19 parameters and a grade
-instance emits at most eight pixel passes (basic, lift, gamma, gain, three RGB curves,
-luma) plus its optional LUT; Image's area bound limits admitted Blur to203
-iterations/406 passes against the reserved512 pass/kernel slots. No additional image,
-unreserved image copy or kernel is introduced by colour interpolation.
+well as pass storage: the catalogue's largest kind has 19 parameters and a grade
+instance emits the primary grade, tone, sharpen or soften, lift, gamma, gain, three RGB
+curves, luma, HSL bands, vignette and grain passes plus its optional LUT; Image's area
+bound limits admitted Blur to203 iterations/406 passes against the reserved512
+pass/kernel slots. No additional image, unreserved image copy or kernel is introduced
+by colour interpolation.
+
+The colour effect appends the Basic set and HSL bands in this order: primary grade
+(brightness, contrast, saturation, hue), tone (temperature, highlight, shadow, shine,
+fade), sharpness (unsharp mask above zero, gaussian soften below), lift, tone gamma,
+gain, RGB curves, luma curve, HSL bands, vignette, grain, LUT. Every new control is
+identity at 0 and emits no pass. Temperature is a red/blue linear gain pair; highlight
+and shadow add to `y²` and `(1-y)²`; shine scales `y²`; fade mixes toward the 0.18
+linear pivot. HSL converts encoded sRGB to HSL, blends the two nearest band centres
+(centres at 0, 30, 60, 120, 180, 240, 300 and 330 degrees), then applies the weighted
+hue (±30 degrees), saturation (0.5–1.5×) and lightness (±0.25). Vignette scales linear
+RGB by `1 - amount·r²·0.8` where `r²` is the normalized squared distance from the frame
+centre; grain adds deterministic coordinate noise. `tone`, `hsl_bands`, `vignette` and
+`grain` have CPU references and no native pipeline yet, so the existing run splitter
+leaves those passes to the CPU and keeps neighbouring native passes on the device.
+
 
 The pixel-local colour references unpremultiply once and re-premultiply at the exit.
 Monochrome uses linear Rec.709 luma; levels, gamma, posterisation, channel mixing

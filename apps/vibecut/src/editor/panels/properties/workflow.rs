@@ -138,6 +138,8 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 effect,
                 values,
             } => effects::set_effect_values(desk, item, &effect, &values),
+            Action::ApplyGradeToAll { item } => effects::apply_grade_to_all(desk, item),
+            Action::SaveGradePreset { item } => effects::save_grade_preset(desk, item),
             Action::ToggleEffect {
                 item,
                 effect,

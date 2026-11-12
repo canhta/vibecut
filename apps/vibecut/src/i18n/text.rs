@@ -1340,6 +1340,25 @@ catalog! {
     SubBankRename { key: "sub_bank_rename", en: "Rename", vi: "Đổi tên" },
     SubBankSave { key: "sub_bank_save", en: "Save current style", vi: "Lưu kiểu hiện tại" },
     SubBankSaved { key: "sub_bank_saved", en: "Saved in project · applies a copy", vi: "Đã lưu trong dự án · áp dụng bản sao" },
+    // Adjust basic set, HSL bands, tabs and footer.
+    AdjustmentPresetsEmpty { key: "adjustment_presets_empty", en: "No presets", vi: "Chưa có mẫu" },
+    ApplyToAll { key: "apply_to_all", en: "Apply to all", vi: "Áp dụng cho tất cả" },
+    ColorWheel { key: "color_wheel", en: "Color wheel", vi: "Bánh xe màu" },
+    Curves { key: "curves", en: "Curves", vi: "Đường cong" },
+    EffectCyan { key: "effect_cyan", en: "Cyan", vi: "Xanh lơ" },
+    EffectGrain { key: "effect_grain", en: "Grain", vi: "Nhiễu hạt" },
+    EffectHighlight { key: "effect_highlight", en: "Highlight", vi: "Vùng sáng" },
+    EffectMagenta { key: "effect_magenta", en: "Magenta", vi: "Hồng cánh sen" },
+    EffectOrange { key: "effect_orange", en: "Orange", vi: "Cam" },
+    EffectPurple { key: "effect_purple", en: "Purple", vi: "Tím" },
+    EffectSharpness { key: "effect_sharpness", en: "Sharpness", vi: "Độ nét" },
+    EffectShine { key: "effect_shine", en: "Shine", vi: "Độ bóng" },
+    EffectTemperature { key: "effect_temperature", en: "Temperature", vi: "Nhiệt độ màu" },
+    EffectVignette { key: "effect_vignette", en: "Vignette", vi: "Viền tối" },
+    EffectYellow { key: "effect_yellow", en: "Yellow", vi: "Vàng" },
+    Hsl { key: "hsl", en: "HSL", vi: "HSL" },
+    Lightness { key: "lightness", en: "Lightness", vi: "Độ sáng" },
+    SaveAsPreset { key: "save_as_preset", en: "Save as preset", vi: "Lưu thành mẫu" },
 }
 
 /// The message for `key` in `locale`.

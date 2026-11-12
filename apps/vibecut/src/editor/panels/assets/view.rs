@@ -44,6 +44,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         AssetsTab::Effects,
                         AssetsTab::Transitions,
                         AssetsTab::Captions,
+                        AssetsTab::Adjustment,
                     ] {
                         let id = format!("assets.tab.{}", tab.id());
                         let label = view.tr(if tab == AssetsTab::Sounds {
@@ -53,7 +54,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         });
                         let response = if compact {
                             ui.allocate_ui_with_layout(
-                                Vec2::new(rect.width() / 7.0, 42.0),
+                                Vec2::new(rect.width() / 8.0, 42.0),
                                 egui::Layout::centered_and_justified(egui::Direction::TopDown),
                                 |ui| {
                                     crate::kit::icon_button(
@@ -207,6 +208,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Stickers => view.shapes(ui),
+            AssetsTab::Adjustment => view.adjustment(ui),
             AssetsTab::Text => {
                 if nav.width() == 0.0
                     && view.icon(ui, "text.insert", Icon::TextT, Text::AssetsAddText, true)
@@ -273,6 +275,43 @@ impl View<'_> {
                 });
             }
         });
+    }
+
+    fn adjustment(&mut self, ui: &mut egui::Ui) {
+        let presets = self.cx.preferences.adjustment_presets.clone();
+        if presets.is_empty() {
+            self.empty(ui, Icon::SlidersHorizontal, Text::AdjustmentPresetsEmpty);
+            return;
+        }
+        for (index, preset) in presets.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(&preset.name)
+                        .font(theme::label_font())
+                        .size(theme::type_size::BODY)
+                        .color(theme::text(self.cx.preferences.dark)),
+                );
+                if self.icon(
+                    ui,
+                    &format!("assets.adjustment.{index}.apply"),
+                    Icon::Plus,
+                    Text::CropApply,
+                    true,
+                ) {
+                    self.actions.push(Action::ApplyAdjustment(index));
+                }
+                if self.icon(
+                    ui,
+                    &format!("assets.adjustment.{index}.delete"),
+                    Icon::Trash,
+                    Text::Delete,
+                    true,
+                ) {
+                    self.actions.push(Action::DeleteAdjustment(index));
+                }
+            });
+            ui.add_space(theme::space::SM);
+        }
     }
 
     fn empty_media(&mut self, ui: &mut egui::Ui) {

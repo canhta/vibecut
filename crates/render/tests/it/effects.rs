@@ -400,6 +400,77 @@ fn color_grade_controls_on_the_chart() {
     let (source, neutral, entries) = graded_with(&[]);
     assert_eq!(source, neutral);
     assert!(entries.is_empty());
+    // Temperature is a red/blue linear gain pair around neutral.
+    let (_, warm, entries) = graded_with(&[("temperature", EffectValue::Scalar(50.0))]);
+    assert_eq!(entries, ["tone"]);
+    assert!(near(warm[3][0], 0.5 * 2.0f32.powf(0.25)));
+    assert!(near(warm[3][2], 0.5 * 2.0f32.powf(-0.25)));
+    // Highlight and shine act on bright linear values; shadow acts on dark ones.
+    let (_, lifted_high, _) = graded_with(&[("highlight", EffectValue::Scalar(50.0))]);
+    assert!(near(lifted_high[3][0], 0.5625));
+    let (_, lifted_low, _) = graded_with(&[("shadow", EffectValue::Scalar(50.0))]);
+    assert!(near(lifted_low[0][0], 0.25));
+    let (_, shiny, _) = graded_with(&[("shine", EffectValue::Scalar(50.0))]);
+    assert!(near(shiny[3][0], 0.53125));
+    // Fade mixes linear light toward the mid-grey pivot.
+    let (_, faded, _) = graded_with(&[("fade", EffectValue::Scalar(50.0))]);
+    assert!(near(faded[3][0], 0.34));
+    // The effect entries append in the documented order after the primary grade.
+    let (_, _, ordered) = graded_with(&[
+        ("brightness", EffectValue::Scalar(10.0)),
+        ("temperature", EffectValue::Scalar(10.0)),
+        ("lift_r", EffectValue::Scalar(10.0)),
+        ("curve_red", curve(&[[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]])),
+        ("hsl_red_hue", EffectValue::Scalar(10.0)),
+        ("vignette", EffectValue::Scalar(10.0)),
+        ("grain", EffectValue::Scalar(10.0)),
+    ]);
+    assert_eq!(
+        ordered,
+        [
+            "grade",
+            "tone",
+            "lift",
+            "curve_red",
+            "hsl_bands",
+            "vignette",
+            "grain"
+        ]
+    );
+    // Sharpness is an unsharp mask; a negative value softens with a gaussian.
+    let smooth = [
+        [0.0, 0.0, 0.0, 1.0],
+        [0.1, 0.1, 0.1, 1.0],
+        [0.2, 0.2, 0.2, 1.0],
+        [0.4, 0.4, 0.4, 1.0],
+        [0.8, 0.8, 0.8, 1.0],
+    ];
+    let (sharp, entries) = graded_on(&[("sharpness", EffectValue::Scalar(50.0))], &smooth);
+    assert_eq!(entries, ["gaussian", "gaussian", "detail_boost"]);
+    assert_ne!(sharp, smooth);
+    let (soft, entries) = graded_on(&[("sharpness", EffectValue::Scalar(-50.0))], &smooth);
+    assert_eq!(entries, ["gaussian", "gaussian"]);
+    assert_ne!(soft, smooth);
+    // Vignette leaves the frame centre alone and darkens the corner pixel.
+    let (_, vignetted, entries) = graded_with(&[("vignette", EffectValue::Scalar(50.0))]);
+    assert_eq!(entries, ["vignette"]);
+    assert!(near(vignetted[6][0], source[6][0]));
+    assert!(vignetted[12][0] < source[12][0]);
+    // Grain is deterministic coordinate noise and changes the picture.
+    let (_, grained, entries) = graded_with(&[("grain", EffectValue::Scalar(50.0))]);
+    assert_eq!(entries, ["grain"]);
+    assert!(grained.iter().zip(&source).any(|(a, b)| a != b));
+    let (_, again, _) = graded_with(&[("grain", EffectValue::Scalar(50.0))]);
+    assert_eq!(grained, again);
+    // HSL bands address one hue: the red patch takes the red band's change and
+    // the blue band leaves it untouched.
+    let (_, shifted, entries) = graded_with(&[("hsl_red_hue", EffectValue::Scalar(50.0))]);
+    assert_eq!(entries, ["hsl_bands"]);
+    assert!(near(shifted[5][1], 0.214_04));
+    let (_, desaturated, _) = graded_with(&[("hsl_red_saturation", EffectValue::Scalar(-50.0))]);
+    assert!(desaturated[5][0] < source[5][0] && desaturated[5][1] > source[5][1]);
+    let (_, isolated, _) = graded_with(&[("hsl_blue_hue", EffectValue::Scalar(50.0))]);
+    assert_eq!(isolated[5], source[5]);
     // Lift is x + L*(1-x) on straight colour, then clamped and premultiplied.
     let (_, lifted, entries) = graded_with(&[
         ("lift_r", EffectValue::Scalar(50.0)),

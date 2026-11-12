@@ -139,4 +139,7 @@ pub(in crate::editor) enum Action {
     MusicCredits,
     MusicKeyApply,
     MusicKeyRemove,
+    /// Apply or delete one app-owned adjustment preset.
+    ApplyAdjustment(usize),
+    DeleteAdjustment(usize),
 }

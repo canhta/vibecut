@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 pub use super::effects_catalog::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX, CHROMA_KEY_MIN,
-    GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN, GRADE_MAX, GRADE_MIN, LIFT_MAX, LIFT_MIN,
-    effect_definitions,
+    GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN, GRADE_BASIC, GRADE_MAX, GRADE_MIN, HSL_BANDS,
+    HSL_CONTROLS, LIFT_MAX, LIFT_MIN, effect_definitions,
 };
 
 /// Where an effect is offered. The effects library lists the library shelves;
@@ -95,6 +95,16 @@ impl EffectValue {
         match self {
             Self::Curve(v) => Some(v),
             _ => None,
+        }
+    }
+    /// The update payload carrying this value through `effects.update_param`;
+    /// choice, bool, colour and point values have no scalar command shape.
+    pub const fn update(&self) -> Option<EffectParamUpdate> {
+        match self {
+            Self::Scalar(value) => Some(EffectParamUpdate::Scalar(*value)),
+            Self::Curve(curve) => Some(EffectParamUpdate::Curve(*curve)),
+            Self::Lut(lut) => Some(EffectParamUpdate::LutRef(LutReference { lut: *lut })),
+            Self::Choice(_) | Self::Bool(_) | Self::Color(_) | Self::Point(_) => None,
         }
     }
 }

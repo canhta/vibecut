@@ -18,6 +18,10 @@ startup. Pending, failed and ready states stay visible; a failed tile offers Ret
 tile drops onto a video, image, sticker or graphic clip, or `+` adds it to the
 selected clip. The tab's preview jobs and drag state live in [`effects`](effects/README.md).
 
+## Adjustment presets
+
+The Adjustment tab lists the app-owned `adjustment_presets` bank from preferences as named rows with an apply and a delete icon. Apply targets the selected video or image item and writes the saved `color_grade` parameter map through `effects.update_param`, or adds one instance when the clip has none, inside one `batch` command (one undo step); a locked track, non-visual selection or missing selection changes nothing. Delete rewrites the bounded preference bank and never touches project data. Empty is an icon and `No presets`.
+
 ## Transition catalog
 
 The Transitions tab reads `project::TRANSITION_DEFINITIONS`; names and shelf navigation use the app catalog, and search filters the current shelf. Cards follow the measured 88 px grid, 15 px gaps, 116 px row pitch. Visible hover or keyboard focus plays a 48 px preview at 12 frames/s through render's procedural thumbnail evaluator; idle tiles retain their 176 px midpoint raster. Only an active, visible tile requests timed repaints; window focus loss restores its idle frame. Failed previews offer Retry, theme changes replace textures, and the preview's accessible value reports the progress of its rendered frame. The all-shelves view keeps the measured heading space without repeating the tab name; a selected shelf names its results. The private `transition` module owns previews, `view/transition` the catalog, `workflow/transition` target resolution.

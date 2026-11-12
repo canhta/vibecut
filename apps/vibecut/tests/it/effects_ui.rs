@@ -1963,21 +1963,47 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
             "contrast",
             "saturation",
             "hue",
-            "lift_r",
-            "lift_g",
-            "lift_b",
-            "gamma_r",
-            "gamma_g",
-            "gamma_b",
-            "gain_r",
-            "gain_g",
-            "gain_b",
+            "temperature",
+            "highlight",
+            "shadow",
+            "shine",
+            "sharpness",
+            "vignette",
+            "fade",
+            "grain",
         ] {
             assert!(has_widget(
                 &harness,
                 &format!("effects.color_grade.param.{key}")
             ));
         }
+        // Basic, HSL, Curves and Color wheel are separate sub-tabs; only the
+        // active tab paints its controls.
+        assert!(!has_widget(&harness, "effects.color_grade.wheel.lift"));
+        assert!(!has_widget(&harness, "effects.color_grade.curve.plot"));
+        click(&mut harness, "effects.color_grade.tab.hsl");
+        for band in [
+            "red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta",
+        ] {
+            assert!(has_widget(
+                &harness,
+                &format!("effects.color_grade.hsl.{band}")
+            ));
+        }
+        assert!(has_widget(
+            &harness,
+            "effects.color_grade.param.hsl_red_hue"
+        ));
+        click(&mut harness, "effects.color_grade.hsl.green");
+        assert!(has_widget(
+            &harness,
+            "effects.color_grade.param.hsl_green_lightness"
+        ));
+        assert!(!has_widget(
+            &harness,
+            "effects.color_grade.param.hsl_red_hue"
+        ));
+        click(&mut harness, "effects.color_grade.tab.wheel");
         for family in ["lift", "gamma", "gain"] {
             assert!(
                 has_widget(&harness, &format!("effects.color_grade.wheel.{family}")),
@@ -1992,6 +2018,7 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
                 &format!("effects.color_grade.wheel.{family}.reset")
             ));
         }
+        click(&mut harness, "effects.color_grade.tab.curves");
         for channel in ["red", "green", "blue", "luma"] {
             assert!(
                 has_widget(&harness, &format!("effects.color_grade.curve.{channel}")),
@@ -2007,9 +2034,11 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
             grade_curve(&harness, item, "curve_red"),
             project::ToneCurve::IDENTITY
         );
+        click(&mut harness, "effects.color_grade.tab.basic");
     }
     select(&mut harness, video);
     click(&mut harness, "inspector.tab.adjust");
+    click(&mut harness, "effects.color_grade.tab.basic");
     // First typed edit adds the effect carrying the value: one undo step.
     let history = harness.state().session.history_len();
     type_value(&mut harness, "effects.color_grade.param.brightness", "20");
@@ -2045,6 +2074,7 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     assert_eq!(grade(&harness, video), Some([20.0, 0.0, -50.0, 50.0]));
     // A wheel drag is one gesture; each move writes all three channels through
     // `effects.update_param`, and the release is one undo step.
+    click(&mut harness, "effects.color_grade.tab.wheel");
     let before = grade_wheel(&harness, video, "lift");
     let history = harness.state().session.history_len();
     let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
@@ -2093,6 +2123,7 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     harness.run_steps(2);
     assert_eq!(grade_wheel(&harness, video, "gain"), [100.0; 3]);
     // A curve click adds one point through `effects.update_param`.
+    click(&mut harness, "effects.color_grade.tab.curves");
     let plot = widget_rect(&harness, "effects.color_grade.curve.plot");
     let history = harness.state().session.history_len();
     click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
@@ -2161,6 +2192,72 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
         harness.run_steps(2);
     }
     assert!(grade(&harness, video).is_none());
+    // The HSL tab writes only the selected band's three rows, still through
+    // `effects.update_param`, and changing bands changes no project data.
+    click(&mut harness, "effects.color_grade.tab.basic");
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.color_grade.param.brightness", "10");
+    assert_eq!(grade(&harness, video), Some([10.0, 0.0, 0.0, 0.0]));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    click(&mut harness, "effects.color_grade.tab.hsl");
+    click(&mut harness, "effects.color_grade.hsl.green");
+    type_value(
+        &mut harness,
+        "effects.color_grade.param.hsl_green_hue",
+        "25",
+    );
+    let green = effects(&harness, video)
+        .into_iter()
+        .find(|effect| effect.kind == "color_grade")
+        .and_then(|effect| effect.value("hsl_green_hue").and_then(EffectValue::scalar));
+    assert_eq!(green, Some(25.0));
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    let green = effects(&harness, video)
+        .into_iter()
+        .find(|effect| effect.kind == "color_grade")
+        .and_then(|effect| effect.value("hsl_green_hue").and_then(EffectValue::scalar));
+    assert_eq!(green, Some(0.0));
+    // Apply to all copies the grade onto every video and image item in one batch.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.apply_all");
+    assert_eq!(grade(&harness, video), Some([10.0, 0.0, 0.0, 0.0]));
+    assert_eq!(grade(&harness, image), Some([10.0, 0.0, 0.0, 0.0]));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(grade(&harness, image).is_none());
+    // Save as preset stores the grade with the app, not the project.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.save_preset");
+    let presets = harness.state().preferences.adjustment_presets.clone();
+    assert_eq!(presets.len(), 1);
+    assert_eq!(presets[0].name, "Preset 1");
+    assert_eq!(
+        presets[0]
+            .params
+            .get("brightness")
+            .and_then(EffectValue::scalar),
+        Some(10.0)
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+    // The saved preset is listed under the Adjustment assets tab and applies to
+    // the selected clip as one undo step.
+    click(&mut harness, "assets.tab.adjustment");
+    assert!(has_widget(&harness, "assets.adjustment.0.apply"));
+    select(&mut harness, image);
+    assert!(grade(&harness, image).is_none());
+    let history = harness.state().session.history_len();
+    click(&mut harness, "assets.adjustment.0.apply");
+    assert_eq!(grade(&harness, image), Some([10.0, 0.0, 0.0, 0.0]));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(grade(&harness, image).is_none());
+    select(&mut harness, video);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(grade(&harness, video).is_none());
     // A locked track refuses the first edit and stays untouched.
     harness
         .state_mut()
@@ -2173,15 +2270,18 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
         })
         .unwrap();
     harness.run_steps(2);
+    click(&mut harness, "effects.color_grade.tab.basic");
     type_value(&mut harness, "effects.color_grade.param.brightness", "10");
     assert!(grade(&harness, video).is_none());
     // The wheels and curve plot refuse on the same lock without a history entry.
     let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.tab.wheel");
     let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
     drag_from(&mut harness, start, egui::vec2(16.0, -8.0));
     harness.drop_at(start + egui::vec2(16.0, -8.0));
     harness.run_steps(2);
     assert!(grade(&harness, video).is_none());
+    click(&mut harness, "effects.color_grade.tab.curves");
     click_pos(
         &mut harness,
         curve_pos(

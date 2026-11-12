@@ -4,7 +4,8 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 `PREFERENCE_KEYS`, `MAX_PREFERENCES_BYTES`, `MAX_SECTIONS`, `MAX_TIMELINE_LANES`,
 `PANEL_MIN`, `PANEL_MAX`, `PREVIEW_MIN`, `PREVIEW_MAX`, `TIMELINE_MIN`, `TIMELINE_MAX`,
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WindowGeometry`,
-`FontPickerPreferences`, `FontTab`.
+`FontPickerPreferences`, `FontTab`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
+`MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`.
 
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:
@@ -25,5 +26,10 @@ project edit's next Undo.
 bounded custom IDs and four recent IDs per pair, using AI's shipped table for defaults.
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
-fetched lists and price acknowledgements are never serialized. Preferences schema 8
+fetched lists and price acknowledgements are never serialized. Preferences schema 9
 rejects earlier documents through the existing version refusal; there is no migration.
+
+`adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,
+64-byte unique names, exactly the current `color_grade` parameter set with each value
+checked against its definition). Saving, applying and deleting a preset are preference
+and project-command paths; the bank never enters project JSON or project history.

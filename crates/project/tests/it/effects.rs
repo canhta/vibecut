@@ -401,6 +401,34 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
             );
         }
     }
+    // Every Basic control and both HSL tab dimensions share the measured
+    // -50..=50 slider, 0 identity and scalar keyframe admission.
+    for id in project::GRADE_BASIC {
+        let p = effect_definition("color_grade").unwrap().param(id).unwrap();
+        assert_eq!(p.default, EffectValue::Scalar(0.0), "color_grade.{id}");
+        assert_eq!(
+            p.kind,
+            EffectParamKind::Float {
+                min: GRADE_MIN,
+                max: GRADE_MAX,
+                soft_min: GRADE_MIN,
+                soft_max: GRADE_MAX
+            },
+            "color_grade.{id}"
+        );
+        assert!(p.animatable, "color_grade.{id}");
+    }
+    for band in project::HSL_BANDS {
+        for control in project::HSL_CONTROLS {
+            let id = format!("hsl_{band}_{control}");
+            let p = effect_definition("color_grade")
+                .unwrap()
+                .param(&id)
+                .unwrap();
+            assert_eq!(p.default, EffectValue::Scalar(0.0), "color_grade.{id}");
+            assert!(p.animatable, "color_grade.{id}");
+        }
+    }
     for (kind, id, value) in [
         ("color_pass", "reverse", EffectValue::Bool(false)),
         ("color_replace", "solid", EffectValue::Bool(false)),

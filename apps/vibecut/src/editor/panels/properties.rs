@@ -32,6 +32,36 @@ use gesture::{
 
 use workflow::transform_scrub;
 
+/// The Adjust tab's sub-tabs in reference order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::editor) enum AdjustTab {
+    #[default]
+    Basic,
+    Hsl,
+    Curves,
+    Wheel,
+}
+impl AdjustTab {
+    pub(in crate::editor) const ALL: [Self; 4] =
+        [Self::Basic, Self::Hsl, Self::Curves, Self::Wheel];
+    pub(in crate::editor) const fn id(self) -> &'static str {
+        match self {
+            Self::Basic => "basic",
+            Self::Hsl => "hsl",
+            Self::Curves => "curves",
+            Self::Wheel => "wheel",
+        }
+    }
+    pub(in crate::editor) const fn label(self) -> Text {
+        match self {
+            Self::Basic => Text::Basic,
+            Self::Hsl => Text::Hsl,
+            Self::Curves => Text::Curves,
+            Self::Wheel => Text::ColorWheel,
+        }
+    }
+}
+
 /// Transient properties presentation state, independent of every other area.
 pub(in crate::editor) struct State {
     /// Uncommitted text of fields being edited, by field key.
@@ -52,6 +82,9 @@ pub(in crate::editor) struct State {
     graph_changed: bool,
     /// Selected tone-curve channel, an index into the view's channel list.
     curve_channel: usize,
+    /// Selected Adjust sub-tab and HSL band.
+    adjust_tab: AdjustTab,
+    hsl_band: usize,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
     picker: Option<color_picker::Draft>,
@@ -154,6 +187,8 @@ impl Default for State {
             graph: None,
             graph_changed: false,
             curve_channel: 0,
+            adjust_tab: AdjustTab::default(),
+            hsl_band: 0,
             opacity_edit: None,
             reorder: None,
             picker: None,

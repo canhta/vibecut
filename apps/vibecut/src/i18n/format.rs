@@ -36,10 +36,27 @@ pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
         ("tint", None) => Text::EffectTwoTone,
         ("blur" | "chroma_key", Some("intensity")) => Text::EffectIntensity,
         ("chroma_key", Some("shadow")) => Text::EffectShadow,
+        ("color_grade", Some(parameter)) if parameter.starts_with("hsl_") => {
+            if parameter.ends_with("_hue") {
+                Text::Hue
+            } else if parameter.ends_with("_saturation") {
+                Text::Saturation
+            } else {
+                Text::Lightness
+            }
+        }
         ("color_grade", Some("brightness")) => Text::Brightness,
         ("color_grade", Some("contrast")) => Text::Contrast,
         ("color_grade", Some("saturation")) => Text::Saturation,
         ("color_grade", Some("hue")) => Text::Hue,
+        ("color_grade", Some("temperature")) => Text::EffectTemperature,
+        ("color_grade", Some("highlight")) => Text::EffectHighlight,
+        ("color_grade", Some("shadow")) => Text::EffectShadow,
+        ("color_grade", Some("shine")) => Text::EffectShine,
+        ("color_grade", Some("sharpness")) => Text::EffectSharpness,
+        ("color_grade", Some("vignette")) => Text::EffectVignette,
+        ("color_grade", Some("fade")) => Text::EffectFade,
+        ("color_grade", Some("grain")) => Text::EffectGrain,
         ("color_grade", Some("lift_r")) => Text::EffectLiftRed,
         ("color_grade", Some("lift_g")) => Text::EffectLiftGreen,
         ("color_grade", Some("lift_b")) => Text::EffectLiftBlue,

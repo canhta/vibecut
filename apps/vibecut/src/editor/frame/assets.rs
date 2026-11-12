@@ -99,6 +99,12 @@ impl Editor {
                 }
                 assets::Action::MusicKeyApply => self.music_key_apply(),
                 assets::Action::MusicKeyRemove => self.music_key_remove(),
+                assets::Action::ApplyAdjustment(index) => self.apply_adjustment_preset(index),
+                assets::Action::DeleteAdjustment(index) => {
+                    if let Err(error) = self.delete_adjustment_preset(index) {
+                        self.desk().fail(error.to_string());
+                    }
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 //! Applies the assets workflows.
+mod adjustment;
 mod effects;
 mod import;
 mod insertion;

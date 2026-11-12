@@ -8,6 +8,27 @@ use crate::Color;
 /// Slider range of every basic colour-grade control.
 pub const GRADE_MIN: f64 = -50.0;
 pub const GRADE_MAX: f64 = 50.0;
+/// The Basic tab's controls in reference order: Color, Lightness, Effects.
+pub const GRADE_BASIC: [&str; 12] = [
+    "saturation",
+    "temperature",
+    "hue",
+    "brightness",
+    "contrast",
+    "shine",
+    "highlight",
+    "shadow",
+    "sharpness",
+    "vignette",
+    "fade",
+    "grain",
+];
+/// The HSL tab's hue bands in reference order.
+pub const HSL_BANDS: [&str; 8] = [
+    "red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta",
+];
+/// One key per HSL band control, in the tab's row order.
+pub const HSL_CONTROLS: [&str; 3] = ["hue", "saturation", "lightness"];
 /// Lift is a signed straight-colour offset in percent.
 pub const LIFT_MIN: f64 = -100.0;
 pub const LIFT_MAX: f64 = 100.0;
@@ -109,7 +130,7 @@ const fn angle(id: &'static str, name: &'static str, default: f64) -> EffectPara
 }
 /// Colour grade controls share one range and neutral default (0 = identity).
 const fn grade_param(id: &'static str, name: &'static str) -> EffectParamDefinition {
-    slider(id, name, (GRADE_MIN, GRADE_MAX), 0.0, false)
+    slider(id, name, (GRADE_MIN, GRADE_MAX), 0.0, true)
 }
 /// One static tone-curve parameter; the neutral value is the two endpoints.
 const fn curve_param(id: &'static str, name: &'static str) -> EffectParamDefinition {
@@ -120,6 +141,21 @@ const fn curve_param(id: &'static str, name: &'static str) -> EffectParamDefinit
         default: EffectValue::Curve(ToneCurve::IDENTITY),
         animatable: false,
     }
+}
+/// One HSL band's hue, saturation and lightness controls, all on the shared
+/// grade range.
+macro_rules! hsl_band {
+    ($id:literal, $name:literal) => {
+        grade_param(concat!("hsl_", $id, "_hue"), concat!($name, " hue")),
+        grade_param(
+            concat!("hsl_", $id, "_saturation"),
+            concat!($name, " saturation"),
+        ),
+        grade_param(
+            concat!("hsl_", $id, "_lightness"),
+            concat!($name, " lightness"),
+        ),
+    };
 }
 const BLACK: Color = Color([0, 0, 0, 255]);
 const WHITE: Color = Color([255, 255, 255, 255]);
@@ -196,6 +232,22 @@ static DEFINITIONS: &[EffectDefinition] = &[
             grade_param("contrast", "Contrast"),
             grade_param("saturation", "Saturation"),
             grade_param("hue", "Hue"),
+            grade_param("temperature", "Temperature"),
+            grade_param("highlight", "Highlight"),
+            grade_param("shadow", "Shadow"),
+            grade_param("shine", "Shine"),
+            grade_param("sharpness", "Sharpness"),
+            grade_param("vignette", "Vignette"),
+            grade_param("fade", "Fade"),
+            grade_param("grain", "Grain"),
+            hsl_band!("red", "Red"),
+            hsl_band!("orange", "Orange"),
+            hsl_band!("yellow", "Yellow"),
+            hsl_band!("green", "Green"),
+            hsl_band!("cyan", "Cyan"),
+            hsl_band!("blue", "Blue"),
+            hsl_band!("purple", "Purple"),
+            hsl_band!("magenta", "Magenta"),
             slider("lift_r", "Lift red", (LIFT_MIN, LIFT_MAX), 0.0, true),
             slider("lift_g", "Lift green", (LIFT_MIN, LIFT_MAX), 0.0, true),
             slider("lift_b", "Lift blue", (LIFT_MIN, LIFT_MAX), 0.0, true),

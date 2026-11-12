@@ -167,7 +167,8 @@ impl Panel<'_, '_> {
     }
 
     /// Adjust tab: the item's colour-grade effect, shown at neutral until the
-    /// first edit adds it to the stack (`set_effect_param` creates it).
+    /// first edit adds it to the stack (`set_effect_param` creates it). The
+    /// sub-tabs match the desktop reference: Basic, HSL, Curves, Color wheel.
     pub(super) fn adjust_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(definition) = project::effect_definitions()
             .iter()
@@ -185,22 +186,148 @@ impl Panel<'_, '_> {
         let present = existing.is_some();
         let id = existing.unwrap_or_else(|| definition.id.to_owned());
         let at = self.effect_time(item);
-        for parameter in definition.params.iter().filter(|p| {
-            p.id != "lut_strength"
-                && matches!(
-                    p.kind,
-                    project::EffectParamKind::Float { .. } | project::EffectParamKind::Angle
-                )
-        }) {
+        self.adjust_tabs(ui, &id);
+        let tab = self.state.adjust_tab;
+        match tab {
+            super::super::AdjustTab::Basic => {
+                for key in project::GRADE_BASIC {
+                    let Some(parameter) = definition.param(key) else {
+                        continue;
+                    };
+                    let current =
+                        read::effect_param_value_at(self.cx.session.project(), item, &id, key, at)
+                            .or_else(|| parameter.default.scalar())
+                            .unwrap_or(0.0);
+                    self.effect_scrub_field(ui, item, &id, definition.id, parameter, current);
+                }
+            }
+            super::super::AdjustTab::Hsl => self.hsl_controls(ui, item, &id, definition, at),
+            super::super::AdjustTab::Curves => self.curve_controls(ui, item, &id, present),
+            super::super::AdjustTab::Wheel => self.wheel_controls(ui, item, &id, definition, at),
+        }
+        self.lut_controls(ui, item, &id, definition);
+        self.adjust_footer(ui, item, &id, present);
+    }
+
+    /// The four measured Adjust sub-tabs. Switching one changes no project data.
+    fn adjust_tabs(&mut self, ui: &mut egui::Ui, effect: &str) {
+        let index = super::super::AdjustTab::ALL
+            .iter()
+            .position(|tab| *tab == self.state.adjust_tab)
+            .unwrap_or(0);
+        let ids: Vec<String> = super::super::AdjustTab::ALL
+            .iter()
+            .map(|tab| format!("effects.{effect}.tab.{}", tab.id()))
+            .collect();
+        let labels: Vec<&str> = super::super::AdjustTab::ALL
+            .iter()
+            .map(|tab| self.tr(tab.label()))
+            .collect();
+        let cells = crate::kit::segmented(ui, &ids, &labels, index);
+        for (position, response) in cells.iter().enumerate() {
+            if let Some(id) = ids.get(position) {
+                self.remember(id.clone(), response);
+            }
+            if response.clicked()
+                && let Some(tab) = super::super::AdjustTab::ALL.get(position)
+            {
+                self.state.adjust_tab = *tab;
+            }
+        }
+        ui.add_space(theme::space::MD);
+    }
+
+    /// One hue band's hue, saturation and lightness rows.
+    fn hsl_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        definition: &project::EffectDefinition,
+        at: Tick,
+    ) {
+        let band = self.state.hsl_band.min(project::HSL_BANDS.len() - 1);
+        let ids: Vec<String> = project::HSL_BANDS
+            .iter()
+            .map(|band| format!("effects.{effect}.hsl.{band}"))
+            .collect();
+        let labels: Vec<&str> = project::HSL_BANDS
+            .iter()
+            .map(|band| self.band_label(band))
+            .collect();
+        let cells = crate::kit::segmented(ui, &ids, &labels, band);
+        for (position, response) in cells.iter().enumerate() {
+            if let Some(id) = ids.get(position) {
+                self.remember(id.clone(), response);
+            }
+            if response.clicked() {
+                self.state.hsl_band = position;
+            }
+        }
+        ui.add_space(theme::space::MD);
+        let band = project::HSL_BANDS
+            .get(self.state.hsl_band)
+            .copied()
+            .unwrap_or("red");
+        for control in project::HSL_CONTROLS {
+            let key = format!("hsl_{band}_{control}");
+            let Some(parameter) = definition.param(&key) else {
+                continue;
+            };
             let current =
-                read::effect_param_value_at(self.cx.session.project(), item, &id, parameter.id, at)
+                read::effect_param_value_at(self.cx.session.project(), item, effect, &key, at)
                     .or_else(|| parameter.default.scalar())
                     .unwrap_or(0.0);
-            self.effect_scrub_field(ui, item, &id, definition.id, parameter, current);
+            self.effect_scrub_field(ui, item, effect, definition.id, parameter, current);
         }
-        self.wheel_controls(ui, item, &id, definition, at);
-        self.curve_controls(ui, item, &id, present);
-        self.lut_controls(ui, item, &id, definition);
+    }
+
+    fn band_label(&self, band: &str) -> &'static str {
+        self.tr(match band {
+            "orange" => Text::EffectOrange,
+            "yellow" => Text::EffectYellow,
+            "green" => Text::EffectGreen,
+            "cyan" => Text::EffectCyan,
+            "blue" => Text::EffectBlue,
+            "purple" => Text::EffectPurple,
+            "magenta" => Text::EffectMagenta,
+            _ => Text::EffectRed,
+        })
+    }
+
+    /// Footer: copy the grade to every visual clip, or store it as an app preset.
+    fn adjust_footer(&mut self, ui: &mut egui::Ui, item: ItemId, effect: &str, present: bool) {
+        ui.add_space(theme::space::MD);
+        let enabled = present
+            && !read::item_locked(self.cx.session.project(), item)
+            && !self.cx.session.transaction_active();
+        let spare = theme::space::SM;
+        let width = ((ui.available_width() - spare) / 2.0).max(80.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = spare;
+            ui.add_enabled_ui(enabled, |ui| {
+                let apply = crate::kit::action_button(
+                    ui,
+                    &format!("effects.{effect}.apply_all"),
+                    Icon::Copy,
+                    self.tr(Text::ApplyToAll),
+                    width,
+                );
+                self.remember(format!("effects.{effect}.apply_all"), &apply);
+                if apply.clicked() {
+                    self.actions.push(Action::ApplyGradeToAll { item });
+                }
+                let save = crate::kit::badge_button(
+                    ui,
+                    &format!("effects.{effect}.save_preset"),
+                    self.tr(Text::SaveAsPreset),
+                );
+                self.remember(format!("effects.{effect}.save_preset"), &save);
+                if save.clicked() {
+                    self.actions.push(Action::SaveGradePreset { item });
+                }
+            });
+        });
     }
 
     /// Three lift/gamma/gain wheels under the numeric grade rows.

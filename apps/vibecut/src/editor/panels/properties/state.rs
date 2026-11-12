@@ -119,6 +119,14 @@ pub(in crate::editor) enum Action {
         effect: String,
         values: Vec<(String, project::EffectParamUpdate)>,
     },
+    /// Copy the selected item's grade onto every video and image item in one batch.
+    ApplyGradeToAll {
+        item: ItemId,
+    },
+    /// Store the selected item's grade as a named app-owned preset.
+    SaveGradePreset {
+        item: ItemId,
+    },
     ToggleEffect {
         item: ItemId,
         effect: String,

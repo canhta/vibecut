@@ -344,3 +344,94 @@ pub(super) fn set_effect_values(
     desk.sync();
     Ok(())
 }
+
+/// Copy the selected item's complete grade onto every unlocked video and image
+/// item as one `batch` command, so the whole copy is one undo step. Items that
+/// already carry a grade receive its values; the rest gain an instance.
+pub(super) fn apply_grade_to_all(desk: &mut Desk<'_>, source: ItemId) -> Result<()> {
+    let project = desk.view().session.project();
+    let Some(params) = read::item(project, source)
+        .and_then(|item| {
+            item.effects
+                .iter()
+                .find(|effect| effect.kind == "color_grade")
+        })
+        .map(|effect| effect.params.clone())
+    else {
+        return Ok(());
+    };
+    let mut commands = Vec::new();
+    for track in project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .filter(|track| !track.locked)
+    {
+        for item in &track.items {
+            if !matches!(
+                element_kind(project, item.id),
+                Some((ElementKind::Video | ElementKind::Image, _))
+            ) {
+                continue;
+            }
+            if let Some(existing) = item
+                .effects
+                .iter()
+                .find(|effect| effect.kind == "color_grade")
+            {
+                for (key, value) in &params {
+                    if let Some(value) = value.update() {
+                        commands.push(engine::Command::UpdateEffectParam {
+                            item: item.id,
+                            effect: existing.id.clone(),
+                            key: key.clone(),
+                            value,
+                        });
+                    }
+                }
+            } else if let Some(id) = next_effect_id(project, item.id, "color_grade") {
+                let mut instance = project::effect_definition("color_grade")?.instance(id);
+                instance.params = params.clone();
+                commands.push(engine::Command::AddEffect {
+                    item: item.id,
+                    effect: instance,
+                });
+            }
+        }
+    }
+    if commands.is_empty() {
+        return Ok(());
+    }
+    desk.apply_result(engine::Command::Batch { commands }, false)?;
+    desk.sync();
+    Ok(())
+}
+
+/// Store the selected item's grade as the next free app-owned preset name.
+pub(super) fn save_grade_preset(desk: &mut Desk<'_>, source: ItemId) -> Result<()> {
+    let project = desk.view().session.project();
+    let Some(params) = read::item(project, source)
+        .and_then(|item| {
+            item.effects
+                .iter()
+                .find(|effect| effect.kind == "color_grade")
+        })
+        .map(|effect| effect.params.clone())
+    else {
+        return Ok(());
+    };
+    let mut presets = desk.view().preferences.adjustment_presets.clone();
+    let taken: BTreeSet<&str> = presets.iter().map(|preset| preset.name.as_str()).collect();
+    let Some(number) = (1..=crate::preferences::MAX_ADJUSTMENT_PRESETS).find(|number| {
+        let name = format!("Preset {number}");
+        !taken.contains(name.as_str())
+    }) else {
+        return Ok(());
+    };
+    presets.push(crate::preferences::AdjustmentPreset {
+        name: format!("Preset {number}"),
+        params,
+    });
+    desk.store_preference("adjustment_presets", serde_json::to_value(presets)?)
+}

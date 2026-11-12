@@ -117,6 +117,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             | AssetsTab::Transitions
             | AssetsTab::Captions
             | AssetsTab::Stickers
+            | AssetsTab::Adjustment
     ) {
         preferences.assets_tab = AssetsTab::Media;
     }
