@@ -1,8 +1,8 @@
 //! Applies text commands to a candidate project.
 use super::{
-    Arc, BTreeMap, BTreeSet, Command, CreatedId, EditError, ItemId, ItemParams, NewItem, Placement,
-    ProjectData, Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement, TrimSources, apply,
-    item, set_range,
+    Arc, BTreeMap, BTreeSet, ClipboardRefs, Command, CreatedId, EditError, ItemId, ItemParams,
+    NewItem, Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement,
+    TrimSources, apply, item, set_range,
 };
 
 /// Change only the opt-in. Timing, copied styles and authoritative trim sources stay intact.
@@ -473,7 +473,7 @@ pub(super) fn import_captions(
         next,
         sources,
         copied_text_bytes,
-        None,
+        ClipboardRefs::default(),
     )?
     .into_data();
     let target = match track {
@@ -502,7 +502,7 @@ pub(super) fn import_captions(
                 next,
                 sources,
                 copied_text_bytes,
-                None,
+                ClipboardRefs::default(),
             )?
             .into_data();
             created
@@ -539,7 +539,7 @@ pub(super) fn import_captions(
         next,
         sources,
         copied_text_bytes,
-        None,
+        ClipboardRefs::default(),
     )?
     .into_data();
     // Imported content must survive a save: a result that cannot be encoded

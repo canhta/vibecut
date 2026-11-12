@@ -245,7 +245,7 @@ fn clear_overlap(
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
     let Some((item_start, item_end)) = find_item(&data, id)
-        .map(|(_, item)| (item.start, item.end()))
+        .map(|(_, item)| item.end().map(|end| (item.start, end)))
         .transpose()?
     else {
         return Ok(data);

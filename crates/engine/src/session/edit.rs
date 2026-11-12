@@ -95,7 +95,7 @@ impl Failure for EditError {
 pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 
 /// Immutable clipboard snapshots available to one edit candidate.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct ClipboardRefs<'a> {
     pub(crate) keyframes: Option<&'a crate::KeyframeClipboard>,
     pub(crate) items: Option<&'a crate::ItemClipboard>,
