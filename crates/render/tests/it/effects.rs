@@ -750,14 +750,8 @@ fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
     assert_eq!(stack, ["grade", "lift", "lut_3d", "chroma_key"]);
     let pixel = || Image::from_working_pixels(1, 1, [[0.1, 0.3, 0.6, 1.0]].into_iter(), &hooks);
     let below = pixel().unwrap();
-    let graded = apply_effect(
-        pixel().unwrap(),
-        &grade_passes,
-        &below,
-        &CpuEffects,
-        &hooks,
-    )
-    .unwrap();
+    let graded =
+        apply_effect(pixel().unwrap(), &grade_passes, &below, &CpuEffects, &hooks).unwrap();
     // The LUT follows the grade stages, not the other way round.
     let oetf = |v: f64| {
         if v <= 0.0031308 {

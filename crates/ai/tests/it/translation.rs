@@ -3,6 +3,7 @@
     clippy::panic,
     reason = "offline fixtures and assertions"
 )]
+use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 use ai::transport::ApiKey;
 use ai::{openai::*, *};
 use captions::{LanguageTag, NfcText};
@@ -11,7 +12,6 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
-use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 struct Hooks(AtomicBool);
 impl ExecutionHooks for Hooks {
     fn cancelled(&self) -> bool {

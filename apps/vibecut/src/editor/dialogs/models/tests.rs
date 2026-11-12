@@ -210,12 +210,7 @@ fn model(id: &str, license: &str, data: &[u8]) -> Model {
         }],
     }
 }
-fn manager(
-    dir: &Path,
-    models: Vec<Model>,
-    http: Arc<Http>,
-    io: Arc<dyn ModelIo>,
-) -> ModelManager {
+fn manager(dir: &Path, models: Vec<Model>, http: Arc<Http>, io: Arc<dyn ModelIo>) -> ModelManager {
     let budget = ByteBudget::new(4 << 20).unwrap();
     let (cache, diagnostics) = ArtifactCache::open(dir, budget.clone(), 16).unwrap();
     assert_eq!(diagnostics, 0);

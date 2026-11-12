@@ -4,6 +4,7 @@
     clippy::indexing_slicing,
     reason = "integration fixtures"
 )]
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use ai::transport::ApiKey;
 use ai::{openai::*, *};
 use captions::{Cue, CueText, CueTrack, LanguageTag};
@@ -25,7 +26,6 @@ use std::{
     time::{Duration, Instant},
 };
 use time::{SourceRange, Tick};
-use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 fn lang(s: &str) -> LanguageTag {
     LanguageTag::parse(s).unwrap()
 }

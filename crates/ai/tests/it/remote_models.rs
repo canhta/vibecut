@@ -5,12 +5,12 @@
     clippy::indexing_slicing,
     reason = "offline provider fixtures"
 )]
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use ai::transport::ApiKey;
 use ai::{self, *};
 use captions::LanguageTag;
 use std::sync::{Arc, Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
-use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 
 struct Hooks;
 impl ExecutionHooks for Hooks {

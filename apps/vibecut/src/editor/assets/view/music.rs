@@ -150,7 +150,13 @@ impl View<'_> {
                     Vec2::splat(theme::size::CONTROL),
                 )),
             |ui| {
-                if self.icon(ui, "music.settings", Icon::GearSix, Text::MusicSettings, true) {
+                if self.icon(
+                    ui,
+                    "music.settings",
+                    Icon::GearSix,
+                    Text::MusicSettings,
+                    true,
+                ) {
                     self.state.music_settings = !self.state.music_settings;
                 }
             },
