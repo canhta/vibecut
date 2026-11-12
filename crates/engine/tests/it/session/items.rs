@@ -1997,6 +1997,8 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
     ));
     assert!(Arc::ptr_eq(&before, s.project()));
     assert_eq!(s.history_len(), history);
+}
+
 fn arrange_overlay(id: u64, x: f64, y: f64) -> Item {
     let mut animations = Animations::default();
     for (path, value) in [
@@ -2077,10 +2079,8 @@ fn align_moves_each_transformed_box_to_the_canvas_and_preserves_its_other_axis()
         })
         .unwrap();
         assert!(
-            close(
-                position(&s, ItemId(21), TransformField::PositionX),
-                x
-            ) && close(position(&s, ItemId(21), TransformField::PositionY), y),
+            close(position(&s, ItemId(21), TransformField::PositionX), x)
+                && close(position(&s, ItemId(21), TransformField::PositionY), y),
             "{alignment:?}"
         );
         // Reset only the axis this case moved, so the next case starts at the
@@ -2122,7 +2122,10 @@ fn align_moves_each_transformed_box_to_the_canvas_and_preserves_its_other_axis()
     let loaded = project::decode(&bytes).unwrap();
     assert!(close(
         TransformField::PositionX
-            .value_at(&get_project_id(&loaded.project, ItemId(21)).animations, Tick::ZERO)
+            .value_at(
+                &get_project_id(&loaded.project, ItemId(21)).animations,
+                Tick::ZERO
+            )
             .unwrap(),
         -95.0
     ));

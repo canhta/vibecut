@@ -33,14 +33,12 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
                 | project::GraphicParams::Polygon { corner_radius, .. },
             ),
         ) => Some(*corner_radius),
-        (
-            "params.sides",
-            ItemParams::Graphic(project::GraphicParams::Polygon { sides, .. }),
-        ) => Some(*sides),
-        (
-            "params.points",
-            ItemParams::Graphic(project::GraphicParams::Star { points, .. }),
-        ) => Some(*points),
+        ("params.sides", ItemParams::Graphic(project::GraphicParams::Polygon { sides, .. })) => {
+            Some(*sides)
+        }
+        ("params.points", ItemParams::Graphic(project::GraphicParams::Star { points, .. })) => {
+            Some(*points)
+        }
         ("params.depth", ItemParams::Graphic(project::GraphicParams::Star { depth, .. })) => {
             Some(*depth)
         }

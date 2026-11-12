@@ -1899,9 +1899,18 @@ fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_chan
             assert!(Project::new(bad).is_err(), "{name} {value}");
         }
         for (name, own) in [
-            ("params.sides", matches!(graphic, GraphicParams::Polygon { .. })),
-            ("params.points", matches!(graphic, GraphicParams::Star { .. })),
-            ("params.depth", matches!(graphic, GraphicParams::Star { .. })),
+            (
+                "params.sides",
+                matches!(graphic, GraphicParams::Polygon { .. }),
+            ),
+            (
+                "params.points",
+                matches!(graphic, GraphicParams::Star { .. }),
+            ),
+            (
+                "params.depth",
+                matches!(graphic, GraphicParams::Star { .. }),
+            ),
         ] {
             let mut good = data.clone();
             good.scene_mut().timeline.main.items[0]

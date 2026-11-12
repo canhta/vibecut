@@ -209,12 +209,8 @@ pub(super) fn apply_patch(
         }
         crate::ItemParamPatch::GraphicCornerRadius(v) => {
             if let ItemParams::Graphic(
-                project::GraphicParams::Rectangle {
-                    corner_radius, ..
-                }
-                | project::GraphicParams::Polygon {
-                    corner_radius, ..
-                },
+                project::GraphicParams::Rectangle { corner_radius, .. }
+                | project::GraphicParams::Polygon { corner_radius, .. },
             ) = &mut target.content
             {
                 *corner_radius = *v;

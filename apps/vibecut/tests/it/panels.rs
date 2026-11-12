@@ -841,7 +841,10 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
             "inspector.transform.align_center_vertical" => (r.y + r.height / 2.0, canvas[1] / 2.0),
             _ => (r.y + r.height, canvas[1]),
         };
-        assert!((actual - expected).abs() < 1e-6, "{id}: {actual} vs {expected}");
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "{id}: {actual} vs {expected}"
+        );
     }
     // Three visual items share the selection inspector and its arrange row.
     let spread = [fixture.video, fixture.text, fixture.graphic];
@@ -4191,7 +4194,8 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                 assert!(matches!(
                     item(&h, shape).content,
                     ItemParams::Graphic(
-                        project::GraphicParams::Polygon { .. } | project::GraphicParams::Star { .. }
+                        project::GraphicParams::Polygon { .. }
+                            | project::GraphicParams::Star { .. }
                     )
                 ));
                 let widgets = h.state().inspect().unwrap().widgets;

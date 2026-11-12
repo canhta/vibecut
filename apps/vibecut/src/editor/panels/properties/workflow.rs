@@ -34,28 +34,30 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
         // Advance only the captured scrub's own mutation. A different snapshot,
         // selection or clock must still be rejected by the next frame's guard.
         let refresh_scrub_snapshot = match &action {
-            Action::SetField { item, field, .. }
-            | Action::SetKeyframeAt { item, field, .. } => {
+            Action::SetField { item, field, .. } | Action::SetKeyframeAt { item, field, .. } => {
                 state.scrub.as_ref().is_some_and(|scrub| {
                     scrub.item == *item
                         && matches!(&scrub.target, super::ScrubTarget::Item(active)
-                            if *active == field.as_str()
-                                && matches!(
-                                    *active,
-                                    "opacity"
-                                        | "params.strokeWidth"
-                                        | "params.cornerRadius"
-                                        | "params.sides"
-                                        | "params.points"
-                                        | "params.depth"
-                                ))
-                }) && state.opacity_edit.as_ref().is_some_and(|(snapshot, bound_item, at)| {
-                    let view = desk.view();
-                    bound_item == item
-                        && *at == view.playhead
-                        && crate::editor::context::single(view.selection) == Some(*item)
-                        && std::sync::Arc::ptr_eq(snapshot, view.session.project())
-                })
+                        if *active == field.as_str()
+                            && matches!(
+                                *active,
+                                "opacity"
+                                    | "params.strokeWidth"
+                                    | "params.cornerRadius"
+                                    | "params.sides"
+                                    | "params.points"
+                                    | "params.depth"
+                            ))
+                }) && state
+                    .opacity_edit
+                    .as_ref()
+                    .is_some_and(|(snapshot, bound_item, at)| {
+                        let view = desk.view();
+                        bound_item == item
+                            && *at == view.playhead
+                            && crate::editor::context::single(view.selection) == Some(*item)
+                            && std::sync::Arc::ptr_eq(snapshot, view.session.project())
+                    })
             }
             _ => false,
         };

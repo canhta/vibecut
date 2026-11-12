@@ -1524,10 +1524,10 @@ fn graphic_polygon_and_star_cover_their_geometry_at_every_scale() {
                 let y = (c + angle.sin() * radius * r).floor() as usize;
                 frame.pixels()[y * frame.width() as usize + x][3]
             };
-            for probe in inside {
+            for &probe in &inside {
                 assert!(alpha(probe) > 0.99, "{name} x{scale} inside {probe:?}");
             }
-            for probe in outside {
+            for &probe in &outside {
                 assert!(alpha(probe) < 0.01, "{name} x{scale} outside {probe:?}");
             }
             drop(frame);

@@ -418,8 +418,8 @@ fn prepare_radial(
             while sweep < -std::f32::consts::PI {
                 sweep += 2. * std::f32::consts::PI;
             }
-            let steps = ((sweep.abs() * (arc_radius / 0.4).sqrt()).ceil().max(1.) as usize)
-                .min(4096);
+            let steps =
+                ((sweep.abs() * (arc_radius / 0.4).sqrt()).ceil().max(1.) as usize).min(4096);
             for n in 1..steps {
                 let angle = first + sweep * n as f32 / steps as f32;
                 push([
