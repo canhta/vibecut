@@ -97,6 +97,7 @@ pub fn insert(track: CueTrack) -> Command {
             source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

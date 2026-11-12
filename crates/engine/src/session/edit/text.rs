@@ -22,6 +22,83 @@ pub(super) fn set_word_highlight(
     Ok(data)
 }
 
+/// Upper bound on cues one selection may name.
+const MAX_EMPHASIS_CUES: usize = 4096;
+
+fn caption_params(data: &mut ProjectData, id: ItemId) -> Result<&mut project::CaptionParams> {
+    if item_in_other_scene(data, id) {
+        return Err(EditError::SceneBoundary);
+    }
+    match &mut item(data, id)?.content {
+        ItemParams::Caption(params) => Ok(params),
+        _ => Err(EditError::Invalid("emphasis requires caption item")),
+    }
+}
+
+fn find_cue<'a>(
+    params: &'a project::CaptionParams,
+    cue: &captions::NfcText,
+) -> Result<&'a captions::Cue> {
+    params
+        .cues
+        .cues
+        .iter()
+        .find(|value| &value.id == cue)
+        .ok_or(EditError::Invalid("emphasis cue"))
+}
+
+/// Choose emphasis words for the named cues with the deterministic lexicon. Every cue must
+/// carry verified word timing, otherwise the whole command refuses with the typed
+/// `NoWordTiming` error and nothing changes. Selections replace earlier ones for those cues.
+pub(super) fn select_emphasis(
+    mut data: ProjectData,
+    id: ItemId,
+    cue_ids: &[captions::NfcText],
+    mode: crate::EmphasisMode,
+) -> Result<ProjectData> {
+    let crate::EmphasisMode::Lexicon = mode;
+    if cue_ids.is_empty() || cue_ids.len() > MAX_EMPHASIS_CUES {
+        return Err(EditError::Invalid("emphasis cue ids"));
+    }
+    let params = caption_params(&mut data, id)?;
+    let mut chosen = Vec::with_capacity(cue_ids.len());
+    for cue_id in cue_ids {
+        let cue = find_cue(params, cue_id)?;
+        let lexicon = captions::EmphasisLexicon::builtin(&cue.source_lang).ok();
+        chosen.push((
+            cue_id.clone(),
+            captions::select_lexicon(cue, lexicon.as_ref())?,
+        ));
+    }
+    for (cue_id, ids) in chosen {
+        if ids.is_empty() {
+            params.emphasis.remove(&cue_id);
+        } else {
+            params.emphasis.insert(cue_id, ids);
+        }
+    }
+    Ok(data)
+}
+
+/// Replace one cue's emphasis with explicit word ids; an empty list clears it. Ids must be
+/// ascending, unique, at most three, and verified timed words of the cue's current source text.
+pub(super) fn set_emphasis(
+    mut data: ProjectData,
+    id: ItemId,
+    cue_id: &captions::NfcText,
+    word_ids: Vec<u32>,
+) -> Result<ProjectData> {
+    let params = caption_params(&mut data, id)?;
+    if word_ids.is_empty() {
+        find_cue(params, cue_id)?;
+        params.emphasis.remove(cue_id);
+        return Ok(data);
+    }
+    captions::validate_selection(find_cue(params, cue_id)?, &word_ids)?;
+    params.emphasis.insert(cue_id.clone(), word_ids);
+    Ok(data)
+}
+
 pub(super) fn execute_apply_caption_style(
     mut data: ProjectData,
     id: ItemId,
@@ -450,6 +527,7 @@ pub(super) fn import_captions(
                 source_range,
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),
@@ -869,6 +947,11 @@ pub(super) fn execute_retranslate(
         .any(|id| !cues.cues.iter().any(|cue| &cue.id == id))
     {
         return Err(EditError::Invalid("missing retained translation cue"));
+    }
+    // A retranslated cue drops its emphasis: ids chosen against the old bilingual text are
+    // never reused. Text and word timing stay as they were.
+    for id in texts.keys() {
+        params.emphasis.remove(id);
     }
     for cue in &mut cues.cues {
         if let Some(text) = texts.get(&cue.id) {

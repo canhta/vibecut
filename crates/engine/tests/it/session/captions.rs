@@ -11,6 +11,7 @@ use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use project::{Color, Item, ItemId, ItemParams, Project, Track, TrackId, TrackKind};
 use proptest::prelude::*;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use time::Tick;
 
@@ -979,7 +980,6 @@ fn caption_splits_and_trims_reuse_mapping_and_preserve_source_text_metadata() {
 fn caption_project() -> Project {
     use captions::{Cue, CueText, CueTrack, LanguageTag};
     use project::CaptionParams;
-    use std::collections::BTreeMap;
     let mut data = project().into_data();
     data.scene_mut().timeline.overlays.clear();
     data.assets.push(
@@ -1032,6 +1032,7 @@ fn caption_project() -> Project {
             source_range: range(100, 200),
             start: Tick(1000),
             content: ItemParams::Caption(CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
@@ -1655,4 +1656,198 @@ fn word_highlight_is_an_undoable_locked_atomic_opt_in_without_style_or_timing_ed
         .is_err()
     );
     assert!(Arc::ptr_eq(&before, s.project()));
+}
+
+fn emphasis_project() -> Project {
+    use captions::{CueText, CueWordTiming, LanguageTag, TimingProvenance, VerifiedCueWord};
+    let mut data = caption_project().into_data();
+    let ItemParams::Caption(params) = &mut data.scene_mut().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption");
+    };
+    let text = "Quarter revenue grew 40 percent worldwide";
+    let en = LanguageTag::parse("en").unwrap();
+    let records = text
+        .split(' ')
+        .scan(0, |at, word| {
+            let start = *at;
+            *at += word.len() + 1;
+            Some(start..start + word.len())
+        })
+        .enumerate()
+        .map(|(index, bytes)| {
+            let timed = range(110 + 10 * index as i64, 120 + 10 * index as i64);
+            VerifiedCueWord {
+                bytes,
+                source_range: timed,
+                projection: captions::WordProjection::Visible(timed),
+                provenance: TimingProvenance::Native,
+            }
+        })
+        .collect();
+    let cue = &mut params.cues.cues[0];
+    cue.source_lang = en.clone();
+    cue.texts = BTreeMap::from([
+        (
+            en.clone(),
+            CueText {
+                text: text.into(),
+                edited: false,
+                translation_ref: None,
+            },
+        ),
+        (
+            LanguageTag::parse("vi").unwrap(),
+            CueText {
+                text: "Doanh thu quý tăng 40 phần trăm".into(),
+                edited: false,
+                translation_ref: Some("ref".into()),
+            },
+        ),
+    ]);
+    cue.word_timing = CueWordTiming::Words {
+        language: en,
+        text: text.into(),
+        records,
+    };
+    Project::new(data).unwrap()
+}
+fn emphasis_of(s: &Session) -> BTreeMap<captions::NfcText, Vec<u32>> {
+    let ItemParams::Caption(params) =
+        &s.project().data().scene().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption");
+    };
+    params.emphasis.clone()
+}
+
+#[test]
+fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retranslation() {
+    // A cue without verified word timing never gets an invented selection.
+    let mut plain = Session::new(caption_project(), 30).unwrap();
+    let before = plain.project().clone();
+    for command in [
+        (
+            "captions.select_emphasis",
+            json!({"item":1,"cue_ids":["source/0"]}),
+        ),
+        (
+            "captions.set_emphasis",
+            json!({"item":1,"cue_id":"source/0","word_ids":[0]}),
+        ),
+    ] {
+        assert!(matches!(
+            plain.execute(command.0, command.1),
+            Err(engine::EditError::Captions(captions::Error::NoWordTiming))
+        ));
+        assert!(Arc::ptr_eq(&before, plain.project()));
+    }
+
+    let mut s = Session::new(emphasis_project(), 30).unwrap();
+    let original = s.project().clone();
+    // Lexicon: the number and the longest content word win; stopwords never score.
+    s.execute(
+        "captions.select_emphasis",
+        json!({"item":1,"cue_ids":["source/0"],"mode":"lexicon"}),
+    )
+    .unwrap();
+    assert_eq!(
+        emphasis_of(&s),
+        BTreeMap::from([("source/0".into(), vec![3, 5])])
+    );
+    let selected = s.project().clone();
+    // Same gesture again is deterministic and changes nothing.
+    assert!(
+        !s.execute(
+            "captions.select_emphasis",
+            json!({"item":1,"cue_ids":["source/0"]})
+        )
+        .unwrap()
+        .changed
+    );
+    // Explicit ids: refusals leave the project untouched and name nothing outside the cue.
+    for ids in [
+        json!([5, 3]),
+        json!([3, 3]),
+        json!([0, 1, 2, 3]),
+        json!([6]),
+    ] {
+        assert!(
+            s.execute(
+                "captions.set_emphasis",
+                json!({"item":1,"cue_id":"source/0","word_ids":ids})
+            )
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(&selected, s.project()));
+    }
+    assert!(
+        s.execute(
+            "captions.set_emphasis",
+            json!({"item":1,"cue_id":"missing","word_ids":[1]})
+        )
+        .is_err()
+    );
+    s.execute(
+        "captions.set_emphasis",
+        json!({"item":1,"cue_id":"source/0","word_ids":[1]}),
+    )
+    .unwrap();
+    assert_eq!(
+        emphasis_of(&s),
+        BTreeMap::from([("source/0".into(), vec![1])])
+    );
+    // One undo step per gesture, and the saved file round-trips the selection.
+    let manual = s.project().clone();
+    assert_eq!(
+        project::decode(&project::encode(&manual, false).unwrap())
+            .unwrap()
+            .project,
+        *manual
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &selected);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+    s.redo().unwrap();
+    s.redo().unwrap();
+    assert_eq!(s.project(), &manual);
+    s.execute(
+        "captions.set_emphasis",
+        json!({"item":1,"cue_id":"source/0","word_ids":[]}),
+    )
+    .unwrap();
+    assert!(emphasis_of(&s).is_empty());
+    s.undo().unwrap();
+
+    // Retranslation drops the selection; cue text and word timing stay as they were.
+    let cue_before = {
+        let ItemParams::Caption(p) =
+            &s.project().data().scene().timeline.overlays[0].items[0].content
+        else {
+            panic!("caption");
+        };
+        p.cues.cues[0].clone()
+    };
+    s.execute(
+        "retranslate",
+        json!({"item":1,"target_language":"vi","texts":{"source/0":"Doanh thu tăng 40%"},
+               "translation_ref":"again","force":true}),
+    )
+    .unwrap();
+    assert!(emphasis_of(&s).is_empty());
+    let ItemParams::Caption(after) =
+        &s.project().data().scene().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption");
+    };
+    assert_eq!(after.cues.cues[0].word_timing, cue_before.word_timing);
+    assert_eq!(
+        after.cues.cues[0]
+            .texts
+            .get(&captions::LanguageTag::parse("en").unwrap()),
+        cue_before
+            .texts
+            .get(&captions::LanguageTag::parse("en").unwrap())
+    );
 }

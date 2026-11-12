@@ -889,6 +889,7 @@ impl<'a> Renderer<'a> {
                     .map(|&(_, start, end)| (start, end))
                     .collect()
             }),
+            emphasis: word_plan.map_or_else(Vec::new, |(plan, _)| plan.emphasis.clone()),
             active_word: word_plan.and_then(|(plan, at)| {
                 plan.spans
                     .iter()

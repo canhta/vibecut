@@ -239,6 +239,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         range(0, 10)?,
         Some(asset_id),
         ItemParams::Caption(CaptionParams {
+            emphasis: Default::default(),
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

@@ -46,6 +46,7 @@ fn nfc_and_nfd_shapes_render_identically_without_tofu() {
 
     let paint = Paint {
         span_fill: None,
+        emphasis: None,
         fill: Color::WHITE,
         outline: Some(Outline {
             color: Color::BLACK,

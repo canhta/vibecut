@@ -38,6 +38,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
             source_range: TimeRange::new(Tick::ZERO, tick(2, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
@@ -1208,6 +1209,67 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         assert_eq!(
             first.pixels(),
             r.render_frame(tick(2, 3), &mut Empty, &h).unwrap().pixels()
+        );
+        // Keyword emphasis rides the same overlay: preview and burn share it, only colour
+        // changes, it persists, and a stale selection paints nothing.
+        let with_emphasis = |ids: Vec<u32>| {
+            let mut data = p.data().clone();
+            let project::ItemParams::Caption(params) =
+                &mut data.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                panic!("caption");
+            };
+            let id = params.cues.cues[0].id.clone();
+            params.emphasis.insert(id, ids);
+            project::Project::new(data).unwrap()
+        };
+        let emphasised = with_emphasis(vec![1]);
+        assert_eq!(
+            project::decode(&project::encode(&emphasised, false).unwrap())
+                .unwrap()
+                .project,
+            emphasised,
+            "emphasis survives persistence"
+        );
+        let mut er = Renderer::new(&emphasised, s.clone()).unwrap();
+        assert!(
+            er.caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings
+                .is_empty()
+        );
+        let em_first = er.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
+        assert_ne!(
+            em_first.pixels(),
+            first.pixels(),
+            "emphasis recolours: {tag}"
+        );
+        assert_eq!(
+            em_first.pixels(),
+            er.preview_frame(tick(1, 2), &mut Empty, &h)
+                .unwrap()
+                .pixels(),
+            "preview and burn share the emphasis path: {tag}"
+        );
+        let em_rgba = em_first.rgba8(1, &h).unwrap();
+        png(&em_rgba.bytes, &format!("word-emphasis-{tag}"));
+        eprintln!("word-emphasis-{tag} hash={:#x}", hash(&em_rgba.bytes));
+        assert!(
+            rgba.bytes
+                .chunks_exact(4)
+                .zip(em_rgba.bytes.chunks_exact(4))
+                .all(|(a, b)| a[3] == b[3]),
+            "emphasis never changes alpha or geometry: {tag}"
+        );
+        let stale = with_emphasis(vec![5]);
+        let mut stale_renderer = Renderer::new(&stale, s.clone()).unwrap();
+        assert_eq!(
+            stale_renderer
+                .render_frame(tick(1, 2), &mut Empty, &h)
+                .unwrap()
+                .pixels(),
+            first.pixels(),
+            "ids that outlived their words paint nothing: {tag}"
         );
         // Word activity follows the content clock, not the real-local opacity clock.
         let mut held = p.data().clone();

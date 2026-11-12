@@ -241,6 +241,7 @@ pub(crate) fn seed() -> Session {
                 source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
                 content: ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),
@@ -657,6 +658,46 @@ pub(crate) fn with_words(seed: &Session) -> Session {
                 word_ranges: vec![SourceRange::new(Tick(500), Tick(600)).unwrap()],
                 style: None,
             });
+        }
+    }
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+/// Caption item 4's `cue-1` carries one verified word record per word.
+pub(crate) fn with_verified_words(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            let text = "Quarter revenue grew 40 percent worldwide";
+            let cue = params.cues.cues.first_mut().unwrap();
+            cue.texts.values_mut().next().unwrap().text = text.into();
+            let mut at = 0;
+            let records = text
+                .split(' ')
+                .enumerate()
+                .map(|(index, word)| {
+                    let bytes = at..at + word.len();
+                    at += word.len() + 1;
+                    let timed =
+                        SourceRange::new(Tick(index as i64 * 100), Tick(index as i64 * 100 + 100))
+                            .unwrap();
+                    captions::VerifiedCueWord {
+                        bytes,
+                        source_range: timed,
+                        projection: captions::WordProjection::Visible(timed),
+                        provenance: captions::TimingProvenance::Native,
+                    }
+                })
+                .collect();
+            cue.word_timing = captions::CueWordTiming::Words {
+                language: cue.source_lang.clone(),
+                text: text.into(),
+                records,
+            };
         }
     }
     Session::new(Project::new(data).unwrap(), 10).unwrap()

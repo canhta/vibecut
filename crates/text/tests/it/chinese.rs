@@ -76,6 +76,7 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
 
     let paint = Paint {
         span_fill: None,
+        emphasis: None,
         fill: Color::WHITE,
         outline: Some(Outline {
             color: Color::BLACK,

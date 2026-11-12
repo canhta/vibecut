@@ -556,6 +556,19 @@ fn validate(data: &ProjectData) -> Result<()> {
                     if p.cues.cues.len() > 100000 {
                         return Err(Error::TooLarge("cues"));
                     }
+                    // Structure only: ids that outlived their words stay storable and are
+                    // ignored by `captions::resolve_selection`.
+                    if p.emphasis.len() > 100000
+                        || p.emphasis.iter().any(|(id, words)| {
+                            text(id).is_err()
+                                || words.len() > captions::MAX_EMPHASIS_WORDS
+                                || words
+                                    .windows(2)
+                                    .any(|pair| matches!(pair, [a, b] if a >= b))
+                        })
+                    {
+                        return Err(Error::Invalid("caption emphasis"));
+                    }
                     if p.cues.styles.len() > captions::MAX_CUE_STYLES {
                         return Err(Error::TooLarge("cue styles"));
                     }

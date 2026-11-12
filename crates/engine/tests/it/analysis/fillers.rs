@@ -74,6 +74,7 @@ fn project() -> Arc<Project> {
             source_range: SourceRange::new(Tick::ZERO, Tick(300)).unwrap(),
             start: Tick::ZERO,
             content: ItemParams::Caption(CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

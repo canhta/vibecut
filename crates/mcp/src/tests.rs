@@ -519,12 +519,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.save_preset", Effect::Edit, true, true),
         ("captions.rename_preset", Effect::Edit, true, true),
         ("captions.delete_preset", Effect::Edit, true, true),
-        (
-            "clipboard.copy",
-            Effect::SessionControl,
-            true,
-            true,
-        ),
+        ("clipboard.copy", Effect::SessionControl, true, true),
         (
             "clipboard.copy_keyframes",
             Effect::SessionControl,
@@ -621,6 +616,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("reframe.generate", Effect::JobControl, true, true),
         ("reframe.set_manual", Effect::Edit, true, true),
         ("captions.apply", Effect::Edit, true, true),
+        ("captions.select_emphasis", Effect::Edit, true, true),
+        ("captions.set_emphasis", Effect::Edit, true, true),
         ("captions.set_word_highlight", Effect::Edit, true, true),
         ("captions.generate", Effect::JobControl, true, true),
         ("clips.suggest", Effect::JobControl, true, true),

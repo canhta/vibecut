@@ -31,6 +31,6 @@ pub use layout::{
 };
 pub use mask::{StrokeKind, coverage_signed_distance, coverage_signed_distance_bytes};
 pub use render::{
-    Canvas, Decoration, Glow, Image, Outline, Paint, Rectangle, RenderError, Shadow, SpanFill,
-    render,
+    Canvas, Decoration, EmphasisFill, Glow, Image, MAX_EMPHASIS_SPANS, Outline, Paint, Rectangle,
+    RenderError, Shadow, SpanFill, render,
 };

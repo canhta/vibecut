@@ -493,3 +493,93 @@ fn source_cut_units_keep_unicode_native_groups_and_never_estimate_missing_timing
     assert_eq!(units.len(), 1);
     assert_eq!(units[0].range, range(0, 2));
 }
+
+#[test]
+#[allow(clippy::unwrap_used, reason = "validated emphasis fixture")]
+fn emphasis_selects_a_verified_subset_and_stale_ids_resolve_to_nothing() {
+    use captions::{Cue, CueText, CueWordTiming, VerifiedCueWord, WordProjection};
+    let cue = |tag: &str, text: &str| {
+        let mut at = 0;
+        let records: Vec<_> = text
+            .split(' ')
+            .enumerate()
+            .map(|(index, word)| {
+                let bytes = at..at + word.len();
+                at += word.len() + 1;
+                VerifiedCueWord {
+                    bytes,
+                    source_range: range(index, index + 1),
+                    projection: WordProjection::Visible(range(index, index + 1)),
+                    provenance: TimingProvenance::Native,
+                }
+            })
+            .collect();
+        Cue {
+            word_timing: CueWordTiming::Words {
+                language: language(tag),
+                text: text.into(),
+                records,
+            },
+            id: "cue-1".into(),
+            range: range(0, 9),
+            source_lang: language(tag),
+            texts: [(
+                language(tag),
+                CueText {
+                    text: text.into(),
+                    edited: false,
+                    translation_ref: None,
+                },
+            )]
+            .into(),
+            word_ranges: Vec::new(),
+            style: None,
+        }
+    };
+    // (language, text, expected ids): the limit is one word per four, two minimum, three at most;
+    // digits and acronyms outrank length, stopwords never score, ties keep the earlier word.
+    for (tag, text, expected) in [
+        (
+            "en",
+            "Quarter revenue grew 40 percent worldwide",
+            vec![3, 5],
+        ),
+        ("en", "Single", vec![]),
+        ("en", "the NASA launch was fine today", vec![1, 2]),
+        (
+            "en",
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa",
+            vec![0, 2, 4],
+        ),
+        ("xx", "ab cd ef gh", vec![0]),
+    ] {
+        let value = cue(tag, text);
+        let lexicon = captions::EmphasisLexicon::builtin(&language(tag)).ok();
+        assert_eq!(lexicon.is_some(), tag != "xx");
+        let ids = captions::select_lexicon(&value, lexicon.as_ref()).unwrap();
+        assert_eq!(ids, expected, "{text}");
+        assert!(ids.len() <= captions::MAX_EMPHASIS_WORDS);
+        captions::validate_selection(&value, &ids).unwrap();
+        assert_eq!(captions::resolve_selection(&value, &ids), ids.as_slice());
+    }
+    // Stale or hostile ids are refused and resolve to nothing; they are never clamped.
+    let value = cue("en", "Quarter revenue grew 40 percent worldwide");
+    for ids in [vec![6], vec![3, 3], vec![5, 3], vec![0, 1, 2, 3]] {
+        assert!(captions::validate_selection(&value, &ids).is_err());
+        assert!(captions::resolve_selection(&value, &ids).is_empty());
+    }
+    // Without verified timing there is no selection and no invented one; edited text drops proof.
+    let mut unverified = value.clone();
+    unverified.word_timing = CueWordTiming::Unverified;
+    assert!(matches!(
+        captions::select_lexicon(&unverified, None),
+        Err(captions::Error::NoWordTiming)
+    ));
+    let mut edited = value;
+    edited.texts.get_mut(&language("en")).unwrap().text = "Quarter revenue".into();
+    assert!(matches!(
+        captions::select_lexicon(&edited, None),
+        Err(captions::Error::NoWordTiming)
+    ));
+    assert!(captions::resolve_selection(&edited, &[3]).is_empty());
+}

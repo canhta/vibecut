@@ -2289,6 +2289,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         Tick(2 * SECOND),
         Some(AssetId(1)),
         ItemParams::Caption(project::CaptionParams {
+            emphasis: Default::default(),
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

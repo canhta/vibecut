@@ -358,6 +358,7 @@ fn caption_editor() -> vibecut::Editor {
                 source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
                 start: Tick::ZERO,
                 content: project::ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

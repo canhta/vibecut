@@ -105,11 +105,32 @@ pub struct SpanFill {
     pub rgb: [u8; 3],
 }
 
+/// Most keyword-emphasis spans one caption cue paints.
+pub const MAX_EMPHASIS_SPANS: usize = 3;
+
+/// Up to [`MAX_EMPHASIS_SPANS`] ordered, disjoint canonical byte spans that share one RGB
+/// colour. Like [`SpanFill`] it recolours whole glyph fills only and keeps the base alpha;
+/// where the active-word [`SpanFill`] covers the same glyphs it wins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EmphasisFill {
+    pub spans: [(usize, usize); MAX_EMPHASIS_SPANS],
+    /// How many leading entries of `spans` are used.
+    pub len: usize,
+    pub rgb: [u8; 3],
+}
+
+impl EmphasisFill {
+    fn used(&self) -> &[(usize, usize)] {
+        self.spans.get(..self.len).unwrap_or(&[])
+    }
+}
+
 /// How a layout is painted.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Paint {
     pub fill: Color,
     pub span_fill: Option<SpanFill>,
+    pub emphasis: Option<EmphasisFill>,
     pub outline: Option<Outline>,
     pub shadow: Option<Shadow>,
     pub glow: Option<Glow>,
@@ -122,6 +143,7 @@ impl Default for Paint {
         Self {
             fill: Color::WHITE,
             span_fill: None,
+            emphasis: None,
             outline: None,
             shadow: None,
             glow: None,
@@ -309,6 +331,11 @@ pub fn render(
     {
         return Err(RenderError::InvalidSpan);
     }
+    if let Some(emphasis) = paint.emphasis
+        && (emphasis.len > MAX_EMPHASIS_SPANS || !layout.certifies_spans(emphasis.used()))
+    {
+        return Err(RenderError::InvalidSpan);
+    }
     let width = canvas.width as usize;
     let height = canvas.height as usize;
     let mut image = Image {
@@ -334,9 +361,21 @@ pub fn render(
 
     let mut fill_mask = Mask::new(width, height);
     let mut span_mask = paint.span_fill.map(|_| Mask::new(width, height));
+    let mut emphasis_mask = paint.emphasis.map(|_| Mask::new(width, height));
     for glyph in &layout.glyphs {
         let path = glyph_path(glyph);
         fill_into(&path, &mut fill_mask, ox + glyph.x, oy + glyph.y);
+        if let (Some(emphasis), Some(mask)) = (paint.emphasis, emphasis_mask.as_mut())
+            && emphasis
+                .used()
+                .iter()
+                .any(|&(start, end)| glyph.cluster >= start && glyph.cluster_end <= end)
+            && !paint
+                .span_fill
+                .is_some_and(|span| glyph.cluster >= span.start && glyph.cluster_end <= span.end)
+        {
+            fill_into(&path, mask, ox + glyph.x, oy + glyph.y);
+        }
         if let (Some(span), Some(mask)) = (paint.span_fill, span_mask.as_mut())
             && glyph.cluster >= span.start
             && glyph.cluster_end <= span.end
@@ -370,6 +409,20 @@ pub fn render(
         }
     }
 
+    // The active word's glyphs are left out of the emphasis mask, so the layers never overlap.
+    let layers: Vec<(&Mask, [u8; 3])> = emphasis_mask
+        .as_ref()
+        .zip(paint.emphasis)
+        .map(|(mask, emphasis)| (mask, emphasis.rgb))
+        .into_iter()
+        .chain(
+            span_mask
+                .as_ref()
+                .zip(paint.span_fill)
+                .map(|(mask, span)| (mask, span.rgb)),
+        )
+        .collect();
+
     // Glow and shadow sit behind the outline and fill. The fill mask already
     // includes decoration bars, so they cast the same shadow as the glyphs.
     if let Some(glow) = paint.glow {
@@ -385,37 +438,22 @@ pub fn render(
         let stroke = mask::stroke(&fill_mask, outline.width, outline.kind)?;
         if outline.kind == StrokeKind::Outer {
             blend(&mut image, &stroke, outline.color);
-            blend_fill(
-                &mut image,
-                &fill_mask,
-                paint.fill,
-                span_mask.as_ref().zip(paint.span_fill),
-            );
+            blend_fill(&mut image, &fill_mask, paint.fill, &layers);
         } else {
-            blend_fill(
-                &mut image,
-                &fill_mask,
-                paint.fill,
-                span_mask.as_ref().zip(paint.span_fill),
-            );
+            blend_fill(&mut image, &fill_mask, paint.fill, &layers);
             blend(&mut image, &stroke, outline.color);
         }
     } else {
-        blend_fill(
-            &mut image,
-            &fill_mask,
-            paint.fill,
-            span_mask.as_ref().zip(paint.span_fill),
-        );
+        blend_fill(&mut image, &fill_mask, paint.fill, &layers);
     }
     Ok(image)
 }
 
-fn blend_fill(image: &mut Image, mask: &Mask, color: Color, span: Option<(&Mask, SpanFill)>) {
-    let Some((active, span)) = span else {
+fn blend_fill(image: &mut Image, mask: &Mask, color: Color, layers: &[(&Mask, [u8; 3])]) {
+    if layers.is_empty() {
         blend(image, mask, color);
         return;
-    };
+    }
     // Composite coverage once. Splitting the paint into two over operations would
     // antialias shared edges twice and change the base alpha.
     for (index, coverage) in mask.a.iter().enumerate() {
@@ -424,7 +462,6 @@ fn blend_fill(image: &mut Image, mask: &Mask, color: Color, span: Option<(&Mask,
         if alpha <= 0.0 {
             continue;
         }
-        let ratio = (active.a.get(index).copied().unwrap_or_default() / coverage).clamp(0.0, 1.0);
         let Some(pixel) = index
             .checked_mul(4)
             .and_then(|offset| image.pixels.get_mut(offset..offset.saturating_add(4)))
@@ -432,12 +469,14 @@ fn blend_fill(image: &mut Image, mask: &Mask, color: Color, span: Option<(&Mask,
             continue;
         };
         let (rgb, coverage_slot) = pixel.split_at_mut(3);
-        for ((out, base), target) in rgb
-            .iter_mut()
-            .zip([color.r, color.g, color.b])
-            .zip(span.rgb)
-        {
-            let source = f32::from(base) + (f32::from(target) - f32::from(base)) * ratio;
+        for (channel, (out, base)) in rgb.iter_mut().zip([color.r, color.g, color.b]).enumerate() {
+            let mut source = f32::from(base);
+            for (layer, target) in layers {
+                let ratio =
+                    (layer.a.get(index).copied().unwrap_or_default() / coverage).clamp(0.0, 1.0);
+                let target = target.get(channel).copied().unwrap_or(base);
+                source += (f32::from(target) - source) * ratio;
+            }
             *out = (source * alpha + f32::from(*out) * (1.0 - alpha))
                 .round()
                 .clamp(0.0, 255.0) as u8;
@@ -512,6 +551,7 @@ mod tests {
             (20.0, 40.0),
             &Paint {
                 span_fill: None,
+                emphasis: None,
                 fill: Color::rgb(255, 255, 255),
                 outline: Some(Outline {
                     color: Color::rgb(0, 0, 0),
@@ -565,6 +605,7 @@ mod tests {
             (20.0, 30.0),
             &Paint {
                 span_fill: None,
+                emphasis: None,
                 fill: Color::WHITE,
                 outline: None,
                 shadow: None,
@@ -580,6 +621,7 @@ mod tests {
             (20.0, 30.0),
             &Paint {
                 span_fill: None,
+                emphasis: None,
                 fill: Color::WHITE,
                 outline: Some(Outline {
                     color: Color::BLACK,

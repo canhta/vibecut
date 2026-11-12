@@ -64,6 +64,15 @@ impl CaptionPreset {
         }
     }
 }
+/// How `captions.select_emphasis` chooses keywords. Lexicon is deterministic and local.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EmphasisMode {
+    #[default]
+    Lexicon,
+}
 /// One whole-item style choice: a built-in or imported value materializes into
 /// cue styles, while a saved preset stays a live project reference with a
 /// sparse patch.
@@ -397,6 +406,9 @@ pub enum Fixture {
     Thumbnails,
     /// Timeline whose caption cue carries measured source words.
     Words,
+    /// Timeline whose caption item 4 cue `cue-1` carries verified word records over
+    /// "Quarter revenue grew 40 percent worldwide".
+    VerifiedWords,
     /// Timeline plus one real local video asset, id 97, at least one second long.
     Video,
     /// Timeline plus one real local video asset, id 97, and video item 8 over it.
@@ -625,6 +637,8 @@ commands! {
     ImportCaptions, "captions.import", "Import ASS captions", Edit { asset: SourceAsset, language: captions::LanguageTag, start: Tick, #[serde(default)] track: Option<TrackId>, #[serde(default)] name: Option<NfcText>, styles: Vec<captions::CueStyle>, cues: Vec<captions::AssCue> } => Timeline, serde_json::json!({"asset":{"ephemeral":true,"id":99,"path":"$output/captions.ass","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"ass","duration":254016000000_i64,"streams":[]}},"language":"en","start":0,"track":null,"name":"Captions","styles":[{"font_family":"Arial","font_size_ratio":0.0555,"primary_color":[255,255,255,255],"outline_color":[0,0,0,255],"background_color":[0,0,0,0],"border_style":1,"alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},"margin_left_ratio":0.0,"margin_right_ratio":0.0,"margin_vertical_ratio":0.0,"bold":true,"italic":false,"underline":false,"strikeout":false}],"cues":[{"range":{"start":0,"end":254016000000_i64},"text":"Hello","style":0}]}), grant = Human;
     RenameCaptionPreset, "captions.rename_preset", "Rename caption preset", Edit { preset: project::CaptionPresetId, name: NfcText } => CaptionPresetBank, serde_json::json!({"preset":100,"name":"Renamed look"}), available = NoTransaction, grant = Agent;
     SaveCaptionPreset, "captions.save_preset", "Save caption preset", Edit { item: ItemId, name: NfcText } => CaptionPresetBank, serde_json::json!({"item":4,"name":"Saved look"}), available = CaptionItem, grant = Agent;
+    SelectCaptionEmphasis, "captions.select_emphasis", "Select caption keyword emphasis", Edit { item: ItemId, cue_ids: Vec<NfcText>, #[serde(default)] mode: EmphasisMode } => VerifiedWords, serde_json::json!({"item":4,"cue_ids":["cue-1"],"mode":"lexicon"}), available = CaptionItem, grant = Agent;
+    SetCaptionEmphasis, "captions.set_emphasis", "Set caption emphasis words", Edit { item: ItemId, cue_id: NfcText, word_ids: Vec<u32> } => VerifiedWords, serde_json::json!({"item":4,"cue_id":"cue-1","word_ids":[3]}), available = CaptionItem, grant = Agent;
     SetCaptionWordHighlight, "captions.set_word_highlight", "Highlight caption words", Edit { item: ItemId, enabled: bool } => Timeline, serde_json::json!({"item":4,"enabled":true}), available = CaptionItem, grant = Agent;
     CaptionsTranslate, "captions.translate", "Translate captions", JobControl { item: ItemId, #[serde(default)] cues: Option<Vec<NfcText>>, target_language: captions::LanguageTag, #[serde(default)] force: bool, #[serde(default)] #[schemars(length(max = 128))] glossary: Vec<ai::GlossaryTerm> } => Timeline, serde_json::json!({"item":4,"target_language":"vi"}), grant = Agent;
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});

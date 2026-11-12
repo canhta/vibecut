@@ -4,10 +4,16 @@ use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, c
 use project::{TextAlign, TextDecoration};
 use std::sync::Arc;
 
+/// Fixed keyword-emphasis fill, distinct from the gold active-word fill. No measured reference
+/// exists yet, so it is not user-configurable.
+pub(super) const EMPHASIS_RGB: [u8; 3] = [255, 64, 129];
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct TextKey {
     pub(super) value: String,
     pub(super) word_spans: Vec<(usize, usize)>,
+    /// Keyword-emphasis subset of `word_spans`, painted in `EMPHASIS_RGB`.
+    pub(super) emphasis: Vec<(usize, usize)>,
     pub(super) active_word: Option<(usize, usize, [u8; 3])>,
     pub(super) size: u32,
     pub(super) fill: [u8; 4],
@@ -197,7 +203,7 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
     let decorated = u64::from(key.shadow.is_some() || key.glow.is_some()) * bytes * 8;
     let _scratch = hooks.reserve(
         MemoryKind::Compositor,
-        bytes * (2 + u64::from(key.active_word.is_some()))
+        bytes * (2 + u64::from(key.active_word.is_some()) + u64::from(!key.emphasis.is_empty()))
             + decorated
             + key.value.len() as u64 * 512
             + (f64::from(size).powi(2) * 32.0).ceil() as u64,
@@ -227,6 +233,19 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
                 .active_word
                 .filter(|_| layout.certifies_spans(&key.word_spans))
                 .map(|(start, end, rgb)| text::SpanFill { start, end, rgb }),
+            emphasis: (!key.emphasis.is_empty() && layout.certifies_spans(&key.word_spans)).then(
+                || {
+                    let mut spans = [(0, 0); text::MAX_EMPHASIS_SPANS];
+                    for (slot, span) in spans.iter_mut().zip(&key.emphasis) {
+                        *slot = *span;
+                    }
+                    text::EmphasisFill {
+                        spans,
+                        len: key.emphasis.len().min(text::MAX_EMPHASIS_SPANS),
+                        rgb: EMPHASIS_RGB,
+                    }
+                },
+            ),
             outline,
             shadow,
             glow,

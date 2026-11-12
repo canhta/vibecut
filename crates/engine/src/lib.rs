@@ -9,8 +9,8 @@ pub use session::{
 };
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
-    CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, Example, Fixture, GrantClass,
-    ItemClipboard, ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard,
+    CommandSpec, CreatedId, CueId, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture,
+    GrantClass, ItemClipboard, ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard,
     KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
     TextAnimationPreset, TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge,
     WordId, declaration_order_error, lifecycle, registry,

@@ -1234,6 +1234,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             source_range: range,
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

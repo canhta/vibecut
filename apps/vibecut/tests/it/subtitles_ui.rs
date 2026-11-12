@@ -1152,6 +1152,7 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         .apply(Command::SetItemParam {
             item: second,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
@@ -2250,6 +2251,7 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         .apply(Command::SetItemParam {
             item,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
@@ -2282,6 +2284,7 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         .apply(Command::SetItemParam {
             item,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
@@ -2427,6 +2430,7 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
         .apply(Command::SetItemParam {
             item,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

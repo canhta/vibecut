@@ -248,6 +248,7 @@ pub(crate) fn caption_words_item(
         source_range: range(source.0, source.1),
         start: Tick(start),
         content: ItemParams::Caption(project::CaptionParams {
+            emphasis: Default::default(),
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

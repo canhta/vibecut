@@ -124,6 +124,7 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
             source_range: range(0, 1000),
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

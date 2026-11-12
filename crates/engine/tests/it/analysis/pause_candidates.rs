@@ -125,6 +125,7 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
         source_range: range(0, 12),
         start: Tick::ZERO,
         content: ItemParams::Caption(project::CaptionParams {
+            emphasis: Default::default(),
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

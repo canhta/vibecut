@@ -41,6 +41,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
 
     let paint = Paint {
         span_fill: None,
+        emphasis: None,
         fill: Color::WHITE,
         outline: Some(Outline {
             color: Color::BLACK,
@@ -82,6 +83,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
         (20.0, 820.0),
         &Paint {
             span_fill: None,
+            emphasis: None,
             fill: Color::WHITE,
             outline: None,
             shadow: None,
@@ -225,6 +227,25 @@ fn active_source_fill_keeps_shaping_translation_and_antialias_alpha() {
                 .zip(active_rgba)
                 .all(|(a, b)| a[3] == b[3]),
             "no double antialias or alpha: {name}"
+        );
+        // Keyword emphasis over the same span paints the same pixels as the active fill.
+        let emphasised = render(
+            &layout,
+            canvas,
+            (10.0, 10.0),
+            &Paint {
+                emphasis: Some(text::EmphasisFill {
+                    spans: [(0, end), (0, 0), (0, 0)],
+                    len: 1,
+                    rgb: [255, 215, 0],
+                }),
+                ..paint
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            emphasised.pixels, active.pixels,
+            "emphasis recolours like the active fill: {name}"
         );
         let translation = &layout.lines[1];
         let row = (translation.baseline - translation.ascent + 10.0).ceil() as usize;

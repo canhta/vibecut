@@ -373,6 +373,7 @@ fn interview_filler_candidates_match_the_manual_read() {
             source_range: range,
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

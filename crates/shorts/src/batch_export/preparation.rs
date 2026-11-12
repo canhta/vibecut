@@ -228,6 +228,7 @@ fn prepare_clip(
                 source_range: segment.range,
                 start: *start,
                 content: ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

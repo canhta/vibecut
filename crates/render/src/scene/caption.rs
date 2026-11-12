@@ -146,6 +146,8 @@ pub(super) fn decoration(cue: Option<&CueStyle>) -> TextDecoration {
 /// consume the same plan; a token count is never used as alignment evidence.
 pub(super) struct WordPlan {
     pub spans: Vec<(Option<time::SourceRange>, usize, usize)>,
+    /// Canonical byte spans of the cue's stored emphasis words that are visible, ascending.
+    pub emphasis: Vec<(usize, usize)>,
     pub reason: Option<captions::WordHighlightReason>,
 }
 pub(super) fn word_plan(
@@ -157,11 +159,13 @@ pub(super) fn word_plan(
     use captions::{CueWordTiming, WordHighlightReason as Reason};
     let refused = |reason| WordPlan {
         spans: Vec::new(),
+        emphasis: Vec::new(),
         reason: Some(reason),
     };
     if !params.word_highlight {
         return WordPlan {
             spans: Vec::new(),
+            emphasis: Vec::new(),
             reason: None,
         };
     }
@@ -279,8 +283,18 @@ pub(super) fn word_plan(
             offset + end,
         ));
     }
+    // Emphasis rides the same verified spans: stored ids that no longer match the cue's
+    // words resolve to nothing, so a stale selection is never painted.
+    let stored = params.emphasis.get(&cue.id).map_or(&[][..], Vec::as_slice);
+    let emphasis = captions::resolve_selection(cue, stored)
+        .iter()
+        .filter_map(|&id| spans.get(usize::try_from(id).ok()?))
+        .filter(|(range, _, _)| range.is_some())
+        .map(|&(_, start, end)| (start, end))
+        .collect();
     WordPlan {
         spans,
+        emphasis,
         reason: None,
     }
 }

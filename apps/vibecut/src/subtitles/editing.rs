@@ -518,6 +518,7 @@ impl Subtitles {
         session.apply(Command::SetItemParam {
             item: self.item.ok_or(Error::Invalid("caption item"))?,
             content: ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight,
                 preset,
                 overrides,

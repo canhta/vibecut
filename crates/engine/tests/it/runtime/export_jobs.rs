@@ -563,6 +563,7 @@ fn caption_project() -> project::Project {
                 source_range: range,
                 start: Tick(at * time::TICKS_PER_SECOND),
                 content: ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

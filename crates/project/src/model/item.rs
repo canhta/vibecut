@@ -596,6 +596,11 @@ pub struct CaptionParams {
     /// Sparse patch over the selected preset; requires a selection.
     #[serde(default, skip_serializing_if = "captions::CaptionOverrides::is_empty")]
     pub overrides: captions::CaptionOverrides,
+    /// Keyword emphasis per cue ID: ascending verified word ids (indices into the cue's
+    /// `CueWordTiming::Words` records) painted by the word-highlight overlay. Read only through
+    /// `captions::resolve_selection`; ids that no longer match the cue's words are ignored.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub emphasis: std::collections::BTreeMap<captions::NfcText, Vec<u32>>,
     pub cues: CueTrack,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

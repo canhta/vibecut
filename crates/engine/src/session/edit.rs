@@ -373,6 +373,20 @@ pub(crate) fn apply(
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;
         }
+        EditCommand::SelectCaptionEmphasis {
+            item,
+            cue_ids,
+            mode,
+        } => {
+            data = text::select_emphasis(data, item, &cue_ids, mode)?;
+        }
+        EditCommand::SetCaptionEmphasis {
+            item,
+            cue_id,
+            word_ids,
+        } => {
+            data = text::set_emphasis(data, item, &cue_id, word_ids)?;
+        }
         EditCommand::SetCaptionWordHighlight { item, enabled } => {
             data = text::set_word_highlight(data, item, enabled)?;
         }

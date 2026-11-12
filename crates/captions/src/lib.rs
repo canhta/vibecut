@@ -1,4 +1,5 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
+mod emphasis;
 mod filler;
 mod interchange;
 mod language;
@@ -7,6 +8,10 @@ mod segment;
 mod span;
 mod style;
 mod timing;
+pub use emphasis::{
+    EmphasisLexicon, MAX_EMPHASIS_WORDS, emphasis_limit, resolve_selection, select_lexicon,
+    validate_selection,
+};
 pub use filler::{FillerCandidate, FillerKind, FillerLexicon, detect_fillers};
 pub use interchange::ass;
 pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
@@ -43,6 +48,10 @@ pub enum Error {
     TooLarge,
     #[error("subtitle time cannot be represented")]
     Time(#[from] time::TimeError),
+    #[error("caption cue has no verified word timing")]
+    NoWordTiming,
+    #[error("no emphasis lexicon for the requested language")]
+    NoEmphasisLexicon,
     #[error("no filler lexicon for the requested language")]
     NoFillerLexicon,
     #[error("malformed filler lexicon: {0}")]

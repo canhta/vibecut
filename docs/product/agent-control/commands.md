@@ -412,6 +412,34 @@ Effect: `Edit`. Fixture: `CaptionPresetBank`.
 }
 ```
 
+## `captions.select_emphasis` — Select caption keyword emphasis
+
+Effect: `Edit`. Fixture: `VerifiedWords`.
+
+```json
+{
+  "cue_ids": [
+    "cue-1"
+  ],
+  "item": 4,
+  "mode": "lexicon"
+}
+```
+
+## `captions.set_emphasis` — Set caption emphasis words
+
+Effect: `Edit`. Fixture: `VerifiedWords`.
+
+```json
+{
+  "cue_id": "cue-1",
+  "item": 4,
+  "word_ids": [
+    3
+  ]
+}
+```
+
 ## `captions.set_word_highlight` — Highlight caption words
 
 Effect: `Edit`. Fixture: `Timeline`.

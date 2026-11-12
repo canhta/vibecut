@@ -580,6 +580,55 @@ fn cli_native_word_opt_in_survives_save_and_paints_the_encoded_source_word() {
         ..Default::default()
     })
     .unwrap();
+    // Keyword emphasis through the same exec path: a subset of the verified words, saved.
+    let cue_id = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|value| match &value.content {
+            project::ItemParams::Caption(params) => {
+                params.cues.cues.first().map(|cue| cue.id.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    let selected = cli(&[
+        os("exec"),
+        path.as_os_str(),
+        os("captions.select_emphasis"),
+        os(&serde_json::json!({"item":item,"cue_ids":[cue_id]}).to_string()),
+        os("--json"),
+    ]);
+    assert_eq!(code(&selected), 0, "{:?}", selected);
+    let saved = project::load(&path).unwrap().project;
+    let project::ItemParams::Caption(saved_params) = &saved
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|value| value.id == item)
+        .unwrap()
+        .content
+    else {
+        panic!("caption item")
+    };
+    let words = serde_json::to_value(&saved_params.cues.cues[0].word_timing).unwrap()["records"]
+        .as_array()
+        .map_or(0, Vec::len);
+    assert!(words > 0, "the fixture carries verified word timing");
+    assert!(
+        saved_params
+            .emphasis
+            .values()
+            .flatten()
+            .all(|&id| (id as usize) < words)
+            && saved_params.emphasis.values().all(|ids| ids.len() <= 3),
+        "emphasis stays a subset of the verified words"
+    );
     for enabled in [false, true] {
         let params = serde_json::json!({"item":item,"enabled":enabled}).to_string();
         let command = cli(&[

@@ -93,6 +93,7 @@ fn session() -> Session {
             start: Tick(0),
             animations: Default::default(),
             content: ItemParams::Caption(CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

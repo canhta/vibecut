@@ -51,6 +51,7 @@ pub(crate) fn apply_command(result: CaptionsResult, start: Tick) -> Result<Comma
             source_range: result.range,
             start,
             content: project::ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

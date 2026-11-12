@@ -278,6 +278,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                 finish(&mut r, job);
             }
             Fixture::Words => s = with_words(&s),
+            Fixture::VerifiedWords => s = crate::support::control::with_verified_words(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
                     name: "History".into(),
@@ -501,6 +502,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "burn_subtitles",
                 "captions.apply_style",
                 "captions.save_preset",
+                "captions.select_emphasis",
+                "captions.set_emphasis",
                 "captions.set_word_highlight",
                 "export_subtitles",
                 "fillers.classify",

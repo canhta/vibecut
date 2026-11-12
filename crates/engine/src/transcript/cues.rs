@@ -86,6 +86,7 @@ pub fn build_session(
             source_range: range,
             start: Tick::ZERO,
             content: ItemParams::Caption(CaptionParams {
+                emphasis: Default::default(),
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),
