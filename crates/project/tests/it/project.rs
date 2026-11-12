@@ -1158,6 +1158,362 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         Err(Error::Invalid(_))
     ));
 }
+
+fn music_record() -> LibraryMusic {
+    LibraryMusic {
+        id: "track-1".into(),
+        title: "Night Walk".into(),
+        author: "Example Artist".into(),
+        licence: "CC BY 4.0".into(),
+        licence_url: "https://creativecommons.org/licenses/by/4.0/".into(),
+        attribution: "Night Walk by Example Artist".into(),
+        source_url: "https://source.example/track-1".into(),
+        audio_url: "https://cdn.example/track-1.ogg".into(),
+        duration_ms: 1,
+    }
+}
+
+fn music_candidate(music: LibraryMusic) -> ProjectData {
+    let mut data = empty().into_data();
+    data.assets
+        .push(source(std::env::temp_dir().join("music-source.mp4")));
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(2),
+        name: "Music".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            id: ItemId(1),
+            hidden: false,
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            retime: Default::default(),
+            source_asset: Some(AssetId(3)),
+            source_range: range(0, 10),
+            start: Tick::ZERO,
+            content: ItemParams::Audio(AudioParams {
+                fades: Default::default(),
+                volume: 0.0,
+                muted: false,
+                source: AudioSource::Music { music },
+            }),
+        }],
+    });
+    data
+}
+
+#[test]
+fn music_ingestion_rejects_hostile_provenance() {
+    use serde_json::json;
+    let mut cases = vec![
+        ("id", json!("")),
+        ("id", json!("x".repeat(129))),
+        ("id", json!("bad/id")),
+        ("id", json!("é")),
+        ("licence", json!("CC BY-NC 4.0")),
+        ("licence", json!("CC BY-SA 4.0")),
+        ("licence", json!("CC BY-ND 4.0")),
+        ("licence", json!("Public Domain Mark 1.0")),
+        ("licence", json!("Unknown")),
+        ("licence", json!("CC BY")),
+        ("licence", json!("")),
+        (
+            "licence_url",
+            json!("https://creativecommons.org/licenses/by-nc/4.0/"),
+        ),
+        (
+            "licence_url",
+            json!("https://creativecommons.org/publicdomain/zero/1.0/"),
+        ),
+        (
+            "licence_url",
+            json!("https://creativecommons.org/licenses/by/3.0/"),
+        ),
+        ("duration_ms", json!(0)),
+        ("duration_ms", json!(86_400_001)),
+    ];
+    for field in ["title", "author", "attribution"] {
+        for value in [
+            String::new(),
+            "x".repeat(4097),
+            "line\nfeed".into(),
+            "control\u{85}".into(),
+        ] {
+            cases.push((field, json!(value)));
+        }
+    }
+    for field in ["source_url", "audio_url"] {
+        for value in [
+            "http://example.com/audio",
+            "https://",
+            "https:///audio",
+            "https://?query=1",
+            "https://secret-user-marker@example.com/audio",
+            "https://user:password@example.com/audio",
+            "https://bad..example/audio",
+            "https://-bad.example/audio",
+            "https://[invalid]/audio",
+            "https://example.com:99999/audio",
+            "https://example.com:/audio",
+            "https://example.com/a b",
+            "https://example.com/\\audio",
+            "https://example.com/\u{85}",
+            "https://example.com/%zz",
+        ] {
+            cases.push((field, json!(value)));
+        }
+        cases.push((
+            field,
+            json!(format!("https://example.com/{}", "x".repeat(8192))),
+        ));
+    }
+    let mut accepted = Vec::new();
+    for (index, (field, value)) in cases.into_iter().enumerate() {
+        let mut raw = serde_json::to_value(music_record()).unwrap();
+        raw[field] = value;
+        let music: LibraryMusic = serde_json::from_value(raw).unwrap();
+        let candidate = music_candidate(music);
+        let body = serde_json::to_value(&candidate).unwrap();
+        let envelope = json!({
+            "format": FORMAT_ID, "schema_version": SCHEMA_VERSION,
+            "generator": "music-test", "project": body,
+        });
+        let model = Project::new(candidate);
+        let serde = serde_json::from_value::<Project>(body);
+        let decoded = decode(&serde_json::to_vec(&envelope).unwrap());
+        for (path, passed) in [
+            ("model", model.is_ok()),
+            ("serde", serde.is_ok()),
+            ("envelope", decoded.is_ok()),
+        ] {
+            if passed {
+                accepted.push(format!("{index}:{field}:{path}"));
+            }
+        }
+        for error in [
+            model.err().map(|e| e.to_string()),
+            serde.err().map(|e| e.to_string()),
+            decoded.err().map(|e| e.to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            assert!(!error.contains("secret-user-marker"));
+            assert!(!error.contains("password"));
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "malformed provenance admitted: {accepted:?}"
+    );
+}
+
+#[test]
+fn music_schema_refuses_pre_music_and_future_before_interpreting_body() {
+    for (version, old) in [(SCHEMA_VERSION - 1, true), (SCHEMA_VERSION + 1, false)] {
+        let raw = serde_json::json!({
+            "format": FORMAT_ID, "schema_version": version,
+            "generator": "music-test", "project": null,
+        });
+        let error = decode(&serde_json::to_vec(&raw).unwrap()).unwrap_err();
+        assert!(
+            match error {
+                Error::TooOld { found, supported } => {
+                    old && found == version && supported == SCHEMA_VERSION
+                }
+                Error::TooNew { found, supported } => {
+                    !old && found == version && supported == SCHEMA_VERSION
+                }
+                _ => false,
+            },
+            "wrong schema refusal for {version}"
+        );
+    }
+}
+
+#[test]
+fn music_licences_require_the_decided_global_identity_and_deed() {
+    // Expected identities are the canonical URLs published on the CC deeds.
+    let identities = [
+        (
+            "CC0 1.0",
+            "https://creativecommons.org/publicdomain/zero/1.0/",
+        ),
+        ("CC BY 1.0", "https://creativecommons.org/licenses/by/1.0/"),
+        ("CC BY 2.0", "https://creativecommons.org/licenses/by/2.0/"),
+        ("CC BY 2.5", "https://creativecommons.org/licenses/by/2.5/"),
+        ("CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"),
+        ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"),
+    ];
+    for (name, deed) in identities {
+        for spelling in [deed, deed.strip_suffix('/').unwrap()] {
+            let identity = MusicLicence::parse(name, spelling).unwrap();
+            assert_eq!(identity.display_name(), name);
+            assert_eq!(identity.deed_url(), deed);
+            let mut music = music_record();
+            music.licence = name.into();
+            music.licence_url = spelling.into();
+            let expected = music.clone();
+            let project = Project::new(music_candidate(music)).unwrap();
+            let loaded = decode(&encode(&project, false).unwrap()).unwrap();
+            let serialized = serde_json::to_value(loaded.project).unwrap();
+            assert_eq!(
+                serialized
+                    .pointer("/scenes/0/timeline/audio/0/items/0/content/params/source/music")
+                    .unwrap(),
+                &serde_json::to_value(expected).unwrap(),
+            );
+        }
+        for (other, wrong_deed) in identities {
+            if other != name {
+                assert!(matches!(
+                    MusicLicence::parse(name, wrong_deed),
+                    Err(Error::Invalid(_))
+                ));
+            }
+        }
+    }
+    for name in [
+        "CC BY-NC 4.0",
+        "CC BY-SA 4.0",
+        "CC BY-ND 4.0",
+        "Public Domain Mark 1.0",
+        "Unknown",
+        "CC BY",
+        "CC0",
+        "CC BY 5.0",
+        "CC BY 3.0 US",
+        "cc by 4.0",
+        " CC BY 4.0",
+    ] {
+        assert!(matches!(
+            MusicLicence::parse(name, identities[5].1),
+            Err(Error::Unsupported(_))
+        ));
+    }
+    for deed in [
+        "http://creativecommons.org/licenses/by/4.0/",
+        "https://creativecommons.org.evil.example/licenses/by/4.0/",
+        "https://user@creativecommons.org/licenses/by/4.0/",
+        "https://creativecommons.org:443/licenses/by/4.0/",
+        "https://creativecommons.org/licenses/by/4.0/?q=1",
+        "https://creativecommons.org/licenses/by/4.0/#deed",
+        "https://creativecommons.org/licenses/by/4.0//",
+        "https://creativecommons.org/licenses/by/4.0/deed.en",
+        "https://creativecommons.org/licenses/by/3.0/us/",
+        "https://creativecommons.org/licenses/by/4.0/../3.0/",
+        "https://creativecommons.org/licenses/%62y/4.0/",
+        "https://CREATIVECOMMONS.ORG/licenses/by/4.0/",
+        "",
+    ] {
+        assert!(matches!(
+            MusicLicence::parse("CC BY 4.0", deed),
+            Err(Error::Invalid(_))
+        ));
+    }
+    assert!(matches!(
+        MusicLicence::parse(&"x".repeat(4097), identities[5].1),
+        Err(Error::TooLarge(_))
+    ));
+    assert!(matches!(
+        MusicLicence::parse("CC BY 4.0", &"x".repeat(8193)),
+        Err(Error::TooLarge(_))
+    ));
+}
+
+#[test]
+fn music_provenance_round_trips_exactly_at_admission_bounds() {
+    for duration_ms in [1, 86_400_000] {
+        let mut music = music_record();
+        music.id = "-_.:".repeat(32).into();
+        music.title = "é".repeat(2048).into();
+        music.author = "a".repeat(4096).into();
+        music.attribution = "b".repeat(4096).into();
+        music.licence_url = "https://creativecommons.org/licenses/by/4.0".into();
+        for url in [&mut music.source_url, &mut music.audio_url] {
+            *url = format!(
+                "https://example.com/{}",
+                "x".repeat(8192 - "https://example.com/".len())
+            );
+        }
+        music.duration_ms = duration_ms;
+        music.validate().unwrap();
+        let project = Project::new(music_candidate(music)).unwrap();
+        let bytes = encode(&project, false).unwrap();
+        let loaded = decode(&bytes).unwrap();
+        assert_eq!(loaded.schema_version, SCHEMA_VERSION);
+        assert_eq!(loaded.project, project);
+    }
+    for url in [
+        "https://example.com:443/a%20b?q=1#part",
+        "https://127.0.0.1/audio",
+        "https://[::1]:8443/audio",
+        "https://localhost/audio",
+    ] {
+        let mut music = music_record();
+        music.source_url = url.into();
+        music.audio_url = url.into();
+        Project::new(music_candidate(music)).unwrap();
+    }
+    for (field, value) in [
+        ("id", "x".repeat(129)),
+        ("title", "é".repeat(2049)),
+        ("author", "a".repeat(4097)),
+        ("attribution", "b".repeat(4097)),
+        (
+            "source_url",
+            format!(
+                "https://example.com/{}",
+                "x".repeat(8193 - "https://example.com/".len())
+            ),
+        ),
+        (
+            "audio_url",
+            format!(
+                "https://example.com/{}",
+                "x".repeat(8193 - "https://example.com/".len())
+            ),
+        ),
+    ] {
+        let mut raw = serde_json::to_value(music_record()).unwrap();
+        raw[field] = value.into();
+        let music: LibraryMusic = serde_json::from_value(raw).unwrap();
+        assert!(
+            matches!(music.validate(), Err(Error::TooLarge(_))),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn music_serde_normalizes_provenance_text_and_rejects_unknown_fields() {
+    let mut raw = serde_json::to_value(music_candidate(music_record())).unwrap();
+    let music = raw
+        .pointer_mut("/scenes/0/timeline/audio/0/items/0/content/params/source/music")
+        .unwrap();
+    for field in ["title", "author", "attribution"] {
+        music[field] = "Tie\u{302}\u{301}ng Vie\u{323}\u{302}t".into();
+    }
+    let project: Project = serde_json::from_value(raw.clone()).unwrap();
+    let serialized = serde_json::to_value(&project).unwrap();
+    let stored = serialized
+        .pointer("/scenes/0/timeline/audio/0/items/0/content/params/source/music")
+        .unwrap();
+    for field in ["title", "author", "attribution"] {
+        assert_eq!(stored[field], "Tiếng Việt");
+    }
+    assert_eq!(
+        decode(&encode(&project, false).unwrap()).unwrap().project,
+        project
+    );
+    raw.pointer_mut("/scenes/0/timeline/audio/0/items/0/content/params/source/music")
+        .unwrap()["licence_identity"] = "second shape".into();
+    assert!(serde_json::from_value::<Project>(raw).is_err());
+}
 #[test]
 fn fades_without_an_offset_load_as_uncut_fades() {
     // A fade without `offset` is uncut.

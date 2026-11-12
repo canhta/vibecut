@@ -74,6 +74,8 @@ Language for the editor's privacy and execution boundaries.
 
 - **Graphic**: A saved generated rectangle or ellipse with fill/stroke appearance and ordinary item-relative animation; a Video-track item with no source asset. Other shape kinds remain outside the admitted scope.
 
+- **Music track**: An openly licensed audio record from the aggregator, carrying title, author, canonical licence name and deed URL, attribution, source page and audio URL. Its licence identity is admitted by [project Music provenance](crates/project/src/model/README.md#music-provenance); only public-domain-dedication and attribution-only families are shown.
+
 **Keyframe clipboard** — A bounded immutable snapshot of selected animation keys held
 by one Session, separate from project/history and system text. Transfer and lifetime:
 [Session](crates/engine/src/session/README.md#keyframe-clipboard).

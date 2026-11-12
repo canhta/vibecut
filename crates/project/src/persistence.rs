@@ -3,6 +3,8 @@
 pub mod atomic;
 pub mod autosave;
 mod bounds;
+mod directory;
+mod identity;
 mod metadata;
 mod streaming;
 mod writer;
@@ -17,7 +19,7 @@ use bounds::{MAX_BYTES, Writer, check};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";
-pub const SCHEMA_VERSION: u32 = 30;
+pub const SCHEMA_VERSION: u32 = 31;
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'static str,

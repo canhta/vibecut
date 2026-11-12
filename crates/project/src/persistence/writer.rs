@@ -1,5 +1,6 @@
 //! One adjacent OS lease plus a full-content precondition for project publication.
 use super::atomic;
+use super::identity::{Identity, held_identity, named_identity};
 use super::metadata;
 use super::read_bytes;
 use crate::{Error, Loaded, Project, Result};
@@ -46,7 +47,7 @@ impl std::fmt::Debug for SaveReceipt {
 pub struct WriterLease {
     path: PathBuf,
     _lock: WriterLock,
-    identity: LockIdentity,
+    identity: Identity,
     baseline: Option<ContentHash>,
 }
 
@@ -365,7 +366,7 @@ fn open_control(path: &Path, create: bool) -> Result<File> {
     Ok(file)
 }
 
-fn check_control(file: &File, path: &Path, identity: LockIdentity) -> Result<()> {
+fn check_control(file: &File, path: &Path, identity: Identity) -> Result<()> {
     let metadata = fs::symlink_metadata(path).map_err(Error::LockUnavailable)?;
     if !metadata.file_type().is_file()
         || !file.metadata().map_err(Error::LockUnavailable)?.is_file()
@@ -440,43 +441,6 @@ fn current(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.into()),
     }
-}
-
-#[cfg(unix)]
-type LockIdentity = (u64, u64);
-#[cfg(windows)]
-type LockIdentity = file_id::FileId;
-#[cfg(not(any(unix, windows)))]
-type LockIdentity = ();
-
-#[cfg(unix)]
-fn held_identity(file: &File, _: &Path) -> std::io::Result<LockIdentity> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = file.metadata()?;
-    Ok((metadata.dev(), metadata.ino()))
-}
-#[cfg(unix)]
-fn named_identity(_: &Path, metadata: &fs::Metadata) -> std::io::Result<LockIdentity> {
-    use std::os::unix::fs::MetadataExt;
-    Ok((metadata.dev(), metadata.ino()))
-}
-#[cfg(windows)]
-fn held_identity(_: &File, path: &Path) -> std::io::Result<LockIdentity> {
-    // The file is already open without delete sharing. Do not degrade to 64-bit
-    // IDs: those do not establish object identity on ReFS.
-    file_id::get_high_res_file_id(path)
-}
-#[cfg(windows)]
-fn named_identity(path: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
-    file_id::get_high_res_file_id(path)
-}
-#[cfg(not(any(unix, windows)))]
-fn held_identity(_: &File, _: &Path) -> std::io::Result<LockIdentity> {
-    Err(std::io::ErrorKind::Unsupported.into())
-}
-#[cfg(not(any(unix, windows)))]
-fn named_identity(_: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
-    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(test)]

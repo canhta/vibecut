@@ -342,3 +342,322 @@ fn real_process_contention_and_abrupt_death_release_the_os_lease() {
         );
     }
 }
+
+#[test]
+fn music_owned_directory_fresh_existing_native_paths_keep_unrelated_files() {
+    use project::atomic::OwnedDirectory;
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("Âm nhạc 中");
+    let root = OwnedDirectory::open(&path).unwrap();
+    assert_eq!(root.path(), fs::canonicalize(&path).unwrap());
+    let audio = root.child(std::ffi::OsStr::new("audio Việt")).unwrap();
+    fs::write(root.path().join(".control.lock"), b"control").unwrap();
+    fs::create_dir(root.path().join("unrelated")).unwrap();
+    fs::write(audio.path().join("sentinel"), b"audio").unwrap();
+    let reopened = OwnedDirectory::open(&path).unwrap();
+    let existing = reopened.child(std::ffi::OsStr::new("audio Việt")).unwrap();
+    assert_eq!(existing.path(), audio.path());
+    assert_eq!(
+        fs::read(existing.path().join("sentinel")).unwrap(),
+        b"audio"
+    );
+    assert_eq!(
+        fs::read(root.path().join(".control.lock")).unwrap(),
+        b"control"
+    );
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
+    #[cfg(unix)]
+    {
+        use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
+        assert_eq!(
+            fs::metadata(root.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(audio.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let name = std::ffi::OsString::from_vec(b"native-\xff".to_vec());
+        match fs::create_dir(root.path().join(&name)) {
+            Ok(()) => {
+                let native = root.child(&name).unwrap();
+                assert_eq!(native.path().file_name(), Some(name.as_os_str()));
+            }
+            Err(expected) => assert!(matches!(root.child(&name), Err(Error::Io(actual))
+                if actual.raw_os_error() == expected.raw_os_error())),
+        }
+    }
+    drop(root);
+    audio.validate().unwrap();
+    existing.validate().unwrap();
+}
+
+#[test]
+fn music_owned_directory_bad_components_and_kinds_refuse_without_mutation() {
+    use project::atomic::OwnedDirectory;
+    use std::ffi::OsStr;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = OwnedDirectory::open(fixture.path()).unwrap();
+    fs::write(root.path().join("sentinel"), b"keep").unwrap();
+    fs::write(root.path().join(".control.lock"), b"control").unwrap();
+    fs::create_dir(root.path().join("unrelated")).unwrap();
+    for name in ["", ".", "..", "a/b", "a\\b", "/", "a/", "./audio", "a\0b"] {
+        assert!(
+            matches!(root.child(OsStr::new(name)), Err(Error::Invalid(_))),
+            "{name:?}"
+        );
+        assert_eq!(fs::read(root.path().join("sentinel")).unwrap(), b"keep");
+        assert_eq!(
+            fs::read(root.path().join(".control.lock")).unwrap(),
+            b"control"
+        );
+        assert!(root.path().join("unrelated").is_dir());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
+    }
+    #[cfg(windows)]
+    for name in [
+        "C:",
+        "C:audio",
+        "audio.",
+        "audio ",
+        "audio:stream",
+        "NUL",
+        "nul.txt",
+        "CON",
+        "CONIN$",
+        "PRN",
+        "AUX",
+        "COM1",
+        "LPT9.wav",
+        "COM¹",
+        "LPT².txt",
+        "bad?",
+        "bad\u{0001}",
+    ] {
+        assert!(
+            matches!(root.child(OsStr::new(name)), Err(Error::Invalid(_))),
+            "{name:?}"
+        );
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
+    }
+    assert!(matches!(
+        root.child(OsStr::new("sentinel")),
+        Err(Error::Unsupported(_))
+    ));
+    assert!(matches!(
+        OwnedDirectory::open(&root.path().join("sentinel")),
+        Err(Error::Unsupported(_))
+    ));
+    let audio = root.child(OsStr::new("audio")).unwrap();
+    assert!(matches!(
+        audio.child(OsStr::new("nested")),
+        Err(Error::Unsupported(_))
+    ));
+    assert!(!audio.path().join("nested").exists());
+    assert_eq!(fs::read(root.path().join("sentinel")).unwrap(), b"keep");
+    assert_eq!(
+        fs::read(root.path().join(".control.lock")).unwrap(),
+        b"control"
+    );
+    assert!(root.path().join("unrelated").is_dir());
+}
+
+#[cfg(unix)]
+fn music_directory_alias(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+#[cfg(windows)]
+fn music_directory_alias(target: &Path, link: &Path) {
+    // Test-only junction creation needs no symlink privilege. Always execute;
+    // unavailable junction support is a failed fixture, never a passing skip.
+    let output = std::process::Command::new("cmd.exe")
+        .args(["/d", "/c", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "junction fixture failed: {:?}",
+        output
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn music_owned_directory_root_alias_resolves_once_children_refuse_aliases() {
+    use project::atomic::OwnedDirectory;
+    use std::ffi::OsStr;
+    let fixture = tempfile::tempdir().unwrap();
+    let real = fixture.path().join("real root");
+    let other = fixture.path().join("unrelated");
+    fs::create_dir(&real).unwrap();
+    fs::create_dir(&other).unwrap();
+    fs::write(real.join(".control.lock"), b"control").unwrap();
+    fs::write(other.join("sentinel"), b"unrelated").unwrap();
+    let alias = fixture.path().join("root alias");
+    music_directory_alias(&real, &alias);
+    let root = OwnedDirectory::open(&alias).unwrap();
+    assert_eq!(root.path(), fs::canonicalize(&real).unwrap());
+    #[cfg(windows)]
+    fs::remove_dir(&alias).unwrap();
+    #[cfg(unix)]
+    fs::remove_file(&alias).unwrap();
+    music_directory_alias(&other, &alias);
+    root.validate().unwrap();
+    let audio = root.child(OsStr::new("audio")).unwrap();
+    assert_eq!(audio.path().parent(), Some(root.path()));
+    assert!(!other.join("audio").exists());
+    for (name, target) in [
+        ("linked", other.clone()),
+        ("dangling", fixture.path().join("absent")),
+    ] {
+        music_directory_alias(&target, &real.join(name));
+        assert!(matches!(root.child(OsStr::new(name)), Err(Error::Conflict)));
+        assert_eq!(fs::read(other.join("sentinel")).unwrap(), b"unrelated");
+        assert_eq!(fs::read(real.join(".control.lock")).unwrap(), b"control");
+        assert!(!fixture.path().join("absent").exists());
+    }
+    #[cfg(windows)]
+    {
+        match std::os::windows::fs::symlink_dir(&other, real.join("symlink")) {
+            Ok(()) => {
+                assert!(matches!(
+                    root.child(OsStr::new("symlink")),
+                    Err(Error::Conflict)
+                ));
+                std::os::windows::fs::symlink_dir(
+                    fixture.path().join("absent"),
+                    real.join("missing-link"),
+                )
+                .unwrap();
+                assert!(matches!(
+                    root.child(OsStr::new("missing-link")),
+                    Err(Error::Conflict)
+                ));
+                eprintln!(
+                    "Windows symlink and dangling-symlink rows executed; junction rows also executed"
+                );
+            }
+            Err(error) if error.raw_os_error() == Some(1314) => {
+                eprintln!(
+                    "UNVERIFIED Windows symlink rows: ERROR_PRIVILEGE_NOT_HELD (1314); mandatory junction and dangling-junction rows executed"
+                );
+            }
+            Err(error) => panic!("unexpected symlink fixture failure: {error}"),
+        }
+    }
+    assert_eq!(fs::read(other.join("sentinel")).unwrap(), b"unrelated");
+    assert_eq!(fs::read(real.join(".control.lock")).unwrap(), b"control");
+    audio.validate().unwrap();
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn music_owned_directory_retained_parent_and_child_handle_bind_replacements() {
+    use project::atomic::OwnedDirectory;
+    for parent in [false, true] {
+        let fixture = tempfile::tempdir().unwrap();
+        let path = fixture.path().join("root");
+        let root = OwnedDirectory::open(&path).unwrap();
+        let audio = root.child(std::ffi::OsStr::new("audio")).unwrap();
+        fs::write(audio.path().join("sentinel"), b"keep").unwrap();
+        fs::write(root.path().join(".control.lock"), b"control").unwrap();
+        let named = if parent {
+            path.clone()
+        } else {
+            path.join("audio")
+        };
+        let moved = fixture.path().join("moved");
+        #[cfg(windows)]
+        let previous_identity = file_id::get_high_res_file_id(&named).unwrap();
+        drop(root); // The child alone must retain the root handle and identity.
+        let (go, ready) = std::sync::mpsc::channel();
+        let attempt = std::thread::scope(|scope| {
+            let named = &named;
+            let moved = &moved;
+            let pending = scope.spawn(move || {
+                ready.recv_timeout(Duration::from_secs(10)).unwrap();
+                fs::rename(named, moved)
+            });
+            audio.validate().unwrap();
+            go.send(()).unwrap();
+            pending.join().unwrap()
+        });
+        #[cfg(windows)]
+        {
+            let error = attempt.unwrap_err();
+            eprintln!("Windows held directory rename refused (parent={parent}): {error:?}");
+            assert!(matches!(error.raw_os_error(), Some(5 | 32)), "{error:?}");
+            audio.validate().unwrap();
+            assert_eq!(fs::read(audio.path().join("sentinel")).unwrap(), b"keep");
+            drop(audio);
+            fs::rename(&named, &moved).unwrap();
+        }
+        #[cfg(unix)]
+        {
+            attempt.unwrap();
+            assert!(matches!(audio.validate(), Err(Error::Conflict)));
+            drop(audio);
+        }
+        fs::create_dir(&named).unwrap();
+        fs::write(named.join("replacement"), b"new object").unwrap();
+        let reopened = OwnedDirectory::open(&named).unwrap();
+        reopened.validate().unwrap();
+        #[cfg(windows)]
+        assert_ne!(
+            file_id::get_high_res_file_id(reopened.path()).unwrap(),
+            previous_identity
+        );
+        assert_eq!(
+            fs::read(reopened.path().join("replacement")).unwrap(),
+            b"new object"
+        );
+        let sentinel = if parent {
+            moved.join("audio/sentinel")
+        } else {
+            moved.join("sentinel")
+        };
+        assert_eq!(fs::read(sentinel).unwrap(), b"keep");
+        assert_eq!(
+            fs::read(if parent {
+                moved.join(".control.lock")
+            } else {
+                path.join(".control.lock")
+            })
+            .unwrap(),
+            b"control"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn music_owned_directory_stale_root_refuses_mutation_and_changed_child_kinds() {
+    use project::atomic::OwnedDirectory;
+    use std::ffi::OsStr;
+    for replacement in ["absent", "file", "alias"] {
+        let fixture = tempfile::tempdir().unwrap();
+        let path = fixture.path().join("root");
+        let root = OwnedDirectory::open(&path).unwrap();
+        let audio = root.child(OsStr::new("audio")).unwrap();
+        fs::write(audio.path().join("sentinel"), b"keep").unwrap();
+        fs::rename(audio.path(), path.join("moved")).unwrap();
+        match replacement {
+            "file" => fs::write(path.join("audio"), b"unrelated").unwrap(),
+            "alias" => music_directory_alias(&path.join("moved"), &path.join("audio")),
+            _ => {}
+        }
+        assert!(matches!(audio.validate(), Err(Error::Conflict)));
+        assert_eq!(fs::read(path.join("moved/sentinel")).unwrap(), b"keep");
+        fs::rename(&path, fixture.path().join("old-root")).unwrap();
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("sentinel"), b"replacement").unwrap();
+        assert!(matches!(
+            root.child(OsStr::new("must-not-create")),
+            Err(Error::Conflict)
+        ));
+        assert_eq!(fs::read_dir(&path).unwrap().count(), 1);
+        assert_eq!(fs::read(path.join("sentinel")).unwrap(), b"replacement");
+    }
+}

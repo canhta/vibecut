@@ -15,9 +15,9 @@ mod track;
 
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
-    GraphicParams, Item, ItemId, ItemParams, LibrarySound, OverlayParams, TextAlign,
-    TextBackground, TextDecoration, TextParams, TextPosition, TextStyle, VideoParams, WordSpan,
-    valid_volume,
+    GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound, MusicLicence,
+    OverlayParams, TextAlign, TextBackground, TextDecoration, TextParams, TextPosition, TextStyle,
+    VideoParams, WordSpan, valid_volume,
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, MAX_TEXT_PRESETS, Project, ProjectData, ProjectId,

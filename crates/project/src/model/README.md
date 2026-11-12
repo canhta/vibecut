@@ -36,6 +36,16 @@ Missing referenced asset IDs are invalid; missing files are valid and carry medi
 
 Audio items carry `AudioParams::source`. The default `upload` references a project asset. `library` records the provider identity, attribution, licence, source page and exact preview URL of the cached bytes, validated (positive provider id, HTTPS URLs, bounded text) and persisted so export can write attribution and licence metadata.
 
+### Music provenance
+
+`music` retains one `LibraryMusic` record with its audio item. `LibraryMusic::validate`
+is its admission interface for project construction and ingestion; its public docs
+own the text, URL, identifier and millisecond limits. `MusicLicence::parse` admits
+only matching recognized global dedication/attribution identities and deed URLs;
+its public docs own the exact recognized spellings. It has no persisted shape of
+its own. Loading or validating a project never performs a source-service lookup or
+repairs restrictive, contradictory or unknown provenance.
+
 ## Settings
 
 The default canvas is 1920×1080 at 30 fps, black background, 16:9 preset, 1920×1080 last-custom size, 48 kHz output audio. Canvas frames must have exact positive frame ticks. `Settings` owns output sample rate, master volume and mute, the clip and master loudness targets and the last measured gains. Presentation preferences stay in the app.

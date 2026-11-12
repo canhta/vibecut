@@ -4,7 +4,7 @@ Versioned project JSON, the writer lease, atomic files, recovery snapshots, opti
 
 ## Envelope and limits
 
-`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (30). Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
+`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (31). Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
 
 ProjectId is stored as a canonical decimal string to keep all u64 bits for control clients; other IDs are numeric. Leases, hashes and receipts are not persisted in the envelope.
 
@@ -35,6 +35,10 @@ Managed-directory moves opt in with `WriterLease::enable_directory_moves(root)` 
 A refused move leaves its source and the caller's history unchanged. An interruption before or after the atomic sibling rename leaves the complete directory at its source or destination. The library owns hidden-directory retention, recovery and permanent deletion. Physical power-loss durability and noncooperating replacement of directories or control files are outside this advisory protocol.
 
 ## Atomic files
+
+`atomic::OwnedDirectory` retains native directory handles and named identity for a canonical root and one immediate child. Open resolves an intentionally supplied root alias once; child names and existing child objects must pass the public admission contract. A child retains and validates its root after the caller drops the root guard. Call `validate` before filesystem work and again at publication boundaries; a bare `path()` does not perform that check. Deeper nesting is refused instead of building recursive ancestry. The guard owns no contents, locks, control files, cleanup or publication protocol; its consumer owns those operations.
+
+Unix compares device/inode from the retained descriptor and current name. Windows opens directory/reparse handles with backup semantics, shares read/write but excludes delete sharing, refuses all native reparse attributes, and obtains full high-resolution IDs through the existing safe `file-id` dependency. Native identity failure never yields a guard. Unix rename can invalidate the next check; Windows can prevent the rename itself. These are advisory operation boundaries, not arbitrary post-check race or physical power-loss guarantees. Native identity code is shared with the unchanged writer-lease protocol, not a second lease implementation.
 
 `atomic_write` is the shared replacement primitive. It stages privately in the destination directory, writes, restores the previous file's permissions, syncs, then atomically replaces. Failed staging or publication cleans up and preserves prior bytes. Destination symlinks are refused; parent sync after publication is best effort. Ownership, ACLs, extended attributes and hard links are not preserved. Callers serialize writes to one target.
 

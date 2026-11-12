@@ -44,6 +44,200 @@ pub struct LibrarySound {
     /// Provider-reported duration for display before the cached file is probed.
     pub duration_ms: u64,
 }
+/// Music provenance carried with an audio item that came from the open music
+/// source. The identifier is the source's own opaque id, so a track keeps its
+/// licence and attribution wherever the project is opened.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryMusic {
+    /// Source identifier (the aggregator's UUID).
+    pub id: NfcText,
+    pub title: NfcText,
+    pub author: NfcText,
+    /// Short licence name shown beside the author, e.g. `CC BY 4.0`.
+    pub licence: NfcText,
+    /// Licence deed the track is used under.
+    pub licence_url: String,
+    /// Human-readable attribution written into exports.
+    pub attribution: NfcText,
+    /// Source page for the track; the item's offline media is a cached file.
+    pub source_url: String,
+    /// Exact audio URL the cached bytes were fetched from.
+    pub audio_url: String,
+    /// Source-reported duration for display before the cached file is probed.
+    pub duration_ms: u64,
+}
+impl LibraryMusic {
+    /// Admit provenance before saving or inserting it into a project.
+    ///
+    /// IDs contain 1..=128 ASCII letters/digits or `-_.:` bytes. NFC title, author
+    /// and attribution contain 1..=4096 UTF-8 bytes without controls. URLs are HTTPS, at most 8192
+    /// bytes, with a valid authority and no credentials. Duration is 1..=86400000 ms.
+    /// Licence name and deed must identify the same admitted [`MusicLicence`].
+    /// Returns typed `Invalid`, `Unsupported` or `TooLarge` with static diagnostics;
+    /// this validation performs no network or filesystem IO.
+    pub fn validate(&self) -> Result<()> {
+        if self.id.as_str().len() > 128 {
+            return Err(Error::TooLarge("library music id"));
+        }
+        if self.id.as_str().is_empty()
+            || !self
+                .id
+                .as_str()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+        {
+            return Err(Error::Invalid("library music id"));
+        }
+        for value in [&self.title, &self.author, &self.attribution] {
+            if value.as_str().len() > 4096 {
+                return Err(Error::TooLarge("library music text"));
+            }
+            if value.as_str().trim().is_empty() || value.as_str().chars().any(char::is_control) {
+                return Err(Error::Invalid("library music attribution"));
+            }
+        }
+        MusicLicence::parse(self.licence.as_str(), &self.licence_url)?;
+        music_url(&self.source_url)?;
+        music_url(&self.audio_url)?;
+        if self.duration_ms == 0 || self.duration_ms > 86_400_000 {
+            return Err(Error::Invalid("library music duration"));
+        }
+        Ok(())
+    }
+    /// Attribution record written into the container comment.
+    pub fn attribution_record(&self) -> String {
+        format!(
+            "{} — {} — {} — {}",
+            self.attribution.as_str(),
+            self.licence.as_str(),
+            self.licence_url,
+            self.source_url
+        )
+    }
+}
+
+/// An admitted music dedication/licence identity, independent of persisted fields.
+/// Construct through [`Self::parse`]; no network lookup or inference is performed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MusicLicence {
+    name: &'static str,
+    deed: &'static str,
+}
+impl MusicLicence {
+    /// Match an exact CC0 1.0 or global CC BY 1.0/2.0/2.5/3.0/4.0 name and deed.
+    /// Only omission of the final deed slash is normalized. Ported, versionless,
+    /// unknown and restrictive licences return `Unsupported`; a contradictory or
+    /// noncanonical deed returns `Invalid`. Names over 4096 UTF-8 bytes or URLs
+    /// over 8192 bytes return `TooLarge`. Diagnostics never include supplied text.
+    pub fn parse(display: &str, deed: &str) -> Result<Self> {
+        const IDENTITIES: [(&str, &str); 6] = [
+            (
+                "CC0 1.0",
+                "https://creativecommons.org/publicdomain/zero/1.0/",
+            ),
+            ("CC BY 1.0", "https://creativecommons.org/licenses/by/1.0/"),
+            ("CC BY 2.0", "https://creativecommons.org/licenses/by/2.0/"),
+            ("CC BY 2.5", "https://creativecommons.org/licenses/by/2.5/"),
+            ("CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"),
+            ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"),
+        ];
+        if display.len() > 4096 || deed.len() > 8192 {
+            return Err(Error::TooLarge("music licence identity"));
+        }
+        let (name, canonical) = IDENTITIES
+            .into_iter()
+            .find(|(name, _)| *name == display)
+            .ok_or(Error::Unsupported("music licence identity"))?;
+        if deed != canonical && Some(deed) != canonical.strip_suffix('/') {
+            return Err(Error::Invalid("music licence deed"));
+        }
+        Ok(Self {
+            name,
+            deed: canonical,
+        })
+    }
+
+    /// Canonical display name belonging to the admitted deed.
+    pub fn display_name(&self) -> &'static str {
+        self.name
+    }
+
+    /// Canonical HTTPS deed URL, including its final slash.
+    pub fn deed_url(&self) -> &'static str {
+        self.deed
+    }
+}
+
+fn music_url(value: &str) -> Result<()> {
+    if value.len() > 8192 {
+        return Err(Error::TooLarge("library music URL"));
+    }
+    let invalid = || Error::Invalid("library music URL");
+    let rest = value.strip_prefix("https://").ok_or_else(invalid)?;
+    if value
+        .chars()
+        .any(|c| c.is_control() || c.is_whitespace() || matches!(c, '\\' | '"' | '<' | '>' | '`'))
+    {
+        return Err(invalid());
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let port = if let Some(ipv6) = authority.strip_prefix('[') {
+        let (host, suffix) = ipv6.split_once(']').ok_or_else(invalid)?;
+        host.parse::<std::net::Ipv6Addr>().map_err(|_| invalid())?;
+        if suffix.is_empty() {
+            None
+        } else {
+            Some(suffix.strip_prefix(':').ok_or_else(invalid)?)
+        }
+    } else {
+        let (host, port) = authority
+            .split_once(':')
+            .map_or((authority, None), |(host, port)| (host, Some(port)));
+        if host.is_empty()
+            || host.len() > 253
+            || !host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && label
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                    && label
+                        .as_bytes()
+                        .first()
+                        .is_some_and(u8::is_ascii_alphanumeric)
+                    && label
+                        .as_bytes()
+                        .last()
+                        .is_some_and(u8::is_ascii_alphanumeric)
+            })
+        {
+            return Err(invalid());
+        }
+        if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+            host.parse::<std::net::Ipv4Addr>().map_err(|_| invalid())?;
+        }
+        port
+    };
+    if let Some(port) = port {
+        if port.is_empty()
+            || !port.bytes().all(|b| b.is_ascii_digit())
+            || port.parse::<u16>().is_err()
+        {
+            return Err(invalid());
+        }
+    }
+    let mut bytes = value.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte == b'%'
+            && !(bytes.next().is_some_and(|b| b.is_ascii_hexdigit())
+                && bytes.next().is_some_and(|b| b.is_ascii_hexdigit()))
+        {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
 impl LibrarySound {
     pub(super) fn validate(&self) -> Result<()> {
         if self.id == 0 {
@@ -88,6 +282,9 @@ pub enum AudioSource {
     Upload,
     Library {
         sound: LibrarySound,
+    },
+    Music {
+        music: LibraryMusic,
     },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
