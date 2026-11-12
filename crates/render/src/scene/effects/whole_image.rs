@@ -310,7 +310,7 @@ pub(super) fn brush_strokes(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &
     let (dx, dy) = (a.cos(), -a.sin());
     let (nx, ny) = (-dy, dx);
     let mut acc = [0.0f32; 4];
-    let mut count = 0.0;
+    let mut count = 0.0_f32;
     for i in 0..steps {
         let t = (i as f32 / (steps - 1) as f32 - 0.5) * length;
         for s in [-0.5f32, 0.0, 0.5] {
@@ -1328,7 +1328,7 @@ pub(super) fn posterize_time_content(
     Ok(time::Tick::from_seconds_f64(held, Rounding::Floor)?)
 }
 
-fn highlight_passes(frame: &EffectFrame, threshold: f64, soft: f32) -> Vec<EffectPass> {
+fn highlight_passes(threshold: f64, soft: f32) -> Vec<EffectPass> {
     vec![EffectPass::Pixel {
         entry_point: "highlights",
         uniforms: floats([(threshold / 100.0) as f32, soft]),
@@ -1366,7 +1366,7 @@ pub(super) fn echo_glow_eval(
     } else {
         echoes.min(3.0)
     };
-    let mut passes = highlight_passes(frame, frame.scalar("threshold")?, 0.1);
+    let mut passes = highlight_passes(frame.scalar("threshold")?, 0.1);
     let base = radius * 2.0;
     for echo in 0..count.max(1.0).round() as u32 {
         let sigma = (base as f32 * spread.powi(echo as i32) / echo.max(1) as f32).clamp(0.0, 64.0);
@@ -1427,7 +1427,7 @@ pub(super) fn glint_eval(
     let length = (frame.scalar("length")? as f32 * gain).max(0.0);
     let rays = [2.0, 4.0, 6.0, 8.0][(frame.choice("rays")? as usize).min(3)];
     let steps = if frame.fine { 24.0 } else { 10.0 };
-    let mut passes = highlight_passes(frame, frame.scalar("threshold")?, 0.08);
+    let mut passes = highlight_passes(frame.scalar("threshold")?, 0.08);
     passes.push(EffectPass::Sample {
         entry_point: "glint_rays",
         uniforms: floats([
@@ -1458,7 +1458,7 @@ pub(super) fn wonder_glow_eval(
     let saturation = frame.scalar("saturation")? as f32 / 100.0;
     let tint = if frame.flag("use_color")? { 1.0 } else { 0.0 };
     let screen = if frame.choice("mode")? == 1 { 1.0 } else { 0.0 };
-    let mut passes = highlight_passes(frame, frame.scalar("threshold")?, 0.15);
+    let mut passes = highlight_passes(frame.scalar("threshold")?, 0.15);
     let scales: &[f32] = if frame.fine {
         &[0.25, 1.0, 3.0]
     } else {
@@ -1492,7 +1492,7 @@ pub(super) fn radial_eval(
     let [cx, cy] = [point[0] as f32 * w, point[1] as f32 * h];
     let steps = if frame.fine { 48.0 } else { 12.0 };
     let only = if frame.flag("only")? { 1.0 } else { 0.0 };
-    let mut passes = highlight_passes(frame, frame.scalar("threshold")?, 0.1);
+    let mut passes = highlight_passes(frame.scalar("threshold")?, 0.1);
     passes.push(EffectPass::Sample {
         entry_point: "radial_rays",
         uniforms: floats([
