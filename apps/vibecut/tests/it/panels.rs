@@ -509,16 +509,18 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
     ) || id.starts_with("inspector.text_")
         || id.starts_with("text.animation.")
         || id.starts_with("inspector.lut.")
+        || id.starts_with("inspector.transform.distribute_")
     {
         // Measure from the tab strip the selected kind shows (Text or Adjust).
-        let tab = if has_widget(harness, "inspector.tab.text") {
-            "inspector.tab.text"
-        } else {
-            "inspector.tab.adjust"
-        };
+        let tab = ["inspector.tab.text", "inspector.tab.adjust"]
+            .into_iter()
+            .find(|tab| has_widget(harness, tab));
         for _ in 0..12 {
             let panel = harness.state().panels()["inspector"];
-            let top = widget_rect(harness, tab).bottom() + 8.0;
+            // The multi-selection inspector has no tab strip: start under the panel top.
+            let top = tab.map_or(panel.top() + 44.0, |tab| {
+                widget_rect(harness, tab).bottom() + 8.0
+            });
             let viewport = egui::Rect::from_min_max(
                 egui::pos2(panel.left() + 12.0, top),
                 panel.max - egui::vec2(12.0, 12.0),
