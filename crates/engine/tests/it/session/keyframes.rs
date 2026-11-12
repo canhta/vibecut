@@ -544,9 +544,13 @@ fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
         );
         assert_eq!(s.project(), &before);
     }
-    for params in [json!({"items":[right.0],"speed":2.0,"maintain_pitch":true})] {
-        assert!(s.execute("timeline.set_speed", params).is_err());
-    }
+    assert!(
+        s.execute(
+            "timeline.set_speed",
+            json!({"items":[right.0],"speed":2.0,"maintain_pitch":true})
+        )
+        .is_err()
+    );
     while s.history_len().0 > 1 {
         s.undo().unwrap();
     }

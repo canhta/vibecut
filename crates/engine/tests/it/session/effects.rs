@@ -533,7 +533,7 @@ fn edge_and_relief_thumbnail_jobs_fallback_cache_hit_and_independent_pixels() {
                     .unwrap();
                 assert_eq!(pump(&mut runner, id).state, JobState::Completed);
                 let output = runner.take_output(id).unwrap();
-                for (pixel, expected) in output.bytes().chunks_exact(4).zip(expected) {
+                for (pixel, expected) in output.bytes().as_chunks::<4>().0.iter().zip(expected) {
                     for (actual, expected) in pixel.iter().zip(expected) {
                         assert!(
                             i32::from(*actual).abs_diff(i32::from(expected)) <= 1,
@@ -626,7 +626,9 @@ fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache
     .unwrap();
     assert_ne!(red, pictures[0]);
     assert!(
-        red.chunks_exact(4)
+        red.as_chunks::<4>()
+            .0
+            .iter()
             .all(|p| p[0] > 250 && p[1] < 2 && p[2] < 2)
     );
     let mut keyed = Param::new(ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap();
@@ -649,7 +651,12 @@ fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache
     )
     .1
     .unwrap();
-    assert!(blue.chunks_exact(4).all(|p| p[0] < 2 && p[2] > 250));
+    assert!(
+        blue.as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| p[0] < 2 && p[2] > 250)
+    );
     let calls = adapter.calls.load(Ordering::SeqCst);
     assert_eq!(
         sample(
@@ -1517,7 +1524,7 @@ fn streak_thumbnail_geometry_keys_independent_pixels_fallback_and_refusal() {
                 .unwrap();
             assert_eq!(pump(&mut runner, id).state, JobState::Completed);
             let output = runner.take_output(id).unwrap();
-            for (pixel, linear) in output.bytes().chunks_exact(4).zip(values) {
+            for (pixel, linear) in output.bytes().as_chunks::<4>().0.iter().zip(values) {
                 let encoded = if linear <= 0.0031308 {
                     linear * 12.92
                 } else {

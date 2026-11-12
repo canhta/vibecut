@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::unreachable
+)]
 //! Default cache discovery through the public runtime and consumer boundaries.
 use engine::{
     ByteBudget,

@@ -309,6 +309,13 @@ pub(super) fn git_rev(root: &Path, reference: &str) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+fn cost(value: Option<u64>) -> String {
+    value.map_or_else(
+        || "unknown".to_owned(),
+        |value| format!("USD {:.6}", micros(value)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,11 +325,4 @@ mod tests {
         assert_eq!(sanitize("real/set 1"), "real-set-1");
         assert_eq!(sanitize(""), "set");
     }
-}
-
-fn cost(value: Option<u64>) -> String {
-    value.map_or_else(
-        || "unknown".to_owned(),
-        |value| format!("USD {:.6}", micros(value)),
-    )
 }

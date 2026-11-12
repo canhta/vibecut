@@ -1,4 +1,10 @@
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::unreachable
+)]
 //! Reframe analysis on generated fixtures. The detector double finds the bright
 //! squares the fixture draws, so every expected position is known analytically.
 use ai::{

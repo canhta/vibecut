@@ -1,4 +1,10 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::unreachable
+)]
 use engine::{
     ByteBudget, Command,
     library::{Error as LibraryError, ProjectLibrary},

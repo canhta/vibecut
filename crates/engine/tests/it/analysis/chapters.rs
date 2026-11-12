@@ -228,7 +228,7 @@ impl ConsentPrompt for Grant {
         if self.allowed.load(Ordering::SeqCst) {
             Ok(())
         } else {
-            Err(engine::providers::Error::ConsentRequired.into())
+            Err(engine::providers::Error::ConsentRequired)
         }
     }
 }

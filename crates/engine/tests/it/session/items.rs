@@ -1,4 +1,10 @@
-#![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::unreachable
+)]
 use crate::support::session::{
     get, get_id, get_project, get_project_id, new_item, project, range, session,
 };
@@ -1615,7 +1621,7 @@ fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
             patch: P::GraphicStrokeWidth(40.),
         })
         .unwrap();
-        let current = || get_project(&s.project(), id.0);
+        let current = || get_project(s.project(), id.0);
         assert_eq!(
             current().animations.value_at(&path, Tick(0)).unwrap(),
             Some(project::ParamValue::Scalar(12.))
