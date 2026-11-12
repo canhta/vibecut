@@ -400,21 +400,19 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
             })
             .count();
         assert!(added > 50, "{name}: coverage outside the fill {added}");
+        // Decoration colours under the antialiased glyph edge can move one
+        // threshold pixel; the text block itself stays where it was.
+        let lit = bounds(&bright(&frame));
+        assert!(
+            lit.0.abs_diff(plain_text.0) <= 2
+                && lit.1.abs_diff(plain_text.1) <= 2
+                && lit.2.abs_diff(plain_text.2) <= 2
+                && lit.3.abs_diff(plain_text.3) <= 2,
+            "{name}: {lit:?} {plain_text:?}"
+        );
         match name {
-            "stroke" => {
-                assert_eq!(
-                    bounds(&bright(&frame)),
-                    plain_text,
-                    "stroke never moves the fill"
-                );
-                assert!(!red(&frame).is_empty(), "red stroke");
-            }
+            "stroke" => assert!(!red(&frame).is_empty(), "red stroke"),
             "shadow" => {
-                assert_eq!(
-                    bounds(&bright(&frame)),
-                    plain_text,
-                    "shadow never moves the fill"
-                );
                 let shadow = bounds(&red(&frame));
                 assert!(
                     shadow.2 > plain_text.2 && shadow.3 > plain_text.3,
@@ -422,16 +420,6 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
                 );
             }
             "glow" => {
-                // A white glow also lifts antialiased glyph edges, so it may add a
-                // threshold pixel at the fill boundary; the text block itself stays.
-                let lit = bounds(&bright(&frame));
-                assert!(
-                    lit.0 + 2 >= plain_text.0
-                        && lit.1 + 2 >= plain_text.1
-                        && lit.2 <= plain_text.2 + 2
-                        && lit.3 <= plain_text.3 + 2,
-                    "{lit:?} {plain_text:?}"
-                );
                 let grey = |pixels: &[u8]| {
                     coloured(pixels, |p| {
                         p[0] > 0 && p[0] < 200 && p[0] == p[1] && p[1] == p[2]
