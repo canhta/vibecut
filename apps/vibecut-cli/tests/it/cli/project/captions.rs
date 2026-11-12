@@ -358,7 +358,8 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
 
     let saved = project.data().caption_presets.last().unwrap();
     assert_eq!(saved.name.as_str(), "box renamed");
-    assert_eq!(saved.style.border_style, 3);
+    // The box look saves as a presentation value with an opaque background.
+    assert!(saved.style.background.is_some());
     let cues = project
         .data()
         .scene()
@@ -371,11 +372,10 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
         })
         .unwrap();
     assert!(!cues.cues.is_empty());
-    assert!(
-        cues.cues
-            .iter()
-            .all(|cue| cues.style_of(cue) == Some(&saved.style))
-    );
+    assert!(cues.cues.iter().all(|cue| {
+        cues.style_of(cue)
+            .is_some_and(|style| render::style_from_cue(style) == saved.style)
+    }));
     let mut session = engine::Session::new(project, 100).unwrap();
     let snapshot = session.project().clone();
     let revision = session.revision();

@@ -555,7 +555,7 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     })
     .unwrap();
     s.apply(Command::Delete {
-        items: vec![ItemId(1), right.0],
+        items: vec![ItemId(1), right],
     })
     .unwrap();
     s.apply(Command::DeleteCaptionPreset {
