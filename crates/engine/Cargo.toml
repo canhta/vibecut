@@ -33,6 +33,7 @@ unicode-segmentation.workspace = true
 
 blake3.workspace = true
 text.workspace = true
+transport.workspace = true
 fs4 = "1.1.0"
 
 [target.'cfg(windows)'.dependencies]

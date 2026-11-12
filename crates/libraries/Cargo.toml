@@ -10,11 +10,11 @@ workspace = true
 
 [dependencies]
 engine.workspace = true
-ai = { workspace = true, default-features = false }
 media.workspace = true
 project.workspace = true
 text.workspace = true
 time.workspace = true
+transport.workspace = true
 blake3.workspace = true
 fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs", "fontconfig"] }
 serde = { workspace = true, features = ["derive"] }

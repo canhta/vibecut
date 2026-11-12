@@ -8,9 +8,7 @@ use ai::anthropic::{
     ANTHROPIC_VERSION, AnthropicTranslator, ENDPOINT, MessagesClient, TRANSLATION_MODE,
     message_text,
 };
-use ai::transport::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, UreqTransport,
-};
+use ai::transport::ApiKey;
 use ai::{
     Consent, Error, ExecutionHooks, GlossaryTerm, Money, Operation, ProviderConfig, Request, Scope,
     Stage, Translation, TranslationSegment, TranslationWindow, Translator, translate,
@@ -24,6 +22,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, UreqTransport};
 
 struct Hooks(AtomicBool);
 impl ExecutionHooks for Hooks {
@@ -39,7 +38,7 @@ struct Transport {
     request: Mutex<Option<HttpRequest>>,
 }
 impl HttpTransport for Transport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         *self.request.lock().unwrap() = Some(request);
         Ok(HttpResponse {
@@ -352,7 +351,7 @@ fn provider_errors_are_typed_without_bodies_and_do_not_retry() {
         calls: AtomicUsize,
     }
     impl HttpTransport for FailureTransport {
-        fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             let (status, kind, message) = self.statuses.lock().unwrap().pop_front().unwrap();
             Ok(HttpResponse {

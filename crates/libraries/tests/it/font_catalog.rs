@@ -6,7 +6,6 @@
 )]
 //! Font catalog behaviour through the store, the job runner and `text` layout.
 
-use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::FontError;
 use engine::control::{FontEntry, FontLoadState, FontOrigin, FontState};
 use engine::{
@@ -29,6 +28,7 @@ use std::{
     },
     time::Duration,
 };
+use transport::{DownloadTransport, HttpStreamResponse};
 
 pub const FIXTURE: &[u8] = include_bytes!("../fixtures/fonts/VibeCutFixtureSans-Regular.ttf");
 const SERIF: &[u8] = include_bytes!("../../../../assets/fonts/NotoSerif-Regular.ttf");
@@ -124,7 +124,11 @@ impl Read for Body {
     }
 }
 impl DownloadTransport for Server {
-    fn get(&self, url: &str, _: &[(String, String)]) -> Result<HttpStreamResponse, ai::Error> {
+    fn get(
+        &self,
+        url: &str,
+        _: &[(String, String)],
+    ) -> Result<HttpStreamResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let data = self
             .bodies
@@ -132,7 +136,7 @@ impl DownloadTransport for Server {
             .unwrap()
             .get(url)
             .cloned()
-            .ok_or(ai::Error::Network)?;
+            .ok_or(transport::Error::Network)?;
         let status = self.status.lock().unwrap().get(url).copied().unwrap_or(200);
         Ok(HttpStreamResponse {
             status,

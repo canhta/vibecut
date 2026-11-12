@@ -815,12 +815,12 @@ mod tests {
     }
 
     struct Offline;
-    impl ai::transport::DownloadTransport for Offline {
+    impl transport::DownloadTransport for Offline {
         fn get(
             &self,
             _: &str,
             _: &[(String, String)],
-        ) -> std::result::Result<ai::transport::HttpStreamResponse, ai::Error> {
+        ) -> std::result::Result<transport::HttpStreamResponse, transport::Error> {
             panic!("cached preview must stay offline")
         }
     }

@@ -1,6 +1,7 @@
 //! Fetches bounded remote model identifiers only on an explicit caller request.
-use crate::transport::{ApiKey, HttpRequest, HttpTransport, MAX_RESPONSE_BYTES};
+use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, defaults::validate_model};
+use ::transport::{HttpRequest, HttpTransport, MAX_RESPONSE_BYTES};
 use captions::NfcText;
 use std::collections::BTreeSet;
 

@@ -16,10 +16,10 @@ use ai::clips::{
     ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester,
     OpenAiClipSuggester,
 };
-use ai::transport::UreqTransport;
 use ai::{ExecutionHooks, Stage};
 use captions::{LanguageProfile, LanguageRegistry, LanguageTag, NfcText, SegmentRules, Transcript};
 use engine::providers::Credentials;
+use transport::UreqTransport;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

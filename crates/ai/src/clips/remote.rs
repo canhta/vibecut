@@ -3,14 +3,13 @@ use super::{
     OPENAI_SETTINGS, prepare, validate,
 };
 use crate::remote::{self, UploadDisclosure};
+use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, ExecutionHooks, Operation, ProviderConfig, Request, Scope,
     Stage,
 };
-use crate::{
-    Evidence, Support,
-    transport::{ApiKey, HttpRequest, HttpTransport},
-};
+use crate::{Evidence, Support};
+use ::transport::{HttpRequest, HttpTransport};
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
 use serde_json::{Value, json};

@@ -3,10 +3,7 @@
     clippy::panic,
     reason = "model transfer integration fixtures"
 )]
-use ai::{
-    models::{DownloadConsent, Model, ModelFile},
-    transport::{DownloadTransport, HttpStreamResponse},
-};
+use ai::models::{DownloadConsent, Model, ModelFile};
 use engine::{
     ByteBudget, ByteOwner,
     cache::ArtifactCache,
@@ -26,6 +23,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use transport::{DownloadTransport, HttpStreamResponse};
 #[derive(Default)]
 struct TestClock(AtomicU64);
 impl Clock for TestClock {
@@ -157,7 +155,7 @@ type RequestLog = Vec<(String, Vec<(String, String)>)>;
 
 #[derive(Default)]
 struct Http {
-    replies: Mutex<VecDeque<Result<Reply, ai::Error>>>,
+    replies: Mutex<VecDeque<Result<Reply, transport::Error>>>,
     requests: Mutex<RequestLog>,
     max: Arc<AtomicUsize>,
 }
@@ -165,7 +163,7 @@ impl Http {
     fn push(&self, r: Reply) {
         self.replies.lock().unwrap().push_back(Ok(r));
     }
-    fn fail(&self, error: ai::Error) {
+    fn fail(&self, error: transport::Error) {
         self.replies.lock().unwrap().push_back(Err(error));
     }
     fn count(&self) -> usize {
@@ -188,7 +186,7 @@ impl DownloadTransport for Http {
         &self,
         url: &str,
         headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         self.requests
             .lock()
             .unwrap()
@@ -198,7 +196,7 @@ impl DownloadTransport for Http {
             .lock()
             .unwrap()
             .pop_front()
-            .ok_or(ai::Error::Network)??;
+            .ok_or(transport::Error::Network)??;
         Ok(HttpStreamResponse {
             status: r.status,
             headers: r.headers,
@@ -1016,7 +1014,7 @@ struct ChildHttp {
     ready: std::path::PathBuf,
 }
 impl DownloadTransport for ChildHttp {
-    fn get(&self, _: &str, _: &[(String, String)]) -> Result<HttpStreamResponse, ai::Error> {
+    fn get(&self, _: &str, _: &[(String, String)]) -> Result<HttpStreamResponse, transport::Error> {
         Ok(HttpStreamResponse {
             status: 200,
             headers: vec![
@@ -1263,18 +1261,14 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
         );
         assert_eq!(http.count(), if downgrade { 1 } else { 2 });
     }
-    // The public transport can refuse with any AI error, including non-Ureq producers.
+    // The transport refuses with one of its three categories, which the engine
+    // bridge maps back onto the existing AI variants.
     for error in [
-        ai::Error::Chapters(ai::chapters::ChapterRefusal::EmptyTranscript),
-        ai::Error::Cancelled,
-        ai::Error::Auth,
-        ai::Error::StorageFull,
-        ai::Error::ModelStorage(io::ErrorKind::StorageFull),
-        ai::Error::ModelIntegrity,
-        ai::Error::RateLimit {
-            retry_after_seconds: Some(3),
-        },
+        transport::Error::Network,
+        transport::Error::Payload,
+        transport::Error::Invalid("model transfer"),
     ] {
+        let error = ai::Error::from(error);
         use engine::control::{ErrorCode, Failure};
         let code = if error.is_transient() {
             ErrorCode::Job
@@ -1335,7 +1329,7 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
     }
     let dir = tempfile::tempdir().unwrap();
     let http = Arc::new(Http::default());
-    http.fail(ai::Error::Cancelled);
+    http.fail(transport::Error::Payload);
     let (_, model) = specimen(11);
     let (_, _, mut runner, clock) = setup(dir.path(), http.clone(), Io::healthy(), 1);
     let request_http = http.clone();
@@ -1365,7 +1359,7 @@ fn bounded_safe_redirects_keep_the_original_consent_scope() {
     let raw = result.error.as_ref().unwrap();
     assert!(matches!(
         (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<engine::RuntimeError>(),
-        Some(engine::RuntimeError::Transfer(ai::Error::Cancelled))
+        Some(engine::RuntimeError::Transfer(ai::Error::Payload))
     ));
     assert!(Arc::ptr_eq(
         raw,

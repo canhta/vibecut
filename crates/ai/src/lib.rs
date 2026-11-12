@@ -119,3 +119,13 @@ impl Error {
         )
     }
 }
+
+impl From<::transport::Error> for Error {
+    fn from(error: ::transport::Error) -> Self {
+        match error {
+            ::transport::Error::Invalid(message) => Self::Invalid(message),
+            ::transport::Error::Payload => Self::Payload,
+            ::transport::Error::Network => Self::Network,
+        }
+    }
+}

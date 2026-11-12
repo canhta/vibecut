@@ -5,11 +5,10 @@
     clippy::indexing_slicing,
     reason = "test fixtures"
 )]
+use ai::transport::ApiKey;
 use ai::{
     Capabilities, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
-    Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator,
-    chapters::*,
-    transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport},
+    Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator, chapters::*,
 };
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
@@ -18,6 +17,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
+use transport::{HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 
 #[derive(Default)]
 struct Hooks(AtomicBool);
@@ -102,14 +102,14 @@ struct Transport {
     fail: bool,
 }
 impl HttpTransport for Transport {
-    fn send(&self, r: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, r: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         self.requests.lock().unwrap().push(r);
         if let Some(h) = &self.cancel {
             h.0.store(true, Ordering::Relaxed);
         }
         if self.fail {
-            return Err(Error::Network);
+            return Err(transport::Error::Network);
         }
         Ok(self.response.lock().unwrap().take().unwrap())
     }

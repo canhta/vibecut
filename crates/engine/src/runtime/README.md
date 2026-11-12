@@ -72,7 +72,9 @@ and `WorkerPanicked` owns worker-unwind diagnostics; both are nontransient and s
 runner's private reservation return this closed result. Higher feature, job and Session operations
 compose it through transparent `engine::control::Error::Runtime`. IO keeps its owned source. `NetworkTransient` owns retryable
 transport failures: static message `transient network failure`, `Job`, source-free
-and transient only as a direct runtime variant. All other runtime variants remain
+and transient only as a direct runtime variant. It is the `transport` crate's
+`Network` category; its `Invalid` and `Payload` categories map onto the existing
+`ai::Error` variants retained by `Transfer` without a new runtime variant. All other runtime variants remain
 nontransient. `ModelResponse` owns unusable model-transfer representations and
 `StorageFull` owns model-storage refusal; both have static diagnostics, no source
 and code `Refused`. Transfer and cache consumers compose them upward without

@@ -4,9 +4,6 @@
     clippy::panic,
     clippy::expect_used
 )]
-use ai::transport::{
-    DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport,
-};
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -26,6 +23,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use transport::{DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport};
 use vibecut::{
     Client, Editor, Sounds, SoundsMode, SoundsProblem, egui,
     preferences::Preferences,
@@ -74,7 +72,7 @@ struct JsonTransport {
 }
 
 impl HttpTransport for JsonTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ai::Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.send_bounded(request, 1 << 20)
     }
 
@@ -82,13 +80,13 @@ impl HttpTransport for JsonTransport {
         &self,
         request: HttpRequest,
         max_bytes: usize,
-    ) -> Result<HttpResponse, ai::Error> {
+    ) -> Result<HttpResponse, transport::Error> {
         self.requests.lock().unwrap().push(request);
         if self.status == 0 {
-            return Err(ai::Error::Network);
+            return Err(transport::Error::Network);
         }
         if self.body.len() > max_bytes {
-            return Err(ai::Error::Payload);
+            return Err(transport::Error::Payload);
         }
         Ok(HttpResponse {
             status: self.status,
@@ -191,7 +189,7 @@ impl DownloadTransport for Download {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         if self.status != 200 {
             return Ok(HttpStreamResponse {
                 status: self.status,
@@ -762,7 +760,7 @@ fn failed_cache_download_offers_network_retry_without_editing_the_project() {
             &self,
             url: &str,
             headers: &[(String, String)],
-        ) -> Result<HttpStreamResponse, ai::Error> {
+        ) -> Result<HttpStreamResponse, transport::Error> {
             Download {
                 gate: None,
                 status: if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -843,7 +841,7 @@ fn shared_download_contention_keeps_the_cache_busy_category_and_allows_a_later_a
             &self,
             url: &str,
             headers: &[(String, String)],
-        ) -> Result<HttpStreamResponse, ai::Error> {
+        ) -> Result<HttpStreamResponse, transport::Error> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Download {
                 gate: None,

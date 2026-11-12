@@ -6,8 +6,9 @@ use crate::speech::{
     SpeechOutput, SpeechPolicy, SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice,
     SynthesisConsent, SynthesisEstimate, prepare_synthesis, validate_speech_audio,
 };
-use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, retry_after};
+use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, MAX_PCM_BYTES, Money, Operation, ProviderConfig, Support};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport, retry_after};
 use captions::{LanguageTag, NfcText, NormalizedText};
 use serde::Serialize;
 use std::collections::BTreeSet;

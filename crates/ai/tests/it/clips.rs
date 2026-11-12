@@ -5,11 +5,10 @@
     clippy::indexing_slicing,
     reason = "test fixtures"
 )]
+use ai::transport::ApiKey;
 use ai::{
     Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
-    SampleRange, Scope, Stage,
-    clips::*,
-    transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport},
+    SampleRange, Scope, Stage, clips::*,
 };
 use captions::LanguageTag;
 use serde_json::{Value, json};
@@ -18,6 +17,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
+use transport::{HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 #[derive(Default)]
 struct Hooks(AtomicBool);
 impl ExecutionHooks for Hooks {
@@ -91,14 +91,14 @@ struct Transport {
     fail: bool,
 }
 impl HttpTransport for Transport {
-    fn send(&self, r: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, r: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         self.requests.lock().unwrap().push(r);
         if let Some(h) = &self.cancel {
             h.0.store(true, Ordering::Relaxed);
         }
         if self.fail {
-            return Err(Error::Network);
+            return Err(transport::Error::Network);
         }
         Ok(self.response.lock().unwrap().take().unwrap())
     }
@@ -596,7 +596,7 @@ fn repeated_window_observations_keep_highest_score_first_tie_and_bounded_diagnos
         calls: AtomicUsize,
     }
     impl HttpTransport for RepeatedWindows {
-        fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
             let call = self.calls.fetch_add(1, Ordering::Relaxed);
             let score = [0.2, 0.9, 0.9, 0.4][call];
             let mut valid = proposal("s100", "s103", score);
@@ -1032,7 +1032,7 @@ fn invalid_window_observation_cannot_replace_valid_metadata_or_score() {
         invalid_first: bool,
     }
     impl HttpTransport for CrossWindow {
-        fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
             let call = self.calls.fetch_add(1, Ordering::Relaxed);
             let invalid = if self.invalid_first {
                 call == 0

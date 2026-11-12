@@ -3,8 +3,9 @@ use super::{
     Arc, ArtifactKind, AtomicBool, Busy, CacheKey, CachedSound, CancelToken, DownloadTransport,
     EngineError, Error, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, KeyInputs,
     MAX_AUDIO_BYTES, NEXT, Ordering, Read, ResourceClass, Sound, SoundDownloads, SoundLibrary,
-    Write, download_redirect, fs, retry_after, url,
+    Write, download_redirect, fs, url,
 };
+use transport::retry_after;
 pub(super) fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
     headers
         .iter()
@@ -29,7 +30,7 @@ impl SoundDownloads {
     }
     /// Production composition helper. Downloads carry no credential.
     pub fn ureq(library: Arc<SoundLibrary>) -> Self {
-        Self::new(library, Arc::new(ai::transport::UreqTransport::new()))
+        Self::new(library, Arc::new(transport::UreqTransport::new()))
     }
     pub fn library(&self) -> &Arc<SoundLibrary> {
         &self.library

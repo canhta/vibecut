@@ -4,11 +4,10 @@
     clippy::panic,
     reason = "test fixtures"
 )]
+use ai::transport::ApiKey;
 use ai::{
     Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
-    SampleRange, Scope, Stage,
-    fillers::*,
-    transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport},
+    SampleRange, Scope, Stage, fillers::*,
 };
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
@@ -16,6 +15,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use transport::{HttpRequest, HttpResponse, HttpTransport};
 
 #[derive(Default)]
 struct Hooks(AtomicBool);
@@ -75,7 +75,7 @@ struct Transport {
     requests: Mutex<Vec<HttpRequest>>,
 }
 impl HttpTransport for Transport {
-    fn send(&self, r: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, r: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         self.requests.lock().unwrap().push(r);
         Ok(self.response.lock().unwrap().take().unwrap())

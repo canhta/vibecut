@@ -1,6 +1,6 @@
 //! Upload consent shows each provider's own disclosure, field by field.
 #![allow(clippy::unwrap_used, reason = "offline consent fixtures")]
-use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+use ai::transport::ApiKey;
 use ai::{
     Location, ProviderConfig, SampleRange, Scope, Transcriber, TranslationSegment,
     TranslationWindow, Translator,
@@ -9,11 +9,12 @@ use captions::LanguageTag;
 use engine::providers::Error as ProviderError;
 use engine::providers::{CatalogOperation, ConsentPrompt, Cost, StoredConsent, UploadRequest};
 use std::sync::Arc;
+use transport::{HttpRequest, HttpResponse, HttpTransport};
 
 struct NoTransport;
 impl HttpTransport for NoTransport {
-    fn send(&self, _: HttpRequest) -> Result<HttpResponse, ai::Error> {
-        Err(ai::Error::Network)
+    fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
+        Err(transport::Error::Network)
     }
 }
 

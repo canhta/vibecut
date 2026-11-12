@@ -12,7 +12,7 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) open: bool,
     catalogs: Catalogs,
     draft: Option<Draft>,
-    transport: Option<Arc<dyn ai::transport::HttpTransport>>,
+    transport: Option<Arc<dyn transport::HttpTransport>>,
 }
 struct Draft {
     provider: String,
@@ -84,10 +84,11 @@ pub(super) fn show(
                         ));
                         if response.clicked() {
                             let transport = state.transport.clone().map(Ok).unwrap_or_else(|| {
-                                ai::transport::UreqTransport::with_timeout(Duration::from_secs(15))
-                                    .map(|transport| {
-                                        Arc::new(transport) as Arc<dyn ai::transport::HttpTransport>
-                                    })
+                                transport::UreqTransport::with_timeout(Duration::from_secs(15)).map(
+                                    |transport| {
+                                        Arc::new(transport) as Arc<dyn transport::HttpTransport>
+                                    },
+                                )
                             });
                             match transport {
                                 Ok(transport) => {

@@ -1185,16 +1185,17 @@ fn caption_submit(
 #[test]
 fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_translation() {
     use crate::support::control::{Allow, caller, finish, ok};
-    use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+    use ai::transport::ApiKey;
     use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
     use serde_json::{Value, json};
     use std::sync::Mutex;
+    use transport::{HttpRequest, HttpResponse, HttpTransport};
     struct Transport {
         model: String,
         calls: Mutex<Vec<Operation>>,
     }
     impl HttpTransport for Transport {
-        fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
             let body = if request.url == ai::elevenlabs::ENDPOINT {
                 assert!(
                     request

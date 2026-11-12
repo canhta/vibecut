@@ -1,9 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 //! Model-manager evidence that needs a whole window, the app owner or the repo tree.
-use ai::{
-    models::{Model, ModelFile},
-    transport::{DownloadTransport, HttpStreamResponse},
-};
+use ai::models::{Model, ModelFile};
 use egui_kittest::kittest::{By, Queryable};
 use engine::{
     ByteBudget,
@@ -18,6 +15,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use transport::{DownloadTransport, HttpStreamResponse};
 use vibecut::{
     Editor, egui,
     model_manager::ModelManager,
@@ -40,12 +38,12 @@ impl DownloadTransport for Http {
         &self,
         url: &str,
         headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         self.requests
             .lock()
             .unwrap()
             .push((url.into(), headers.into()));
-        Err(ai::Error::Network)
+        Err(transport::Error::Network)
     }
 }
 struct Io {

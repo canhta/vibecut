@@ -26,7 +26,7 @@ impl Failure for ai::Error {
     }
 }
 
-use ai::transport::{DownloadTransport, HttpStreamResponse};
+use transport::{DownloadTransport, HttpStreamResponse};
 pub(crate) fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result<Option<&'a str>> {
     let mut values = response
         .headers
@@ -56,22 +56,19 @@ pub fn response(
     let mut url = url.to_owned();
     for redirect in 0..=5 {
         ctx.check_cancelled()?;
-        let reply = http.get(&url, headers).map_err(|error| {
-            if error.is_transient() {
-                RuntimeError::NetworkTransient
-            } else {
-                RuntimeError::Transfer(error)
-            }
+        let reply = http.get(&url, headers).map_err(|error| match error {
+            transport::Error::Network => RuntimeError::NetworkTransient,
+            error => RuntimeError::Transfer(error.into()),
         })?;
         if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
             if redirect == 5 {
                 return Err(RuntimeError::ModelResponse);
             }
-            url = ai::transport::download_redirect(
+            url = transport::download_redirect(
                 &url,
                 header(&reply, "location")?.ok_or(RuntimeError::ModelResponse)?,
             )
-            .map_err(RuntimeError::Transfer)?;
+            .map_err(|error| RuntimeError::Transfer(error.into()))?;
         } else {
             return Ok(reply);
         }

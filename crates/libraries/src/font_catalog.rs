@@ -1,5 +1,4 @@
 //! Resolves font assets for project rendering.
-use ai::transport::DownloadTransport;
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::ResourceClass;
 use engine::jobs::{
@@ -17,6 +16,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
+use transport::DownloadTransport;
 
 const BUFFER: usize = 64 * 1024;
 /// Job reservation: the streaming buffer plus hashing state.

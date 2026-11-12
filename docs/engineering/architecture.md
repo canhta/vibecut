@@ -7,20 +7,21 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
 | time | crates/time | Ticks, rational rates, source ranges | - |
+| transport | crates/transport | Bounded HTTPS requests, streaming downloads, redirect and retry-after rules | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time, testkit |
 | testkit | crates/testkit | Dev-only synthetic media fixture builders, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, time |
 | project | crates/project | Scene/timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions, testkit |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT/ASS import | time |
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text, testkit |
-| ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, testkit |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, testkit |
+| ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, transport, testkit |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, transport, testkit |
 | mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time |
-| libraries | crates/libraries | External project assets: font catalog with verified download/import cache, licensed sound search, saved library and previews | engine, ai, media, project, text, time |
-| shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, testkit |
-| clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
+| libraries | crates/libraries | External project assets: font catalog with verified download/import cache, licensed sound search, saved library and previews | engine, media, project, text, time, transport |
+| shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, transport, testkit |
+| clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts, transport |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, testkit |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, shorts, libraries, testkit |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, shorts, libraries, transport, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
@@ -28,29 +29,36 @@ Tiers of the table, arrows pointing at the dependency. Edges implied by a path a
 
 ```mermaid
 flowchart BT
+  transport
   media --> time
   captions --> time
   project --> media
   project --> captions
   ai --> media
   ai --> captions
+  ai --> transport
   render --> project
   render --> text
   engine --> render
   engine --> ai
+  engine --> transport
   libraries --> engine
+  libraries --> transport
   mcp --> engine
   shorts --> engine
+  shorts --> transport
   eval[clip-eval] --> shorts
+  eval --> transport
   cli[vibecut-cli] --> shorts
   cli --> libraries
   cli --> mcp
   app[vibecut] --> mcp
+  app --> transport
   subgraph apps
     cli; app
   end
   subgraph core[headless core]
-    time; text; media; captions; project; ai; render; engine; mcp; libraries; shorts; eval
+    time; text; transport; media; captions; project; ai; render; engine; mcp; libraries; shorts; eval
   end
 ```
 
@@ -77,7 +85,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Preview screen/canvas conversion, selectable item geometry, rotated handles | [render viewport](../../crates/render/src/scene/README.md#preview-viewport-geometry) |
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/src/analysis/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
-| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/src/providers/README.md#local-model-transfers) / [app manager](../../apps/vibecut/src/editor/dialogs/models/README.md) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [transport](../../crates/transport/README.md) / [engine transfers](../../crates/engine/src/providers/README.md#local-model-transfers) / [app manager](../../apps/vibecut/src/editor/dialogs/models/README.md) |
 | Clip boundary snapping / speech groups / speech windows and energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/src/segment/README.md#source-cut-units) / [media windows](../../crates/media/src/audio/README.md#speech-windows) and [energy](../../crates/media/src/audio/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/src/analysis/shot_analysis/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision/README.md) / [ai detectors](../../crates/ai/src/vision/README.md) |

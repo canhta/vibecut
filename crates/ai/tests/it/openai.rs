@@ -5,7 +5,7 @@
     clippy::indexing_slicing
 )]
 use ai::openai::{MAX_UPLOAD_BYTES, OpenAiTranscriber};
-use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
+use ai::transport::ApiKey;
 use ai::{
     AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
     Request, Scope, Stage, TimingUnit, Transcriber,
@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use transport::{HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 
 struct NoHooks;
 impl ExecutionHooks for NoHooks {
@@ -31,7 +32,7 @@ enum Reply {
         headers: Vec<(String, String)>,
         body: Vec<u8>,
     },
-    Failure(Error),
+    Failure(transport::Error),
 }
 
 struct FakeTransport {
@@ -57,7 +58,7 @@ impl FakeTransport {
     }
 }
 impl HttpTransport for FakeTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.requests.lock().unwrap().push(request);
         match self.replies.lock().unwrap().pop_front() {
             Some(Reply::Response {
@@ -70,7 +71,7 @@ impl HttpTransport for FakeTransport {
                 body,
             }),
             Some(Reply::Failure(error)) => Err(error),
-            None => Err(Error::Network),
+            None => Err(transport::Error::Network),
         }
     }
 }
@@ -639,7 +640,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
             body: fixture("error-server.json"),
         },
         FakeTransport::ok(fixture("error-malformed.json")),
-        Reply::Failure(Error::Network),
+        Reply::Failure(transport::Error::Network),
         Reply::Response {
             status: 503,
             headers: Vec::new(),
@@ -650,7 +651,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
             headers: Vec::new(),
             body: Vec::new(),
         },
-        FakeTransport::ok(vec![b'x'; ai::transport::MAX_RESPONSE_BYTES + 1]),
+        FakeTransport::ok(vec![b'x'; transport::MAX_RESPONSE_BYTES + 1]),
     ]));
     let provider = config();
     let transcriber = adapter(&fake, provider.clone());

@@ -10,7 +10,6 @@ mod elevenlabs_speech;
 mod fillers;
 mod local_gipformer;
 mod local_whisper;
-mod model_transport;
 mod models;
 mod openai;
 mod openai_speech;

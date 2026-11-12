@@ -5,10 +5,7 @@ use crate::editor::context::bench::Bench;
 use crate::editor::{Editor, egui};
 use crate::preferences::Preferences;
 use crate::services::playback::{Files, Playback};
-use ai::{
-    models::{Model, ModelFile},
-    transport::{DownloadTransport, HttpStreamResponse},
-};
+use ai::models::{Model, ModelFile};
 use egui_kittest::kittest::{By, NodeT, Queryable};
 use engine::{
     ByteBudget,
@@ -25,6 +22,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use transport::{DownloadTransport, HttpStreamResponse};
 
 struct Reply {
     status: u16,
@@ -118,14 +116,14 @@ impl Read for Body {
 type Request = (String, Vec<(String, String)>);
 #[derive(Default)]
 struct Http {
-    replies: Mutex<VecDeque<Result<Reply, ai::Error>>>,
+    replies: Mutex<VecDeque<Result<Reply, transport::Error>>>,
     requests: Mutex<Vec<Request>>,
 }
 impl Http {
     fn push(&self, reply: Reply) {
         self.replies.lock().unwrap().push_back(Ok(reply));
     }
-    fn fail(&self, error: ai::Error) {
+    fn fail(&self, error: transport::Error) {
         self.replies.lock().unwrap().push_back(Err(error));
     }
     fn count(&self) -> usize {
@@ -149,7 +147,7 @@ impl DownloadTransport for Http {
         &self,
         url: &str,
         headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         self.requests
             .lock()
             .unwrap()
@@ -159,7 +157,7 @@ impl DownloadTransport for Http {
             .lock()
             .unwrap()
             .pop_front()
-            .ok_or(ai::Error::Network)??;
+            .ok_or(transport::Error::Network)??;
         Ok(HttpStreamResponse {
             status: reply.status,
             headers: reply.headers,

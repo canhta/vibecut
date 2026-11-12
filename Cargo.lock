@@ -174,7 +174,7 @@ dependencies = [
  "tokenizers",
  "tract-linalg",
  "tract-onnx",
- "ureq",
+ "transport",
  "url",
  "whisper-rs",
 ]
@@ -1016,6 +1016,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "time 0.1.0",
+ "transport",
 ]
 
 [[package]]
@@ -1760,6 +1761,7 @@ dependencies = [
  "text",
  "thiserror 2.0.21",
  "time 0.1.0",
+ "transport",
  "unicode-segmentation",
 ]
 
@@ -3143,7 +3145,6 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 name = "libraries"
 version = "0.1.0"
 dependencies = [
- "ai",
  "blake3",
  "brotli",
  "engine",
@@ -3157,6 +3158,7 @@ dependencies = [
  "tempfile",
  "text",
  "time 0.1.0",
+ "transport",
  "unicode-normalization",
  "wuff",
 ]
@@ -5412,6 +5414,7 @@ dependencies = [
  "testkit",
  "thiserror 2.0.21",
  "time 0.1.0",
+ "transport",
  "unicode-segmentation",
 ]
 
@@ -6260,6 +6263,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "transport"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "transpose"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6559,6 +6571,7 @@ dependencies = [
  "time 0.1.0",
  "tracing",
  "tracing-subscriber",
+ "transport",
 ]
 
 [[package]]

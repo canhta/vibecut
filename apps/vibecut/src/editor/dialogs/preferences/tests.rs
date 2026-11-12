@@ -17,19 +17,19 @@ struct Reply {
     body: Mutex<Vec<u8>>,
     status: u16,
 }
-impl ai::transport::HttpTransport for Reply {
+impl transport::HttpTransport for Reply {
     fn send(
         &self,
-        request: ai::transport::HttpRequest,
-    ) -> Result<ai::transport::HttpResponse, ai::Error> {
+        request: transport::HttpRequest,
+    ) -> Result<transport::HttpResponse, transport::Error> {
         assert_eq!(request.method, "GET");
         assert!(request.body.is_empty());
         self.calls.fetch_add(1, Ordering::SeqCst);
         // A zero fixture status represents no HTTP response while offline.
         if self.status == 0 {
-            return Err(ai::Error::Network);
+            return Err(transport::Error::Network);
         }
-        Ok(ai::transport::HttpResponse {
+        Ok(transport::HttpResponse {
             status: self.status,
             headers: vec![],
             body: self.body.lock().unwrap().clone(),

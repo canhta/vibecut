@@ -3,14 +3,13 @@
 pub mod speech;
 use crate::contracts::checkpoint;
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, wav,
-};
+use crate::transport::{ApiKey, Multipart, wav};
 use crate::{
     AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation,
     Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,
     Support, TimingUnit, Transcriber,
 };
+use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
 use std::collections::BTreeSet;

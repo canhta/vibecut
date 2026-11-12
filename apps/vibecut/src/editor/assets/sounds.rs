@@ -4,7 +4,6 @@
 //! this module only presents them and owns the app's device sink composition.
 
 use crate::{Error, Result};
-use ai::transport::HttpTransport;
 use engine::SoundError;
 use engine::{
     ByteBudget,
@@ -24,6 +23,7 @@ use std::{
     },
     time::Duration,
 };
+use transport::HttpTransport;
 
 mod sink;
 
@@ -203,7 +203,7 @@ impl Sounds {
         let client = Token::from_env()
             .ok()
             .flatten()
-            .map(|token| Client::new(token, Arc::new(ai::transport::UreqTransport::new())));
+            .map(|token| Client::new(token, Arc::new(transport::UreqTransport::new())));
         let downloads = Arc::new(SoundDownloads::ureq(library.clone()));
         let preview = Arc::new(SoundPreview::new(
             downloads.clone(),

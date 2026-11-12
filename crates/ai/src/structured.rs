@@ -1,8 +1,6 @@
 //! Shared strict Responses JSON parsing; operation owners validate semantic IDs.
-use crate::{
-    Error,
-    transport::{HttpResponse, MAX_RESPONSE_BYTES},
-};
+use crate::Error;
+use ::transport::{HttpResponse, MAX_RESPONSE_BYTES};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 /// Schema objects must enumerate required fields and reject additional properties.

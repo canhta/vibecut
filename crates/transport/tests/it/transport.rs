@@ -1,12 +1,10 @@
 #![allow(clippy::unwrap_used, reason = "loopback HTTP fixtures")]
-use ai::transport::{
-    DownloadTransport, HttpRequest, HttpTransport, UreqTransport, download_redirect,
-};
 use std::{
     io::{Read, Write},
     net::TcpListener,
     thread,
 };
+use transport::{DownloadTransport, HttpRequest, HttpTransport, UreqTransport, download_redirect};
 #[test]
 fn shared_client_streams_get_without_the_provider_body_cap_and_keeps_duplicate_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -11,7 +11,7 @@ use ai::speech::{
     SpeechAudio, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer,
     SpeechVoice, SynthesisConsent, SynthesisEstimate, VoiceCategory, synthesize,
 };
-use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
+use ai::transport::ApiKey;
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
@@ -20,6 +20,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use transport::{HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 
 const VOICE: &str = "21m00Tcm4TlvDq8ikWAM";
 
@@ -29,7 +30,7 @@ enum Reply {
         headers: Vec<(String, String)>,
         body: Vec<u8>,
     },
-    Failure(Error),
+    Failure(transport::Error),
 }
 
 struct FakeTransport {
@@ -60,7 +61,7 @@ impl FakeTransport {
     }
 }
 impl HttpTransport for FakeTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         let calls = {
             let mut requests = self.requests.lock().unwrap();
             requests.push(request);
@@ -71,7 +72,7 @@ impl HttpTransport for FakeTransport {
             .lock()
             .unwrap()
             .pop_front()
-            .unwrap_or(Reply::Failure(Error::Network));
+            .unwrap_or(Reply::Failure(transport::Error::Network));
         if let Some((flag, after)) = &self.cancel
             && calls >= *after
         {
@@ -1114,7 +1115,9 @@ fn malformed_and_oversized_audio_is_rejected() {
 
 #[test]
 fn synthesis_failures_are_typed_without_partial_audio() {
-    let fake = Arc::new(FakeTransport::new(vec![Reply::Failure(Error::Network)]));
+    let fake = Arc::new(FakeTransport::new(vec![Reply::Failure(
+        transport::Error::Network,
+    )]));
     let adapter = build_adapter(fake.clone(), "eleven_flash_v2_5", settings(), voices());
     let request = build_request(
         adapter.config().clone(),
@@ -1148,7 +1151,11 @@ fn synthesis_failures_are_typed_without_partial_audio() {
     let split = format!("{}\n{}", "a".repeat(9_000), "b".repeat(2_000));
     let fake = Arc::new(FakeTransport::new(vec![
         pcm_reply(pcm("success.wav"), Some(9_001)),
-        Reply::Failure(Error::Server),
+        Reply::Response {
+            status: 500,
+            headers: Vec::new(),
+            body: Vec::new(),
+        },
     ]));
     let adapter = build_adapter(fake.clone(), "eleven_multilingual_v2", settings(), voices());
     let split_request = build_request(

@@ -1,7 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-use ai::transport::{
-    DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport,
-};
 use engine::{Command, Placement, Session, control::Error as EngineError};
 use libraries::sounds::{
     PreviewClip, PreviewSink, SearchRequest, SoundClient, SoundDownloads, SoundLibrary,
@@ -17,23 +14,24 @@ use std::{
     },
 };
 use time::Tick;
+use transport::{DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport};
 
 struct JsonTransport {
     response: HttpResponse,
     requests: Mutex<Vec<HttpRequest>>,
 }
 impl HttpTransport for JsonTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ai::Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.send_bounded(request, 1 << 20)
     }
     fn send_bounded(
         &self,
         request: HttpRequest,
         max_bytes: usize,
-    ) -> Result<HttpResponse, ai::Error> {
+    ) -> Result<HttpResponse, transport::Error> {
         self.requests.lock().unwrap().push(request);
         if self.response.body.len() > max_bytes {
-            return Err(ai::Error::Payload);
+            return Err(transport::Error::Payload);
         }
         Ok(HttpResponse {
             status: self.response.status,
@@ -224,7 +222,7 @@ impl DownloadTransport for Download {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(HttpStreamResponse {
             status: self.status,
@@ -243,7 +241,7 @@ impl DownloadTransport for TrackedDownload {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         Ok(HttpStreamResponse {
             status: self.status,
             headers: self.headers.clone(),
@@ -286,7 +284,7 @@ impl DownloadTransport for CancellingDownload {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         Ok(HttpStreamResponse {
             status: 200,
             headers: vec![("content-length".into(), self.bytes.len().to_string())],
@@ -347,7 +345,7 @@ impl DownloadTransport for GateDownload {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-    ) -> Result<HttpStreamResponse, ai::Error> {
+    ) -> Result<HttpStreamResponse, transport::Error> {
         let bytes = wav();
         Ok(HttpStreamResponse {
             status: 200,
@@ -868,7 +866,7 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
             &self,
             url: &str,
             headers: &[(String, String)],
-        ) -> Result<HttpStreamResponse, ai::Error> {
+        ) -> Result<HttpStreamResponse, transport::Error> {
             self.0.fetch_add(1, Ordering::SeqCst);
             TrackedDownload {
                 bytes: wav(),
@@ -1003,9 +1001,9 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
             &self,
             url: &str,
             headers: &[(String, String)],
-        ) -> Result<HttpStreamResponse, ai::Error> {
+        ) -> Result<HttpStreamResponse, transport::Error> {
             if self.0.fetch_add(1, Ordering::SeqCst) < 2 {
-                return Err(ai::Error::Network);
+                return Err(transport::Error::Network);
             }
             TrackedDownload {
                 bytes: wav(),

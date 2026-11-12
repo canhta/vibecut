@@ -4,6 +4,7 @@ use super::{
     MAX_QUERY, MAX_SEARCH_BYTES, MAX_TEXT, MAX_URL, RawPage, RawSound, SearchPage, SearchRequest,
     SearchSource, Sound, SoundClient, SoundResult, Token, fmt,
 };
+use transport::retry_after;
 impl Token {
     pub fn new(value: impl Into<String>) -> Sound<Self> {
         let value = value.into();
@@ -76,7 +77,7 @@ impl SoundClient {
     }
     /// Production composition helper; transport policy stays in ai's shared owner.
     pub fn ureq(token: Token) -> Self {
-        Self::new(token, Arc::new(ai::transport::UreqTransport::new()))
+        Self::new(token, Arc::new(transport::UreqTransport::new()))
     }
     pub fn search(&self, request: &SearchRequest) -> Sound<SearchPage> {
         request.validate()?;
@@ -195,12 +196,6 @@ pub(super) fn url(value: &str) -> bool {
 }
 pub fn commercial(licence: &str) -> bool {
     matches!(licence, "Creative Commons 0" | "Attribution")
-}
-pub(super) fn retry_after(headers: &[(String, String)]) -> Option<u32> {
-    headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("retry-after"))
-        .and_then(|(_, value)| value.trim().parse().ok())
 }
 fn encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());

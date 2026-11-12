@@ -1,8 +1,9 @@
 //! Owns shared remote provider admission.
 pub mod defaults;
 mod models;
-use crate::transport::{HttpResponse, retry_after, wav_bytes};
+use crate::transport::wav_bytes;
 use crate::{Capabilities, CostEstimate, Error, Location, Operation, ProviderConfig, Scope};
+use ::transport::{HttpResponse, retry_after};
 use captions::NfcText;
 pub use models::{MAX_REMOTE_MODELS, list_remote_models};
 use sha2::{Digest, Sha256};
@@ -368,7 +369,7 @@ pub(crate) fn status_error(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
-    use crate::transport::HttpResponse;
+    use ::transport::HttpResponse;
     use captions::LanguageTag;
 
     fn config(model: &str, settings: &str, backend: &str, base_url: &str) -> ProviderConfig {

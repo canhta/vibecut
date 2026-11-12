@@ -1,10 +1,11 @@
 //! Single-attempt OpenAI Responses translation over the existing HTTPS transport.
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{ApiKey, HttpRequest, HttpTransport};
+use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,
 };
+use ::transport::{HttpRequest, HttpTransport};
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
 use serde_json::json;

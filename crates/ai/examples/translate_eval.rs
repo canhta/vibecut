@@ -3,9 +3,10 @@ use ai::{
     Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope, Translation,
     TranslationWindow, Translator,
     openai::{OpenAiTranslator, TRANSLATION_MODE},
-    transport::{ApiKey, UreqTransport},
+    transport::ApiKey,
 };
 use std::{io::Read, path::PathBuf, sync::Arc};
+use transport::UreqTransport;
 struct Hooks;
 impl ai::ExecutionHooks for Hooks {
     fn cancelled(&self) -> bool {

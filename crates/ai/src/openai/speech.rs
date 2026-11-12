@@ -7,8 +7,9 @@ use crate::speech::{
     SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice, SynthesisConsent,
     SynthesisEstimate, VoiceCategory, prepare_synthesis,
 };
-use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, Money, Operation, ProviderConfig, Support};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use base64::Engine as _;
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;

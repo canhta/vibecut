@@ -126,7 +126,7 @@ impl ModelManager {
         let (transfers, _) = ModelTransfers::open_default(
             budget.clone(),
             128,
-            Arc::new(ai::transport::UreqTransport::new()),
+            Arc::new(transport::UreqTransport::new()),
         )?;
         Self::with_transfers(budget, ai::models::catalog()?, transfers)
     }

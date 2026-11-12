@@ -114,14 +114,14 @@ pub(super) fn build_suggester(
             Ok(BuiltSuggester::OpenAi(OpenAiClipSuggester::new(
                 OpenAiClipSuggester::provider_config(model)?,
                 credentials.openai()?,
-                Arc::new(ai::transport::UreqTransport::new()),
+                Arc::new(transport::UreqTransport::new()),
             )?))
         }
         SuggestionProvider::Anthropic { model } => {
             Ok(BuiltSuggester::Anthropic(AnthropicClipSuggester::new(
                 AnthropicClipSuggester::provider_config(model)?,
                 credentials.anthropic()?,
-                Arc::new(ai::transport::UreqTransport::new()),
+                Arc::new(transport::UreqTransport::new()),
             )?))
         }
     }

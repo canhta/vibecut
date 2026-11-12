@@ -331,14 +331,15 @@ fn heuristic_suggestion_snaps_inside_the_source() {
 #[test]
 fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_checkpoints() {
     use ai::elevenlabs::ElevenLabsTranscriber;
-    use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport};
+    use ai::transport::ApiKey;
     use engine::providers::{ConsentPrompt, Cost, UploadRequest};
+    use transport::{HttpRequest, HttpResponse, HttpTransport};
     struct Transport {
         model: String,
         calls: Mutex<usize>,
     }
     impl HttpTransport for Transport {
-        fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
             assert_eq!(request.url, ai::elevenlabs::ENDPOINT);
             assert!(
                 request

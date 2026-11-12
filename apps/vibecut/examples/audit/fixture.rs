@@ -67,13 +67,13 @@ pub(super) fn empty_editor(theme: Theme, locale: Locale) -> Result<Editor, Failu
     Ok(Editor::new(session, playback, preferences(theme, locale)))
 }
 pub(super) struct NoTransfer;
-impl ai::transport::DownloadTransport for NoTransfer {
+impl transport::DownloadTransport for NoTransfer {
     fn get(
         &self,
         _: &str,
         _: &[(String, String)],
-    ) -> Result<ai::transport::HttpStreamResponse, ai::Error> {
-        Err(ai::Error::Network)
+    ) -> Result<transport::HttpStreamResponse, transport::Error> {
+        Err(transport::Error::Network)
     }
 }
 pub(super) fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failure> {

@@ -3,11 +3,9 @@
 //! The owner supplies the operation prompt and schema; this module owns the provider
 //! identity check, the exact wire body, the bounded send and the shared response
 //! parsing. It never retries or switches provider.
-use crate::transport::{ApiKey, HttpRequest, HttpTransport};
-use crate::{
-    Error, ExecutionHooks, ProviderConfig, Stage, contracts::checkpoint, remote,
-    transport::HttpResponse,
-};
+use crate::transport::ApiKey;
+use crate::{Error, ExecutionHooks, ProviderConfig, Stage, contracts::checkpoint, remote};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use captions::NfcText;
 use serde_json::{Value, json};
 use std::sync::Arc;

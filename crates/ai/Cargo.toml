@@ -50,8 +50,8 @@ time.workspace = true
 serde = { workspace = true, features = ["derive"] }
 schemars.workspace = true
 thiserror.workspace = true
-url = "2.5.8"
-ureq = { version = "2.12.1", default-features = false, features = ["tls"] }
+url.workspace = true
+transport.workspace = true
 
 sha2.workspace = true
 

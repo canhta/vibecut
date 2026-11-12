@@ -288,7 +288,7 @@ impl FontStore {
             root,
             curated_google_families(),
             scan_system,
-            Arc::new(ai::transport::UreqTransport::new()),
+            Arc::new(transport::UreqTransport::new()),
             Arc::new(super::LocalFontFile),
         )
     }

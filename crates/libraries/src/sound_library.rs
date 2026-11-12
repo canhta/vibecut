@@ -1,5 +1,4 @@
 //! Provides licensed sound assets for projects.
-use ai::transport::{DownloadTransport, HttpRequest, HttpTransport, download_redirect};
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
@@ -19,6 +18,7 @@ use std::{
     },
 };
 use time::Tick;
+use transport::{DownloadTransport, HttpRequest, HttpTransport, download_redirect};
 
 pub const SEARCH_COMMAND: &str = "sounds.search";
 pub const SAVE_COMMAND: &str = "sounds.save";
@@ -203,7 +203,7 @@ mod timeline;
 
 mod control;
 
-use search::{hex, retry_after, url};
+use search::{hex, url};
 
 pub use search::commercial;
 

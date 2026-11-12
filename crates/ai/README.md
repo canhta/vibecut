@@ -1,6 +1,6 @@
 # ai
 
-Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs transcription, local Whisper/Gipformer transcription, bounded local vision inference, recognition assembly, model metadata and the shared HTTPS transport. Excludes download execution, audio decoding, job scheduling/retries/checkpoints, cache storage, cue segmentation and user-edit policy.
+Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs transcription, local Whisper/Gipformer transcription, bounded local vision inference, recognition assembly, provider credentials and model metadata. Excludes download execution, bounded HTTPS, audio decoding, job scheduling/retries/checkpoints, cache storage, cue segmentation and user-edit policy.
 
 Implement `Transcriber`, `Aligner`, `Translator` or `clips::ClipSuggester`; call the free `transcribe`, `translate`, `assemble` and `clips::suggest_clips`. Remote-capable traits also return one provider-neutral `UploadDisclosure` from `disclosure(&Scope)` (speech from `disclosure(&SpeechRequest)`); local adapters return `None`. Adapter methods are blocking and object safe; engine runs them on its worker and supplies `ExecutionHooks`. Adapters observe cancellation during expensive work and do no IO in `config`, `capabilities` or `estimate`. The crate has no runtime or engine dependency. Typed errors carry categories, safe static diagnostics and an optional retry delay, never provider bodies, text, keys or paths.
 
@@ -23,6 +23,6 @@ Adapters cap response-parser allocation before building transport records; engin
 | `speech.rs` | [Speech synthesis](src/speech/README.md) |
 | `structured.rs` | [source](src/structured.rs) |
 | `translation.rs` | [Contextual text translation](src/translation/README.md) |
-| `transport/` | [Shared HTTPS and structured text-model request](src/transport/README.md) |
+| `transport/` | [Provider credentials, payload encoding and structured text-model request](src/transport/README.md) |
 | `vision/` | [Local vision detectors](src/vision/README.md) |
 | `whisper/` | [Local Whisper](src/whisper/README.md) |

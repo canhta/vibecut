@@ -4,12 +4,12 @@ use super::{
     OPENAI_SETTINGS, prepare,
 };
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{MAX_OUTPUT, TextModel};
+use crate::transport::{ApiKey, MAX_OUTPUT, TextModel};
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support,
-    transport::{ApiKey, HttpTransport},
 };
+use ::transport::HttpTransport;
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
 use std::sync::Arc;

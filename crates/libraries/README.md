@@ -1,6 +1,6 @@
 # libraries
 
-External assets for a project: fonts are resolved and verified for rendering; sounds are searched, saved, previewed and inserted as project media. Each module owns its remote transport, local cache and admission limits. Neither edits project data except through the registered insert/edit commands.
+External assets for a project: fonts are resolved and verified for rendering; sounds are searched, saved, previewed and inserted as project media. Each module owns its local cache and admission limits and shares the [`transport`](../transport/README.md) crate's bounded HTTPS client. Neither edits project data except through the registered insert/edit commands.
 
 Use `fonts::FontStore` for discovery, verified loading, explicit downloads and user font imports, and `sounds::{SoundClient, SoundLibrary, SoundDownloads, SoundPreview}` plus the `add_to_timeline`/`add_saved` helpers for licensed audio. Callers compose the engine `JobRunner`, the project writer lease and the app-owned preview sink; this crate owns no UI, scheduler or project mutation outside the registered edit.
 

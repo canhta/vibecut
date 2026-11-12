@@ -1890,17 +1890,17 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     struct Wire(AtomicUsize);
-    impl ai::transport::HttpTransport for Wire {
+    impl transport::HttpTransport for Wire {
         fn send(
             &self,
-            request: ai::transport::HttpRequest,
-        ) -> Result<ai::transport::HttpResponse, ai::Error> {
+            request: transport::HttpRequest,
+        ) -> Result<transport::HttpResponse, transport::Error> {
             self.0.fetch_add(1, Ordering::SeqCst);
             let body: Value = serde_json::from_slice(&request.body).unwrap();
             assert_eq!(body["model"], "fixture-control-model");
             let input: Value = serde_json::from_str(body["input"].as_str().unwrap()).unwrap();
             let proposal = json!({"title":"Fixture title","description":"Fixture description","chapters":[{"start_segment_id":input["segments"][0]["id"],"title":"Opening"}]});
-            Ok(ai::transport::HttpResponse {status:200,headers:vec![],body:serde_json::to_vec(&json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":proposal.to_string()}]}]})).unwrap()})
+            Ok(transport::HttpResponse {status:200,headers:vec![],body:serde_json::to_vec(&json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":proposal.to_string()}]}]})).unwrap()})
         }
     }
     struct Prompt(Arc<AtomicBool>);

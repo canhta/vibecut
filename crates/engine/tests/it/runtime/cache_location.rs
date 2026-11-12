@@ -1,5 +1,4 @@
 //! Default cache discovery through the public runtime and consumer boundaries.
-use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::{
     ByteBudget,
     cache::{ArtifactCache, CacheRoot},
@@ -15,6 +14,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
+use transport::{DownloadTransport, HttpStreamResponse};
 
 const PROBE: &str = "VIBECUT_TEST_CACHE_PROBE";
 const BASE: &str = "VIBECUT_TEST_CACHE_BASE";
@@ -136,9 +136,9 @@ fn xdg_precedes_home_and_only_absence_uses_home_cache() {
 #[derive(Default)]
 struct Offline(AtomicUsize);
 impl DownloadTransport for Offline {
-    fn get(&self, _: &str, _: &[(String, String)]) -> Result<HttpStreamResponse, ai::Error> {
+    fn get(&self, _: &str, _: &[(String, String)]) -> Result<HttpStreamResponse, transport::Error> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        Err(ai::Error::Network)
+        Err(transport::Error::Network)
     }
 }
 

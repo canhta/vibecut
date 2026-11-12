@@ -5,11 +5,12 @@ use super::catalog::{
 use super::consent::UploadRequest;
 use super::error::{Error, Result};
 use crate::cache::{ArtifactCache, ModelLease};
-use ai::transport::{ApiKey, UreqTransport};
+use ai::transport::ApiKey;
 use ai::{ExecutionHooks, SampleRange, Scope};
 use captions::LanguageTag;
 use captions::{LanguageProfile, LanguageRegistry, NfcText};
 use std::{path::PathBuf, sync::Arc};
+use transport::UreqTransport;
 
 #[derive(Clone)]
 pub struct Credentials {

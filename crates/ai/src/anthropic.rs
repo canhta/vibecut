@@ -1,11 +1,12 @@
 //! Anthropic Messages translation: one context-window translator plus a reusable
 //! Messages transport for later LLM adapters. Endpoint and provider policy link stay here.
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
+use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,
 };
+use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -47,17 +48,19 @@ impl MessagesClient {
         if body.len() > MAX_WIRE {
             return Err(Error::Payload);
         }
-        self.transport.send(HttpRequest {
-            method: "POST",
-            url: ENDPOINT.into(),
-            headers: vec![
-                ("x-api-key".into(), self.key.expose().to_owned()),
-                ("anthropic-version".into(), ANTHROPIC_VERSION.into()),
-                ("Content-Type".into(), "application/json".into()),
-                ("Accept".into(), "application/json".into()),
-            ],
-            body,
-        })
+        self.transport
+            .send(HttpRequest {
+                method: "POST",
+                url: ENDPOINT.into(),
+                headers: vec![
+                    ("x-api-key".into(), self.key.expose().to_owned()),
+                    ("anthropic-version".into(), ANTHROPIC_VERSION.into()),
+                    ("Content-Type".into(), "application/json".into()),
+                    ("Accept".into(), "application/json".into()),
+                ],
+                body,
+            })
+            .map_err(Error::from)
     }
 }
 impl fmt::Debug for MessagesClient {

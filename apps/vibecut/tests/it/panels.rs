@@ -2769,7 +2769,7 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
                     root,
                     vec![],
                     Vec::new,
-                    Arc::new(ai::transport::UreqTransport::new()),
+                    Arc::new(transport::UreqTransport::new()),
                     Arc::new(libraries::fonts::LocalFontFile),
                 )
                 .unwrap(),
@@ -2955,7 +2955,7 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
                 root.clone(),
                 vec![],
                 Vec::new,
-                Arc::new(ai::transport::UreqTransport::new()),
+                Arc::new(transport::UreqTransport::new()),
                 Arc::new(libraries::fonts::LocalFontFile),
             )
             .unwrap(),
@@ -3054,7 +3054,7 @@ fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
             directory.path().join("fonts"),
             vec![],
             Vec::new,
-            Arc::new(ai::transport::UreqTransport::new()),
+            Arc::new(transport::UreqTransport::new()),
             Arc::new(Source(reads.clone())),
         )
         .unwrap(),
@@ -3112,14 +3112,14 @@ fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() 
     };
     use std::time::{Duration, Instant};
     struct Provider(AtomicUsize);
-    impl ai::transport::DownloadTransport for Provider {
+    impl transport::DownloadTransport for Provider {
         fn get(
             &self,
             _: &str,
             _: &[(String, String)],
-        ) -> Result<ai::transport::HttpStreamResponse, ai::Error> {
+        ) -> Result<transport::HttpStreamResponse, transport::Error> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Err(ai::Error::Network)
+            Err(transport::Error::Network)
         }
     }
     struct Source {
@@ -3325,7 +3325,7 @@ fn custom_font_import_cancel_and_failure_keep_the_authored_family() {
                 root.clone(),
                 vec![],
                 Vec::new,
-                Arc::new(ai::transport::UreqTransport::new()),
+                Arc::new(transport::UreqTransport::new()),
                 Arc::new(libraries::fonts::LocalFontFile),
             )
             .unwrap(),

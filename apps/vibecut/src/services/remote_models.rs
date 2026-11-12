@@ -1,6 +1,6 @@
 //! Owns remote model selection independently of any window.
 mod selection;
-use ai::transport::{ApiKey, HttpTransport};
+use ai::transport::ApiKey;
 use engine::providers::Credentials;
 pub use selection::{AiPreferences, MAX_RECENT_MODELS, ModelChoice};
 use std::sync::{
@@ -8,6 +8,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
+use transport::HttpTransport;
 
 struct Hooks(Arc<AtomicBool>);
 impl ai::ExecutionHooks for Hooks {
@@ -168,14 +169,14 @@ impl Catalogs {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
     use super::*;
-    use ai::transport::{HttpRequest, HttpResponse};
     use std::sync::Mutex;
+    use transport::{HttpRequest, HttpResponse};
     struct Blocked {
         started: mpsc::SyncSender<()>,
         release: Mutex<mpsc::Receiver<()>>,
     }
     impl HttpTransport for Blocked {
-        fn send(&self, request: HttpRequest) -> Result<HttpResponse, ai::Error> {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
             assert_eq!(request.method, "GET");
             assert!(request.body.is_empty());
             self.started.send(()).unwrap();
@@ -193,7 +194,7 @@ mod tests {
     }
     struct Reply(u16, &'static [u8]);
     impl HttpTransport for Reply {
-        fn send(&self, _: HttpRequest) -> Result<HttpResponse, ai::Error> {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
             Ok(HttpResponse {
                 status: self.0,
                 headers: vec![],

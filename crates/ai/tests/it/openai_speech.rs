@@ -11,7 +11,7 @@ use ai::speech::{
     SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer, SynthesisConsent,
     VoiceCategory, prepare_synthesis, synthesize,
 };
-use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
+use ai::transport::ApiKey;
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use base64::Engine as _;
 use captions::LanguageTag;
@@ -21,6 +21,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use transport::{HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 
 struct NoHooks;
 impl ExecutionHooks for NoHooks {
@@ -44,7 +45,7 @@ enum Reply {
         headers: Vec<(String, String)>,
         body: Vec<u8>,
     },
-    Failure(Error),
+    Failure(transport::Error),
 }
 
 struct FakeTransport {
@@ -70,7 +71,7 @@ impl FakeTransport {
     }
 }
 impl HttpTransport for FakeTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.requests.lock().unwrap().push(request);
         match self.replies.lock().unwrap().pop_front() {
             Some(Reply::Response {
@@ -83,7 +84,7 @@ impl HttpTransport for FakeTransport {
                 body,
             }),
             Some(Reply::Failure(error)) => Err(error),
-            None => Err(Error::Network),
+            None => Err(transport::Error::Network),
         }
     }
 }
@@ -95,7 +96,7 @@ struct CancelTransport {
     reply: Mutex<Option<Reply>>,
 }
 impl HttpTransport for CancelTransport {
-    fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+    fn send(&self, _: HttpRequest) -> Result<HttpResponse, transport::Error> {
         self.flag.store(true, Ordering::SeqCst);
         match self.reply.lock().unwrap().take() {
             Some(Reply::Response {
@@ -108,7 +109,7 @@ impl HttpTransport for CancelTransport {
                 body,
             }),
             Some(Reply::Failure(error)) => Err(error),
-            None => Err(Error::Network),
+            None => Err(transport::Error::Network),
         }
     }
 }
@@ -489,7 +490,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
             headers: Vec::new(),
             body: Vec::new(),
         },
-        Reply::Failure(Error::Network),
+        Reply::Failure(transport::Error::Network),
     ]));
     let synth = adapter(fake.clone());
     let request = request("private text");
@@ -631,7 +632,7 @@ fn bounded_transport_rejects_oversized_response_bodies() {
     };
     assert!(matches!(
         fake.send_bounded(request, 64),
-        Err(Error::Payload)
+        Err(transport::Error::Payload)
     ));
 }
 

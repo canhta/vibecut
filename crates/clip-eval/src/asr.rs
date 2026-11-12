@@ -6,7 +6,6 @@
 use crate::budget::Budget;
 use crate::{Error, Result};
 use ai::elevenlabs::ElevenLabsTranscriber;
-use ai::transport::UreqTransport;
 use ai::{
     AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Request, SampleRange, Scope, Stage,
     Transcriber,
@@ -20,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Instant;
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
+use transport::UreqTransport;
 
 const SAMPLE_RATE: u32 = 16_000;
 const MAX_PCM_BYTES: u64 = 64 * 1024 * 1024;
