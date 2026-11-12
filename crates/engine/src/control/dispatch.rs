@@ -816,24 +816,23 @@ impl Session {
                 let keys = crate::emit_reframe(&analysis, &item)?;
                 let (crop, x, y, auto) =
                     crate::session::merge_reframe(&item, keys, replace_manual)?;
-                let outcome = self.transaction(|session| {
-                    session.apply(Command::SetItemField {
+                // One atomic batch: one undo step, and the outcome the caller reports.
+                let mut commands = vec![Command::SetItemField {
+                    item: item_id,
+                    patch: crate::ItemParamPatch::Crop(Some(crop)),
+                }];
+                for (path, channel) in [
+                    (project::BuiltinPath::CropX, x),
+                    (project::BuiltinPath::CropY, y),
+                    (project::BuiltinPath::CropAuto, auto),
+                ] {
+                    commands.push(Command::SetAnimatedParam {
                         item: item_id,
-                        patch: crate::ItemParamPatch::Crop(Some(crop)),
-                    })?;
-                    for (path, channel) in [
-                        (project::BuiltinPath::CropX, x),
-                        (project::BuiltinPath::CropY, y),
-                        (project::BuiltinPath::CropAuto, auto),
-                    ] {
-                        session.apply(Command::SetAnimatedParam {
-                            item: item_id,
-                            path: project::AnimationPath::from(path),
-                            param: project::Param::Value(channel),
-                        })?;
-                    }
-                    Ok::<(), crate::EditError>(())
-                })?;
+                        path: project::AnimationPath::from(path),
+                        param: project::Param::Value(channel),
+                    });
+                }
+                let outcome = self.apply(Command::Batch { commands })?;
                 Ok(ControlResult::Edit { outcome })
             }
             command => self
