@@ -319,7 +319,6 @@ catalog! {
     Theme { key: "theme", en: "Switch theme", vi: "Đổi giao diện" },
 
     // Panels and empty states.
-
     Adjustment { key: "adjustment", en: "Adjustment", vi: "Điều chỉnh" },
     Basic { key: "basic", en: "Basic", vi: "Cơ bản" },
     Blending { key: "blending", en: "Blending", vi: "Hòa trộn" },
@@ -414,7 +413,6 @@ catalog! {
     TransitionDipBlack { key: "transition_dip_black", en: "Dip to black", vi: "Mờ qua đen" },
     TransitionDipColour { key: "transition_dip_colour", en: "Dip to colour", vi: "Mờ qua màu" },
     TransitionDipWhite { key: "transition_dip_white", en: "Dip to white", vi: "Mờ qua trắng" },
-    TransitionDissolve { key: "transition_dissolve", en: "Dissolve", vi: "Hòa tan" },
     TransitionDoubleDoors { key: "transition_double_doors", en: "Double Doors", vi: "Cửa đôi" },
     TransitionDropMiss { key: "transition_drop_miss", en: "Drop between two adjacent clips.", vi: "Thả vào giữa hai đoạn liền kề." },
     TransitionFailed { key: "transition_failed", en: "Transition wasn't added. Select the cut again.", vi: "Chưa thêm được chuyển cảnh. Hãy chọn lại điểm cắt." },
