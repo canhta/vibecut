@@ -209,11 +209,16 @@ fn active_source_fill_keeps_shaping_translation_and_antialias_alpha() {
             ordinary.pixels, active.pixels,
             "source word changes colour: {name}"
         );
+        let (ordinary_rgba, ordinary_tail) = ordinary.pixels.as_chunks::<4>();
+        let (active_rgba, active_tail) = active.pixels.as_chunks::<4>();
         assert!(
-            ordinary
-                .pixels
-                .chunks_exact(4)
-                .zip(active.pixels.chunks_exact(4))
+            ordinary_tail.is_empty() && active_tail.is_empty(),
+            "whole RGBA pixels: {name}"
+        );
+        assert!(
+            ordinary_rgba
+                .iter()
+                .zip(active_rgba)
                 .all(|(a, b)| a[3] == b[3]),
             "no double antialias or alpha: {name}"
         );
@@ -235,7 +240,7 @@ fn active_source_fill_keeps_shaping_translation_and_antialias_alpha() {
             "vi" => 0x5bfbda800b172fa4,
             "zh" => 0x1168a9a97cc9a0a6,
             "ligature" => 0x2179242137699268,
-            _ => unreachable!(),
+            _ => panic!("unknown source-word fill case {name}"),
         };
         assert_eq!(
             crate::support::checksum(&active),

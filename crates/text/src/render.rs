@@ -378,13 +378,20 @@ fn blend_fill(image: &mut Image, mask: &Mask, color: Color, span: Option<(&Mask,
         else {
             continue;
         };
-        for (channel, base) in [color.r, color.g, color.b].into_iter().enumerate() {
-            let source = f32::from(base) + (f32::from(span.rgb[channel]) - f32::from(base)) * ratio;
-            pixel[channel] = (source * alpha + f32::from(pixel[channel]) * (1.0 - alpha))
+        let (rgb, coverage_slot) = pixel.split_at_mut(3);
+        for ((out, base), target) in rgb
+            .iter_mut()
+            .zip([color.r, color.g, color.b])
+            .zip(span.rgb)
+        {
+            let source = f32::from(base) + (f32::from(target) - f32::from(base)) * ratio;
+            *out = (source * alpha + f32::from(*out) * (1.0 - alpha))
                 .round()
                 .clamp(0.0, 255.0) as u8;
         }
-        pixel[3] = premultiply(255, alpha, pixel[3], 1.0 - alpha);
+        if let Some(out) = coverage_slot.first_mut() {
+            *out = premultiply(255, alpha, *out, 1.0 - alpha);
+        }
     }
 }
 
