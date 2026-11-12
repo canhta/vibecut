@@ -471,6 +471,159 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
     }
 }
 #[test]
+fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
+    use engine::ItemParamPatch;
+    use project::{SavedTextPreset, TextStyle};
+    let mut data = project().into_data();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
+    track.kind = TrackKind::Text;
+    for (item, size) in track.items.iter_mut().zip([20.0, 30.0]) {
+        item.content = ItemParams::Text(project::TextParams {
+            content: format!("item {}", item.id.0).into(),
+            font_size: size,
+            color: Color([10, 20, 30, 255]),
+            background: Some(Default::default()),
+            ..Default::default()
+        });
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let first = ItemParams::Text(project::TextParams {
+        content: "item 10".into(),
+        font_size: 20.0,
+        color: Color([10, 20, 30, 255]),
+        background: Some(Default::default()),
+        ..Default::default()
+    });
+    let ItemParams::Text(first_params) = &first else {
+        unreachable!()
+    };
+    let saved = s
+        .apply(Command::SaveTextPreset {
+            item: ItemId(10),
+            name: "Look".into(),
+        })
+        .unwrap();
+    let CreatedId::TextPreset(preset) = saved.created[0] else {
+        panic!("text preset")
+    };
+    assert_eq!(
+        s.project().data().text_presets,
+        vec![SavedTextPreset {
+            id: preset,
+            name: "Look".into(),
+            style: TextStyle::from_params(first_params),
+        }]
+    );
+    assert_eq!(s.history_len(), (1, 0));
+    // Each item keeps its own words while the saved style replaces every field.
+    for (item, size, color) in [
+        (ItemId(10), 72.0, [1, 2, 3, 255]),
+        (ItemId(11), 8.0, [4, 5, 6, 255]),
+    ] {
+        s.apply(Command::SetItemField {
+            item,
+            patch: ItemParamPatch::TextSize(size),
+        })
+        .unwrap();
+        s.apply(Command::SetItemField {
+            item,
+            patch: ItemParamPatch::TextColor(Color(color)),
+        })
+        .unwrap();
+    }
+    let before = s.project().clone();
+    let outcome = s
+        .apply(Command::ApplyTextPreset {
+            items: vec![ItemId(10), ItemId(11)],
+            preset,
+        })
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len().0, 6);
+    for id in [10, 11] {
+        let ItemParams::Text(params) = &get(&s, id).content else {
+            panic!("text")
+        };
+        assert_eq!(
+            TextStyle::from_params(params),
+            s.project().data().text_presets[0].style
+        );
+        assert_eq!(params.content.as_str(), format!("item {id}"));
+    }
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    s.redo().unwrap();
+    let applied = s.project().clone();
+    let bytes = project::encode(&applied, false).unwrap();
+    assert_eq!(project::decode(&bytes).unwrap().project, *applied);
+    // Refusals are atomic and name reuse is refused.
+    for command in [
+        Command::ApplyTextPreset {
+            items: Vec::new(),
+            preset,
+        },
+        Command::ApplyTextPreset {
+            items: vec![ItemId(10), ItemId(10)],
+            preset,
+        },
+        Command::ApplyTextPreset {
+            items: vec![ItemId(999)],
+            preset,
+        },
+        Command::ApplyTextPreset {
+            items: vec![ItemId(10)],
+            preset: project::TextPresetId(999),
+        },
+        Command::ApplyTextPreset {
+            items: vec![ItemId(1)],
+            preset,
+        },
+        Command::SaveTextPreset {
+            item: ItemId(10),
+            name: "Look".into(),
+        },
+        Command::SaveTextPreset {
+            item: ItemId(1),
+            name: "Other".into(),
+        },
+    ] {
+        let before = s.project().clone();
+        let history = s.history_len();
+        assert!(s.apply(command).is_err());
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+    }
+    let locked = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.items.iter().any(|item| item.id == ItemId(10)))
+        .unwrap()
+        .id;
+    s.apply(Command::SetTrackLocked {
+        track: locked,
+        locked: true,
+    })
+    .unwrap();
+    assert!(matches!(
+        s.apply(Command::ApplyTextPreset {
+            items: vec![ItemId(10)],
+            preset,
+        }),
+        Err(EditError::Locked(_))
+    ));
+    assert!(matches!(
+        s.apply(Command::SaveTextPreset {
+            item: ItemId(10),
+            name: "Locked".into(),
+        }),
+        Err(EditError::Locked(_))
+    ));
+}
+
+#[test]
 #[allow(clippy::panic, reason = "validated fixture assertions")]
 fn shared_fields_are_atomic_and_history_restores_transient_selection() {
     use engine::ItemParamPatch;

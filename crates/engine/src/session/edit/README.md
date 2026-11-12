@@ -82,15 +82,31 @@ higher engine workflows delegate through `engine::control::Error::Edit`. Command
 
 ## Text animation
 
-`text.apply_animation` expands a built-in fade once into ordinary item-relative opacity
-keys on one unlocked active-scene Text item. It retains the scalar base B (default 1,
-finite 0..1, including zero). A title must last at least two canvas frames. Each edge
-lasts min(300 ms, floor(duration/2)) in integer ticks; linear keys have no handles and
-Hold extrapolation. Both coalesces only equal-time middle keys. An existing keyed Param
-is accepted only when the complete requested Param is already identical; otherwise
-undo or remove keys before applying another look. Locks refuse even an exact repeat.
-Trim, split, move and key-time scaling retain ordinary key semantics, without edge
-binding or a saved preset identity. Text media-speed editing remains unsupported.
+`text.apply_animation` expands one built-in look once into ordinary item-relative
+keys on one unlocked active-scene Text item. Names, not source parity: Fade animates
+`opacity`; Slide travels 25 % of the project canvas width along `transform.positionX`;
+Scale shrinks to half the item's current `transform.scale` on both axes. In/out/both
+directions share one 300 ms edge, capped at floor(duration/2), measured in integer
+ticks. Scalar bases come from the item's existing channels or their documented
+defaults and are preserved; linear keys have no handles and Hold extrapolation.
+Both coalesces only equal-time middle keys. A title must last at least two canvas
+frames. Any keyed preset channel is accepted only when the complete requested Param
+is already identical; otherwise undo or remove keys before applying another look.
+Applying a preset whose family owns no keys leaves unrelated transform keys alone.
+Locks refuse even an exact repeat. Trim, split, move and key-time scaling retain
+ordinary key semantics, without edge binding or a saved preset identity. Text
+media-speed editing remains unsupported.
+
+## Text presets
+
+`text.save_preset` copies the selected Text item's appearance, never its words or
+keys, into the project-wide 64-entry bank under a unique NFC name.
+`text.apply_preset` copies one saved style onto one or more unlocked active-scene
+Text items as one atomic edit; an empty, duplicate, missing, non-text or locked
+selection refuses every item and leaves history unchanged. The app names its
+save action `Style N` (the first free N); command callers pass any valid name.
+Preset names and values are new product behaviour, not reference parity. See
+[model](../../../../project/src/model/README.md#saved-text-styles) for validation.
 
 ## Caption styles
 

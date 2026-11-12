@@ -91,11 +91,22 @@ Typed drafts and scrubs belong to their project snapshot, item and playhead; tim
 selection, lock, tab or snapshot changes cancel them before blur. Removing the final
 key exposes the retained base.
 
-The single-Text tab offers Fade in, Fade out and Both in the existing segmented row.
-Apply creates ordinary editable opacity keys through `text.apply_animation`; the
+The single-Text tab offers Fade, Slide and Scale effects, each with In, Out and Both
+directions in segmented rows (`text.animation.fade_in`, `text.animation.slide_out`,
+`text.animation.scale_in_out`, and family cells). Apply creates ordinary editable
+opacity or transform keys through `text.apply_animation`; the
 [engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#text-animation)
-owns the recipe and refusal rules. A choice is selected only for an exact saved Param
+owns the recipes and refusal rules. A choice is selected only for an exact saved Param
 match. Other curves have no selected choice: undo or remove their keys to change modes.
+
+The same tab's Preset row lists the project's saved text styles
+(`inspector.text_preset.saved.<id>`) and a Save style action. Apply copies the saved
+values onto this item; Save stores its current appearance as the first free `Style N`
+using `text.save_preset`. Both use the engine preset commands from
+[text presets](../../../../../../crates/engine/src/session/edit/README.md#text-presets),
+and the row's selection compares the complete stored style. Words and animation keys are
+never saved.
+
 Exactly one unlocked Text and no active work, transaction, save, inline/caption or
 Properties draft is required. Captured row actions revalidate their target and snapshot;
 direct activation uses the same readiness before any unrelated draft can flush.

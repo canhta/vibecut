@@ -366,7 +366,7 @@ fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
 }
 
 #[test]
-fn cli_text_fades_execute_reopen_export_and_control_replay() {
+fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     assert!(tools());
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("text.vibecut");
@@ -404,6 +404,66 @@ fn cli_text_fades_execute_reopen_export_and_control_replay() {
         .unwrap()
         .save(session.project())
         .unwrap();
+    let saved = exec(
+        &file,
+        "text.save_preset",
+        json!({"item":item.0,"name":"Style A"}),
+    );
+    let preset = saved["created"][0]["text_preset"].as_u64().unwrap();
+    exec(
+        &file,
+        "timeline.set_item_param",
+        json!({"item":item.0,"patch":{"field":"text_size","value":48.0}}),
+    );
+    let applied = exec(
+        &file,
+        "text.apply_preset",
+        json!({"items":[item.0],"preset":preset}),
+    );
+    assert_eq!(applied["changed"], true);
+    let reopened = project::load(&file).unwrap().project;
+    let titled = reopened
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|candidate| candidate.id == item)
+        .unwrap();
+    let project::ItemParams::Text(style) = &titled.content else {
+        panic!("text")
+    };
+    assert_eq!(style.font_size, 24.0);
+    assert_eq!(reopened.data().text_presets[0].style.font, style.font);
+    assert_eq!(reopened.data().text_presets[0].name.as_str(), "Style A");
+    exec(
+        &file,
+        "text.apply_animation",
+        json!({"item":item.0,"preset":"slide_out"}),
+    );
+    let reopened = project::load(&file).unwrap().project;
+    let titled = reopened
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|candidate| candidate.id == item)
+        .unwrap();
+    let slide = titled
+        .animations
+        .get(&project::BuiltinPath::TransformPositionX.into())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(slide.keys().len(), 2);
+    for time in slide.keys().iter().map(|key| key.time) {
+        exec(
+            &file,
+            "keyframes.remove",
+            json!({"item":item.0,"path":"transform.positionX","component":null,"time":time.0}),
+        );
+    }
     exec(
         &file,
         "text.apply_animation",

@@ -1661,7 +1661,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
 }
 
 #[test]
-fn text_fades_click_edit_undo_reopen_and_capture_both_locales() {
+fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales() {
     for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
         for scale in [1.0, 2.0] {
             let mut f = fixture();
@@ -1696,10 +1696,117 @@ fn text_fades_click_edit_undo_reopen_and_capture_both_locales() {
                     .len(),
                 4
             );
-            h.state_mut().activate("edit.undo").unwrap();
+            // Save the current look, change it, then apply the saved copy back.
+            let history = h.state().session.history_len().0;
+            click(&mut h, "inspector.text_preset.save");
+            assert_eq!(h.state().session.history_len().0, history + 1);
+            let bank = h.state().session.project().data().text_presets.clone();
+            assert_eq!(bank.len(), 1);
+            assert_eq!(bank[0].name.as_str(), "Style 1");
+            assert_eq!(
+                bank[0].style,
+                project::TextStyle::from_params(&text_params(&h, f.text))
+            );
             h.state_mut()
-                .activate("text.animation.fade_in_out")
+                .set_item_field(f.text, "text_color", "#FF0000")
                 .unwrap();
+            assert_eq!(
+                text_params(&h, f.text).color,
+                project::Color([255, 0, 0, 255])
+            );
+            let history = h.state().session.history_len().0;
+            click(&mut h, "inspector.text_preset");
+            click(
+                &mut h,
+                &format!("inspector.text_preset.saved.{}", bank[0].id.0),
+            );
+            assert_eq!(h.state().session.history_len().0, history + 1);
+            assert_eq!(
+                text_params(&h, f.text).color,
+                project::Color([255, 255, 255, 255])
+            );
+            assert_eq!(
+                text_params(&h, f.text).content.as_str(),
+                "Tiếng Việt\nEnglish"
+            );
+            h.state_mut().activate("edit.undo").unwrap();
+            assert_eq!(
+                text_params(&h, f.text).color,
+                project::Color([255, 0, 0, 255])
+            );
+            h.state_mut().activate("edit.redo").unwrap();
+            // Slide and scale write ordinary transform keys through the same rows.
+            let remove = |h: &mut Harness<Editor>, path: project::BuiltinPath| {
+                let times: Vec<_> = item(h, f.text)
+                    .animations
+                    .get(&path.into())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap()
+                    .keys()
+                    .iter()
+                    .map(|key| key.time)
+                    .collect();
+                for time in times {
+                    h.state_mut()
+                        .session
+                        .apply(Command::RemoveKeyframe {
+                            item: f.text,
+                            path: path.into(),
+                            component: None,
+                            time,
+                        })
+                        .unwrap();
+                }
+            };
+            remove(&mut h, project::BuiltinPath::Opacity);
+            click(&mut h, "text.animation.family.slide");
+            assert_eq!(
+                item(&h, f.text)
+                    .animations
+                    .get(&project::BuiltinPath::TransformPositionX.into())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap()
+                    .keys()
+                    .len(),
+                2
+            );
+            remove(&mut h, project::BuiltinPath::TransformPositionX);
+            click(&mut h, "text.animation.family.scale");
+            for path in [
+                project::BuiltinPath::TransformScaleX,
+                project::BuiltinPath::TransformScaleY,
+            ] {
+                assert_eq!(
+                    item(&h, f.text)
+                        .animations
+                        .get(&path.into())
+                        .unwrap()
+                        .channel(None)
+                        .unwrap()
+                        .keys()
+                        .len(),
+                    2
+                );
+            }
+            remove(&mut h, project::BuiltinPath::TransformScaleX);
+            remove(&mut h, project::BuiltinPath::TransformScaleY);
+            // Restore the fade used by the preview frames below.
+            click(&mut h, "text.animation.family.fade");
+            remove(&mut h, project::BuiltinPath::Opacity);
+            click(&mut h, "text.animation.fade_in_out");
+            assert_eq!(
+                item(&h, f.text)
+                    .animations
+                    .get(&project::BuiltinPath::Opacity.into())
+                    .unwrap()
+                    .channel(None)
+                    .unwrap()
+                    .keys()
+                    .len(),
+                4
+            );
             h.state_mut()
                 .dispatch(vibecut::AppCommand::Seek(Tick(38_102_400_000)))
                 .unwrap();

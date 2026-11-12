@@ -60,6 +60,14 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 preset,
                 snapshot,
             } => commands::apply_text_animation(state, desk, item, preset, snapshot),
+            Action::ApplyTextPreset {
+                item,
+                preset,
+                snapshot,
+            } => commands::apply_text_preset(state, desk, item, preset, snapshot),
+            Action::SaveTextPreset { item, snapshot } => {
+                commands::save_text_preset(state, desk, item, snapshot)
+            }
             Action::Activate(id) => {
                 // Activation runs on the editor, which holds a placeholder while
                 // this pass carries the area state. A refusal did not write it.

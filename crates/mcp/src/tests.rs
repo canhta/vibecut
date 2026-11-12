@@ -523,6 +523,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("clipboard.paste_keyframes", Effect::Edit, true, true),
         ("clipboard.read", Effect::Read, true, true),
         ("text.apply_animation", Effect::Edit, true, true),
+        ("text.apply_preset", Effect::Edit, true, true),
+        ("text.save_preset", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
         ("timeline.filler_candidates", Effect::Read, true, true),

@@ -208,6 +208,118 @@ fn text_animation_expands_literal_keys_preserves_base_and_exact_noop_redo() {
     }
 }
 #[test]
+fn text_slide_and_scale_presets_expand_transform_keys_and_follow_trim_and_match() {
+    use engine::TextAnimationPreset::{FadeInOut, ScaleIn, ScaleOut, SlideIn, SlideOut};
+    let length = 254_016_000_000;
+    let d = 76_204_800_000;
+    let exit = 177_811_200_000;
+    let mut s = title(None, length);
+    assert_eq!(s.project().data().canvas.width, 64);
+    s.execute(
+        "text.apply_animation",
+        json!({"item":3,"preset":"slide_in"}),
+    )
+    .unwrap();
+    let slide = AnimationPath::from(BuiltinPath::TransformPositionX);
+    let channel = item(&s, ItemId(3))
+        .animations
+        .get(&slide)
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.base(), &ParamValue::Scalar(0.0));
+    assert_eq!(
+        channel.keys(),
+        [
+            Keyframe::new(Tick::ZERO, ParamValue::Scalar(-16.0)),
+            Keyframe::new(Tick(d), ParamValue::Scalar(0.0)),
+        ]
+    );
+    assert!(SlideIn.matches(item(&s, ItemId(3)), s.project().data()));
+    assert!(!SlideOut.matches(item(&s, ItemId(3)), s.project().data()));
+    assert!(!FadeInOut.matches(item(&s, ItemId(3)), s.project().data()));
+    // Trim re-times the ordinary transform keys like any other animation.
+    s.apply(Command::TrimStart {
+        item: ItemId(3),
+        at: frame(102),
+    })
+    .unwrap();
+    let channel = item(&s, ItemId(3))
+        .animations
+        .get(&slide)
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    let expected = -16.0 * (1.0 - 16_951_334_400.0 / 76_204_800_000.0);
+    let ParamValue::Scalar(value) = channel.value_at(Tick::ZERO) else {
+        panic!("slide scalar")
+    };
+    assert!((value - expected).abs() < 1e-8, "{value} != {expected}");
+    // Scale writes both transform scale channels and refuses to overwrite keys.
+    let mut s = title(None, length);
+    s.execute(
+        "text.apply_animation",
+        json!({"item":3,"preset":"scale_out"}),
+    )
+    .unwrap();
+    for path in [
+        AnimationPath::from(BuiltinPath::TransformScaleX),
+        AnimationPath::from(BuiltinPath::TransformScaleY),
+    ] {
+        let channel = item(&s, ItemId(3))
+            .animations
+            .get(&path)
+            .unwrap()
+            .channel(None)
+            .unwrap();
+        assert_eq!(channel.base(), &ParamValue::Scalar(1.0));
+        assert_eq!(
+            channel.keys(),
+            [
+                Keyframe::new(Tick(exit), ParamValue::Scalar(1.0)),
+                Keyframe::new(Tick(length), ParamValue::Scalar(0.5)),
+            ]
+        );
+    }
+    assert!(ScaleOut.matches(item(&s, ItemId(3)), s.project().data()));
+    assert!(!ScaleIn.matches(item(&s, ItemId(3)), s.project().data()));
+    let before = s.project().clone();
+    assert!(
+        s.apply(Command::ApplyTextAnimation {
+            item: ItemId(3),
+            preset: FadeInOut,
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    let keys: Vec<_> = [exit, length]
+        .into_iter()
+        .flat_map(|time| {
+            [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY].map(|path| {
+                engine::KeyframeRef {
+                    item: ItemId(3),
+                    path: AnimationPath::from(path),
+                    component: None,
+                    time: Tick(time),
+                }
+            })
+        })
+        .collect();
+    s.apply(Command::DeleteKeyframes { keys }).unwrap();
+    s.apply(Command::ApplyTextAnimation {
+        item: ItemId(3),
+        preset: FadeInOut,
+    })
+    .unwrap();
+    assert!(
+        item(&s, ItemId(3))
+            .animations
+            .get(&project::BuiltinPath::Opacity.into())
+            .is_some()
+    );
+}
+
+#[test]
 fn text_animation_refusals_and_transactions_preserve_all_state() {
     use engine::TextAnimationPreset::FadeInOut;
     let apply = || Command::ApplyTextAnimation {

@@ -824,7 +824,17 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         .unwrap();
     assert_eq!(
         fade["params_schema"]["$defs"]["TextAnimationPreset"]["enum"],
-        json!(["fade_in", "fade_out", "fade_in_out"])
+        json!([
+            "fade_in",
+            "fade_out",
+            "fade_in_out",
+            "slide_in",
+            "slide_out",
+            "slide_in_out",
+            "scale_in",
+            "scale_out",
+            "scale_in_out"
+        ])
     );
     let initial = client.call("inspect", json!({}), None, None);
     let inserted = client.call("timeline.insert",json!({"placement":{"mode":"auto"},"item":{

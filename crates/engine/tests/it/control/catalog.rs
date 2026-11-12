@@ -22,6 +22,7 @@ use crate::support::control::with_audio;
 use crate::support::control::with_loudness;
 use crate::support::control::with_source_audio;
 use crate::support::control::with_text;
+use crate::support::control::with_text_presets;
 use crate::support::control::with_thumbnails;
 use crate::support::control::with_video;
 use crate::support::control::with_waveform;
@@ -130,6 +131,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         match spec.example.fixture {
             Fixture::CaptionPresetBank => s = crate::support::control::with_caption_presets(&s),
             Fixture::Text => s = crate::support::control::with_text(&s),
+            Fixture::TextPresetBank => s = with_text_presets(&s),
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
@@ -446,6 +448,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "set_item_param",
                 "split_at",
                 "text.apply_animation",
+                "text.apply_preset",
+                "text.save_preset",
                 "timeline.duplicate",
                 "timeline.move_items",
                 "timeline.set_hidden",

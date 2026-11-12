@@ -122,6 +122,97 @@ fn check_preset_name(
     Ok(())
 }
 
+pub(super) fn save_text_preset(
+    mut data: ProjectData,
+    id: ItemId,
+    name: captions::NfcText,
+    next: &mut Option<u64>,
+    created: &mut Vec<CreatedId>,
+) -> Result<ProjectData> {
+    if item_in_other_scene(&data, id) {
+        return Err(EditError::SceneBoundary);
+    }
+    let target = item(&mut data, id)?;
+    let ItemParams::Text(params) = &target.content else {
+        return Err(EditError::Invalid("preset requires text item"));
+    };
+    let style = project::TextStyle::from_params(params);
+    check_text_preset_name(&data.text_presets, &name)?;
+    if data.text_presets.len() >= project::MAX_TEXT_PRESETS {
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
+    }
+    let id = project::TextPresetId(super::alloc(next)?);
+    data.text_presets
+        .push(project::SavedTextPreset { id, name, style });
+    created.push(CreatedId::TextPreset(id));
+    Ok(data)
+}
+
+fn check_text_preset_name(
+    presets: &[project::SavedTextPreset],
+    name: &captions::NfcText,
+) -> Result<()> {
+    if !project::SavedTextPreset::valid_name(name)
+        || presets.iter().any(|preset| preset.name == *name)
+    {
+        return Err(EditError::Invalid("text preset name"));
+    }
+    Ok(())
+}
+
+/// Copy one saved style into every named unlocked text item as one atomic edit.
+/// A non-text, missing or locked item refuses the whole command.
+pub(super) fn apply_text_preset(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    preset: project::TextPresetId,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty text preset selection"));
+    }
+    let mut remaining: BTreeSet<_> = items.iter().copied().collect();
+    if remaining.len() != items.len() {
+        return Err(EditError::Invalid("duplicate text preset selection"));
+    }
+    let style = data
+        .text_presets
+        .iter()
+        .find(|value| value.id == preset)
+        .map(|value| value.style.clone())
+        .ok_or(EditError::Invalid("text preset not found"))?;
+    for track in data.scene_mut().timeline.iter_mut() {
+        let matched = track
+            .items
+            .iter()
+            .any(|target| remaining.contains(&target.id));
+        if !matched {
+            continue;
+        }
+        if track.locked {
+            return Err(EditError::Locked(track.id));
+        }
+        for target in &mut track.items {
+            if !remaining.remove(&target.id) {
+                continue;
+            }
+            let ItemParams::Text(params) = &mut target.content else {
+                return Err(EditError::Invalid("text preset requires text items"));
+            };
+            style.apply_to(params);
+        }
+    }
+    if let Some(id) = remaining.into_iter().next() {
+        return Err(if item_in_other_scene(&data, id) {
+            EditError::SceneBoundary
+        } else {
+            EditError::NoItem(id)
+        });
+    }
+    Ok(data)
+}
+
 pub(super) fn rename_caption_preset(
     mut data: ProjectData,
     id: project::CaptionPresetId,

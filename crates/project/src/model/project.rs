@@ -1,5 +1,5 @@
 //! The validated project snapshot, its editable candidate and whole-project invariants.
-use super::item::{AudioSource, ItemParams, valid_volume};
+use super::item::{AudioSource, ItemParams, TextStyle, valid_volume};
 use super::scene::{Scene, SceneId, SceneScope, Scenes};
 use super::settings::{AspectPreset, Canvas, CanvasSize, Settings};
 use super::track::TrackKind;
@@ -11,9 +11,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use time::Tick;
 
 id!(CaptionPresetId);
+id!(TextPresetId);
 
 /// Maximum number of named caption values in one project.
 pub const MAX_CAPTION_PRESETS: usize = 64;
+/// Maximum number of named text styles in one project.
+pub const MAX_TEXT_PRESETS: usize = 64;
+
+/// Whether a preset name is storable: 1..=64 extended graphemes, at most 256
+/// UTF-8 bytes, no controls, no leading or trailing whitespace. Input is never trimmed.
+fn valid_preset_name(name: &NfcText) -> bool {
+    let name = name.as_str();
+    !name.is_empty()
+        && name.len() <= 256
+        && name.trim() == name
+        && !name.chars().any(char::is_control)
+        && captions::NormalizedText::new(name)
+            .is_ok_and(|text| (1..=64).contains(&text.spans().len()))
+}
 
 /// A reusable value; application copies the style into ordinary cue styles.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -27,13 +42,23 @@ impl SavedCaptionPreset {
     /// Names contain 1..=64 extended graphemes, at most 256 UTF-8 bytes,
     /// no controls, and no leading or trailing whitespace. Input is never trimmed.
     pub fn valid_name(name: &NfcText) -> bool {
-        let name = name.as_str();
-        !name.is_empty()
-            && name.len() <= 256
-            && name.trim() == name
-            && !name.chars().any(char::is_control)
-            && captions::NormalizedText::new(name)
-                .is_ok_and(|text| (1..=64).contains(&text.spans().len()))
+        valid_preset_name(name)
+    }
+}
+
+/// A reusable text look; application copies values into ordinary text parameters.
+/// Content and animation keys never belong to a preset.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedTextPreset {
+    pub id: TextPresetId,
+    pub name: NfcText,
+    pub style: TextStyle,
+}
+impl SavedTextPreset {
+    /// The same closed naming rule as caption presets.
+    pub fn valid_name(name: &NfcText) -> bool {
+        valid_preset_name(name)
     }
 }
 
@@ -78,6 +103,7 @@ pub struct ProjectData {
     pub current_scene_id: SceneId,
     pub settings: Settings,
     pub caption_presets: Vec<SavedCaptionPreset>,
+    pub text_presets: Vec<SavedTextPreset>,
 }
 impl ProjectData {
     /// Candidates with an invalid current ID read main; validation still refuses them.
@@ -124,6 +150,7 @@ impl Project {
             current_scene_id: SceneId(0),
             settings: Settings::default(),
             caption_presets: Vec::new(),
+            text_presets: Vec::new(),
         })
     }
     pub fn data(&self) -> &ProjectData {
@@ -198,6 +225,20 @@ fn validate(data: &ProjectData) -> Result<()> {
             || !preset_names.insert(&preset.name)
         {
             return Err(Error::Invalid("caption preset"));
+        }
+    }
+    if data.text_presets.len() > MAX_TEXT_PRESETS {
+        return Err(Error::TooLarge("text presets"));
+    }
+    let mut text_preset_ids = BTreeSet::new();
+    let mut text_preset_names = BTreeSet::new();
+    for preset in &data.text_presets {
+        if !SavedTextPreset::valid_name(&preset.name)
+            || !preset.style.valid()
+            || !text_preset_ids.insert(preset.id)
+            || !text_preset_names.insert(&preset.name)
+        {
+            return Err(Error::Invalid("text preset"));
         }
     }
     let c = &data.canvas;

@@ -342,6 +342,27 @@ pub(crate) fn with_text(seed: &Session) -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The text fixture plus one saved style under `TextPresetId(100)`.
+pub(crate) fn with_text_presets(seed: &Session) -> Session {
+    let mut data = with_text(seed).project().data().clone();
+    let ItemParams::Text(params) = &data
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == ItemId(3))
+        .unwrap()
+        .content
+    else {
+        panic!("text seed")
+    };
+    data.text_presets = vec![project::SavedTextPreset {
+        id: project::TextPresetId(100),
+        name: "Project style".into(),
+        style: project::TextStyle::from_params(params),
+    }];
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed plus one real mono audio asset (id 97) for waveform command examples.
 pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();

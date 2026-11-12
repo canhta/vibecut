@@ -245,6 +245,70 @@ impl TextParams {
         }
     }
 }
+/// Reusable text appearance copied from one item into ordinary text parameters.
+/// Content is never part of a preset, so applying one keeps every item's words.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextStyle {
+    pub font: NfcText,
+    pub font_size: f32,
+    pub weight: u16,
+    pub italic: bool,
+    pub align: TextAlign,
+    pub decoration: TextDecoration,
+    pub letter_spacing: f32,
+    pub line_height: f32,
+    pub color: Color,
+    pub background: Option<TextBackground>,
+    pub position: TextPosition,
+}
+impl TextStyle {
+    /// The style of `params`, leaving its content behind.
+    pub fn from_params(params: &TextParams) -> Self {
+        Self {
+            font: params.font.clone(),
+            font_size: params.font_size,
+            weight: params.weight,
+            italic: params.italic,
+            align: params.align,
+            decoration: params.decoration,
+            letter_spacing: params.letter_spacing,
+            line_height: params.line_height,
+            color: params.color,
+            background: params.background.clone(),
+            position: params.position,
+        }
+    }
+    /// Copy this style over `params`, keeping its content.
+    pub fn apply_to(&self, params: &mut TextParams) {
+        params.font = self.font.clone();
+        params.font_size = self.font_size;
+        params.weight = self.weight;
+        params.italic = self.italic;
+        params.align = self.align;
+        params.decoration = self.decoration;
+        params.letter_spacing = self.letter_spacing;
+        params.line_height = self.line_height;
+        params.color = self.color;
+        params.background = self.background.clone();
+        params.position = self.position;
+    }
+    /// Whether every stored field satisfies the text-item bounds.
+    pub fn valid(&self) -> bool {
+        crate::visual::valid(
+            self.font.as_str(),
+            self.weight,
+            self.letter_spacing,
+            self.line_height,
+        ) && self.font_size.is_finite()
+            && (1.0..=4096.0).contains(&self.font_size)
+            && self.position.x.is_finite()
+            && self.position.y.is_finite()
+            && (0.0..=100.0).contains(&self.position.x)
+            && (0.0..=100.0).contains(&self.position.y)
+            && self.background.as_ref().is_none_or(TextBackground::valid)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionParams {

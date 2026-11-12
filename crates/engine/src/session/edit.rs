@@ -317,6 +317,12 @@ pub(crate) fn apply(
         EditCommand::SetCaptionWordHighlight { item, enabled } => {
             data = text::set_word_highlight(data, item, enabled)?;
         }
+        EditCommand::ApplyTextPreset { items, preset } => {
+            data = text::apply_text_preset(data, items, preset)?;
+        }
+        EditCommand::SaveTextPreset { item, name } => {
+            data = text::save_text_preset(data, item, name, next, created)?;
+        }
         EditCommand::ApplyCaptionStyle { item, style } => {
             data = text::execute_apply_caption_style(data, item, style, sources)?;
         }

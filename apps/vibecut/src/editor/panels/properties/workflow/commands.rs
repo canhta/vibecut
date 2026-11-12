@@ -9,15 +9,72 @@ pub(in crate::editor) fn apply_text_animation(
     preset: engine::TextAnimationPreset,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
-    if !desk.editor().text_animation_available(state)
-        || state.animation_target(desk.view().session, desk.view().selection) != Some(item)
-        || !std::sync::Arc::ptr_eq(&snapshot, desk.view().session.project())
-    {
-        return Err(Error::Invalid("text animation target changed"));
-    }
+    text_target(state, desk, item, &snapshot, "text animation")?;
     desk.end_merge();
     desk.apply_result(engine::Command::ApplyTextAnimation { item, preset }, false)?;
     Ok(())
+}
+
+pub(in crate::editor) fn apply_text_preset(
+    state: &mut super::State,
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    preset: project::TextPresetId,
+    snapshot: std::sync::Arc<project::Project>,
+) -> Result<()> {
+    text_target(state, desk, item, &snapshot, "text preset")?;
+    desk.end_merge();
+    desk.apply_result(
+        engine::Command::ApplyTextPreset {
+            items: vec![item],
+            preset,
+        },
+        false,
+    )?;
+    Ok(())
+}
+
+pub(in crate::editor) fn save_text_preset(
+    state: &mut super::State,
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    snapshot: std::sync::Arc<project::Project>,
+) -> Result<()> {
+    text_target(state, desk, item, &snapshot, "text preset")?;
+    let name = next_preset_name(desk.view().session.project())?;
+    desk.end_merge();
+    desk.apply_result(engine::Command::SaveTextPreset { item, name }, false)?;
+    Ok(())
+}
+
+/// Guard a text workflow against a stale target, open transaction or blocked editor.
+fn text_target(
+    state: &mut super::State,
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    snapshot: &std::sync::Arc<project::Project>,
+    what: &'static str,
+) -> Result<()> {
+    if !desk.editor().text_animation_available(state)
+        || state.animation_target(desk.view().session, desk.view().selection) != Some(item)
+        || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
+    {
+        return Err(Error::Invalid(match what {
+            "text preset" => "text preset target changed",
+            _ => "text animation target changed",
+        }));
+    }
+    Ok(())
+}
+
+/// First free `Style N` name in the saved bank; the engine rechecks uniqueness.
+fn next_preset_name(project: &project::Project) -> Result<captions::NfcText> {
+    let bank = &project.data().text_presets;
+    (1..=project::MAX_TEXT_PRESETS)
+        .map(|n| format!("Style {n}"))
+        .find(|name| !bank.iter().any(|preset| preset.name.as_str() == name))
+        .map(Into::into)
+        .ok_or(Error::Invalid("text preset bank is full"))
 }
 
 /// The inspector and automation use the same registered atomic field edit.

@@ -16,10 +16,12 @@ mod track;
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
     GraphicParams, Item, ItemId, ItemParams, LibrarySound, OverlayParams, TextAlign,
-    TextBackground, TextDecoration, TextParams, TextPosition, VideoParams, WordSpan, valid_volume,
+    TextBackground, TextDecoration, TextParams, TextPosition, TextStyle, VideoParams, WordSpan,
+    valid_volume,
 };
 pub use project::{
-    CaptionPresetId, MAX_CAPTION_PRESETS, Project, ProjectData, ProjectId, SavedCaptionPreset,
+    CaptionPresetId, MAX_CAPTION_PRESETS, MAX_TEXT_PRESETS, Project, ProjectData, ProjectId,
+    SavedCaptionPreset, SavedTextPreset, TextPresetId,
 };
 pub use scene::{Bookmark, BookmarkId, Scene, SceneId, SceneScope, Scenes};
 pub use settings::{

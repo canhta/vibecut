@@ -29,6 +29,15 @@ pub(in crate::editor) enum Action {
         preset: engine::TextAnimationPreset,
         snapshot: Arc<project::Project>,
     },
+    ApplyTextPreset {
+        item: ItemId,
+        preset: project::TextPresetId,
+        snapshot: Arc<project::Project>,
+    },
+    SaveTextPreset {
+        item: ItemId,
+        snapshot: Arc<project::Project>,
+    },
     /// Switch the Project/Details strip through the action registry.
     Activate(&'static str),
     Cache(crate::editor::context::CacheAction),

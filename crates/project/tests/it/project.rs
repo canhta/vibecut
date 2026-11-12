@@ -10,7 +10,7 @@ fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<Sa
 }
 
 #[test]
-fn caption_bank_validates_every_entry_names_closed_fields_and_schema() {
+fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
     let style: captions::CueStyle = serde_json::from_value(serde_json::json!({
         "font_family":"Inter", "font_size_ratio":0.05, "primary_color":[255,255,255,180],
         "outline_color":[0,0,0,255], "background_color":[0,0,0,0], "border_style":1,
@@ -88,6 +88,92 @@ fn caption_bank_validates_every_entry_names_closed_fields_and_schema() {
     case_sensitive.caption_presets[0].name = "Look".into();
     case_sensitive.caption_presets[1].name = "look".into();
     Project::new(case_sensitive).unwrap(); // Equal style values under distinct names are valid.
+    // A text bank uses the same closed naming and identity rules over text styles.
+    let text_style = TextStyle::from_params(&TextParams::new("Giữ chữ"));
+    data.text_presets = (0..64)
+        .map(|id| SavedTextPreset {
+            id: TextPresetId(id),
+            name: format!("Style {id}").into(),
+            style: text_style.clone(),
+        })
+        .collect();
+    let project = Project::new(data.clone()).unwrap();
+    assert_eq!(
+        decode(&encode(&project, false).unwrap()).unwrap().project,
+        project
+    );
+    assert_eq!(
+        project.fork().unwrap().data().text_presets,
+        data.text_presets
+    );
+    assert_eq!(
+        project
+            .for_scene(project::SceneId(0))
+            .unwrap()
+            .data()
+            .text_presets,
+        data.text_presets
+    );
+    for case in ["65", "id", "name", "nfd", "font", "size", "position", "box"] {
+        let mut invalid = data.clone();
+        match case {
+            "65" => invalid.text_presets.push(SavedTextPreset {
+                id: TextPresetId(65),
+                name: "Extra".into(),
+                style: text_style.clone(),
+            }),
+            "id" => invalid.text_presets[1].id = TextPresetId(0),
+            "name" => invalid.text_presets[1].name = "Style 0".into(),
+            "nfd" => {
+                invalid.text_presets[0].name = "Tiếng Việt".into();
+                invalid.text_presets[1].name = "Tie\u{302}\u{301}ng Vie\u{323}\u{302}t".into();
+            }
+            "font" => invalid.text_presets[0].style.font = " ".into(),
+            "size" => invalid.text_presets[0].style.font_size = f32::NAN,
+            "position" => invalid.text_presets[0].style.position.x = 101.0,
+            "box" => {
+                invalid.text_presets[0].style.background = Some(TextBackground {
+                    padding_x: -1.0,
+                    ..Default::default()
+                });
+            }
+            _ => unreachable!(),
+        }
+        assert!(Project::new(invalid).is_err(), "{case}");
+    }
+    let encoded_text =
+        serde_json::from_slice::<serde_json::Value>(&encode(&project, false).unwrap()).unwrap();
+    for case in [
+        "missing",
+        "entry-unknown",
+        "style-unknown",
+        "name-type",
+        "style-missing",
+    ] {
+        let mut value = encoded_text.clone();
+        match case {
+            "missing" => {
+                value["project"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("text_presets");
+            }
+            "entry-unknown" => value["project"]["text_presets"][0]["extra"] = 0.into(),
+            "style-unknown" => value["project"]["text_presets"][0]["style"]["extra"] = 0.into(),
+            "name-type" => value["project"]["text_presets"][0]["name"] = 5.into(),
+            "style-missing" => {
+                value["project"]["text_presets"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("style");
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            decode(&serde_json::to_vec(&value).unwrap()).is_err(),
+            "{case}"
+        );
+    }
     let encoded =
         serde_json::from_slice::<serde_json::Value>(&encode(&project, false).unwrap()).unwrap();
     for case in [
