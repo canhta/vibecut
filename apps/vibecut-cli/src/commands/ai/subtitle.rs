@@ -224,8 +224,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     }
     let plan = Plan {
         input,
-        source_language: source_language
-            .ok_or(CliError::Rejected("source language unresolved"))?,
+        source_language: source_language.ok_or(CliError::Rejected("source language unresolved"))?,
         target_language,
         bilingual,
         srt,
@@ -736,7 +735,10 @@ mod tests {
         let report = execute(&first, &allowed, runner()).unwrap();
         assert_eq!((report.checkpoints, calls.load(Ordering::Relaxed)), (0, 1));
         let srt = std::fs::read_to_string(first.srt.as_ref().unwrap()).unwrap();
-        assert!(srt.contains("Hello there") && srt.contains("Xin chao"), "{srt}");
+        assert!(
+            srt.contains("Hello there") && srt.contains("Xin chao"),
+            "{srt}"
+        );
         let value = report_json(&first, &providers, &report).unwrap();
         assert_eq!(value["status"], "completed");
         assert_eq!(value["source_language"], "en");

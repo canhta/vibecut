@@ -4,8 +4,8 @@ use engine::control::{
     API_VERSION, Caller, ControlResult, FontAccess, MediaAccess, Policy, Request, SoundAccess,
     registry_hash,
 };
-use engine::subtitles::CaptionAccess;
 use engine::jobs::JobRunner;
+use engine::subtitles::CaptionAccess;
 use engine::{Command, Session};
 use serde_json::Value;
 use std::sync::Mutex;

@@ -1,6 +1,6 @@
 # Transcript
 
-Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session`,
+Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session`, `source_session`,
 `wait_for_job`, `Cancellation`, `Error`, `Result`, `Progress`, `translation`.
 
 Acquires source-timed cues from the user's chosen providers, shared by

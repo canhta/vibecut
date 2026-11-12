@@ -298,13 +298,7 @@ struct Outcome {
 
 type Cause = Arc<dyn engine::Failure + 'static>;
 
-fn run(
-    input: &Path,
-    source: &str,
-    target: &str,
-    directory: &Path,
-    burn: bool,
-) -> Run {
+fn run(input: &Path, source: &str, target: &str, directory: &Path, burn: bool) -> Run {
     Run {
         input: input.to_path_buf(),
         source: lang(source),
@@ -652,10 +646,11 @@ fn checkpoint_envelope_miss_renews_consent_but_bad_json_never_reruns_asr() {
             engine::cache::ArtifactCache::open(&root, budget.clone(), 16).unwrap();
         (Arc::new(std::sync::Mutex::new(cache)), diagnostics)
     };
-    let access = |cache: &Arc<std::sync::Mutex<engine::cache::ArtifactCache>>,
-                  consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>| {
-        subtitles::CaptionAccess::new(providers.clone(), consent, cache.clone())
-    };
+    let access =
+        |cache: &Arc<std::sync::Mutex<engine::cache::ArtifactCache>>,
+         consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>| {
+            subtitles::CaptionAccess::new(providers.clone(), consent, cache.clone())
+        };
     let (cache, _) = open(&budget);
     let mut req = run(&input, "en", "en", dir.path(), false);
     let first = workflow(&req, &access(&cache, Arc::new(AllowAll)), &mut runner).unwrap();
@@ -1130,6 +1125,7 @@ impl Translator for BlockingTranslator {
         }
         Err(Error::Cancelled)
     }
+}
 
 #[test]
 fn progress_is_presentation_only_and_optional() {
@@ -1810,12 +1806,14 @@ fn registry_generation_reuses_the_existing_subtitle_checkpoint_without_an_upload
         engine::cache::ArtifactCache::open(&dir.path().join("cache"), budget, 16).unwrap();
     let cache = Arc::new(std::sync::Mutex::new(cache));
     // The CLI workflow wrote this checkpoint; a registry job reuses it without an upload.
-    let written = engine::subtitles::CaptionAccess::new(
-        providers.clone(),
-        Arc::new(AllowAll),
-        cache.clone(),
-    );
-    workflow(&run(&input, "en", "en", dir.path(), false), &written, &mut r).unwrap();
+    let written =
+        engine::subtitles::CaptionAccess::new(providers.clone(), Arc::new(AllowAll), cache.clone());
+    workflow(
+        &run(&input, "en", "en", dir.path(), false),
+        &written,
+        &mut r,
+    )
+    .unwrap();
     let access = engine::subtitles::CaptionAccess::new(providers, Arc::new(DenyUploads), cache);
     let mut s = registry_session(&input);
     let job = caption_submit(

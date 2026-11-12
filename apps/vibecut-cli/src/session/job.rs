@@ -59,7 +59,7 @@ pub(crate) fn run_job_with(
     match registry::run(
         session,
         runner,
-        Lent::default(),
+        lent,
         "job_status",
         serde_json::json!({"job": job}),
         false,
