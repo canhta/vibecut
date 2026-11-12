@@ -24,6 +24,7 @@ impl Editor {
             }
         }
         self.tick_sounds();
+        self.tick_music();
         self.dialogs
             .export
             .tick(self.session.project(), self.preferences.export);

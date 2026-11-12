@@ -13,6 +13,7 @@ mod lifecycle;
 mod media_import;
 mod media_library;
 mod models_ui;
+mod music_ui;
 mod panels;
 mod preview_ui;
 mod projects_ui;

@@ -2,6 +2,7 @@
 use super::super::Failure;
 use super::super::application::*;
 use super::super::fixture::*;
+use egui_kittest::kittest::{By, Queryable};
 use media::MediaError;
 use media::SourceAsset;
 use std::sync::Arc;
@@ -53,6 +54,7 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         "text" => vibecut::panels::AssetsTab::Text,
         "captions" => vibecut::panels::AssetsTab::Captions,
         "offline" => vibecut::panels::AssetsTab::Sounds,
+        "music" => vibecut::panels::AssetsTab::Sounds,
         _ => vibecut::panels::AssetsTab::Media,
     };
     if state == "offline" {
@@ -70,6 +72,44 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
             downloads: 100,
         })?;
         editor.set_sound_library(library)?;
+        sound_library = Some(directory);
+    }
+    if state == "music" {
+        let directory = tempfile::tempdir()?;
+        let library = Arc::new(libraries::music::MusicLibrary::open(directory.path())?);
+        for (id, title, author, licence, duration) in [
+            (
+                "audit-1",
+                "Night Walk",
+                "Example Artist",
+                "CC BY 4.0",
+                31_000,
+            ),
+            ("audit-2", "Paper Planes", "Studio Nine", "CC0 1.0", 128_000),
+            ("audit-3", "Quiet Harbour", "Mara Vale", "CC BY 4.0", 94_000),
+        ] {
+            library.save(&libraries::music::MusicResult {
+                id: id.into(),
+                title: title.into(),
+                author: author.into(),
+                licence: licence.into(),
+                licence_url: if licence == "CC0 1.0" {
+                    "https://creativecommons.org/publicdomain/zero/1.0/".into()
+                } else {
+                    "https://creativecommons.org/licenses/by/4.0/".into()
+                },
+                attribution: format!("\"{title}\" by {author} is licensed under {licence}."),
+                source_url: format!("https://commons.example/wiki/File:{id}.ogg"),
+                audio_url: format!("https://cdn.example/{id}.ogg"),
+                duration_ms: duration,
+            })?;
+        }
+        let client = libraries::music::MusicClient::new(None, Arc::new(MusicAuditSource));
+        editor.set_music(vibecut::Music::with_client(
+            Arc::new(vibecut::services::music::MusicSession::new(library)),
+            client,
+            engine::ByteBudget::new(128 << 20)?,
+        )?);
         sound_library = Some(directory);
     }
     if state == "loading" {
@@ -93,6 +133,11 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
     let mut app = harness_sized(App::Assets(Box::new(editor)), scale, [1727.0, 1029.0]);
     app.state_mut()._sound_library = sound_library;
     app.run_steps(4);
+    if state == "music" {
+        app.get(By::new().predicate(|node| node.author_id() == Some("audio.section.music")))
+            .click();
+        app.run_steps(40);
+    }
     if phase3 {
         if let App::Assets(editor) = &mut app.state_mut().app {
             editor.settle_previews(Duration::from_secs(10))?;
@@ -101,6 +146,77 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         app.run_steps(1);
     }
     Ok(app)
+}
+
+/// Recorded music page for the audit render; it never opens a socket.
+struct MusicAuditSource;
+impl ai::transport::HttpTransport for MusicAuditSource {
+    fn send(
+        &self,
+        request: ai::transport::HttpRequest,
+    ) -> Result<ai::transport::HttpResponse, ai::Error> {
+        self.send_bounded(request, 1 << 20)
+    }
+    fn send_bounded(
+        &self,
+        _: ai::transport::HttpRequest,
+        _: usize,
+    ) -> Result<ai::transport::HttpResponse, ai::Error> {
+        let tracks = [
+            (
+                "audit-1",
+                "Night Walk",
+                "Example Artist",
+                "by",
+                "4.0",
+                31_000,
+            ),
+            (
+                "audit-2",
+                "Paper Planes",
+                "Studio Nine",
+                "cc0",
+                "1.0",
+                128_000,
+            ),
+            ("audit-3", "Quiet Harbour", "Mara Vale", "by", "4.0", 94_000),
+        ];
+        let results: Vec<_> = tracks
+            .iter()
+            .map(|(id, title, author, licence, version, duration)| {
+                let family = if *licence == "cc0" { "CC0" } else { "CC BY" };
+                let licence_url = if *licence == "cc0" {
+                    "https://creativecommons.org/publicdomain/zero/1.0/"
+                } else {
+                    "https://creativecommons.org/licenses/by/4.0/"
+                };
+                serde_json::json!({
+                    "id": id,
+                    "title": title,
+                    "creator": author,
+                    "license": licence,
+                    "license_version": version,
+                    "license_url": licence_url,
+                    "attribution": format!("\"{title}\" by {author} is licensed under {family} {version}."),
+                    "foreign_landing_url": format!("https://commons.example/wiki/File:{id}.ogg"),
+                    "url": format!("https://cdn.example/{id}.ogg"),
+                    "duration": duration,
+                })
+            })
+            .collect();
+        let body = serde_json::json!({
+            "result_count": 3,
+            "page_count": 1,
+            "page_size": 15,
+            "page": 1,
+            "results": results,
+        });
+        Ok(ai::transport::HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&body).map_err(|_| ai::Error::Payload)?,
+        })
+    }
 }
 
 /// Own generated pixels, injected through the real thumbnail publication seam.

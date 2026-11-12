@@ -1,4 +1,5 @@
 //! Owns the assets presentation boundary.
+pub mod music;
 mod projection;
 pub mod sounds;
 mod state;
@@ -7,6 +8,15 @@ mod view;
 mod workflow;
 pub(super) use projection::prepare;
 pub(super) use state::State;
+
+/// The Audio tab's two pages. Sound effects keep the existing provider; Music
+/// adds the open-source search section.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum AudioSection {
+    Music,
+    #[default]
+    Sounds,
+}
 
 use super::{
     Align2, Arc, AssetId, AssetRow, AssetState, AssetsTab, BTreeMap, BTreeSet, Color32, Command,
@@ -36,6 +46,11 @@ struct Model {
     marquee: Option<MediaMarquee>,
     failed: bool,
     sounds: Option<sounds::SoundsView>,
+    music: Option<music::MusicView>,
+    /// Full project-derived music attribution records, independent of Saved.
+    music_credits: Vec<String>,
+    /// Set when the project's credit text exceeds its bounded aggregate.
+    music_credits_failed: bool,
 }
 
 pub(super) fn show(state: &mut State, cx: &super::Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
@@ -91,6 +106,20 @@ pub(super) enum Action {
     SoundsAdd(u64),
     SoundsCancelCache,
     SoundsRetry,
+    MusicMode(music::MusicMode),
+    MusicChip(&'static str),
+    MusicSearch {
+        more: bool,
+    },
+    MusicPreview(String),
+    MusicToggleSaved(String),
+    MusicAdd(String),
+    MusicCancelCache,
+    MusicRetry,
+    MusicRetryAdd,
+    MusicCredits,
+    MusicKeyApply,
+    MusicKeyRemove,
 }
 
 impl Editor {

@@ -1,6 +1,7 @@
 //! Applies the assets workflows.
 mod import;
 mod insertion;
+mod music;
 mod selection;
 mod sounds;
 mod transition;

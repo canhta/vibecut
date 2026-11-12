@@ -2,6 +2,7 @@
 pub mod ai_task;
 pub mod color_picker;
 pub mod crop;
+pub mod music;
 pub mod playback;
 pub mod preview;
 pub mod progress;

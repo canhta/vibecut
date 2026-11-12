@@ -183,6 +183,7 @@ pub struct Inspection {
     pub media_highlight: Option<AssetId>,
     pub media_delete_pending: Vec<AssetId>,
     pub sounds: Option<super::assets::sounds::SoundsView>,
+    pub music: Option<super::assets::music::MusicView>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
@@ -345,6 +346,8 @@ pub struct Editor {
     pub(super) sound_library: Option<Arc<libraries::sounds::SoundLibrary>>,
     pub(super) sounds: Option<super::assets::sounds::Sounds>,
     pub(super) sound_media_dir: Option<PathBuf>,
+    pub(super) music: Option<super::assets::music::Music>,
+    pub(super) music_media_dir: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,
     /// Cross-area requests the frame drains after the area that raised them.
     pub(super) requests: Vec<super::Request>,

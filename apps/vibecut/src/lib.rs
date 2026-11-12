@@ -28,8 +28,9 @@ pub use editor::properties::font_picker;
 pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fields};
 pub use editor::{
     AppCommand, AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor,
-    Inspection, PreviewAxis, PreviewGuide, PreviewZoom, ShortcutRow, ShortcutTab,
-    ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, WidgetState,
+    Inspection, Music, MusicMode, MusicProblem, MusicView, PreviewAxis, PreviewGuide, PreviewZoom,
+    ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView,
+    TextCaret, WidgetState,
 };
 pub use eframe::egui;
 

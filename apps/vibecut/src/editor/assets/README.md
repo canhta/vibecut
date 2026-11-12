@@ -1,6 +1,6 @@
 # Assets
 
-Interface: `State`, `show`, `Action`, `prepare`, `sounds`.
+Interface: `State`, `show`, `Action`, `prepare`, `sounds`, `music`.
 
 The area owns its navigation drafts and the prepared workflow projection; `show`
 consumes the editor's read-only context and returns `Action` values the frame routes.
@@ -27,3 +27,23 @@ Sounds rows: [sounds](sounds/README.md).
 ## Shapes
 
 The persisted Stickers tab exposes only locally generated Rectangle and Ellipse cards, using their real silhouettes and existing kit controls. `graphic.insert.rectangle` and `graphic.insert.ellipse` insert five seconds at the playhead through ordinary engine placement and select the returned item. The prepared readiness projection, direct activation and preflush admission share the same predicate, including drafts, transactions and modal work. No unavailable shape variants or network source exist.
+
+## Music section
+
+The Audio tab's Music page consumes the libraries music library. A section switch at
+the top of the 120 px navigation column chooses Music or Sound effects; Music holds
+Saved, then one chip per source tag. Discover answers anonymously from the open
+source, Saved is the offline local library, and the free-text field sends `q` while a
+chip sends `tags`. Rows are 48 px on the existing audio pitch: a 32 px cover with a
+24 px play/pause overlay, the title, `artist · duration · licence`, the full
+attribution, and 24 px bookmark (save) and add buttons. Every row's accessible label
+and hover text also carry the source page. Add downloads into the local cache when
+needed and applies `music.add_to_timeline` as one undo step; unsave and clear-all only
+reach the cache. Provider, cache, publication, no-audio-device and cancelled failures
+are typed states with creator copy; a failed download changes no project bytes.
+
+A header disclosure lists the project's complete used-track credits from
+`Project::music_credits` and copies that exact block; unused saved tracks are excluded.
+The settings sheet applies or removes the optional source key for this process only,
+using a masked field and a direct source-terms link; the key never enters project,
+preferences, automation, undo or logs.

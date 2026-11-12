@@ -47,6 +47,8 @@ pub struct Workspace {
     lane_paths: BTreeMap<project::ProjectId, PathBuf>,
     lane_prune_key: Vec<project::ProjectId>,
     sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+    /// One process music library and session credential shared by every window.
+    music: Option<Arc<crate::services::music::MusicSession>>,
     /// One process media cache instance, lent to every editor's timeline and to
     /// the desktop MCP inbox. A second open of the same root is never attempted.
     media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
@@ -70,6 +72,11 @@ impl Workspace {
         let sounds = libraries::sounds::SoundLibrary::open(&root.with_file_name("sounds"))
             .ok()
             .map(Arc::new);
+        // One music library and in-memory session key are shared by every
+        // project window; the adjacent writer lease refuses a second owner.
+        let music = libraries::music::MusicLibrary::open(&root.with_file_name("music"))
+            .ok()
+            .map(|library| Arc::new(crate::services::music::MusicSession::new(Arc::new(library))));
         // One media cache owner for the whole desktop process. Its workspace
         // root keeps test runs isolated and never races the CLI's cache root.
         let media =
@@ -95,6 +102,7 @@ impl Workspace {
             persistence,
             runner,
             sounds.clone(),
+            music.clone(),
             media.clone(),
         );
         home.startup_path = path;
@@ -114,6 +122,7 @@ impl Workspace {
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
             sounds,
+            music,
             media,
         })
     }
@@ -135,6 +144,9 @@ impl Workspace {
         if let Some(sounds) = &self.sounds {
             let _ = editor.set_sound_library(sounds.clone());
         }
+        if let Some(music) = &self.music {
+            let _ = editor.set_music_session(music.clone());
+        }
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
         }
@@ -151,6 +163,7 @@ impl Workspace {
                 self.home.persistence.clone(),
                 self.home.runner.clone(),
                 self.sounds.clone(),
+                self.music.clone(),
                 self.media.clone(),
             );
             window.project_window = true;
@@ -762,6 +775,8 @@ pub struct EditorWindow {
     persistence: ByteBudget,
     runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+    /// The process music session lent to this window's editor.
+    music: Option<Arc<crate::services::music::MusicSession>>,
     /// The process media cache instance lent to this window's editor.
     media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
     pending: Option<Pending>,
@@ -793,6 +808,7 @@ impl EditorWindow {
         persistence: ByteBudget,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
         sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
+        music: Option<Arc<crate::services::music::MusicSession>>,
         media: Option<Arc<Mutex<engine::control::MediaAccess>>>,
     ) -> Self {
         static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -814,6 +830,7 @@ impl EditorWindow {
             persistence,
             runner,
             sounds,
+            music,
             media,
             pending: None,
             picker: None,
@@ -1288,6 +1305,9 @@ impl EditorWindow {
                 editor.playback.set_device_available(self.device_available);
                 if let Some(sounds) = &self.sounds {
                     let _ = editor.set_sound_library(sounds.clone());
+                }
+                if let Some(music) = &self.music {
+                    let _ = editor.set_music_session(music.clone());
                 }
                 if let Some(media) = &self.media {
                     editor.set_media(media.clone());
@@ -1858,6 +1878,7 @@ mod tests {
                 budget.clone(),
                 budget.clone(),
                 runner,
+                None,
                 None,
                 None,
             );

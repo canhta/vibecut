@@ -15,6 +15,7 @@ mod timeline;
 mod widgets;
 
 mod state;
+pub use assets::music::{Music, MusicMode, MusicProblem, MusicView};
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
 pub use state::{
@@ -290,6 +291,8 @@ impl Editor {
             sound_library: None,
             sounds: None,
             sound_media_dir: None,
+            music: None,
+            music_media_dir: None,
             subtitles: None,
             requests: Vec::new(),
         }
@@ -425,6 +428,7 @@ impl Editor {
             media_highlight,
             media_delete_pending,
             sounds: self.sounds.as_ref().map(|sounds| sounds.view()),
+            music: self.music.as_ref().map(|music| music.view()),
             export_options: self.preferences.export,
             export: self.dialogs.export.inspect(),
             crop: self

@@ -4,13 +4,14 @@ mod browser;
 mod deletion;
 mod effects;
 mod feedback;
+mod music;
 mod sounds;
 mod transition;
 
 use super::{
-    Action, Align2, AssetRow, AssetState, AssetsTab, Color32, EffectRow, FontId, Icon, Id,
-    MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row, State, Text,
-    Vec2, asset_state_color, display_short_time, egui, icons, state, theme,
+    Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,
+    Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
+    State, Text, Vec2, asset_state_color, display_short_time, egui, icons, state, theme,
 };
 use state::Filter;
 
@@ -133,7 +134,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                     return;
                 }
                 if cx.preferences.assets_tab == AssetsTab::Sounds {
-                    view.sounds_nav(ui);
+                    view.audio_nav(ui);
                     return;
                 }
                 let label = view.tr(active);
@@ -193,7 +194,13 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                 view.empty_media(ui)
             }
             AssetsTab::Media => view.browser(ui),
-            AssetsTab::Sounds => view.sounds(ui),
+            AssetsTab::Sounds => {
+                if view.state.audio_section == AudioSection::Music && nav.width() > 0.0 {
+                    view.music(ui)
+                } else {
+                    view.sounds(ui)
+                }
+            }
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Stickers => view.shapes(ui),

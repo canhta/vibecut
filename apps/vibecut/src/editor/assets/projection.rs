@@ -140,6 +140,10 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
     } else {
         [None, None]
     };
+    let (music_credits, music_credits_failed) = match editor.session.project().music_credits() {
+        Ok(credits) => (credits, false),
+        Err(_) => (Vec::new(), true),
+    };
     editor.assets.model = Model {
         preferences,
         rows,
@@ -155,6 +159,9 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         marquee: editor.media_marquee.clone(),
         failed: !editor.import_failures.is_empty() || editor.import_notice.is_some(),
         sounds: editor.sounds.as_ref().map(|sounds| sounds.view()),
+        music: editor.music.as_ref().map(|music| music.view()),
+        music_credits,
+        music_credits_failed,
     };
 }
 

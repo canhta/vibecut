@@ -25,7 +25,7 @@ use std::{
 };
 use transport::HttpTransport;
 
-mod sink;
+pub(super) mod sink;
 
 const PAGE_SIZE: u32 = 30;
 

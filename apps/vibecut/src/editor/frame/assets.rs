@@ -3,6 +3,11 @@ use crate::editor::{Editor, assets, captions, egui};
 
 impl Editor {
     pub(in crate::editor) fn show_assets(&mut self, ui: &mut egui::Ui) {
+        if self.preferences.assets_tab == crate::panels::AssetsTab::Sounds
+            && self.assets.audio_section == assets::AudioSection::Music
+        {
+            self.music_loaded();
+        }
         assets::prepare(self, ui.ctx());
         let mut state = std::mem::take(&mut self.assets);
         let cx = self.context();
@@ -61,6 +66,25 @@ impl Editor {
                 assets::Action::SoundsAdd(id) => self.sounds_add(id),
                 assets::Action::SoundsCancelCache => self.sounds_cancel_cache(),
                 assets::Action::SoundsRetry => self.sounds_retry(),
+                assets::Action::MusicMode(mode) => self.music_set_mode(mode),
+                assets::Action::MusicChip(chip) => self.music_set_chip(chip),
+                assets::Action::MusicSearch { more } => self.music_search(more),
+                assets::Action::MusicPreview(id) => self.music_preview(&id),
+                assets::Action::MusicToggleSaved(id) => self.music_toggle_saved(&id),
+                assets::Action::MusicAdd(id) => self.music_add(&id),
+                assets::Action::MusicCancelCache => self.music_cancel_cache(),
+                assets::Action::MusicRetry => self.music_retry(),
+                assets::Action::MusicRetryAdd => self.music_retry_add(),
+                assets::Action::MusicCredits => {
+                    let copied = crate::i18n::text(
+                        self.preferences.locale,
+                        crate::i18n::Text::MusicCreditsCopied,
+                    )
+                    .to_owned();
+                    self.set_toast(&copied, None);
+                }
+                assets::Action::MusicKeyApply => self.music_key_apply(),
+                assets::Action::MusicKeyRemove => self.music_key_remove(),
             }
         }
     }

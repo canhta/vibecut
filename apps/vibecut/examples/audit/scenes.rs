@@ -190,6 +190,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "offline"),
     },
     Scene {
+        name: "assets-music",
+        reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221703.png"),
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "music"),
+    },
+    Scene {
         name: "assets-captions",
         reference_dark: None,
         reference_light: None,
