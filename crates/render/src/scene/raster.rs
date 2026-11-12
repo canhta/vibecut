@@ -192,8 +192,9 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
     if w as f32 <= pad * 2.0 || h as f32 <= pad * 2.0 {
         return Err(Error::Invalid("text decoration exceeds destination"));
     }
-    // A shadow or glow adds intermediate coverage masks (four bytes per pixel each).
-    let decorated = u64::from(key.shadow.is_some() || key.glow.is_some()) * bytes * 4;
+    // A glow's distance grid, stroke mask and blur pair peak near seven coverage
+    // masks (four bytes per pixel each); a shadow peaks lower.
+    let decorated = u64::from(key.shadow.is_some() || key.glow.is_some()) * bytes * 8;
     let _scratch = hooks.reserve(
         MemoryKind::Compositor,
         bytes * (2 + u64::from(key.active_word.is_some()))
