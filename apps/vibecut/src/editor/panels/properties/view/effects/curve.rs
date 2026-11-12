@@ -158,7 +158,8 @@ mod tests {
         let expected = (0.3 * CURVE_GRID + 0.5).floor() / CURVE_GRID;
         assert_eq!(points(edited).len(), 3);
         assert_eq!(interior_point(edited), [expected, 0.6]);
-        assert!((edited.map(0.3) - 0.6).abs() < 1e-6);
+        // The click snaps to the grid, so the curve passes through the knot.
+        assert!((edited.map(expected as f32) - 0.6).abs() < 1e-6);
     }
 
     #[test]
@@ -207,6 +208,7 @@ mod tests {
         let moved_point = interior_point(moved);
         assert_eq!(moved_point[0], 1.0 / CURVE_GRID);
         assert_eq!(moved_point[1], 0.6);
+        // An out-of-range output clamps to 1, which the last endpoint admits.
         assert!(
             apply(
                 start,
@@ -216,11 +218,23 @@ mod tests {
                     y: 2.0,
                 },
             )
+            .is_ok()
+        );
+        let two = apply(start, Edit::Add { x: 0.75, y: 0.7 }).expect("a second point");
+        assert!(
+            apply(
+                two,
+                Edit::Move {
+                    index: 1,
+                    x: 0.5,
+                    y: 0.9,
+                },
+            )
             .is_err(),
             "a point above its next neighbour would break monotonicity"
         );
         assert!(
-            apply(start, Edit::Add { x: 0.75, y: 2.0 },).is_err(),
+            apply(two, Edit::Add { x: 0.6, y: 0.9 }).is_err(),
             "a point above the segment would break monotonicity"
         );
         for pair in moved.points().windows(2) {
