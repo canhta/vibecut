@@ -1919,6 +1919,8 @@ impl Workflow for GenerateWorkflow {
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
                     word_highlight: false,
+                    preset: None,
+                    overrides: Default::default(),
                     // Auto-detect resolves to a concrete spoken language; the
                     // fixture uses vi so the inserted cues stay realistic.
                     cues: fixture::cues(if options.source == "auto" {
