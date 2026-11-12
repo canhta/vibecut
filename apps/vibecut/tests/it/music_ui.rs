@@ -319,21 +319,19 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
     harness.run_steps(2);
 }
 
-/// Opens the Music section. kittest spreads one pointer click into a
-/// press/release pair across frames, and under a loaded suite such a click can
-/// miss the sub-nav; press the real button again before failing.
+/// Opens the Music section, then runs frames until the panel paints its sub-nav:
+/// the section changes during the click's release frame, so the nav arrives with
+/// the next paint instead of with the click helper's steps.
 fn open_music(harness: &mut Harness<Editor>) {
-    for _ in 0..3 {
-        click(harness, "audio.section.music");
-        harness.run_steps(2);
-        if harness
-            .query(By::new().predicate(|node| node.author_id() == Some("music.tab.saved")))
-            .is_some()
-        {
-            return;
-        }
-    }
-    panic!("the music section did not open");
+    click(harness, "audio.section.music");
+    wait(harness, "music sub-nav", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "music.tab.saved")
+    });
 }
 
 fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
