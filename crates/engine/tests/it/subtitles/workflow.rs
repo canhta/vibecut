@@ -2078,7 +2078,8 @@ fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_appli
         (json!(["cue-1", "cue-1"]), json!([]), ErrorCode::Refused),
         (json!(["missing"]), json!([]), ErrorCode::Refused),
         (json!(["cue-0"]), json!([]), ErrorCode::Refused),
-        (json!(["cue-1"]), json!(too_many), ErrorCode::Ai),
+        // The schema bounds the glossary at 128 terms, so admission refuses before any window.
+        (json!(["cue-1"]), json!(too_many), ErrorCode::InvalidParams),
     ]
     .into_iter()
     .enumerate()
@@ -2703,6 +2704,14 @@ impl Transcriber for ConfidenceAsr {
     }
     fn estimate(&self, scope: &Scope) -> CostEstimate {
         self.inner.estimate(scope)
+    }
+    /// The omitted-language row needs a detector; silent media still reaches recognition.
+    fn detect_language(
+        &self,
+        _: ai::AudioWindow<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> Result<LanguageTag, Error> {
+        Ok(lang("en"))
     }
     fn transcribe(
         &self,

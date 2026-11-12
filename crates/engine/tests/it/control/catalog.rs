@@ -470,6 +470,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         [
             "audio.measure_loudness",
             "captions.generate",
+            "captions.suggest_emphasis",
             "captions.translate",
             "chapters.generate",
             "clips.suggest",
