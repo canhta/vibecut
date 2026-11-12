@@ -90,7 +90,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 "preview.copy",
                 Text::SnapshotCopy,
                 !empty,
-                "copy",
+                "preview.copy_snapshot",
                 None,
             );
             ui.separator();
@@ -265,17 +265,14 @@ fn menu(
     } else {
         egui::Button::new(cx.tr(text))
     };
+    let shortcut = shortcut.or_else(|| cx.shortcut(command));
     let button = match shortcut {
         Some(shortcut) => button.shortcut_text(shortcut),
         None => button,
     };
     let r = ui.add_enabled(enabled, button);
     if r.clicked() {
-        actions.push(if command == "copy" {
-            Action::Copy
-        } else {
-            Action::Command(command.into())
-        });
+        actions.push(Action::Command(command.into()));
         ui.close();
     }
     remember(cx, actions, id, r);
@@ -667,7 +664,7 @@ fn canvas(
                 "preview.menu.copy",
                 Text::SnapshotCopy,
                 !empty,
-                "copy",
+                "preview.copy_snapshot",
                 None,
             );
             menu(

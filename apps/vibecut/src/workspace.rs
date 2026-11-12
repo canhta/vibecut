@@ -1418,6 +1418,20 @@ impl EditorWindow {
                         self.focus_home = true;
                         Ok(())
                     }
+                    EditorAction::ExitProject => {
+                        self.request_close();
+                        Ok(())
+                    }
+                    EditorAction::OpenHelp => {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab(crate::lifecycle::HELP_URL));
+                        Ok(())
+                    }
+                    EditorAction::OpenFeedback => {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab(crate::lifecycle::FEEDBACK_URL));
+                        Ok(())
+                    }
                     EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),
                     EditorAction::Save => self.save_from_ui(ui.ctx(), false, false, false),
                 };

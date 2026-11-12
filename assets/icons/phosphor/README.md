@@ -9,7 +9,7 @@ time; there is no runtime network or font request.
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117
-- Files: 52 unmodified `assets/regular/*.svg` files.
+- Files: 54 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -25,6 +25,7 @@ SHA-256 of each embedded file:
 | `bookmark-simple.svg` | `c3de1070187d7995c76e2fe5b7c899cb9eddbb9040aa7cfe90babd83b4adcc40` |
 | `caret-down.svg` | `9257147c4510788a10c3065f1d0f6c3c68da5bb265e03892b960f45d3d50d903` |
 | `caret-right.svg` | `da96a0362670cf8fc16b2e94ba4db4862852469570b586c428e897781ecc10a5` |
+| `chat-circle.svg` | `09e36aa820a39bbc8cffe705ad84c836d1e5733f83dc1d2212a965fdacdf4a67` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
 | `copy.svg` | `5a892fc6a72866e60c67db2088a87653cf44b57b1a5d183b36e950cdc5dd66b3` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
@@ -59,6 +60,7 @@ SHA-256 of each embedded file:
 | `skip-back.svg` | `20f318558e166d5dea09fb854a1bbc199e9891b17febed640e912a6ee4712d37` |
 | `skip-forward.svg` | `52f1ed5a89f1a38bf8537b38bd2da0501e396fc4cb03a2cdde38d248ceb03fbe` |
 | `sliders-horizontal.svg` | `1d937baa3bc51ec4052364edf30cf8991d550920534f5d413eb9f60535cc1916` |
+| `snowflake.svg` | `ab90939b684fe05dd182e2a984a8ed9813cbb851e586f8e7a176cf359c3056bd` |
 | `sparkle.svg` | `9e2c17a26564098cb48dd95737a83c742156f755f13cedaa30f9d864d0e3eb76` |
 | `squares-four.svg` | `f70d6b20e08e028ab5b1714077681910a2431092cf7a23b82366ddaec554ab87` |
 | `speaker-high.svg` | `caca5fc1ee8489ac19232301d2c96f6d4048802491d75d761bbb89d5c98e459d` |

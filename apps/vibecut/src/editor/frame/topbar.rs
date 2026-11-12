@@ -106,6 +106,34 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         ),
         Vec2::splat(kit::size::CONTROL),
     );
+    let feedback_rect = Rect::from_min_size(
+        egui::pos2(
+            menu_rect.left() - kit::space::MD - kit::size::CONTROL,
+            rect.top() + 6.0,
+        ),
+        Vec2::splat(kit::size::CONTROL),
+    );
+    let mut feedback_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("app.feedback")
+            .max_rect(feedback_rect),
+    );
+    let feedback = kit::icon_button(
+        &mut feedback_ui,
+        "app.feedback",
+        Icon::ChatCircle,
+        tr(Text::Feedback),
+        false,
+    );
+    state.painted.push((
+        "app.feedback",
+        Some(Icon::ChatCircle.name()),
+        feedback.clone(),
+    ));
+    if feedback.clicked() {
+        actions.push(Action::Activate("app.feedback"));
+    }
+
     let mut menu_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("window.actions")
@@ -120,6 +148,14 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
     );
     egui::Popup::menu(&menu).show(|ui| {
         for (id, icon, label) in [
+            ("project.exit", Icon::ArrowLeft, Text::ExitProject),
+            ("shortcuts.open", Icon::GearSix, Text::Shortcuts),
+            ("app.help", Icon::File, Text::Help),
+        ] {
+            menu_entry(state, cx, ui, &mut actions, id, icon, label, &font, color);
+        }
+        ui.separator();
+        for (id, icon, label) in [
             ("window.home", Icon::SquaresFour, Text::Home),
             ("project.save", Icon::FloppyDisk, Text::Save),
             ("project.save_as", Icon::FloppyDiskBack, Text::SaveAs),
@@ -128,27 +164,42 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             ("layout.reset", Icon::CornersOut, Text::Reset),
             ("appearance.locale", Icon::Translate, Text::Language),
             ("appearance.theme", Icon::CircleHalf, Text::Theme),
-            ("shortcuts.open", Icon::GearSix, Text::Shortcuts),
         ] {
-            let response = ui
-                .push_id(id, |ui| {
-                    ui.add(egui::Button::image_and_text(
-                        kit::tinted(icon, kit::icon::DENSE, color),
-                        tr(label),
-                    ))
-                })
-                .inner;
-            state
-                .painted
-                .push((id, Some(icon.name()), response.clone()));
-            if response.clicked() {
-                actions.push(Action::Activate(id));
-                ui.close();
-            }
+            menu_entry(state, cx, ui, &mut actions, id, icon, label, &font, color);
         }
     });
     state
         .painted
         .push(("window.menu", Some(Icon::SlidersHorizontal.name()), menu));
     actions
+}
+
+/// One header menu row; the shortcut comes from the action registry.
+#[allow(clippy::too_many_arguments)]
+fn menu_entry(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    id: &'static str,
+    icon: Icon,
+    label: Text,
+    font: &FontId,
+    color: egui::Color32,
+) {
+    let mut button = egui::Button::image_and_text(
+        kit::tinted(icon, kit::icon::DENSE, color),
+        egui::RichText::new(i18n::text(cx.locale, label)).font(font.clone()),
+    );
+    if let Some(shortcut) = cx.shortcut(id) {
+        button = button.shortcut_text(shortcut);
+    }
+    let response = ui.push_id(id, |ui| ui.add(button)).inner;
+    state
+        .painted
+        .push((id, Some(icon.name()), response.clone()));
+    if response.clicked() {
+        actions.push(Action::Activate(id));
+        ui.close();
+    }
 }

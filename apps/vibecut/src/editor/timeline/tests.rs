@@ -1075,6 +1075,10 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
         "edit.undo",
         "edit.redo",
         "timeline.split",
+        "timeline.split_left",
+        "timeline.split_right",
+        "timeline.extract_audio",
+        "timeline.duplicate",
         "timeline.delete",
         "timeline.snap",
         "timeline.ripple",
@@ -1090,6 +1094,18 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
             "{id} returned {returned:?}"
         );
     }
+    // Freeze frame is visible but unavailable until its engine command lands.
+    let at = harness.state().rect("timeline.freeze").center();
+    click(&mut harness, at);
+    assert!(harness.state_mut().take().is_empty());
+    assert!(
+        harness
+            .state()
+            .widgets
+            .iter()
+            .find(|widget| widget.id == "timeline.freeze")
+            .is_some_and(|widget| !widget.response.enabled())
+    );
     // Magnet edits the project, so it asks for the command itself.
     let at = harness.state().rect("timeline.magnet").center();
     click(&mut harness, at);

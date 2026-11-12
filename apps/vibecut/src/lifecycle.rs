@@ -37,11 +37,18 @@ pub enum EditorAction {
     Save,
     SaveAs,
     FocusHome,
+    ExitProject,
+    OpenHelp,
+    OpenFeedback,
     ImportMedia,
     ImportLut,
     ExportSave,
     SnapshotSave,
 }
+
+/// Project-owned documentation and issue entry points; no hosted feedback service.
+pub(crate) const HELP_URL: &str = "https://github.com/canhta/vibecut/blob/main/docs/README.md";
+pub(crate) const FEEDBACK_URL: &str = "https://github.com/canhta/vibecut/issues/new/choose";
 
 pub(crate) fn fresh(name: &str) -> Result<Session> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

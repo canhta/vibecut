@@ -224,7 +224,15 @@ impl State {
         let enabled = !cx.disabled.contains("edit.paste")
             && cx.selection.len() == 1
             && cx.selection.contains(&item.id);
-        if self.menu_action(cx, ui, paste, Text::ActionEditPaste, Icon::Copy, enabled) {
+        if self.menu_action(
+            cx,
+            ui,
+            paste,
+            "edit.paste",
+            Text::ActionEditPaste,
+            Icon::Copy,
+            enabled,
+        ) {
             self.push(Action::Activate("edit.paste".to_owned()));
             ui.close();
         }
@@ -232,7 +240,15 @@ impl State {
         let at = cx.playhead;
         let splittable = editable && item.start < at && at < item.end;
         let split = format!("timeline.item.{}.split", item.id.0);
-        if self.menu_action(cx, ui, split, Text::Split, Icon::Scissors, splittable) {
+        if self.menu_action(
+            cx,
+            ui,
+            split,
+            "timeline.split",
+            Text::Split,
+            Icon::Scissors,
+            splittable,
+        ) {
             self.push(Action::Activate("timeline.split".to_owned()));
             ui.close();
         }
@@ -241,6 +257,7 @@ impl State {
             cx,
             ui,
             split_left,
+            "timeline.split_left",
             Text::SplitLeft,
             Icon::ArrowLeft,
             splittable,
@@ -253,6 +270,7 @@ impl State {
             cx,
             ui,
             split_right,
+            "timeline.split_right",
             Text::SplitRight,
             Icon::ArrowsLeftRight,
             splittable,
@@ -261,12 +279,28 @@ impl State {
             ui.close();
         }
         let duplicate = format!("timeline.item.{}.duplicate", item.id.0);
-        if self.menu_action(cx, ui, duplicate, Text::Duplicate, Icon::Copy, editable) {
+        if self.menu_action(
+            cx,
+            ui,
+            duplicate,
+            "timeline.duplicate",
+            Text::Duplicate,
+            Icon::Copy,
+            editable,
+        ) {
             self.push(Action::Activate("timeline.duplicate".to_owned()));
             ui.close();
         }
         let delete = format!("timeline.item.{}.delete", item.id.0);
-        if self.menu_action(cx, ui, delete, Text::Delete, Icon::Trash, editable) {
+        if self.menu_action(
+            cx,
+            ui,
+            delete,
+            "timeline.delete",
+            Text::Delete,
+            Icon::Trash,
+            editable,
+        ) {
             self.push(Action::Activate("timeline.delete".to_owned()));
             ui.close();
         }
@@ -277,7 +311,7 @@ impl State {
                 (Text::HideItem, Icon::EyeSlash)
             };
             let hide = format!("timeline.item.{}.hide", item.id.0);
-            if self.menu_action(cx, ui, hide, label, icon, editable) {
+            if self.menu_action(cx, ui, hide, "timeline.set_hidden", label, icon, editable) {
                 self.push(Action::Activate("timeline.set_hidden".to_owned()));
                 ui.close();
             }
@@ -290,7 +324,7 @@ impl State {
                 (Text::MuteItem, Icon::SpeakerSlash)
             };
             let mute = format!("timeline.item.{}.mute", item.id.0);
-            if self.menu_action(cx, ui, mute, label, icon, editable) {
+            if self.menu_action(cx, ui, mute, "timeline.set_muted", label, icon, editable) {
                 self.push(Action::Activate("timeline.set_muted".to_owned()));
                 ui.close();
             }
@@ -303,14 +337,22 @@ impl State {
                 (Text::ExtractAudio, "timeline.extract_audio")
             };
             let id = format!("timeline.item.{}.audio", item.id.0);
-            if self.menu_action(cx, ui, id, label, Icon::MusicNotes, editable) {
+            if self.menu_action(cx, ui, id, action, label, Icon::MusicNotes, editable) {
                 self.push(Action::Activate(action.to_owned()));
                 ui.close();
             }
         }
         if item.source_asset.is_some() {
             let reveal = format!("timeline.item.{}.reveal", item.id.0);
-            if self.menu_action(cx, ui, reveal, Text::RevealMedia, Icon::FolderOpen, true) {
+            if self.menu_action(
+                cx,
+                ui,
+                reveal,
+                "media.reveal",
+                Text::RevealMedia,
+                Icon::FolderOpen,
+                true,
+            ) {
                 if let Some(asset) = item.source_asset {
                     self.push(Action::Activate(format!("media.reveal.{}", asset.0)));
                 }
@@ -319,20 +361,24 @@ impl State {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn menu_action(
         &mut self,
         cx: &Context<'_>,
         ui: &mut egui::Ui,
         id: String,
+        action: &str,
         label: Text,
         icon: Icon,
         enabled: bool,
     ) -> bool {
         let ink = Ink::of(cx);
-        let response = ui.add_enabled(
-            enabled,
-            egui::Button::image_and_text(icons::tinted(icon, 16.0, ink.text()), tr(cx, label)),
-        );
+        let mut button =
+            egui::Button::image_and_text(icons::tinted(icon, 16.0, ink.text()), tr(cx, label));
+        if let Some(shortcut) = cx.shortcut(action) {
+            button = button.shortcut_text(shortcut);
+        }
+        let response = ui.add_enabled(enabled, button);
         self.remember_icon(id, Some(icon.name()), &response);
         enabled && response.clicked()
     }

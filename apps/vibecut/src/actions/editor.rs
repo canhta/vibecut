@@ -351,6 +351,13 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         EngineAction::Delete,
         &["Backspace", "Delete"],
     ),
+    ActionSpec::pending(
+        "timeline.freeze",
+        Text::ActionTimelineFreeze,
+        ActionCategory::Timeline,
+        "freeze frame",
+        "53",
+    ),
     ActionSpec::engine(
         "timeline.ripple_delete",
         Text::ActionTimelineRippleDelete,
@@ -769,6 +776,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "preview snapshot dialog",
         UiAction::PreviewSnapshot,
+        &[],
+    ),
+    ActionSpec::ui(
+        "preview.copy_snapshot",
+        Text::ActionPreviewCopySnapshot,
+        ActionCategory::View,
+        "preview snapshot",
+        UiAction::PreviewCopySnapshot,
         &[],
     ),
     ActionSpec::ui(

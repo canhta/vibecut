@@ -24,6 +24,7 @@ pub(crate) enum Icon {
     BookmarkSimple,
     CaretDown,
     CaretRight,
+    ChatCircle,
     CircleHalf,
     Copy,
     CornersOut,
@@ -58,6 +59,7 @@ pub(crate) enum Icon {
     SkipBack,
     SkipForward,
     SlidersHorizontal,
+    Snowflake,
     Sparkle,
     SquaresFour,
     SpeakerHigh,
@@ -85,6 +87,7 @@ impl Icon {
         Self::BookmarkSimple,
         Self::CaretDown,
         Self::CaretRight,
+        Self::ChatCircle,
         Self::CircleHalf,
         Self::Copy,
         Self::CornersOut,
@@ -119,6 +122,7 @@ impl Icon {
         Self::SkipBack,
         Self::SkipForward,
         Self::SlidersHorizontal,
+        Self::Snowflake,
         Self::Sparkle,
         Self::SquaresFour,
         Self::SpeakerHigh,
@@ -145,6 +149,7 @@ impl Icon {
             Self::BookmarkSimple => "bookmark-simple",
             Self::CaretDown => "caret-down",
             Self::CaretRight => "caret-right",
+            Self::ChatCircle => "chat-circle",
             Self::CircleHalf => "circle-half",
             Self::Copy => "copy",
             Self::CornersOut => "corners-out",
@@ -179,6 +184,7 @@ impl Icon {
             Self::SkipBack => "skip-back",
             Self::SkipForward => "skip-forward",
             Self::SlidersHorizontal => "sliders-horizontal",
+            Self::Snowflake => "snowflake",
             Self::Sparkle => "sparkle",
             Self::SquaresFour => "squares-four",
             Self::SpeakerHigh => "speaker-high",
@@ -241,6 +247,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "caret-right",
         include_bytes!("../../../../assets/icons/phosphor/regular/caret-right.svg"),
+    ),
+    (
+        "chat-circle",
+        include_bytes!("../../../../assets/icons/phosphor/regular/chat-circle.svg"),
     ),
     (
         "circle-half",
@@ -377,6 +387,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "sliders-horizontal",
         include_bytes!("../../../../assets/icons/phosphor/regular/sliders-horizontal.svg"),
+    ),
+    (
+        "snowflake",
+        include_bytes!("../../../../assets/icons/phosphor/regular/snowflake.svg"),
     ),
     (
         "sparkle",

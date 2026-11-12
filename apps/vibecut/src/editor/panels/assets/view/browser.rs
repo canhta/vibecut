@@ -576,19 +576,29 @@ impl View<'_> {
             }
         }
         response.on_hover_text(&row.info).context_menu(|ui| {
-            let response = ui.add_enabled(
-                !self.cx.importing,
-                egui::Button::new(if selected && self.cx.selection.len() > 1 {
-                    i18n::format_count(
-                        self.cx.preferences.locale,
-                        self.cx.selection.len() as u64,
-                        Text::DeleteItemsOther,
-                        Text::DeleteItemsOther,
-                    )
-                } else {
-                    self.tr(Text::DeleteItemOne).to_owned()
-                }),
+            let export = ui.add_enabled(
+                false,
+                egui::Button::image_and_text(
+                    icons::tinted(Icon::Export, 16.0, theme::text(self.cx.preferences.dark)),
+                    self.tr(Text::ExportClips),
+                ),
             );
+            let export = export.on_disabled_hover_text(self.tr(Text::NotAvailableYet));
+            self.remember("media.export_clip", &export, Some(Icon::Export));
+            let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
+                i18n::format_count(
+                    self.cx.preferences.locale,
+                    self.cx.selection.len() as u64,
+                    Text::DeleteItemsOther,
+                    Text::DeleteItemsOther,
+                )
+            } else {
+                self.tr(Text::DeleteItemOne).to_owned()
+            });
+            if let Some(shortcut) = self.cx.shortcut("media.delete") {
+                button = button.shortcut_text(shortcut);
+            }
+            let response = ui.add_enabled(!self.cx.importing, button);
             self.remember("media.delete", &response, Some(Icon::Trash));
             if response.clicked() {
                 let ids = if selected {

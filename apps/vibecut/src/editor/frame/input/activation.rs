@@ -313,6 +313,15 @@ impl Editor {
                 UiAction::FocusHome => {
                     self.lifecycle_action = Some(crate::lifecycle::EditorAction::FocusHome)
                 }
+                UiAction::ExitProject => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExitProject)
+                }
+                UiAction::OpenHelp => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::OpenHelp)
+                }
+                UiAction::OpenFeedback => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::OpenFeedback)
+                }
                 UiAction::RenameProject => {
                     self.frame.rename =
                         Some(self.session.project().data().name.as_str().to_owned());
@@ -421,6 +430,7 @@ impl Editor {
                 UiAction::ProjectInspector => self.properties.set_details(false),
                 UiAction::DetailsInspector => self.properties.set_details(true),
                 UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
+                UiAction::PreviewCopySnapshot => self.copy_snapshot_requested = true,
                 UiAction::PreviewFullscreen => self.player.fullscreen = !self.player.fullscreen,
                 UiAction::PreviewFit => self.set_preview_fit()?,
                 UiAction::PreviewZoomIn => self.preview_zoom_by(preview::ZOOM_STEP)?,

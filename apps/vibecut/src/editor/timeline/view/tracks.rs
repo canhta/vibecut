@@ -451,6 +451,19 @@ impl State {
     /// The context menu shared by a header's right click and its more button.
     fn track_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, row: &TrackRow) {
         let ink = Ink::of(cx);
+        let paste = ui.add_enabled(
+            false,
+            egui::Button::image_and_text(
+                icons::tinted(Icon::Copy, 16.0, ink.text()),
+                tr(cx, Text::PasteElements),
+            ),
+        );
+        let paste = paste.on_disabled_hover_text(tr(cx, Text::NotAvailableYet));
+        self.remember_icon(
+            format!("track.{}.paste", row.id.0),
+            Some(Icon::Copy.name()),
+            &paste,
+        );
         let rename = ui.add(egui::Button::image_and_text(
             icons::tinted(Icon::PencilSimple, 16.0, ink.text()),
             tr(cx, Text::RenameTrack),
@@ -464,6 +477,54 @@ impl State {
             self.track_rename = Some((row.id, row.name.clone()));
             self.track_rename_focus = true;
             ui.close();
+        }
+        if row.kind.can_mute() {
+            let (label, icon) = if row.muted {
+                (Text::UnmuteTrack, Icon::SpeakerHigh)
+            } else {
+                (Text::MuteTrack, Icon::SpeakerSlash)
+            };
+            let response = ui.add_enabled(
+                !row.locked,
+                egui::Button::image_and_text(icons::tinted(icon, 16.0, ink.text()), tr(cx, label)),
+            );
+            let response = response.on_disabled_hover_text(tr(cx, Text::TrackLocked));
+            self.remember_icon(
+                format!("track.{}.muted", row.id.0),
+                Some(icon.name()),
+                &response,
+            );
+            if response.clicked() {
+                self.push(Action::Command(Box::new(engine::Command::SetTrackMuted {
+                    track: row.id,
+                    muted: !row.muted,
+                })));
+                ui.close();
+            }
+        }
+        if row.kind.can_hide() {
+            let (label, icon) = if row.hidden {
+                (Text::ShowTrack, Icon::Eye)
+            } else {
+                (Text::HideTrack, Icon::EyeSlash)
+            };
+            let response = ui.add_enabled(
+                !row.locked,
+                egui::Button::image_and_text(icons::tinted(icon, 16.0, ink.text()), tr(cx, label)),
+            );
+            let response = response.on_disabled_hover_text(tr(cx, Text::TrackLocked));
+            self.remember_icon(
+                format!("track.{}.hidden", row.id.0),
+                Some(icon.name()),
+                &response,
+            );
+            if response.clicked() {
+                self.push(Action::Command(Box::new(engine::Command::SetTrackHidden {
+                    track: row.id,
+                    hidden: !row.hidden,
+                })));
+                ui.close();
+            }
         }
         if !row.main {
             let response = ui.add_enabled(

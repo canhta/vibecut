@@ -301,6 +301,8 @@ pub struct Editor {
     pub(super) music: Option<super::assets::music::Music>,
     pub(super) music_media_dir: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,
+    /// A copy-snapshot action waits for the next frame's egui context.
+    pub(super) copy_snapshot_requested: bool,
     /// Cross-area requests the frame drains after the area that raised them.
     pub(super) requests: Vec<super::Request>,
 }

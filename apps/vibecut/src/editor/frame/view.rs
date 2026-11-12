@@ -346,11 +346,6 @@ impl Editor {
                     self.player.snapshot.error = None;
                     self.action("preview.retry");
                 }
-                Action::Copy => {
-                    if let Err(error) = self.copy_snapshot(ui.ctx()) {
-                        self.desk().fail(error.to_string());
-                    }
-                }
                 Action::Zoom(factor) => {
                     if let Err(error) = self.preview_zoom_by(factor) {
                         self.desk().fail(error.to_string());
@@ -365,6 +360,11 @@ impl Editor {
                     }
                 }
             }
+        }
+        if std::mem::take(&mut self.copy_snapshot_requested)
+            && let Err(error) = self.copy_snapshot(ui.ctx())
+        {
+            self.desk().fail(error.to_string());
         }
     }
     pub(super) fn save_status(&self) -> Text {

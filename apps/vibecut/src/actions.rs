@@ -133,6 +133,7 @@ pub enum UiAction {
     Save,
     SaveAs,
     FocusHome,
+    ExitProject,
     RenameProject,
     CancelImport,
     Play,
@@ -176,6 +177,7 @@ pub enum UiAction {
     SceneRow,
     SelectItem,
     PreviewSnapshot,
+    PreviewCopySnapshot,
     PreviewFullscreen,
     PreviewFit,
     PreviewZoomIn,
@@ -187,6 +189,8 @@ pub enum UiAction {
     SetPreference,
     SetKeybinding,
     ResetKeybindings,
+    OpenHelp,
+    OpenFeedback,
 }
 
 /// Engine routing owns the executable identity. Delete follows the app's ripple
@@ -298,25 +302,44 @@ impl ActionSpec {
         }
     }
 
+    /// A row that is visible in a menu or toolbar but cannot run yet.
+    const fn pending(
+        id: &'static str,
+        label: Text,
+        category: ActionCategory,
+        owner: &'static str,
+        ticket: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            category,
+            target: ActionTarget::Pending { owner, ticket },
+            defaults: &[],
+            requires_clipboard: false,
+        }
+    }
+
     /// Parameterized widget families need an item/scene identity, so a global
     /// chord cannot invoke them. Shortcut editors list only bindable actions.
     pub const fn bindable(&self) -> bool {
         !matches!(
             self.target,
-            ActionTarget::Ui {
-                action: UiAction::RenameScene
-                    | UiAction::SceneRow
-                    | UiAction::SelectItem
-                    | UiAction::SubtitleCue
-                    | UiAction::RevealMedia
-                    | UiAction::PreviewZoomPreset
-                    | UiAction::Seek
-                    | UiAction::SetPreviewZoom
-                    | UiAction::SetPreference
-                    | UiAction::SetKeybinding
-                    | UiAction::ResetKeybindings,
-                ..
-            }
+            ActionTarget::Pending { .. }
+                | ActionTarget::Ui {
+                    action: UiAction::RenameScene
+                        | UiAction::SceneRow
+                        | UiAction::SelectItem
+                        | UiAction::SubtitleCue
+                        | UiAction::RevealMedia
+                        | UiAction::PreviewZoomPreset
+                        | UiAction::Seek
+                        | UiAction::SetPreviewZoom
+                        | UiAction::SetPreference
+                        | UiAction::SetKeybinding
+                        | UiAction::ResetKeybindings,
+                    ..
+                }
         )
     }
 

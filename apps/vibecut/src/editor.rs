@@ -273,6 +273,7 @@ impl Editor {
             music: None,
             music_media_dir: None,
             subtitles: None,
+            copy_snapshot_requested: false,
             requests: Vec::new(),
         }
     }

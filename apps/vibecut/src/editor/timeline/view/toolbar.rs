@@ -17,11 +17,16 @@ const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
 
 /// The registered actions the toolbar can show as unavailable.
-pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 15] = [
+pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 20] = [
     "timeline.add_track",
     "edit.undo",
     "edit.redo",
     "timeline.split",
+    "timeline.split_left",
+    "timeline.split_right",
+    "timeline.extract_audio",
+    "timeline.duplicate",
+    "timeline.freeze",
     "timeline.delete",
     "timeline.bookmark",
     "timeline.crop",
@@ -98,7 +103,43 @@ impl State {
             ("edit.undo", Icon::ArrowCounterClockwise, Text::Undo),
             ("edit.redo", Icon::ArrowClockwise, Text::Redo),
             ("timeline.split", Icon::Scissors, Text::Split),
-            ("timeline.delete", Icon::Trash, Text::Delete),
+            ("timeline.split_left", Icon::ArrowLeft, Text::SplitLeft),
+            (
+                "timeline.split_right",
+                Icon::ArrowsLeftRight,
+                Text::SplitRight,
+            ),
+            (
+                "timeline.extract_audio",
+                Icon::MusicNotes,
+                Text::ExtractAudio,
+            ),
+            ("timeline.duplicate", Icon::Copy, Text::Duplicate),
+        ] {
+            let rect = left.cell(CELL);
+            self.toolbar_button(cx, ui, rect, id, icon, label, None);
+        }
+        let freeze = left.cell(CELL);
+        self.toolbar_unavailable(
+            cx,
+            ui,
+            freeze,
+            "timeline.freeze",
+            Icon::Snowflake,
+            Text::FreezeFrame,
+        );
+        let delete = left.cell(CELL);
+        self.toolbar_button(
+            cx,
+            ui,
+            delete,
+            "timeline.delete",
+            Icon::Trash,
+            Text::Delete,
+            None,
+        );
+        left.divider(ui, divider, DIVIDER_GAP);
+        for (id, icon, label) in [
             (
                 "timeline.bookmark",
                 Icon::BookmarkSimple,
@@ -271,6 +312,35 @@ impl State {
             return false;
         }
         clicked
+    }
+
+    /// A visible toolbar cell whose action is not available yet; its tooltip
+    /// carries the reason.
+    fn toolbar_unavailable(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        id: &'static str,
+        icon: Icon,
+        label: Text,
+    ) {
+        let label = tr(cx, label);
+        let tooltip = i18n::format(
+            cx.locale,
+            Text::ActionUnavailable,
+            &[("action", label), ("reason", tr(cx, Text::NotAvailableYet))],
+        );
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.add_enabled_ui(false, |ui| {
+                    crate::kit::icon_button(ui, id, icon, &tooltip, false)
+                })
+                .inner
+            })
+            .inner;
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, false, &tooltip));
+        self.remember_with(id, Some(icon.name()), Some(tooltip), &response);
     }
 
     fn toolbar_scene(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect, name: &str) {

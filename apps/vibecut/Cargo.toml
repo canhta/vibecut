@@ -30,7 +30,7 @@ pollster = "1.0.1"
 arboard = { version = "3.7.0", default-features = false, features = ["wayland-data-control"] }
 
 rfd = { version = "0.17.2", default-features = false }
-eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "accesskit", "x11", "wayland", "clipboard"] }
+eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "accesskit", "x11", "wayland", "clipboard", "links"] }
 egui_extras = { version = "0.37.0", features = ["svg"] }
 cpal = "0.18.2"
 media.workspace = true

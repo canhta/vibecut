@@ -49,6 +49,7 @@
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
 | `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
+| `timeline.freeze` — Freeze frame | Timeline | — | — | freeze frame (unavailable) |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
 | `transport.play` — Play/Pause | Playback | Space | — | playback transport |
 | `transport.pause` — Pause | Playback | K | — | playback transport |
@@ -103,6 +104,7 @@
 | `scene.row` — Choose scene | View | — | — | scene switcher |
 | `timeline.item` — Select item | View | — | — | timeline selection |
 | `preview.snapshot` — Save a frame | View | — | — | preview snapshot dialog |
+| `preview.copy_snapshot` — Copy snapshot | View | — | — | preview snapshot |
 | `preview.fullscreen` — Toggle preview fullscreen | View | — | — | preview viewport |
 | `preview.zoom.fit` — Fit preview | View | — | — | preview view |
 | `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
@@ -114,11 +116,14 @@
 | `project.save_as` — Save as | File | — | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
+| `project.exit` — Exit project | File | — | — | project lifecycle |
 | `import.cancel` — Cancel import | File | — | — | workspace import queue |
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
 | `layout.reset` — Reset layout | View | — | — | preference store |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
+| `app.help` — Help | View | — | — | help |
+| `app.feedback` — Feedback | View | — | — | help |
 | `playback.seek` — Seek to time | Playback | — | — | playback transport |
 | `preview.set_zoom` — Set preview zoom | View | — | — | preview view |
 | `ui.prefs.set` — Change a setting | View | — | — | preference store |

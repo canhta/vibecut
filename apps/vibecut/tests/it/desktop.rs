@@ -14,6 +14,7 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Locale,
+    lifecycle::EditorAction,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };
@@ -75,6 +76,271 @@ fn open_window_menu(harness: &mut Harness<Editor>) {
         .click();
     harness.run_steps(2);
 }
+
+/// One row of every context and header menu: the item's command and whether
+/// the row is present only as an unavailable placeholder with a reason.
+struct MenuRow {
+    menu: &'static str,
+    item: &'static str,
+    command: &'static str,
+    unavailable: bool,
+}
+
+const MENU_ROWS: &[MenuRow] = &[
+    // Header project menu and its Feedback link.
+    MenuRow {
+        menu: "header",
+        item: "exit project",
+        command: "project.exit",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "shortcuts",
+        command: "shortcuts.open",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "help",
+        command: "app.help",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "home",
+        command: "window.home",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "save",
+        command: "project.save",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "save as",
+        command: "project.save_as",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "settings",
+        command: "preferences.open",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "models",
+        command: "models.open",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "reset layout",
+        command: "layout.reset",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "language",
+        command: "appearance.locale",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "theme",
+        command: "appearance.theme",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "feedback",
+        command: "app.feedback",
+        unavailable: false,
+    },
+    // Timeline element menu.
+    MenuRow {
+        menu: "clip",
+        item: "paste keyframes",
+        command: "edit.paste",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "split",
+        command: "timeline.split",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "split left",
+        command: "timeline.split_left",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "split right",
+        command: "timeline.split_right",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "duplicate",
+        command: "timeline.duplicate",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "delete",
+        command: "timeline.delete",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "hide",
+        command: "timeline.set_hidden",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "mute",
+        command: "timeline.set_muted",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "extract audio",
+        command: "timeline.extract_audio",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "recover audio",
+        command: "timeline.recover_audio",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "clip",
+        item: "reveal media",
+        command: "media.reveal",
+        unavailable: false,
+    },
+    // Track menu.
+    MenuRow {
+        menu: "track",
+        item: "paste elements",
+        command: "",
+        unavailable: true,
+    },
+    MenuRow {
+        menu: "track",
+        item: "rename",
+        command: "track.rename",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "track",
+        item: "mute",
+        command: "track.set_muted",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "track",
+        item: "hide",
+        command: "track.set_hidden",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "track",
+        item: "delete",
+        command: "track.remove",
+        unavailable: false,
+    },
+    // Preview menu.
+    MenuRow {
+        menu: "preview",
+        item: "snapshot",
+        command: "preview.snapshot",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "preview",
+        item: "copy snapshot",
+        command: "preview.copy_snapshot",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "preview",
+        item: "fullscreen",
+        command: "preview.fullscreen",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "preview",
+        item: "next bookmark",
+        command: "playback.jump_bookmark.next",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "preview",
+        item: "previous bookmark",
+        command: "playback.jump_bookmark.previous",
+        unavailable: false,
+    },
+    // Media item menu.
+    MenuRow {
+        menu: "media",
+        item: "export clips",
+        command: "",
+        unavailable: true,
+    },
+    MenuRow {
+        menu: "media",
+        item: "delete",
+        command: "media.delete",
+        unavailable: false,
+    },
+];
+
+#[test]
+fn every_enabled_menu_item_names_a_registered_command() {
+    for row in MENU_ROWS {
+        if row.unavailable {
+            assert!(
+                row.command.is_empty(),
+                "{} / {} is unavailable but names a command",
+                row.menu,
+                row.item
+            );
+            continue;
+        }
+        assert!(
+            vibecut::actions::action(row.command).is_some()
+                || engine::CommandKind::from_id(row.command).is_some(),
+            "{} / {} names unregistered command {}",
+            row.menu,
+            row.item,
+            row.command
+        );
+    }
+}
+#[test]
+fn header_exit_help_and_feedback_route_through_registered_actions() {
+    let mut editor = editor();
+    for (id, expected) in [
+        ("project.exit", EditorAction::ExitProject),
+        ("app.help", EditorAction::OpenHelp),
+        ("app.feedback", EditorAction::OpenFeedback),
+    ] {
+        editor.activate(id).unwrap();
+        assert_eq!(editor.take_lifecycle_action(), Some(expected), "{id}");
+    }
+    assert!(vibecut::actions::action("timeline.freeze").is_some());
+    assert!(!editor.action_enabled("timeline.freeze"));
+}
+
 #[test]
 fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
     let mut harness = crate::gpu::builder()

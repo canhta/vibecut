@@ -17,7 +17,6 @@ pub(in crate::editor) use workflow::format_timecode;
 /// Requests are applied by the frame after rendering releases its read borrow.
 pub(crate) enum Action {
     Command(String),
-    Copy,
     Retry,
     CommitTimecode,
     Zoom(f32),

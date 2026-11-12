@@ -4167,6 +4167,166 @@ fn open_item_menu(harness: &mut Harness<'_, Editor>, id: ItemId, suffix: &'stati
     harness.run_steps(3);
 }
 
+fn menu_enabled(harness: &Harness<'_, Editor>, id: &str) -> bool {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .unwrap_or_else(|| panic!("missing menu widget {id}"))
+        .enabled
+}
+
+fn open_author_menu(harness: &mut Harness<'_, Editor>, author: String) {
+    harness
+        .get(By::new().predicate(move |node| node.author_id() == Some(author.as_str())))
+        .click_secondary();
+    harness.run_steps(3);
+}
+
+fn close_menu(harness: &mut Harness<'_, Editor>) {
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+}
+
+#[test]
+fn context_and_header_menus_expose_registered_items_and_reasons() {
+    let fixture = audible_editor();
+    let video_a = fixture.video_a;
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
+        .unwrap();
+    h.run_steps(2);
+    click_item(&mut h, video_a);
+    let before = project::encode(h.state().session.project(), false).unwrap();
+
+    open_author_menu(&mut h, format!("timeline.item.{}", video_a.0));
+    for id in [
+        "split",
+        "split_left",
+        "split_right",
+        "duplicate",
+        "delete",
+        "hide",
+        "mute",
+        "audio",
+        "reveal",
+    ] {
+        assert!(
+            menu_enabled(&h, &format!("timeline.item.{}.{id}", video_a.0)),
+            "clip menu {id}"
+        );
+    }
+    assert!(
+        !menu_enabled(&h, &format!("timeline.item.{}.paste", video_a.0)),
+        "the empty clipboard disables paste"
+    );
+    let image = h.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-07-menus.png")).unwrap();
+    close_menu(&mut h);
+
+    let track = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.name.as_str() == "Video")
+        .unwrap()
+        .id;
+    h.get(By::new().predicate(move |node| {
+        node.author_id() == Some(format!("track.{}.more", track.0).as_str())
+    }))
+    .click();
+    h.run_steps(3);
+    for (suffix, enabled) in [
+        ("rename_action", true),
+        ("muted", true),
+        ("hidden", true),
+        ("delete", true),
+        ("paste", false),
+    ] {
+        assert_eq!(
+            menu_enabled(&h, &format!("track.{}.{suffix}", track.0)),
+            enabled,
+            "track menu {suffix}"
+        );
+    }
+    close_menu(&mut h);
+
+    open_author_menu(&mut h, "preview.canvas".to_owned());
+    for (id, enabled) in [
+        ("preview.menu.snapshot", true),
+        ("preview.menu.copy", true),
+        ("preview.menu.fullscreen", true),
+        ("preview.menu.jump.next", true),
+        ("preview.menu.jump.previous", false),
+    ] {
+        assert_eq!(menu_enabled(&h, id), enabled, "preview menu {id}");
+    }
+    close_menu(&mut h);
+
+    h.get(By::new().predicate(|node| node.author_id() == Some("media.asset.1")))
+        .click_secondary();
+    h.run_steps(3);
+    assert!(menu_enabled(&h, "media.delete"));
+    assert!(
+        !menu_enabled(&h, "media.export_clip"),
+        "clip export is unavailable until its engine command lands"
+    );
+    close_menu(&mut h);
+
+    h.get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+        .click();
+    h.run_steps(2);
+    for id in [
+        "project.exit",
+        "shortcuts.open",
+        "app.help",
+        "window.home",
+        "project.save",
+        "project.save_as",
+        "preferences.open",
+        "models.open",
+        "layout.reset",
+        "appearance.locale",
+        "appearance.theme",
+    ] {
+        assert!(menu_enabled(&h, id), "header menu {id}");
+    }
+    close_menu(&mut h);
+    assert!(menu_enabled(&h, "app.feedback"));
+    let freeze = h
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == "timeline.freeze")
+        .expect("freeze toolbar cell");
+    assert!(!freeze.enabled);
+    assert!(
+        freeze
+            .tooltip
+            .is_some_and(|tooltip| tooltip.contains("Not available yet")),
+        "{:?}",
+        freeze.tooltip
+    );
+    assert_eq!(
+        project::encode(h.state().session.project(), false).unwrap(),
+        before,
+        "opening menus changes no project bytes"
+    );
+}
+
 #[test]
 fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     let fixture = audible_editor();
@@ -4312,6 +4472,49 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     assert!(item(h.state(), video_a).hidden, "menu hides the clip");
     undo(&mut h);
     assert!(!item(h.state(), video_a).hidden);
+
+    // Split, duplicate and delete also run from the clip menu with one undo step.
+    seek(&mut h);
+    click_item(&mut h, video_a);
+    open_item_menu(&mut h, video_a, "split");
+    assert_eq!(count(h.state()), 5, "the clip menu splits at the playhead");
+    undo(&mut h);
+    assert_eq!(count(h.state()), 4);
+
+    click_item(&mut h, video_a);
+    open_item_menu(&mut h, video_a, "duplicate");
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .len(),
+        3,
+        "the clip menu duplicates onto a new track"
+    );
+    let copy = h.state().inspect().unwrap().selection;
+    assert_eq!(copy.len(), 1);
+    undo(&mut h);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .len(),
+        2
+    );
+
+    click_item(&mut h, video_b);
+    open_item_menu(&mut h, video_b, "delete");
+    assert!(item_opt(h.state(), video_b).is_none(), "the menu deletes");
+    undo(&mut h);
+    assert!(item_opt(h.state(), video_b).is_some());
 
     click_item(&mut h, audio);
     open_item_menu(&mut h, audio, "mute");

@@ -53,6 +53,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "project.exit",
+        Text::ActionProjectExit,
+        ActionCategory::File,
+        "project lifecycle",
+        UiAction::ExitProject,
+        &[],
+    ),
+    ActionSpec::ui(
         "import.cancel",
         Text::ActionImportCancel,
         ActionCategory::File,
@@ -90,6 +98,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "shortcuts dialog",
         UiAction::OpenShortcuts,
+        &[],
+    ),
+    ActionSpec::ui(
+        "app.help",
+        Text::ActionAppHelp,
+        ActionCategory::View,
+        "help",
+        UiAction::OpenHelp,
+        &[],
+    ),
+    ActionSpec::ui(
+        "app.feedback",
+        Text::ActionAppFeedback,
+        ActionCategory::View,
+        "help",
+        UiAction::OpenFeedback,
         &[],
     ),
     ActionSpec::ui(
