@@ -339,6 +339,11 @@ impl State {
         actions
     }
 
+    /// A wheel or curve gesture of this panel is open; its own transaction is not a block.
+    pub(super) fn graph_open(&self) -> bool {
+        self.graph.is_some()
+    }
+
     pub(super) fn graph_matches(&self, item: ItemId, effect: &str, key: &str) -> bool {
         self.graph
             .as_ref()

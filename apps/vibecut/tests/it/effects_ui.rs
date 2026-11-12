@@ -1920,11 +1920,14 @@ fn drag_from(harness: &mut Harness<Editor>, start: egui::Pos2, delta: egui::Vec2
     harness.run_steps(2);
 }
 
+/// Both clicks arrive in one frame: `harness.event` spends a frame per event,
+/// and egui counts a double click only inside its 0.3 s window.
 fn double_click_pos(harness: &mut Harness<Editor>, at: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(at));
+    harness.run_steps(2);
     for _ in 0..2 {
-        harness.event(egui::Event::PointerMoved(at));
         for pressed in [true, false] {
-            harness.event(egui::Event::PointerButton {
+            harness.input_mut().events.push(egui::Event::PointerButton {
                 pos: at,
                 button: egui::PointerButton::Primary,
                 pressed,
@@ -1982,6 +1985,8 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
         assert!(!has_widget(&harness, "effects.color_grade.wheel.lift"));
         assert!(!has_widget(&harness, "effects.color_grade.curve.plot"));
         click(&mut harness, "effects.color_grade.tab.hsl");
+        // The chosen band outlives the item, so each pass starts from red.
+        click(&mut harness, "effects.color_grade.hsl.red");
         for band in [
             "red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta",
         ] {

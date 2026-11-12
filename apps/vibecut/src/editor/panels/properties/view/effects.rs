@@ -340,7 +340,7 @@ impl Panel<'_, '_> {
         at: Tick,
     ) {
         let enabled = !read::item_locked(self.cx.session.project(), item)
-            && !self.cx.session.transaction_active();
+            && (!self.cx.session.transaction_active() || self.state.graph_open());
         let spare = theme::space::LG * 2.0;
         let column = ((ui.available_width() - spare) / 3.0).max(72.0);
         ui.add_space(theme::space::MD);
@@ -356,7 +356,10 @@ impl Panel<'_, '_> {
                         })
                         .unwrap_or(0.0)
                 });
-                self.wheel_control(ui, item, effect, family, values, column, enabled);
+                // Each wheel stacks its title row over its disc in a column of its own.
+                ui.vertical(|ui| {
+                    self.wheel_control(ui, item, effect, family, values, column, enabled);
+                });
             }
         });
         ui.add_space(theme::space::MD);
@@ -583,7 +586,7 @@ impl Panel<'_, '_> {
         let tone = read::effect_curve(self.cx.session.project(), item, effect, channel.key())
             .unwrap_or(project::ToneCurve::IDENTITY);
         let enabled = !read::item_locked(self.cx.session.project(), item)
-            && !self.cx.session.transaction_active();
+            && (!self.cx.session.transaction_active() || self.state.graph_open());
         let reset_id = format!("effects.{effect}.curve.reset");
         ui.horizontal(|ui| {
             let reset_width = theme::size::CONTROL + theme::space::SM;
