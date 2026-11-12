@@ -1733,9 +1733,21 @@ fn translation_all_pairs_and_scripts_uses_fresh_consent_and_protects_manual_text
                 p.edit_text(s, &"cue-0".into(), lang(target), "Human edit")
                     .unwrap()
             });
-            // An all-protected selection refuses without an upload or provider invocation.
-            with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
-            wait(&mut h, |e| !panel(e).busy);
+            // An all-protected selection is refused when the command is submitted:
+            // no job, no upload and no provider invocation.
+            let refused = with_panel(h.state_mut(), |p, s, o| p.translate(s, o));
+            assert!(
+                matches!(
+                    &refused,
+                    Err(vibecut::Error::Engine(engine::control::Error::Subtitles(
+                        engine::subtitles::Error::Edit(engine::EditError::Invalid(
+                            "no unprotected translation selection"
+                        ))
+                    )))
+                ),
+                "{refused:?}"
+            );
+            assert!(!panel(h.state()).busy);
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             assert_eq!(
                 track(h.state()).cues[0].texts[&lang(target)].text.as_str(),
@@ -2116,7 +2128,23 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
             click(&mut h, "subtitles.consent.approve");
         }
         wait(&mut h, |e| !panel(e).busy);
-        let count = track(h.state()).cues.len();
+        // The fixture already carries a caption; generation adds a new item after it.
+        let count = h
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .filter_map(|i| match &i.content {
+                ItemParams::Caption(p) => Some((i.id, p.cues.cues.len())),
+                _ => None,
+            })
+            .max_by_key(|(id, _)| *id)
+            .unwrap()
+            .1;
         assert!(count > 0);
         assert_eq!(panel(h.state()).completed, Some(count));
         assert!(
