@@ -1900,7 +1900,8 @@ fn clipboard_items_paste_offsets_overwrite_and_split_on_the_relative_track() {
     })
     .unwrap();
     let track = &s.project().data().scene().timeline.overlays[0];
-    assert_eq!(track.items.len(), 3);
+    // Item 11 sits later on the same track and is untouched by the paste.
+    assert_eq!(track.items.len(), 4);
     assert_eq!(get(&s, 10).source_range, range(100, 110));
     let right = track
         .items
