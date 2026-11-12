@@ -350,7 +350,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             }
             _ => {}
         }
-        eprintln!("SPEC {}", spec.id);`n        let req = request(&s, spec.id, params, "example");
+        let req = request(&s, spec.id, params, "example");
         let fonts = font_access();
         let sounds = sound_access();
         let music = music_access();
