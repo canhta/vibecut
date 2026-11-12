@@ -149,6 +149,7 @@ fn timed_words_choose_sentence_then_clause_and_pause() {
         .into_iter()
         .enumerate()
         .map(|(i, word)| Word {
+            provenance: None,
             text: word.into(),
             range: Some(range(
                 i as i64 * TICKS_PER_SECOND,
@@ -228,6 +229,7 @@ fn timed_words_choose_sentence_then_clause_and_pause() {
 #[test]
 fn translations_are_proportional_estimates_and_keep_flags() {
     let source = Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "src".into(),
         range: range(100, 160),
         source_lang: lang("en"),
@@ -288,6 +290,7 @@ fn invalid_inputs_return_errors_and_fallback_preserves_segment() {
     assert!(segment_transcript(&base, &profile("en"), &policy).is_err());
     let mut input = base.clone();
     input.segments.first_mut().unwrap().words.push(Word {
+        provenance: None,
         text: "wrong".into(),
         range: Some(range(0, 1)),
         confidence: None,
@@ -330,12 +333,14 @@ fn profile_defaults_and_unsatisfied_limits_are_explicit() {
     let s = input.segments.first_mut().unwrap();
     s.words = vec![
         Word {
+            provenance: None,
             text: "one".into(),
             range: Some(range(0, 10)),
             speaker: None,
             confidence: None,
         },
         Word {
+            provenance: None,
             text: "two".into(),
             range: Some(range(10, 20)),
             speaker: None,
@@ -389,6 +394,7 @@ fn segmentation_benchmark() {
                 .iter()
                 .enumerate()
                 .map(|(i, token)| Word {
+                    provenance: None,
                     text: (*token).into(),
                     range: Some(range(
                         i as i64 * TICKS_PER_SECOND * 600 / tokens.len() as i64,
@@ -427,12 +433,14 @@ fn source_word_silence_extension_and_missing_timing_are_explicit() {
     let segment = input.segments.first_mut().unwrap();
     segment.words = vec![
         Word {
+            provenance: None,
             text: "你好".into(),
             range: Some(range(0, 10)),
             speaker: None,
             confidence: None,
         },
         Word {
+            provenance: None,
             text: "世界".into(),
             range: Some(range(100, 110)),
             speaker: None,
@@ -522,12 +530,14 @@ fn provider_words_cannot_split_a_grapheme_and_oversize_input_is_refused() {
     let mut input = transcript("👨‍👩‍👧‍👦", "en");
     input.segments.first_mut().unwrap().words = vec![
         Word {
+            provenance: None,
             text: "👨".into(),
             range: Some(range(0, 1)),
             speaker: None,
             confidence: None,
         },
         Word {
+            provenance: None,
             text: "‍👩‍👧‍👦".into(),
             range: Some(range(1, 2)),
             speaker: None,
@@ -576,6 +586,7 @@ fn timed_transcript(text: &str, tokens: &[&str]) -> Transcript {
         .iter()
         .enumerate()
         .map(|(i, token)| Word {
+            provenance: None,
             text: (*token).into(),
             range: Some(range(
                 i as i64 * TICKS_PER_SECOND,
@@ -612,4 +623,166 @@ fn timed_boundaries_share_uax_policy_for_lines_and_cues() {
         assert_eq!(output.cues[0].cue.range, range(0, 2 * TICKS_PER_SECOND));
         assert!(has(&output, WarningKind::TextLayout));
     }
+}
+
+#[test]
+fn native_word_correspondence_survives_segmentation_and_mapping_without_certifying_groups() {
+    use captions::{CueWordTiming, EditMapping, TimingProvenance};
+    let mut input = transcript("Tie\u{302}\u{301}ng Vie\u{323}\u{302}t", "vi");
+    input.segments[0].words = ["Tiếng", "Việt"]
+        .iter()
+        .enumerate()
+        .map(|(i, text)| Word {
+            provenance: Some(if i == 0 {
+                TimingProvenance::Native
+            } else {
+                TimingProvenance::Forced
+            }),
+            text: (*text).into(),
+            range: Some(range(
+                i as i64 * TICKS_PER_SECOND,
+                (i as i64 + 1) * TICKS_PER_SECOND,
+            )),
+            speaker: None,
+            confidence: None,
+        })
+        .collect();
+    let segmented = segment_transcript(&input, &profile("vi"), &rules("vi", 80)).unwrap();
+    let cue = &segmented.cues[0].cue;
+    let CueWordTiming::Words { text, records, .. } = &cue.word_timing else {
+        panic!("real word proof lost");
+    };
+    assert_eq!(text.as_str(), "Tiếng Việt");
+    assert_eq!(text.as_str().get(records[0].bytes.clone()), Some("Tiếng"));
+    assert_eq!(text.as_str().get(records[1].bytes.clone()), Some("Việt"));
+    let track = captions::CueTrack {
+        styles: vec![],
+        cues: vec![cue.clone()],
+    };
+    let mut without = track.clone();
+    without.cues[0].word_timing = CueWordTiming::Unverified;
+    for format in [Format::Srt, Format::WebVtt] {
+        assert_eq!(
+            export(&track, format, &[lang("vi")]).unwrap().text,
+            export(&without, format, &[lang("vi")]).unwrap().text,
+            "word proof never changes subtitle text bytes"
+        );
+    }
+    let mapped = EditMapping::new(vec![(
+        range(TICKS_PER_SECOND / 2, TICKS_PER_SECOND * 2),
+        Tick(3 * TICKS_PER_SECOND),
+    )])
+    .unwrap()
+    .map_cues(&track)
+    .unwrap();
+    let CueWordTiming::Words {
+        records: shifted, ..
+    } = &mapped.cues[0].word_timing
+    else {
+        panic!("mapped proof lost");
+    };
+    assert_eq!(
+        match shifted[0].projection {
+            captions::WordProjection::Visible(range) => range.start(),
+            _ => panic!("visible word"),
+        },
+        Tick(3 * TICKS_PER_SECOND)
+    );
+    assert_eq!(
+        match shifted[1].projection {
+            captions::WordProjection::Visible(range) => range.start(),
+            _ => panic!("visible word"),
+        },
+        Tick(7 * TICKS_PER_SECOND / 2)
+    );
+    let edge = EditMapping::new(vec![(
+        range(0, TICKS_PER_SECOND / 2),
+        Tick(i64::MAX - TICKS_PER_SECOND / 2),
+    )])
+    .unwrap()
+    .map_cues(&track)
+    .unwrap();
+    let CueWordTiming::Words {
+        records: clipped, ..
+    } = &edge.cues[0].word_timing
+    else {
+        panic!("clipped proof lost");
+    };
+    assert_eq!(
+        match clipped[0].projection {
+            captions::WordProjection::Visible(range) => range.end(),
+            _ => panic!("visible word"),
+        },
+        Tick(i64::MAX)
+    );
+    assert_eq!(
+        clipped[1].projection,
+        captions::WordProjection::Clipped,
+        "outside words remain known, never assigned a fallback time"
+    );
+    assert_eq!(
+        clipped[1].source_range, records[1].source_range,
+        "native timing custody survives the empty intersection"
+    );
+    let long_text = "a".repeat(65536);
+    let mut long = transcript(&long_text, "en");
+    long.segments[0].words = vec![Word {
+        provenance: Some(TimingProvenance::Native),
+        text: long_text.into(),
+        range: Some(long.segments[0].range),
+        speaker: None,
+        confidence: None,
+    }];
+    let generated = segment_transcript(&long, &profile("en"), &rules("en", 80)).unwrap();
+    let long_track = captions::CueTrack {
+        styles: vec![],
+        cues: generated.cues.into_iter().map(|value| value.cue).collect(),
+    };
+    let many = EditMapping::new(
+        (0..300)
+            .map(|index| {
+                (
+                    range(0, 6 * TICKS_PER_SECOND),
+                    Tick(index * 6 * TICKS_PER_SECOND),
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    assert!(
+        matches!(many.map_cues(&long_track), Err(captions::Error::TooLarge)),
+        "bound new correspondence amplification before cloning repeated occurrences"
+    );
+    for word in &mut input.segments[0].words {
+        word.provenance = None;
+    }
+    assert!(
+        segment_transcript(&input, &profile("vi"), &rules("vi", 80))
+            .unwrap()
+            .cues
+            .iter()
+            .all(|value| value.cue.word_timing == CueWordTiming::Unverified)
+    );
+    let mut grouped = transcript("don't", "en");
+    grouped.segments[0].words = ["don", "'t"]
+        .iter()
+        .enumerate()
+        .map(|(i, text)| Word {
+            provenance: Some(TimingProvenance::Native),
+            text: (*text).into(),
+            range: Some(range(
+                i as i64 * TICKS_PER_SECOND,
+                (i as i64 + 1) * TICKS_PER_SECOND,
+            )),
+            speaker: None,
+            confidence: None,
+        })
+        .collect();
+    assert!(
+        segment_transcript(&grouped, &profile("en"), &rules("en", 80))
+            .unwrap()
+            .cues
+            .iter()
+            .all(|value| value.cue.word_timing == CueWordTiming::Unverified)
+    );
 }

@@ -227,7 +227,10 @@ fn prepare_clip(
                 source_asset: Some(options.asset.id()),
                 source_range: segment.range,
                 start: *start,
-                content: ItemParams::Caption(CaptionParams { cues: clipped }),
+                content: ItemParams::Caption(CaptionParams {
+                    word_highlight: false,
+                    cues: clipped,
+                }),
             });
             next_item = next_item
                 .checked_add(1)

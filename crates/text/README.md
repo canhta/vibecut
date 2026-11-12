@@ -14,3 +14,5 @@ Unicode shaping, line layout and CPU rasterization for overlay titles and burn-i
 The crate root re-exports the same public names. Mask and path internals are private; callers paint through `render`.
 
 Pinned FNV-1a checksums of full rendered buffers are regression goldens. Changing one requires visual inspection and an explained re-bless, never automatic acceptance.
+
+The `caption_paint_benchmark` example measures bounded same-input shaping/paint repetitions and process memory; optional raw RGBA output supports exact disabled-pixel comparison. `active` selects the adopted span fill. It opens no native window and supplies no GPU or reference-parity evidence.

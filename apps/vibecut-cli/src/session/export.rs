@@ -141,6 +141,11 @@ fn export_configured(
         budget,
         Arc::new(SystemClock::default()),
     )?;
+    let word_highlight_warnings = options.caption_word_warnings(
+        &project,
+        &settings,
+        &engine::ByteBudgetHooks::new(runner.memory_budget(), None),
+    )?;
     let (id, _cancel) = submit(
         &mut runner,
         key,
@@ -155,6 +160,7 @@ fn export_configured(
         "path": json_path(&output)?,
         "paths": paths.iter().map(|path| json_path(path)).collect::<Result<Vec<_>, _>>()?,
         "status": "completed",
+        "word_highlight_warnings": word_highlight_warnings,
     });
     Ok(Output::new(
         value,

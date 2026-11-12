@@ -49,6 +49,7 @@ fn session() -> Session {
     );
     let cues = (0..4)
         .map(|i| Cue {
+            word_timing: captions::CueWordTiming::Unverified,
             id: format!("cue-{i}").into(),
             range: SourceRange::new(Tick(i * 10), Tick(i * 10 + 10)).unwrap(),
             source_lang: lang("vi"),
@@ -94,6 +95,7 @@ fn session() -> Session {
             start: Tick(0),
             animations: Default::default(),
             content: ItemParams::Caption(CaptionParams {
+                word_highlight: false,
                 cues: CueTrack {
                     styles: Vec::new(),
                     cues,

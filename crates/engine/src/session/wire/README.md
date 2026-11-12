@@ -5,7 +5,7 @@
 `parse_frame` accepts at most 16 MiB of UTF-8 with duplicate-key refusal, 32 nested levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate text. Validators compile only generated local schemas with network and file resolution disabled. Safe wire error codes omit paths, user text, provider bodies and Rust Debug. `bounded_json` is the adapter's response serializer, capped at 16 MiB. Preview jobs retain their separate 4 MiB result reservation and serialization ceiling.
 Caption workflow result bounds belong to [subtitles](../../subtitles/README.md#caption-workflow-commands).
 
-API version 4 is independent of the project file schema. The BLAKE3 catalog digest covers schemas, static effects, examples and limits, excluding enabled and session state. [Generated commands](../../../../../docs/product/agent-control/commands.md) and `catalog.digest` regenerate with `cargo xtask catalog`.
+API version 5 is independent of the project file schema. The BLAKE3 catalog digest covers schemas, static effects, examples and limits, excluding enabled and session state. [Generated commands](../../../../../docs/product/agent-control/commands.md) and `catalog.digest` regenerate with `cargo xtask catalog`.
 
 Every Session starts with an OS-random epoch. `revision()` is an opaque string; its generation and `JobTarget` share the same Arc invalidation boundary. UI edits, undo/redo, preview lifetimes, transaction rollback or net-zero end, view changes and successful save advance it; ordinary no-ops and refusals do not. One typed `Payload` set covers command result/error, committed project change, revision change and job snapshots; envelopes include API, catalog and session identity, revision and a string sequence number.
 
@@ -38,3 +38,5 @@ catalog digest within the current API; consumers use the current digest.
 Static catalog limits include clipboard keys, paths and compact bytes; the aggregate
 explicit payload bytes in an edit tree share the same cap before candidate cloning.
 Copy revision and lifetime rules: [clipboard](../README.md#keyframe-clipboard).
+
+Job admission carries bounded `word_highlight_warnings` from the captured project and selected caption languages. Preview and burn use render’s shared eligibility and shaped layout; warning entries expose only numeric item/cue positions, a language tag and safe reason, never caption text. Disabled or repaired state recomputes to an empty list. Project persistence and caption correspondence belong to their lower owners.

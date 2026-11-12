@@ -124,3 +124,5 @@ rules belong to the [clipboard contract](../README.md#keyframe-clipboard).
 The private edit allocator returns `SessionError` directly. Callers compose it into
 mixed edit results; it neither wraps the counter nor changes allocation admission.
 ID retirement and checkpoint rules belong to [Session](../README.md#public-entry-points).
+
+`captions.set_word_highlight {item,enabled}` changes only an active-scene caption item’s opt-in. The ordinary locked-item guard runs even on equal requests; no-op, undo/redo, atomic batch and receipt/grant admission remain the shared command rules. It never changes styles, source text, verified correspondence or authoritative hidden trim cues.

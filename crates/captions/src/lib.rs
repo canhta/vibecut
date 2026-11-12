@@ -21,8 +21,9 @@ pub use span::{NormalizedText, TextSpan};
 use std::{collections::BTreeMap, fmt};
 use time::{SourceRange, Tick};
 pub use timing::{
-    DisplayReplacement, DisplayVariant, MappedTiming, SpanTiming, TimingGroup, TimingProvenance,
-    TimingSpans, TimingUnit,
+    CueWordTiming, DisplayReplacement, DisplayVariant, MappedTiming, SpanTiming, TimingGroup,
+    TimingProvenance, TimingSpans, TimingUnit, VerifiedCueWord, WordHighlightReason,
+    WordProjection,
 };
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -95,6 +96,8 @@ impl From<Confidence> for f32 {
 /// A source word; absent timing never implies target-language word alignment.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Word {
+    /// Explicit native/forced word provenance; absent records cannot certify highlighting.
+    pub provenance: Option<TimingProvenance>,
     pub text: NfcText,
     pub range: Option<SourceRange>,
     pub speaker: Option<NfcText>,
@@ -235,6 +238,8 @@ pub struct CueStyleId(pub u16);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Cue {
+    /// Exact verified source display correspondence; imported/estimated cues are unverified.
+    pub word_timing: CueWordTiming,
     pub id: NfcText,
     pub range: SourceRange,
     pub source_lang: LanguageTag,

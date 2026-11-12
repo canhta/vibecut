@@ -905,6 +905,7 @@ fn caption_project() -> Project {
     );
     let lang = LanguageTag::parse("vi").unwrap();
     let cue = Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "source/0".into(),
         range: range(110, 190),
         source_lang: lang.clone(),
@@ -938,6 +939,7 @@ fn caption_project() -> Project {
             source_range: range(100, 200),
             start: Tick(1000),
             content: ItemParams::Caption(CaptionParams {
+                word_highlight: false,
                 cues: CueTrack {
                     styles: Vec::new(),
                     cues: vec![cue.clone()],
@@ -1493,4 +1495,69 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
             engine::control::ControlError::Limit
         ))
     ));
+}
+
+#[test]
+fn word_highlight_is_an_undoable_locked_atomic_opt_in_without_style_or_timing_edits() {
+    let mut s = Session::new(style_source_project(), 30).unwrap();
+    let original = s.project().clone();
+    s.execute(
+        "captions.set_word_highlight",
+        json!({"item":1,"enabled":true}),
+    )
+    .unwrap();
+    let mut expected = original.data().clone();
+    let ItemParams::Caption(params) =
+        &mut expected.scene_mut().timeline.overlays[0].items[0].content
+    else {
+        panic!("caption");
+    };
+    params.word_highlight = true;
+    assert_eq!(s.project().data(), &expected);
+    let enabled = s.project().clone();
+    assert!(
+        !s.execute(
+            "captions.set_word_highlight",
+            json!({"item":1,"enabled":true})
+        )
+        .unwrap()
+        .changed
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &enabled);
+    let locked_track = s.project().data().scene().timeline.overlays[0].id;
+    s.apply(Command::SetTrackLocked {
+        track: locked_track,
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    assert!(matches!(
+        s.execute(
+            "captions.set_word_highlight",
+            json!({"item":1,"enabled":true})
+        ),
+        Err(engine::EditError::Locked(_))
+    ));
+    assert!(Arc::ptr_eq(&locked, s.project()));
+    s.undo().unwrap();
+    let before = s.project().clone();
+    assert!(
+        s.apply(Command::Batch {
+            commands: vec![
+                Command::SetCaptionWordHighlight {
+                    item: ItemId(1),
+                    enabled: false
+                },
+                Command::SetCaptionWordHighlight {
+                    item: ItemId(u64::MAX),
+                    enabled: true
+                }
+            ]
+        })
+        .is_err()
+    );
+    assert!(Arc::ptr_eq(&before, s.project()));
 }

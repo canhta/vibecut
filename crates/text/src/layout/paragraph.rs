@@ -14,6 +14,7 @@ pub(super) struct ShapedGlyph {
     pub(super) face: FaceId,
     pub(super) id: u32,
     pub(super) cluster: usize,
+    pub(super) cluster_end: usize,
     pub(super) advance: f32,
     pub(super) offset_x: f32,
     pub(super) offset_y: f32,
@@ -248,6 +249,7 @@ pub(super) fn append_paragraph(
                 y,
                 size: options.size,
                 cluster: glyph.cluster,
+                cluster_end: glyph.cluster_end,
                 synth_bold: glyph.synth_bold,
                 synth_italic: glyph.synth_italic,
             });
@@ -360,11 +362,23 @@ fn shape_run(
     let scale = face.scale(size);
     let synth_bold = primary.synth_bold && face_id == primary.face;
     let synth_italic = primary.synth_italic && face_id == primary.face;
+    let mut boundaries: Vec<_> = buffer
+        .glyph_infos()
+        .iter()
+        .map(|info| info.cluster as usize)
+        .collect();
+    boundaries.push(cluster_base + run.len());
+    boundaries.sort_unstable();
+    boundaries.dedup();
     for (info, position) in buffer.glyph_infos().iter().zip(buffer.glyph_positions()) {
         out.push(ShapedGlyph {
             face: face_id,
             id: info.glyph_id,
             cluster: info.cluster as usize,
+            cluster_end: boundaries
+                .get(boundaries.partition_point(|start| *start <= info.cluster as usize))
+                .copied()
+                .unwrap_or(cluster_base + run.len()),
             advance: position.x_advance as f32 * scale,
             offset_x: position.x_offset as f32 * scale,
             offset_y: position.y_offset as f32 * scale,
@@ -423,7 +437,7 @@ fn line_metrics(glyphs: &[ShapedGlyph], primary: Resolved, size: f32) -> (f32, f
 }
 
 /// Canonical line separators become LF, then the text is normalized to NFC.
-pub(super) fn canonical_text(text: &str) -> String {
+pub fn canonical_text(text: &str) -> String {
     let mut canonical = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {

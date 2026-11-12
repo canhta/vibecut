@@ -19,6 +19,7 @@ pub fn cues(source: &str) -> CueTrack {
         styles: Vec::new(),
         cues: (0..3)
             .map(|i| Cue {
+                word_timing: captions::CueWordTiming::Unverified,
                 id: format!("cue-{i}").into(),
                 range: SourceRange::new(
                     Tick((1 + i * 3) * TICKS_PER_SECOND),
@@ -45,6 +46,48 @@ pub fn cues(source: &str) -> CueTrack {
             .collect(),
     }
 }
+pub fn verified_cues() -> CueTrack {
+    let mut track = cues("vi");
+    for cue in &mut track.cues {
+        let text = cue.texts.get(&cue.source_lang).unwrap().text.clone();
+        let split = text.as_str().find(' ').unwrap();
+        let middle = cue
+            .range
+            .start()
+            .checked_add(Tick(TICKS_PER_SECOND))
+            .unwrap();
+        cue.texts.insert(
+            lang("en"),
+            CueText {
+                text: "Hello friend".into(),
+                edited: false,
+                translation_ref: Some("synthetic-fixture".into()),
+            },
+        );
+        let left = SourceRange::new(cue.range.start(), middle).unwrap();
+        let right = SourceRange::new(middle, cue.range.end()).unwrap();
+        cue.word_timing = captions::CueWordTiming::Words {
+            language: cue.source_lang.clone(),
+            text: text.clone(),
+            records: vec![
+                captions::VerifiedCueWord {
+                    bytes: 0..split,
+                    source_range: left,
+                    projection: captions::WordProjection::Visible(left),
+                    provenance: captions::TimingProvenance::Native,
+                },
+                captions::VerifiedCueWord {
+                    bytes: split + 1..text.as_str().len(),
+                    source_range: right,
+                    projection: captions::WordProjection::Visible(right),
+                    provenance: captions::TimingProvenance::Forced,
+                },
+            ],
+        };
+    }
+    track
+}
+
 pub fn insert(track: CueTrack) -> Command {
     Command::InsertItem {
         placement: engine::Placement::Auto,
@@ -54,11 +97,17 @@ pub fn insert(track: CueTrack) -> Command {
             source_asset: Some(media::AssetId(1)),
             source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
             start: Tick::ZERO,
-            content: ItemParams::Caption(project::CaptionParams { cues: track }),
+            content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues: track,
+            }),
         },
     }
 }
 pub fn editor(source: &str) -> Editor {
+    editor_with_cues(source, cues(source))
+}
+pub fn editor_with_cues(source: &str, track: CueTrack) -> Editor {
     let mut session =
         Session::new(Project::empty(ProjectId(9), "Captions".into()).unwrap(), 30).unwrap();
     session
@@ -77,7 +126,7 @@ pub fn editor(source: &str) -> Editor {
             .unwrap(),
         })
         .unwrap();
-    session.apply(insert(cues(source))).unwrap();
+    session.apply(insert(track)).unwrap();
     let playback = Playback::new(
         &session,
         ByteBudget::new(256 << 20).unwrap(),

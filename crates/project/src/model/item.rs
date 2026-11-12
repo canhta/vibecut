@@ -248,6 +248,8 @@ impl TextParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionParams {
+    /// Explicit source-word emphasis; new and imported caption items start disabled.
+    pub word_highlight: bool,
     pub cues: CueTrack,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -478,4 +480,23 @@ pub fn valid_volume(value: f32) -> bool {
     value.is_finite()
         && (-60.0..=20.0).contains(&value)
         && (value * 100.0 - (value * 100.0).round()).abs() < 0.001
+}
+
+/// Safe captured-state diagnostics. No cue text, arbitrary cue ID or source path is exposed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptionWordWarning {
+    pub item: ItemId,
+    /// Zero-based retained cue position, never the user-authored cue ID.
+    pub cue: usize,
+    pub language: captions::LanguageTag,
+    pub reason: captions::WordHighlightReason,
+}
+/// At most 64 item/language/reason summaries; additional unrepresented cues are counted.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptionWordWarnings {
+    #[schemars(length(max = 64))]
+    pub warnings: Vec<CaptionWordWarning>,
+    pub additional: usize,
 }

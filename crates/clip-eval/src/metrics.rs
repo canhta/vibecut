@@ -328,18 +328,21 @@ mod tests {
                 text: "hello world again.".into(),
                 words: vec![
                     Word {
+                        provenance: None,
                         text: NfcText::from("hello"),
                         range: Some(range(0, 2)),
                         speaker: None,
                         confidence: None,
                     },
                     Word {
+                        provenance: None,
                         text: NfcText::from("world"),
                         range: Some(range(2, 4)),
                         speaker: None,
                         confidence: None,
                     },
                     Word {
+                        provenance: None,
                         text: NfcText::from("again."),
                         range: Some(range(4, 6)),
                         speaker: None,

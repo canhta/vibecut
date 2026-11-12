@@ -101,6 +101,7 @@ impl Session {
                     fingerprint,
                 )?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -162,6 +163,7 @@ impl Session {
             } => {
                 let job = (font_access(caller)?.import)(runner, &path, accept_license)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -173,6 +175,7 @@ impl Session {
             } => {
                 let job = (font_access(caller)?.download)(runner, family.as_str(), accept_license)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -248,6 +251,7 @@ impl Session {
                     .map_err(|_| crate::RuntimeError::Poisoned)?
                     .generate_waveform(runner, asset)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -294,6 +298,7 @@ impl Session {
                     .map_err(|_| crate::RuntimeError::Poisoned)?
                     .generate_clip_thumbnails(runner, asset, &clip, visible, pixels_per_second)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -324,6 +329,7 @@ impl Session {
                     .map_err(|_| crate::RuntimeError::Poisoned)?
                     .detect_scenes(runner, asset, settings)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -339,6 +345,7 @@ impl Session {
                     Box::new(render::FileSources::default())
                 })?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -365,6 +372,7 @@ impl Session {
                 )?;
                 let job = request.submit(runner)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job: job.id,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -386,6 +394,7 @@ impl Session {
                     crate::chapters::ChapterRequest::new(self.project(), language, max_chapters)?;
                 let job = request.submit(runner, access)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job: job.id,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -407,6 +416,7 @@ impl Session {
                     crate::fillers::FillerRequest::new(self.project(), language, include_markers)?;
                 let job = request.submit(runner, access)?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job: job.id,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -450,6 +460,7 @@ impl Session {
                     crate::control_preview::control_key(fingerprint)?,
                 )?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -480,6 +491,7 @@ impl Session {
                     crate::control_preview::control_key(fingerprint)?,
                 )?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
@@ -592,6 +604,11 @@ impl Session {
                 } else {
                     project::atomic::Overwrite::Refuse
                 };
+                let word_highlight_warnings = options.caption_word_warnings(
+                    self.project(),
+                    &settings,
+                    &crate::ByteBudgetHooks::new(runner.memory_budget(), None),
+                )?;
                 let (job, _) = crate::submit_scene_exports_with_sources(
                     runner,
                     crate::control_preview::control_key(fingerprint)?,
@@ -602,6 +619,7 @@ impl Session {
                     || Box::new(render::FileSources::default()),
                 )?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings,
                     job,
                     revision: self.revision(),
                     paths,
@@ -618,12 +636,34 @@ impl Session {
                         ));
                     }
                 };
+                let word_highlight_warnings = if let Command::BurnSubtitles {
+                    languages,
+                    style,
+                    portrait,
+                    ..
+                } = &command
+                {
+                    let mut settings = if *portrait {
+                        render::RenderSettings::portrait(self.project())
+                    } else {
+                        render::RenderSettings::from_project(self.project())
+                    };
+                    settings.caption_languages = languages.clone();
+                    settings.caption_style = style.clone();
+                    render::Renderer::new(self.project(), settings)?.caption_word_warnings(
+                        None,
+                        &crate::ByteBudgetHooks::new(runner.memory_budget(), None),
+                    )?
+                } else {
+                    project::CaptionWordWarnings::default()
+                };
                 let (job, _) = self.submit_export_command(
                     runner,
                     crate::control_preview::control_key(fingerprint)?,
                     command,
                 )?;
                 Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings,
                     job,
                     revision: self.revision(),
                     paths: vec![path],

@@ -314,6 +314,9 @@ pub(crate) fn apply(
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;
         }
+        EditCommand::SetCaptionWordHighlight { item, enabled } => {
+            data = text::set_word_highlight(data, item, enabled)?;
+        }
         EditCommand::ApplyCaptionStyle { item, style } => {
             data = text::execute_apply_caption_style(data, item, style, sources)?;
         }

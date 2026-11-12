@@ -18,3 +18,9 @@ Language profiles are owned by `captions`; this crate does not match language ta
 - CR, CRLF, NEL, line separator, paragraph separator, vertical tab and form feed become LF before shaping.
 - Every line's final span is shaped independently whenever a boundary ligature or cross-boundary kerning changes its context; unaffected lines reuse the paragraph shape. A multi-grapheme line that still exceeds the width is split further without dropping its prefix, and a single grapheme wider than the wrap width occupies its own line.
 - Line ranges tile the complete source, apart from intentional max-lines overflow.
+
+`canonical_text` is the shared line-ending-then-NFC normalization used by layout and span callers. Every positioned glyph retains the actual shaping cluster’s exclusive byte end. `Layout::certifies_span` admits only whole canonical graphemes and shaped clusters; it never assigns words by ordinal or reshapes them independently.
+
+A span also needs actual nonmissing glyph coverage. Uncovered scripts keep ordinary base rendering and a warning; bundled font coverage and left-to-right layout limits remain unchanged.
+
+`canonical_boundaries` pairs source grapheme boundaries with their canonical byte offsets using the same normalization. Batch `certifies_spans` checks ordered disjoint spans against all shaped clusters without a word-by-glyph Cartesian scan.

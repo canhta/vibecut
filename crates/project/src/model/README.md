@@ -47,3 +47,5 @@ The default canvas is 1920Ã—1080 at 30 fps, black background, 16:9 preset, 1920Ã
 ## Generated graphics
 
 `ItemParams::Graphic` stores only rectangle and ellipse definitions, with explicit sRGB RGBA8 fill/stroke, author-pixel stroke width (0..64), inside/center/outside alignment, and rectangle corner radius (0..50 percent). The author square is512 pixels; these generated Video-track items have no source asset or media retime. Appearance paths `params.fill`/`stroke` require straight linear RGBA channels; `params.strokeWidth` and rectangle-only `params.cornerRadius` require bounded scalar bases and keys; `params.strokeAlign` requires held text inside/center/outside. Other `params.*` paths refuse. Present Params, including zero-key bases, override static fallbacks. Ordinary key-time propagation applies.
+
+`CaptionParams.word_highlight` is a required persisted per-item opt-in, false for new/imported items. It is independent of copied caption styles and the named preset bank. Cues retain captions-owned word correspondence; project validation bounds its stored structure. `CaptionWordWarnings` is transient preflight data, not project state.

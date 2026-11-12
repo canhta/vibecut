@@ -133,6 +133,13 @@ pub struct ExportDialog {
     pub(crate) open: bool,
     consent: bool,
     unavailable: Vec<render::Unavailable>,
+    word_warnings: Option<(
+        Arc<project::Project>,
+        ExportOptions,
+        usize,
+        u64,
+        std::result::Result<project::CaptionWordWarnings, Arc<Error>>,
+    )>,
     refused: Option<(Arc<project::Project>, bool)>,
     empty: bool,
     error: Option<Arc<Error>>,
@@ -167,6 +174,7 @@ impl ExportDialog {
             open: false,
             consent: false,
             unavailable: Vec::new(),
+            word_warnings: None,
             refused: None,
             empty: false,
             error: None,
@@ -596,7 +604,7 @@ impl ExportDialog {
         locale: Locale,
         dark: bool,
         options: &mut ExportOptions,
-        project: &project::Project,
+        project: &Arc<project::Project>,
         preview: Option<&egui::TextureHandle>,
     ) -> DialogUi {
         let mut result = DialogUi {
@@ -605,6 +613,45 @@ impl ExportDialog {
         };
         if !self.open {
             return result;
+        }
+        let used = self
+            .runner
+            .memory_budget()
+            .snapshot()
+            .map_or(u64::MAX, |snapshot| snapshot.limited_used());
+        if self
+            .word_warnings
+            .as_ref()
+            .is_none_or(|(prior, settings, fonts, prior_used, result)| {
+                !Arc::ptr_eq(prior, project)
+                    || *settings != *options
+                    || *fonts != text::generation()
+                    || (result.is_err() && *prior_used != used)
+            })
+        {
+            let warnings = self
+                .render_state
+                .settings(project)
+                .and_then(|render| {
+                    let mut settings = options.settings(project);
+                    settings.render = render;
+                    options
+                        .output
+                        .caption_word_warnings(
+                            project,
+                            &settings,
+                            &engine::ByteBudgetHooks::new(self.runner.memory_budget(), None),
+                        )
+                        .map_err(Error::from)
+                })
+                .map_err(Arc::new);
+            self.word_warnings = Some((
+                project.clone(),
+                *options,
+                text::generation(),
+                used,
+                warnings,
+            ));
         }
         let tr = |k| i18n::text(locale, k);
         let active = self.active();
@@ -706,6 +753,25 @@ impl ExportDialog {
                                             .checkbox(&mut self.consent, tr(Text::ExportDegraded));
                                         result.widgets.push(("export.consent", r));
                                         ui.add_space(14.0);
+                                    }
+                                    if let Some((_,_,_,_,warnings)) = &self.word_warnings {
+                                        match warnings {
+                                            Ok(warnings) => {
+                                                let reasons: std::collections::BTreeSet<_> = warnings.warnings.iter().map(|warning| warning.reason).collect();
+                                                for reason in reasons {
+                                                    let key = match reason {
+                                                        captions::WordHighlightReason::MissingTiming => Text::SubWordMissing,
+                                                        captions::WordHighlightReason::SourceChanged => Text::SubWordChanged,
+                                                        captions::WordHighlightReason::SourceNotDisplayed => Text::SubWordLanguage,
+                                                        captions::WordHighlightReason::AmbiguousTiming => Text::SubWordAmbiguous,
+                                                        captions::WordHighlightReason::ShapedBoundary => Text::SubWordShaped,
+                                                    };
+                                                    let response = ui.colored_label(theme::warning(dark),tr(key));
+                                                    result.widgets.push(("export.word_highlight.warning",response));
+                                                }
+                                            }
+                                            Err(error) => { ui.label(tr(Text::SubWordUnavailable)).on_hover_text(error.to_string()); }
+                                        }
                                     }
                                     settings::show(
                                         ui,

@@ -15,6 +15,7 @@ use time::{SourceRange, Tick};
 
 fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> captions::Cue {
     captions::Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: SourceRange::new(Tick(start), Tick(end)).unwrap(),
         source_lang: captions::LanguageTag::parse("en").unwrap(),
@@ -73,6 +74,7 @@ fn project() -> Arc<Project> {
             source_range: SourceRange::new(Tick::ZERO, Tick(300)).unwrap(),
             start: Tick::ZERO,
             content: ItemParams::Caption(CaptionParams {
+                word_highlight: false,
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![

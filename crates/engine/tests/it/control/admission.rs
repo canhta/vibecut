@@ -545,6 +545,7 @@ fn diagnostic_debug_redacts_request_content_output_paths_and_frame_bytes() {
     );
     assert!(!format!("{request:?}").contains("private-secret"));
     let result = ControlResult::JobAccepted {
+        word_highlight_warnings: project::CaptionWordWarnings::default(),
         job: engine::jobs::JobId(0),
         revision: s.revision(),
         paths: vec!["/private-secret-path".into()],

@@ -124,9 +124,11 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
             source_range: range(0, 1000),
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {
+                        word_timing: captions::CueWordTiming::Unverified,
                         id: "cue-1".into(),
                         range: range(0, 1000),
                         source_lang: captions::LanguageTag::parse("en").unwrap(),

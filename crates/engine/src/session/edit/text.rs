@@ -5,6 +5,23 @@ use super::{
     item, set_range,
 };
 
+/// Change only the opt-in. Timing, copied styles and authoritative trim sources stay intact.
+pub(super) fn set_word_highlight(
+    mut data: ProjectData,
+    id: ItemId,
+    enabled: bool,
+) -> Result<ProjectData> {
+    if item_in_other_scene(&data, id) {
+        return Err(EditError::SceneBoundary);
+    }
+    let target = item(&mut data, id)?;
+    let ItemParams::Caption(params) = &mut target.content else {
+        return Err(EditError::Invalid("word highlight requires caption item"));
+    };
+    params.word_highlight = enabled;
+    Ok(data)
+}
+
 pub(super) fn execute_apply_caption_style(
     mut data: ProjectData,
     id: ItemId,
@@ -180,6 +197,7 @@ pub(super) fn import_captions(
         end = end.max(cue.range.end());
         let id = format!("ass-{}", index.saturating_add(1)).into();
         cue_track.cues.push(captions::Cue {
+            word_timing: captions::CueWordTiming::Unverified,
             id,
             range: cue.range,
             source_lang: language.clone(),
@@ -257,7 +275,10 @@ pub(super) fn import_captions(
                 source_asset: Some(asset_id),
                 source_range,
                 start,
-                content: ItemParams::Caption(project::CaptionParams { cues: cue_track }),
+                content: ItemParams::Caption(project::CaptionParams {
+                    word_highlight: false,
+                    cues: cue_track,
+                }),
             },
         },
         created,
@@ -583,7 +604,16 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
         .last()
         .ok_or(EditError::Invalid("merge cue count"))?;
     let range = SourceRange::new(first.range.start(), last.range.end())?;
+    let word_timing = captions::CueWordTiming::joined(
+        &selected,
+        if source_lang.joins_with_space() {
+            " "
+        } else {
+            ""
+        },
+    )?;
     let merged = captions::Cue {
+        word_timing,
         id: first.id.clone(),
         range,
         source_lang,

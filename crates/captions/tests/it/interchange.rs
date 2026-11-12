@@ -260,6 +260,7 @@ fn transcript_wire_and_export_safety() {
             text: "e\u{301}".into(),
             spans: None,
             words: vec![Word {
+                provenance: None,
                 text: "e\u{301}".into(),
                 range: Some(range),
                 speaker: Some("speaker".into()),

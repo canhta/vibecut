@@ -31,3 +31,5 @@ CPS, duration, gap and layout conflicts warn instead of truncating text or movin
 ## Source cut units
 
 `source_speech_units(transcript, resolved_profile)` reuses subtitle validation, NFC correspondence, word and span grouping and profile punctuation to return indivisible `SourceSpeechUnit`s and sentence-end marks for engine boundary snapping. Fully measured, text-matching native groups keep their source ranges. Missing, incomplete or mismatched timing protects the entire source segment, and no proportional estimate is admitted as a cut boundary. Limits are 10,000 segments, 500,000 words or output units and the 16 MiB segmentation byte cap. The caller resolves the `LanguageProfile` once.
+
+Individual native/forced words also retain `CueWordTiming` through assembly. A UAX group combining words, a non-Word span layer, an estimate or missing provenance leaves it unverified. This proof is separate from the legacy measured-range list. Cut-list mapping translates proof timing by the same source/output offset while retaining the exact display bytes; clipping does not invent finer words.

@@ -532,6 +532,7 @@ fn caption_project() -> project::Project {
         })
         .collect();
     let cue = Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "cue".into(),
         range,
         source_lang: LanguageTag::parse("vi").unwrap(),
@@ -562,6 +563,7 @@ fn caption_project() -> project::Project {
                 source_range: range,
                 start: Tick(at * time::TICKS_PER_SECOND),
                 content: ItemParams::Caption(CaptionParams {
+                    word_highlight: false,
                     cues: CueTrack {
                         styles: Vec::new(),
                         cues: vec![cue.clone()],

@@ -40,6 +40,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
     assert!(laid_out.glyphs.iter().all(|glyph| glyph.id != 0));
 
     let paint = Paint {
+        span_fill: None,
         fill: Color::WHITE,
         outline: Some(Outline {
             color: Color::BLACK,
@@ -78,6 +79,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
         canvas,
         (20.0, 820.0),
         &Paint {
+            span_fill: None,
             fill: Color::WHITE,
             outline: None,
             background: None,
@@ -122,4 +124,161 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
         first, second,
         "rendering and PNG encoding are deterministic"
     );
+}
+
+#[test]
+fn active_source_fill_keeps_shaping_translation_and_antialias_alpha() {
+    for (name, value, end) in [
+        (
+            "vi",
+            "Tie\u{302}\u{301}ng Việt\r\nClear English",
+            "Tiếng".len(),
+        ),
+        ("zh", "中文词语\nClear English", 6),
+        ("ligature", "office affine\nClear English", 6),
+        ("rtl", "السلام عليكم\nClear English", "السلام".len()),
+    ] {
+        let layout = layout(
+            value,
+            &LayoutOptions {
+                family: if name == "ligature" {
+                    "Noto Serif"
+                } else {
+                    "Inter"
+                },
+                line_height: 90.0,
+                size: 44.0,
+                max_width: 620.0,
+                align: Align::Center,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let canvas = Canvas {
+            width: 640,
+            height: 240,
+        };
+        let paint = Paint {
+            fill: Color::rgba(245, 245, 250, 180),
+            outline: Some(Outline {
+                color: Color::rgba(0, 0, 0, 200),
+                width: 2.0,
+                kind: StrokeKind::Outer,
+            }),
+            background: Some(Rectangle::uniform(Color::rgba(20, 30, 50, 100), 4.0, 3.0)),
+            ..Default::default()
+        };
+        let ordinary = render(&layout, canvas, (10.0, 10.0), &paint).unwrap();
+        if name == "rtl" {
+            assert!(
+                matches!(
+                    render(
+                        &layout,
+                        canvas,
+                        (10.0, 10.0),
+                        &Paint {
+                            span_fill: Some(text::SpanFill {
+                                start: 0,
+                                end,
+                                rgb: [255, 215, 0]
+                            }),
+                            ..paint
+                        }
+                    ),
+                    Err(text::RenderError::InvalidSpan)
+                ),
+                "bundled fonts do not certify Arabic glyphs"
+            );
+            continue;
+        }
+        let active = render(
+            &layout,
+            canvas,
+            (10.0, 10.0),
+            &Paint {
+                span_fill: Some(text::SpanFill {
+                    start: 0,
+                    end,
+                    rgb: [255, 215, 0],
+                }),
+                ..paint
+            },
+        )
+        .unwrap();
+        assert_ne!(
+            ordinary.pixels, active.pixels,
+            "source word changes colour: {name}"
+        );
+        assert!(
+            ordinary
+                .pixels
+                .chunks_exact(4)
+                .zip(active.pixels.chunks_exact(4))
+                .all(|(a, b)| a[3] == b[3]),
+            "no double antialias or alpha: {name}"
+        );
+        let translation = &layout.lines[1];
+        let row = (translation.baseline - translation.ascent + 10.0).ceil() as usize;
+        assert_eq!(
+            &ordinary.pixels[row * 640 * 4..],
+            &active.pixels[row * 640 * 4..],
+            "translation and geometry unchanged: {name}"
+        );
+        let path = target_dir().join(format!("word-fill-{name}.png"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, crate::support::encode(&active)).unwrap();
+        eprintln!(
+            "word-fill-{name} fnv={:#x}",
+            crate::support::checksum(&active)
+        );
+        let expected = match name {
+            "vi" => 0x5bfbda800b172fa4,
+            "zh" => 0x1168a9a97cc9a0a6,
+            "ligature" => 0x2179242137699268,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            crate::support::checksum(&active),
+            expected,
+            "visually inspected source-word fill golden"
+        );
+        if name == "ligature" {
+            let joined = layout
+                .glyphs
+                .iter()
+                .find(|glyph| {
+                    glyph.cluster_end > glyph.cluster + 1
+                        && layout
+                            .text
+                            .get(glyph.cluster..glyph.cluster_end)
+                            .is_some_and(|value| value.chars().count() > 1)
+                })
+                .expect("pinned Noto Serif ligature fixture");
+            let inside = joined.cluster
+                + layout
+                    .text
+                    .get(joined.cluster..joined.cluster_end)
+                    .unwrap()
+                    .chars()
+                    .next()
+                    .unwrap()
+                    .len_utf8();
+            assert!(matches!(
+                render(
+                    &layout,
+                    canvas,
+                    (10.0, 10.0),
+                    &Paint {
+                        span_fill: Some(text::SpanFill {
+                            start: 0,
+                            end: inside,
+                            rgb: [255, 215, 0]
+                        }),
+                        ..paint
+                    }
+                ),
+                Err(text::RenderError::InvalidSpan)
+            ));
+        }
+    }
 }

@@ -375,6 +375,43 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     std::fs::write(&path, project::encode(session.project(), true).unwrap()).unwrap();
     let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
     let initial = client.call("inspect", json!({}), None, None);
+    let highlight = client.call(
+        "captions.set_word_highlight",
+        json!({"item":item,"enabled":true}),
+        Some(&initial["rev_after"]),
+        Some("word-highlight"),
+    );
+    assert_eq!(
+        highlight.pointer("/value/value/outcome/changed"),
+        Some(&json!(true)),
+        "{highlight}"
+    );
+    assert_eq!(
+        client.call(
+            "captions.set_word_highlight",
+            json!({"item":item,"enabled":true}),
+            Some(&initial["rev_after"]),
+            Some("word-highlight")
+        ),
+        highlight
+    );
+    let preview = client.call(
+        "preview",
+        json!({"frames":[0]}),
+        Some(&highlight["rev_after"]),
+        Some("word-preview"),
+    );
+    assert_eq!(
+        preview.pointer("/value/value/word_highlight_warnings/warnings/0/reason"),
+        Some(&json!("missing_timing")),
+        "{preview}"
+    );
+    assert!(
+        !preview["value"]["value"]["word_highlight_warnings"]
+            .to_string()
+            .contains("Hello")
+    );
+    let initial = client.call("inspect", json!({}), None, None);
     let params = json!({"item":item,"style":{"kind":"preset","preset":"box"}});
     let applied = client.call(
         "captions.apply_style",
@@ -861,9 +898,9 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
     );
 }
 
-struct CaptionAsr {
-    config: ai::ProviderConfig,
-    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+pub(crate) struct CaptionAsr {
+    pub(crate) config: ai::ProviderConfig,
+    pub(crate) calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 impl ai::Transcriber for CaptionAsr {
     fn config(&self) -> &ai::ProviderConfig {
@@ -876,7 +913,9 @@ impl ai::Transcriber for CaptionAsr {
             operation: ai::Operation::Transcribe,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
-            timing: [ai::TimingUnit::Segment].into_iter().collect(),
+            timing: [ai::TimingUnit::Segment, ai::TimingUnit::Word]
+                .into_iter()
+                .collect(),
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
@@ -900,7 +939,25 @@ impl ai::Transcriber for CaptionAsr {
             id: "mcp-cue".into(),
             text: "Hello from MCP".into(),
             range: Some(audio.range),
-            timing: Vec::new(),
+            timing: ["Hello", "from", "MCP"]
+                .iter()
+                .enumerate()
+                .map(|(index, text)| {
+                    let duration = audio.range.end() - audio.range.start();
+                    ai::TimedText {
+                        text: (*text).into(),
+                        unit: ai::TimingUnit::Word,
+                        range: ai::SampleRange::new(
+                            audio.range.start() + duration * index as u64 / 3,
+                            audio.range.start() + duration * (index as u64 + 1) / 3,
+                        )
+                        .unwrap(),
+                        provenance: ai::Provenance::Native,
+                        speaker: None,
+                        confidence: None,
+                    }
+                })
+                .collect(),
             raw_tokens: Vec::new(),
         }])
     }

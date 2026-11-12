@@ -50,7 +50,10 @@ pub(crate) fn apply_command(result: CaptionsResult, start: Tick) -> Result<Comma
             source_asset: Some(result.asset),
             source_range: result.range,
             start,
-            content: project::ItemParams::Caption(project::CaptionParams { cues }),
+            content: project::ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues,
+            }),
         },
     })
 }

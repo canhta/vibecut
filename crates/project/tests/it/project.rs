@@ -260,6 +260,7 @@ fn populated(path: PathBuf) -> Project {
     data.canvas.fps = FrameRate::FPS_29_97;
     data.assets.push(source(path));
     let cue = Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "cue-1".into(),
         range: range(0, 10),
         source_lang: LanguageTag::parse("vi").unwrap(),
@@ -306,6 +307,7 @@ fn populated(path: PathBuf) -> Project {
         }),
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
+            word_highlight: false,
             cues: CueTrack {
                 styles: Vec::new(),
                 cues: vec![cue],

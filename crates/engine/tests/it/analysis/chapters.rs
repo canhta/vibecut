@@ -19,6 +19,7 @@ fn second(n: i64) -> Tick {
 
 fn cue(id: &str, start: i64, end: i64, language: &str, text: &str) -> captions::Cue {
     captions::Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: SourceRange::new(second(start), second(end)).unwrap(),
         source_lang: captions::LanguageTag::parse(language).unwrap(),
@@ -74,6 +75,7 @@ fn project() -> Arc<Project> {
             source_range: SourceRange::new(Tick::ZERO, second(3)).unwrap(),
             start: second(1),
             content: ItemParams::Caption(CaptionParams {
+                word_highlight: false,
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![

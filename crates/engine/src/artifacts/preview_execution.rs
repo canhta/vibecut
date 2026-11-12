@@ -60,6 +60,18 @@ pub(crate) fn preview(
         1024,
     )?))?;
     let accepted_revision = revision.clone();
+    let mut warning_settings = render::RenderSettings::from_project(&project);
+    let canvas = &project.data().canvas;
+    let long = canvas.width.max(canvas.height);
+    warning_settings.width =
+        (u64::from(canvas.width) * u64::from(MAX_PREVIEW_EDGE) / u64::from(long)).max(1) as u32;
+    warning_settings.height =
+        (u64::from(canvas.height) * u64::from(MAX_PREVIEW_EDGE) / u64::from(long)).max(1) as u32;
+    let word_highlight_warnings = render::Renderer::new(&project, warning_settings)?
+        .caption_word_warnings(
+            None,
+            &crate::ByteBudgetHooks::new(runner.memory_budget(), None),
+        )?;
     let (job, _) = runner.submit_for_session(
         session,
         JobSpec {
@@ -271,6 +283,7 @@ pub(crate) fn preview(
         },
     )?;
     Ok(ControlResult::JobAccepted {
+        word_highlight_warnings,
         job,
         revision: accepted_revision,
         paths: Vec::new(),

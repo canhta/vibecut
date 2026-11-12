@@ -206,11 +206,22 @@ struct BankEdit {
     focused: bool,
 }
 
+struct WordWarnings {
+    project: Arc<project::Project>,
+    item: ItemId,
+    languages: Vec<LanguageTag>,
+    fonts: usize,
+    used: u64,
+    preview: std::result::Result<project::CaptionWordWarnings, Arc<render::Error>>,
+    export: std::result::Result<project::CaptionWordWarnings, Arc<render::Error>>,
+}
+
 /// Panel state survives tab and locale changes; only Options enter preferences.
 pub struct Subtitles {
     pub(crate) models: crate::services::remote_models::AiPreferences,
     bank: Option<BankEdit>,
     bank_frame: Option<u64>,
+    word_warnings: Option<WordWarnings>,
     workflow: Arc<dyn Workflow>,
     budget: ByteBudget,
     active: Option<Active>,
@@ -266,6 +277,7 @@ impl Subtitles {
             models: Default::default(),
             bank: None,
             bank_frame: None,
+            word_warnings: None,
             workflow,
             budget,
             runner,

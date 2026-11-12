@@ -517,7 +517,11 @@ fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
                 .is_none(),
             "{control}"
         );
-        for id in ["subtitles.style.save", "subtitles.style.manage"] {
+        for id in [
+            "subtitles.style.save",
+            "subtitles.style.manage",
+            "subtitles.style.word_highlight",
+        ] {
             assert!(!h.state().action_enabled(id), "{control}");
             assert!(h.state_mut().activate(id).is_err(), "{control}");
             assert_eq!(h.state().session.project(), &before, "{control}");
@@ -996,6 +1000,7 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         .apply(Command::SetItemParam {
             item: second,
             content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
                 cues: CueTrack::default(),
             }),
         })
@@ -1075,7 +1080,11 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     );
     assert_eq!(h.state().session.project(), &before);
     assert_eq!(h.state().session.history_len(), history);
-    for id in ["subtitles.style.save", "subtitles.style.manage"] {
+    for id in [
+        "subtitles.style.save",
+        "subtitles.style.manage",
+        "subtitles.style.word_highlight",
+    ] {
         assert!(h.state_mut().activate(id).is_err());
     }
     assert!(h.state_mut().activate("subtitles.style.box").is_err());
@@ -1852,6 +1861,7 @@ impl Workflow for GenerateWorkflow {
                 source_range: range,
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
+                    word_highlight: false,
                     // Auto-detect resolves to a concrete spoken language; the
                     // fixture uses vi so the inserted cues stay realistic.
                     cues: fixture::cues(if options.source == "auto" {
@@ -2168,7 +2178,10 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         .session
         .apply(Command::SetItemParam {
             item,
-            content: ItemParams::Caption(project::CaptionParams { cues }),
+            content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues,
+            }),
         })
         .unwrap();
     h.run_steps(2);
@@ -2195,7 +2208,10 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         .session
         .apply(Command::SetItemParam {
             item,
-            content: ItemParams::Caption(project::CaptionParams { cues }),
+            content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues,
+            }),
         })
         .unwrap();
     h.run_steps(2);
@@ -2335,7 +2351,10 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
         .session
         .apply(Command::SetItemParam {
             item,
-            content: ItemParams::Caption(project::CaptionParams { cues: updated }),
+            content: ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues: updated,
+            }),
         })
         .unwrap();
     h.run_steps(3);
@@ -2442,4 +2461,153 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(track(h.state()).cues[0].texts.contains_key(&lang("en")));
     }
+}
+
+#[test]
+fn word_highlight_toggle_uses_selected_item_and_warning_clears_on_undo_disable_and_locale() {
+    for (locale, scale) in [
+        (Locale::En, 1.0),
+        (Locale::En, 2.0),
+        (Locale::Vi, 1.0),
+        (Locale::Vi, 2.0),
+    ] {
+        let mut e = editor("vi");
+        e.preferences.locale = locale;
+        let mut h = harness(e, scale);
+        h.run_steps(3);
+        click(&mut h, "subtitles.style.word_highlight");
+        let item = panel(h.state()).item.unwrap();
+        let value = h
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|value| value.id == item)
+            .unwrap();
+        assert!(matches!(&value.content,ItemParams::Caption(params) if params.word_highlight));
+        assert!(
+            h.query_all(By::new().predicate(|n| {
+                n.author_id()
+                    .is_some_and(|id| id.starts_with("subtitles.word_highlight.warning."))
+            }))
+            .next()
+            .is_some()
+        );
+        let output = std::env::var_os("CARGO_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
+            })
+            .join("ui-audit");
+        std::fs::create_dir_all(&output).unwrap();
+        h.render()
+            .unwrap()
+            .save(output.join(format!("captions-word-missing-{locale:?}@{scale}x.png")))
+            .unwrap();
+        h.state_mut().session.undo().unwrap();
+        h.run_steps(3);
+        assert!(
+            h.query_all(By::new().predicate(|n| {
+                n.author_id()
+                    .is_some_and(|id| id.starts_with("subtitles.word_highlight.warning."))
+            }))
+            .next()
+            .is_none()
+        );
+        h.render()
+            .unwrap()
+            .save(output.join(format!("captions-word-cleared-{locale:?}@{scale}x.png")))
+            .unwrap();
+        h.state_mut().session.redo().unwrap();
+        h.run_steps(3);
+        click(&mut h, "subtitles.style.word_highlight");
+        assert!(
+            h.query_all(By::new().predicate(|n| {
+                n.author_id()
+                    .is_some_and(|id| id.starts_with("subtitles.word_highlight.warning."))
+            }))
+            .next()
+            .is_none()
+        );
+        click(&mut h, "subtitles.cue.cue-0");
+        let field = "subtitles.text.cue-0.vi";
+        h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+            .focus();
+        h.run_steps(2);
+        let before = h.state().session.project().clone();
+        assert!(
+            h.state_mut()
+                .activate("subtitles.style.word_highlight")
+                .is_err()
+        );
+        assert!(
+            Arc::ptr_eq(&before, h.state().session.project()),
+            "refuse before inline preflush"
+        );
+    }
+}
+
+#[test]
+fn verified_word_warning_tracks_manual_source_changes_and_actual_undo() {
+    let mut e = fixture::editor_with_cues("vi", fixture::verified_cues());
+    e.preferences.subtitles.bilingual = true;
+    let mut h = harness(e, 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.style.word_highlight");
+    let warning = || {
+        By::new().predicate(|n| {
+            n.author_id()
+                .is_some_and(|id| id.starts_with("subtitles.word_highlight.warning."))
+        })
+    };
+    assert!(h.query_all(warning()).next().is_none());
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel
+            .edit_text(session, &"cue-0".into(), lang("vi"), "Xin chào")
+            .unwrap()
+    });
+    h.run_steps(3);
+    assert!(
+        h.query_all(warning()).next().is_some(),
+        "same-count edited source is not alignment proof"
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert!(h.query_all(warning()).next().is_none());
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+        panel.select_cue(session, 1, true, false).unwrap();
+        panel.merge(session).unwrap();
+    });
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    let value = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|value| value.id == item)
+        .unwrap();
+    let ItemParams::Caption(params) = &value.content else {
+        panic!("caption");
+    };
+    let captions::CueWordTiming::Words { records, .. } = &params.cues.cues[0].word_timing else {
+        panic!("native evidence lost on manual merge");
+    };
+    assert_eq!(records.len(), 4);
+    assert!(
+        h.query_all(warning()).next().is_some(),
+        "manual merge preserves edited protection"
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert!(h.query_all(warning()).next().is_none());
 }

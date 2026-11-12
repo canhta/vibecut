@@ -195,6 +195,19 @@ impl Subtitles {
             "subtitles.style.save" | "subtitles.style.manage" => {
                 self.open_bank(session, at, id == "subtitles.style.save")?;
             }
+            "subtitles.style.word_highlight" => {
+                if !self.style_available(session) {
+                    return Err(Error::Invalid("caption style unavailable"));
+                }
+                let (item, params) = self
+                    .caption(session)
+                    .ok_or(Error::Invalid("caption item"))?;
+                session.apply(Command::SetCaptionWordHighlight {
+                    item: item.id,
+                    enabled: !params.word_highlight,
+                })?;
+                self.refresh(session);
+            }
             "subtitles.style.outline" | "subtitles.style.box" => {
                 if !self.style_available(session) {
                     return Err(Error::Invalid("caption style unavailable"));
@@ -389,9 +402,17 @@ impl Subtitles {
         if self.busy() || session.transaction_active() {
             return Err(Error::Invalid("caption edit busy"));
         }
+        let word_highlight = self
+            .caption(session)
+            .ok_or(Error::Invalid("caption item"))?
+            .1
+            .word_highlight;
         session.apply(Command::SetItemParam {
             item: self.item.ok_or(Error::Invalid("caption item"))?,
-            content: ItemParams::Caption(project::CaptionParams { cues }),
+            content: ItemParams::Caption(project::CaptionParams {
+                word_highlight,
+                cues,
+            }),
         })?;
         self.drafts.clear();
         self.refresh(session);
@@ -702,6 +723,8 @@ impl Subtitles {
             .get(first..=last)
             .ok_or(Error::Invalid("cue range"))?;
         let mut merged = selected.first().ok_or(Error::Invalid("cue range"))?.clone();
+        merged.word_timing =
+            captions::CueWordTiming::joined(&selected.iter().collect::<Vec<_>>(), "\n")?;
         merged.word_ranges = selected
             .iter()
             .flat_map(|c| c.word_ranges.iter().copied())

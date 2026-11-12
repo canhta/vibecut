@@ -29,7 +29,20 @@ pub(crate) fn run_job(
         params,
         true,
     )? {
-        ControlResult::JobAccepted { job, .. } => job,
+        ControlResult::JobAccepted {
+            job,
+            word_highlight_warnings,
+            ..
+        } => {
+            if !word_highlight_warnings.warnings.is_empty()
+                || word_highlight_warnings.additional > 0
+            {
+                if let Ok(value) = serde_json::to_string(&word_highlight_warnings) {
+                    eprintln!("{value}");
+                }
+            }
+            job
+        }
         _ => return Err(CliError::Rejected("command did not start a job")),
     };
     wait_for_job(runner, job)?;

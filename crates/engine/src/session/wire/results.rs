@@ -47,6 +47,7 @@ pub enum ControlResult {
         paths: super::ChapterSidecars,
     },
     JobAccepted {
+        word_highlight_warnings: project::CaptionWordWarnings,
         job: JobId,
         revision: Revision,
         paths: Vec<std::path::PathBuf>,

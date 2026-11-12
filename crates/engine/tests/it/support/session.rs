@@ -214,6 +214,7 @@ pub(crate) fn word_cue(
         .unwrap_or_default()
         .join(" ");
     captions::Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),
@@ -247,6 +248,7 @@ pub(crate) fn caption_words_item(
         source_range: range(source.0, source.1),
         start: Tick(start),
         content: ItemParams::Caption(project::CaptionParams {
+            word_highlight: false,
             cues: captions::CueTrack {
                 styles: Vec::new(),
                 cues,

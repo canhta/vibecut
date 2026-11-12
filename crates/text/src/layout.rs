@@ -7,7 +7,8 @@ mod breaks;
 mod paragraph;
 
 use crate::fonts::{self, FaceId};
-use paragraph::{ParagraphContext, append_paragraph, canonical_text, content_bounds};
+pub use paragraph::canonical_text;
+use paragraph::{ParagraphContext, append_paragraph, content_bounds};
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -81,6 +82,8 @@ pub struct Glyph {
     pub size: f32,
     /// UTF-8 byte offset of the glyph's cluster in [`Layout::text`].
     pub cluster: usize,
+    /// Exclusive end supplied by the actual shaping run, in canonical text bytes.
+    pub cluster_end: usize,
     pub synth_bold: bool,
     pub synth_italic: bool,
 }
@@ -123,6 +126,24 @@ pub struct Layout {
     pub overflow: bool,
 }
 
+/// Source grapheme boundaries paired with byte offsets after the layout's exact
+/// line-ending/NFC normalization. Input shares layout's 16 MiB ceiling.
+pub fn canonical_boundaries(source: &str) -> Result<Vec<(usize, usize)>, TextError> {
+    if source.len() > MAX_TEXT_BYTES {
+        return Err(TextError::TextTooLarge {
+            limit: MAX_TEXT_BYTES,
+        });
+    }
+    let mut result = Vec::with_capacity(source.chars().count().saturating_add(1));
+    result.push((0, 0));
+    let mut offset = 0;
+    for (start, grapheme) in source.grapheme_indices(true) {
+        offset += canonical_text(grapheme).len();
+        result.push((start + grapheme.len(), offset));
+    }
+    Ok(result)
+}
+
 /// A caret position in layout pixels with y down.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Caret {
@@ -137,6 +158,51 @@ pub struct Caret {
 }
 
 impl Layout {
+    /// Whether a canonical byte span contains whole shaped clusters and graphemes.
+    /// A word crossing a ligature or combining cluster cannot be painted independently.
+    pub fn certifies_span(&self, span: Range<usize>) -> bool {
+        self.certifies_spans(&[(span.start, span.end)])
+    }
+
+    /// Certify ordered, disjoint canonical spans against the same shaped glyphs.
+    /// Visits each glyph once with ordered span lookup, avoiding words times glyphs.
+    pub fn certifies_spans(&self, spans: &[(usize, usize)]) -> bool {
+        let boundaries: std::collections::BTreeSet<_> = self
+            .text
+            .grapheme_indices(true)
+            .map(|(byte, _)| byte)
+            .chain(std::iter::once(self.text.len()))
+            .collect();
+        let mut previous = 0;
+        for &(start, end) in spans {
+            if start < previous
+                || start >= end
+                || !boundaries.contains(&start)
+                || !boundaries.contains(&end)
+            {
+                return false;
+            }
+            previous = end;
+        }
+        let mut covered = vec![false; spans.len()];
+        for glyph in &self.glyphs {
+            let index = spans.partition_point(|&(_, end)| end <= glyph.cluster);
+            let Some(&(start, end)) = spans.get(index) else {
+                continue;
+            };
+            if glyph.cluster_end <= start {
+                continue;
+            }
+            if glyph.id == 0 || glyph.cluster < start || glyph.cluster_end > end {
+                return false;
+            }
+            if let Some(value) = covered.get_mut(index) {
+                *value = true;
+            }
+        }
+        covered.into_iter().all(|value| value)
+    }
+
     /// Caret at a character index in `source`, the string this layout was built from.
     ///
     /// Indices past the end clamp to the text end. A position inside a grapheme moves to

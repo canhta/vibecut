@@ -77,6 +77,7 @@ fn text(value: &str) -> CueText {
 }
 fn cue(id: &str, start: i64, end: i64, entries: &[(&str, &str)]) -> Cue {
     Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: range(start, end),
         source_lang: lang("vi"),
@@ -797,6 +798,7 @@ fn bilingual_ordered_segments_export_mp4_and_subtitle_sidecars() {
     let cues = CueTrack {
         styles: Vec::new(),
         cues: vec![Cue {
+            word_timing: captions::CueWordTiming::Unverified,
             id: "speech".into(),
             range: short_range(1, 8),
             source_lang: lang("vi"),
@@ -1189,6 +1191,7 @@ fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
             CueTrack {
                 styles: Vec::new(),
                 cues: vec![Cue {
+                    word_timing: captions::CueWordTiming::Unverified,
                     id: "speech".into(),
                     range: short_range(1, 3),
                     source_lang: lang("vi"),

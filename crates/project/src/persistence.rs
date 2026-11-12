@@ -17,7 +17,7 @@ use bounds::{MAX_BYTES, Writer, check};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'static str,

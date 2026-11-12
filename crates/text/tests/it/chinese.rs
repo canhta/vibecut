@@ -75,6 +75,7 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
     assert!(!simplified_ids.is_empty() && !traditional_ids.is_empty());
 
     let paint = Paint {
+        span_fill: None,
         fill: Color::WHITE,
         outline: Some(Outline {
             color: Color::BLACK,

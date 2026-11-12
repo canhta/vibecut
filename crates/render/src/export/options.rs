@@ -202,6 +202,40 @@ impl OutputOptions {
     pub fn profile_fits(profile: media::H264Profile, container: media::Container) -> bool {
         profile == media::H264Profile::Automatic || !matches!(container, media::Container::WebM)
     }
+    /// Safe word-highlight preflight for the exact selected scenes and output geometry.
+    /// Shares the immutable caption reader and shaped fit with preview/burn; no media IO.
+    pub fn caption_word_warnings(
+        self,
+        project: &Project,
+        settings: &ExportSettings,
+        hooks: &dyn crate::ExecutionHooks,
+    ) -> Result<project::CaptionWordWarnings> {
+        let mut configured = settings.clone();
+        self.apply(&mut configured)?;
+        let mut result = project::CaptionWordWarnings::default();
+        for (scene, _) in self.ranges(project)? {
+            let snapshot = project.for_scene(scene)?;
+            let warnings = crate::Renderer::new(&snapshot, configured.render.clone())?
+                .caption_word_warnings(None, hooks)?;
+            result.additional = result.additional.saturating_add(warnings.additional);
+            for warning in warnings.warnings {
+                if result.warnings.iter().any(|prior| {
+                    prior.item == warning.item
+                        && prior.language == warning.language
+                        && prior.reason == warning.reason
+                }) {
+                    continue;
+                }
+                if result.warnings.len() < 64 {
+                    result.warnings.push(warning);
+                } else {
+                    result.additional = result.additional.saturating_add(1);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     pub fn apply(self, settings: &mut ExportSettings) -> Result<()> {
         self.validate()?;
         if !self.codec.fits(settings.container)

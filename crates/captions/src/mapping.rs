@@ -161,13 +161,38 @@ impl EditMapping {
     ) -> Result<CueTrack, Error> {
         let mut ids = std::collections::BTreeSet::new();
         let mut cues = Vec::new();
+        let mut word_bytes = 0usize;
         for cue in &source.cues {
             if !ids.insert(cue.id.as_str()) {
                 return Err(Error::Invalid("duplicate source cue identity"));
             }
             for range in self.map_range(cue.range)? {
+                word_bytes = word_bytes
+                    .checked_add(cue.word_timing.byte_cost()?)
+                    .filter(|bytes| *bytes <= crate::timing::LIMIT)
+                    .ok_or(Error::TooLarge)?;
                 let mut fragment = cue.clone();
                 fragment.range = range.output;
+                if let crate::CueWordTiming::Words { records, .. } = &mut fragment.word_timing {
+                    for word in records {
+                        word.projection = if let crate::WordProjection::Visible(word_range) =
+                            word.projection
+                        {
+                            let start = word_range.start().max(range.source.start());
+                            let end = word_range.end().min(range.source.end());
+                            if start < end {
+                                crate::WordProjection::Visible(SourceRange::new(
+                                    translate(start, range.source.start(), range.output.start())?,
+                                    translate(end, range.source.start(), range.output.start())?,
+                                )?)
+                            } else {
+                                crate::WordProjection::Clipped
+                            }
+                        } else {
+                            crate::WordProjection::Clipped
+                        };
+                    }
+                }
                 fragment.id = identity(cue, range);
                 cues.push(fragment);
             }
@@ -217,6 +242,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &(start, end))| Cue {
+                    word_timing: crate::CueWordTiming::Unverified,
                     id: format!("nguồn/{i}").into(),
                     range: range(start, end),
                     source_lang: language.clone(),

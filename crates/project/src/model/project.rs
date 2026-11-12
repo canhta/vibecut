@@ -475,6 +475,9 @@ fn validate(data: &ProjectData) -> Result<()> {
                     }
                     let mut ids = BTreeSet::new();
                     for cue in &p.cues.cues {
+                        cue.word_timing
+                            .validate()
+                            .map_err(|_| Error::Invalid("cue word correspondence"))?;
                         text(&cue.id)?;
                         if !ids.insert(&cue.id) {
                             return Err(Error::Invalid("duplicate cue ID"));

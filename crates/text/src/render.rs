@@ -77,10 +77,20 @@ pub enum Decoration {
     LineThrough,
 }
 
+/// A canonical byte span whose whole shaped glyph fill uses another RGB colour.
+/// Alpha remains the base fill alpha; outlines, boxes and decorations stay unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpanFill {
+    pub start: usize,
+    pub end: usize,
+    pub rgb: [u8; 3],
+}
+
 /// How a layout is painted.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Paint {
     pub fill: Color,
+    pub span_fill: Option<SpanFill>,
     pub outline: Option<Outline>,
     pub background: Option<Rectangle>,
     pub decoration: Decoration,
@@ -90,6 +100,7 @@ impl Default for Paint {
     fn default() -> Self {
         Self {
             fill: Color::WHITE,
+            span_fill: None,
             outline: None,
             background: None,
             decoration: Decoration::None,
@@ -108,6 +119,8 @@ pub struct Image {
 /// Invalid canvas or paint input.
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
+    #[error("fill span crosses a shaped cluster boundary")]
+    InvalidSpan,
     #[error("text coverage cancelled")]
     Cancelled,
     #[error("coverage must be finite and in 0..=1")]
@@ -249,6 +262,11 @@ pub fn render(
         return Err(RenderError::InvalidRectangle);
     }
 
+    if let Some(span) = paint.span_fill
+        && !layout.certifies_span(span.start..span.end)
+    {
+        return Err(RenderError::InvalidSpan);
+    }
     let width = canvas.width as usize;
     let height = canvas.height as usize;
     let mut image = Image {
@@ -273,9 +291,16 @@ pub fn render(
     }
 
     let mut fill_mask = Mask::new(width, height);
+    let mut span_mask = paint.span_fill.map(|_| Mask::new(width, height));
     for glyph in &layout.glyphs {
         let path = glyph_path(glyph);
         fill_into(&path, &mut fill_mask, ox + glyph.x, oy + glyph.y);
+        if let (Some(span), Some(mask)) = (paint.span_fill, span_mask.as_mut())
+            && glyph.cluster >= span.start
+            && glyph.cluster_end <= span.end
+        {
+            fill_into(&path, mask, ox + glyph.x, oy + glyph.y);
+        }
     }
     if paint.decoration != Decoration::None {
         for line in &layout.lines {
@@ -307,15 +332,60 @@ pub fn render(
         let stroke = mask::stroke(&fill_mask, outline.width, outline.kind)?;
         if outline.kind == StrokeKind::Outer {
             blend(&mut image, &stroke, outline.color);
-            blend(&mut image, &fill_mask, paint.fill);
+            blend_fill(
+                &mut image,
+                &fill_mask,
+                paint.fill,
+                span_mask.as_ref().zip(paint.span_fill),
+            );
         } else {
-            blend(&mut image, &fill_mask, paint.fill);
+            blend_fill(
+                &mut image,
+                &fill_mask,
+                paint.fill,
+                span_mask.as_ref().zip(paint.span_fill),
+            );
             blend(&mut image, &stroke, outline.color);
         }
     } else {
-        blend(&mut image, &fill_mask, paint.fill);
+        blend_fill(
+            &mut image,
+            &fill_mask,
+            paint.fill,
+            span_mask.as_ref().zip(paint.span_fill),
+        );
     }
     Ok(image)
+}
+
+fn blend_fill(image: &mut Image, mask: &Mask, color: Color, span: Option<(&Mask, SpanFill)>) {
+    let Some((active, span)) = span else {
+        blend(image, mask, color);
+        return;
+    };
+    // Composite coverage once. Splitting the paint into two over operations would
+    // antialias shared edges twice and change the base alpha.
+    for (index, coverage) in mask.a.iter().enumerate() {
+        let coverage = coverage.clamp(0.0, 1.0);
+        let alpha = f32::from(color.a) / 255.0 * coverage;
+        if alpha <= 0.0 {
+            continue;
+        }
+        let ratio = (active.a.get(index).copied().unwrap_or_default() / coverage).clamp(0.0, 1.0);
+        let Some(pixel) = index
+            .checked_mul(4)
+            .and_then(|offset| image.pixels.get_mut(offset..offset.saturating_add(4)))
+        else {
+            continue;
+        };
+        for (channel, base) in [color.r, color.g, color.b].into_iter().enumerate() {
+            let source = f32::from(base) + (f32::from(span.rgb[channel]) - f32::from(base)) * ratio;
+            pixel[channel] = (source * alpha + f32::from(pixel[channel]) * (1.0 - alpha))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
+        pixel[3] = premultiply(255, alpha, pixel[3], 1.0 - alpha);
+    }
 }
 
 fn blend(image: &mut Image, mask: &Mask, color: Color) {
@@ -381,6 +451,7 @@ mod tests {
             },
             (20.0, 40.0),
             &Paint {
+                span_fill: None,
                 fill: Color::rgb(255, 255, 255),
                 outline: Some(Outline {
                     color: Color::rgb(0, 0, 0),
@@ -423,6 +494,7 @@ mod tests {
             canvas,
             (20.0, 30.0),
             &Paint {
+                span_fill: None,
                 fill: Color::WHITE,
                 outline: None,
                 background: None,
@@ -435,6 +507,7 @@ mod tests {
             canvas,
             (20.0, 30.0),
             &Paint {
+                span_fill: None,
                 fill: Color::WHITE,
                 outline: Some(Outline {
                     color: Color::BLACK,

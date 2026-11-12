@@ -412,6 +412,7 @@ fn cue_track_shares_one_bounded_style_table() {
     assert_eq!(track.intern_style(style.clone()), Some(id));
     assert_eq!(track.styles.len(), 1);
     track.cues.push(Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "1".into(),
         range: SourceRange::new(Tick::ZERO, Tick(1)).unwrap(),
         source_lang: LanguageTag::parse("en").unwrap(),

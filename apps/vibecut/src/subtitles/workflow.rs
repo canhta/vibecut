@@ -237,7 +237,10 @@ fn insert(
             source_asset: asset,
             source_range: range,
             start,
-            content: project::ItemParams::Caption(project::CaptionParams { cues }),
+            content: project::ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
+                cues,
+            }),
         },
     })
 }

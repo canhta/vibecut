@@ -26,8 +26,10 @@ pub use fonts::{
     is_available, register, resolve, style_name,
 };
 pub use layout::{
-    Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout,
-    word_range,
+    Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError,
+    canonical_boundaries, canonical_text, layout, word_range,
 };
 pub use mask::{StrokeKind, coverage_signed_distance, coverage_signed_distance_bytes};
-pub use render::{Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, render};
+pub use render::{
+    Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, SpanFill, render,
+};

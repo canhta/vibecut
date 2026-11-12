@@ -465,6 +465,7 @@ impl<'a> Renderer<'a> {
                                 decoration: p.decoration,
                             },
                             background,
+                            None,
                             hooks,
                         )?;
                         draw(&mut out, &image, grown, hooks)?;
@@ -475,45 +476,32 @@ impl<'a> Renderer<'a> {
                                 c.range.start() <= source_at && source_at < c.range.end()
                             })
                         {
-                            let mut selected: Vec<_> = if self.settings.caption_languages.is_empty()
-                            {
-                                cue.texts
-                                    .get(&cue.source_lang)
-                                    .or_else(|| cue.texts.values().next())
-                                    .into_iter()
-                                    .collect()
+                            let _word_work = if p.word_highlight {
+                                Some(
+                                    hooks.reserve(
+                                        MemoryKind::Compositor,
+                                        128 + cue
+                                            .texts
+                                            .values()
+                                            .map(|value| value.text.as_str().len() as u64 * 32)
+                                            .sum::<u64>()
+                                            + match &cue.word_timing {
+                                                captions::CueWordTiming::Words {
+                                                    records, ..
+                                                } => records.len() as u64 * 64,
+                                                _ => 0,
+                                            },
+                                    )?,
+                                )
                             } else {
-                                self.settings
-                                    .caption_languages
-                                    .iter()
-                                    .map(|language| {
-                                        cue.texts.get(language).ok_or(Error::Unsupported(
-                                            "requested caption language unavailable",
-                                        ))
-                                    })
-                                    .collect::<Result<Vec<_>>>()?
+                                None
                             };
-                            selected.retain(|text| !text.text.as_str().trim().is_empty());
-                            let bytes = selected
-                                .iter()
-                                .try_fold(0usize, |sum, text| {
-                                    sum.checked_add(text.text.as_str().len() + 1)
-                                })
-                                .ok_or(Error::Invalid("caption text bytes"))?;
-                            if bytes > 16384 {
-                                return Err(Error::Invalid("render caption byte limit"));
-                            }
-                            if !selected.is_empty() {
-                                let _joined =
-                                    hooks.reserve(MemoryKind::Compositor, bytes as u64)?;
-                                let mut value = String::new();
-                                value.try_reserve_exact(bytes)?;
-                                for text in selected {
-                                    if !value.is_empty() {
-                                        value.push('\n');
-                                    }
-                                    value.push_str(text.text.as_str());
-                                }
+                            let (value, _joined) = super::caption::display_text(
+                                cue,
+                                &self.settings.caption_languages,
+                                hooks,
+                            )?;
+                            if !value.is_empty() {
                                 let cue_style = p.cues.style_of(cue);
                                 let style = self.settings.caption_style.for_cue(cue_style);
                                 let caption_placement = style.cue_placement(cue_style);
@@ -535,6 +523,19 @@ impl<'a> Renderer<'a> {
                                         ..Default::default()
                                     },
                                     background,
+                                    Some((
+                                        &super::caption::word_plan(
+                                            p,
+                                            cue,
+                                            &self.settings.caption_languages,
+                                            p.cues.cues.iter().any(|other| {
+                                                !std::ptr::eq(other, cue)
+                                                    && other.range.start() < cue.range.end()
+                                                    && cue.range.start() < other.range.end()
+                                            }),
+                                        ),
+                                        source_at,
+                                    )),
                                     hooks,
                                 )?;
                                 draw(&mut out, &image, caption_placement, hooks)?;
@@ -598,6 +599,7 @@ impl<'a> Renderer<'a> {
                                         line_height: mask.line_height * 1080.0 / canvas_height,
                                         ..Default::default()
                                     },
+                                    None,
                                     None,
                                     hooks,
                                 )
@@ -728,26 +730,15 @@ impl<'a> Renderer<'a> {
         caption: Option<&CaptionStyle>,
         face: TextFace<'_>,
         background: Option<TextBox>,
+        word_plan: Option<(&super::caption::WordPlan, time::Tick)>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<Image>> {
-        let font = face.family;
-        if value.len() > 16384 {
-            return Err(Error::Invalid("render text byte limit"));
-        }
-        let w = (f64::from(self.settings.width) * placement.destination.width)
-            .round()
-            .max(1.0) as u32;
-        let h = (f64::from(self.settings.height) * placement.destination.height)
-            .round()
-            .max(1.0) as u32;
-        let scale = if caption.is_some() {
-            self.settings.height as f32 / 1080.0
-        } else {
-            self.settings.width as f32 / self.project.data().canvas.width as f32
-        };
-        let size = size * scale;
-        let font_style = caption.map_or(face.style, |s| s.font_style.as_str());
-        let key_bytes = (value.len() + font.len() + font_style.len()) as u64 + 512;
+        let key_bytes = (value.len()
+            + face.family.len()
+            + caption.map_or(face.style, |s| s.font_style.as_str()).len())
+            as u64
+            + 512
+            + word_plan.map_or(0, |(plan, _)| plan.spans.len() as u64 * 32);
         let key_lease = match hooks.reserve(MemoryKind::Compositor, key_bytes) {
             Err(Error::Budget { .. }) if !self.text_cache.is_empty() => {
                 self.clear_text_cache();
@@ -755,26 +746,9 @@ impl<'a> Renderer<'a> {
             }
             result => result?,
         };
-        let key = TextKey {
-            value: value.to_owned(),
-            size: size.to_bits(),
-            fill,
-            width: w,
-            height: h,
-            font: font.into(),
-            style: font_style.into(),
-            letter_spacing: (face.letter_spacing * scale).to_bits(),
-            line_height: (face.line_height * scale).to_bits(),
-            fonts: text::generation(),
-            outline: caption
-                .and_then(|s| s.outline.as_ref())
-                .map(|o| ((o.width * scale).to_bits(), o.color)),
-            background: background.map(TextBox::key),
-            align: face.align,
-            decoration: face.decoration,
-            position: caption.map_or(CaptionPosition::Top, |s| s.position),
-            max_lines: caption.map(|s| s.max_lines),
-        };
+        let key = self.text_key(
+            value, size, fill, placement, caption, face, background, word_plan,
+        )?;
         self.cache_clock = self.cache_clock.saturating_add(1);
         if let Some(entry) = self.text_cache.get_mut(&key) {
             entry.stamp = self.cache_clock;
@@ -790,7 +764,7 @@ impl<'a> Renderer<'a> {
             result => result?,
         };
         let image = Arc::new(image);
-        let bytes = Image::bytes(w, h)?
+        let bytes = Image::bytes(key.width, key.height)?
             .checked_add(key_bytes)
             .ok_or(Error::Invalid("text cache bytes"))?;
         if self.settings.text_cache_entries == 0 || bytes > self.settings.text_cache_bytes {
@@ -821,6 +795,184 @@ impl<'a> Renderer<'a> {
         self.cache_stats.bytes += bytes;
         self.cache_stats.entries = self.text_cache.len();
         Ok(image)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn text_key(
+        &self,
+        value: &str,
+        size: f32,
+        fill: [u8; 4],
+        placement: Placement,
+        caption: Option<&CaptionStyle>,
+        face: TextFace<'_>,
+        background: Option<TextBox>,
+        word_plan: Option<(&super::caption::WordPlan, time::Tick)>,
+    ) -> Result<TextKey> {
+        let font = face.family;
+        if value.len() > 16384 {
+            return Err(Error::Invalid("render text byte limit"));
+        }
+        let w = (f64::from(self.settings.width) * placement.destination.width)
+            .round()
+            .max(1.0) as u32;
+        let h = (f64::from(self.settings.height) * placement.destination.height)
+            .round()
+            .max(1.0) as u32;
+        let scale = if caption.is_some() {
+            self.settings.height as f32 / 1080.0
+        } else {
+            self.settings.width as f32 / self.project.data().canvas.width as f32
+        };
+        let size = size * scale;
+        let font_style = caption.map_or(face.style, |s| s.font_style.as_str());
+        Ok(TextKey {
+            value: value.to_owned(),
+            word_spans: word_plan.map_or_else(Vec::new, |(plan, _)| {
+                plan.spans
+                    .iter()
+                    .filter(|(range, _, _)| range.is_some())
+                    .map(|&(_, start, end)| (start, end))
+                    .collect()
+            }),
+            active_word: word_plan.and_then(|(plan, at)| {
+                plan.spans
+                    .iter()
+                    .find(|(range, _, _)| {
+                        range.is_some_and(|range| range.start() <= at && at < range.end())
+                    })
+                    .map(|&(_, start, end)| (start, end, [255, 215, 0]))
+            }),
+            size: size.to_bits(),
+            fill,
+            width: w,
+            height: h,
+            font: font.into(),
+            style: font_style.into(),
+            letter_spacing: (face.letter_spacing * scale).to_bits(),
+            line_height: (face.line_height * scale).to_bits(),
+            fonts: text::generation(),
+            outline: caption
+                .and_then(|s| s.outline.as_ref())
+                .map(|o| ((o.width * scale).to_bits(), o.color)),
+            background: background.map(TextBox::key),
+            align: face.align,
+            decoration: face.decoration,
+            position: caption.map_or(CaptionPosition::Top, |s| s.position),
+            max_lines: caption.map(|s| s.max_lines),
+        })
+    }
+
+    /// Recompute bounded safe warnings for this immutable project and display settings.
+    /// Does not run jobs, decode media or mutate history. Call on committed-state changes.
+    pub fn caption_word_warnings(
+        &self,
+        target: Option<project::ItemId>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<project::CaptionWordWarnings> {
+        use captions::WordHighlightReason;
+        let mut result = project::CaptionWordWarnings::default();
+        for track in self
+            .project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| !track.hidden)
+        {
+            for item in track.items.iter().filter(|item| !item.hidden) {
+                let ItemParams::Caption(params) = &item.content else {
+                    continue;
+                };
+                if !params.word_highlight || target.is_some_and(|target| target != item.id) {
+                    continue;
+                }
+                let _intervals =
+                    hooks.reserve(MemoryKind::Compositor, params.cues.cues.len() as u64 * 40)?;
+                let ambiguous = super::caption::ambiguous_cues(params);
+                for (index, cue) in params.cues.cues.iter().enumerate() {
+                    check(hooks)?;
+                    let _work = hooks.reserve(
+                        MemoryKind::Compositor,
+                        65536
+                            + cue
+                                .texts
+                                .values()
+                                .map(|text| text.text.as_str().len() as u64)
+                                .sum::<u64>()
+                                * 512
+                            + match &cue.word_timing {
+                                captions::CueWordTiming::Words { records, .. } => {
+                                    records.len() as u64 * 64
+                                }
+                                _ => 0,
+                            },
+                    )?;
+                    let plan = super::caption::word_plan(
+                        params,
+                        cue,
+                        &self.settings.caption_languages,
+                        ambiguous.get(index).copied().unwrap_or(true),
+                    );
+                    let mut reason = plan.reason;
+                    if reason.is_none() {
+                        let (value, _joined) = super::caption::display_text(
+                            cue,
+                            &self.settings.caption_languages,
+                            hooks,
+                        )?;
+                        let cue_style = params.cues.style_of(cue);
+                        let style = self.settings.caption_style.for_cue(cue_style);
+                        let scale = self.settings.height as f32 / 1080.0;
+                        let key = self.text_key(
+                            &value,
+                            style.size,
+                            style.color,
+                            style.cue_placement(cue_style),
+                            Some(&style),
+                            TextFace {
+                                family: &style.font,
+                                style: &style.font_style,
+                                align: super::caption::align(cue_style),
+                                decoration: super::caption::decoration(cue_style),
+                                ..Default::default()
+                            },
+                            style.background.as_ref().map(|b| {
+                                TextBox::uniform(b.padding * scale, b.radius * scale, b.color)
+                            }),
+                            Some((&plan, time::Tick::ZERO)),
+                        )?;
+                        let layout = super::raster::fitted_layout(&key, hooks)?;
+                        if !layout.certifies_spans(&key.word_spans) {
+                            reason = Some(WordHighlightReason::ShapedBoundary);
+                        }
+                    }
+                    if let Some(reason) = reason {
+                        let language = match &cue.word_timing {
+                            captions::CueWordTiming::Words { language, .. } => language,
+                            _ => &cue.source_lang,
+                        };
+                        if result.warnings.iter().any(|warning| {
+                            warning.item == item.id
+                                && warning.language == *language
+                                && warning.reason == reason
+                        }) {
+                            continue;
+                        }
+                        if result.warnings.len() < 64 {
+                            result.warnings.push(project::CaptionWordWarning {
+                                item: item.id,
+                                cue: index,
+                                language: language.clone(),
+                                reason,
+                            });
+                        } else {
+                            result.additional = result.additional.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 }
 /// Maps the item's source-normalized crop into the placement's source window so

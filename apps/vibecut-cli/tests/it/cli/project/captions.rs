@@ -65,6 +65,27 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
     assert_eq!(style.alignment.numpad, 2);
     assert!(style.bold);
     assert_eq!(params.cues.styles.len(), 1);
+    assert!(!params.word_highlight, "imports never opt in");
+    let enabled = cli(&[
+        os("exec"),
+        project.as_os_str(),
+        os("captions.set_word_highlight"),
+        os(&serde_json::json!({"item":item.id,"enabled":true}).to_string()),
+        os("--json"),
+    ]);
+    assert_eq!(code(&enabled), 0, "{:?}", enabled);
+    let saved = project::load(&project).unwrap().project;
+    let saved_item = saved
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|value| value.id == item.id)
+        .unwrap();
+    assert!(
+        matches!(&saved_item.content,project::ItemParams::Caption(params) if params.word_highlight)
+    );
     // The saved command feeds the real CLI exporter; no preset-only export parser.
     for (preset, border) in [("outline", 1), ("box", 3)] {
         let args = serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":preset}})
@@ -240,6 +261,16 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 os("--json"),
             ]);
             assert_eq!(code(&exported), 0, "{:?}", exported);
+            let diagnostics = stdout_json(&exported);
+            assert_eq!(
+                diagnostics["word_highlight_warnings"]["warnings"][0]["reason"],
+                "missing_timing"
+            );
+            assert!(
+                !diagnostics["word_highlight_warnings"]
+                    .to_string()
+                    .contains("Hello")
+            );
             let frames = crate::cli::fixtures::decoded_rgb(&output, 360, 640, &[0, 1]);
             assert!(
                 frames[0].iter().all(|value| *value < 10),
@@ -431,4 +462,132 @@ fn captions_import_rejects_non_ass_input() {
     ]);
     assert_eq!(code(&output), 2);
     assert_eq!(error_json(&output)["error"]["code"], "usage");
+}
+
+#[test]
+fn cli_native_word_opt_in_survives_save_and_paints_the_encoded_source_word() {
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    use std::sync::{Arc, Mutex, atomic::AtomicUsize};
+    use time::TICKS_PER_SECOND;
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("synthetic-word-source.wav");
+    crate::cli::fixtures::generate_audio(&source);
+    let asset = media::SourceAsset::import(media::AssetId(1), source).unwrap();
+    let language = engine::providers::parse_language("en").unwrap();
+    // Reuse the genuine offline word-provider seam, not an imported cue promoted by count.
+    let config = ai::ProviderConfig::new(
+        "offline-asr".into(),
+        "word-fixture".into(),
+        "cli-v1".into(),
+        ai::Location::Remote {
+            backend: "fixture".into(),
+            base_url: "https://fixture.invalid".into(),
+            auth_ref: "fixture".into(),
+        },
+    )
+    .unwrap();
+    let providers = engine::providers::Providers::from_parts(
+        engine::providers::TranscriptionProvider::ElevenLabs {
+            model: "word-fixture".into(),
+        },
+        "transcribe".into(),
+        Arc::new(crate::mcp::CaptionAsr {
+            config,
+            calls: Arc::new(AtomicUsize::new(0)),
+        }),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (cache, _) = engine::cache::ArtifactCache::open(
+        &dir.path().join("cache"),
+        engine::ByteBudget::new(256 << 20).unwrap(),
+        16,
+    )
+    .unwrap();
+    let cancel = engine::transcript::Cancellation::new();
+    let acquired = engine::transcript::transcribe(
+        &asset,
+        Tick(TICKS_PER_SECOND),
+        &language,
+        &providers,
+        None,
+        &Mutex::new(cache),
+        &engine::providers::AllowAll,
+        &engine::transcript::SilentProgress,
+        &cancel,
+        &cancel,
+    )
+    .unwrap();
+    let session = engine::transcript::build_session(
+        &asset,
+        &acquired.cues,
+        Tick(TICKS_PER_SECOND),
+        false,
+        None,
+    )
+    .unwrap();
+    let item = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, project::ItemParams::Caption(_)))
+        .unwrap()
+        .id;
+    let path = dir.path().join("native.vibecut");
+    fs::write(&path, project::encode(session.project(), true).unwrap()).unwrap();
+    let settings = serde_json::to_string(&render::OutputOptions {
+        resolution: Some([360, 640]),
+        ..Default::default()
+    })
+    .unwrap();
+    for enabled in [false, true] {
+        let params = serde_json::json!({"item":item,"enabled":enabled}).to_string();
+        let command = cli(&[
+            os("exec"),
+            path.as_os_str(),
+            os("captions.set_word_highlight"),
+            os(&params),
+            os("--json"),
+        ]);
+        assert_eq!(code(&command), 0, "{:?}", command);
+        let movie = dir.path().join(if enabled {
+            "active.mp4"
+        } else {
+            "ordinary.mp4"
+        });
+        let output = cli(&[
+            os("export"),
+            path.as_os_str(),
+            os("--out"),
+            movie.as_os_str(),
+            os("--settings"),
+            os(&settings),
+            os("--json"),
+        ]);
+        assert_eq!(code(&output), 0, "{:?}", output);
+        assert_eq!(
+            stdout_json(&output)["word_highlight_warnings"]["warnings"],
+            serde_json::json!([])
+        );
+        let decoded = crate::cli::fixtures::decoded_rgb(&movie, 360, 640, &[1]);
+        let gold = decoded[0]
+            .chunks_exact(3)
+            .filter(|pixel| pixel[0] > 150 && pixel[1] > 70 && pixel[2] < 80)
+            .count();
+        if enabled {
+            assert!(
+                gold > 5,
+                "verified source word survives the real movie encoder: {gold}"
+            );
+        } else {
+            assert_eq!(gold, 0, "ordinary white caption remains unchanged");
+        }
+    }
 }

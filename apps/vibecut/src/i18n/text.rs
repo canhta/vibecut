@@ -149,6 +149,14 @@ catalog! {
     SubTxt { key: "sub_txt", en: "TXT", vi: "TXT" },
     SubVietnamese { key: "sub_vietnamese", en: "Vietnamese", vi: "Tiếng Việt" },
     SubVtt { key: "sub_vtt", en: "VTT", vi: "VTT" },
+    SubWordAmbiguous { key: "sub_word_ambiguous", en: "Overlapping words keep their original colour.", vi: "Từ chồng lấn giữ màu gốc." },
+    SubWordChanged { key: "sub_word_changed", en: "Edited words keep their original colour.", vi: "Từ đã sửa giữ màu gốc." },
+    SubWordHighlight { key: "sub_word_highlight", en: "Highlight spoken words", vi: "Tô sáng từ đang nói" },
+    SubWordHint { key: "sub_word_hint", en: "Highlight spoken words when word timing is available.", vi: "Tô sáng từ đang nói khi có thời gian từng từ." },
+    SubWordLanguage { key: "sub_word_language", en: "Show the source language to highlight spoken words.", vi: "Hiện ngôn ngữ gốc để tô sáng từ đang nói." },
+    SubWordMissing { key: "sub_word_missing", en: "Word timing is unavailable; captions keep their original colour.", vi: "Chưa có thời gian từng từ; phụ đề giữ màu gốc." },
+    SubWordShaped { key: "sub_word_shaped", en: "This font keeps some words in their original colour.", vi: "Phông chữ này giữ màu gốc của một số từ." },
+    SubWordUnavailable { key: "sub_word_unavailable", en: "Word highlighting is unavailable; try again after other tasks finish.", vi: "Chưa tô sáng được từ; thử lại sau khi tác vụ khác xong." },
     Windows { key: "windows", en: "Window", vi: "Cửa sổ" },
 
     // Long-video Shorts workflow.

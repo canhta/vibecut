@@ -72,12 +72,36 @@ pub(super) fn captions_scene(
     locale: Locale,
     filled: bool,
 ) -> Result<AppHarness, Failure> {
-    let mut editor = if filled {
+    let editor = if filled {
         subtitles_fixture::editor("vi")
     } else {
         empty_editor(theme, locale)?
     };
+    captions_editor(theme, scale, locale, editor, filled, false)
+}
+
+pub(super) fn caption_word_scene(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+) -> Result<AppHarness, Failure> {
+    let cues = subtitles_fixture::verified_cues();
+    let editor = subtitles_fixture::editor_with_cues("vi", cues);
+    captions_editor(theme, scale, locale, editor, true, true)
+}
+
+fn captions_editor(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    mut editor: Editor,
+    filled: bool,
+    highlighted: bool,
+) -> Result<AppHarness, Failure> {
     editor.preferences = preferences(theme, locale);
+    if highlighted {
+        editor.preferences.subtitles.bilingual = true;
+    }
     editor.preferences.assets_tab = vibecut::panels::AssetsTab::Captions;
     editor.prepare_subtitles()?;
     if filled {
@@ -94,6 +118,9 @@ pub(super) fn captions_scene(
         editor
             .playback
             .seek(Tick(2 * SECOND), false, editor.session.project().clone())?;
+    }
+    if highlighted {
+        editor.activate("subtitles.style.word_highlight")?;
     }
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
     app.run_steps(4);

@@ -325,7 +325,8 @@ impl Editor {
                         self.caption_bank_ready()
                             && panel.bank_available(&self.session, id == "subtitles.style.save")
                     } else {
-                        panel.style_available(&self.session)
+                        (id != "subtitles.style.word_highlight" || self.caption_bank_ready())
+                            && panel.style_available(&self.session)
                     }
                 })
             }

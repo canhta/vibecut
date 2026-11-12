@@ -374,6 +374,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "burn_subtitles",
                 "captions.apply_style",
                 "captions.save_preset",
+                "captions.set_word_highlight",
                 "export_subtitles",
                 "fillers.classify",
                 "timeline.filler_candidates",

@@ -1206,6 +1206,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
     );
     let cues = (0..5000)
         .map(|n| captions::Cue {
+            word_timing: captions::CueWordTiming::Unverified,
             id: format!("cue-{n}").into(),
             range,
             source_lang: captions::LanguageTag::parse("vi").unwrap(),
@@ -1233,6 +1234,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             source_range: range,
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues,

@@ -17,6 +17,15 @@ use project::{ItemId, ItemParams};
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 
+fn output_languages(options: &Options, source: &LanguageTag) -> Result<Vec<LanguageTag>> {
+    let target = LanguageTag::parse(&options.target)?;
+    Ok(if options.bilingual && target != *source {
+        vec![source.clone(), target]
+    } else {
+        vec![target]
+    })
+}
+
 struct Controls {
     models: crate::services::remote_models::AiPreferences,
     locale: Locale,
@@ -763,6 +772,7 @@ impl Subtitles {
         if params.cues.cues.is_empty() {
             return;
         }
+        let highlighted = params.word_highlight;
         let item = item.id;
         let first = params
             .cues
@@ -834,6 +844,126 @@ impl Subtitles {
                 c.remember("subtitles.style", &response);
             });
         });
+        let mut highlighted = highlighted;
+        let response = ui
+            .add_enabled_ui(enabled && bank_ready, |ui| {
+                ui.add_sized(
+                    egui::vec2(ui.available_width(), theme::size::FIELD),
+                    egui::Checkbox::new(&mut highlighted, c.tr(Text::SubWordHighlight)),
+                )
+            })
+            .inner
+            .on_hover_text(c.tr(Text::SubWordHint));
+        c.remember("subtitles.style.word_highlight", &response);
+        if response.changed() {
+            chosen = Some("subtitles.style.word_highlight");
+        }
+        let languages = snapshot
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|value| value.id == item)
+            .and_then(|item| match &item.content {
+                ItemParams::Caption(params) => params.cues.cues.first().map(|cue| &cue.source_lang),
+                _ => None,
+            })
+            .and_then(|source| output_languages(options, source).ok())
+            .unwrap_or_default();
+        let used = self
+            .budget
+            .snapshot()
+            .map_or(u64::MAX, |snapshot| snapshot.limited_used());
+        if self.word_warnings.as_ref().is_none_or(|state| {
+            !Arc::ptr_eq(&state.project, &snapshot)
+                || state.item != item
+                || state.languages != languages
+                || state.fonts != text::generation()
+                || ((state.preview.is_err() || state.export.is_err()) && state.used != used)
+        }) {
+            let read = |settings| {
+                render::Renderer::new(&snapshot, settings)
+                    .and_then(|renderer| {
+                        renderer.caption_word_warnings(
+                            Some(item),
+                            &engine::ByteBudgetHooks::new(&self.budget, None),
+                        )
+                    })
+                    .map_err(Arc::new)
+            };
+            let preview = read(render::RenderSettings::from_project(&snapshot));
+            let mut settings = render::RenderSettings::from_project(&snapshot);
+            settings.caption_languages = languages.clone();
+            let export = read(settings);
+            self.word_warnings = Some(super::WordWarnings {
+                project: snapshot.clone(),
+                item,
+                languages,
+                fonts: text::generation(),
+                used,
+                preview,
+                export,
+            });
+        }
+        if let Some(state) = &self.word_warnings {
+            let same = match (&state.preview, &state.export) {
+                (Ok(preview), Ok(export)) => preview == export,
+                (Err(_), Err(_)) => true,
+                _ => false,
+            };
+            for (scope, prefix, warnings) in [
+                (
+                    "preview",
+                    if same { None } else { Some(Text::Preview) },
+                    &state.preview,
+                ),
+                ("export", Some(Text::Export), &state.export),
+            ]
+            .into_iter()
+            .take(if same { 1 } else { 2 })
+            {
+                match warnings {
+                    Ok(warnings) => {
+                        for warning in &warnings.warnings {
+                            let key = match warning.reason {
+                                captions::WordHighlightReason::MissingTiming => {
+                                    Text::SubWordMissing
+                                }
+                                captions::WordHighlightReason::SourceChanged => {
+                                    Text::SubWordChanged
+                                }
+                                captions::WordHighlightReason::SourceNotDisplayed => {
+                                    Text::SubWordLanguage
+                                }
+                                captions::WordHighlightReason::AmbiguousTiming => {
+                                    Text::SubWordAmbiguous
+                                }
+                                captions::WordHighlightReason::ShapedBoundary => {
+                                    Text::SubWordShaped
+                                }
+                            };
+                            let message = prefix.map_or_else(
+                                || c.tr(key).to_owned(),
+                                |prefix| format!("{}: {}", c.tr(prefix), c.tr(key)),
+                            );
+                            let response = ui.label(message);
+                            c.remember(
+                                format!(
+                                    "subtitles.word_highlight.warning.{scope}.{:?}",
+                                    warning.reason
+                                ),
+                                &response,
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        ui.label(c.tr(Text::SubWordUnavailable))
+                            .on_hover_text(error.to_string());
+                    }
+                }
+            }
+        }
         if let Some(id) = chosen
             && self.item == Some(item)
             && Arc::ptr_eq(&snapshot, session.project())
@@ -1447,12 +1577,7 @@ impl Subtitles {
             .ok_or(Error::Invalid("no cues"))?
             .source_lang
             .clone();
-        let target = LanguageTag::parse(&options.target)?;
-        let languages = if options.bilingual && target != source {
-            vec![source, target]
-        } else {
-            vec![target]
-        };
+        let languages = output_languages(options, &source)?;
         let track = session
             .project()
             .data()

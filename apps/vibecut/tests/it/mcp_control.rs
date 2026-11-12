@@ -358,9 +358,11 @@ fn caption_editor() -> vibecut::Editor {
                 source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
                 start: Tick::ZERO,
                 content: project::ItemParams::Caption(project::CaptionParams {
+                    word_highlight: false,
                     cues: captions::CueTrack {
                         styles: Vec::new(),
                         cues: vec![captions::Cue {
+                            word_timing: captions::CueWordTiming::Unverified,
                             id: "cue-0".into(),
                             range: SourceRange::new(
                                 Tick(TICKS_PER_SECOND),

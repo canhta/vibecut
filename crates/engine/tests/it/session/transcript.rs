@@ -38,6 +38,7 @@ fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> Cue 
         },
     );
     Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: range(start, end),
         source_lang: source,
@@ -59,6 +60,7 @@ fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item
         source_range: range(source.0, source.1),
         start: Tick(start),
         content: ItemParams::Caption(CaptionParams {
+            word_highlight: false,
             cues: CueTrack {
                 styles: Vec::new(),
                 cues,
@@ -230,6 +232,7 @@ fn merge_cue(
 ) -> captions::Cue {
     let language = captions::LanguageTag::parse("vi").unwrap();
     captions::Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),

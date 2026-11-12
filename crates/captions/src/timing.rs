@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, ops::Range};
 use time::SourceRange;
 use unicode_segmentation::UnicodeSegmentation;
 
-const LIMIT: usize = 16 * 1024 * 1024;
+pub(crate) const LIMIT: usize = 16 * 1024 * 1024;
 /// Native timing identity; grouping never relabels an input unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -17,7 +17,7 @@ pub enum TimingUnit {
     Grapheme,
     Token,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TimingProvenance {
     Native,
@@ -74,6 +74,7 @@ impl MappedTiming {
 /// A missing input range or uncovered visible grapheme leaves the group untimed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TimingGroup {
+    pub unit: TimingUnit,
     pub display: Range<usize>,
     pub range: Option<SourceRange>,
     pub indices: Vec<usize>,
@@ -398,6 +399,7 @@ impl TimingSpans {
                 timed = false;
             }
             output.push(TimingGroup {
+                unit: selected,
                 display,
                 range: if timed { range } else { None },
                 indices,
@@ -497,4 +499,164 @@ fn display_map(
         return Err(Error::Invalid("display grapheme boundary"));
     }
     Ok((text, map))
+}
+
+/// Current occurrence of a retained native word in the cue-track clock.
+/// A clipped record still retains its original source timing and display bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(
+    tag = "kind",
+    content = "range",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum WordProjection {
+    Visible(SourceRange),
+    Clipped,
+}
+
+/// One actual native or forced Word record, mapped to exact stored NFC source bytes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VerifiedCueWord {
+    pub bytes: Range<usize>,
+    /// Original native/forced source timing, retained even outside a mapped occurrence.
+    pub source_range: SourceRange,
+    /// Required current occurrence, distinct from missing recognition timing.
+    pub projection: WordProjection,
+    pub provenance: TimingProvenance,
+}
+/// Persisted correspondence, never inferred from a token/range count.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CueWordTiming {
+    Unverified,
+    Words {
+        language: crate::LanguageTag,
+        text: NfcText,
+        records: Vec<VerifiedCueWord>,
+    },
+}
+/// Safe creator-facing eligibility categories; adapters supply localized wording.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum WordHighlightReason {
+    MissingTiming,
+    SourceChanged,
+    SourceNotDisplayed,
+    AmbiguousTiming,
+    ShapedBoundary,
+}
+impl CueWordTiming {
+    /// Retain native correspondence when joining complete same-language cue proofs.
+    /// Current edited flags remain with CueText; retaining proof never clears them.
+    /// Unknown or cross-normalizing pieces cannot certify a new word mapping.
+    pub fn joined(cues: &[&crate::Cue], separator: &str) -> Result<Self, Error> {
+        let Some(first) = cues.first() else {
+            return Ok(Self::Unverified);
+        };
+        let Self::Words { language, .. } = &first.word_timing else {
+            return Ok(Self::Unverified);
+        };
+        let mut bytes = 0usize;
+        let mut count = 0usize;
+        for cue in cues {
+            let Self::Words {
+                language: tag,
+                text,
+                records,
+            } = &cue.word_timing
+            else {
+                return Ok(Self::Unverified);
+            };
+            if tag != language || tag.primary() != cue.source_lang.primary() {
+                return Ok(Self::Unverified);
+            }
+            count = count.checked_add(records.len()).ok_or(Error::TooLarge)?;
+            bytes = bytes
+                .checked_add(text.as_str().len())
+                .and_then(|n| n.checked_add(separator.len()))
+                .ok_or(Error::TooLarge)?;
+        }
+        if count > 500_000
+            || count
+                .checked_mul(std::mem::size_of::<VerifiedCueWord>())
+                .and_then(|n| n.checked_add(bytes))
+                .and_then(|n| n.checked_add(language.as_str().len()))
+                .and_then(|n| n.checked_add(std::mem::size_of::<Self>()))
+                .is_none_or(|n| n > LIMIT)
+        {
+            return Err(Error::TooLarge);
+        }
+        let mut joined = String::with_capacity(bytes);
+        let mut records = Vec::with_capacity(count);
+        for cue in cues {
+            let Self::Words {
+                text,
+                records: words,
+                ..
+            } = &cue.word_timing
+            else {
+                return Ok(Self::Unverified);
+            };
+            if !joined.is_empty() && !text.as_str().is_empty() {
+                joined.push_str(separator);
+            }
+            let offset = joined.len();
+            joined.push_str(text.as_str());
+            records.extend(words.iter().map(|word| VerifiedCueWord {
+                bytes: offset + word.bytes.start..offset + word.bytes.end,
+                source_range: word.source_range,
+                projection: word.projection,
+                provenance: word.provenance,
+            }));
+        }
+        let text = NfcText::from(joined.as_str());
+        if text.as_str() != joined {
+            return Ok(Self::Unverified);
+        }
+        let value = Self::Words {
+            language: language.clone(),
+            text,
+            records,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn byte_cost(&self) -> Result<usize, Error> {
+        match self {
+            Self::Unverified => Ok(0),
+            Self::Words {
+                language,
+                text,
+                records,
+            } => records
+                .len()
+                .checked_mul(std::mem::size_of::<VerifiedCueWord>())
+                .and_then(|n| n.checked_add(text.as_str().len()))
+                .and_then(|n| n.checked_add(language.as_str().len()))
+                .and_then(|n| n.checked_add(std::mem::size_of::<Self>()))
+                .ok_or(Error::TooLarge),
+        }
+    }
+
+    /// Structural bounds only: stale source text/timing remains a warning, never an invented map.
+    pub fn validate(&self) -> Result<(), Error> {
+        if let Self::Words { text, records, .. } = self {
+            let bytes = self.byte_cost()?;
+            if bytes > LIMIT || records.len() > 500_000 || records.len() > text.as_str().len() {
+                return Err(Error::TooLarge);
+            }
+            if records.iter().any(|word| {
+                word.bytes.start >= word.bytes.end
+                    || text.as_str().get(word.bytes.clone()).is_none()
+            }) {
+                return Err(Error::Invalid("word display correspondence"));
+            }
+        }
+        Ok(())
+    }
 }

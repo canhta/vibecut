@@ -48,6 +48,7 @@ fn transcript(words: bool) -> Transcript {
 }
 fn word(text: &str, start: f64, end: f64) -> Word {
     Word {
+        provenance: None,
         text: text.into(),
         range: Some(range(start, end)),
         speaker: None,

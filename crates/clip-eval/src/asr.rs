@@ -214,6 +214,7 @@ fn span_words(spans: &TimingSpans, profile: &LanguageProfile) -> Result<Option<V
             continue;
         }
         words.push(Word {
+            provenance: None,
             text: NfcText::from(text),
             range: Some(range),
             speaker,

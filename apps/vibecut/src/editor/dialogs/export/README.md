@@ -53,3 +53,5 @@ output, leaving a prior successful file untouched; publication Retry reopens
 destination selection without re-encoding. Retry refuses running, cancelled and
 successful attempts. A degraded retry needs an explicit toggle over the listed
 diagnostics, and a project or audio-scope change clears that consent.
+
+The settings sheet recomputes spoken-word warnings from the captured project, output choices and shared render state before submission. Safe reason labels never include caption text, and a warning keeps the ordinary base caption rather than blocking an otherwise valid export.

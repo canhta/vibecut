@@ -237,9 +237,11 @@ pub(crate) fn seed() -> Session {
                 source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
                 content: ItemParams::Caption(project::CaptionParams {
+                    word_highlight: false,
                     cues: captions::CueTrack {
                         styles: Vec::new(),
                         cues: vec![captions::Cue {
+                            word_timing: captions::CueWordTiming::Unverified,
                             id: "cue-1".into(),
                             range: SourceRange::new(Tick::ZERO, duration).unwrap(),
                             source_lang: captions::LanguageTag::parse("en").unwrap(),
@@ -514,6 +516,7 @@ pub(crate) fn with_words(seed: &Session) -> Session {
                 .map(|index| SourceRange::new(Tick(index * 100), Tick(index * 100 + 100)).unwrap())
                 .collect();
             params.cues.cues.push(captions::Cue {
+                word_timing: captions::CueWordTiming::Unverified,
                 id: "cue-2".into(),
                 range: SourceRange::new(Tick(500), end).unwrap(),
                 source_lang: language.clone(),

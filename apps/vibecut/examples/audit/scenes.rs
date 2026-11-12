@@ -220,6 +220,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| captions_scene(theme, scale, Locale::Vi, false),
     },
     Scene {
+        name: "captions-word-highlight",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| caption_word_scene(theme, scale, Locale::En),
+    },
+    Scene {
+        name: "captions-word-highlight-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| caption_word_scene(theme, scale, Locale::Vi),
+    },
+    Scene {
         name: "captions-editor",
         reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
         reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),

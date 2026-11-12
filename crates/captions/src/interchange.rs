@@ -210,6 +210,7 @@ fn cue(
         text
     };
     Ok(Cue {
+        word_timing: crate::CueWordTiming::Unverified,
         id: id.to_string().into(),
         range: SourceRange::new(block.start, block.end)?,
         source_lang: language.clone(),

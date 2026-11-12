@@ -257,6 +257,7 @@ impl Recognition {
                     continue;
                 }
                 words.push(Word {
+                    provenance: Some(span.provenance),
                     text: span.text.clone(),
                     range: Some(ticks(span.range, self.sample_rate)?),
                     speaker: span.speaker.clone(),

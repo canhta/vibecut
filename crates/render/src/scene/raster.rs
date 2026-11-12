@@ -7,6 +7,8 @@ use std::sync::Arc;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct TextKey {
     pub(super) value: String,
+    pub(super) word_spans: Vec<(usize, usize)>,
+    pub(super) active_word: Option<(usize, usize, [u8; 3])>,
     pub(super) size: u32,
     pub(super) fill: [u8; 4],
     pub(super) width: u32,
@@ -140,8 +142,58 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
     }
     let _scratch = hooks.reserve(
         MemoryKind::Compositor,
-        bytes * 2 + key.value.len() as u64 * 512 + (f64::from(size).powi(2) * 32.0).ceil() as u64,
+        bytes * (2 + u64::from(key.active_word.is_some()))
+            + key.value.len() as u64 * 512
+            + (f64::from(size).powi(2) * 32.0).ceil() as u64,
     )?;
+    let layout = fitted_layout(key, hooks)?;
+    let b = layout.bounds;
+    let y = if key.max_lines.is_none() {
+        pad
+    } else {
+        match key.position {
+            CaptionPosition::Top => pad - b.y0,
+            CaptionPosition::Middle => (h as f32 - (b.y1 - b.y0)) / 2.0 - b.y0,
+            CaptionPosition::Bottom => h as f32 - pad - b.y1,
+        }
+    };
+    check(hooks)?;
+    let image = text::render(
+        &layout,
+        text::Canvas {
+            width: w,
+            height: h,
+        },
+        (pad, y),
+        &text::Paint {
+            fill: rgba(key.fill),
+            span_fill: key
+                .active_word
+                .filter(|_| layout.certifies_spans(&key.word_spans))
+                .map(|(start, end, rgb)| text::SpanFill { start, end, rgb }),
+            outline,
+            background,
+            decoration: match key.decoration {
+                TextDecoration::None => text::Decoration::None,
+                TextDecoration::Underline => text::Decoration::Underline,
+                TextDecoration::LineThrough => text::Decoration::LineThrough,
+            },
+        },
+    )?;
+    Image::from_rgba8(w, h, &image.pixels, true, 13, hooks)
+}
+fn rgba(value: [u8; 4]) -> text::Color {
+    let [r, g, b, a] = value;
+    text::Color::rgba(r, g, b, a)
+}
+
+pub(super) fn fitted_layout(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<text::Layout> {
+    let (w, h, size) = (key.width, key.height, f32::from_bits(key.size));
+    let pad = key
+        .outline
+        .map_or(0.0, |(width, _)| f32::from_bits(width))
+        .max(key.background.map_or(0.0, BoxKey::margin))
+        .ceil();
     let mut options = text::LayoutOptions {
         family: &key.font,
         style: &key.style,
@@ -189,38 +241,5 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
             }
         }
     }
-    let b = layout.bounds;
-    let y = if key.max_lines.is_none() {
-        pad
-    } else {
-        match key.position {
-            CaptionPosition::Top => pad - b.y0,
-            CaptionPosition::Middle => (h as f32 - (b.y1 - b.y0)) / 2.0 - b.y0,
-            CaptionPosition::Bottom => h as f32 - pad - b.y1,
-        }
-    };
-    check(hooks)?;
-    let image = text::render(
-        &layout,
-        text::Canvas {
-            width: w,
-            height: h,
-        },
-        (pad, y),
-        &text::Paint {
-            fill: rgba(key.fill),
-            outline,
-            background,
-            decoration: match key.decoration {
-                TextDecoration::None => text::Decoration::None,
-                TextDecoration::Underline => text::Decoration::Underline,
-                TextDecoration::LineThrough => text::Decoration::LineThrough,
-            },
-        },
-    )?;
-    Image::from_rgba8(w, h, &image.pixels, true, 13, hooks)
-}
-fn rgba(value: [u8; 4]) -> text::Color {
-    let [r, g, b, a] = value;
-    text::Color::rgba(r, g, b, a)
+    Ok(layout)
 }

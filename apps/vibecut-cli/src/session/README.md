@@ -20,3 +20,5 @@ Control JSON parsing and request-envelope construction return the wire owner's
 `ControlError`. The CLI retains their typed category for framed diagnostics and
 composes them into the engine error only at mixed workflow boundaries; command and
 batch byte limits retain their existing labels and exit policies.
+
+Export JSON includes bounded `word_highlight_warnings` from the shared scene/geometry preflight. Registry job admissions carry the same typed warning data; the one-shot adapter prints only that safe data on stderr. SRT/VTT serializers remain unchanged.

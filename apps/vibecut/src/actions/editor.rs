@@ -149,6 +149,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "subtitles.style.word_highlight",
+        Text::SubWordHighlight,
+        ActionCategory::Edit,
+        "subtitle editor workflow",
+        UiAction::Subtitles,
+        &[],
+    ),
+    ActionSpec::ui(
         "subtitles.style.outline",
         Text::ActionSubtitlesStyleOutline,
         ActionCategory::Edit,

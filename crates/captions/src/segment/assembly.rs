@@ -79,6 +79,22 @@ pub(super) fn append_groups(
             source.as_str().len(),
             reference.as_ref().map_or(0, |r| r.as_str().len()),
             text.len(),
+            if reference.is_none()
+                && !edited
+                && slice.iter().all(|unit| unit.word_provenance.is_some())
+            {
+                text.len()
+                    .checked_add(
+                        slice
+                            .len()
+                            .checked_mul(std::mem::size_of::<crate::VerifiedCueWord>())
+                            .ok_or(Error::TooLarge)?,
+                    )
+                    .and_then(|bytes| bytes.checked_add(language.as_str().len()))
+                    .ok_or(Error::TooLarge)?
+            } else {
+                0
+            },
             64,
         ];
         output.output_bytes = costs
@@ -113,6 +129,7 @@ pub(super) fn append_groups(
         };
         output.cues.push(SegmentedCue {
             cue: Cue {
+                word_timing: correspondence(slice, &text, language, edited, reference.is_some())?,
                 id: format!(
                     "{}:{}:{}:{}",
                     identity.as_str().len(),
@@ -197,4 +214,57 @@ pub(super) fn finish(output: &mut Segmentation, rules: &SegmentRules) -> Result<
         }
     }
     Ok(())
+}
+
+fn correspondence(
+    units: &[Unit],
+    text: &str,
+    language: &LanguageTag,
+    edited: bool,
+    translation: bool,
+) -> Result<crate::CueWordTiming, Error> {
+    if edited || translation {
+        return Ok(crate::CueWordTiming::Unverified);
+    }
+    let mut records = Vec::new();
+    let mut cursor = 0;
+    for unit in units {
+        let Some(provenance) = unit.word_provenance else {
+            return Ok(crate::CueWordTiming::Unverified);
+        };
+        let suffix = text
+            .get(cursor..)
+            .ok_or(Error::Invalid("cue word correspondence"))?;
+        let start = cursor + suffix.len() - suffix.trim_start().len();
+        let end = start
+            .checked_add(unit.text.trim().len())
+            .ok_or(Error::TooLarge)?;
+        if text.get(start..end) != Some(unit.text.trim()) {
+            return Ok(crate::CueWordTiming::Unverified);
+        }
+        records.push(crate::VerifiedCueWord {
+            bytes: start..end,
+            source_range: SourceRange::new(unit.range.start, unit.range.end)?,
+            projection: crate::WordProjection::Visible(SourceRange::new(
+                unit.range.start,
+                unit.range.end,
+            )?),
+            provenance,
+        });
+        cursor = end;
+    }
+    if !text
+        .get(cursor..)
+        .is_some_and(|tail| tail.trim().is_empty())
+        || records.is_empty()
+    {
+        return Ok(crate::CueWordTiming::Unverified);
+    }
+    let value = crate::CueWordTiming::Words {
+        language: language.clone(),
+        text: text.into(),
+        records,
+    };
+    value.validate()?;
+    Ok(value)
 }

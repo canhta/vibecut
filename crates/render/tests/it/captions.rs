@@ -38,9 +38,11 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
             source_range: TimeRange::new(Tick::ZERO, tick(2, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Caption(project::CaptionParams {
+                word_highlight: false,
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {
+                        word_timing: captions::CueWordTiming::Unverified,
                         id: "stress".into(),
                         range,
                         source_lang: captions::LanguageTag::parse(texts[0].0).unwrap(),
@@ -960,4 +962,276 @@ fn extreme_font_scaling_is_a_typed_refusal_before_raster_scratch() {
             .render_frame(tick(1, 2), &mut Empty, &h),
         Err(Error::Invalid("scaled font size"))
     ));
+}
+
+#[test]
+fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
+    use captions::{CueWordTiming, TimingProvenance, VerifiedCueWord, WordHighlightReason};
+    let h = Hooks::default();
+    for (tag, source, target) in [
+        ("vi", "Tiếng Việt", "Clear English"),
+        ("en", "office affine", "Tiếng Việt"),
+        ("zh", "中文 词语", "Clear English"),
+    ] {
+        let mut data = scene(&[
+            (tag, source),
+            (if tag == "en" { "vi" } else { "en" }, target),
+        ])
+        .into_data();
+        let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+        let project::ItemParams::Caption(params) = &mut item.content else {
+            panic!("caption");
+        };
+        params.word_highlight = true;
+        let cue = &mut params.cues.cues[0];
+        let split = source.find(' ').unwrap();
+        cue.word_timing = CueWordTiming::Words {
+            language: cue.source_lang.clone(),
+            text: source.into(),
+            records: vec![
+                VerifiedCueWord {
+                    bytes: 0..split,
+                    source_range: TimeRange::new(tick(1, 4), tick(3, 4)).unwrap(),
+                    projection: captions::WordProjection::Visible(
+                        TimeRange::new(tick(1, 4), tick(3, 4)).unwrap(),
+                    ),
+                    provenance: TimingProvenance::Native,
+                },
+                VerifiedCueWord {
+                    bytes: split + 1..source.len(),
+                    source_range: TimeRange::new(tick(3, 4), tick(1, 1)).unwrap(),
+                    projection: captions::WordProjection::Visible(
+                        TimeRange::new(tick(3, 4), tick(1, 1)).unwrap(),
+                    ),
+                    provenance: TimingProvenance::Forced,
+                },
+            ],
+        };
+        let p = project::Project::new(data.clone()).unwrap();
+        let encoded = project::encode(&p, false).unwrap();
+        let decoded = project::decode(&encoded).unwrap().project;
+        assert_eq!(
+            decoded, p,
+            "verified correspondence and opt-in survive persistence"
+        );
+        let mut s = settings(&p);
+        s.caption_languages = [tag, if tag == "en" { "vi" } else { "en" }]
+            .iter()
+            .map(|tag| captions::LanguageTag::parse(tag).unwrap())
+            .collect();
+        let mut r = Renderer::new(&p, s.clone()).unwrap();
+        assert!(
+            r.caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings
+                .is_empty()
+        );
+        let first = r.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
+        let next = r.render_frame(tick(3, 4), &mut Empty, &h).unwrap();
+        let rgba = first.rgba8(1, &h).unwrap();
+        png(&rgba.bytes, &format!("word-highlight-{tag}"));
+        eprintln!("word-highlight-{tag} hash={:#x}", hash(&rgba.bytes));
+        let expected = match tag {
+            "vi" => 0xb617086f5d85ff1d,
+            "en" => 0x4fa62fd0d7be69c0,
+            "zh" => 0x4d100236d75f592c,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            hash(&rgba.bytes),
+            expected,
+            "visually inspected portrait source-word golden"
+        );
+        assert_ne!(
+            first.pixels(),
+            next.pixels(),
+            "touching end belongs only to the next word"
+        );
+        assert_eq!(
+            next.pixels(),
+            r.preview_frame(tick(3, 4), &mut Empty, &h)
+                .unwrap()
+                .pixels()
+        );
+        assert_eq!(
+            first.pixels(),
+            r.render_frame(tick(2, 3), &mut Empty, &h).unwrap().pixels()
+        );
+        // Word activity follows the content clock, not the real-local opacity clock.
+        let mut held = p.data().clone();
+        held.scene_mut().timeline.overlays[0].items[0].effects.push(
+            project::effect_definition("hold_time")
+                .unwrap()
+                .instance("word-hold")
+                .with("rate", project::EffectValue::Scalar(2.0))
+                .unwrap(),
+        );
+        let held = project::Project::new(held).unwrap();
+        let mut held_renderer = Renderer::new(&held, s.clone()).unwrap();
+        let held_early = held_renderer
+            .render_frame(tick(1, 2), &mut Empty, &h)
+            .unwrap();
+        let held_late = held_renderer
+            .render_frame(tick(7, 8), &mut Empty, &h)
+            .unwrap();
+        assert!(
+            held_early.pixels() == held_late.pixels(),
+            "same content clock and effect pass must give pixel0; differing pixels={}",
+            held_early
+                .pixels()
+                .iter()
+                .zip(held_late.pixels())
+                .filter(|(a, b)| a != b)
+                .count()
+        );
+        // The clip removes complete words without inventing a time or warning.
+        let mut clipped = p.data().clone();
+        let item = &mut clipped.scene_mut().timeline.overlays[0].items[0];
+        item.source_range = TimeRange::new(tick(5, 4), tick(3, 2)).unwrap();
+        let project::ItemParams::Caption(params) = &mut item.content else {
+            unreachable!()
+        };
+        params.cues = captions::clip_track(&params.cues, item.source_range).unwrap();
+        let clipped = project::Project::new(clipped).unwrap();
+        let mut clipped_renderer = Renderer::new(&clipped, s.clone()).unwrap();
+        assert!(
+            clipped_renderer
+                .caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings
+                .is_empty()
+        );
+        let mut disabled_clip = clipped.data().clone();
+        let project::ItemParams::Caption(params) =
+            &mut disabled_clip.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            unreachable!()
+        };
+        params.word_highlight = false;
+        let disabled_clip = project::Project::new(disabled_clip).unwrap();
+        assert_eq!(
+            clipped_renderer
+                .render_frame(tick(1, 10), &mut Empty, &h)
+                .unwrap()
+                .pixels(),
+            Renderer::new(&disabled_clip, s.clone())
+                .unwrap()
+                .render_frame(tick(1, 10), &mut Empty, &h)
+                .unwrap()
+                .pixels()
+        );
+        for duplicate_cue in [false, true] {
+            let mut ambiguous = p.data().clone();
+            let project::ItemParams::Caption(params) =
+                &mut ambiguous.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                unreachable!()
+            };
+            if duplicate_cue {
+                let mut cue = params.cues.cues[0].clone();
+                cue.id = "overlapping-source".into();
+                params.cues.cues.push(cue);
+            } else {
+                let CueWordTiming::Words { records, .. } = &mut params.cues.cues[0].word_timing
+                else {
+                    unreachable!()
+                };
+                records[1].projection = captions::WordProjection::Visible(
+                    TimeRange::new(tick(1, 2), tick(3, 4)).unwrap(),
+                );
+            }
+            let enabled = project::Project::new(ambiguous.clone()).unwrap();
+            let mut renderer = Renderer::new(&enabled, s.clone()).unwrap();
+            let warnings = renderer.caption_word_warnings(None, &h).unwrap();
+            assert_eq!(
+                warnings.warnings.len(),
+                1,
+                "one summary for the ambiguous state"
+            );
+            assert_eq!(
+                warnings.warnings[0].reason,
+                WordHighlightReason::AmbiguousTiming
+            );
+            let project::ItemParams::Caption(params) =
+                &mut ambiguous.scene_mut().timeline.overlays[0].items[0].content
+            else {
+                unreachable!()
+            };
+            params.word_highlight = false;
+            let ordinary = project::Project::new(ambiguous).unwrap();
+            assert_eq!(
+                renderer
+                    .render_frame(tick(1, 2), &mut Empty, &h)
+                    .unwrap()
+                    .pixels(),
+                Renderer::new(&ordinary, s.clone())
+                    .unwrap()
+                    .render_frame(tick(1, 2), &mut Empty, &h)
+                    .unwrap()
+                    .pixels()
+            );
+        }
+        let project::ItemParams::Caption(params) =
+            &mut data.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            unreachable!()
+        };
+        params.word_highlight = false;
+        let disabled = project::Project::new(data.clone()).unwrap();
+        let mut base = Renderer::new(&disabled, s.clone()).unwrap();
+        assert_eq!(
+            r.render_frame(tick(5, 4), &mut Empty, &h).unwrap().pixels(),
+            base.render_frame(tick(5, 4), &mut Empty, &h)
+                .unwrap()
+                .pixels(),
+            "no active word after the last word"
+        );
+        let project::ItemParams::Caption(params) =
+            &mut data.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            unreachable!()
+        };
+        params.word_highlight = true;
+        params.cues.cues[0]
+            .texts
+            .get_mut(&captions::LanguageTag::parse(tag).unwrap())
+            .unwrap()
+            .edited = true;
+        let stale = project::Project::new(data.clone()).unwrap();
+        let mut stale_renderer = Renderer::new(&stale, s.clone()).unwrap();
+        assert_eq!(
+            stale_renderer
+                .caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings[0]
+                .reason,
+            WordHighlightReason::SourceChanged
+        );
+        assert_eq!(
+            stale_renderer
+                .render_frame(tick(1, 2), &mut Empty, &h)
+                .unwrap()
+                .pixels(),
+            base.render_frame(tick(1, 2), &mut Empty, &h)
+                .unwrap()
+                .pixels()
+        );
+        let mut only_translation = s;
+        only_translation.caption_languages.remove(0);
+        assert_eq!(
+            Renderer::new(&p, only_translation)
+                .unwrap()
+                .caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings[0]
+                .reason,
+            WordHighlightReason::SourceNotDisplayed
+        );
+        assert!(
+            base.caption_word_warnings(None, &h)
+                .unwrap()
+                .warnings
+                .is_empty()
+        );
+    }
 }

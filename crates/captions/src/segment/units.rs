@@ -7,6 +7,7 @@ use time::{SourceRange, Tick};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) struct Unit {
+    pub(super) word_provenance: Option<crate::TimingProvenance>,
     pub(super) text: String,
     pub(super) range: Range<Tick>,
     pub(super) timing: TimingKind,
@@ -57,11 +58,28 @@ pub(super) fn span_units(
             .last_mut()
             .filter(|_| !boundaries.breaks.contains(&start))
         {
+            last.word_provenance = None;
             last.text.push_str(value);
             last.range.end = range.end();
             last.boundary = rank(&last.text, profile);
         } else {
             units.push(Unit {
+                word_provenance: if group.unit == crate::TimingUnit::Word
+                    && group.indices.len() == 1
+                {
+                    spans
+                        .spans()
+                        .iter()
+                        .find(|span| {
+                            span.input().unit == crate::TimingUnit::Word
+                                && group.indices.first() == Some(&span.input().index)
+                                && span.display().start <= start
+                                && span.display().end >= group.display.end
+                        })
+                        .map(|span| span.input().provenance)
+                } else {
+                    None
+                },
                 text: value.to_owned(),
                 range: range.start()..range.end(),
                 timing: TimingKind::SourceSpans,
@@ -124,11 +142,13 @@ pub(super) fn timed_units(
             .last_mut()
             .filter(|_| !boundaries.breaks.contains(&start))
         {
+            last.word_provenance = None;
             last.text.push_str(value);
             last.range.end = range.end();
             last.boundary = rank(&last.text, profile);
         } else {
             units.push(Unit {
+                word_provenance: word.provenance,
                 text: value.to_owned(),
                 range: range.start()..range.end(),
                 timing: TimingKind::SourceWords,
@@ -184,6 +204,7 @@ pub(super) fn text_units(
         let next = count + value.graphemes(true).count();
         if !value.trim().is_empty() {
             units.push(Unit {
+                word_provenance: None,
                 text: value.to_owned(),
                 range: proportional(range, count, boundaries.total)?
                     ..proportional(range, next, boundaries.total)?,
@@ -192,6 +213,7 @@ pub(super) fn text_units(
                 speaker: None,
             });
         } else if let Some(last) = units.last_mut() {
+            last.word_provenance = None;
             last.text.push_str(value);
         }
         start = end;

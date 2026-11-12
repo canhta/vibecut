@@ -23,6 +23,7 @@
 | `text.insert` — Add text | Edit | — | — | text insertion workflow |
 | `subtitles.cue` — Choose a caption | Edit | — | — | subtitle cue selection |
 | `subtitles.cancel` — Cancel caption job | Edit | — | — | subtitle editor workflow |
+| `subtitles.style.word_highlight` — Highlight spoken words | Edit | — | — | subtitle editor workflow |
 | `subtitles.style.outline` — Use outlined captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.style.box` — Use boxed captions | Edit | — | — | subtitle editor workflow |
 | `subtitles.style.save` — Save caption style | Edit | — | — | subtitle editor workflow |

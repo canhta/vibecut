@@ -33,6 +33,7 @@ fn cue(id: &str, tag: &str, text: &str, words: Vec<SourceRange>, edited: bool) -
         .last()
         .map_or(Tick(TICKS_PER_SECOND), |range| range.end());
     Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: SourceRange::new(start, end).unwrap(),
         source_lang: lang(tag),
@@ -462,6 +463,7 @@ fn interview_excerpt_matches_the_manual_filler_read() {
     let track = CueTrack {
         styles: Vec::new(),
         cues: vec![Cue {
+            word_timing: captions::CueWordTiming::Unverified,
             id: "interview-09".into(),
             range: SourceRange::new(words.first().unwrap().start(), words.last().unwrap().end())
                 .unwrap(),

@@ -218,6 +218,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         translation_ref: None,
     };
     let cue = Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: "readme-cue".into(),
         range: range(2, 6)?,
         source_lang: LanguageTag::parse("vi")?,
@@ -238,6 +239,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         range(0, 10)?,
         Some(asset_id),
         ItemParams::Caption(CaptionParams {
+            word_highlight: false,
             cues: CueTrack {
                 styles: Vec::new(),
                 cues: vec![cue],

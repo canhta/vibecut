@@ -92,6 +92,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
             .segments
             .iter()
             .map(|segment| captions::Cue {
+                word_timing: captions::CueWordTiming::Unverified,
                 id: segment.id.clone(),
                 range: segment.range,
                 source_lang: transcript.source_lang.clone(),

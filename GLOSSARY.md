@@ -31,6 +31,8 @@ Language for the editor's privacy and execution boundaries.
 - **Timing unit**: Unit of recognized speech timing: segment, word, syllable, character, grapheme or token. A token can be part of a character or word.
 - **Display variant**: Same-language spelling or script rendering of recognized text, retaining its source speech timing.
 - **Word**: Recognized source text with optional source range, speaker and confidence.
+- **Verified word correspondence**: An exact pairing of individually timed native or forced source words with the displayed source text.
+- **Word projection**: The portion of a timed source word present in one edited cue occurrence; a fully trimmed word has no active projection.
 - **CueTrack**: A collection of timed cues for subtitle validation and export.
 - **Selection**: The timeline items chosen as the targets of an editing action.
 - **Viewport**: The screen region displaying a project's canvas, fitted with letterboxing and adjusted by preview zoom and pan.

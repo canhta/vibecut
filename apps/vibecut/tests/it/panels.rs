@@ -1964,7 +1964,10 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         Tick::ZERO,
         Tick(2 * SECOND),
         Some(AssetId(1)),
-        ItemParams::Caption(project::CaptionParams { cues }),
+        ItemParams::Caption(project::CaptionParams {
+            word_highlight: false,
+            cues,
+        }),
     );
     f.editor.preferences.assets_tab = AssetsTab::Captions;
     f.editor.prepare_subtitles().unwrap();

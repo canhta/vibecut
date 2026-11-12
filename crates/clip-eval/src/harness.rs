@@ -568,6 +568,7 @@ mod tests {
                 range: SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),
                 text: NfcText::from("One."),
                 words: vec![Word {
+                    provenance: None,
                     text: NfcText::from("One."),
                     range: Some(
                         SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),

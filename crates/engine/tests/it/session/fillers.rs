@@ -20,6 +20,7 @@ fn english_cue(
 ) -> captions::Cue {
     let language = captions::LanguageTag::parse("en").unwrap();
     captions::Cue {
+        word_timing: captions::CueWordTiming::Unverified,
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),

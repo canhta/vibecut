@@ -32,7 +32,7 @@ fn word_project(path: &Path, edited: bool) -> i64 {
                 "source_asset": 7,
                 "source_range": {"start": 0, "end": 1200},
                 "start": 0,
-                "content": {"kind": "caption", "params": {"cues": {"cues": [{
+                "content": {"kind": "caption", "params": {"word_highlight": false, "cues": {"cues": [{
                     "id": "câu-1",
                     "range": {"start": 0, "end": 1200},
                     "source_lang": "vi",
@@ -41,6 +41,7 @@ fn word_project(path: &Path, edited: bool) -> i64 {
                         "edited": edited,
                         "translation_ref": null
                     }},
+                    "word_timing": {"kind": "unverified"},
                     "word_ranges": [
                         {"start": 50, "end": 150},
                         {"start": 150, "end": 250},
