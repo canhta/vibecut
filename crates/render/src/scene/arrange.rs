@@ -123,7 +123,7 @@ mod tests {
     fn envelope_matches_the_placed_box_after_scale_reflection_and_quarter_turn() {
         // Reference example: destination (40,30,80,20), translate (10,-5),
         // scale (.5,2), 90 degrees gives the envelope (70,15,40,40).
-        let item = item(
+        let boxed = item(
             ItemParams::Text(TextParams::new("Box")),
             transformed(&[
                 (BuiltinPath::TransformPositionX, 10.0),
@@ -133,7 +133,7 @@ mod tests {
                 (BuiltinPath::TransformRotate, 90.0),
             ]),
         );
-        let envelope = Transform::at(&item, Tick::ZERO)
+        let envelope = Transform::at(&boxed, Tick::ZERO)
             .unwrap()
             .bounds(rect(40.0, 30.0, 80.0, 20.0));
         assert!(
