@@ -377,8 +377,15 @@ impl Editor {
                         } else {
                             engine::Command::Redo {}
                         })?;
+                        // A selected transition survives history while it still exists.
+                        let transition = self.selection_scopes.transition;
                         self.selection = self.session.selection().clone();
                         self.selection_scopes = SelectionScopes::default();
+                        self.selection_scopes.transition = transition;
+                        self.forget_missing_transition();
+                        if self.selection_scopes.transition.is_some() {
+                            self.selection.clear();
+                        }
                         self.properties.clear_drafts();
                     } else {
                         self.sync_keymap();
