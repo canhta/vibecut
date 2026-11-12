@@ -1,8 +1,8 @@
 # transport
 
-Bounded blocking HTTPS for buffered requests and streaming downloads: `HttpRequest`, `HttpResponse`, `HttpStreamResponse`, the `HttpTransport` and `DownloadTransport` seams, the `UreqTransport` adapter, `download_redirect`, `retry_after`, `MAX_RESPONSE_BYTES` and `Error`.
+Bounded blocking HTTPS for buffered requests and streaming downloads: `HttpRequest`, `HttpResponse`, `HttpStreamResponse`, the `HttpTransport`, `DownloadTransport` and `StreamTransport` seams, the `UreqTransport` adapter, `download_redirect`, `retry_after`, `MAX_RESPONSE_BYTES` and `Error`.
 
-`UreqTransport` bounds total/read/write time (120 s; `with_timeout` overrides), connect time at 10 s and follows no redirects, so an authorization header cannot move to another host. It reads at most the caller's ceiling and returns `Payload` past it. Request and response Debug output redacts headers and bodies; `Error` carries only `Invalid`, `Payload` or `Network`. `ureq` stays at 2.12.1 because `sherpa-onnx-sys` pins `ureq ^2.12`; this crate is the only workspace member that declares the production HTTP client.
+`StreamTransport::post_stream` is the streaming POST for server-sent event replies: status and headers first (error statuses included), the body read incrementally by the caller, who bounds it and drops it to cancel. `UreqTransport` bounds total/read/write time (120 s; `with_timeout` overrides), connect time at 10 s and follows no redirects, so an authorization header cannot move to another host. It reads at most the caller's ceiling and returns `Payload` past it. Request and response Debug output redacts headers and bodies; `Error` carries only `Invalid`, `Payload` or `Network`. `ureq` stays at 2.12.1 because `sherpa-onnx-sys` pins `ureq ^2.12`; this crate is the only workspace member that declares the production HTTP client.
 
 | Module | Responsibility |
 |---|---|

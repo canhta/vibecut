@@ -84,6 +84,12 @@ pub struct HttpStreamResponse {
 pub trait DownloadTransport: Send + Sync {
     fn get(&self, url: &str, headers: &[(String, String)]) -> Result<HttpStreamResponse, Error>;
 }
+/// Streaming POST for server-sent event replies. The caller reads the body
+/// incrementally, bounds every line and the total, and drops it to cancel; the
+/// status and headers arrive before the body, errors included. No retries.
+pub trait StreamTransport: Send + Sync {
+    fn post_stream(&self, request: HttpRequest) -> Result<HttpStreamResponse, Error>;
+}
 /// Resolve a bounded HTTPS download redirect; signed CDN queries are kept private.
 pub fn download_redirect(base: &str, location: &str) -> Result<String, Error> {
     if location.len() > 8192 {
@@ -131,6 +137,28 @@ impl UreqTransport {
                 .build(),
         }
     }
+    fn stream_response(response: ureq::Response) -> HttpStreamResponse {
+        let status = response.status();
+        let names: std::collections::BTreeSet<_> = response
+            .headers_names()
+            .into_iter()
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        let headers = names
+            .into_iter()
+            .flat_map(|name| {
+                response
+                    .all(&name)
+                    .into_iter()
+                    .map(move |v| (name.clone(), v.to_owned()))
+            })
+            .collect();
+        HttpStreamResponse {
+            status,
+            headers,
+            body: response.into_reader(),
+        }
+    }
     fn read_response(response: ureq::Response, max_bytes: usize) -> Result<HttpResponse, Error> {
         if max_bytes == 0 {
             return Err(Error::Payload);
@@ -168,26 +196,21 @@ impl DownloadTransport for UreqTransport {
             Ok(r) | Err(ureq::Error::Status(_, r)) => r,
             Err(ureq::Error::Transport(_)) => return Err(Error::Network),
         };
-        let status = response.status();
-        let names: std::collections::BTreeSet<_> = response
-            .headers_names()
-            .into_iter()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
-        let headers = names
-            .into_iter()
-            .flat_map(|name| {
-                response
-                    .all(&name)
-                    .into_iter()
-                    .map(move |v| (name.clone(), v.to_owned()))
-            })
-            .collect();
-        Ok(HttpStreamResponse {
-            status,
-            headers,
-            body: response.into_reader(),
-        })
+        Ok(Self::stream_response(response))
+    }
+}
+impl StreamTransport for UreqTransport {
+    fn post_stream(&self, request: HttpRequest) -> Result<HttpStreamResponse, Error> {
+        let mut outbound = self.agent.request(request.method, &request.url);
+        for (name, value) in &request.headers {
+            outbound = outbound.set(name, value);
+        }
+        match outbound.send_bytes(&request.body) {
+            Ok(response) | Err(ureq::Error::Status(_, response)) => {
+                Ok(Self::stream_response(response))
+            }
+            Err(ureq::Error::Transport(_)) => Err(Error::Network),
+        }
     }
 }
 impl Default for UreqTransport {
