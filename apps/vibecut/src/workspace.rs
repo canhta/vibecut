@@ -2189,6 +2189,23 @@ mod tests {
             .history_len();
         let import =
             || By::new().predicate(|node| node.author_id() == Some("inspector.lut.import"));
+        // The grade rows above the LUT push its import button below the
+        // inspector's visible area at this window size; wheel-scroll it in.
+        for _ in 0..16 {
+            let bounds = harness.get(import()).accesskit_node().raw_bounds().unwrap();
+            if bounds.y1 < 480.0 {
+                break;
+            }
+            harness.hover_at(egui::pos2(1200.0, 300.0));
+            harness.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -120.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run_steps(8);
+        }
         harness.get(import()).click();
         harness.run_steps(2);
         assert_eq!(
