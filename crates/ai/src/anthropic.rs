@@ -273,7 +273,7 @@ pub fn message_text(response: &HttpResponse) -> Result<String, Error> {
     Ok(text)
 }
 
-fn status_error(response: &HttpResponse) -> Error {
+pub(crate) fn status_error(response: &HttpResponse) -> Error {
     remote::status_error(response, |status, fields| {
         (status == 400 && remote::quota(fields)).then_some(Error::Quota)
     })

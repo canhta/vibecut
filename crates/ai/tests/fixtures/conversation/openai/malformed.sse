@@ -1,0 +1,18 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]},"sequence_number":28}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_bad","name":"get_clip","arguments":"","status":"in_progress"},"sequence_number":29}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"clip\":","sequence_number":30}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"arguments":"{\"clip\":","sequence_number":31}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_bad","name":"get_clip","arguments":"{\"clip\":","status":"completed"},"sequence_number":32}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}},"sequence_number":33}
+

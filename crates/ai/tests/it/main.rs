@@ -5,6 +5,7 @@ mod candle_alignment;
 mod chapters;
 mod clips;
 mod conformance;
+mod conversation;
 mod elevenlabs;
 mod elevenlabs_speech;
 mod fillers;

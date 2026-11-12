@@ -1,0 +1,30 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]},"sequence_number":18}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_a","type":"function_call","call_id":"call_a","name":"get_clip","arguments":"","status":"in_progress"},"sequence_number":19}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_a","output_index":0,"delta":"{\"clip\":\"c1\"}","sequence_number":20}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","item_id":"fc_a","output_index":0,"arguments":"{\"clip\":\"c1\"}","sequence_number":21}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_a","type":"function_call","call_id":"call_a","name":"get_clip","arguments":"{\"clip\":\"c1\"}","status":"completed"},"sequence_number":22}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"id":"fc_b","type":"function_call","call_id":"call_b","name":"get_clip","arguments":"","status":"in_progress"},"sequence_number":23}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_b","output_index":1,"delta":"{\"clip\":\"c2\"}","sequence_number":24}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","item_id":"fc_b","output_index":1,"arguments":"{\"clip\":\"c2\"}","sequence_number":25}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"fc_b","type":"function_call","call_id":"call_b","name":"get_clip","arguments":"{\"clip\":\"c2\"}","status":"completed"},"sequence_number":26}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":110,"output_tokens":40,"total_tokens":150}},"sequence_number":27}
+

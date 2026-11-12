@@ -1,6 +1,6 @@
 # ai
 
-Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs transcription, local Whisper/Gipformer transcription, bounded local vision inference, recognition assembly, provider credentials and model metadata. Excludes download execution, bounded HTTPS, audio decoding, job scheduling/retries/checkpoints, cache storage, cue segmentation and user-edit policy.
+Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs transcription, the streamed agent-chat conversation with its consent scope and spend ledger, local Whisper/Gipformer transcription, bounded local vision inference, recognition assembly, provider credentials and model metadata. Excludes download execution, bounded HTTPS, audio decoding, job scheduling/retries/checkpoints, cache storage, cue segmentation and user-edit policy.
 
 Implement `Transcriber`, `Aligner`, `Translator` or `clips::ClipSuggester`; call the free `transcribe`, `translate`, `assemble` and `clips::suggest_clips`. Remote-capable traits also return one provider-neutral `UploadDisclosure` from `disclosure(&Scope)` (speech from `disclosure(&SpeechRequest)`); local adapters return `None`. Adapter methods are blocking and object safe; engine runs them on its worker and supplies `ExecutionHooks`. Adapters observe cancellation during expensive work and do no IO in `config`, `capabilities` or `estimate`. The crate has no runtime or engine dependency. Typed errors carry categories, safe static diagnostics and an optional retry delay, never provider bodies, text, keys or paths.
 
@@ -14,6 +14,7 @@ Adapters cap response-parser allocation before building transport records; engin
 | `chapters/` | [Chapter generation](src/chapters/README.md) |
 | `clips/` | [Transcript clip suggestions](src/clips/README.md) |
 | `contracts.rs` | [Provider contracts](src/contracts/README.md) |
+| `conversation/` | [Agent chat conversation](src/conversation/README.md) |
 | `elevenlabs.rs` | [ElevenLabs transcription and speech synthesis](src/elevenlabs/README.md) |
 | `fillers/` | [Filler classification](src/fillers/README.md) |
 | `gipformer/` | [Local Gipformer](src/gipformer/README.md) |

@@ -6,6 +6,7 @@ mod assembly;
 pub mod chapters;
 pub mod clips;
 mod contracts;
+pub mod conversation;
 pub mod elevenlabs;
 pub mod fillers;
 #[cfg(feature = "gipformer")]
