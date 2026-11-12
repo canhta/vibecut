@@ -370,6 +370,7 @@ impl Rig {
             scope: crate::selection::SelectionScope::None,
             keyframes: &keyframes,
             mask_points: &mask_points,
+            transition: None,
             visuals: &self.visuals,
             cache: crate::editor::context::CacheUi::default(),
             disabled: self.disabled.clone(),

@@ -6,6 +6,11 @@ mod state;
 mod transition;
 mod view;
 mod workflow;
+
+/// The localized catalogue name of an applied transition kind.
+pub(in crate::editor) fn transition_label(kind: &str) -> Text {
+    project::transition_definition(kind).map_or(Text::Transitions, transition::name)
+}
 pub(super) use projection::prepare;
 pub(super) use state::State;
 

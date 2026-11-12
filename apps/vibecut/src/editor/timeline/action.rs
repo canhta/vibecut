@@ -80,6 +80,8 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         modifiers: egui::Modifiers,
     },
+    /// Select an applied transition on the timeline.
+    SelectTransition(project::TransitionId),
     /// Live marquee result; the selection is not settled until `SettleSelection`.
     Marquee(BTreeSet<ItemId>),
     /// The marquee ended: announce the selection to the other areas.

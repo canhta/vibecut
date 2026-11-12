@@ -376,8 +376,11 @@ impl Editor {
                         EngineAction::RecoverAudio => !self.recover_targets().is_empty(),
                         EngineAction::Delete | EngineAction::RippleDelete => {
                             !self.selection.is_empty()
-                                || self.selection_scopes.active(&self.selection)
-                                    == crate::selection::SelectionScope::Keyframes
+                                || matches!(
+                                    self.selection_scopes.active(&self.selection),
+                                    crate::selection::SelectionScope::Keyframes
+                                        | crate::selection::SelectionScope::Transition
+                                )
                         }
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
                         EngineAction::Flip(axis) => self.flip_targets(axis).is_some(),

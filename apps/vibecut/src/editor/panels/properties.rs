@@ -27,7 +27,7 @@ use crate::editor::{
 };
 use gesture::{
     AUDIO_GAIN_SCRUB, EffectReorder, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
-    TEXT_SIZE_SCRUB, effect_scrub_spec,
+    TEXT_SIZE_SCRUB, TRANSITION_DURATION_SCRUB, effect_scrub_spec,
 };
 
 use workflow::transform_scrub;

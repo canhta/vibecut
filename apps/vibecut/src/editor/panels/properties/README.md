@@ -48,6 +48,18 @@ sensitivity: opacity 0.01 per 4 px, audio gain 0.01 dB per 4 px, text size 1 px 
 2 px, speed 0.01 per 2 px. Enter or blur commits a typed shared-field patch through the
 engine registry in one undo step. Focused text editing owns keyboard input.
 
+## Transition inspector
+
+A selected timeline transition replaces the clip properties with one `Transition` tab: the
+catalogue name, a Duration field with stepper (0.1-5 s in 0.1 s steps, the reference's
+range; Enter or blur commits, Escape cancels) and a Start / Center / End alignment
+segmented control, then Remove. Duration is `transition.set_duration`, which the engine
+clamps to the handles of both neighbouring clips and refuses with none. Alignment has no
+command of its own: it is `transition.move` to the span position the alignment names,
+batched with a `transition.set_duration` shrink when the span is longer than the handle it
+must grow into, so one click is one undo step; a span moved by hand shows none selected.
+Remove is `transition.remove`.
+
 ## Remove BG sub-tab
 
 Video and image items get a `Remove BG` cell in the Basic sub-tab bar. Switching

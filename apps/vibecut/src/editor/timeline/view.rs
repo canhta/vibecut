@@ -8,6 +8,7 @@ mod ruler;
 mod scenes;
 mod toolbar;
 mod tracks;
+mod transition;
 
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, FontId, State, Text, TimelineLayout, egui, theme,
@@ -75,6 +76,7 @@ pub(in crate::editor) fn show(
     state.paint_ruler(cx, ui, &layout, views.bookmarks.as_slice());
     state.advance_bookmark_drag(cx, ui);
     state.paint_tracks(cx, ui, &layout, &views.rows, &views.items);
+    state.paint_transitions(cx, ui, &layout, &views.rows);
     state.advance_drag(cx, ui, &layout, &views.rows);
     let modifiers = ui.ctx().input(|input| input.modifiers);
     state.paint_lanes(cx, ui, &layout, &views.items, modifiers);

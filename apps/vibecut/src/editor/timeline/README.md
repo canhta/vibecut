@@ -53,6 +53,17 @@ Right-clicking the ruler opens its
 [bookmark navigation menu](view/ruler/README.md); the lookup policy is owned by the
 [action registry](../../actions/README.md#bookmark-navigation).
 
+## Transitions
+
+Each applied transition draws a 18 px marker on its track's clip band, spanning its span
+(at least 20 px wide so it stays clickable at any zoom) with the catalogue name beside a
+glyph once there is room. A click, or the accessibility action (Enter and Space are
+transport chords, so there is no key-activated focus), selects it as the `Transition`
+selection scope, which replaces the item selection; selecting an item, a marquee or
+Escape clears it. Delete and Ripple delete remove just the transition through
+`transition.remove`, one undo step. The inspector edits it
+([Properties](../panels/properties/README.md#transition-inspector)).
+
 ## Reflection
 
 The toolbar carries horizontal and vertical reflection buttons after Crop, bound to

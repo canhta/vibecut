@@ -56,6 +56,18 @@ pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     decimals: 2,
     suffix: "x",
 };
+/// Transition duration, 0.1-5 s as the reference's field; the engine further
+/// clamps it to the handles of both neighbouring clips.
+pub(super) const TRANSITION_DURATION_SCRUB: ScrubSpec = ScrubSpec {
+    field: "transition_duration",
+    label: Text::TransitionDuration,
+    min: 0.1,
+    max: 5.0,
+    step: 0.1,
+    pixels_per_step: 8.0,
+    decimals: 1,
+    suffix: "s",
+};
 pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     field: "audio_gain",
     label: Text::AudioGain,

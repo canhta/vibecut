@@ -62,6 +62,8 @@ pub(crate) struct Context<'a> {
     pub(crate) keyframes: &'a std::collections::BTreeSet<crate::selection::KeyframeSelection>,
     /// The selected mask points; the app owns this one canonical set.
     pub(crate) mask_points: &'a std::collections::BTreeSet<crate::selection::MaskPointSelection>,
+    /// The selected timeline transition the inspector edits instead of items.
+    pub(crate) transition: Option<project::TransitionId>,
     pub(crate) save_status: Text,
     /// Playback position of the shared transport.
     pub(crate) playhead: time::Tick,

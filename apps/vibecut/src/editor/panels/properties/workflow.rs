@@ -8,6 +8,7 @@ pub(in crate::editor) mod lut;
 mod masks;
 mod number_edit;
 mod speed;
+mod transition;
 
 pub(in crate::editor) use commands::{apply_text_animation, set_item_field, set_shared_field};
 pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
@@ -87,6 +88,15 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 speed,
                 maintain_pitch,
             } => speed::set_speed(desk, item, speed, maintain_pitch),
+            Action::SetTransitionDuration {
+                transition,
+                duration,
+            } => transition::set_duration(desk, transition, duration),
+            Action::SetTransitionAlignment {
+                transition,
+                alignment,
+            } => transition::set_alignment(desk, transition, alignment),
+            Action::RemoveTransition(transition) => transition::remove(desk, transition),
             Action::SetCanvas {
                 width,
                 height,

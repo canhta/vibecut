@@ -90,6 +90,14 @@ impl Editor {
     ) -> Result<()> {
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
+        // A transition has no ripple: both delete chords remove just it.
+        if matches!(id, "timeline.delete" | "timeline.ripple_delete")
+            && self.selection_scopes.active(&self.selection)
+                == crate::selection::SelectionScope::Transition
+        {
+            self.delete_selected_transition();
+            return Ok(());
+        }
         if id == "timeline.delete" {
             match self.selection_scopes.active(&self.selection) {
                 crate::selection::SelectionScope::MaskPoints => {

@@ -164,6 +164,10 @@ pub(in crate::editor) fn show(
 
 impl<'a, 'c> Panel<'a, 'c> {
     fn area(&mut self, ui: &mut egui::Ui, area: Rect) {
+        if let Some(transition) = self.cx.transition {
+            self.transition_panel(ui, area, transition);
+            return;
+        }
         if !self.state.details && self.cx.selection.len() == 1 {
             self.properties(ui, area);
             return;
@@ -1150,3 +1154,5 @@ mod remove_background;
 mod selection;
 
 mod font_dialog;
+
+mod transition;

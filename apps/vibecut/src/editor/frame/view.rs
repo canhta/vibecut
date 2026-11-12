@@ -51,6 +51,7 @@ impl Editor {
         self.frame.panels.clear();
         self.tick();
         // History and external commands can remove what the timeline is editing.
+        self.forget_missing_transition();
         let missing_fade = self.timeline.forget_missing(&self.session);
         let interrupted_fade = (!ui.input(|input| input.focused) || self.player.fullscreen)
             && self.timeline.cancel_fade_drag();

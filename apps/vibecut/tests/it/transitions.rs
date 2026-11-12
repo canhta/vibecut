@@ -15,6 +15,7 @@ use vibecut::{
     i18n::Locale,
     panels::AssetsTab,
     preferences::Preferences,
+    selection::SelectionScope,
     services::playback::{Files, Playback},
 };
 
@@ -556,4 +557,151 @@ fn localized_search_and_category_filter_keep_preview_tiles_available() {
     h.input_mut().focused = false;
     h.run_steps(2);
     assert_eq!(progress(&h), "50%", "window focus loss stops animation");
+}
+
+fn span(h: &Harness<Editor>) -> (Tick, Tick, TransitionAlignment) {
+    let tr = transition(h);
+    (tr.start, tr.duration, tr.alignment)
+}
+fn history(h: &Harness<Editor>) -> usize {
+    h.state().session.history_len().0
+}
+fn step_history(h: &mut Harness<Editor>, action: &str) {
+    h.state_mut().activate(action).unwrap();
+    h.run_steps(2);
+}
+
+#[test]
+fn selected_transition_edits_in_the_inspector_one_undo_step_each() {
+    use TransitionAlignment::{Center, End, Start};
+    let mut h = build(editor(2 * SECOND));
+    open(&mut h);
+    select_pair(&mut h);
+    activate(&mut h, "transitions.add.cross_dissolve");
+    let id = transition(&h).id;
+    let marker = format!("timeline.transition.{}", id.0);
+    let scope = |h: &Harness<Editor>| h.state().inspect().unwrap().selection_scope;
+
+    // Pointer click replaces the item selection and shows the inspector.
+    click(&mut h, &marker);
+    assert_eq!(h.state().selection_scopes.transition, Some(id));
+    assert!(h.state().selection.is_empty());
+    assert_eq!(scope(&h), SelectionScope::Transition);
+    widget(&h, "inspector.tab.transition");
+    let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    h.render()
+        .unwrap()
+        .save(target.join("p1-154-transition-selected.png"))
+        .unwrap();
+    // An item click, then the accessibility action (the keyboard-equivalent
+    // path: Enter and Space are transport chords), selects again.
+    click(&mut h, "timeline.item.1");
+    assert_eq!(h.state().selection_scopes.transition, None);
+    assert_eq!(scope(&h), SelectionScope::Items);
+    activate(&mut h, &marker);
+    assert_eq!(h.state().selection_scopes.transition, Some(id));
+
+    // Duration steps follow the alignment; alignment moves the span about the cut.
+    let cut = Tick(2 * SECOND);
+    for (control, expected) in [
+        (
+            "inspector.transition.duration.increase",
+            (
+                Tick(2 * SECOND - 3 * SECOND / 10),
+                Tick(6 * SECOND / 10),
+                Center,
+            ),
+        ),
+        (
+            "inspector.transition.duration.decrease",
+            (Tick(2 * SECOND - SECOND / 4), Tick(SECOND / 2), Center),
+        ),
+        (
+            "inspector.transition.align.start",
+            (cut, Tick(SECOND / 2), Start),
+        ),
+        (
+            "inspector.transition.align.end",
+            (Tick(2 * SECOND - SECOND / 2), Tick(SECOND / 2), End),
+        ),
+        (
+            "inspector.transition.align.center",
+            (Tick(2 * SECOND - SECOND / 4), Tick(SECOND / 2), Center),
+        ),
+    ] {
+        let before = h.state().session.project().clone();
+        let steps = history(&h);
+        activate(&mut h, control);
+        assert_eq!(span(&h), expected, "{control}");
+        assert_eq!(history(&h), steps + 1, "{control} is one undo step");
+        step_history(&mut h, "edit.undo");
+        assert_eq!(h.state().session.project(), &before, "{control} undo");
+        step_history(&mut h, "edit.redo");
+        assert_eq!(span(&h), expected, "{control} redo");
+    }
+
+    // Escape pops the selection without touching the project.
+    let before = h.state().session.project().clone();
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert_eq!(scope(&h), SelectionScope::None);
+    assert_eq!(h.state().session.project(), &before);
+
+    // Remove, and Delete, each take one undo step and undo restores the span.
+    for remove in [true, false] {
+        click(&mut h, &marker);
+        let before = h.state().session.project().clone();
+        let steps = history(&h);
+        if remove {
+            activate(&mut h, "inspector.transition.remove");
+        } else {
+            h.key_press(egui::Key::Delete);
+            h.run_steps(3);
+        }
+        assert!(
+            h.state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .transitions
+                .is_empty()
+        );
+        assert_eq!(history(&h), steps + 1);
+        assert_eq!(scope(&h), SelectionScope::None);
+        step_history(&mut h, "edit.undo");
+        assert_eq!(h.state().session.project(), &before);
+    }
+}
+
+#[test]
+fn transition_edits_clamp_to_both_clips_handles_and_refusals_change_nothing() {
+    use TransitionAlignment::Start;
+    let mut h = build(editor(SECOND / 10));
+    open(&mut h);
+    let project = h.state().session.project().clone();
+    h.state_mut()
+        .playback
+        .seek(Tick(SECOND / 10), false, project)
+        .unwrap();
+    h.run_steps(3);
+    click(&mut h, "transitions.tile.cross_dissolve");
+    let marker = format!("timeline.transition.{}", transition(&h).id.0);
+    click(&mut h, &marker);
+    // Start alignment only fits the incoming handle: one batch shrinks and moves.
+    let steps = history(&h);
+    activate(&mut h, "inspector.transition.align.start");
+    assert_eq!(
+        span(&h),
+        (Tick(SECOND / 10), Tick(SECOND / 10), Start),
+        "shrunk to the incoming handle"
+    );
+    assert_eq!(history(&h), steps + 1, "shrink and move are one undo step");
+    // Growing past the handle is clamped to it: the project does not change.
+    let before = h.state().session.project().clone();
+    activate(&mut h, "inspector.transition.duration.increase");
+    assert_eq!(span(&h), (Tick(SECOND / 10), Tick(SECOND / 10), Start));
+    assert_eq!(h.state().session.project(), &before);
 }

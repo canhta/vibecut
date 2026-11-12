@@ -55,6 +55,17 @@ pub(in crate::editor) enum Action {
         speed: f64,
         maintain_pitch: bool,
     },
+    /// The selected transition's duration, through `transition.set_duration`.
+    SetTransitionDuration {
+        transition: project::TransitionId,
+        duration: time::Tick,
+    },
+    /// Realign the selected transition: `transition.move`, batched with a shrink.
+    SetTransitionAlignment {
+        transition: project::TransitionId,
+        alignment: project::TransitionAlignment,
+    },
+    RemoveTransition(project::TransitionId),
     SetCanvas {
         width: u32,
         height: u32,

@@ -1,6 +1,6 @@
 //! Transient nested selection scopes over items, keyframes or mask points.
 use crate::egui::{Pos2, Rect};
-use project::{AnimationPath, ColorComponent, ItemId};
+use project::{AnimationPath, ColorComponent, ItemId, TransitionId};
 use std::collections::BTreeSet;
 use time::Tick;
 
@@ -10,6 +10,8 @@ pub enum SelectionScope {
     Items,
     Keyframes,
     MaskPoints,
+    /// One timeline transition; it replaces the item selection.
+    Transition,
 }
 /// Identity includes the channel: simultaneous keys on distinct paths stay distinct.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +56,8 @@ pub struct MaskPointSelection {
 pub struct SelectionScopes {
     pub mask_points: BTreeSet<MaskPointSelection>,
     pub keyframes: BTreeSet<KeyframeSelection>,
+    /// The selected transition; never coexists with selected items.
+    pub transition: Option<TransitionId>,
 }
 impl SelectionScopes {
     pub fn active(&self, items: &BTreeSet<ItemId>) -> SelectionScope {
@@ -63,6 +67,8 @@ impl SelectionScopes {
             SelectionScope::Keyframes
         } else if !items.is_empty() {
             SelectionScope::Items
+        } else if self.transition.is_some() {
+            SelectionScope::Transition
         } else {
             SelectionScope::None
         }
@@ -72,6 +78,7 @@ impl SelectionScopes {
             SelectionScope::MaskPoints => self.mask_points.clear(),
             SelectionScope::Keyframes => self.keyframes.clear(),
             SelectionScope::Items => items.clear(),
+            SelectionScope::Transition => self.transition = None,
             SelectionScope::None => {}
         }
     }

@@ -37,7 +37,58 @@ impl Editor {
         self.properties.clear_drafts();
         self.desk().select();
     }
+    /// A timeline transition replaces the item selection, so the inspector edits it.
+    pub(in crate::editor) fn select_transition(&mut self, transition: project::TransitionId) {
+        if !self.transition_exists(transition) {
+            return;
+        }
+        self.finish_scrub(false);
+        self.player.key_color_pick = None;
+        self.selection.clear();
+        self.selection_scopes = SelectionScopes::default();
+        self.selection_scopes.transition = Some(transition);
+        self.properties.clear_drafts();
+        self.desk().select();
+    }
+    fn transition_exists(&self, transition: project::TransitionId) -> bool {
+        self.session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .transitions
+            .iter()
+            .any(|tr| tr.id == transition)
+    }
+    /// History and external commands can remove the selected transition.
+    pub(in crate::editor) fn forget_missing_transition(&mut self) {
+        if self
+            .selection_scopes
+            .transition
+            .is_some_and(|transition| !self.transition_exists(transition))
+        {
+            self.selection_scopes.transition = None;
+            self.properties.clear_drafts();
+        }
+    }
+    /// Delete removes the selected transition as one undo step.
+    pub(in crate::editor) fn delete_selected_transition(&mut self) {
+        let Some(transition) = self.selection_scopes.transition else {
+            return;
+        };
+        let result = self
+            .desk()
+            .apply_result(engine::Command::RemoveTransition { transition }, false);
+        match result {
+            Ok(_) => {
+                self.selection_scopes.transition = None;
+                self.properties.clear_drafts();
+            }
+            Err(error) => self.desk().fail(error.to_string()),
+        }
+    }
     pub(in crate::editor) fn prune_selection(&mut self) {
+        self.forget_missing_transition();
         let existing: BTreeSet<ItemId> = self
             .session
             .project()

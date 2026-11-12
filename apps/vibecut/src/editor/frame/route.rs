@@ -20,6 +20,7 @@ impl Editor {
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
             mask_points: &self.selection_scopes.mask_points,
+            transition: self.selection_scopes.transition,
             visuals: &self.media,
             cache: self.media.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
@@ -102,7 +103,11 @@ impl Editor {
                 }
                 Action::Seek(at) => self.seek_to(at),
                 Action::Select { item, modifiers } => self.select_item(item, modifiers),
-                Action::Marquee(items) => self.selection = items,
+                Action::SelectTransition(transition) => self.select_transition(transition),
+                Action::Marquee(items) => {
+                    self.selection_scopes.transition = None;
+                    self.selection = items;
+                }
                 Action::SettleSelection => self.selection_changed(),
                 Action::SelectKeyframe {
                     keyframe,
