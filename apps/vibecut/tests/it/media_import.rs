@@ -25,8 +25,7 @@ use std::{
 };
 use time::{FrameRate, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, Error, egui,
-    import::{ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES},
+    Editor, Error, ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES, egui,
     preferences::Preferences,
     services::playback::{Files, Playback},
 };

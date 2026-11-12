@@ -17,9 +17,8 @@ use std::{
 };
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    AssetsTab, Editor, egui,
     i18n::Locale,
-    panels::AssetsTab,
     preferences::PreferenceStore,
     subtitles::{LocalWorkflow, Options, Subtitles, TaskEvents, Work, Workflow},
 };
@@ -145,7 +144,7 @@ fn caption_bank_name_refusals_and_cap_preserve_the_real_project() {
 #[test]
 fn caption_bank_name_invalidation_precedes_enter_and_blur() {
     struct HeldImport;
-    impl vibecut::import::ImportProbe for HeldImport {
+    impl vibecut::ImportProbe for HeldImport {
         fn import(
             &self,
             _: media::AssetId,

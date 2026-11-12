@@ -194,23 +194,11 @@ name = "capture"
 group = "shell"
 
 [[crate.module]]
-name = "media_panel"
-group = "assets"
-
-[[crate.module]]
-name = "import"
-group = "assets"
-
-[[crate.module]]
 name = "effects"
 group = "assets"
 
 [[crate.module]]
 name = "effect_previews"
-group = "assets"
-
-[[crate.module]]
-name = "panels"
 group = "assets"
 
 [[crate.module]]
@@ -248,7 +236,7 @@ groups = ["context"]
 
 [[crate.folder.layer]]
 name = "areas"
-groups = ["assets", "captions", "dialogs", "panels", "timeline", "widgets"]
+groups = ["captions", "dialogs", "panels", "timeline", "widgets"]
 
 [[crate.folder.layer]]
 name = "frame"
@@ -261,10 +249,6 @@ group = "context"
 [[crate.folder.module]]
 name = "timing"
 group = "context"
-
-[[crate.folder.module]]
-name = "assets"
-group = "assets"
 
 [[crate.folder.module]]
 name = "captions"
@@ -301,7 +285,11 @@ path = "src/editor/panels"
 
 [[crate.folder.layer]]
 name = "areas"
-groups = ["panels", "properties"]
+groups = ["assets", "panels", "properties"]
+
+[[crate.folder.module]]
+name = "assets"
+group = "assets"
 
 [[crate.folder.module]]
 name = "player"

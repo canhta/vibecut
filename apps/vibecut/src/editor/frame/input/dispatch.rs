@@ -36,7 +36,7 @@ pub enum PreviewZoom {
 
 impl Editor {
     pub(in crate::editor) fn caption_bank_ready(&self) -> bool {
-        self.preferences.assets_tab == crate::panels::AssetsTab::Captions
+        self.preferences.assets_tab == crate::editor::AssetsTab::Captions
             && self.properties.input_ready(&self.session)
             && !self.player.transform.text_edit_open()
             && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
@@ -385,7 +385,7 @@ impl Editor {
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
                         EngineAction::Flip(axis) => self.flip_targets(axis).is_some(),
                         EngineAction::InsertMedia => {
-                            !self.importing() && !self.media_selection.is_empty()
+                            !self.importing() && self.assets.has_media_selection()
                         }
                         _ => true,
                     }

@@ -18,10 +18,12 @@ Each module's contract is its README.
 | `capture.rs` | [Capture](src/capture/README.md) |
 | `control.rs` | [Control](src/control/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
-| `editor/assets/` | [Assets](src/editor/assets/README.md) |
-| `editor/assets/sounds/` | [Sounds tab](src/editor/assets/sounds/README.md) |
-| `editor/assets/view/` | [Assets view](src/editor/assets/view/README.md) |
-| `editor/assets/workflow/` | [Assets workflow](src/editor/assets/workflow/README.md) |
+| `editor/panels/assets/` | [Assets](src/editor/panels/assets/README.md) |
+| `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
+| `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |
+| `editor/panels/assets/workflow/` | [Assets workflow](src/editor/panels/assets/workflow/README.md) |
+| `editor/panels/assets/import.rs` | [Media import](src/editor/panels/assets/import/README.md) |
+| `editor/panels/assets/media_panel.rs` | [Media library](src/editor/panels/assets/media_panel/README.md) |
 | `editor/captions/` | [Captions panel](src/editor/captions/README.md) |
 | `editor/context/` | [Editor context](src/editor/context/README.md) |
 | `editor/dialogs/` | [Editor dialogs](src/editor/dialogs/README.md) |
@@ -48,13 +50,10 @@ Each module's contract is its README.
 | `home.rs` / `home/` | [Projects page](src/home/README.md) |
 | `home/view/` | [Home view](src/home/view/README.md) |
 | `i18n.rs` / `i18n/` | [Localization](src/i18n/README.md) |
-| `import.rs` | [Media import](src/import/README.md) |
 | `input.rs` / `input/` | [Key input](src/input/README.md) |
 | `kit.rs` / `kit/` | [Kit](src/kit/README.md) |
 | `kit/widgets/` | [Kit widgets](src/kit/widgets/README.md) |
 | `lifecycle.rs` | [Project lifecycle](src/lifecycle/README.md) |
-| `media_panel.rs` | [Media library](src/media_panel/README.md) |
-| `panels.rs` | [Panels](src/panels/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |
 | `selection.rs` | [Selection](src/selection/README.md) |
 | `services.rs` / `services/` | [Services](src/services/README.md) |

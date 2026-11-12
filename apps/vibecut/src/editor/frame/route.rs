@@ -594,9 +594,7 @@ impl Editor {
         if self.assets.transition_drag.take().is_some() {
             return;
         }
-        if self.media_marquee.take().is_some() {
-            self.media_selection.clear();
-            self.media_anchor = None;
+        if self.assets.cancel_media_marquee() {
             self.session.end_merge();
             return;
         }
@@ -649,9 +647,8 @@ impl Editor {
         } else {
             self.selection_scopes.clear_specific(&mut self.selection);
             self.desk().select();
-            if !self.media_selection.is_empty() {
-                self.media_selection.clear();
-                self.media_anchor = None;
+            if self.assets.has_media_selection() {
+                self.assets.clear_media_selection();
                 self.session.end_merge();
             }
         }

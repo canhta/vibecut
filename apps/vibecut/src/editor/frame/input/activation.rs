@@ -148,10 +148,9 @@ impl Editor {
                     let next = media_panel::next_sort(self.preferences.media_sort, key);
                     self.set_preference("media_sort", serde_json::to_value(next)?)?;
                 }
-                UiAction::RequestDeleteMedia => {
-                    self.request_media_delete(self.media_selection.iter().copied().collect())
-                }
-                UiAction::CancelDeleteMedia => self.media_delete_confirm = None,
+                UiAction::RequestDeleteMedia => self
+                    .request_media_delete(self.assets.media_selection().iter().copied().collect()),
+                UiAction::CancelDeleteMedia => self.cancel_media_delete(),
                 UiAction::ConfirmDeleteMedia => self.confirm_media_delete()?,
                 UiAction::RevealMedia => {
                     let asset = AssetId(argument.ok_or(Error::Unsupported("media identity"))?);
@@ -286,13 +285,13 @@ impl Editor {
                 }
                 UiAction::Import => {
                     if self.importing() {
-                        self.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
+                        self.assets.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
                     } else {
                         self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
                     }
                 }
                 UiAction::CancelImport => {
-                    if let Some(queue) = &self.imports {
+                    if let Some(queue) = &self.assets.imports {
                         queue.cancel();
                     }
                 }

@@ -31,9 +31,9 @@ impl Editor {
             }
             return;
         }
-        if self.media_delete_confirm.is_some() {
+        if self.assets.media_delete_confirm.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
-                self.media_delete_confirm = None;
+                self.cancel_media_delete();
             }
             return;
         }
@@ -54,7 +54,7 @@ impl Editor {
             }
             return;
         }
-        if self.timeline.marquee_active() || self.media_marquee.is_some() {
+        if self.timeline.marquee_active() || self.assets.media_marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();
             }

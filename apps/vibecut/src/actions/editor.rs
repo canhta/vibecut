@@ -49,7 +49,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionMediaSortName,
         ActionCategory::View,
         "media library preferences",
-        UiAction::MediaSortBy(crate::media_panel::MediaSortKey::Name),
+        UiAction::MediaSortBy(crate::editor::MediaSortKey::Name),
         &[],
     ),
     ActionSpec::ui(
@@ -57,7 +57,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionMediaSortType,
         ActionCategory::View,
         "media library preferences",
-        UiAction::MediaSortBy(crate::media_panel::MediaSortKey::Type),
+        UiAction::MediaSortBy(crate::editor::MediaSortKey::Type),
         &[],
     ),
     ActionSpec::ui(
@@ -65,7 +65,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionMediaSortDuration,
         ActionCategory::View,
         "media library preferences",
-        UiAction::MediaSortBy(crate::media_panel::MediaSortKey::Duration),
+        UiAction::MediaSortBy(crate::editor::MediaSortKey::Duration),
         &[],
     ),
     ActionSpec::ui(
@@ -73,7 +73,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionMediaSortSize,
         ActionCategory::View,
         "media library preferences",
-        UiAction::MediaSortBy(crate::media_panel::MediaSortKey::Size),
+        UiAction::MediaSortBy(crate::editor::MediaSortKey::Size),
         &[],
     ),
     ActionSpec::ui(

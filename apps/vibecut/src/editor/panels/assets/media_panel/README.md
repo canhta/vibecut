@@ -5,7 +5,7 @@ Interface: `MediaView`, `MediaSort`, `MediaSortKey`, `MediaSortOrder`, `MediaKin
 
 The Media tab is the live asset library. Grid and list share one persisted mode. The
 sort dropdown orders by name, type, duration or file size, flips direction on the active
-key, and persists key and direction in [preferences](../preferences/README.md); sorting
+key, and persists key and direction in [preferences](../../../../preferences/README.md); sorting
 is stable. File size is filesystem metadata for display and sort only (missing files
 show none) and never enters the project record. Cards and rows reuse the
 [import](../import/README.md) cache's decoded thumbnails and capability badges.
@@ -32,4 +32,4 @@ undo step via engine auto placement; the engine owns track choice and creates se
 tracks on demand. Insert synchronizes playback to the new snapshot.
 
 Thumbnail retention and its leases belong to
-[engine artifacts](../../../../crates/engine/src/artifacts/README.md).
+[engine artifacts](../../../../../../../crates/engine/src/artifacts/README.md).

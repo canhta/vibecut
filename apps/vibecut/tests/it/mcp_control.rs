@@ -396,7 +396,7 @@ fn caption_editor() -> vibecut::Editor {
     )
     .unwrap();
     let mut preferences = vibecut::preferences::Preferences {
-        assets_tab: vibecut::panels::AssetsTab::Captions,
+        assets_tab: vibecut::AssetsTab::Captions,
         ..Default::default()
     };
     preferences.subtitles.source = "vi".into();

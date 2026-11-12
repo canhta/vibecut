@@ -1,9 +1,9 @@
 //! Routes assets intentions through existing editor commands.
-use crate::editor::{Editor, assets, captions, egui};
+use crate::editor::{Editor, Rect, Vec2, assets, captions, egui};
 
 impl Editor {
     pub(in crate::editor) fn show_assets(&mut self, ui: &mut egui::Ui) {
-        if self.preferences.assets_tab == crate::panels::AssetsTab::Sounds
+        if self.preferences.assets_tab == assets::AssetsTab::Sounds
             && self.assets.audio_section == assets::AudioSection::Music
         {
             self.music_loaded();
@@ -14,6 +14,13 @@ impl Editor {
         let actions = assets::show(&mut state, &cx, ui);
         drop(cx);
         self.assets = state;
+        self.apply_assets_actions(Some(ui), actions);
+    }
+    fn apply_assets_actions(
+        &mut self,
+        mut ui: Option<&mut egui::Ui>,
+        actions: Vec<assets::Action>,
+    ) {
         for action in actions {
             match action {
                 assets::Action::SelectTab(tab) => {
@@ -38,11 +45,17 @@ impl Editor {
                     content,
                     background,
                     rects,
-                } => self.media_marquee(ui, content, &background, &rects),
+                } => {
+                    if let Some(ui) = ui.as_deref_mut() {
+                        self.media_marquee(ui, content, &background, &rects);
+                    }
+                }
                 assets::Action::Captions(rect) => {
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-                    captions::show(self, &mut child);
-                    self.drain_requests();
+                    if let Some(ui) = ui.as_deref_mut() {
+                        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                        captions::show(self, &mut child);
+                        self.drain_requests();
+                    }
                 }
                 assets::Action::EffectDrag(kind) => self.effect_drag = Some(kind.to_owned()),
                 assets::Action::AddEffect(kind) => self.add_effect_from_selection(kind),
@@ -87,5 +100,39 @@ impl Editor {
                 assets::Action::MusicKeyRemove => self.music_key_remove(),
             }
         }
+    }
+    pub(in crate::editor) fn show_media_delete_dialog(&mut self, ctx: &egui::Context) {
+        let mut state = std::mem::take(&mut self.assets);
+        let cx = self.context();
+        let actions = assets::delete_dialog(&state, &cx, ctx);
+        drop(cx);
+        self.assets = state;
+        self.apply_assets_actions(None, actions);
+    }
+    pub(in crate::editor) fn show_import_overlay(&mut self, ctx: &egui::Context) {
+        let rect = self
+            .frame
+            .panels
+            .get("media")
+            .copied()
+            .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)));
+        let mut state = std::mem::take(&mut self.assets);
+        let cx = self.context();
+        let actions = assets::import_overlay(&state, &cx, ctx, rect);
+        drop(cx);
+        self.assets = state;
+        self.apply_assets_actions(None, actions);
+    }
+    pub(in crate::editor) fn show_drop_overlay(&mut self, ctx: &egui::Context, hovering: bool) {
+        let importing = self.assets.importing();
+        if !hovering || importing {
+            return;
+        }
+        let cx = self.context();
+        assets::drop_overlay(&cx, ctx, hovering, importing);
+    }
+    pub(in crate::editor) fn show_toast(&mut self, ctx: &egui::Context) {
+        let cx = self.context();
+        assets::toast(self.toast.as_ref(), &cx, ctx);
     }
 }

@@ -8,6 +8,9 @@ mod music;
 mod sounds;
 mod transition;
 
+pub(super) use deletion::show as delete_dialog;
+pub(super) use feedback::{drop_overlay, import_overlay, toast};
+
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,
     Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
@@ -15,7 +18,7 @@ use super::{
 };
 use state::Filter;
 
-pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Action> {
+pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Action> {
     let mut view = View {
         state,
         cx,

@@ -2,28 +2,12 @@
 
 use super::panels::player::{PreviewGuide, TextCaret};
 use super::{
-    Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, Icon, ImportFailure,
-    ImportQueue, ItemId, KeybindingIssue, MediaSort, MediaView, PathBuf, Playback, Preferences,
-    SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason, WidgetState, actions, egui,
-    theme,
+    Arc, AssetId, BTreeMap, Clock, Duration, Icon, ItemId, KeybindingIssue, MediaSort, MediaView,
+    PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick, WidgetState,
+    actions, egui, theme,
 };
 use crate::services::color_picker::EyedropperState;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AssetState {
-    Probing,
-    Ready,
-    Unsupported(UnsupportedReason),
-}
-impl AssetState {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Probing => "probing",
-            Self::Ready => "ready",
-            Self::Unsupported(_) => "unsupported",
-        }
-    }
-}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetInspection {
     pub id: AssetId,
@@ -281,20 +265,8 @@ pub(super) struct AssetRow {
     pub(super) name: String,
     pub(super) info: String,
     pub(super) icon: Icon,
-    pub(super) state: AssetState,
+    pub(super) state: super::assets::AssetState,
     pub(super) duration: Option<Tick>,
-}
-#[derive(Clone, Copy, Debug)]
-pub(super) struct MediaReveal {
-    pub(super) asset: AssetId,
-    pub(super) until: Duration,
-}
-#[derive(Clone, Debug)]
-pub(super) struct MediaMarquee {
-    pub(super) origin: egui::Pos2,
-    pub(super) before: BTreeSet<AssetId>,
-    pub(super) additive: bool,
-    pub(super) moved: bool,
 }
 /// App state only. The immutable engine project is read through Session, never copied
 /// into a parallel frontend project model. Every edit dispatches its registry ID.
@@ -318,31 +290,11 @@ pub struct Editor {
     pub(crate) persistence_error: Option<std::sync::Arc<engine::recovery::Error>>,
     pub(super) configured: bool,
     pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
-    pub(super) imports: Option<ImportQueue>,
-    pub(super) import_total: usize,
-    pub(super) import_completed: usize,
-    pub(super) import_imported: usize,
-    pub(super) import_cancelled: bool,
-    pub(super) import_failures: Vec<ImportFailure>,
-    pub(super) import_notice: Option<String>,
-    pub(super) import_error: Option<Arc<dyn engine::Failure + 'static>>,
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,
     pub(super) assets: super::assets::State,
-    pub(super) media_selection: BTreeSet<AssetId>,
-    pub(super) media_anchor: Option<AssetId>,
-    pub(super) media_sizes: BTreeMap<AssetId, (ContentHash, Option<u64>)>,
-    pub(super) media_marquee: Option<MediaMarquee>,
-    pub(super) media_reveal: Option<MediaReveal>,
-    pub(super) media_delete_confirm: Option<Vec<AssetId>>,
     pub(super) dialogs: super::dialogs::State,
-    pub(super) asset_states: BTreeMap<AssetId, AssetState>,
-    pub(super) thumbnails: BTreeMap<AssetId, engine::thumbnails::RetainedThumbnail>,
-    pub(super) pending_imports: BTreeMap<AssetId, PathBuf>,
-    pub(super) restoring_asset: Option<AssetId>,
-    pub(super) thumbnail_textures: std::cell::RefCell<BTreeMap<AssetId, egui::TextureHandle>>,
-    pub(super) thumbnail_root: Option<PathBuf>,
     pub(super) sound_library: Option<Arc<libraries::sounds::SoundLibrary>>,
     pub(super) sounds: Option<super::assets::sounds::Sounds>,
     pub(super) sound_media_dir: Option<PathBuf>,

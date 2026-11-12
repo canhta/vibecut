@@ -134,8 +134,8 @@ impl PreferenceStore {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::editor::AssetsTab;
     use crate::i18n::Locale;
-    use crate::panels::AssetsTab;
     use crate::preferences::FontTab;
     use crate::preferences::{
         PANEL_MAX, PANEL_MIN, PREFERENCE_KEYS, PREVIEW_MAX, PREVIEW_MIN, TIMELINE_MAX,

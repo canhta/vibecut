@@ -21,8 +21,7 @@ use std::{
 };
 use time::Tick;
 use vibecut::{
-    Editor, egui,
-    import::{ImportProbe, ThumbnailSource},
+    Editor, ImportProbe, ThumbnailSource, egui,
     preferences::Preferences,
     services::playback::{Files, Playback},
 };

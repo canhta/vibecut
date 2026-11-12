@@ -9,9 +9,11 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         editor.preferences.assets_tab,
         AssetsTab::Text | AssetsTab::Effects | AssetsTab::Transitions | AssetsTab::Captions
     ) {
-        editor.refresh_media_sizes();
-        let sizes = editor.media_size_map();
-        let order = editor.media_order();
+        editor.assets.refresh_media_sizes(&editor.session);
+        let sizes = editor.assets.media_size_map();
+        let order = editor
+            .assets
+            .media_order(&editor.session, &editor.preferences);
         let by_id: BTreeMap<_, _> = editor
             .session
             .project()
@@ -25,6 +27,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             .filter_map(|id| {
                 let asset = by_id.get(&id)?;
                 let status = editor
+                    .assets
                     .asset_states
                     .get(&id)
                     .copied()
@@ -40,7 +43,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
                 })
             })
             .collect();
-        rows.extend(editor.pending_imports.iter().map(|(id, path)| Row {
+        rows.extend(editor.assets.pending_imports.iter().map(|(id, path)| Row {
             display: AssetRow {
                 id: *id,
                 name: file_name(path),
@@ -59,6 +62,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         .iter()
         .filter_map(|row| {
             editor
+                .assets
                 .thumbnail_texture(ctx, row.display.id)
                 .map(|texture| (row.display.id, texture))
         })
@@ -153,11 +157,11 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         transition_drag_enabled,
         graphic_insertion_ready: editor.graphic_insertion_available(),
         graphic_previews,
-        importing: editor.importing(),
-        selection: editor.media_selection.clone(),
-        reveal: editor.media_reveal.map(|reveal| reveal.asset),
-        marquee: editor.media_marquee.clone(),
-        failed: !editor.import_failures.is_empty() || editor.import_notice.is_some(),
+        importing: editor.assets.importing(),
+        selection: editor.assets.media_selection.clone(),
+        reveal: editor.assets.media_reveal.map(|reveal| reveal.asset),
+        marquee: editor.assets.media_marquee.clone(),
+        failed: !editor.assets.import_failures.is_empty() || editor.assets.import_notice.is_some(),
         sounds: editor.sounds.as_ref().map(|sounds| sounds.view()),
         music: editor.music.as_ref().map(|music| music.view()),
         music_credits,

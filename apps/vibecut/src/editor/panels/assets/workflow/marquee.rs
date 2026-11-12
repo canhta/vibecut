@@ -1,8 +1,13 @@
 //! Applies media marquee selection gestures.
-use super::super::{AssetId, Editor, MediaMarquee, Rect, egui};
-impl Editor {
+use super::super::state::MediaMarquee;
+use super::super::{AssetId, Rect, egui};
+use super::State;
+use crate::editor::Desk;
+
+impl State {
     pub(in crate::editor) fn media_marquee(
         &mut self,
+        desk: &mut Desk<'_>,
         ui: &mut egui::Ui,
         content: Rect,
         background: &egui::Response,
@@ -34,15 +39,16 @@ impl Editor {
             if let Some(state) = &mut self.media_marquee {
                 state.moved |= marquee.origin.distance(pointer) > 4.0;
             }
+            let accent = desk.editor().accent();
             ui.painter().with_clip_rect(content).rect_filled(
                 rect,
                 0.0,
-                self.accent().gamma_multiply(0.15),
+                accent.gamma_multiply(0.15),
             );
             ui.painter().with_clip_rect(content).rect_stroke(
                 rect,
                 0.0,
-                egui::Stroke::new(1.0, self.accent()),
+                egui::Stroke::new(1.0, accent),
                 egui::StrokeKind::Inside,
             );
         }
@@ -53,12 +59,27 @@ impl Editor {
                 self.media_selection.clear();
                 self.media_anchor = None;
             }
-            self.session.end_merge();
+            desk.end_merge();
         }
         if background.clicked() {
             self.media_selection.clear();
             self.media_anchor = None;
-            self.session.end_merge();
+            desk.end_merge();
         }
+    }
+    /// Escape: abandon an open marquee, clearing a selection it never moved.
+    pub(in crate::editor) fn cancel_media_marquee(&mut self) -> bool {
+        let Some(marquee) = self.media_marquee.take() else {
+            return false;
+        };
+        if !marquee.moved {
+            self.media_selection.clear();
+            self.media_anchor = None;
+        }
+        true
+    }
+    pub(in crate::editor) fn clear_media_selection(&mut self) {
+        self.media_selection.clear();
+        self.media_anchor = None;
     }
 }

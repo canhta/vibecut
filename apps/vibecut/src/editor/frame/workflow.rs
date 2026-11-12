@@ -16,7 +16,7 @@ impl Editor {
         }
         if let Some(previews) = &mut self.effect_previews {
             previews.update(
-                self.preferences.assets_tab == crate::panels::AssetsTab::Effects,
+                self.preferences.assets_tab == crate::editor::AssetsTab::Effects,
                 self.clock.now(),
             );
             if let Err(e) = previews.tick() {
@@ -64,11 +64,12 @@ impl Editor {
         }
         self.truncate_toast();
         if self
+            .assets
             .media_reveal
             .as_ref()
             .is_some_and(|reveal| self.clock.now() >= reveal.until)
         {
-            self.media_reveal = None;
+            self.assets.media_reveal = None;
         }
         if let Err(error) = self.remember_view() {
             self.desk().fail(error.to_string());

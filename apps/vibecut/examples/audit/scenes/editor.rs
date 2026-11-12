@@ -106,7 +106,7 @@ fn captions_editor(
     if highlighted {
         editor.preferences.subtitles.bilingual = true;
     }
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Captions;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Captions;
     editor.prepare_subtitles()?;
     if filled {
         let mut panel = editor.subtitles.take().ok_or("captions missing")?;
@@ -317,7 +317,7 @@ pub(super) fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failu
 /// The Transitions tab with an applicable cut selected, at the measured editor size.
 pub(super) fn editor_transitions(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, first) = media_editor(theme, Locale::En)?;
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Transitions;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Transitions;
     let second = editor
         .session
         .project()

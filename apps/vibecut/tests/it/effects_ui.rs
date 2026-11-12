@@ -1866,7 +1866,7 @@ fn effect_preferences_round_trip_through_the_app_store() {
     click(&mut harness, "assets.tab.effects");
     store.save(&harness.state().preferences).unwrap();
     let restored = store.load().unwrap();
-    assert_eq!(restored.assets_tab, vibecut::panels::AssetsTab::Effects);
+    assert_eq!(restored.assets_tab, vibecut::AssetsTab::Effects);
 }
 
 fn grade(harness: &Harness<Editor>, id: ItemId) -> Option<[f64; 4]> {

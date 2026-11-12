@@ -3,11 +3,11 @@
 use super::{FontPickerPreferences, WindowGeometry};
 use crate::{
     ElementKind, PropertiesTab,
+    editor::AssetsTab,
+    editor::{MediaSort, MediaView},
     home::ProjectsPreferences,
     i18n::Locale,
     input::KeybindingPreferences,
-    media_panel::{MediaSort, MediaView},
-    panels::AssetsTab,
 };
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};

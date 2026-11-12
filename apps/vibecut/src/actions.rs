@@ -116,7 +116,7 @@ pub enum UiAction {
     InsertGraphic(GraphicShape),
     MediaView,
     MediaSort,
-    MediaSortBy(crate::media_panel::MediaSortKey),
+    MediaSortBy(crate::editor::MediaSortKey),
     RequestDeleteMedia,
     CancelDeleteMedia,
     ConfirmDeleteMedia,

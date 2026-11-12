@@ -58,7 +58,7 @@ Lowest first; imports go down only, and a window never names another window.
 | Foundation | `kit/` (tokens, icons, widgets, appearance), `i18n/`, `input/`; no engine knowledge |
 | Services | `services/`: playback, preview, crop, AI task progress, the editor session with autosave, capture, the GPU effects adapter |
 | Shared editor context | `editor/context/`: the read context, the one write context, thumbnails, the one-selected-item read and the clip display contract every editor area names |
-| Windows and areas | `home/`, `shorts/`, editor areas (`assets/`, `captions/`, `dialogs/`, `panels/`, `properties/`, `timeline/`, `widgets.rs`) |
+| Windows and areas | `home/`, `shorts/`, editor areas (`panels/` with assets, player and properties, `captions/`, `dialogs/`, `timeline/`, `widgets.rs`) |
 | Frame | `editor/frame/`, the `Editor` record (`editor/state.rs`), `actions/`, `preferences/` |
 | Composition root | `app/`: wiring, window registry, control attach |
 

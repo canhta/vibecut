@@ -11,9 +11,8 @@ use project::{
 use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, egui,
+    AssetsTab, Editor, egui,
     i18n::Locale,
-    panels::AssetsTab,
     preferences::Preferences,
     selection::SelectionScope,
     services::playback::{Files, Playback},

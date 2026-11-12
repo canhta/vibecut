@@ -1,37 +1,46 @@
 //! Owns the assets presentation boundary.
+pub mod import;
+pub mod media_panel;
 pub mod music;
 mod projection;
 pub mod sounds;
 mod state;
+mod tabs;
 mod transition;
 mod view;
 mod workflow;
-
 /// The localized catalogue name of an applied transition kind.
 pub(in crate::editor) fn transition_label(kind: &str) -> Text {
     project::transition_definition(kind).map_or(Text::Transitions, transition::name)
 }
-pub(super) use projection::prepare;
-pub(super) use state::State;
+pub use import::{
+    ImportEvent, ImportFailure, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MEDIA_EXTENSIONS,
+    ThumbnailOutcome, ThumbnailSource,
+};
+pub use media_panel::{MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView};
+pub(in crate::editor) use projection::prepare;
+pub use state::AssetState;
+pub(in crate::editor) use state::State;
+pub use tabs::AssetsTab;
+pub(in crate::editor) use view::{delete_dialog, drop_overlay, import_overlay, toast};
 
 /// The Audio tab's two pages. Sound effects keep the existing provider; Music
 /// adds the open-source search section.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum AudioSection {
+pub(in crate::editor) enum AudioSection {
     Music,
     #[default]
     Sounds,
 }
 
-use super::{
-    Align2, Arc, AssetId, AssetRow, AssetState, AssetsTab, BTreeMap, BTreeSet, Color32, Command,
-    CreatedId, Duration, Editor, Error, FontId, Icon, Id, ImportEvent, ImportFailure, ImportProbe,
-    ImportQueue, ItemParams, Locale, MEDIA_REVEAL, MediaKind, MediaMarquee, MediaReveal,
-    MediaSortKey, MediaSortOrder, MediaView, NewItem, PathBuf, Rect, Result, SelectionScopes,
-    SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, ThumbnailOutcome,
-    ThumbnailSource, Tick, Toast, TrackKind, UnsupportedReason, Vec2, display_short_time,
-    display_time, effect_preview_instance, egui, error_detail, icons, media_panel, theme,
+use super::super::{
+    Align2, Arc, AssetId, AssetRow, BTreeMap, BTreeSet, Color32, Command, ContentHash, CreatedId,
+    Duration, Editor, Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result,
+    SelectionScopes, SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, Tick, Toast,
+    TrackKind, UnsupportedReason, Vec2, display_short_time, display_time, effect_preview_instance,
+    egui, error_detail, icons, theme,
 };
+use state::MediaMarquee;
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};
 
 /// Read-only workflow projection owned by this area's state.
@@ -58,7 +67,11 @@ struct Model {
     music_credits_failed: bool,
 }
 
-pub(super) fn show(state: &mut State, cx: &super::Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
+pub(in crate::editor) fn show(
+    state: &mut State,
+    cx: &crate::editor::Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
     let mut model = std::mem::take(&mut state.model);
     model.preferences.locale = cx.locale;
     model.preferences.dark = cx.dark;
@@ -77,14 +90,14 @@ struct EffectRow {
     status: Option<crate::effect_previews::EffectPreviewStatus>,
     texture: Option<egui::TextureHandle>,
 }
-pub(super) struct Recorded {
-    pub(super) id: String,
-    pub(super) response: egui::Response,
-    pub(super) glyph: Option<Icon>,
-    pub(super) tooltip: Option<String>,
+pub(in crate::editor) struct Recorded {
+    pub(in crate::editor) id: String,
+    pub(in crate::editor) response: egui::Response,
+    pub(in crate::editor) glyph: Option<Icon>,
+    pub(in crate::editor) tooltip: Option<String>,
 }
 /// Intentions routed by the frame after painting has released its read borrow.
-pub(super) enum Action {
+pub(in crate::editor) enum Action {
     SelectTab(AssetsTab),
     Command(String),
     Select(AssetId, egui::Modifiers),
@@ -125,21 +138,4 @@ pub(super) enum Action {
     MusicCredits,
     MusicKeyApply,
     MusicKeyRemove,
-}
-
-impl Editor {
-    /// Render the assets surface in isolation for offscreen design audits.
-    pub fn assets_ui(&mut self, ui: &mut egui::Ui) {
-        Self::fonts(ui.ctx());
-        icons::install(ui.ctx());
-        Self::theme(ui.ctx(), self.preferences.dark);
-        crate::kit::install_editor_density(ui.ctx());
-        self.frame.widgets.clear();
-        self.tick();
-        ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, self.panel_fill());
-        self.frame.panels.insert("media", ui.max_rect());
-        self.show_assets(ui);
-        self.import_overlay(ui.ctx());
-    }
 }

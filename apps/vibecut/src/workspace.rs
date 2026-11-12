@@ -996,8 +996,10 @@ impl EditorWindow {
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
-                let dialog = rfd::AsyncFileDialog::new()
-                    .add_filter(self.tr(Text::Media), crate::import::MEDIA_EXTENSIONS);
+                let dialog = rfd::AsyncFileDialog::new().add_filter(
+                    self.tr(Text::Media),
+                    crate::editor::assets::import::MEDIA_EXTENSIONS,
+                );
                 Box::pin(dialog.pick_files())
             }
             PickerAction::SnapshotSave => {

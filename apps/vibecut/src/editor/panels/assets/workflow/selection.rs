@@ -1,15 +1,17 @@
 //! Maintains asset selection.
 
-use crate::editor::assets::{
-    Arc, AssetId, AssetState, AssetsTab, BTreeMap, BTreeSet, Command, Editor, Error, MEDIA_REVEAL,
-    MediaReveal, Result, SourceAsset, Text, UnsupportedReason, egui, error_detail, media_panel,
+use super::super::state::{MEDIA_REVEAL, MediaReveal};
+use super::super::{
+    Arc, AssetId, AssetState, AssetsTab, BTreeMap, BTreeSet, Command, Error, Result, SourceAsset,
+    Text, UnsupportedReason, egui, error_detail, media_panel,
 };
+use super::State;
+use crate::editor::Desk;
 use crate::i18n;
 
-impl Editor {
-    pub(in crate::editor) fn prune_media_selection(&mut self) {
-        let existing: BTreeSet<AssetId> = self
-            .session
+impl State {
+    pub(in crate::editor) fn prune_media_selection(&mut self, session: &engine::Session) {
+        let existing: BTreeSet<AssetId> = session
             .project()
             .data()
             .assets
@@ -45,8 +47,8 @@ impl Editor {
             .collect()
     }
     /// File size is display metadata; stat each asset once per content identity.
-    pub(in crate::editor) fn refresh_media_sizes(&mut self) {
-        let assets = &self.session.project().data().assets;
+    pub(in crate::editor) fn refresh_media_sizes(&mut self, session: &engine::Session) {
+        let assets = &session.project().data().assets;
         let mut next = BTreeMap::new();
         for asset in assets.iter().filter(|asset| !asset.ephemeral()) {
             let hash = asset.content_hash();
@@ -59,16 +61,43 @@ impl Editor {
         }
         self.media_sizes = next;
     }
-    pub(in crate::editor) fn media_order(&self) -> Vec<AssetId> {
+    pub(in crate::editor) fn media_order(
+        &self,
+        session: &engine::Session,
+        preferences: &crate::preferences::Preferences,
+    ) -> Vec<AssetId> {
         media_panel::ordered_assets(
-            &self.session.project().data().assets,
-            self.preferences.media_sort,
+            &session.project().data().assets,
+            preferences.media_sort,
             &self.media_size_map(),
         )
     }
-    pub(in crate::editor) fn prune_asset_state(&mut self) {
-        let existing: BTreeSet<AssetId> = self
-            .session
+    pub(in crate::editor) fn media_selection(&self) -> &BTreeSet<AssetId> {
+        &self.media_selection
+    }
+    pub(in crate::editor) fn has_media_selection(&self) -> bool {
+        !self.media_selection.is_empty()
+    }
+    pub(in crate::editor) fn media_highlight(&self) -> Option<AssetId> {
+        self.media_reveal.map(|reveal| reveal.asset)
+    }
+    pub(in crate::editor) fn media_delete_pending(&self) -> Vec<AssetId> {
+        self.media_delete_confirm.clone().unwrap_or_default()
+    }
+    /// Upload one decoded thumbnail on first use; later frames reuse the handle.
+    pub(in crate::editor) fn thumbnail_texture(
+        &self,
+        ctx: &egui::Context,
+        id: AssetId,
+    ) -> Option<egui::TextureHandle> {
+        crate::editor::context::Thumbnails {
+            images: &self.thumbnails,
+            textures: &self.thumbnail_textures,
+        }
+        .texture(ctx, id)
+    }
+    pub(in crate::editor) fn prune_asset_state(&mut self, session: &engine::Session) {
+        let existing: BTreeSet<AssetId> = session
             .project()
             .data()
             .assets
@@ -81,14 +110,15 @@ impl Editor {
             .get_mut()
             .retain(|id, _| existing.contains(id));
         if let Some(queue) = &mut self.imports {
-            queue.retain_assets(&self.session.project().data().assets);
+            queue.retain_assets(&session.project().data().assets);
         }
     }
-    pub(in crate::editor) fn restore_asset_state(&mut self) {
+    pub(in crate::editor) fn restore_asset_state(&mut self, desk: &mut Desk<'_>) {
         if self.importing() {
             return;
         }
-        let asset = self
+        let asset = desk
+            .editor()
             .session
             .project()
             .data()
@@ -100,7 +130,7 @@ impl Editor {
             let id = asset.id();
             self.asset_states.insert(id, AssetState::Probing);
             self.restoring_asset = Some(id);
-            let result = self.start_import_paths(vec![asset.path().to_owned()], id.0);
+            let result = self.start_import_paths(desk, vec![asset.path().to_owned()], id.0);
             if result.is_err() {
                 self.restoring_asset = None;
                 self.asset_states
@@ -109,13 +139,22 @@ impl Editor {
         }
     }
     /// Replace the media selection; tests and agents use the same state as clicks.
-    pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
+    pub(in crate::editor) fn select_media(
+        &mut self,
+        desk: &mut Desk<'_>,
+        ids: impl IntoIterator<Item = AssetId>,
+    ) {
         self.media_selection = ids.into_iter().collect();
         self.media_anchor = self.media_selection.iter().next().copied();
-        self.session.end_merge();
+        desk.end_merge();
     }
-    pub(in crate::editor) fn select_asset(&mut self, id: AssetId, modifiers: egui::Modifiers) {
-        let ids = self.media_order();
+    pub(in crate::editor) fn select_asset(
+        &mut self,
+        desk: &mut Desk<'_>,
+        id: AssetId,
+        modifiers: egui::Modifiers,
+    ) {
+        let ids = self.media_order(desk.view().session, desk.view().preferences);
         crate::selection::click(
             &mut self.media_selection,
             &mut self.media_anchor,
@@ -123,12 +162,17 @@ impl Editor {
             modifiers.command || modifiers.ctrl,
             modifiers.shift.then_some(ids.as_slice()),
         );
-        self.session.end_merge();
+        desk.end_merge();
     }
     /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
     /// It changes presentation state only; the project snapshot is untouched.
-    pub fn reveal_media(&mut self, asset: AssetId) -> Result<()> {
-        if !self
+    pub(in crate::editor) fn reveal_media(
+        &mut self,
+        desk: &mut Desk<'_>,
+        asset: AssetId,
+    ) -> Result<()> {
+        if !desk
+            .view()
             .session
             .project()
             .data()
@@ -140,20 +184,24 @@ impl Editor {
                 engine::EditError::NoAsset(asset),
             )));
         }
-        if self.preferences.assets_tab != AssetsTab::Media {
-            self.preferences
+        if desk.view().preferences.assets_tab != AssetsTab::Media {
+            desk.editor()
+                .preferences
                 .set("assets_tab", serde_json::to_value(AssetsTab::Media)?)?;
         }
         self.media_reveal = Some(MediaReveal {
             asset,
-            until: self.clock.now() + MEDIA_REVEAL,
+            until: desk.editor().clock.now() + MEDIA_REVEAL,
         });
-        self.session.end_merge();
+        desk.end_merge();
         Ok(())
     }
-    pub(in crate::editor) fn request_media_delete(&mut self, ids: Vec<AssetId>) {
-        let existing: BTreeSet<AssetId> = self
-            .session
+    pub(in crate::editor) fn request_media_delete(
+        &mut self,
+        session: &engine::Session,
+        ids: Vec<AssetId>,
+    ) {
+        let existing: BTreeSet<AssetId> = session
             .project()
             .data()
             .assets
@@ -168,34 +216,43 @@ impl Editor {
             self.media_delete_confirm = Some(ids);
         }
     }
-    pub(in crate::editor) fn confirm_media_delete(&mut self) -> Result<()> {
+    pub(in crate::editor) fn cancel_media_delete(&mut self) {
+        self.media_delete_confirm = None;
+    }
+    pub(in crate::editor) fn confirm_media_delete(&mut self, desk: &mut Desk<'_>) -> Result<()> {
         let Some(ids) = self.media_delete_confirm.take() else {
             return Ok(());
         };
         let count = ids.len() as u64;
-        let before = self.session.project().clone();
-        match self.session.apply(Command::RemoveAssets { assets: ids }) {
+        let before = desk.editor().session.project().clone();
+        match desk
+            .editor()
+            .session
+            .apply(Command::RemoveAssets { assets: ids })
+        {
             Ok(_) => {
                 self.media_selection.clear();
                 self.media_anchor = None;
                 self.media_reveal = None;
-                self.prune_media_selection();
-                if !Arc::ptr_eq(&before, self.session.project()) {
-                    self.desk().sync();
+                self.prune_media_selection(&desk.editor().session);
+                if !Arc::ptr_eq(&before, desk.editor().session.project()) {
+                    desk.sync();
                 }
                 let text = i18n::format_count(
-                    self.preferences.locale,
+                    desk.editor().preferences.locale,
                     count,
                     Text::MediaDeletedOne,
                     Text::MediaDeletedOther,
                 );
-                self.set_toast(&text, None);
+                desk.toast(&text, None);
                 Ok(())
             }
             Err(error) => {
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                self.set_toast(self.tr(Text::DeleteMediaFailed), Some(detail));
+                let locale = desk.editor().preferences.locale;
+                let text = i18n::text(locale, Text::DeleteMediaFailed);
+                desk.toast(text, Some(detail));
                 Ok(())
             }
         }

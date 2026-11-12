@@ -1,6 +1,5 @@
 //! Coordinates the editor through area interfaces.
 use crate::i18n;
-mod assets;
 mod captions;
 mod context;
 pub(crate) use context::{Context, Desk, Request};
@@ -8,6 +7,8 @@ pub(crate) mod dialogs;
 mod frame;
 pub use frame::{AppCommand, PreviewZoom};
 pub(crate) mod panels;
+pub(crate) use panels::assets;
+pub(crate) use panels::assets::media_panel;
 pub(crate) use panels::player::KeyPick;
 pub use panels::player::crop::{Aspect as CropAspect, Inspection as CropInspection};
 pub use panels::properties;
@@ -17,13 +18,17 @@ mod widgets;
 mod state;
 pub use assets::music::{Music, MusicMode, MusicProblem, MusicView};
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
+pub use assets::{
+    AssetState, AssetsTab, ImportEvent, ImportFailure, ImportProbe, ImportQueue, MediaKind,
+    MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome, ThumbnailSource,
+};
 pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
 pub use state::{
-    AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
+    AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };
 use state::{
-    AssetRow, MediaMarquee, MediaReveal, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT,
-    SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE, Toast,
+    AssetRow, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
+    SHORTCUT_TITLE_SIZE, Toast,
 };
 pub use widgets::WidgetState;
 
@@ -40,13 +45,8 @@ use crate::{
     },
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     i18n::{Locale, Text},
-    import::{
-        ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
-    },
     kit as theme,
     kit::{self as icons, Icon},
-    media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
-    panels::AssetsTab,
     preferences::{Preferences, drag_panel},
     services::playback::Playback,
 };
@@ -72,7 +72,6 @@ const RULER_HEIGHT: f32 = theme::size::RULER;
 const LABEL_WIDTH: f32 = theme::size::TRACK_LABEL;
 const SCROLLBAR: f32 = theme::size::SCROLLBAR;
 const TRACK_GAP: f32 = theme::space::SM;
-const MEDIA_REVEAL: Duration = Duration::from_millis(1500);
 /// Fixed reference scale for persisted view state: 1× is 40 logical px/s.
 const DEFAULT_ZOOM: f32 = 40.0;
 /// The timeline slider tops out at 100× the reference scale.
@@ -264,30 +263,10 @@ impl Editor {
             persistence_error: None,
             configured: false,
             lifecycle_action: None,
-            imports: None,
-            import_total: 0,
-            import_completed: 0,
-            import_imported: 0,
-            import_cancelled: false,
-            import_failures: Vec::new(),
-            import_notice: None,
-            import_error: None,
             clock: Arc::new(SystemClock::default()),
             toast: None,
             assets: assets::State::default(),
-            media_selection: BTreeSet::new(),
-            media_anchor: None,
-            media_sizes: BTreeMap::new(),
-            media_marquee: None,
-            media_reveal: None,
-            media_delete_confirm: None,
             dialogs: dialogs::State::default(),
-            asset_states: BTreeMap::new(),
-            thumbnails: BTreeMap::new(),
-            pending_imports: BTreeMap::new(),
-            restoring_asset: None,
-            thumbnail_textures: std::cell::RefCell::default(),
-            thumbnail_root: None,
             sound_library: None,
             sounds: None,
             sound_media_dir: None,
@@ -314,9 +293,9 @@ impl Editor {
         )
     }
     pub fn inspect(&self) -> Result<Inspection> {
-        let media_order = self.media_order();
-        let media_highlight = self.media_reveal.map(|reveal| reveal.asset);
-        let media_delete_pending = self.media_delete_confirm.clone().unwrap_or_default();
+        let media_order = self.assets.media_order(&self.session, &self.preferences);
+        let media_highlight = self.assets.media_highlight();
+        let media_delete_pending = self.assets.media_delete_pending();
         Ok(Inspection {
             widgets: self.frame.widgets.values().cloned().collect(),
             view: "editor",
@@ -360,13 +339,17 @@ impl Editor {
             snapshot_dialog_open: self.player.snapshot.is_open(),
             snapshot_saved: self.player.snapshot.saved.clone(),
             snapshot_error: self.player.snapshot.error,
-            importing: self.importing(),
-            import_completed: self.import_completed,
-            import_total: self.import_total,
-            import_imported: self.import_imported,
-            import_unfinished: self.import_total.saturating_sub(self.import_completed),
-            import_cancelled: self.import_cancelled,
+            importing: self.assets.importing(),
+            import_completed: self.assets.import_completed,
+            import_total: self.assets.import_total,
+            import_imported: self.assets.import_imported,
+            import_unfinished: self
+                .assets
+                .import_total
+                .saturating_sub(self.assets.import_completed),
+            import_cancelled: self.assets.import_cancelled,
             import_failures: self
+                .assets
                 .import_failures
                 .iter()
                 .map(|failure| {
@@ -381,13 +364,13 @@ impl Editor {
                     )
                 })
                 .collect(),
-            import_notice: self.import_notice.clone(),
-            import_error: self.import_error.clone(),
+            import_notice: self.assets.import_notice.clone(),
+            import_error: self.assets.import_error.clone(),
             import_toast: self.toast.as_ref().map(|toast| match &toast.detail {
                 Some(detail) => format!("{} · {detail}", toast.text),
                 None => toast.text.clone(),
             }),
-            media_selection: self.media_selection.iter().copied().collect(),
+            media_selection: self.assets.media_selection().iter().copied().collect(),
             assets: self
                 .session
                 .project()
@@ -397,6 +380,7 @@ impl Editor {
                 .filter(|asset| !asset.ephemeral())
                 .map(|asset| {
                     let state = self
+                        .assets
                         .asset_states
                         .get(&asset.id())
                         .copied()
@@ -404,19 +388,24 @@ impl Editor {
                     AssetInspection {
                         id: asset.id(),
                         state: state.code(),
-                        thumbnail: self.thumbnails.contains_key(&asset.id()),
+                        thumbnail: self.assets.thumbnails.contains_key(&asset.id()),
                         detail: match state {
                             AssetState::Unsupported(reason) => Some(reason.label().to_owned()),
                             _ => None,
                         },
                     }
                 })
-                .chain(self.pending_imports.keys().map(|id| AssetInspection {
-                    id: *id,
-                    state: "probing",
-                    thumbnail: false,
-                    detail: None,
-                }))
+                .chain(
+                    self.assets
+                        .pending_imports
+                        .keys()
+                        .map(|id| AssetInspection {
+                            id: *id,
+                            state: "probing",
+                            thumbnail: false,
+                            detail: None,
+                        }),
+                )
                 .collect(),
             effect_previews: self
                 .effect_previews
@@ -490,13 +479,22 @@ impl Editor {
     pub fn set_clock(&mut self, clock: Arc<dyn Clock>) {
         self.clock = clock;
     }
-    /// Upload one decoded thumbnail on first use; later frames reuse the handle.
-    fn thumbnail_texture(&self, ctx: &egui::Context, id: AssetId) -> Option<egui::TextureHandle> {
-        context::Thumbnails {
-            images: &self.thumbnails,
-            textures: &self.thumbnail_textures,
+    /// Show a creator-facing toast for five seconds.
+    pub(in crate::editor) fn set_toast(&mut self, text: &str, detail: Option<String>) {
+        self.toast = Some(Toast {
+            text: text.to_owned(),
+            detail,
+            until: self.clock.now() + Duration::from_secs(5),
+        });
+    }
+    pub(in crate::editor) fn truncate_toast(&mut self) {
+        if self
+            .toast
+            .as_ref()
+            .is_some_and(|toast| self.clock.now() >= toast.until)
+        {
+            self.toast = None;
         }
-        .texture(ctx, id)
     }
     /// Start the export sheet with typed caller settings without mutating
     /// editable project content.
@@ -657,6 +655,108 @@ impl Editor {
         Self::theme(ui.ctx(), self.preferences.dark);
         crate::kit::install_editor_density(ui.ctx());
         self.show_player(ui);
+    }
+    /// Render the assets surface in isolation for offscreen design audits.
+    pub fn assets_ui(&mut self, ui: &mut egui::Ui) {
+        Self::fonts(ui.ctx());
+        icons::install(ui.ctx());
+        Self::theme(ui.ctx(), self.preferences.dark);
+        crate::kit::install_editor_density(ui.ctx());
+        self.frame.widgets.clear();
+        self.tick();
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, self.panel_fill());
+        self.frame.panels.insert("media", ui.max_rect());
+        self.show_assets(ui);
+        self.show_import_overlay(ui.ctx());
+    }
+    /// Lend the assets state and the write context to one workflow step.
+    pub(in crate::editor) fn with_assets<T>(
+        &mut self,
+        run: impl FnOnce(&mut assets::State, &mut Desk<'_>) -> T,
+    ) -> T {
+        let mut state = std::mem::take(&mut self.assets);
+        let result = run(&mut state, &mut Desk::new(self));
+        self.assets = state;
+        result
+    }
+    /// Replace the media boundary in tests; production keeps the media owner.
+    pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {
+        self.with_assets(|assets, desk| assets.set_import_probe(desk, probe))
+    }
+    /// Replace thumbnail decoding in tests; production reuses media's decoder.
+    pub fn set_thumbnailer(&mut self, thumbnailer: Arc<dyn ThumbnailSource>) -> Result<()> {
+        self.with_assets(|assets, desk| assets.set_thumbnailer(desk, thumbnailer))
+    }
+    /// Persistent content-keyed thumbnail directory. Without one thumbnails are
+    /// memoized for this session only.
+    pub fn set_thumbnail_root(&mut self, root: PathBuf) {
+        self.assets.set_thumbnail_root(root);
+    }
+    pub fn importing(&self) -> bool {
+        self.assets.importing()
+    }
+    /// Accept a native drag-drop batch through the same path as the picker.
+    pub fn drop_files(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        self.start_import(paths)
+    }
+    pub fn start_import(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        self.with_assets(|assets, desk| assets.start_import(desk, paths))
+    }
+    /// Replace the media selection; tests and agents use the same state as clicks.
+    pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
+        self.with_assets(|assets, desk| assets.select_media(desk, ids));
+    }
+    /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
+    pub fn reveal_media(&mut self, asset: AssetId) -> Result<()> {
+        self.with_assets(|assets, desk| assets.reveal_media(desk, asset))
+    }
+    pub(in crate::editor) fn select_asset(&mut self, id: AssetId, modifiers: egui::Modifiers) {
+        self.with_assets(|assets, desk| assets.select_asset(desk, id, modifiers));
+    }
+    pub(in crate::editor) fn request_media_delete(&mut self, ids: Vec<AssetId>) {
+        self.assets.request_media_delete(&self.session, ids);
+    }
+    pub(in crate::editor) fn cancel_media_delete(&mut self) {
+        self.assets.cancel_media_delete();
+    }
+    pub(in crate::editor) fn confirm_media_delete(&mut self) -> Result<()> {
+        self.with_assets(|assets, desk| assets.confirm_media_delete(desk))
+    }
+    pub(in crate::editor) fn insert_selected_assets(&mut self) {
+        self.with_assets(|assets, desk| assets.insert_selected_assets(desk));
+    }
+    pub(in crate::editor) fn insert_graphic(&mut self, shape: crate::actions::GraphicShape) {
+        self.with_assets(|assets, desk| assets.insert_graphic(desk, shape));
+    }
+    pub(in crate::editor) fn insert_text(&mut self) {
+        self.with_assets(|assets, desk| assets.insert_text(desk));
+    }
+    pub(in crate::editor) fn remember_assets_tab(&mut self, tab: AssetsTab) -> Result<()> {
+        self.with_assets(|assets, desk| assets.remember_assets_tab(desk, tab))
+    }
+    pub(in crate::editor) fn apply_import_events(&mut self) {
+        self.with_assets(|assets, desk| assets.apply_import_events(desk));
+    }
+    pub(in crate::editor) fn restore_asset_state(&mut self) {
+        self.with_assets(|assets, desk| assets.restore_asset_state(desk));
+    }
+    pub(in crate::editor) fn prune_media_selection(&mut self) {
+        self.assets.prune_media_selection(&self.session);
+    }
+    pub(in crate::editor) fn prune_asset_state(&mut self) {
+        self.assets.prune_asset_state(&self.session);
+    }
+    pub(in crate::editor) fn media_marquee(
+        &mut self,
+        ui: &mut egui::Ui,
+        content: Rect,
+        background: &egui::Response,
+        rects: &[(AssetId, Rect)],
+    ) {
+        self.with_assets(|assets, desk| {
+            assets.media_marquee(desk, ui, content, background, rects);
+        });
     }
 }
 fn error_detail(error: &dyn std::error::Error) -> String {

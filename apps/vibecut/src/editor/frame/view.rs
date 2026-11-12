@@ -42,7 +42,7 @@ impl Editor {
         if !dropped.is_empty()
             && let Err(error) = self.drop_files(dropped)
         {
-            self.import_notice = Some(error_detail(&error));
+            self.assets.import_notice = Some(error_detail(&error));
         }
         Self::theme(ui.ctx(), self.preferences.dark);
         crate::kit::install_editor_density(ui.ctx());
@@ -92,7 +92,7 @@ impl Editor {
             );
             child.set_clip_rect(rect);
             self.show_player(&mut child);
-            self.toast(ui.ctx());
+            self.show_toast(ui.ctx());
             return;
         }
         let rect = ui.max_rect();
@@ -189,10 +189,10 @@ impl Editor {
             }
         }
         self.timeline_scenes(ui.ctx());
-        self.media_delete_dialog(ui.ctx());
-        self.import_overlay(ui.ctx());
-        self.drop_overlay(ui.ctx(), hovering);
-        self.toast(ui.ctx());
+        self.show_media_delete_dialog(ui.ctx());
+        self.show_import_overlay(ui.ctx());
+        self.show_drop_overlay(ui.ctx(), hovering);
+        self.show_toast(ui.ctx());
         self.show_export(ui);
         super::super::panels::player::crop::show(self, ui.ctx());
         if let Some(subtitles) = &mut self.subtitles {

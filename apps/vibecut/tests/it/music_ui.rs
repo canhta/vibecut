@@ -392,7 +392,7 @@ fn section_switches_between_music_and_sound_effects_and_loads_a_tag_page() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     assert!(has_widget(&harness, "audio.section.music"));
@@ -481,7 +481,7 @@ fn save_preview_and_download_then_add_is_one_undo_step_with_music_metadata() {
         sink.clone(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -599,7 +599,7 @@ fn saved_list_is_offline_and_credits_come_from_the_project() {
         time::Tick::ZERO,
     )
     .unwrap();
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -651,7 +651,7 @@ fn rows_use_the_measured_48_by_60_pitch() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -692,7 +692,7 @@ fn settings_apply_and_remove_the_session_key_without_touching_the_project() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -764,7 +764,7 @@ fn failed_add_retry_resubmits_the_track_without_reloading_search() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -813,7 +813,7 @@ fn provider_failures_are_typed_states_and_leave_the_project_untouched() {
             Sink::available(),
             root.path().join("media"),
         );
-        editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+        editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
         let mut harness = build(editor);
         harness.run_steps(3);
         open_music(&mut harness);
@@ -868,7 +868,7 @@ fn a_failed_download_leaves_no_project_media_and_a_cancel_publishes_nothing() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -919,7 +919,7 @@ fn a_rejected_download_is_reported_and_publishes_nothing() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);
@@ -960,7 +960,7 @@ fn a_missing_audio_device_is_a_typed_preview_failure() {
         Sink::unavailable(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     open_music(&mut harness);

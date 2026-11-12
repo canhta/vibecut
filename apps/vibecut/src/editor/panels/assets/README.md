@@ -1,10 +1,13 @@
 # Assets
 
-Interface: `State`, `show`, `Action`, `prepare`, `sounds`, `music`.
+Interface: `State`, `show`, `Action`, `prepare`, `media_panel`, `import`, `sounds`,
+`music`.
 
-The area owns its navigation drafts and the prepared workflow projection; `show`
-consumes the editor's read-only context and returns `Action` values the frame routes.
-`prepare` builds the read-only projection the view draws.
+The area owns its navigation drafts, the media selection and thumbnail caches, the
+import batch and its last report, and the prepared workflow projection; `show` consumes
+the editor's read-only context and returns `Action` values the frame routes. `prepare`
+builds the read-only projection the view draws. Toast and clock deadlines stay in the
+editor core and are passed to the overlay renderers.
 
 ## Effects panel
 

@@ -24,9 +24,8 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AppCommand, Editor, egui,
-    import::{ImportProbe, ThumbnailSource},
-    media_panel::{MediaSort, MediaSortKey, MediaSortOrder, MediaView},
+    AppCommand, Editor, ImportProbe, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
+    ThumbnailSource, egui,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };
@@ -568,7 +567,7 @@ fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let inspection = harness.state().inspect().unwrap();
     assert_eq!(
         harness.state().preferences.assets_tab,
-        vibecut::panels::AssetsTab::Media
+        vibecut::AssetsTab::Media
     );
     assert_eq!(inspection.media_highlight, Some(AssetId(30)));
     let media_panel = harness.state().panels()["media"];
@@ -619,7 +618,7 @@ fn timeline_clip_context_menu_reveals_the_source_media() {
     harness.run_steps(3);
     assert_eq!(
         harness.state().preferences.assets_tab,
-        vibecut::panels::AssetsTab::Media
+        vibecut::AssetsTab::Media
     );
     assert_eq!(
         harness.state().inspect().unwrap().media_highlight,
@@ -846,7 +845,7 @@ fn local_audio_row_adds_its_source_through_the_existing_insert_command() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Media;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Media;
     let mut harness = build(editor);
     harness.run_steps(3);
     assert!(has_widget(&harness, "media.asset.4"));

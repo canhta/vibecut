@@ -49,13 +49,13 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         }
     }
     editor.preferences.assets_tab = match state {
-        "effects" => vibecut::panels::AssetsTab::Effects,
-        "transitions" => vibecut::panels::AssetsTab::Transitions,
-        "text" => vibecut::panels::AssetsTab::Text,
-        "captions" => vibecut::panels::AssetsTab::Captions,
-        "offline" => vibecut::panels::AssetsTab::Sounds,
-        "music" => vibecut::panels::AssetsTab::Sounds,
-        _ => vibecut::panels::AssetsTab::Media,
+        "effects" => vibecut::AssetsTab::Effects,
+        "transitions" => vibecut::AssetsTab::Transitions,
+        "text" => vibecut::AssetsTab::Text,
+        "captions" => vibecut::AssetsTab::Captions,
+        "offline" => vibecut::AssetsTab::Sounds,
+        "music" => vibecut::AssetsTab::Sounds,
+        _ => vibecut::AssetsTab::Media,
     };
     if state == "offline" {
         let directory = tempfile::tempdir()?;
@@ -221,7 +221,7 @@ impl transport::HttpTransport for MusicAuditSource {
 
 /// Own generated pixels, injected through the real thumbnail publication seam.
 pub(super) struct AssetsThumbnail;
-impl vibecut::import::ThumbnailSource for AssetsThumbnail {
+impl vibecut::ThumbnailSource for AssetsThumbnail {
     fn thumbnail(
         &self,
         _: &SourceAsset,

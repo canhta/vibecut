@@ -115,7 +115,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
     data.canvas.fps = FrameRate::FPS_30;
     let session = Session::new(Project::new(data)?, 100)?;
     let mut preferences = preferences(Theme::Dark, Locale::En);
-    preferences.assets_tab = vibecut::panels::AssetsTab::Media;
+    preferences.assets_tab = vibecut::AssetsTab::Media;
     preferences.subtitles.source = "vi".into();
     preferences.subtitles.target = "en".into();
     preferences.subtitles.bilingual = true;

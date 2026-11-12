@@ -396,7 +396,7 @@ fn search_filter_save_preview_and_add_use_the_sounds_contract() {
         sink.clone(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     assert!(has_widget(&harness, "sounds.search"));
@@ -591,7 +591,7 @@ fn provider_errors_and_empty_results_are_rendered_as_typed_states() {
             Sink::available(),
             root.path().join("media"),
         );
-        editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+        editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
         let mut harness = build(editor);
         harness.run_steps(3);
         click(&mut harness, "sounds.search");
@@ -631,7 +631,7 @@ fn empty_search_and_empty_saved_tab_show_their_empty_states() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     click(&mut harness, "sounds.search");
@@ -676,7 +676,7 @@ fn no_token_uses_the_local_library_and_the_saved_tab_works_offline() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     let sounds = harness.state().inspect().unwrap().sounds.unwrap();
@@ -728,7 +728,7 @@ fn no_audio_device_is_a_typed_preview_state() {
         Sink::unavailable(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     click(&mut harness, "sounds.tab.saved");
@@ -784,7 +784,7 @@ fn failed_cache_download_offers_network_retry_without_editing_the_project() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     click(&mut harness, "sounds.search");
@@ -882,7 +882,7 @@ fn shared_download_contention_keeps_the_cache_busy_category_and_allows_a_later_a
         root.path().join("media"),
     );
     editor.set_sounds(sounds);
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     click(&mut harness, "sounds.search");
@@ -944,7 +944,7 @@ fn add_waits_for_the_cache_job_and_cancel_leaves_the_project_untouched() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     // A local search makes the uncached result visible without a token.
@@ -999,7 +999,7 @@ fn failed_saved_library_publication_is_reported_without_losing_the_list() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
     harness.run_steps(3);
     let path = root.path().join("library.json");
@@ -1046,7 +1046,7 @@ fn sounds_tab_renders_a_representative_result_list() {
         Sink::available(),
         root.path().join("media"),
     );
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build_sized(editor, egui::vec2(1727.0, 1029.0));
     harness.run_steps(3);
     click(&mut harness, "sounds.search");

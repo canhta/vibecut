@@ -6,8 +6,7 @@ use project::{ItemParams, Project, ProjectId};
 use std::{collections::BTreeMap, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    panels::AssetsTab,
+    AssetsTab, Editor,
     preferences::Preferences,
     services::playback::{Files, Playback},
 };

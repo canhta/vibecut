@@ -1,15 +1,18 @@
 //! Inserts chosen assets into the timeline.
 
-use crate::editor::assets::{
-    AssetId, AssetState, BTreeSet, Command, CreatedId, Editor, ItemParams, NewItem,
-    SelectionScopes, SourceAsset, SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind,
-    error_detail,
+use super::super::{
+    AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, SelectionScopes,
+    SourceAsset, SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, error_detail,
 };
+use super::State;
+use crate::editor::Desk;
+use crate::i18n;
 
-impl Editor {
+impl State {
     /// Insert selected assets in library order; engine owns track and overlap policy.
-    pub(in crate::editor) fn insert_selected_assets(&mut self) {
-        let selected: Vec<SourceAsset> = self
+    pub(in crate::editor) fn insert_selected_assets(&mut self, desk: &mut Desk<'_>) {
+        let selected: Vec<SourceAsset> = desk
+            .editor()
             .session
             .project()
             .data()
@@ -22,11 +25,12 @@ impl Editor {
         if selected.is_empty() {
             return;
         }
-        let at = match self.playback.position() {
+        let at = match desk.editor().playback.position() {
             Ok(at) => at,
             Err(_error) => {
                 tracing::warn!(category = "asset_position", "insertion unavailable");
-                self.set_toast(self.tr(Text::InsertFailed), None);
+                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
+                desk.toast(text, None);
                 return;
             }
         };
@@ -35,7 +39,7 @@ impl Editor {
             .filter(|asset| self.asset_states.get(&asset.id()) != Some(&AssetState::Ready))
             .map(SourceAsset::id)
             .collect();
-        let result = self.session.transaction(|session| {
+        let result = desk.editor().session.transaction(|session| {
             let mut created = Vec::new();
             let mut video_at = at;
             let mut audio_at = at;
@@ -115,26 +119,31 @@ impl Editor {
         });
         match result {
             Ok(created) => {
-                self.selection = created.into_iter().collect();
+                desk.editor().selection = created.into_iter().collect();
                 self.import_notice = None;
-                self.session.end_merge();
+                desk.editor().session.end_merge();
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                self.set_toast(self.tr(Text::InsertFailed), None);
+                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
+                desk.toast(text, None);
             }
         }
     }
-    pub(in crate::editor) fn insert_graphic(&mut self, shape: crate::actions::GraphicShape) {
+    pub(in crate::editor) fn insert_graphic(
+        &mut self,
+        desk: &mut Desk<'_>,
+        shape: crate::actions::GraphicShape,
+    ) {
         let result = (|| -> crate::Result<project::ItemId> {
-            let start = self.playback.position()?;
+            let start = desk.editor().playback.position()?;
             let content = match shape {
                 crate::actions::GraphicShape::Rectangle => project::GraphicParams::rectangle(),
                 crate::actions::GraphicShape::Ellipse => project::GraphicParams::ellipse(),
             };
-            let outcome = self.session.apply(Command::InsertItem {
+            let outcome = desk.editor().session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
                 item: NewItem {
                     retime: Default::default(),
@@ -156,28 +165,30 @@ impl Editor {
         })();
         match result {
             Ok(item) => {
-                self.selection = [item].into_iter().collect();
-                self.selection_scopes = SelectionScopes::default();
-                self.properties.clear_drafts();
-                self.session.end_merge();
+                desk.editor().selection = [item].into_iter().collect();
+                desk.editor().selection_scopes = SelectionScopes::default();
+                desk.editor().properties.clear_drafts();
+                desk.editor().session.end_merge();
             }
             Err(error) => {
                 self.import_notice = Some(error_detail(&error));
-                self.set_toast(self.tr(Text::InsertFailed), None);
+                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
+                desk.toast(text, None);
             }
         }
     }
-    pub(in crate::editor) fn insert_text(&mut self) {
-        let at = match self.playback.position() {
+    pub(in crate::editor) fn insert_text(&mut self, desk: &mut Desk<'_>) {
+        let at = match desk.editor().playback.position() {
             Ok(at) => at,
             Err(_error) => {
                 tracing::warn!(category = "asset_position", "insertion unavailable");
-                self.set_toast(self.tr(Text::TextInsertFailed), None);
+                let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
+                desk.toast(text, None);
                 return;
             }
         };
-        let content = self.tr(Text::TextItem).to_owned();
-        let result = self.session.transaction(|session| {
+        let content = i18n::text(desk.editor().preferences.locale, Text::TextItem).to_owned();
+        let result = desk.editor().session.transaction(|session| {
             let duration = Tick(5 * TICKS_PER_SECOND);
             let outcome = session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
@@ -203,15 +214,16 @@ impl Editor {
         });
         match result {
             Ok(item) => {
-                self.selection = [item].into_iter().collect();
-                self.selection_scopes = SelectionScopes::default();
-                self.properties.clear_drafts();
+                desk.editor().selection = [item].into_iter().collect();
+                desk.editor().selection_scopes = SelectionScopes::default();
+                desk.editor().properties.clear_drafts();
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                self.set_toast(self.tr(Text::TextInsertFailed), None);
+                let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
+                desk.toast(text, None);
             }
         }
     }
