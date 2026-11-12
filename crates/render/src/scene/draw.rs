@@ -340,11 +340,14 @@ pub(super) fn blur(image: &mut Image, radius: u32, hooks: &dyn ExecutionHooks) -
     Ok(())
 }
 
+/// Resolved graphic paint: fill, stroke, stroke width, alignment, corner radius.
+type GraphicAppearance = ([f32; 4], [f32; 4], f64, project::StrokeAlign, f64);
+
 /// Resolve appearance at the real item clock; keyed colors are already linear.
 pub(super) fn graphic_appearance(
     item: &project::Item,
     local: time::Tick,
-) -> Result<([f32; 4], [f32; 4], f64, project::StrokeAlign, f64)> {
+) -> Result<GraphicAppearance> {
     let project::ItemParams::Graphic(params) = &item.content else {
         return Err(Error::Invalid("graphic item"));
     };

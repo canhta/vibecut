@@ -163,7 +163,14 @@ pub(super) fn magnify(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32])
     let sample =
         inputs.sample_current(cx + dx / m - 0.5, cy + dy / m - 0.5, image_ops::Edge::Clamp);
     let base = inputs.texel_current(x, y);
-    std::array::from_fn(|channel| base[channel] + (sample[channel] - base[channel]) * k)
+    let [br, bg, bb, ba] = base;
+    let [sr, sg, sb, sa] = sample;
+    [
+        br + (sr - br) * k,
+        bg + (sg - bg) * k,
+        bb + (sb - bb) * k,
+        ba + (sa - ba) * k,
+    ]
 }
 
 pub(super) fn wave_warp(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
@@ -377,7 +384,7 @@ pub(super) fn roughen_edges(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &
     if matches!(kind, 1 | 5 | 7) && d < 0.97 {
         let t = ((1.0 - d) * 1.5).min(1.0);
         let (c, alpha) = straight(centre);
-        let mixed = [0, 1, 2].map(|i| c[i] + (edge[i] - c[i]) * t);
+        let mixed = super::zip3(c, edge, |c, e| c + (e - c) * t);
         out = premultiply(mixed, alpha);
     }
     if matches!(kind, 6 | 7) {
@@ -397,11 +404,7 @@ pub(super) fn camera_shake(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[
     let shake = |t: f64, channel: u64| -> f32 {
         let (mut sum, mut amp, mut freq, mut norm) = (0.0, 1.0, 1.0, 0.0);
         for octave in 0..3u64 {
-            sum += noise1(
-                t * f64::from(frequency) * f64::from(freq),
-                channel * 10 + octave,
-                0,
-            ) * amp;
+            sum += noise1(t * f64::from(frequency) * freq, channel * 10 + octave, 0) * amp;
             norm += amp;
             amp *= 0.5;
             freq *= 2.0;
@@ -483,19 +486,17 @@ pub(super) fn glow_add(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]
         return [light[0], light[1], light[2], alpha];
     }
     let base = inputs.texel_input(x, y);
-    let mut out = base;
-    if screen > 0.5 {
-        for k in 0..3 {
-            let add = light[k].min(1.0);
-            out[k] = (base[k] + add - base[k].min(1.0) * add).max(0.0);
-        }
-        out[3] = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
+    let alpha = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
+    let mixed = if screen > 0.5 {
+        let add = light.map(|l| l.min(1.0));
+        super::zip3(super::rgb(base), add, |b, add| {
+            (b + add - b.min(1.0) * add).max(0.0)
+        })
     } else {
-        for k in 0..3 {
-            out[k] = (base[k] + light[k]).max(0.0);
-        }
-        out[3] = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
-    }
+        super::zip3(super::rgb(base), light, |b, l| (b + l).max(0.0))
+    };
+    let mut out = super::with_rgb(base, mixed);
+    out[3] = alpha;
     out
 }
 
@@ -537,19 +538,20 @@ pub(super) fn glint_rays(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f3
             l * colour[1] * 1.5,
             l * colour[2] * 1.5,
         ];
-        for k in 0..3 {
-            total[k] += (tinted[k] - total[k]) * colorize.clamp(0.0, 1.0);
-        }
+        let total_rgb = super::zip3(super::rgb(total), tinted, |t, tint| {
+            t + (tint - t) * colorize.clamp(0.0, 1.0)
+        });
+        total = super::with_rgb(total, total_rgb);
     }
     let light = [
         total[0] * intensity,
         total[1] * intensity,
         total[2] * intensity,
     ];
-    let mut out = base;
-    for k in 0..3 {
-        out[k] = (base[k] + light[k]).max(0.0);
-    }
+    let mut out = super::with_rgb(
+        base,
+        super::zip3(super::rgb(base), light, |b, l| (b + l).max(0.0)),
+    );
     out[3] = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
     out
 }
@@ -585,10 +587,10 @@ pub(super) fn radial_rays(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f
         let alpha = light[0].max(light[1]).max(light[2]).min(1.0);
         return [light[0], light[1], light[2], alpha];
     }
-    let mut out = base;
-    for k in 0..3 {
-        out[k] = (base[k] + light[k]).max(0.0);
-    }
+    let mut out = super::with_rgb(
+        base,
+        super::zip3(super::rgb(base), light, |b, l| (b + l).max(0.0)),
+    );
     out[3] = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
     out
 }
@@ -616,20 +618,22 @@ pub(super) fn light_leaks(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f
         + 0.5;
     let m = fbm(u * 0.7 + 5.2, v * 0.7, phase * 0.1 + 9.0, 2.0, seed) * 0.5 + 0.5;
     let k = smooth(0.35, 0.85, n) * bias * intensity;
-    let light = [0, 1, 2].map(|i| c1[i] + (c2[i] - c1[i]) * m);
+    let light = super::zip3(c1, c2, |a, b| a + (b - a) * m);
     let light = light.map(|v| v * k);
     let (colour, alpha) = straight(base);
     let blended = match mode.round() as u32 {
-        1 => [0, 1, 2].map(|i| colour[i] + light[i]),
-        2 => [0, 1, 2].map(|i| {
-            let (b, s) = (colour[i], (colour[i] + light[i] + 0.5).min(1.0));
-            if b < 0.5 {
-                2.0 * b * s
+        1 => super::zip3(colour, light, |c, l| c + l),
+        2 => super::zip3(colour, light, |c, l| {
+            let s = (c + l + 0.5).min(1.0);
+            if c < 0.5 {
+                2.0 * c * s
             } else {
-                1.0 - 2.0 * (1.0 - b) * (1.0 - s)
+                1.0 - 2.0 * (1.0 - c) * (1.0 - s)
             }
         }),
-        _ => [0, 1, 2].map(|i| 1.0 - (1.0 - colour[i].min(1.0)) * (1.0 - light[i].min(1.0))),
+        _ => super::zip3(colour, light, |c, l| {
+            1.0 - (1.0 - c.min(1.0)) * (1.0 - l.min(1.0))
+        }),
     };
     let out_alpha = alpha + (1.0 - alpha) * k.min(1.0);
     premultiply(blended, out_alpha)
@@ -659,16 +663,14 @@ pub(super) fn lens_flare(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f3
         let ring = ((1.0 - ((dd - radius) / 0.01).abs()).max(0.0) * 0.12
             + if dd < radius { 0.05 } else { 0.0 })
             * if index == 1 { 0.8 } else { 1.0 };
-        for k in 0..3 {
-            light[k] += hue[k] * ring;
-        }
+        light = super::zip3(light, hue, |l, h| l + h * ring);
     }
     let gain = brightness * (1.0 - blend);
     let light = light.map(|v| (v * gain).max(0.0));
-    let mut out = base;
-    for k in 0..3 {
-        out[k] = (base[k] + light[k]).max(0.0);
-    }
+    let mut out = super::with_rgb(
+        base,
+        super::zip3(super::rgb(base), light, |b, l| (b + l).max(0.0)),
+    );
     out[3] = base[3] + (1.0 - base[3]) * light[0].max(light[1]).max(light[2]).min(1.0);
     out
 }
@@ -690,7 +692,14 @@ pub(super) fn rgb_split(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32
     let b = inputs.sample_input(px + ox - 0.5, py + oy - 0.5, image_ops::Edge::Clamp);
     let mixed = [r[0], g[1], b[2], r[3].max(g[3]).max(b[3])];
     // `blend` is the original-picture fraction: 0 is the full split, 1 the input.
-    std::array::from_fn(|channel| mixed[channel] + (g[channel] - mixed[channel]) * blend)
+    let [mr, mg, mb, ma] = mixed;
+    let [gr, gg, gb, ga] = g;
+    [
+        mr + (gr - mr) * blend,
+        mg + (gg - mg) * blend,
+        mb + (gb - mb) * blend,
+        ma + (ga - ma) * blend,
+    ]
 }
 
 // ------------------------------------------------------------------ overlay and key
@@ -787,7 +796,7 @@ pub(super) fn gradient(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]
         _ => along,
     };
     let t = t.clamp(0.0, 1.0).powf(gamma);
-    let colour = [0, 1, 2].map(|k| start[k] + (end[k] - start[k]) * t);
+    let colour = super::zip3(start, end, |s, e| s + (e - s) * t);
     premultiply(colour, 1.0)
 }
 
@@ -815,9 +824,7 @@ pub(super) fn four_color_gradient(
     for (point, colour) in points.iter().zip(colours) {
         let d = (px - point[0]).hypot(py - point[1]).max(1.0);
         let weight = 1.0 / d.powi(2);
-        for k in 0..3 {
-            acc[k] += colour[k] * weight;
-        }
+        acc = super::zip3(acc, colour, |a, c| a + c * weight);
         weight_sum += weight;
     }
     let colour = acc.map(|v| v / weight_sum.max(1e-6));
@@ -1034,8 +1041,8 @@ pub(super) fn magnify_eval(
     let point = frame.point("center")?;
     let [cx, cy] = [point[0] as f32 * w, point[1] as f32 * h];
     let magnification = frame.scalar("magnification")? as f32;
-    let size = (frame.scalar("size")? * f64::from(gx.min(gy))) as f32;
-    let feather = (frame.scalar("feather")? * f64::from(gx.min(gy))) as f32;
+    let size = (frame.scalar("size")? * gx.min(gy)) as f32;
+    let feather = (frame.scalar("feather")? * gx.min(gy)) as f32;
     Ok(vec![EffectPass::Sample {
         entry_point: "magnify",
         uniforms: floats([
@@ -1271,7 +1278,7 @@ pub(super) fn roughen_eval(
     if border < 0.5 {
         return Ok(Vec::new());
     }
-    let scale = (frame.scalar("scale")? / 100.0 * 30.0 * f64::from(gx.min(gy))).max(0.5) as f32;
+    let scale = (frame.scalar("scale")? / 100.0 * 30.0 * gx.min(gy)).max(0.5) as f32;
     let mut passes = vec![EffectPass::Pixel {
         entry_point: "alpha_plane",
         uniforms: Vec::new(),
@@ -1430,7 +1437,12 @@ pub(super) fn glint_eval(
     let gain = ((gx + gy) / 2.0) as f32;
     let colour = linear(frame.color("color")?);
     let length = (frame.scalar("length")? as f32 * gain).max(0.0);
-    let rays = [2.0, 4.0, 6.0, 8.0][(frame.choice("rays")? as usize).min(3)];
+    let rays = match frame.choice("rays")?.min(3) {
+        0 => 2.0,
+        1 => 4.0,
+        2 => 6.0,
+        _ => 8.0,
+    };
     let steps = if frame.fine { 24.0 } else { 10.0 };
     let mut passes = highlight_passes(frame.scalar("threshold")?, 0.08);
     passes.push(EffectPass::Sample {

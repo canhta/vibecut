@@ -1147,17 +1147,17 @@ fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
             if !uncovered {
                 assert!(im.pixels().iter().all(|p| p[3] == 1.));
             }
-            if let Some(prev) = previous {
-                if midpoint(def.kind).is_some() {
-                    assert!(
-                        im.pixels()[0]
-                            .iter()
-                            .zip(prev)
-                            .all(|(a, b): (&f32, f32)| (a - b).abs() <= 0.051),
-                        "{} at {at} jumps by more than 0.051",
-                        def.kind
-                    );
-                }
+            if let Some(prev) = previous
+                && midpoint(def.kind).is_some()
+            {
+                assert!(
+                    im.pixels()[0]
+                        .iter()
+                        .zip(prev)
+                        .all(|(a, b): (&f32, f32)| (a - b).abs() <= 0.051),
+                    "{} at {at} jumps by more than 0.051",
+                    def.kind
+                );
             }
             previous = Some(im.pixels()[0]);
         }
@@ -1912,7 +1912,7 @@ fn fingerprint(image: &Image) -> String {
     let (width, height) = (image.width() as usize, image.height() as usize);
     let mut sums = [[[0u64; 3]; 4]; 4];
     let mut counts = [[0u64; 4]; 4];
-    for (n, px) in bytes.bytes.chunks_exact(4).enumerate() {
+    for (n, px) in bytes.bytes.as_chunks::<4>().0.iter().enumerate() {
         let (x, y) = (n % width, n / width);
         let (column, row) = (x * 4 / width, y * 4 / height);
         counts[row][column] += 1;

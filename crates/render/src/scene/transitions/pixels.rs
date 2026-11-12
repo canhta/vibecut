@@ -406,7 +406,7 @@ fn boxes_for_gauss(sigma: f32) -> [usize; 3] {
     let sigma = f64::from(sigma);
     let wideal = (4. * sigma * sigma + 1.).sqrt();
     let mut wl = wideal.floor() as usize;
-    if wl % 2 == 0 {
+    if wl.is_multiple_of(2) {
         wl -= 1;
     }
     let wu = wl + 2;

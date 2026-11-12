@@ -415,23 +415,24 @@ pub fn gain_passes(r: f64, g: f64, b: f64) -> Result<Vec<EffectPass>> {
 /// One pixel-local lift stage: `straight + L * (1 - straight)`, clamped.
 pub fn lift_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
-    let lift = [0, 1, 2].map(|k| uniform(values, k));
-    let mapped = [0, 1, 2].map(|k| (c[k] + lift[k] * (1.0 - c[k])).clamp(0.0, 1.0));
+    let lift = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
+    let mapped = zip3(c, lift, |c, l| (c + l * (1.0 - c)).clamp(0.0, 1.0));
     premultiply(mapped, alpha)
 }
 /// One pixel-local gamma stage: `straight^(1/gamma)`, clamped.
 pub fn tone_gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
-    let mapped = [0, 1, 2].map(|k| {
-        let gamma = uniform(values, k).max(0.25);
-        c[k].max(0.0).powf(1.0 / gamma).clamp(0.0, 1.0)
+    let gamma = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
+    let mapped = zip3(c, gamma, |c, gamma| {
+        c.max(0.0).powf(1.0 / gamma.max(0.25)).clamp(0.0, 1.0)
     });
     premultiply(mapped, alpha)
 }
 /// One pixel-local gain stage: `straight * gain`, clamped.
 pub fn gain_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
-    let mapped = [0, 1, 2].map(|k| (c[k] * uniform(values, k)).clamp(0.0, 1.0));
+    let gain = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
+    let mapped = zip3(c, gain, |c, g| (c * g).clamp(0.0, 1.0));
     premultiply(mapped, alpha)
 }
 /// The flat curve layout: point count, then 32 ordered `x, y` pairs zero-padded.
@@ -633,16 +634,9 @@ fn curve_uniforms_valid(values: &[f32]) -> bool {
     }
     let count = raw as usize;
     let mut previous = [0.0f32; 2];
-    for (index, pair) in values
-        .get(1..)
-        .unwrap_or_default()
-        .chunks_exact(2)
-        .enumerate()
-    {
-        let [x, y] = pair else {
-            return false;
-        };
-        let (x, y) = (*x, *y);
+    let (pairs, _) = values.get(1..).unwrap_or_default().as_chunks::<2>();
+    for (index, pair) in pairs.iter().enumerate() {
+        let [x, y] = *pair;
         if index >= count {
             if x != 0.0 || y != 0.0 {
                 return false;
@@ -736,7 +730,7 @@ static PIXEL_OPS: [PixelOp; 24] = [
         entry_point: "highlights",
         len: 2,
         valid: |v| {
-            v.get(0)
+            v.first()
                 .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
                 && v.get(1).is_some_and(|soft| *soft > 0.0 && *soft <= 1.0)
         },
@@ -788,7 +782,7 @@ static PIXEL_OPS: [PixelOp; 24] = [
         entry_point: "color_replace",
         len: 8,
         valid: |v| {
-            v.get(0).is_some_and(|sim| (0.0..=1.2).contains(sim))
+            v.first().is_some_and(|sim| (0.0..=1.2).contains(sim))
                 && v.get(1).is_some_and(|solid| (0.0..=1.0).contains(solid))
                 && v.get(2..8)
                     .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
@@ -799,7 +793,7 @@ static PIXEL_OPS: [PixelOp; 24] = [
         entry_point: "extract",
         len: 4,
         valid: |v| {
-            v.get(0).is_some_and(|lo| (0.0..=1.0).contains(lo))
+            v.first().is_some_and(|lo| (0.0..=1.0).contains(lo))
                 && v.get(1).is_some_and(|hi| (0.0..=1.0).contains(hi))
                 && v.get(2).is_some_and(|soft| (0.0..=0.2001).contains(soft))
                 && v.get(3).is_some_and(|invert| (0.0..=1.0).contains(invert))
@@ -885,6 +879,23 @@ fn premultiply(rgb: [f32; 3], alpha: f32) -> [f32; 4] {
 fn uniform(values: &[f32], index: usize) -> f32 {
     values.get(index).copied().unwrap_or(0.0)
 }
+/// Elementwise `f` over the three channels of two colour arrays.
+pub(super) fn zip3<T: Copy, U: Copy, V>(a: [T; 3], b: [U; 3], f: impl Fn(T, U) -> V) -> [V; 3] {
+    let [a0, a1, a2] = a;
+    let [b0, b1, b2] = b;
+    [f(a0, b0), f(a1, b1), f(a2, b2)]
+}
+/// The RGB channels of one working pixel.
+pub(super) fn rgb(pixel: [f32; 4]) -> [f32; 3] {
+    let [r, g, b, _] = pixel;
+    [r, g, b]
+}
+/// Replaces a working pixel's RGB channels, keeping its alpha.
+pub(super) fn with_rgb(pixel: [f32; 4], channels: [f32; 3]) -> [f32; 4] {
+    let [_, _, _, alpha] = pixel;
+    let [r, g, b] = channels;
+    [r, g, b, alpha]
+}
 fn uniform_color(values: &[f32], start: usize) -> [f32; 3] {
     [0, 1, 2].map(|k| uniform(values, start + k))
 }
@@ -964,13 +975,20 @@ pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let e = encoded_color(c);
     let inverted = e.map(|v| 1.0 - v);
-    let mixed = [0, 1, 2].map(|k| {
-        if channel == 0 || channel == k as u32 + 1 {
-            inverted[k] + (e[k] - inverted[k]) * blend
-        } else {
-            e[k]
-        }
-    });
+    let mixed = if channel == 0 {
+        zip3(e, inverted, |e, inv| inv + (e - inv) * blend)
+    } else {
+        let mix = |index: u32, e: f32, inv: f32| {
+            if channel == index {
+                inv + (e - inv) * blend
+            } else {
+                e
+            }
+        };
+        let [er, eg, eb] = e;
+        let [ir, ig, ib] = inverted;
+        [mix(1, er, ir), mix(2, eg, ig), mix(3, eb, ib)]
+    };
     premultiply(decoded_color(mixed), alpha)
 }
 /// Encoded-space quantisation into `n + 1` levels.
@@ -1005,9 +1023,9 @@ pub fn tint_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let amount = uniform(values, 6).clamp(0.0, 1.0);
     let (c, alpha) = straight(pixel);
     let l = crate::image::oetf(luma(c).max(0.0), 13);
-    let target = [0, 1, 2].map(|k| black[k] + (white[k] - black[k]) * l);
+    let target = zip3(black, white, |b, w| b + (w - b) * l);
     let e = encoded_color(c);
-    let mixed = [0, 1, 2].map(|k| e[k] + (target[k] - e[k]) * amount);
+    let mixed = zip3(e, target, |e, t| e + (t - e) * amount);
     premultiply(decoded_color(mixed), alpha)
 }
 /// Keeps colours within `similarity` of the key and greys the rest.
@@ -1041,18 +1059,19 @@ pub fn color_replace_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
         let [h, s, _] = hsl(replace);
         hsl_color(h, s, hsl(e)[2])
     };
-    let mixed = [0, 1, 2].map(|k| e[k] + (to[k] - e[k]) * weight);
+    let mixed = zip3(e, to, |e, to| e + (to - e) * weight);
     premultiply(decoded_color(mixed), alpha)
 }
 /// Encoded 3x4 channel matrix; the last value of each row is a constant.
 pub fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let e = encoded_color(c);
+    let [er, eg, eb] = e;
     let mixed = [0, 1, 2].map(|k| {
         let row = k * 4;
-        (uniform(values, row) * e[0]
-            + uniform(values, row + 1) * e[1]
-            + uniform(values, row + 2) * e[2]
+        (uniform(values, row) * er
+            + uniform(values, row + 1) * eg
+            + uniform(values, row + 2) * eb
             + uniform(values, row + 3))
         .clamp(0.0, 1.0)
     });
@@ -1080,7 +1099,7 @@ pub fn strobe_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let strobe = decoded_color(uniform_color(values, 0));
     let blend = uniform(values, 3).clamp(0.0, 1.0);
     let (c, alpha) = straight(pixel);
-    let mixed = [0, 1, 2].map(|k| strobe[k] + (c[k] - strobe[k]) * blend);
+    let mixed = zip3(strobe, c, |s, c| s + (c - s) * blend);
     premultiply(mixed, alpha)
 }
 fn pixel_op(entry_point: &str) -> Option<&'static PixelOp> {
@@ -1136,7 +1155,7 @@ static SAMPLE_OPS: [SampleOp; 28] = [
         entry_point: "pixelate",
         len: 3,
         valid: |v, _, _| {
-            v.get(0)
+            v.first()
                 .is_some_and(|block| block.is_finite() && *block >= 1.0)
                 && v.get(1)
                     .is_some_and(|block| block.is_finite() && *block >= 1.0)
@@ -1149,7 +1168,7 @@ static SAMPLE_OPS: [SampleOp; 28] = [
         entry_point: "detail_boost",
         len: 2,
         valid: |v, _, _| {
-            v.get(0).is_some_and(|gain| (0.0..=40.0).contains(gain))
+            v.first().is_some_and(|gain| (0.0..=40.0).contains(gain))
                 && v.get(1)
                     .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
         },
@@ -1174,7 +1193,7 @@ static SAMPLE_OPS: [SampleOp; 28] = [
         entry_point: "edge_lines",
         len: 2,
         valid: |v, _, _| {
-            v.get(0).is_some_and(|invert| (0.0..=1.0).contains(invert))
+            v.first().is_some_and(|invert| (0.0..=1.0).contains(invert))
                 && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
         },
         apply: edge_lines_sample,
@@ -1391,7 +1410,7 @@ fn colour_relief_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32
     let difference = luma(straight_sample(plus)) - luma(straight_sample(minus));
     let encoded = encoded_color([centre[0] / alpha, centre[1] / alpha, centre[2] / alpha]);
     let relief = encoded.map(|v| (v + 2.0 * contrast * difference).clamp(0.0, 1.0));
-    let mixed = [0, 1, 2].map(|k| relief[k] + (encoded[k] - relief[k]) * blend.clamp(0.0, 1.0));
+    let mixed = zip3(relief, encoded, |r, e| r + (e - r) * blend.clamp(0.0, 1.0));
     premultiply(decoded_color(mixed), alpha)
 }
 /// Pixelate divides the picture into the authored number of blocks per axis and
@@ -1816,6 +1835,10 @@ pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
     }
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "resolved values stay Copy and inline for the per-frame parameter map; boxing the curve would allocate on every effect evaluation"
+)]
 #[derive(Clone, Copy)]
 enum ResolvedValue {
     Scalar(f64),
@@ -2370,15 +2393,16 @@ pub fn evaluate_effect(
     let mut frame = EffectFrame::new(animations, effect, local, width, height)?;
     frame.fine = fine;
     let mut passes = evaluate(&frame, &geometry)?;
-    if effect.kind == "color_grade" && frame.scalar("lut_strength")? != 0. {
-        if let Some(ResolvedValue::Lut(Some(id))) = frame.params.get("lut") {
-            let table = resources.get(*id)?;
-            if !table.is_identity() {
-                passes.push(EffectPass::Lut3d {
-                    table,
-                    strength: (frame.scalar("lut_strength")? / 100.) as f32,
-                });
-            }
+    if effect.kind == "color_grade"
+        && frame.scalar("lut_strength")? != 0.
+        && let Some(ResolvedValue::Lut(Some(id))) = frame.params.get("lut")
+    {
+        let table = resources.get(*id)?;
+        if !table.is_identity() {
+            passes.push(EffectPass::Lut3d {
+                table,
+                strength: (frame.scalar("lut_strength")? / 100.) as f32,
+            });
         }
     }
     Ok(passes)

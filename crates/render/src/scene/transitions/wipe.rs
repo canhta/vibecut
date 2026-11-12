@@ -38,8 +38,12 @@ impl Style {
         })
     }
     fn of(t: &Tx) -> Result<Self> {
-        let aa = [0.5, 1., 1.75, 2.5][t.params.choice("antialias")?.min(3) as usize]
-            * t.scale.clamp(0.25, 1.);
+        let aa = match t.params.choice("antialias")?.min(3) {
+            0 => 0.5,
+            1 => 1.,
+            2 => 1.75,
+            _ => 2.5,
+        } * t.scale.clamp(0.25, 1.);
         Self::new(
             px(t, "feather")?,
             px(t, "border_width")?,

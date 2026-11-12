@@ -512,7 +512,7 @@ mod tests {
                 for strength in [0., 0.5, 1.] {
                     let dry = [0.19f64, 0.42, 0.73];
                     let [r, g, b] = dry.map(encode);
-                    let expected = [r * g, g * b, b * r].map(|v| decode(v));
+                    let expected = [r * g, g * b, b * r].map(decode);
                     let pixel = [
                         (dry[0] * alpha) as f32,
                         (dry[1] * alpha) as f32,

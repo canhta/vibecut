@@ -1187,7 +1187,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
             "vi" => 0xb617086f5d85ff1d,
             "en" => 0x4fa62fd0d7be69c0,
             "zh" => 0x4d100236d75f592c,
-            _ => unreachable!(),
+            _ => panic!("unexpected caption fixture"),
         };
         assert_eq!(
             hash(&rgba.bytes),
@@ -1241,7 +1241,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         let item = &mut clipped.scene_mut().timeline.overlays[0].items[0];
         item.source_range = TimeRange::new(tick(5, 4), tick(3, 2)).unwrap();
         let project::ItemParams::Caption(params) = &mut item.content else {
-            unreachable!()
+            panic!("unexpected caption fixture")
         };
         params.cues = captions::clip_track(&params.cues, item.source_range).unwrap();
         let clipped = project::Project::new(clipped).unwrap();
@@ -1257,7 +1257,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         let project::ItemParams::Caption(params) =
             &mut disabled_clip.scene_mut().timeline.overlays[0].items[0].content
         else {
-            unreachable!()
+            panic!("unexpected caption fixture")
         };
         params.word_highlight = false;
         let disabled_clip = project::Project::new(disabled_clip).unwrap();
@@ -1277,7 +1277,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
             let project::ItemParams::Caption(params) =
                 &mut ambiguous.scene_mut().timeline.overlays[0].items[0].content
             else {
-                unreachable!()
+                panic!("unexpected caption fixture")
             };
             if duplicate_cue {
                 let mut cue = params.cues.cues[0].clone();
@@ -1286,7 +1286,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
             } else {
                 let CueWordTiming::Words { records, .. } = &mut params.cues.cues[0].word_timing
                 else {
-                    unreachable!()
+                    panic!("unexpected caption fixture")
                 };
                 records[1].projection = captions::WordProjection::Visible(
                     TimeRange::new(tick(1, 2), tick(3, 4)).unwrap(),
@@ -1307,7 +1307,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
             let project::ItemParams::Caption(params) =
                 &mut ambiguous.scene_mut().timeline.overlays[0].items[0].content
             else {
-                unreachable!()
+                panic!("unexpected caption fixture")
             };
             params.word_highlight = false;
             let ordinary = project::Project::new(ambiguous).unwrap();
@@ -1326,7 +1326,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         let project::ItemParams::Caption(params) =
             &mut data.scene_mut().timeline.overlays[0].items[0].content
         else {
-            unreachable!()
+            panic!("unexpected caption fixture")
         };
         params.word_highlight = false;
         let disabled = project::Project::new(data.clone()).unwrap();
@@ -1341,7 +1341,7 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         let project::ItemParams::Caption(params) =
             &mut data.scene_mut().timeline.overlays[0].items[0].content
         else {
-            unreachable!()
+            panic!("unexpected caption fixture")
         };
         params.word_highlight = true;
         params.cues.cues[0]

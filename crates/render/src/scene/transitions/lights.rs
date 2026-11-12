@@ -80,7 +80,11 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                         cx,
                         cy,
                         w.max(h) * (0.25 + 0.25 * hash(i, 4, seed)),
-                        cols[i as usize % 3],
+                        match i % 3 {
+                            0 => cols[0],
+                            1 => cols[1],
+                            _ => cols[2],
+                        },
                     )
                 })
                 .collect();

@@ -2659,7 +2659,8 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
 /// Bless only after the independent equation rows pass and the artifacts are viewed.
 #[test]
 fn pixel_effect_oracle_rows() {
-    let rows: [(&str, Vec<(&str, EffectValue)>, u64); 11] = [
+    type Row = (&'static str, Vec<(&'static str, EffectValue)>, u64);
+    let rows: [Row; 11] = [
         ("black_white", vec![], 0xed1fade70be90ac9),
         (
             "channel_mix",
@@ -3982,7 +3983,8 @@ fn edge_lines_matches_independent_sobel_blend_and_invert_on_clamped_borders() {
 
 #[test]
 fn colour_relief_matches_independent_straight_luma_transfer_and_axis_gains() {
-    let rows: &[(f64, f64, f64, f64, [f64; 2], bool)] = &[
+    type Row = (f64, f64, f64, f64, [f64; 2], bool);
+    let rows: &[Row] = &[
         (45.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
         (0.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),
         (90.0, 1.0, 100.0, 0.0, [1.0, 1.0], false),

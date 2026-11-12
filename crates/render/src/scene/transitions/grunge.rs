@@ -90,7 +90,7 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
                     shutter,
                     n,
                     &|x: f32, y: f32, q: f32| {
-                        let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+                        let (fx, fy) = (x + 0.5, y + 0.5);
                         let e = bell(q);
                         let ox = (vnoise(q * 45., 0.5, seed) - 0.5) * 2. * shake * e;
                         let oy =

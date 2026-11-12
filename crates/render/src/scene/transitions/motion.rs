@@ -127,7 +127,15 @@ fn composite(layers: &[Layer], eye: V3, x: f32, y: f32) -> [f32; 4] {
         .unwrap_or(&[])
         .iter()
         .fold([0.; 4], |accumulated, &(_, color, hidden)| {
-            std::array::from_fn(|k| color[k] + accumulated[k] * (1. - hidden))
+            let keep = 1. - hidden;
+            let [cr, cg, cb, ca] = color;
+            let [ar, ag, ab, aa] = accumulated;
+            [
+                cr + ar * keep,
+                cg + ag * keep,
+                cb + ab * keep,
+                ca + aa * keep,
+            ]
         })
 }
 
