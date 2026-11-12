@@ -8,7 +8,10 @@ use crate::editor::properties::{
 /// Effects whose numeric text keeps authored hard-bound precision and whose
 /// pending edits invalidate through the shared spatial draft path.
 fn spatial_effect(kind: &str) -> bool {
-    matches!(kind, "directional_blur" | "find_edges" | "color_emboss")
+    matches!(
+        kind,
+        "directional_blur" | "find_edges" | "color_emboss" | "sharpen" | "mosaic"
+    )
 }
 
 impl Panel<'_, '_> {
@@ -504,6 +507,7 @@ impl Panel<'_, '_> {
             "reverse" => Text::EffectReverse,
             "solid" => Text::EffectSolidColour,
             "invert" => Text::MaskInvert,
+            "sharp" => Text::EffectSharp,
             _ => return,
         };
         let id = format!("effects.{effect}.param.{}", parameter.id);
@@ -626,7 +630,7 @@ impl Panel<'_, '_> {
             match parameter.id {
                 "direction" => "\u{b0}",
                 "length" | "relief" => "px",
-                "contrast" | "blend" => "%",
+                "contrast" | "blend" | "amount" | "softness" => "%",
                 _ => "",
             }
         };

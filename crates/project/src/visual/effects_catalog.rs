@@ -216,6 +216,16 @@ static DEFINITIONS: &[EffectDefinition] = &[
         ],
     },
     EffectDefinition {
+        id: "sharpen",
+        name: "Sharpen",
+        shelf: EffectShelf::BlurDetail,
+        params: &[
+            // Source amount is a percent gain: 100 keeps one unit of detail
+            // difference, 4000 is the hard ceiling.
+            ranged("amount", "Amount", (0.0, 4000.0), (0.0, 100.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
         id: "extract",
         name: "Threshold",
         shelf: EffectShelf::Stylize,
@@ -251,6 +261,33 @@ static DEFINITIONS: &[EffectDefinition] = &[
             slider("out_black", "Output black", (0.0, 255.0), 0.0, true),
             slider("out_white", "Output white", (0.0, 255.0), 255.0, true),
             ranged("gamma", "Gamma", (10.0, 1000.0), (10.0, 300.0), 100.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "mosaic",
+        name: "Pixelate",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            // Source counts are block counts, not pixel sizes: 1 is one block per
+            // axis and 4000 is the hard ceiling.
+            ranged(
+                "horizontal",
+                "Horizontal",
+                (1.0, 4000.0),
+                (1.0, 200.0),
+                10.0,
+                true,
+            ),
+            ranged(
+                "vertical",
+                "Vertical",
+                (1.0, 4000.0),
+                (1.0, 200.0),
+                10.0,
+                true,
+            ),
+            flag("sharp", "Sharp", false),
+            slider("softness", "Softness", (0.0, 100.0), 0.0, true),
         ],
     },
     EffectDefinition {

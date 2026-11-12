@@ -843,7 +843,30 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 4] = [
+static SAMPLE_OPS: [SampleOp; 6] = [
+    SampleOp {
+        entry_point: "pixelate",
+        len: 3,
+        valid: |v, _, _| {
+            v.get(0)
+                .is_some_and(|block| block.is_finite() && *block >= 1.0)
+                && v.get(1)
+                    .is_some_and(|block| block.is_finite() && *block >= 1.0)
+                && v.get(2)
+                    .is_some_and(|softness| (0.0..=1.0).contains(softness))
+        },
+        apply: pixelate_sample,
+    },
+    SampleOp {
+        entry_point: "detail_boost",
+        len: 2,
+        valid: |v, _, _| {
+            v.get(0).is_some_and(|gain| (0.0..=40.0).contains(gain))
+                && v.get(1)
+                    .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
+        },
+        apply: detail_boost_sample,
+    },
     SampleOp {
         entry_point: "mirror",
         len: 4,
@@ -950,6 +973,79 @@ fn colour_relief_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32
     let relief = encoded.map(|v| (v + 2.0 * contrast * difference).clamp(0.0, 1.0));
     let mixed = [0, 1, 2].map(|k| relief[k] + (encoded[k] - relief[k]) * blend.clamp(0.0, 1.0));
     premultiply(decoded_color(mixed), alpha)
+}
+/// Pixelate divides the picture into the authored number of blocks per axis and
+/// reads the immutable input at block centres. Zero softness (or the sharp flag,
+/// which forces it) takes the nearest tile colour; otherwise the four surrounding
+/// tile centres blend with the block fraction, mixed toward that lattice by the
+/// softness fraction. At most five bilinear samples per output pixel: the four
+/// lattice corners plus the nearest tile colour.
+fn pixelate_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[bw, bh, softness]) = values.first_chunk::<3>() else {
+        return inputs.texel_current(x, y);
+    };
+    let (w, h) = (inputs.input.width(), inputs.input.height());
+    let tiles_x = (w as f32 / bw).ceil().max(1.0);
+    let tiles_y = (h as f32 / bh).ceil().max(1.0);
+    let tile = |coordinate: u32, block: f32, tiles: f32| {
+        let raw = coordinate as f32 / block;
+        let index = raw.floor().clamp(0.0, tiles - 1.0);
+        (index, raw - raw.floor())
+    };
+    let (ix, _) = tile(x, bw, tiles_x);
+    let (iy, _) = tile(y, bh, tiles_y);
+    let centre = |i: f32, j: f32| {
+        let px = ((i + 0.5) * bw - 0.5).clamp(0.0, (w - 1) as f32);
+        let py = ((j + 0.5) * bh - 0.5).clamp(0.0, (h - 1) as f32);
+        inputs.sample_input(px, py, image_ops::Edge::Clamp)
+    };
+    let nearest = centre(ix, iy);
+    if softness <= 0.0 {
+        return nearest;
+    }
+    // The source samples a virtual tile image in continuous coordinates with
+    // pixel centres at half offsets, so map once into texel-index tile space and
+    // clamp the four lattice indices at the picture edge.
+    let lattice_at = |coordinate: u32, block: f32| {
+        let raw = (coordinate as f32 + 0.5) / block - 0.5;
+        (raw.floor(), raw - raw.floor())
+    };
+    let (i0, fx) = lattice_at(x, bw);
+    let (j0, fy) = lattice_at(y, bh);
+    let tile_at = |i: f32, j: f32| centre(i.clamp(0.0, tiles_x - 1.0), j.clamp(0.0, tiles_y - 1.0));
+    let mix = |a: [f32; 4], b: [f32; 4], t: f32| {
+        [0, 1, 2, 3].map(|k| {
+            let (a, b) = (
+                a.get(k).copied().unwrap_or(0.0),
+                b.get(k).copied().unwrap_or(0.0),
+            );
+            a + (b - a) * t
+        })
+    };
+    let top = mix(tile_at(i0, j0), tile_at(i0 + 1.0, j0), fx);
+    let bottom = mix(tile_at(i0, j0 + 1.0), tile_at(i0 + 1.0, j0 + 1.0), fx);
+    let lattice = mix(top, bottom, fy);
+    mix(nearest, lattice, softness)
+}
+/// Unsharp detail: the current image is the blurred copy a preceding gaussian
+/// convolution produced, the immutable instance input is the original picture.
+/// Per channel the difference is added back by `gain`, gated by `threshold` times
+/// the original coverage so transparent pixels keep their alpha. Clamping to the
+/// working-image contract happens once at the pass exit.
+fn detail_boost_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let Some(&[gain, threshold]) = values.first_chunk::<2>() else {
+        return inputs.texel_current(x, y);
+    };
+    let original = inputs.texel_input(x, y);
+    let blurred = inputs.texel_current(x, y);
+    let alpha = original[3];
+    let mut out = original;
+    for (channel, blurred) in out.iter_mut().zip(blurred).take(3) {
+        let difference = *channel - blurred;
+        let keep = threshold <= 0.0 || difference.abs() >= threshold * alpha;
+        *channel += if keep { gain * difference } else { 0.0 };
+    }
+    out
 }
 /// Clamp coordinates while still floating point, before the sampler's integer lookup.
 fn streak_sample(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
@@ -1489,6 +1585,7 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "directional_blur" => streak_blur,
         "color_grade" => color_grade,
         "chroma_key" => chroma_key,
+        "sharpen" => sharpen,
         "black_white" => black_white,
         "channel_mix" => channel_mix,
         "color_pass" => color_pass,
@@ -1499,6 +1596,7 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "gamma_correction" => gamma_correction,
         "invert" => invert,
         "levels" => levels,
+        "mosaic" => mosaic,
         "posterize" => posterize,
         "strobe" => strobe,
         "tint" => tint,
@@ -1530,6 +1628,31 @@ fn color_uniform([r, g, b, _]: [f64; 4]) -> Uniform {
 
 fn blur(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     blur_passes(frame.scalar("intensity")?, frame.width, frame.height)
+}
+/// Sharpen is an unsharp mask: a gaussian of one clip pixel, at least .6 output
+/// pixels, subtracted from the immutable input and added back by the authored
+/// gain. The source's uniform scale is the equal-gain case; unequal gains take
+/// the smaller axis like Blur, so the kernel stays within the tighter clip pixel.
+fn sharpen(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    if geometry.working_size() != [frame.width, frame.height] {
+        return Err(Error::Invalid("effect spatial geometry"));
+    }
+    let amount = frame.scalar("amount")?;
+    if amount == 0.0 {
+        return Ok(Vec::new());
+    }
+    let [gx, gy] = geometry.clip_pixel_scale();
+    let sigma = gx.min(gy).max(0.6) as f32;
+    let mut passes = sigma_passes(sigma, frame.width, frame.height)?;
+    passes.push(EffectPass::Sample {
+        entry_point: "detail_boost",
+        uniforms: vec![
+            Uniform::Float((amount / 100.0) as f32),
+            // Sharpen has no threshold and keeps every difference.
+            Uniform::Float(0.0),
+        ],
+    });
+    Ok(passes)
 }
 fn color_grade(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     grade_passes(
@@ -1663,6 +1786,32 @@ fn levels(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
             Uniform::Float((100.0 / gamma.max(1.0)) as f32),
         ],
     )])
+}
+/// Pixelate counts blocks per axis, so its block size is the output axis over the
+/// truncated count, at least one pixel. Both axes covering one pixel per block is
+/// an exact identity. The sharp flag forces nearest tile colours.
+fn mosaic(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    if geometry.working_size() != [frame.width, frame.height] {
+        return Err(Error::Invalid("effect spatial geometry"));
+    }
+    let bw = (f64::from(frame.width) / frame.scalar("horizontal")?.trunc().max(1.0)).max(1.0);
+    let bh = (f64::from(frame.height) / frame.scalar("vertical")?.trunc().max(1.0)).max(1.0);
+    if bw == 1.0 && bh == 1.0 {
+        return Ok(Vec::new());
+    }
+    let softness = if frame.flag("sharp")? {
+        0.0
+    } else {
+        (frame.scalar("softness")? / 100.0) as f32
+    };
+    Ok(vec![EffectPass::Sample {
+        entry_point: "pixelate",
+        uniforms: vec![
+            Uniform::Float(bw as f32),
+            Uniform::Float(bh as f32),
+            Uniform::Float(softness),
+        ],
+    }])
 }
 fn posterize(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     Ok(vec![pixel(

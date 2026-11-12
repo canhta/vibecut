@@ -3607,6 +3607,431 @@ fn colour_relief_matches_independent_straight_luma_transfer_and_axis_gains() {
     }
 }
 
+// Independent f64 gaussian and unsharp combine: the documented sigma, iteration,
+// radius and weight formulas only. No production kernel, sampler or evaluator is
+// used to build expected pixels.
+fn convolve_axis(
+    pixels: &[[f64; 4]],
+    [w, h]: [u32; 2],
+    weights: &[f64],
+    horizontal: bool,
+) -> Vec<[f64; 4]> {
+    let radius = weights.len() as i64 / 2;
+    (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let mut sum = [0.0; 4];
+            for (tap, weight) in weights.iter().enumerate() {
+                let delta = tap as i64 - radius;
+                let sx = if horizontal {
+                    (x as i64 + delta).clamp(0, i64::from(w) - 1) as u32
+                } else {
+                    x
+                };
+                let sy = if horizontal {
+                    y
+                } else {
+                    (y as i64 + delta).clamp(0, i64::from(h) - 1) as u32
+                };
+                let source = pixels[(sy * w + sx) as usize];
+                for (v, s) in sum.iter_mut().zip(source) {
+                    *v += s * weight;
+                }
+            }
+            let alpha = sum[3].clamp(0.0, 1.0);
+            let rgb = [0, 1, 2].map(|k| sum[k].clamp(0.0, alpha));
+            [rgb[0], rgb[1], rgb[2], alpha]
+        })
+        .collect()
+}
+fn sharpen_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    gains: [f64; 2],
+    amount: f64,
+) -> Vec<[f64; 4]> {
+    let sigma = f64::from(gains[0].min(gains[1]).max(0.6) as f32);
+    let iterations = ((sigma / 8.0).powi(2).ceil().max(1.0)) as usize;
+    let sigma = sigma / (iterations as f64).sqrt();
+    let radius = (sigma * 3.0).ceil().clamp(1.0, 24.0) as i64;
+    let mut weights: Vec<f64> = (-radius..=radius)
+        .map(|x| (-(x as f64).powi(2) / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let total: f64 = weights.iter().sum();
+    for weight in &mut weights {
+        *weight /= total;
+    }
+    let mut current = pixels.to_vec();
+    for _ in 0..iterations {
+        current = convolve_axis(&current, size, &weights, true);
+        current = convolve_axis(&current, size, &weights, false);
+    }
+    let gain = amount / 100.0;
+    current
+        .iter()
+        .zip(pixels)
+        .map(|(blurred, original)| {
+            let alpha = original[3];
+            let rgb = [0, 1, 2]
+                .map(|k| (original[k] + gain * (original[k] - blurred[k])).clamp(0.0, alpha));
+            [rgb[0], rgb[1], rgb[2], alpha]
+        })
+        .collect()
+}
+fn sharpen(amount: f64) -> project::EffectInstance {
+    project::effect_definition("sharpen")
+        .unwrap()
+        .instance("sharpen")
+        .with("amount", EffectValue::Scalar(amount))
+        .unwrap()
+}
+#[test]
+fn sharpen_matches_independent_gaussian_unsharp_rows() {
+    for size in [[5, 5], [8, 5], [1, 1], [1, 7], [7, 1]] {
+        let n = (size[0] * size[1]) as usize;
+        for pattern in 0..3 {
+            let pixels: Vec<[f64; 4]> = (0..n)
+                .map(|i| match pattern {
+                    // A hard step: the sharpening peak sits on the border texels.
+                    0 => {
+                        let v = if (i as u32 % size[0]) < size[0] / 2 {
+                            0.25
+                        } else {
+                            0.75
+                        };
+                        [v, v * 0.5, v * 0.25, 1.0]
+                    }
+                    // Unequal alpha, so the coverage stays per pixel.
+                    1 => {
+                        let a = [0.25, 0.5, 1.0][i % 3];
+                        [0.6 * a, 0.2 * a, 0.1 * a, a]
+                    }
+                    // An impulse over a flat field.
+                    _ if (i as u32 % size[0]) == size[0] / 2 => [1.0, 0.5, 0.0, 1.0],
+                    _ => [0.2, 0.2, 0.2, 1.0],
+                })
+                .collect();
+            for gains in [[1.0, 1.0], [0.5, 0.5], [0.5, 1.5]] {
+                for amount in [0.0, 50.0, 100.0, 250.0] {
+                    let effect = sharpen(amount);
+                    let (actual, passes) = spatial_output(&pixels, size, gains, &effect, true);
+                    assert_eq!(
+                        passes,
+                        if amount == 0.0 { 0 } else { 3 },
+                        "Sharpen pass count {size:?} {pattern} {gains:?} {amount}"
+                    );
+                    let input: Vec<[f32; 4]> = pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+                    if amount == 0.0 {
+                        assert_eq!(actual, input, "Sharpen amount0 exact identity");
+                        continue;
+                    }
+                    let expected = sharpen_expected(&pixels, size, gains, amount);
+                    for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                        assert_working_pixel(
+                            *actual,
+                            expected,
+                            &format!("Sharpen {size:?} {pattern} {gains:?} {amount} #{index}"),
+                        );
+                        assert_eq!(
+                            actual[3], pixels[index][3] as f32,
+                            "Sharpen preserves coverage {size:?} {pattern} {gains:?} {amount}"
+                        );
+                    }
+                    let (coarse, _) = spatial_output(&pixels, size, gains, &effect, false);
+                    assert_eq!(actual, coarse, "Sharpen fine/coarse share one effort");
+                }
+            }
+        }
+    }
+    // The hard gain ceiling must stay finite and inside the premultiplied
+    // contract even on fully opaque white beside transparent black.
+    let pixels = vec![
+        [1.0, 1.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.5, 0.25, 0.125, 1.0],
+    ];
+    let (hard, passes) = spatial_output(&pixels, [3, 1], [1.0, 1.0], &sharpen(4000.0), true);
+    assert_eq!(passes, 3);
+    for pixel in &hard {
+        assert!(pixel.iter().all(|v| v.is_finite()));
+        assert!((0.0..=1.0).contains(&pixel[3]));
+        assert!(pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3]);
+    }
+    assert_eq!(hard[0][3], 1.0);
+    assert_eq!(hard[1][3], 0.0);
+}
+#[test]
+fn sharpen_refuses_hostile_values_and_malformed_detail_passes() {
+    for amount in [-1.0, 4000.1, f64::NAN, f64::INFINITY] {
+        let definition = project::effect_definition("sharpen").unwrap();
+        assert!(
+            definition
+                .instance("sharpen")
+                .with("amount", EffectValue::Scalar(amount))
+                .is_err(),
+            "Sharpen refuses {amount}"
+        );
+    }
+    assert!(matches!(
+        evaluate_effect(
+            &project::Animations::default(),
+            &sharpen(4000.0),
+            time::Tick::ZERO,
+            EffectGeometry::new([8, 4], [1e9, 1e9]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        ),
+        Err(Error::Unsupported("blur iteration bound"))
+    ));
+    let hooks = Hooks::default();
+    let image = Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap();
+    let tiny = Hooks {
+        limit: 0,
+        ..Default::default()
+    };
+    for values in [
+        vec![1.0],
+        vec![1.0, 0.0, 0.0],
+        vec![40.1, 0.0],
+        vec![1.0, 1.1],
+        vec![f32::NAN, 0.0],
+        vec![1.0, f32::INFINITY],
+    ] {
+        let pass = EffectPass::Sample {
+            entry_point: "detail_boost",
+            uniforms: values.iter().copied().map(Uniform::Float).collect(),
+        };
+        assert!(matches!(
+            apply_effect(
+                Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+                &[pass],
+                &image,
+                &CpuEffects,
+                &tiny
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(tiny.requested.load(Ordering::SeqCst), 0);
+    }
+}
+
+fn pixelate_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    horizontal: f64,
+    vertical: f64,
+    sharp: bool,
+    softness: f64,
+) -> Vec<[f64; 4]> {
+    let [w, h] = size;
+    // The pass boundary carries f32 uniforms and indices; round every coordinate
+    // and fraction explicitly, as the streak oracle does.
+    let bw = (w as f32 / horizontal.trunc().max(1.0) as f32).max(1.0);
+    let bh = (h as f32 / vertical.trunc().max(1.0) as f32).max(1.0);
+    let tiles_x = (w as f32 / bw).ceil().max(1.0);
+    let tiles_y = (h as f32 / bh).ceil().max(1.0);
+    let centre = |i: f32, j: f32| {
+        let px = ((i + 0.5) * bw - 0.5).clamp(0.0, (w - 1) as f32);
+        let py = ((j + 0.5) * bh - 0.5).clamp(0.0, (h - 1) as f32);
+        spatial_sample(pixels, size, f64::from(px), f64::from(py))
+    };
+    let mix = |a: [f64; 4], b: [f64; 4], t: f32| {
+        [0, 1, 2, 3].map(|k| a[k] + (b[k] - a[k]) * f64::from(t))
+    };
+    let soft = if sharp {
+        0.0
+    } else {
+        (softness / 100.0) as f32
+    };
+    (0..w * h)
+        .map(|index| {
+            let x = (index % w) as f32;
+            let y = (index / w) as f32;
+            let nearest = centre(
+                (x / bw).floor().clamp(0.0, tiles_x - 1.0),
+                (y / bh).floor().clamp(0.0, tiles_y - 1.0),
+            );
+            if soft <= 0.0 {
+                return nearest;
+            }
+            // Source lattice coordinate: pixel centres at half offsets, then one
+            // half-tile shift into tile-centre space.
+            let raw_x = (x + 0.5) / bw - 0.5;
+            let raw_y = (y + 0.5) / bh - 0.5;
+            let ix = raw_x.floor();
+            let iy = raw_y.floor();
+            let (fx, fy) = (raw_x - ix, raw_y - iy);
+            let tile_at =
+                |i: f32, j: f32| centre(i.clamp(0.0, tiles_x - 1.0), j.clamp(0.0, tiles_y - 1.0));
+            let top = mix(tile_at(ix, iy), tile_at(ix + 1.0, iy), fx);
+            let bottom = mix(tile_at(ix, iy + 1.0), tile_at(ix + 1.0, iy + 1.0), fx);
+            mix(nearest, mix(top, bottom, fy), soft)
+        })
+        .collect()
+}
+fn pixelate(horizontal: f64, vertical: f64, sharp: bool, softness: f64) -> project::EffectInstance {
+    project::effect_definition("mosaic")
+        .unwrap()
+        .instance("pixelate")
+        .with("horizontal", EffectValue::Scalar(horizontal))
+        .unwrap()
+        .with("vertical", EffectValue::Scalar(vertical))
+        .unwrap()
+        .with("sharp", EffectValue::Bool(sharp))
+        .unwrap()
+        .with("softness", EffectValue::Scalar(softness))
+        .unwrap()
+}
+#[test]
+fn pixelate_matches_independent_tile_lattice_rows() {
+    let counts = [
+        (1.0, 1.0),
+        (2.0, 2.0),
+        (3.0, 2.0),
+        (3.7, 2.2),
+        (10.0, 10.0),
+        (4000.0, 4000.0),
+    ];
+    for size in [[8, 6], [5, 5], [1, 1], [1, 7], [7, 1], [9, 4]] {
+        let n = (size[0] * size[1]) as usize;
+        for pattern in 0..3 {
+            let pixels: Vec<[f64; 4]> = (0..n)
+                .map(|i| match pattern {
+                    0 => {
+                        let c = (i % 4) as f64 / 3.0;
+                        let a = [0.25, 0.5, 1.0][i % 3];
+                        [c * a, (1.0 - c) * a, 0.2 * a, a]
+                    }
+                    1 => {
+                        let v = if (i as u32 % size[0]) < size[0] / 2 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        [v, 0.25 * v, 0.0, v]
+                    }
+                    _ if i == n / 2 => [1.0, 0.0, 0.0, 1.0],
+                    _ => [0.0, 0.0, 0.0, 0.0],
+                })
+                .collect();
+            for (horizontal, vertical) in counts {
+                for (sharp, softness) in [(false, 0.0), (false, 35.0), (false, 100.0), (true, 60.0)]
+                {
+                    let effect = pixelate(horizontal, vertical, sharp, softness);
+                    let (actual, passes) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
+                    // Both axes at one pixel per block are an exact identity for
+                    // every softness value, so the evaluator emits no pass.
+                    let identity =
+                        horizontal >= f64::from(size[0]) && vertical >= f64::from(size[1]);
+                    assert_eq!(
+                        passes,
+                        usize::from(!identity),
+                        "Pixelate pass count {size:?} {pattern} {horizontal} {vertical} {sharp} {softness}"
+                    );
+                    let input: Vec<[f32; 4]> = pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+                    if identity {
+                        assert_eq!(actual, input, "Pixelate identity exact");
+                        continue;
+                    }
+                    let expected =
+                        pixelate_expected(&pixels, size, horizontal, vertical, sharp, softness);
+                    for (actual, expected) in actual.iter().zip(expected) {
+                        assert_working_pixel(
+                            *actual,
+                            expected,
+                            &format!(
+                                "Pixelate {size:?} {pattern} {horizontal} {vertical} {sharp} {softness}"
+                            ),
+                        );
+                    }
+                    let (coarse, _) = spatial_output(&pixels, size, [1.0, 1.0], &effect, false);
+                    assert_eq!(actual, coarse, "Pixelate fine/coarse share one effort");
+                }
+            }
+        }
+    }
+}
+#[test]
+fn pixelate_parameters_change_the_picture_and_refuse_hostile_values() {
+    let size = [8, 8];
+    let pixels: Vec<[f64; 4]> = (0..64)
+        .map(|i| {
+            let v = if (i % 8) < 4 { 0.75 } else { 0.25 };
+            [v, 0.5 * v, 0.0, 1.0]
+        })
+        .collect();
+    for (label, left_effect, right_effect) in [
+        (
+            "horizontal",
+            pixelate(2.0, 8.0, false, 0.0),
+            pixelate(3.0, 8.0, false, 0.0),
+        ),
+        (
+            "vertical",
+            pixelate(8.0, 2.0, false, 0.0),
+            pixelate(8.0, 3.0, false, 0.0),
+        ),
+        (
+            "softness",
+            pixelate(2.0, 2.0, false, 0.0),
+            pixelate(2.0, 2.0, false, 55.0),
+        ),
+        (
+            "sharp",
+            pixelate(2.0, 2.0, false, 55.0),
+            pixelate(2.0, 2.0, true, 55.0),
+        ),
+    ] {
+        let (left, _) = spatial_output(&pixels, size, [1.0, 1.0], &left_effect, true);
+        let (right, _) = spatial_output(&pixels, size, [1.0, 1.0], &right_effect, true);
+        assert_ne!(left, right, "Pixelate {label} must change the picture");
+    }
+    let definition = project::effect_definition("mosaic").unwrap();
+    for (id, value) in [
+        ("horizontal", EffectValue::Scalar(0.5)),
+        ("horizontal", EffectValue::Scalar(4000.1)),
+        ("vertical", EffectValue::Scalar(f64::NAN)),
+        ("softness", EffectValue::Scalar(-1.0)),
+        ("softness", EffectValue::Scalar(101.0)),
+        ("sharp", EffectValue::Scalar(1.0)),
+    ] {
+        assert!(
+            definition.instance("pixelate").with(id, value).is_err(),
+            "Pixelate refuses {id} {value:?}"
+        );
+    }
+    let hooks = Hooks::default();
+    let image = Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap();
+    let tiny = Hooks {
+        limit: 0,
+        ..Default::default()
+    };
+    for values in [
+        vec![2.0, 2.0],
+        vec![2.0, 2.0, 0.5, 0.0],
+        vec![0.5, 2.0, 0.0],
+        vec![f32::NAN, 2.0, 0.0],
+        vec![2.0, f32::INFINITY, 0.0],
+        vec![2.0, 2.0, 1.1],
+    ] {
+        let pass = EffectPass::Sample {
+            entry_point: "pixelate",
+            uniforms: values.iter().copied().map(Uniform::Float).collect(),
+        };
+        assert!(matches!(
+            apply_effect(
+                Image::new(8, 4, [0.125, 0.0625, 0.0, 0.25], &hooks).unwrap(),
+                &[pass],
+                &image,
+                &CpuEffects,
+                &tiny
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(tiny.requested.load(Ordering::SeqCst), 0);
+    }
+}
+
 #[test]
 fn edge_relief_raw_extent_budget_cancel_and_drop_refuse_without_leaks() {
     let hooks = Hooks::default();

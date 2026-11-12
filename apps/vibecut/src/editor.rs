@@ -682,6 +682,13 @@ fn effect_preview_instance(
             instance.set_scalar("length", 8.0).ok()?;
             instance.set_scalar("direction", 45.0).ok()?;
         }
+        "sharpen" => instance.set_scalar("amount", 100.0).ok()?,
+        // A soft 8x6 lattice shows both axes and a blended edge.
+        "mosaic" => {
+            instance.set_scalar("horizontal", 8.0).ok()?;
+            instance.set_scalar("vertical", 6.0).ok()?;
+            instance.set_scalar("softness", 50.0).ok()?;
+        }
         "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
         "levels" => {
             instance.set_scalar("in_black", 40.0).ok()?;

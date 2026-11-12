@@ -61,6 +61,14 @@ Colour Relief is Stylize with an animatable direction (degrees), relief (full-re
 clip pixels, 0–10), contrast (percent, 0–500) and blend percent. The static invert flag
 has no animation; every numeric control uses the existing scalar/enum shape.
 
+Sharpen is Blur & Detail with one animatable amount (percent gain, hard 0–4000,
+slider 0–100, default 0 = identity).
+
+Pixelate is Stylize with animatable horizontal and vertical block counts (hard 1–4000,
+slider 1–200, default 10), an animatable softness percent and a static sharp flag.
+The counts are blocks per axis, not pixel sizes; one block per axis on both axes is
+identity.
+
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector`; it is off in every production build.
 
 ## Video transitions

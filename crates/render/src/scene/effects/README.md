@@ -92,3 +92,20 @@ encoded centre RGB before the original-picture blend; the result decodes and
 re-premultiplies centre alpha. Both emit no pass at their stated identities
 (Edge Lines blend100; Colour Relief relief0/contrast0/blend100) and reject
 unrepresentable extents before execution copies.
+
+Sharpen convolves the current image with a gaussian of
+`max(min(gx,gy),.6)` output pixels over the existing kernel builder, then a
+`detail_boost` sample op adds `amount/100` times the difference between the
+immutable instance input and that blurred copy, per channel, preserving input
+coverage; the pass exit clamps to the working contract. Amount 0 emits no pass.
+The source's single uniform scale is the equal-gain case of this admitted
+smaller-axis extension; a threshold uniform (0 for Sharpen) gates each
+difference against that threshold times input coverage.
+
+Pixelate turns each authored block count into a block size
+`max(axis/count,1)` output pixels and reads the immutable input at block
+centres in texel-index coordinates, clamped at the picture edge. Softness
+blends the nearest tile colour toward the bilinear mix of the four surrounding
+tile centres; the sharp flag forces the nearest colour, so it changes the
+picture only with softness above zero. One block per axis on both axes emits
+no pass.
