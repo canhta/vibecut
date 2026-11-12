@@ -456,6 +456,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "text.save_preset",
                 "timeline.duplicate",
                 "timeline.move_items",
+                "timeline.set_flipped",
                 "timeline.set_hidden",
                 "timeline.set_item_param",
                 "timeline.set_muted",
