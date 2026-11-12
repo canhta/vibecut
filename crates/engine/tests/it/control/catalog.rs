@@ -18,6 +18,7 @@ use crate::support::control::runner;
 use crate::support::control::seed;
 use crate::support::control::sound_access;
 use crate::support::control::submit;
+use crate::support::control::vision_access;
 use crate::support::control::with_audio;
 use crate::support::control::with_loudness;
 use crate::support::control::with_source_audio;
@@ -92,6 +93,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
     )
     .unwrap();
     let media = Mutex::new(media_access(root.path()));
+    let vision = vision_access();
     let chapters = fixture_chapters();
     let (cache, _) = engine::cache::ArtifactCache::open(
         &root.path().join("captions-cache"),
@@ -139,6 +141,37 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Waveform => s = with_waveform(&s, &wav),
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
             Fixture::Video => s = with_video(&s, &video),
+            Fixture::Reframe | Fixture::ReframeShot => {
+                s = crate::support::control::with_reframe(&s, &video);
+                let allow = Allow;
+                let access = || {
+                    let mut access = caller(&allow);
+                    access.media = Some(&media);
+                    access.vision = Some(&vision);
+                    access
+                };
+                let generate = request(
+                    &s,
+                    "reframe.generate",
+                    json!({"item":8,"target":"9:16"}),
+                    "reframe-fixture-generate",
+                );
+                let ControlResult::JobAccepted { job, .. } =
+                    ok(s.control_request(generate, access(), &mut r).unwrap())
+                else {
+                    panic!("reframe job");
+                };
+                finish(&mut r, job);
+                if matches!(spec.example.fixture, Fixture::ReframeShot) {
+                    let apply = request(
+                        &s,
+                        "reframe.apply",
+                        json!({"job":job,"replace_manual":false}),
+                        "reframe-fixture-apply",
+                    );
+                    ok(s.control_request(apply, access(), &mut r).unwrap());
+                }
+            }
             Fixture::Loudness => s = with_loudness(&s, &wav),
             Fixture::MaskPath => s = crate::support::control::with_mask_path(&s),
             Fixture::Captions => {
@@ -245,6 +278,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     media: Some(&media),
                     chapters: Some(&chapters),
                     captions: Some(&captions),
+                    vision: Some(&vision),
                 },
                 &mut r,
             )
@@ -355,6 +389,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "media.generate_clip_thumbnails",
             "media.generate_waveform",
             "preview",
+            "reframe.generate",
             "timeline.pause_candidates"
         ]
     );
@@ -447,6 +482,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "keyframes.toggle_at",
                 "move_item",
                 "move_items",
+                "reframe.apply",
+                "reframe.clear",
+                "reframe.set_manual",
                 "retranslate",
                 "ripple_delete",
                 "set_item_param",

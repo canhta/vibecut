@@ -19,7 +19,7 @@ pub(crate) use libraries::{prepare_project_fonts, with_fonts, with_sounds};
 pub(crate) use media_cache::{thumbnail_cache, waveform_cache};
 pub(crate) use paths::{resolve_target, same_target};
 pub(crate) use registry::{Lent, run as run_command, session as standalone_session};
-pub(crate) use runtime::{caption_access, cli_runner, cli_runtime};
+pub(crate) use runtime::{caption_access, cli_runner, cli_runtime, vision_access};
 
 use crate::args::CliError;
 use engine::ByteBudget;

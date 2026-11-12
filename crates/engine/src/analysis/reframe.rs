@@ -206,6 +206,26 @@ impl ReframeRequest {
         cache: &mut ArtifactCache,
         detector: impl VisionDetector + 'static,
     ) -> Result<ReframeJob> {
+        self.submit_with(runner, cache, detector, None)
+    }
+    /// The same, bound to one Session revision so `reframe.apply` can refuse a
+    /// project that changed after the job started.
+    pub fn submit_for_session(
+        &self,
+        runner: &mut JobRunner,
+        cache: &mut ArtifactCache,
+        detector: impl VisionDetector + 'static,
+        session: &crate::Session,
+    ) -> Result<ReframeJob> {
+        self.submit_with(runner, cache, detector, Some(session))
+    }
+    fn submit_with(
+        &self,
+        runner: &mut JobRunner,
+        cache: &mut ArtifactCache,
+        detector: impl VisionDetector + 'static,
+        session: Option<&crate::Session>,
+    ) -> Result<ReframeJob> {
         let cached = match cache.get(self.key) {
             Ok(Some(lease)) => {
                 self.decode(lease.bytes())?;
@@ -227,7 +247,7 @@ impl ReframeRequest {
             },
         };
         let detector = Mutex::new(Some(detector));
-        let (id, cancel) = runner.submit::<AnalysisError>(spec, move |ctx| {
+        let task = move |ctx: &JobContext| {
             ctx.check_cancelled()?;
             if let Some(bytes) = &cached {
                 return Ok(bytes.clone());
@@ -241,7 +261,11 @@ impl ReframeRequest {
             let bytes = encode(&result)?;
             ctx.check_cancelled()?;
             Ok(bytes)
-        })?;
+        };
+        let (id, cancel) = match session {
+            Some(session) => runner.submit_for_session::<AnalysisError>(session, spec, task)?,
+            None => runner.submit::<AnalysisError>(spec, task)?,
+        };
         Ok(ReframeJob {
             id,
             cancel,
@@ -340,9 +364,12 @@ impl ReframeRequest {
     }
 }
 impl ReframeJob {
-    pub fn finish(
+    /// Validate and cache a completed result without consuming its retained
+    /// output, so `reframe.apply` can still read the same job. `None` while the
+    /// job is outstanding.
+    pub fn publish(
         &self,
-        runner: &mut JobRunner,
+        runner: &JobRunner,
         cache: &mut ArtifactCache,
     ) -> Result<Option<ReframeAnalysis>> {
         let snapshot = runner
@@ -359,13 +386,23 @@ impl ReframeJob {
                     .ok_or(RuntimeError::JobNotRetained)?;
                 let result = self.request.decode(bytes)?;
                 cache.put(self.request.key, bytes)?;
-                runner
-                    .take_output(self.id)
-                    .ok_or(RuntimeError::JobNotRetained)?;
                 Ok(Some(result))
             }
             _ => Ok(None),
         }
+    }
+    pub fn finish(
+        &self,
+        runner: &mut JobRunner,
+        cache: &mut ArtifactCache,
+    ) -> Result<Option<ReframeAnalysis>> {
+        let result = self.publish(runner, cache)?;
+        if result.is_some() {
+            runner
+                .take_output(self.id)
+                .ok_or(RuntimeError::JobNotRetained)?;
+        }
+        Ok(result)
     }
 }
 impl ReframeAnalysis {

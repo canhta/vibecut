@@ -15,6 +15,7 @@ pub(crate) fn run_job(
     session: &mut Session,
     runner: &mut JobRunner,
     media: Option<&Mutex<MediaAccess>>,
+    vision: Option<&engine::control::VisionAccess>,
     command: &str,
     params: Value,
 ) -> Result<JobView, CliError> {
@@ -23,6 +24,7 @@ pub(crate) fn run_job(
         runner,
         Lent {
             media,
+            vision,
             ..Lent::default()
         },
         command,

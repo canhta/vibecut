@@ -17,7 +17,7 @@ Headless `vibecut-cli` process adapter. Parses native command-line arguments, di
 | `commands/libraries/` | Adapts font and sound library commands. | [Library commands](src/commands/libraries/README.md) |
 | `commands/media/` | Adapts export, normalize, probe, scene, waveform and thumbnail commands. | [Media commands](src/commands/media/README.md) |
 | `commands/media/batch/` | Runs one bounded export job file. | [Batch export](src/commands/media/batch/README.md) |
-| `commands/project/` | Adapts control, exec, lifecycle, caption, cut and transcript commands. | [Project commands](src/commands/project/README.md) |
+| `commands/project/` | Adapts control, exec, lifecycle, caption, cut, reframe and transcript commands. | [Project commands](src/commands/project/README.md) |
 | `mcp.rs` / `mcp/` | Composes the `mcp` subcommand over the MCP crate. | [MCP command](src/mcp/README.md) |
 | `output.rs` / `output/` | Shapes results, progress and upload disclosures. | [Output](src/output/README.md) |
 | `session.rs` / `session/` | Holds the leased control session and export admission. | [Session](src/session/README.md) |

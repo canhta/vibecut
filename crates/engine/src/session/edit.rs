@@ -297,6 +297,21 @@ pub(crate) fn apply(
                 "caption application requires control dispatch",
             ));
         }
+        EditCommand::ReframeApply {
+            job,
+            replace_manual,
+        } => {
+            let _ = (job, replace_manual);
+            return Err(EditError::Unsupported(
+                "reframe application requires control dispatch",
+            ));
+        }
+        EditCommand::ReframeClear { item } => {
+            data = reframe::execute_clear(data, item)?;
+        }
+        EditCommand::ReframeSetManual { item, at } => {
+            data = reframe::execute_set_manual(data, item, at)?;
+        }
         EditCommand::SaveCaptionPreset { item, name } => {
             data = text::save_caption_preset(data, item, name, sources, next, created)?;
         }
@@ -838,7 +853,9 @@ mod masks;
 mod media_edits;
 mod parameters;
 mod project_edits;
+mod reframe;
 mod retime;
+pub(crate) use reframe::merge as merge_reframe;
 mod text;
 mod tracks;
 mod transitions;

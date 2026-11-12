@@ -60,6 +60,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         &mut session,
         &mut runner,
         None,
+        None,
         "audio.measure_loudness",
         json!({}),
     );

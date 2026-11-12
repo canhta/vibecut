@@ -2,7 +2,7 @@
 use crate::args::CliError;
 use engine::control::{
     API_VERSION, Caller, ControlResult, FontAccess, MediaAccess, Policy, Request, SoundAccess,
-    registry_hash,
+    VisionAccess, registry_hash,
 };
 use engine::jobs::JobRunner;
 use engine::subtitles::CaptionAccess;
@@ -19,6 +19,7 @@ pub(crate) struct Lent<'a> {
     pub(crate) captions: Option<&'a CaptionAccess>,
     /// Narrower trusted admission than the default allow-all of a one-shot session.
     pub(crate) policy: Option<&'a dyn Policy>,
+    pub(crate) vision: Option<&'a VisionAccess>,
 }
 
 /// The adapter is the trusted composition root of its own one-shot session.
@@ -68,6 +69,7 @@ pub(crate) fn run(
         media: lent.media,
         chapters: None,
         captions: lent.captions,
+        vision: lent.vision,
     };
     session
         .control_typed(request, caller, runner)

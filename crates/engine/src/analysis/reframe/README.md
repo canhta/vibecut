@@ -10,10 +10,11 @@ downloads nothing. Face following is not speaker awareness; nothing here or in i
   an explicit range of at most one hour, a target (`9:16`, `1:1`, `16:9`), the loaded adapter's
   complete `VisionFingerprint` and the shot-analysis thresholds (`AnalysisSettings`, so cut
   discovery matches shot analysis). `submit` queues one local CPU `AnalyzeReframe` job and
-  `ReframeJob::finish` validates, caches and returns the `ReframeAnalysis`. Cancel and progress
-  travel through the job context, which is the detector's `ExecutionHooks`. The composition root
-  supplies the `VisionDetector` (tract YuNet, already pinned in the model catalog; download is a
-  user action).
+  `ReframeJob::finish` validates, caches and returns the `ReframeAnalysis`; `submit_for_session`
+  binds the job to one Session revision and `publish` validates and caches without consuming its
+  retained output, which `reframe.apply {job}` reads. Cancel and progress travel through the job
+  context, which is the detector's `ExecutionHooks`. The composition root supplies the
+  `VisionDetector` (tract YuNet, already pinned in the model catalog; download is a user action).
 - `emit_reframe(&analysis, &item)` is pure. It converts the shots under the item to the key set
   of the design (shot = span between `crop.auto` keys): `crop.x` and `crop.y` scalar keys, one `crop.auto` `Step` key (true) at
   the item start and at every cut inside it, and the static `Crop` that carries the constant

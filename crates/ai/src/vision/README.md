@@ -8,7 +8,7 @@ SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attri
 
 ## Local vision detectors
 
-`vision::VisionDetector` is a blocking, object-safe local inference seam. `vision::TractVision::load(VisionPaths, threads, capacity, hooks)` implements it with tract 0.23.9 (default `vision` feature); contracts and decision functions exist without the feature. No engine/media dependency.
+`vision::VisionDetector` is a blocking, object-safe local inference seam. `vision::TractVision::load(VisionPaths, threads, capacity, hooks)` implements it with tract 0.23.9 (default `vision` feature); contracts and decision functions exist without the feature. No engine/media dependency. `TractVision::load_faces(yunet, threads, capacity, hooks)` loads only the pinned YuNet graph for consumers that need face boxes alone (auto reframe); `speaker` and `scene` then refuse with `VisionLoad`, and the fingerprint names exactly the graphs loaded.
 
 Media supplies borrowed, finite prepared tensors through validated constructors:
 

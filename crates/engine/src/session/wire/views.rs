@@ -335,6 +335,54 @@ pub struct DetectionResult {
     pub decoded_frames: u64,
 }
 
+/// Output aspect of a constant auto-reframe crop window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ReframeTarget {
+    #[serde(rename = "9:16")]
+    Vertical,
+    #[serde(rename = "1:1")]
+    Square,
+    #[serde(rename = "16:9")]
+    Landscape,
+}
+
+/// Why a shot's path is not simply the followed face; a shot may carry several.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ReframeReason {
+    /// More than one face was stable at once; the largest is followed.
+    Ambiguous,
+    /// No face was stable; the crop is centred for the whole shot.
+    NoSubject,
+    /// The followed face was gone for more than 0.5 s and the crop eased to centre.
+    Lost,
+}
+
+/// One analysed shot of `reframe.generate`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReframeShotReport {
+    /// First source tick of the shot.
+    pub start: Tick,
+    /// Position keys the analysed path carries for this shot, sampled at 8 Hz
+    /// before the per-item half-pixel reduction `reframe.apply` performs.
+    pub keys: usize,
+    pub reasons: Vec<ReframeReason>,
+}
+
+/// The retained report of a completed `reframe.generate`; it edits no project.
+/// `reframe.apply { job }` reads the same job's full retained analysis instead.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReframeReport {
+    pub target: ReframeTarget,
+    /// Constant crop width and height as fractions of the source frame.
+    pub size: [f64; 2],
+    pub shots: Vec<ReframeShotReport>,
+}
+
 /// What a provider run cost or may cost, as the CLI and `job_status` disclose it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

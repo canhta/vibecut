@@ -10,6 +10,12 @@ Leased control lifetime, shared export admission, runtime settings.
 from the same verified font store before control rendering and export. Opening a
 project never downloads or changes its authored family key.
 
+`runtime::vision_access` lends the local YuNet face detector behind `reframe.generate`.
+It reads the pinned `yunet-2026may` bundle from the shared verified model cache and never
+downloads; a missing bundle becomes the typed setup refusal naming `model download`.
+The one-shot and control adapters and the headless MCP inbox lend the same access object,
+so the command family exists only once in the registry.
+
 The control and headless MCP roots lend optional local `CaptionAccess` with `DenyUploads`.
 Their setup closure returns the Subtitles result and retains its typed setup refusal.
 Shared runtime construction retains setup refusals for caption commands without stopping

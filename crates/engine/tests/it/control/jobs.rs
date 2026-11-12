@@ -756,6 +756,7 @@ fn submit_media(
         media: Some(media),
         chapters: None,
         captions: None,
+        vision: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::JobAccepted { job, .. } => job,
@@ -779,6 +780,7 @@ fn media_status(
         media: Some(media),
         chapters: None,
         captions: None,
+        vision: None,
     };
     match ok(s.control_request(req, caller, r).unwrap()) {
         ControlResult::Job { snapshot } => snapshot,
@@ -1010,6 +1012,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 media: None,
                 chapters: None,
                 captions: None,
+                vision: None,
             },
             &mut r,
         )
@@ -1035,6 +1038,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 media: None,
                 chapters: Some(&chapters),
                 captions: None,
+                vision: None,
             },
             &mut r,
         )
@@ -1056,6 +1060,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 media: None,
                 chapters: Some(&chapters),
                 captions: None,
+                vision: None,
             },
             &mut r,
         )
@@ -1102,6 +1107,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 media: None,
                 chapters: None,
                 captions: None,
+                vision: None,
             },
             &mut r,
         )
@@ -1144,6 +1150,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
                 media: None,
                 chapters: None,
                 captions: None,
+                vision: None,
             },
             &mut r,
         )
@@ -1548,6 +1555,7 @@ fn scene_detection_returns_candidates_warms_the_cache_and_refuses_bad_input() {
         media,
         chapters: None,
         captions: None,
+        vision: None,
     };
     for (key, id, params, with_media) in [
         ("missing", "media.detect_scenes", json!({"asset":99}), true),
@@ -1849,6 +1857,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         media: Some(&media),
         chapters: None,
         captions: None,
+        vision: None,
     };
     error(
         wave_session
@@ -1872,6 +1881,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             media: Some(&media),
             chapters: None,
             captions: None,
+            vision: None,
         };
         error(
             thumbnail_session
@@ -1954,6 +1964,7 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
         media: None,
         chapters: Some(&access),
         captions: None,
+        vision: None,
     };
     let req = request(
         &session,

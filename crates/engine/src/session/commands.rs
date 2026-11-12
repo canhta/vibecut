@@ -376,6 +376,10 @@ pub enum Fixture {
     Words,
     /// Timeline plus one real local video asset, id 97, at least one second long.
     Video,
+    /// Timeline plus one real local video asset, id 97, and video item 8 over it.
+    Reframe,
+    /// The `Reframe` fixture with one completed generate already applied to item 8.
+    ReframeShot,
     /// Timeline plus one real audible clip, item 5, and a master loudness target.
     Loudness,
     /// Timeline plus a real source asset and its retained completed transcription.
@@ -653,6 +657,10 @@ commands! {
     ThumbnailProject, "project.thumbnail", "Refresh project thumbnail", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Thumbnail;
     ProviderCatalog, "provider_catalog", "Provider catalog", Read {} => Timeline, serde_json::json!({});
     Redo, "redo", "Redo", SessionControl {} => Redo, serde_json::json!({}), available = CanRedo, grant = Agent, curated = true;
+    ReframeApply, "reframe.apply", "Apply a reframe result", Edit { job: super::wire::JobId, replace_manual: bool } => Reframe, serde_json::json!({"job":0,"replace_manual":false}), available = UnlockedItem;
+    ReframeClear, "reframe.clear", "Clear reframe crop keys", Edit { item: ItemId } => ReframeShot, serde_json::json!({"item":8}), available = UnlockedItem;
+    ReframeGenerate, "reframe.generate", "Analyse subject reframing", JobControl { item: ItemId, target: super::wire::ReframeTarget } => Reframe, serde_json::json!({"item":8,"target":"9:16"}), grant = Agent;
+    ReframeSetManual, "reframe.set_manual", "Mark a reframe shot manual", Edit { item: ItemId, at: Tick } => ReframeShot, serde_json::json!({"item":8,"at":0}), available = UnlockedItem;
     Retranslate, "retranslate", "Apply selected cue translations", Edit { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool } => Timeline, serde_json::json!({"item":4,"target_language":"vi","texts":{"cue-1":"Xin chào"},"translation_ref":"example","force":true}), available = UnlockedItem;
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1}), available = UnlockedItem;
     CreateScene, "scene.create", "Create scene", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Scene 2"});

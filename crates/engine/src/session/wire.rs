@@ -24,6 +24,6 @@ pub use views::{
     CaptionsResult, ChangeKind, ChapterSidecars, CostView, DetectionResult, FillerCandidate,
     FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState,
     LoudnessResult, Measured, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult,
-    SavedSoundEntry, SceneCandidate, SnapshotResult, SoundEntry, SoundPage, SoundSource,
-    TranslationsResult,
+    ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, SavedSoundEntry,
+    SceneCandidate, SnapshotResult, SoundEntry, SoundPage, SoundSource, TranslationsResult,
 };

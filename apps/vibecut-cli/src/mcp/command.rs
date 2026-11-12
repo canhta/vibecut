@@ -86,6 +86,9 @@ pub(crate) fn run(
         inbox.attach_captions(std::sync::Arc::new(crate::session::caption_access(
             context.budget()?,
         )));
+        inbox.attach_vision(std::sync::Arc::new(crate::session::vision_access(
+            context.budget()?,
+        )));
         if full {
             handler.all_tools();
         }

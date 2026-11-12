@@ -65,3 +65,33 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
     };
     open().unwrap_or_else(engine::subtitles::CaptionAccess::unavailable)
 }
+
+/// The local YuNet detector behind `reframe.generate`. Model files are read from
+/// the shared verified cache and never downloaded here: a missing bundle returns
+/// the typed setup refusal that names `model download yunet-2026may`.
+pub(crate) fn vision_access(budget: ByteBudget) -> engine::control::VisionAccess {
+    engine::control::VisionAccess::new(move || {
+        let (transfers, _) = engine::models::ModelTransfers::open_native(budget.clone(), 128)?;
+        let model = engine::models::catalog_model("yunet-2026may")?;
+        let hooks = VisionHooks;
+        let lease = transfers.installed(&model, &hooks)?.ok_or_else(|| {
+            engine::control::Error::Providers(engine::providers::Error::ModelMissing(
+                "yunet-2026may",
+            ))
+        })?;
+        let vision = ai::vision::TractVision::load_faces(lease.directory(), 2, 3, &hooks)?;
+        let fingerprint = *vision.fingerprint()?.as_bytes();
+        Ok((
+            Box::new(vision) as Box<dyn ai::vision::VisionDetector>,
+            fingerprint,
+        ))
+    })
+}
+
+struct VisionHooks;
+impl ai::ExecutionHooks for VisionHooks {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn stage(&self, _: ai::Stage) {}
+}

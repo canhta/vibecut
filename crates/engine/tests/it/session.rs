@@ -13,6 +13,7 @@ mod masks;
 mod media;
 mod pauses;
 mod preview;
+mod reframe;
 mod registry;
 mod retime;
 mod ripple;

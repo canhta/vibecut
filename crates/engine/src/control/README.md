@@ -96,7 +96,7 @@ against its admitted immutable snapshot and returns job ID, revision and paths; 
 A command that starts a job is `JobControl`, declares `grant` explicitly and returns
 `JobAccepted { job, revision, paths }`. `job_status` returns a `JobView` whose single
 `output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`,
-`scenes`, `captions`, `translations`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
+`scenes`, `captions`, `translations`, `reframe`) while the job is `completed`, and `null` otherwise. `control/output.rs` decodes it from
 the runner's retained bytes with one exhaustive `match` on `JobKind`, so a new kind does not
 compile until it names its output or states it has none. Reading does not consume the output; a
 completed job whose bytes were evicted refuses `job_not_retained`.
@@ -109,9 +109,17 @@ completed job whose bytes were evicted refuses `job_not_retained`.
   instead of carrying the data; it is still an ordinary edit with `base_rev`, and it refuses when
   the output was evicted or the target changed since the job started. `Session::apply_job_result`
   is for in-process owners only.
+- **Reframe.** `reframe.generate {item,target}` submits one CPU `AnalyzeReframe` job over the
+  item's source span through the lent `VisionAccess` and the media artifact cache. `job_status`
+  returns a small per-shot report (`start`, analysed key count, fallback reasons) while the full
+  analysis stays in the runner's retained output; `reframe.apply {job,replace_manual}` reads those
+  bytes as one ordinary undo step, sets the target's static crop size and writes `crop.x`,
+  `crop.y` and `crop.auto` for every shot that is not manual. A shot is manual where `crop.auto`
+  is false; `replace_manual` is its explicit confirmation and `reframe.set_manual`/`reframe.clear`
+  are the ordinary edits that mark one shot or remove the three channels.
 - **Lent implementations.** Engine declares the command and its output type. A workflow that
   lives above `engine` is implemented by a crate above it and lent through one optional access
-  object per workflow family in `Caller` (`fonts`, `media`, `chapters`, `captions`). Absent, a local workflow
+  object per workflow family in `Caller` (`fonts`, `media`, `chapters`, `captions`, `vision`). Absent, a local workflow
   refuses `Unsupported` and a remote-capable one refuses `ConsentRequired`.
 - **Grants and consent.** Local workflows are `grant = Agent`. A remote-capable workflow is
   startable by an agent only when its access object already carries the human approval for that

@@ -27,6 +27,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli cut <project> --remove-pauses [--min-pause-ms N] [--pad-ms N] [--crossfade-ms N] [--dry-run]` | List detected pauses, or remove them as one undoable edit |
 | `vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]` | List cue/word output times, or delete a measured word range as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
+| `vibecut-cli reframe <project> --item <id> --target 9:16\|1:1\|16:9 [--replace-manual] [--dry-run]` | Generate and apply the auto-reframe crop, printing per-shot reasons |
 | `vibecut-cli chapters <project> --language <tag> [--max-chapters N] [--export <dir>]` | Generate chapters, title and description, and optionally export the sidecars |
 | `vibecut-cli fillers <project> --language <tag> --llm [--include-markers]` | Classify fillers through the lent text provider and list candidates |
 | `vibecut-cli providers` | List transcription, translation, clip, chapter and filler providers offline |
@@ -207,6 +208,12 @@ The three library commands are read-effect registry entries (they never enter pr
 `--select` takes 1-based candidate indices (default: all). `--export` requires `--subs` and runs one engine batch export per selected short at 1080×1920, burning the requested language; when `--subs` differs from the detected source, or with `--bilingual`, subtitle translation runs first. Outputs are `<title>.mp4` with no sidecars. Existing files are preserved unless `--overwrite`.
 
 Candidates carry `pieces` (the provider's play-order pieces with roles), `segments` (snapped source ranges) and `adjustments` (signed original/adjusted delta per edge). The `word_fade` kind marks frame rounding at a sub-frame word gap; [shorts snapping](../../../crates/shorts/src/boundaries/README.md) owns its overlap and export-audio policy. Rejected snaps and dropped suggestions are reported with typed reasons. `providers --operation clips` lists the offline suggestion catalog with policy links.
+
+## Reframe
+
+`reframe <project> --item <id> --target 9:16|1:1|16:9 [--replace-manual] [--dry-run]` runs the registry job `reframe.generate {item,target}` on one video item, prints every shot's source start, analysed key count and fallback reasons, then applies the finished job with `reframe.apply {job,replace_manual}` and saves once. Shots whose `crop.auto` key is false were marked manual with `reframe.set_manual {item,at}` and keep their position keys unless `--replace-manual` is passed; `reframe.clear {item}` removes all three crop channels. `--dry-run` prints the report without editing. A generate job never edits the project, and apply refuses a stale revision, an evicted or unfinished job or an item changed since the job started. Face following is not speaker awareness.
+
+Generation needs the pinned local `yunet-2026may` face model installed through `model download yunet-2026may --yes-download`; nothing downloads implicitly. The detector loads only that graph and its fingerprint enters the analysis cache key. The command family is the same registry entries the control session and MCP expose.
 
 ## Scene detection
 

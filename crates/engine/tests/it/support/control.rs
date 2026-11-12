@@ -8,6 +8,7 @@
 )]
 use engine::control::{
     self, Caller, ControlResult, ErrorCode, MediaAccess, Policy, Request, Response, ResponseValue,
+    VisionAccess,
 };
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
@@ -15,6 +16,7 @@ use engine::jobs::{
 use engine::{ByteBudget, Command, Session, control::Error as EngineError};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
+    VideoParams,
 };
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc, time::Duration};
@@ -44,6 +46,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         media: None,
         chapters: None,
         captions: None,
+        vision: None,
     }
 }
 pub(crate) fn runner() -> JobRunner {
@@ -397,6 +400,44 @@ pub(crate) fn with_video(seed: &Session, path: &Path) -> Session {
         media::SourceAsset::import(media::AssetId(97), path.to_owned())
             .expect("fixture video imports"),
     );
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+/// The seed plus a 2 s video asset (id 97) and video item 8 over all of it.
+pub(crate) fn with_reframe(seed: &Session, path: &Path) -> Session {
+    let mut data = with_video(seed, path).project().data().clone();
+    let duration = data
+        .assets
+        .iter()
+        .find(|asset| asset.id() == media::AssetId(97))
+        .and_then(|asset| asset.probe().duration)
+        .expect("fixture video duration");
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(8),
+        name: "Reframe".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(8),
+            source_asset: Some(media::AssetId(97)),
+            source_range: SourceRange::new(Tick::ZERO, duration).expect("fixture range"),
+            start: Tick::ZERO,
+            content: ItemParams::Video(VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
+                crop: None,
+            }),
+        }],
+    });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 /// The audible-clip seed with a real local wav behind asset 97 and a master target.
@@ -783,6 +824,42 @@ pub(crate) fn fake_sound_unsave(_: u64) -> engine::control::Result<bool> {
 /// Synthetic capability for registry dispatch; real-library coverage lives in `libraries`.
 pub(crate) fn sound_access() -> engine::control::SoundAccess<'static> {
     engine::control::SoundAccess::new(&fake_sound_search, &fake_sound_save, &fake_sound_unsave)
+}
+
+/// A detector that finds no faces; reframe still produces a centred `no_subject`
+/// path per shot. The fingerprint is fixed so example jobs stay deterministic.
+pub(crate) struct NoFaces;
+impl ai::vision::VisionDetector for NoFaces {
+    fn faces(
+        &mut self,
+        _: ai::vision::FaceFrame<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<Vec<ai::vision::FaceBox>, ai::Error> {
+        Ok(Vec::new())
+    }
+    fn speaker(
+        &mut self,
+        chunk: ai::vision::SpeakerChunk<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<Vec<f32>, ai::Error> {
+        Ok(vec![0.; chunk.frames()])
+    }
+    fn scene(
+        &mut self,
+        _: ai::vision::SceneFrame<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::vision::SceneResult, ai::Error> {
+        Ok(ai::vision::SceneResult::unknown())
+    }
+}
+/// The fake detector behind `reframe.generate` in command-family tests.
+pub(crate) fn vision_access() -> VisionAccess {
+    VisionAccess::new(|| {
+        Ok((
+            Box::new(NoFaces) as Box<dyn ai::vision::VisionDetector>,
+            [9; 32],
+        ))
+    })
 }
 pub(crate) fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     for _ in 0..10000 {

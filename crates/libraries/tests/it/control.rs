@@ -81,6 +81,7 @@ fn control<'a>(
             media: None,
             chapters: None,
             captions: None,
+            vision: None,
         },
         r,
     )
@@ -118,6 +119,7 @@ fn control_sounds(
             media: None,
             chapters: None,
             captions: None,
+            vision: None,
         },
         r,
     )

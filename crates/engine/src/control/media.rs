@@ -1,22 +1,65 @@
 //! Lends process media caches and durable LUT sources to generation/import jobs.
 use super::{Error as EngineError, Result};
 use crate::{
+    analysis::{AnalysisSettings, ReframeJob, ReframeRequest, ReframeTarget},
     artifacts::thumbnail_strip::{
         self, ThumbnailStripJob, ThumbnailStripRequest, ThumbnailStripState,
     },
     artifacts::thumbnails::ThumbnailCache,
     cache::ArtifactCache,
-    jobs::{JobId, JobRunner},
+    jobs::{JobId, JobKind, JobRunner},
     scene_detection::{DetectionJob, DetectionRequest, DetectionSettings},
     waveform::{self, WaveformJob, WaveformRequest, WaveformState},
 };
+use ai::vision::{FaceFrame, IdentityFrame, SceneFrame, SceneResult, SpeakerChunk, VisionDetector};
 use media::{SourceAsset, THUMBNAIL_MAX_EDGE};
-use project::Item;
+use project::{Item, ItemId};
 use std::collections::BTreeMap;
 use time::{SourceRange, Tick, TimeRange};
 
 /// Entries each cache may retain; the CLI and desktop composition roots agree.
 const MAX_CACHE_ENTRIES: usize = 128;
+
+/// A submitted reframe analysis and the item it was generated for, so
+/// `reframe.apply { job }` knows which item the job names.
+struct ReframeEntry {
+    job: ReframeJob,
+    item: ItemId,
+    published: bool,
+}
+
+/// Defers to the boxed adapter; `ReframeRequest::submit` accepts a sized value.
+struct BoxedDetector(Box<dyn VisionDetector>);
+impl VisionDetector for BoxedDetector {
+    fn embedding(
+        &mut self,
+        frame: IdentityFrame<'_>,
+        hooks: &dyn ai::ExecutionHooks,
+    ) -> std::result::Result<Option<ai::vision::FaceEmbedding>, ai::Error> {
+        self.0.embedding(frame, hooks)
+    }
+    fn faces(
+        &mut self,
+        frame: FaceFrame<'_>,
+        hooks: &dyn ai::ExecutionHooks,
+    ) -> std::result::Result<Vec<ai::vision::FaceBox>, ai::Error> {
+        self.0.faces(frame, hooks)
+    }
+    fn speaker(
+        &mut self,
+        chunk: SpeakerChunk<'_>,
+        hooks: &dyn ai::ExecutionHooks,
+    ) -> std::result::Result<Vec<f32>, ai::Error> {
+        self.0.speaker(chunk, hooks)
+    }
+    fn scene(
+        &mut self,
+        frame: SceneFrame<'_>,
+        hooks: &dyn ai::ExecutionHooks,
+    ) -> std::result::Result<SceneResult, ai::Error> {
+        self.0.scene(frame, hooks)
+    }
+}
 
 /// One process's media stores and the generation jobs they have not published yet.
 /// The composition root builds it from the same caches its display queries read.
@@ -27,6 +70,7 @@ pub struct MediaAccess {
     waveforms: BTreeMap<JobId, WaveformJob>,
     strips: BTreeMap<JobId, ThumbnailStripJob>,
     scenes: BTreeMap<JobId, DetectionJob>,
+    reframes: BTreeMap<JobId, ReframeEntry>,
 }
 
 impl MediaAccess {
@@ -62,6 +106,7 @@ impl MediaAccess {
             waveforms: BTreeMap::new(),
             strips: BTreeMap::new(),
             scenes: BTreeMap::new(),
+            reframes: BTreeMap::new(),
         }
     }
 
@@ -181,6 +226,47 @@ impl MediaAccess {
         Ok(id)
     }
 
+    /// Submit one item's reframe analysis. A warm entry completes without
+    /// opening the source or calling the detector; the entry is published when
+    /// `job_status` first sees the job complete. The item is retained so
+    /// `reframe.apply { job }` can name it without reopening the job payload.
+    pub(crate) fn generate_reframe(
+        &mut self,
+        runner: &mut JobRunner,
+        session: &crate::Session,
+        asset: SourceAsset,
+        item: Item,
+        target: ReframeTarget,
+        models: [u8; 32],
+        settings: AnalysisSettings,
+        detector: Box<dyn VisionDetector>,
+    ) -> crate::analysis::Result<JobId> {
+        self.retain(runner);
+        let item_id = item.id;
+        let request = ReframeRequest::new(asset, item.source_range, target, models, settings)?;
+        let job = request.submit_for_session(
+            runner,
+            &mut self.artifacts,
+            BoxedDetector(detector),
+            session,
+        )?;
+        let id = job.id;
+        self.reframes.insert(
+            id,
+            ReframeEntry {
+                job,
+                item: item_id,
+                published: false,
+            },
+        );
+        Ok(id)
+    }
+
+    /// The item a reframe job was generated for; `None` after eviction.
+    pub(crate) fn reframe_item(&self, job: JobId) -> Option<ItemId> {
+        self.reframes.get(&job).map(|entry| entry.item)
+    }
+
     /// Publish a completed job's validated output. A job this owner no longer
     /// holds was already published or was not submitted here.
     pub(crate) fn finish(&mut self, runner: &mut JobRunner, job: JobId) -> Result<()> {
@@ -193,6 +279,17 @@ impl MediaAccess {
         if let Some(handle) = self.scenes.remove(&job) {
             handle.finish(runner, &mut self.artifacts)?;
         }
+        // Keep the reframe handle: `reframe.apply` reads the same retained
+        // output after `job_status` has already published the cache entry.
+        if let Some(entry) = self.reframes.get_mut(&job)
+            && !entry.published
+            && runner
+                .snapshot(job)
+                .is_some_and(|snapshot| snapshot.kind == JobKind::AnalyzeReframe)
+            && entry.job.publish(runner, &mut self.artifacts)?.is_some()
+        {
+            entry.published = true;
+        }
         Ok(())
     }
 
@@ -201,6 +298,7 @@ impl MediaAccess {
         self.waveforms.remove(&job);
         self.strips.remove(&job);
         self.scenes.remove(&job);
+        self.reframes.remove(&job);
     }
 
     fn retain(&mut self, runner: &JobRunner) {
@@ -208,5 +306,6 @@ impl MediaAccess {
             .retain(|id, _| runner.snapshot(*id).is_some());
         self.strips.retain(|id, _| runner.snapshot(*id).is_some());
         self.scenes.retain(|id, _| runner.snapshot(*id).is_some());
+        self.reframes.retain(|id, _| runner.snapshot(*id).is_some());
     }
 }

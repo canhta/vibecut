@@ -58,6 +58,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         &mut session,
         &mut runner,
         Some(&media),
+        None,
         "media.detect_scenes",
         json!({"asset": id, "settings": settings}),
     );

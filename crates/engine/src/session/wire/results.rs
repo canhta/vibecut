@@ -137,4 +137,7 @@ pub enum JobOutput {
     Loudness(super::LoudnessResult),
     /// Source-time candidates of `media.detect_scenes`.
     Scenes(super::DetectionResult),
+    /// Per-shot report of `reframe.generate`; `reframe.apply` reads the job's
+    /// retained analysis instead of carrying it here.
+    Reframe(super::ReframeReport),
 }

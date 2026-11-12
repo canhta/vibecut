@@ -141,6 +141,10 @@ locked. Same-name rename is an exact no-op; duplicate names refuse. Deletion ref
 caption item in any scene selects the preset, so no live reference ever dangles; materialize a
 different style first. Rename never changes appearance.
 
+## Reframe
+
+`reframe.set_manual {item,at}` finds the shot containing `at` — the span from the last `crop.auto` key at or before it — and replaces that key's value with false while keeping every `crop.x`/`crop.y` key. `reframe.clear {item}` removes the three crop paths and leaves the static crop. Both are one undo step and refuse a locked track, a missing item or a shot time outside the item. `reframe.apply {job,replace_manual}` is executed by control dispatch because it needs the runner and the media cache: it merges the job's emitted keys shot by shot, keeps a shot whose `crop.auto` value is false unless `replace_manual`, then commits the static crop and the three channels through `transaction` as one undo step. The [reframe analysis](../../analysis/reframe/README.md) owns key emission.
+
 ## Graphic appearance
 
 Generated rectangles and ellipses insert through `timeline.insert` and ordinary Video placement, without initializing source canvas/FPS. Graphic fill/stroke/width/alignment/radius patches update stored fallbacks only; they preserve any authoritative animation Param. Ellipses refuse radius. Ordinary parameter commands validate every graphic base and key through the project candidate before publication. Generic masks, effects, trim/split/move/duplicate and key-time scaling retain their normal history and refusal rules; media speed remains unsupported.

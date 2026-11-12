@@ -34,9 +34,9 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         },
         JobKind::MeasureLoudness => JobOutput::Loudness(crate::loudness::decode(retained()?)?),
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
+        JobKind::AnalyzeReframe => JobOutput::Reframe(reframe_report(retained()?)?),
         JobKind::SuggestClips
         | JobKind::AnalyzeShots
-        | JobKind::AnalyzeReframe
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails
@@ -50,4 +50,54 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         | JobKind::SoundDownload
         | JobKind::DownloadFont => return Ok(None),
     }))
+}
+
+/// The small per-shot report and the retained analysis are one job output:
+/// `reframe.apply` later parses the same bytes for the exact key set.
+fn reframe_report(bytes: &[u8]) -> Result<crate::session::wire::ReframeReport> {
+    let analysis: crate::ReframeAnalysis = serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?;
+    Ok(crate::session::wire::ReframeReport {
+        target: analysis.target.into(),
+        size: analysis.size,
+        shots: analysis
+            .shots
+            .iter()
+            .map(|shot| crate::session::wire::ReframeShotReport {
+                start: shot.range.start(),
+                keys: shot.samples.len(),
+                reasons: shot.reasons.iter().copied().map(Into::into).collect(),
+            })
+            .collect(),
+    })
+}
+
+impl From<crate::ReframeTarget> for crate::session::wire::ReframeTarget {
+    fn from(target: crate::ReframeTarget) -> Self {
+        match target {
+            crate::ReframeTarget::Vertical => Self::Vertical,
+            crate::ReframeTarget::Square => Self::Square,
+            crate::ReframeTarget::Landscape => Self::Landscape,
+        }
+    }
+}
+
+impl From<crate::session::wire::ReframeTarget> for crate::ReframeTarget {
+    fn from(target: crate::session::wire::ReframeTarget) -> Self {
+        match target {
+            crate::session::wire::ReframeTarget::Vertical => Self::Vertical,
+            crate::session::wire::ReframeTarget::Square => Self::Square,
+            crate::session::wire::ReframeTarget::Landscape => Self::Landscape,
+        }
+    }
+}
+
+impl From<crate::ReframeReason> for crate::session::wire::ReframeReason {
+    fn from(reason: crate::ReframeReason) -> Self {
+        match reason {
+            crate::ReframeReason::Ambiguous => Self::Ambiguous,
+            crate::ReframeReason::NoSubject => Self::NoSubject,
+            crate::ReframeReason::Lost => Self::Lost,
+        }
+    }
 }

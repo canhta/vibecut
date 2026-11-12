@@ -49,6 +49,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             session,
             &mut runner,
             Some(&media),
+            None,
             "color.import_lut",
             serde_json::json!({"path":source,"name":null,"licence":null,"expected_hash":null}),
         )?;

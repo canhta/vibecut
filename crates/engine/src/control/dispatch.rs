@@ -212,6 +212,7 @@ impl Session {
                     JobKind::GenerateWaveform
                         | JobKind::GenerateClipThumbnails
                         | JobKind::DetectScenes
+                        | JobKind::AnalyzeReframe
                 ) && let Some(media) = caller.media
                 {
                     let mut media = media.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
@@ -668,6 +669,145 @@ impl Session {
                     revision: self.revision(),
                     paths: vec![path],
                 })
+            }
+            Command::ReframeGenerate { item, target } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let data = self.project().data();
+                let clip = data
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .find(|candidate| candidate.id == item)
+                    .cloned()
+                    .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+                if !matches!(clip.content, project::ItemParams::Video(_)) {
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "reframe needs a video item",
+                    )));
+                }
+                let asset_id =
+                    clip.source_asset
+                        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                            "reframe item has no source",
+                        )))?;
+                let asset = data
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset_id)
+                    .cloned()
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset_id)))?;
+                let vision =
+                    caller
+                        .vision
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "reframe detector unavailable",
+                        )))?;
+                let (detector, models) = vision.load()?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
+                let job = media
+                    .lock()
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
+                    .generate_reframe(
+                        runner,
+                        self,
+                        asset,
+                        clip,
+                        target.into(),
+                        models,
+                        crate::AnalysisSettings::default(),
+                        detector,
+                    )?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::ReframeApply {
+                job,
+                replace_manual,
+            } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let snapshot = runner
+                    .snapshot(job)
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                if snapshot.kind != JobKind::AnalyzeReframe {
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "job is not a reframe analysis",
+                    )));
+                }
+                if snapshot.state != JobState::Completed {
+                    return Err(EngineError::Session(crate::SessionError::StaleResult));
+                }
+                runner.validate_output_target(job, self)?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
+                let item_id = {
+                    let mut media = media.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
+                    let item = media
+                        .reframe_item(job)
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                    media.finish(runner, job)?;
+                    item
+                };
+                let bytes = runner
+                    .output_bytes(job)
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                let analysis: crate::ReframeAnalysis =
+                    serde_json::from_slice(bytes).map_err(|_| {
+                        EngineError::Edit(crate::EditError::Invalid("reframe result is invalid"))
+                    })?;
+                let item = self
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .find(|candidate| candidate.id == item_id)
+                    .cloned()
+                    .ok_or(EngineError::Edit(crate::EditError::NoItem(item_id)))?;
+                let keys = crate::emit_reframe(&analysis, &item)?;
+                let (crop, x, y, auto) =
+                    crate::session::merge_reframe(&item, keys, replace_manual)?;
+                let outcome = self.transaction(|session| {
+                    session.apply(Command::SetItemField {
+                        item: item_id,
+                        patch: crate::ItemParamPatch::Crop(Some(crop)),
+                    })?;
+                    for (path, channel) in [
+                        (project::BuiltinPath::CropX, x),
+                        (project::BuiltinPath::CropY, y),
+                        (project::BuiltinPath::CropAuto, auto),
+                    ] {
+                        session.apply(Command::SetAnimatedParam {
+                            item: item_id,
+                            path: project::AnimationPath::from(path),
+                            param: project::Param::Value(channel),
+                        })?;
+                    }
+                    Ok::<(), crate::EditError>(())
+                })?;
+                Ok(ControlResult::Edit { outcome })
             }
             command => self
                 .apply_control(command)

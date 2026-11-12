@@ -92,6 +92,7 @@ impl LutWorkflow {
                 media: Some(access.as_ref()),
                 chapters: None,
                 captions: None,
+                vision: None,
             },
             self.runner
                 .as_mut()

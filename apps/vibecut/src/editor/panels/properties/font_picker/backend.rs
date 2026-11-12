@@ -119,6 +119,7 @@ impl EngineBackend {
                 media: None,
                 chapters: None,
                 captions: None,
+                vision: None,
             },
             runner,
         )?;

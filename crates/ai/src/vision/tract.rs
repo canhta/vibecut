@@ -208,6 +208,60 @@ impl TractVision {
         checkpoint(hooks, Stage::Vision)?;
         Ok(this)
     }
+    /// Loads only the pinned YuNet face graph. Shot analysis needs the full
+    /// bundle; auto reframe calls only `faces`, so this keeps a face-only
+    /// composition small. `speaker` and `scene` refuse without their graphs.
+    pub fn load_faces(
+        yunet: &Path,
+        threads: usize,
+        capacity: usize,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Self, Error> {
+        checkpoint(hooks, Stage::Vision)?;
+        if !(1..=4).contains(&threads) || !(3..=12).contains(&capacity) {
+            return Err(Error::VisionShape);
+        }
+        let executor = if threads == 1 {
+            Executor::SingleThread
+        } else {
+            Executor::MultiThread(Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .thread_name(|i| format!("vision-{i}"))
+                    .build()
+                    .map_err(|_| Error::VisionLoad)?,
+            ))
+        };
+        let catalog = models::catalog()?;
+        let face = catalog
+            .iter()
+            .find(|m| m.id == "yunet-2026may")
+            .ok_or(Error::VisionLoad)?;
+        let file = face
+            .files
+            .iter()
+            .find(|f| f.name == "face_detection_yunet_2026may.onnx")
+            .ok_or(Error::VisionLoad)?;
+        let face = Graph::load(
+            yunet,
+            &file.name,
+            file.size,
+            &file.sha256,
+            Kind::Face,
+            None,
+            hooks,
+        )?;
+        checkpoint(hooks, Stage::Vision)?;
+        Ok(Self {
+            graphs: vec![face],
+            plans: VecDeque::new(),
+            capacity,
+            threads,
+            executor,
+            prompts: [Vec::new(), Vec::new()],
+            reidentification: None,
+        })
+    }
     /// Content identity includes every graph/external-data hash, tokenizer and
     /// exact prompts, recipe, runtime and thread setting. No paths or pixels.
     pub fn fingerprint(&self) -> Result<VisionFingerprint, Error> {

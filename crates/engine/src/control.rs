@@ -10,9 +10,10 @@ pub use crate::session::wire::{
     MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES,
     MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER, MAX_TEXT_BYTES, OutputSpan,
     PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView,
-    RECEIPT_RESERVATION, Request, Response, ResponseValue, Revision, SavedSoundEntry, Snapshot,
-    SoundEntry, SoundPage, SoundSource, TranslationsResult, bounded_json, contract_schema,
-    parse_frame, reference_markdown, registry_hash,
+    RECEIPT_RESERVATION, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request,
+    Response, ResponseValue, Revision, SavedSoundEntry, Snapshot, SoundEntry, SoundPage,
+    SoundSource, TranslationsResult, bounded_json, contract_schema, parse_frame,
+    reference_markdown, registry_hash,
 };
 
 use crate::{
@@ -220,6 +221,30 @@ pub struct SoundQuery {
     pub page_size: u32,
     pub commercial_only: bool,
 }
+/// The local detector factory behind `reframe.generate`. The composition root
+/// owns the pinned model files and the user-initiated download; engine owns the
+/// analysis job and its artifact cache. A call returns a ready detector and the
+/// loaded adapter's complete `VisionFingerprint`, so no model name enters the key.
+pub struct VisionAccess {
+    detector:
+        Box<dyn Fn() -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])> + Send + Sync>,
+}
+impl VisionAccess {
+    pub fn new(
+        detector: impl Fn() -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            detector: Box::new(detector),
+        }
+    }
+    pub(crate) fn load(&self) -> Result<(Box<dyn ai::vision::VisionDetector>, [u8; 32])> {
+        (self.detector)()
+    }
+}
+
 pub struct Caller<'a> {
     pub principal: &'a str,
     pub external: bool,
@@ -241,6 +266,9 @@ pub struct Caller<'a> {
     pub chapters: Option<&'a crate::providers::TextAccess>,
     /// Resolved caption providers, human consent and the shared checkpoint cache.
     pub captions: Option<&'a crate::subtitles::CaptionAccess>,
+    /// The local vision detector and its fingerprint behind `reframe.generate`.
+    /// Without it the command refuses `Unsupported` before any analysis work.
+    pub vision: Option<&'a VisionAccess>,
 }
 
 /// Fills the request envelope from the running session and parses one command.
@@ -322,6 +350,7 @@ mod tests {
                     media: None,
                     chapters: None,
                     captions: None,
+                    vision: None,
                 },
                 &mut runner,
             )

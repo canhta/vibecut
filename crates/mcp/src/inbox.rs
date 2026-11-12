@@ -41,6 +41,9 @@ pub struct Inbox {
     /// `consent_required`.
     chapters: Option<Arc<TextAccess>>,
     captions: Option<Arc<engine::subtitles::CaptionAccess>>,
+    /// The local vision detector the CLI composition root lends to
+    /// `reframe.generate`. A desktop inbox currently lends none.
+    vision: Option<Arc<engine::control::VisionAccess>>,
 }
 impl Inbox {
     /// Build an inbox with its own media cache; without a usable cache the
@@ -84,6 +87,7 @@ impl Inbox {
                 media,
                 chapters: None,
                 captions: None,
+                vision: None,
             },
         ))
     }
@@ -102,6 +106,12 @@ impl Inbox {
     /// Lend resolved providers, human consent and the process checkpoint cache.
     pub fn attach_captions(&mut self, captions: Arc<engine::subtitles::CaptionAccess>) {
         self.captions = Some(captions);
+    }
+
+    /// Lend the local vision detector behind `reframe.generate`. A composition
+    /// without it keeps every other command available.
+    pub fn attach_vision(&mut self, vision: Arc<engine::control::VisionAccess>) {
+        self.vision = Some(vision);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -222,6 +232,7 @@ impl Inbox {
             grants,
             chapters,
             captions,
+            vision,
             ..
         } = self;
         let runner = projects.get_mut(&id).ok_or(EngineError::Control(
@@ -234,6 +245,7 @@ impl Inbox {
             media.as_deref(),
             chapters.as_deref(),
             captions.as_deref(),
+            vision.as_deref(),
             session,
             value,
             publish,
@@ -252,6 +264,7 @@ impl Inbox {
             grants,
             chapters,
             captions,
+            vision,
             ..
         } = self;
         Self::execute_with(
@@ -260,6 +273,7 @@ impl Inbox {
             media.as_deref(),
             chapters.as_deref(),
             captions.as_deref(),
+            vision.as_deref(),
             session,
             value,
             publish,
@@ -271,6 +285,7 @@ impl Inbox {
         media: Option<&Mutex<MediaAccess>>,
         chapters: Option<&TextAccess>,
         captions: Option<&engine::subtitles::CaptionAccess>,
+        vision: Option<&engine::control::VisionAccess>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
@@ -285,6 +300,7 @@ impl Inbox {
             media,
             chapters,
             captions,
+            vision,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response)

@@ -509,6 +509,7 @@ mod tests {
             media: None,
             chapters: None,
             captions: None,
+            vision: None,
         };
         for (fault, code) in [
             (disk_full as fn() -> Result<()>, ErrorCode::Io),
