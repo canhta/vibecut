@@ -1212,10 +1212,17 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
         })
         .is_err()
     );
-    // Lift/gamma/gain each accept both limits and refuse one step beyond.
+    // Lift/gamma/gain each accept both limits, refuse one step beyond, and
+    // every channel is one undo step.
     for (key, low, high) in [
         ("lift_r", project::LIFT_MIN, project::LIFT_MAX),
+        ("lift_g", project::LIFT_MIN, project::LIFT_MAX),
+        ("lift_b", project::LIFT_MIN, project::LIFT_MAX),
+        ("gamma_r", project::GAMMA_MIN, project::GAMMA_MAX),
         ("gamma_g", project::GAMMA_MIN, project::GAMMA_MAX),
+        ("gamma_b", project::GAMMA_MIN, project::GAMMA_MAX),
+        ("gain_r", project::GAIN_MIN, project::GAIN_MAX),
+        ("gain_g", project::GAIN_MIN, project::GAIN_MAX),
         ("gain_b", project::GAIN_MIN, project::GAIN_MAX),
     ] {
         for edge in [low, high] {
@@ -1244,8 +1251,33 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
             assert_eq!(s.project(), &held);
         }
     }
-    // A curve is one typed update and one undo step.
+    // Every curve channel is one typed update and one undo/redo step.
     let curve = ToneCurve::new(&[[0.0, 0.0], [0.5, 0.75], [1.0, 1.0]]).unwrap();
+    for key in ["curve_red", "curve_green", "curve_blue", "curve_luma"] {
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "color_grade".into(),
+            key: key.into(),
+            value: project::EffectParamUpdate::Curve(curve),
+        })
+        .unwrap();
+        assert_eq!(
+            item(&s).effects[0].value(key),
+            Some(&EffectValue::Curve(curve)),
+            "{key}"
+        );
+        s.apply(Command::Undo {}).unwrap();
+        assert_eq!(s.project(), &added, "{key} undo");
+        s.apply(Command::Redo {}).unwrap();
+        assert_eq!(
+            item(&s).effects[0].value(key),
+            Some(&EffectValue::Curve(curve)),
+            "{key} redo"
+        );
+        s.apply(Command::Undo {}).unwrap();
+        assert_eq!(s.project(), &added, "{key} second undo");
+    }
+    // Leave the luma curve applied for the gesture/round-trip rows below.
     s.apply(Command::UpdateEffectParam {
         item: ItemId(2),
         effect: "color_grade".into(),
@@ -1253,13 +1285,6 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
         value: project::EffectParamUpdate::Curve(curve),
     })
     .unwrap();
-    assert_eq!(
-        item(&s).effects[0].value("curve_luma"),
-        Some(&EffectValue::Curve(curve))
-    );
-    s.apply(Command::Undo {}).unwrap();
-    assert_eq!(s.project(), &added);
-    s.apply(Command::Redo {}).unwrap();
     let with_curve = s.project().clone();
     assert!(
         s.apply(Command::UpdateEffectParam {

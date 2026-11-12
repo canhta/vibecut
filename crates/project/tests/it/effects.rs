@@ -220,6 +220,32 @@ fn every_parameter_kind_accepts_its_range_and_refuses_the_rest() {
         *point = [index as f64 / 32.0, index as f64 / 32.0];
     }
     assert!(ToneCurve::new(&oversized).is_err(), "33 points refuse");
+    // The map is exact at knots and endpoints, clamps outside the domain and is
+    // nondecreasing across the whole grid; flats are allowed.
+    let flat = ToneCurve::new(&[[0.0, 0.0], [0.25, 0.5], [0.5, 0.5], [1.0, 1.0]]).unwrap();
+    for (x, expected) in [
+        (0.0, 0.0),
+        (0.125, 0.25),
+        (0.25, 0.5),
+        (0.5, 0.5),
+        (0.75, 0.75),
+        (1.0, 1.0),
+    ] {
+        let actual = flat.map(x);
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "curve map {x} = {actual}, expected {expected}"
+        );
+    }
+    let mut previous = -1.0f32;
+    for step in 0..=4096u32 {
+        let value = flat.map(step as f32 / 4096.0);
+        assert!(value >= previous, "curve descends at step {step}");
+        previous = value;
+    }
+    assert_eq!(identity.map(0.37), 0.37);
+    assert_eq!(identity.map(-1.0), 0.0);
+    assert_eq!(identity.map(2.0), 1.0);
 }
 
 #[test]
@@ -607,6 +633,57 @@ fn instances_round_trip_through_json_with_typed_values() {
     assert_eq!(json["params"]["curve_luma"]["kind"], "curve");
     let back: EffectInstance = serde_json::from_value(json).unwrap();
     assert_eq!(back.value("curve_luma"), Some(&EffectValue::Curve(curve)));
+    // Non-neutral lift/gamma/gain and every curve channel keep their exact
+    // authored values through the typed envelope.
+    let full = effect_definition("color_grade")
+        .unwrap()
+        .instance("one")
+        .with("lift_r", EffectValue::Scalar(-75.0))
+        .unwrap()
+        .with("lift_g", EffectValue::Scalar(12.5))
+        .unwrap()
+        .with("lift_b", EffectValue::Scalar(100.0))
+        .unwrap()
+        .with("gamma_r", EffectValue::Scalar(25.0))
+        .unwrap()
+        .with("gamma_g", EffectValue::Scalar(175.0))
+        .unwrap()
+        .with("gamma_b", EffectValue::Scalar(400.0))
+        .unwrap()
+        .with("gain_r", EffectValue::Scalar(0.0))
+        .unwrap()
+        .with("gain_g", EffectValue::Scalar(250.0))
+        .unwrap()
+        .with("gain_b", EffectValue::Scalar(400.0))
+        .unwrap()
+        .with("curve_red", EffectValue::Curve(curve))
+        .unwrap()
+        .with("curve_green", EffectValue::Curve(ToneCurve::IDENTITY))
+        .unwrap()
+        .with("curve_blue", EffectValue::Curve(curve))
+        .unwrap()
+        .with("curve_luma", EffectValue::Curve(curve))
+        .unwrap();
+    let json = serde_json::to_value(&full).unwrap();
+    let back: EffectInstance = serde_json::from_value(json).unwrap();
+    assert_eq!(back, full);
+    for key in [
+        "lift_r",
+        "lift_g",
+        "lift_b",
+        "gamma_r",
+        "gamma_g",
+        "gamma_b",
+        "gain_r",
+        "gain_g",
+        "gain_b",
+        "curve_red",
+        "curve_green",
+        "curve_blue",
+        "curve_luma",
+    ] {
+        assert_eq!(back.value(key), full.value(key), "{key}");
+    }
     // A curve's topology is static; an addressed path refuses rather than
     // being ignored by the evaluator.
     let curve_path = graded.param_path("curve_luma").unwrap();

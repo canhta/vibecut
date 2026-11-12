@@ -542,6 +542,129 @@ fn color_grade_controls_on_the_chart() {
             );
         }
     }
+
+    // Colour-chart goldens for the whole family: neutral, every stage at its
+    // minimum, every stage at its maximum and a combined grade with RGB/luma
+    // curves. The recorded chart is an independent f64 application of the
+    // documented stage equations (basic grade, lift, tone gamma, gain, curves),
+    // not a call into the production pixel ops. `2e-5` is the recorded working
+    // tolerance used for the native parity rows.
+    let golden_chart = [
+        [0.0, 0.0, 0.0, 1.0],
+        [0.18, 0.18, 0.18, 1.0],
+        [0.5, 0.5, 0.5, 1.0],
+        [1.0, 1.0, 1.0, 1.0],
+        [0.25, 0.5, 0.75, 1.0],
+        [0.1, 0.2, 0.3, 0.5],
+    ];
+    let goldens: [(&str, Vec<(&'static str, EffectValue)>, [[f64; 4]; 6]); 4] = [
+        (
+            "neutral",
+            Vec::new(),
+            [
+                [0.0, 0.0, 0.0, 1.0],
+                [0.18, 0.18, 0.18, 1.0],
+                [0.5, 0.5, 0.5, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [0.25, 0.5, 0.75, 1.0],
+                [0.1, 0.2, 0.3, 0.5],
+            ],
+        ),
+        (
+            "minimum",
+            vec![
+                ("lift_r", EffectValue::Scalar(-100.0)),
+                ("lift_g", EffectValue::Scalar(-100.0)),
+                ("lift_b", EffectValue::Scalar(-100.0)),
+                ("gamma_r", EffectValue::Scalar(25.0)),
+                ("gamma_g", EffectValue::Scalar(25.0)),
+                ("gamma_b", EffectValue::Scalar(25.0)),
+                ("gain_r", EffectValue::Scalar(0.0)),
+                ("gain_g", EffectValue::Scalar(0.0)),
+                ("gain_b", EffectValue::Scalar(0.0)),
+            ],
+            [
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.5],
+            ],
+        ),
+        (
+            "maximum",
+            vec![
+                ("lift_r", EffectValue::Scalar(100.0)),
+                ("lift_g", EffectValue::Scalar(100.0)),
+                ("lift_b", EffectValue::Scalar(100.0)),
+                ("gamma_r", EffectValue::Scalar(400.0)),
+                ("gamma_g", EffectValue::Scalar(400.0)),
+                ("gamma_b", EffectValue::Scalar(400.0)),
+                ("gain_r", EffectValue::Scalar(400.0)),
+                ("gain_g", EffectValue::Scalar(400.0)),
+                ("gain_b", EffectValue::Scalar(400.0)),
+            ],
+            [
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [0.5, 0.5, 0.5, 0.5],
+            ],
+        ),
+        (
+            "combined",
+            vec![
+                ("brightness", EffectValue::Scalar(20.0)),
+                ("contrast", EffectValue::Scalar(-30.0)),
+                ("saturation", EffectValue::Scalar(40.0)),
+                ("hue", EffectValue::Scalar(-25.0)),
+                ("lift_r", EffectValue::Scalar(20.0)),
+                ("lift_g", EffectValue::Scalar(-20.0)),
+                ("lift_b", EffectValue::Scalar(50.0)),
+                ("gamma_r", EffectValue::Scalar(100.0)),
+                ("gamma_g", EffectValue::Scalar(200.0)),
+                ("gamma_b", EffectValue::Scalar(50.0)),
+                ("gain_r", EffectValue::Scalar(150.0)),
+                ("gain_g", EffectValue::Scalar(100.0)),
+                ("gain_b", EffectValue::Scalar(75.0)),
+                ("curve_red", curve(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]])),
+                (
+                    "curve_blue",
+                    curve(&[[0.0, 0.0], [0.25, 0.125], [0.75, 0.875], [1.0, 1.0]]),
+                ),
+                ("curve_luma", curve(&[[0.0, 0.0], [0.5, 0.75], [1.0, 1.0]])),
+            ],
+            [
+                [0.225, 0.0, 0.140_625, 1.0],
+                [0.515_098_7, 0.374_297_6, 0.251_432_3, 1.0],
+                [1.0, 0.773_496_3, 0.451_894_8, 1.0],
+                [1.0, 0.896_671_9, 0.643_352_1, 1.0],
+                [0.578_819_1, 1.0, 0.243_821_3, 1.0],
+                [0.373_116_2, 0.5, 0.152_405_1, 0.5],
+            ],
+        ),
+    ];
+    for (name, params, expected) in goldens {
+        let (out, entries) = graded_on(&params, &golden_chart);
+        if name == "neutral" {
+            assert!(entries.is_empty(), "neutral emits no pass");
+        } else {
+            assert!(!entries.is_empty(), "{name} emits its stages");
+        }
+        for (index, (pixel, want)) in out.iter().zip(expected).enumerate() {
+            for channel in 0..4 {
+                let actual = f64::from(pixel[channel]);
+                assert!(
+                    (actual - want[channel]).abs() <= 2e-5,
+                    "{name} chart pixel {index} channel {channel}: {actual} != {}",
+                    want[channel]
+                );
+            }
+        }
+    }
 }
 
 #[test]
