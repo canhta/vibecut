@@ -96,7 +96,7 @@ pub(super) fn show(
                                         catalog.error = Some(ai::Error::Inference);
                                     }
                                 }
-                                Err(error) => catalog.error = Some(error),
+                                Err(error) => catalog.error = Some(error.into()),
                             }
                         }
                     });

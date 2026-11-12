@@ -123,9 +123,6 @@ impl Http {
     fn push(&self, reply: Reply) {
         self.replies.lock().unwrap().push_back(Ok(reply));
     }
-    fn fail(&self, error: transport::Error) {
-        self.replies.lock().unwrap().push_back(Err(error));
-    }
     fn count(&self) -> usize {
         self.requests.lock().unwrap().len()
     }
@@ -182,6 +179,16 @@ impl ModelIo for Io {
         file.write_all(data)
     }
 }
+/// Space checks pass, then the first write finds the disk full mid-transfer.
+struct FullDisk;
+impl ModelIo for FullDisk {
+    fn available(&self, _: &Path) -> io::Result<u64> {
+        Ok(u64::MAX)
+    }
+    fn write(&self, _: &mut File, _: &[u8]) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::StorageFull))
+    }
+}
 fn digest(data: &[u8]) -> String {
     Sha256::digest(data)
         .iter()
@@ -203,7 +210,12 @@ fn model(id: &str, license: &str, data: &[u8]) -> Model {
         }],
     }
 }
-fn manager(dir: &Path, models: Vec<Model>, http: Arc<Http>, io: Arc<Io>) -> ModelManager {
+fn manager(
+    dir: &Path,
+    models: Vec<Model>,
+    http: Arc<Http>,
+    io: Arc<dyn ModelIo>,
+) -> ModelManager {
     let budget = ByteBudget::new(4 << 20).unwrap();
     let (cache, diagnostics) = ArtifactCache::open(dir, budget.clone(), 16).unwrap();
     assert_eq!(diagnostics, 0);
@@ -728,44 +740,36 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
             .is_some()
     );
     assert_eq!(http.count(), 0, "disk preflight precedes transfer");
-    for error in [
-        ai::Error::StorageFull,
-        ai::Error::ModelStorage(io::ErrorKind::StorageFull),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        let fixture = model("fixture-disk", "MIT", &vec![6u8; 64 * 1024]);
-        let http = Arc::new(Http::default());
-        http.fail(error);
-        let manager = self::manager(
-            dir.path(),
-            vec![fixture],
-            http.clone(),
-            Arc::new(Io {
-                available: u64::MAX,
-            }),
-        );
-        let mut bench = self::bench(open(manager, "fixture-disk"));
-        wait_check(&mut bench);
-        bench.click("models.download.fixture-disk");
-        wait_terminal(&mut bench);
-        let inspection = inspect(&bench);
-        let snapshot = inspection.job.as_ref().unwrap();
-        assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
-        assert!(matches!(
-            (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
-                .downcast_ref::<engine::models::Error>(),
-            Some(engine::models::Error::Runtime(
-                engine::RuntimeError::Transfer(_)
-            ))
-        ));
-        assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
-        assert!(inspection.installed.is_empty());
-        assert!(
-            bench
-                .harness()
-                .query_by_label("Not enough space. Free some and retry.")
-                .is_some()
-        );
-        assert_eq!(http.count(), 1);
-    }
+    // A disk that fills during the transfer reports the same storage problem.
+    // Transports carry only network/payload/invalid categories, so storage
+    // failures reach the manager through the model IO seam.
+    let dir = tempfile::tempdir().unwrap();
+    let data = vec![6u8; 64 * 1024];
+    let fixture = model("fixture-disk", "MIT", &data);
+    let http = Arc::new(Http::default());
+    http.push(Reply::ok(Arc::from(data), "\"one\""));
+    let manager = self::manager(dir.path(), vec![fixture], http.clone(), Arc::new(FullDisk));
+    let mut bench = self::bench(open(manager, "fixture-disk"));
+    wait_check(&mut bench);
+    bench.click("models.download.fixture-disk");
+    wait_terminal(&mut bench);
+    let inspection = inspect(&bench);
+    let snapshot = inspection.job.as_ref().unwrap();
+    assert_eq!((snapshot.state, snapshot.attempts), (JobState::Failed, 1));
+    assert!(matches!(
+        (snapshot.error.as_deref().unwrap() as &(dyn std::error::Error + 'static))
+            .downcast_ref::<engine::models::Error>(),
+        Some(engine::models::Error::Runtime(
+            engine::RuntimeError::StorageFull
+        ))
+    ));
+    assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
+    assert!(inspection.installed.is_empty());
+    assert!(
+        bench
+            .harness()
+            .query_by_label("Not enough space. Free some and retry.")
+            .is_some()
+    );
+    assert_eq!(http.count(), 1);
 }

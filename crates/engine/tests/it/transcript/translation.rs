@@ -25,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use time::{SourceRange, Tick};
-use transport::{HttpRequest, HttpResponse, HttpTransport};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 fn lang(s: &str) -> LanguageTag {
     LanguageTag::parse(s).unwrap()
 }
@@ -118,10 +118,10 @@ struct Transport {
     cancelled: AtomicBool,
 }
 impl HttpTransport for Transport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ::transport::Error> {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
         if self.cancelled.load(Ordering::Relaxed) {
-            return Err(transport::Error::Network);
+            return Err(::transport::Error::Network);
         }
         let wire: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
         let w: TranslationWindow = serde_json::from_str(wire["input"].as_str().unwrap()).unwrap();
@@ -313,7 +313,7 @@ fn maximum_model_ids_submit_translation_with_exact_consent_and_distinct_cache_ke
         inner: Transport,
     }
     impl HttpTransport for SelectedTransport {
-        fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, ::transport::Error> {
             let wire: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
             assert_eq!(wire["model"], self.model);
             self.inner.send(request)

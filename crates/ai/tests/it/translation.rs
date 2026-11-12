@@ -11,7 +11,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
-use transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 struct Hooks(AtomicBool);
 impl ExecutionHooks for Hooks {
     fn cancelled(&self) -> bool {
@@ -26,7 +26,7 @@ struct Transport {
     cancel: Option<Arc<Hooks>>,
 }
 impl HttpTransport for Transport {
-    fn send(&self, r: HttpRequest) -> Result<HttpResponse, transport::Error> {
+    fn send(&self, r: HttpRequest) -> Result<HttpResponse, ::transport::Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         *self.request.lock().unwrap() = Some(r);
         if let Some(h) = &self.cancel {

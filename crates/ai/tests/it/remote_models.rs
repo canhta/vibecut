@@ -10,7 +10,7 @@ use ai::{self, *};
 use captions::LanguageTag;
 use std::sync::{Arc, Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
-use transport::{HttpRequest, HttpResponse, HttpTransport};
+use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 
 struct Hooks;
 impl ExecutionHooks for Hooks {
@@ -25,7 +25,7 @@ struct Transport {
     body: Vec<u8>,
 }
 impl HttpTransport for Transport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ::transport::Error> {
         self.requests.lock().unwrap().push(request);
         Ok(HttpResponse {
             status: self.status,
