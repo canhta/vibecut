@@ -1835,8 +1835,10 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
             let error = panel(h.state()).error.unwrap();
             assert!(matches!(
                 (error.as_ref() as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<engine::transcript::Error>(),
-                Some(engine::transcript::Error::Ai(ai::Error::Cancelled))
+                    .downcast_ref::<engine::subtitles::Error>(),
+                Some(engine::subtitles::Error::Transcript(
+                    engine::transcript::Error::Ai(ai::Error::Cancelled)
+                ))
             ));
             assert_eq!(error.to_string(), "AI execution failed");
             assert_eq!(error.code(), engine::control::ErrorCode::Ai);
