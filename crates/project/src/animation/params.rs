@@ -28,6 +28,7 @@ pub enum BuiltinPath {
     Volume,
     Muted,
     Color,
+    StrokeColor,
     BackgroundColor,
     BackgroundPaddingX,
     BackgroundPaddingY,
@@ -39,7 +40,7 @@ pub enum BuiltinPath {
     CropAuto,
 }
 impl BuiltinPath {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::TransformPositionX,
         Self::TransformPositionY,
         Self::TransformScaleX,
@@ -51,6 +52,7 @@ impl BuiltinPath {
         Self::Volume,
         Self::Muted,
         Self::Color,
+        Self::StrokeColor,
         Self::BackgroundColor,
         Self::BackgroundPaddingX,
         Self::BackgroundPaddingY,
@@ -74,6 +76,7 @@ impl BuiltinPath {
             Self::Volume => "volume",
             Self::Muted => "muted",
             Self::Color => "color",
+            Self::StrokeColor => "stroke.color",
             Self::BackgroundColor => "background.color",
             Self::BackgroundPaddingX => "background.paddingX",
             Self::BackgroundPaddingY => "background.paddingY",
@@ -162,7 +165,7 @@ impl AnimationPath {
             | BuiltinPath::CropAuto
             | BuiltinPath::TransformFlipX
             | BuiltinPath::TransformFlipY => matches!(base, Some(ParamValue::Bool(_))),
-            BuiltinPath::Color | BuiltinPath::BackgroundColor => {
+            BuiltinPath::Color | BuiltinPath::StrokeColor | BuiltinPath::BackgroundColor => {
                 matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
             }
             _ => matches!(base, Some(ParamValue::Scalar(_))),

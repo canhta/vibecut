@@ -95,7 +95,19 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
     case_sensitive.caption_presets[1].name = "look".into();
     Project::new(case_sensitive).unwrap(); // Equal style values under distinct names are valid.
     // A text bank uses the same closed naming and identity rules over text styles.
-    let text_style = TextStyle::from_params(&TextParams::new("Giữ chữ"));
+    let mut styled = TextParams::new("Giữ chữ");
+    styled.stroke = Some(project::TextStroke {
+        color: Color([255, 0, 0, 255]),
+        width: 3.0,
+    });
+    styled.shadow = Some(project::TextShadow {
+        color: Color([0, 0, 0, 128]),
+        offset_x: 4.0,
+        offset_y: 5.0,
+        blur: 2.0,
+    });
+    styled.glow = true;
+    let text_style = TextStyle::from_params(&styled);
     data.text_presets = (0..64)
         .map(|id| SavedTextPreset {
             id: TextPresetId(id),
@@ -120,7 +132,9 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
             .text_presets,
         data.text_presets
     );
-    for case in ["65", "id", "name", "nfd", "font", "size", "position", "box"] {
+    for case in [
+        "65", "id", "name", "nfd", "font", "size", "position", "box", "stroke", "shadow",
+    ] {
         let mut invalid = data.clone();
         match case {
             "65" => invalid.text_presets.push(SavedTextPreset {
@@ -142,6 +156,20 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                     padding_x: -1.0,
                     ..Default::default()
                 });
+            }
+            "stroke" => {
+                invalid.text_presets[0]
+                    .style
+                    .stroke
+                    .get_or_insert_with(Default::default)
+                    .width = project::TextStroke::MAX_WIDTH + 1.0;
+            }
+            "shadow" => {
+                invalid.text_presets[0]
+                    .style
+                    .shadow
+                    .get_or_insert_with(Default::default)
+                    .blur = f32::NAN;
             }
             _ => panic!("unknown case {case}"),
         }
@@ -393,6 +421,17 @@ fn item(id: u64, start: i64) -> Item {
             color: Color([255; 4]),
             align: project::TextAlign::Left,
             decoration: project::TextDecoration::Underline,
+            stroke: Some(project::TextStroke {
+                color: Color([200, 10, 20, 255]),
+                width: 3.0,
+            }),
+            shadow: Some(project::TextShadow {
+                color: Color([0, 0, 0, 128]),
+                offset_x: 4.0,
+                offset_y: 5.0,
+                blur: 2.0,
+            }),
+            glow: true,
             background: Some(project::TextBackground {
                 color: Color([10, 20, 30, 40]),
                 padding_x: 14.0,
@@ -880,7 +919,7 @@ fn model_trust_boundaries() {
     });
     cases.push(d);
     type Corrupt = fn(&mut TextParams);
-    let text_style: [Corrupt; 16] = [
+    let text_style: [Corrupt; 19] = [
         |p| p.background.as_mut().unwrap().padding_x = -1.0,
         |p| p.background.as_mut().unwrap().padding_y = 128.5,
         |p| p.background.as_mut().unwrap().radius = f32::NAN,
@@ -897,6 +936,15 @@ fn model_trust_boundaries() {
         |p| p.line_height = project::MAX_LINE_HEIGHT + 1.0,
         |p| p.font = "x".repeat(257).into(),
         |p| p.letter_spacing = f32::NEG_INFINITY,
+        |p| {
+            p.stroke.get_or_insert_with(Default::default).width =
+                project::TextStroke::MAX_WIDTH + 1.0;
+        },
+        |p| p.shadow.get_or_insert_with(Default::default).offset_x = f32::NAN,
+        |p| {
+            p.shadow.get_or_insert_with(Default::default).blur =
+                project::TextShadow::MAX_BLUR + 1.0;
+        },
     ];
     for corrupt in text_style {
         let mut d = base.clone();

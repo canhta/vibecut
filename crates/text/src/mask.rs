@@ -269,6 +269,122 @@ pub fn coverage_signed_distance_bytes(width: u32, height: u32) -> u64 {
     area * 4 * F32 + scratch
 }
 
+/// Coverage shifted by whole pixels, leaving transparent borders.
+pub fn shift(mask: &Mask, x: f32, y: f32) -> Result<Mask, crate::RenderError> {
+    if !x.is_finite() || !y.is_finite() {
+        return Err(crate::RenderError::InvalidFilter);
+    }
+    // An offset beyond the mask leaves no coverage, so the clamp only bounds arithmetic.
+    let dx = x.round().clamp(-(mask.w as f32), mask.w as f32) as i64;
+    let dy = y.round().clamp(-(mask.h as f32), mask.h as f32) as i64;
+    let mut out = Mask::new(mask.w, mask.h);
+    for y in 0..mask.h {
+        let source_y = y as i64 - dy;
+        if source_y < 0 || source_y >= mask.h as i64 {
+            continue;
+        }
+        let source_row = source_y as usize * mask.w;
+        let target_row = y * mask.w;
+        for x in 0..mask.w {
+            let source_x = x as i64 - dx;
+            if source_x < 0 || source_x >= mask.w as i64 {
+                continue;
+            }
+            if let (Some(target), Some(source)) = (
+                out.a.get_mut(target_row + x),
+                mask.a.get(source_row + source_x as usize),
+            ) {
+                *target = *source;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Separable box blur of a coverage mask. A zero radius copies the mask.
+pub fn blur(mask: &Mask, radius: f32) -> Result<Mask, crate::RenderError> {
+    let radius = checked_radius(radius)?;
+    if radius == 0 {
+        return Ok(mask.clone());
+    }
+    let mut horizontal = Mask::new(mask.w, mask.h);
+    let divisor = (2 * radius + 1) as f32;
+    for y in 0..mask.h {
+        let row = y * mask.w;
+        let mut sum = 0.0f32;
+        for x in 0..=radius.min(mask.w.saturating_sub(1)) {
+            sum += mask.a.get(row + x).copied().unwrap_or(0.0);
+        }
+        for x in 0..mask.w {
+            if let Some(target) = horizontal.a.get_mut(row + x) {
+                *target = sum / divisor;
+            }
+            let add = x + radius + 1;
+            if add < mask.w {
+                sum += mask.a.get(row + add).copied().unwrap_or(0.0);
+            }
+            if x >= radius {
+                sum -= mask.a.get(row + x - radius).copied().unwrap_or(0.0);
+            }
+        }
+    }
+    let mut out = Mask::new(mask.w, mask.h);
+    for x in 0..mask.w {
+        let mut sum = 0.0f32;
+        for y in 0..=radius.min(mask.h.saturating_sub(1)) {
+            sum += horizontal.a.get(y * mask.w + x).copied().unwrap_or(0.0);
+        }
+        for y in 0..mask.h {
+            if let Some(target) = out.a.get_mut(y * mask.w + x) {
+                *target = sum / divisor;
+            }
+            let add = y + radius + 1;
+            if add < mask.h {
+                sum += horizontal.a.get(add * mask.w + x).copied().unwrap_or(0.0);
+            }
+            if y >= radius {
+                sum -= horizontal
+                    .a
+                    .get((y - radius) * mask.w + x)
+                    .copied()
+                    .unwrap_or(0.0);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Shadow coverage: the mask shifted by its offset and then blurred.
+pub fn shadow(
+    mask: &Mask,
+    offset_x: f32,
+    offset_y: f32,
+    blur: f32,
+) -> Result<Mask, crate::RenderError> {
+    if !offset_x.is_finite() || !offset_y.is_finite() {
+        return Err(crate::RenderError::InvalidFilter);
+    }
+    let moved = shift(mask, offset_x, offset_y)?;
+    crate::mask::blur(&moved, blur)
+}
+
+/// Glow coverage: a spread halo around the mask, softened by a half-radius blur.
+pub fn glow(mask: &Mask, radius: f32) -> Result<Mask, crate::RenderError> {
+    let radius = checked_radius(radius)? as f32;
+    let spread = stroke(mask, radius, StrokeKind::Outer)?;
+    crate::mask::blur(&spread, radius * 0.5)
+}
+
+/// Largest accepted filter radius; larger radii already blur the whole mask.
+const MAX_FILTER_RADIUS: usize = 4096;
+
+fn checked_radius(radius: f32) -> Result<usize, crate::RenderError> {
+    if !radius.is_finite() || radius < 0.0 {
+        return Err(crate::RenderError::InvalidFilter);
+    }
+    Ok((radius.round() as usize).min(MAX_FILTER_RADIUS))
+}
+
 /// Stroke coverage of `width` pixels around the shape in `mask`.
 pub fn stroke(mask: &Mask, width: f32, kind: StrokeKind) -> Result<Mask, crate::RenderError> {
     let distance = signed_distance(mask, &|| false)?;
@@ -355,5 +471,25 @@ mod tests {
         let centre = stroke(&mask, 4.0, StrokeKind::Center).expect("center");
         assert!(centre.get(9, 20) > 0.99 && centre.get(11, 20) > 0.99);
         assert!(centre.get(20, 20) < 0.01 && centre.get(5, 20) < 0.01);
+    }
+
+    #[test]
+    fn shadow_glow_and_blur_spread_coverage_behind_the_shape() {
+        let mask = fill(&Path::rect(10.0, 10.0, 30.0, 30.0), 60, 60, 0.0, 0.0);
+        let moved = shift(&mask, 5.0, -3.0).expect("shift");
+        assert!(moved.get(18, 20) > 0.99 && moved.get(13, 20) < 0.01);
+        let soft = blur(&mask, 4.0).expect("blur");
+        assert!(soft.get(7, 20) > 0.0 && soft.get(10, 20) < 1.0);
+        let lifted = shadow(&mask, 5.0, 2.0, 2.0).expect("shadow");
+        assert!(lifted.get(13, 22) > 0.0 && lifted.get(30, 20) > 0.99);
+        let halo = glow(&mask, 8.0).expect("glow");
+        assert!(halo.get(5, 20) > 0.0 && halo.get(20, 20) > 0.99);
+        assert!(halo.get(1, 1) < 0.05);
+        for invalid in [-1.0, f32::NAN, f32::INFINITY] {
+            assert!(blur(&mask, invalid).is_err());
+            assert!(glow(&mask, invalid).is_err());
+        }
+        assert!(shadow(&mask, f32::NAN, 0.0, 1.0).is_err());
+        assert!(shift(&mask, 0.0, f32::INFINITY).is_err());
     }
 }

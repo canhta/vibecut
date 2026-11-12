@@ -349,6 +349,65 @@ impl TextBackground {
             && offset(self.offset_y)
     }
 }
+/// An outer stroke drawn around the glyph fill.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextStroke {
+    pub color: Color,
+    /// Stroke width in project canvas pixels; zero draws nothing.
+    pub width: f32,
+}
+impl TextStroke {
+    /// Largest accepted stroke width in project canvas pixels.
+    pub const MAX_WIDTH: f32 = 64.0;
+    /// Whether the width is finite and within the documented range.
+    pub fn valid(&self) -> bool {
+        self.width.is_finite() && (0.0..=Self::MAX_WIDTH).contains(&self.width)
+    }
+}
+impl Default for TextStroke {
+    fn default() -> Self {
+        Self {
+            color: Color([0, 0, 0, 255]),
+            width: 4.0,
+        }
+    }
+}
+/// A soft, offset copy of the glyph coverage painted behind the fill.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextShadow {
+    pub color: Color,
+    /// Offset from the glyph coverage in project canvas pixels (y down).
+    pub offset_x: f32,
+    pub offset_y: f32,
+    /// Blur radius in project canvas pixels; zero keeps a hard copy.
+    pub blur: f32,
+}
+impl TextShadow {
+    /// Largest offset magnitude in project canvas pixels.
+    pub const MAX_OFFSET: f32 = 1024.0;
+    /// Largest blur radius in project canvas pixels.
+    pub const MAX_BLUR: f32 = 64.0;
+    /// Whether every field is finite and within its documented range.
+    pub fn valid(&self) -> bool {
+        let offset = |v: f32| v.is_finite() && v.abs() <= Self::MAX_OFFSET;
+        offset(self.offset_x)
+            && offset(self.offset_y)
+            && self.blur.is_finite()
+            && (0.0..=Self::MAX_BLUR).contains(&self.blur)
+    }
+}
+impl Default for TextShadow {
+    fn default() -> Self {
+        Self {
+            color: Color([0, 0, 0, 160]),
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur: 4.0,
+        }
+    }
+}
 /// Horizontal alignment of lines inside the text box.
 #[derive(
     Clone,
@@ -414,6 +473,13 @@ pub struct TextParams {
     /// Baseline distance in project canvas pixels; zero uses the font's natural height.
     pub line_height: f32,
     pub color: Color,
+    #[serde(default)]
+    pub stroke: Option<TextStroke>,
+    #[serde(default)]
+    pub shadow: Option<TextShadow>,
+    /// Paint a soft halo in the fill colour behind the glyphs.
+    #[serde(default)]
+    pub glow: bool,
     pub background: Option<TextBackground>,
     pub position: TextPosition,
 }
@@ -436,6 +502,9 @@ impl TextParams {
             letter_spacing: 0.0,
             line_height: 0.0,
             color: Color([255; 4]),
+            stroke: None,
+            shadow: None,
+            glow: false,
             background: None,
             position: TextPosition::default(),
         }
@@ -455,6 +524,9 @@ pub struct TextStyle {
     pub letter_spacing: f32,
     pub line_height: f32,
     pub color: Color,
+    pub stroke: Option<TextStroke>,
+    pub shadow: Option<TextShadow>,
+    pub glow: bool,
     pub background: Option<TextBackground>,
     pub position: TextPosition,
 }
@@ -471,6 +543,9 @@ impl TextStyle {
             letter_spacing: params.letter_spacing,
             line_height: params.line_height,
             color: params.color,
+            stroke: params.stroke.clone(),
+            shadow: params.shadow.clone(),
+            glow: params.glow,
             background: params.background.clone(),
             position: params.position,
         }
@@ -486,6 +561,9 @@ impl TextStyle {
         params.letter_spacing = self.letter_spacing;
         params.line_height = self.line_height;
         params.color = self.color;
+        params.stroke = self.stroke.clone();
+        params.shadow = self.shadow.clone();
+        params.glow = self.glow;
         params.background = self.background.clone();
         params.position = self.position;
     }
@@ -502,6 +580,8 @@ impl TextStyle {
             && self.position.y.is_finite()
             && (0.0..=100.0).contains(&self.position.x)
             && (0.0..=100.0).contains(&self.position.y)
+            && self.stroke.as_ref().is_none_or(TextStroke::valid)
+            && self.shadow.as_ref().is_none_or(TextShadow::valid)
             && self.background.as_ref().is_none_or(TextBackground::valid)
     }
 }

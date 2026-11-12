@@ -52,6 +52,8 @@ fn nfc_and_nfd_shapes_render_identically_without_tofu() {
             width: 3.0,
             kind: StrokeKind::Outer,
         }),
+        shadow: None,
+        glow: None,
         background: None,
         decoration: text::Decoration::None,
     };

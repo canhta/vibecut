@@ -536,6 +536,8 @@ fn validate(data: &ProjectData) -> Result<()> {
                         || !p.position.y.is_finite()
                         || !(0.0..=100.0).contains(&p.position.x)
                         || !(0.0..=100.0).contains(&p.position.y)
+                        || p.stroke.as_ref().is_some_and(|s| !s.valid())
+                        || p.shadow.as_ref().is_some_and(|s| !s.valid())
                         || p.background.as_ref().is_some_and(|b| !b.valid())
                     {
                         return Err(Error::Invalid("text style"));

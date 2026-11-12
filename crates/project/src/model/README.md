@@ -58,7 +58,9 @@ The default canvas is 1920Ã—1080 at 30 fps, black background, 16:9 preset, 1920Ã
 
 ## Saved text styles
 
-`ProjectData.text_presets` is a required project-wide bank of at most 64 `SavedTextPreset` values with stable `TextPresetId` identities and the same closed naming rule as caption presets. Each `TextStyle` holds font family, size, weight, italic, alignment, decoration, letter spacing, line height, colour, optional background box and text position; the item's words and animation keys are never stored. Every entry must be valid on its own and have a unique ID and name, even without text items. Forks and scene snapshots retain the whole bank. Applying copies values into ordinary `TextParams`; no selected preset reference is saved.
+`ProjectData.text_presets` is a required project-wide bank of at most 64 `SavedTextPreset` values with stable `TextPresetId` identities and the same closed naming rule as caption presets. Each `TextStyle` holds font family, size, weight, italic, alignment, decoration, letter spacing, line height, colour, optional stroke, optional shadow, glow, optional background box and text position; the item's words and animation keys are never stored. Every entry must be valid on its own and have a unique ID and name, even without text items. Forks and scene snapshots retain the whole bank. Applying copies values into ordinary `TextParams`; no selected preset reference is saved.
+
+A text item's optional `TextStroke` is an outer stroke in project-canvas pixels (0..=64 width); `TextShadow` stores colour, an offset up to 1024 pixels on each axis and a 0..=64-pixel blur; `glow` is a switch whose halo uses the fill colour at 15% of the font size, capped at 64 output pixels. These are authored appearance values, not measured reference defaults. The reference exposes a keyframe diamond on the stroke colour only, so `stroke.color` is the one added built-in animation channel; width, shadow and glow stay static and are copied whole by presets.
 
 ## Generated graphics
 

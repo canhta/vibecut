@@ -629,6 +629,17 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
             content: format!("item {}", item.id.0).into(),
             font_size: size,
             color: Color([10, 20, 30, 255]),
+            stroke: Some(project::TextStroke {
+                color: Color([255, 0, 0, 255]),
+                width: 3.0,
+            }),
+            shadow: Some(project::TextShadow {
+                color: Color([0, 0, 0, 128]),
+                offset_x: 2.0,
+                offset_y: 3.0,
+                blur: 1.0,
+            }),
+            glow: true,
             background: Some(Default::default()),
             ..Default::default()
         });
@@ -638,6 +649,17 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
         content: "item 10".into(),
         font_size: 20.0,
         color: Color([10, 20, 30, 255]),
+        stroke: Some(project::TextStroke {
+            color: Color([255, 0, 0, 255]),
+            width: 3.0,
+        }),
+        shadow: Some(project::TextShadow {
+            color: Color([0, 0, 0, 128]),
+            offset_x: 2.0,
+            offset_y: 3.0,
+            blur: 1.0,
+        }),
+        glow: true,
         background: Some(Default::default()),
         ..Default::default()
     });

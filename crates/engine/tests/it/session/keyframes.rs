@@ -558,6 +558,97 @@ fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
 }
 
 #[test]
+fn text_stroke_colour_keys_are_ordinary_item_relative_colour_channels() {
+    use project::ColorComponent;
+    let mut s = title(None, 254_016_000_000);
+    let stroke = AnimationPath::from(BuiltinPath::StrokeColor);
+    let from = [1.0, 0.0, 0.0, 1.0];
+    let to = [0.0, 0.0, 1.0, 1.0];
+    let channels: [Channel; 4] = std::array::from_fn(|i| {
+        Channel::new(
+            ParamValue::Scalar(from[i]),
+            vec![
+                Keyframe::new(Tick::ZERO, ParamValue::Scalar(from[i])),
+                Keyframe::new(frame(20), ParamValue::Scalar(to[i])),
+            ],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap()
+    });
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(3),
+        path: stroke.clone(),
+        param: Param::Color(Box::new(channels)),
+    })
+    .unwrap();
+    assert_eq!(s.history_len(), (1, 0));
+    let colour = |s: &Session, id: ItemId| match item(s, id)
+        .animations
+        .value_at(&stroke, Tick::ZERO)
+        .unwrap()
+    {
+        Some(ParamValue::Color(value)) => value,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(colour(&s, ItemId(3)), from);
+    s.apply(Command::TrimStart {
+        item: ItemId(3),
+        at: frame(102),
+    })
+    .unwrap();
+    let keys = item(&s, ItemId(3))
+        .animations
+        .get(&stroke)
+        .unwrap()
+        .channel(Some(ColorComponent::R))
+        .unwrap()
+        .keys()
+        .to_vec();
+    assert_eq!(keys[1].time, frame(18));
+    let trimmed = colour(&s, ItemId(3));
+    assert!(trimmed[0] < from[0] && trimmed[2] > from[2], "{trimmed:?}");
+    // Split, move and scale preserve the ordinary colour curve.
+    let outcome = s
+        .apply(Command::SplitAt {
+            item: ItemId(3),
+            at: frame(110),
+        })
+        .unwrap();
+    let right = outcome
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let curve = item(&s, right).animations.clone();
+    assert!(curve.get(&stroke).is_some());
+    s.apply(Command::MoveItem {
+        item: right,
+        track: TrackId(3),
+        start: frame(200),
+    })
+    .unwrap();
+    assert_eq!(item(&s, right).animations, curve);
+    s.apply(Command::ScaleKeyframeTime {
+        item: right,
+        numerator: 2,
+        denominator: 1,
+    })
+    .unwrap();
+    let scaled = item(&s, right)
+        .animations
+        .value_at(&stroke, frame(2))
+        .unwrap();
+    assert_eq!(scaled, curve.value_at(&stroke, frame(1)).unwrap());
+}
+
+#[test]
 fn transform_and_graph_edits_share_the_timeline_preview_transaction() {
     let mut s = session();
     let before = s.project().clone();

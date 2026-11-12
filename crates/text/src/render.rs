@@ -68,6 +68,25 @@ impl Rectangle {
     }
 }
 
+/// A blurred copy of the glyph coverage, painted behind the fill.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    pub color: Color,
+    /// Offset from the glyph coverage in pixels (y down).
+    pub offset_x: f32,
+    pub offset_y: f32,
+    /// Box blur radius in pixels; zero keeps a hard copy.
+    pub blur: f32,
+}
+
+/// A soft halo around the glyph coverage, painted behind the fill.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Glow {
+    pub color: Color,
+    /// Halo radius beyond the glyph coverage in pixels.
+    pub radius: f32,
+}
+
 /// A line drawn across every laid-out line in the fill colour.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Decoration {
@@ -92,6 +111,8 @@ pub struct Paint {
     pub fill: Color,
     pub span_fill: Option<SpanFill>,
     pub outline: Option<Outline>,
+    pub shadow: Option<Shadow>,
+    pub glow: Option<Glow>,
     pub background: Option<Rectangle>,
     pub decoration: Decoration,
 }
@@ -102,6 +123,8 @@ impl Default for Paint {
             fill: Color::WHITE,
             span_fill: None,
             outline: None,
+            shadow: None,
+            glow: None,
             background: None,
             decoration: Decoration::None,
         }
@@ -131,6 +154,12 @@ pub enum RenderError {
     InvalidCanvas,
     #[error("outline width must be finite and not negative")]
     InvalidOutline,
+    #[error("shadow offset and blur must be finite and the blur not negative")]
+    InvalidShadow,
+    #[error("glow radius must be finite and not negative")]
+    InvalidGlow,
+    #[error("filter radius must be finite and not negative")]
+    InvalidFilter,
     #[error("background padding and radius must be finite and not negative")]
     InvalidRectangle,
 }
@@ -231,9 +260,9 @@ fn glyph_path(glyph: &Glyph) -> Path {
 
 /// Render a layout into a premultiplied RGBA8 image.
 ///
-/// `origin` maps layout coordinates to canvas pixels. The background box, outline and fill are
-/// composited in that order, with an outer outline below the fill and centre/inner outlines above
-/// it.
+/// `origin` maps layout coordinates to canvas pixels. The background box, glow, shadow, outline
+/// and fill are composited in that order, with an outer outline below the fill and centre/inner
+/// outlines above it.
 pub fn render(
     layout: &Layout,
     canvas: Canvas,
@@ -248,6 +277,19 @@ pub fn render(
         && !(outline.width.is_finite() && outline.width >= 0.0)
     {
         return Err(RenderError::InvalidOutline);
+    }
+    if let Some(shadow) = paint.shadow
+        && !(shadow.offset_x.is_finite()
+            && shadow.offset_y.is_finite()
+            && shadow.blur.is_finite()
+            && shadow.blur >= 0.0)
+    {
+        return Err(RenderError::InvalidShadow);
+    }
+    if let Some(glow) = paint.glow
+        && !(glow.radius.is_finite() && glow.radius >= 0.0)
+    {
+        return Err(RenderError::InvalidGlow);
     }
     if let Some(background) = paint.background
         && !(background.padding_x.is_finite()
@@ -326,6 +368,17 @@ pub fn render(
             );
             fill_into(&bar, &mut fill_mask, 0.0, 0.0);
         }
+    }
+
+    // Glow and shadow sit behind the outline and fill. The fill mask already
+    // includes decoration bars, so they cast the same shadow as the glyphs.
+    if let Some(glow) = paint.glow {
+        let halo = mask::glow(&fill_mask, glow.radius)?;
+        blend(&mut image, &halo, glow.color);
+    }
+    if let Some(shadow) = paint.shadow {
+        let lift = mask::shadow(&fill_mask, shadow.offset_x, shadow.offset_y, shadow.blur)?;
+        blend(&mut image, &lift, shadow.color);
     }
 
     if let Some(outline) = paint.outline {
@@ -465,6 +518,16 @@ mod tests {
                     width: 4.0,
                     kind: StrokeKind::Outer,
                 }),
+                shadow: Some(Shadow {
+                    color: Color::rgba(255, 0, 0, 255),
+                    offset_x: 4.0,
+                    offset_y: 4.0,
+                    blur: 2.0,
+                }),
+                glow: Some(Glow {
+                    color: Color::rgba(0, 0, 255, 255),
+                    radius: 6.0,
+                }),
                 background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 160), 12.0, 6.0)),
                 decoration: Decoration::None,
             },
@@ -504,6 +567,8 @@ mod tests {
                 span_fill: None,
                 fill: Color::WHITE,
                 outline: None,
+                shadow: None,
+                glow: None,
                 background: None,
                 decoration: Decoration::None,
             },
@@ -521,6 +586,8 @@ mod tests {
                     width: 8.0,
                     kind: StrokeKind::Outer,
                 }),
+                shadow: None,
+                glow: None,
                 background: None,
                 decoration: Decoration::None,
             },
@@ -544,6 +611,95 @@ mod tests {
         }
         assert!(filled > 100, "{filled}");
         assert!(outline_only > 100, "{outline_only}");
+    }
+
+    #[test]
+    fn shadow_and_glow_paint_outside_the_fill_and_reject_invalid_input() {
+        let laid_out = layout(
+            "H",
+            &LayoutOptions {
+                size: 80.0,
+                max_width: 400.0,
+                ..LayoutOptions::default()
+            },
+        )
+        .expect("layout");
+        let canvas = Canvas {
+            width: 240,
+            height: 160,
+        };
+        let plain = render(&laid_out, canvas, (20.0, 30.0), &Paint::default()).expect("plain");
+        let decorated = render(
+            &laid_out,
+            canvas,
+            (20.0, 30.0),
+            &Paint {
+                shadow: Some(Shadow {
+                    color: Color::rgba(255, 0, 0, 255),
+                    offset_x: 6.0,
+                    offset_y: 6.0,
+                    blur: 0.0,
+                }),
+                glow: Some(Glow {
+                    color: Color::rgba(0, 0, 255, 255),
+                    radius: 4.0,
+                }),
+                ..Paint::default()
+            },
+        )
+        .expect("decorated");
+        let mut red = 0usize;
+        let mut blue = 0usize;
+        let mut extra = 0usize;
+        for (plain, pixel) in plain
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(decorated.pixels.as_chunks::<4>().0)
+        {
+            red += usize::from(pixel[0] > pixel[2] && pixel[3] > 0);
+            blue += usize::from(pixel[2] > pixel[0] && pixel[3] > 0);
+            extra += usize::from(plain[3] == 0 && pixel[3] > 0);
+        }
+        assert!(red > 100, "{red}");
+        assert!(blue > 100, "{blue}");
+        assert!(extra > 100, "{extra}");
+        for paint in [
+            Paint {
+                shadow: Some(Shadow {
+                    color: Color::WHITE,
+                    offset_x: f32::NAN,
+                    offset_y: 0.0,
+                    blur: 0.0,
+                }),
+                ..Paint::default()
+            },
+            Paint {
+                shadow: Some(Shadow {
+                    color: Color::WHITE,
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    blur: -1.0,
+                }),
+                ..Paint::default()
+            },
+            Paint {
+                glow: Some(Glow {
+                    color: Color::WHITE,
+                    radius: f32::INFINITY,
+                }),
+                ..Paint::default()
+            },
+        ] {
+            assert!(
+                matches!(
+                    render(&laid_out, canvas, (20.0, 30.0), &paint),
+                    Err(RenderError::InvalidShadow | RenderError::InvalidGlow)
+                ),
+                "{paint:?}"
+            );
+        }
     }
 
     #[test]

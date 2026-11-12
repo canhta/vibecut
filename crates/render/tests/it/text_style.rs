@@ -324,6 +324,167 @@ fn text_style_params_render_per_spec_and_preview_equals_export() {
 }
 
 #[test]
+fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate() {
+    use project::{
+        AnimationPath, BuiltinPath, Channel, Extrapolation, Keyframe, Param, ParamValue,
+        TextShadow, TextStroke,
+    };
+    let plain = export(&project_with(base(), Default::default(), 1), Tick::ZERO);
+    let plain_text = bounds(&bright(&plain));
+    let cases: Vec<(&str, Edit)> = vec![
+        (
+            "stroke",
+            Box::new(|t| {
+                t.stroke = Some(TextStroke {
+                    color: Color([255, 0, 0, 255]),
+                    width: 6.0,
+                });
+            }),
+        ),
+        (
+            "shadow",
+            Box::new(|t| {
+                t.shadow = Some(TextShadow {
+                    color: Color([255, 0, 0, 255]),
+                    offset_x: 10.0,
+                    offset_y: 8.0,
+                    blur: 0.0,
+                });
+            }),
+        ),
+        ("glow", Box::new(|t| t.glow = true)),
+    ];
+    for (name, edit) in cases {
+        let mut text = base();
+        edit(&mut text);
+        let project = project_with(text, Default::default(), 1);
+        let hooks = Hooks::default();
+        let settings = RenderSettings::from_project(&project);
+        let mut renderer = Renderer::new(&project, settings.clone()).unwrap();
+        let preview = renderer
+            .preview_frame(Tick::ZERO, &mut Empty, &hooks)
+            .unwrap();
+        let exported = renderer
+            .render_frame(Tick::ZERO, &mut Empty, &hooks)
+            .unwrap();
+        assert_eq!(
+            preview.pixels(),
+            exported.pixels(),
+            "{name}: preview/export"
+        );
+        let mut cold = settings;
+        cold.text_cache_bytes = 0;
+        assert_eq!(
+            preview.pixels(),
+            Renderer::new(&project, cold)
+                .unwrap()
+                .render_frame(Tick::ZERO, &mut Empty, &hooks)
+                .unwrap()
+                .pixels(),
+            "{name}: cached and uncached raster"
+        );
+        let frame = exported.rgba8(1, &hooks).unwrap().bytes;
+        assert_ne!(frame, plain, "{name} changes the picture");
+        // The solid project background is opaque black, so an uncovered pixel is
+        // black on the plain title and picks up decoration colour here.
+        let added = frame
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(plain.as_chunks::<4>().0)
+            .filter(|(decorated, plain)| {
+                plain[0] == 0
+                    && plain[1] == 0
+                    && plain[2] == 0
+                    && (decorated[0] > 0 || decorated[1] > 0 || decorated[2] > 0)
+            })
+            .count();
+        assert!(added > 50, "{name}: coverage outside the fill {added}");
+        match name {
+            "stroke" => {
+                assert_eq!(
+                    bounds(&bright(&frame)),
+                    plain_text,
+                    "stroke never moves the fill"
+                );
+                assert!(!red(&frame).is_empty(), "red stroke");
+            }
+            "shadow" => {
+                assert_eq!(
+                    bounds(&bright(&frame)),
+                    plain_text,
+                    "shadow never moves the fill"
+                );
+                let shadow = bounds(&red(&frame));
+                assert!(
+                    shadow.2 > plain_text.2 && shadow.3 > plain_text.3,
+                    "{shadow:?} {plain_text:?}"
+                );
+            }
+            "glow" => {
+                // A white glow also lifts antialiased glyph edges, so it may add a
+                // threshold pixel at the fill boundary; the text block itself stays.
+                let lit = bounds(&bright(&frame));
+                assert!(
+                    lit.0 + 2 >= plain_text.0
+                        && lit.1 + 2 >= plain_text.1
+                        && lit.2 <= plain_text.2 + 2
+                        && lit.3 <= plain_text.3 + 2,
+                    "{lit:?} {plain_text:?}"
+                );
+                let grey = |pixels: &[u8]| {
+                    coloured(pixels, |p| {
+                        p[0] > 0 && p[0] < 200 && p[0] == p[1] && p[1] == p[2]
+                    })
+                    .len()
+                };
+                assert!(grey(&frame) > grey(&plain) + 50, "glow spreads a grey halo");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    let mut text = base();
+    text.stroke = Some(TextStroke {
+        color: Color([255, 0, 0, 255]),
+        width: 8.0,
+    });
+    let from = [1.0, 0.0, 0.0, 1.0];
+    let to = [0.0, 0.0, 1.0, 1.0];
+    let channels: [Channel; 4] = std::array::from_fn(|i| {
+        Channel::new(
+            ParamValue::Scalar(from[i]),
+            vec![
+                Keyframe::new(Tick::ZERO, ParamValue::Scalar(from[i])),
+                Keyframe::new(tick(1, 1), ParamValue::Scalar(to[i])),
+            ],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap()
+    });
+    let mut animations = project::Animations::default();
+    animations
+        .set(
+            AnimationPath::from(BuiltinPath::StrokeColor),
+            Param::Color(Box::new(channels)),
+        )
+        .unwrap();
+    let project = project_with(text, animations, 2);
+    let start = export(&project, Tick::ZERO);
+    let end = export(&project, tick(1, 1));
+    assert!(
+        !red(&start).is_empty() && blue(&start).is_empty(),
+        "stroke starts red"
+    );
+    assert!(
+        !blue(&end).is_empty() && red(&end).is_empty(),
+        "stroke ends blue"
+    );
+    assert_eq!(export(&project, tick(3, 2)), end, "keys hold after the end");
+}
+
+#[test]
 fn background_box_and_colour_animate_and_unkeyed_text_keeps_stored_values() {
     use project::{AnimationPath, Channel, Extrapolation, Keyframe, Param, ParamValue};
     let channel = |from: f64, to: f64| {

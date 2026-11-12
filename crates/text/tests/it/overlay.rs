@@ -47,6 +47,8 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
             width: 4.0,
             kind: StrokeKind::Outer,
         }),
+        shadow: None,
+        glow: None,
         background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 150), 28.0, 18.0)),
         decoration: text::Decoration::None,
     };
@@ -82,6 +84,8 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
             span_fill: None,
             fill: Color::WHITE,
             outline: None,
+            shadow: None,
+            glow: None,
             background: None,
             decoration: text::Decoration::None,
         },

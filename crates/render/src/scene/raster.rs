@@ -20,6 +20,10 @@ pub(super) struct TextKey {
     /// Registered-font generation: a newly loaded family changes what a name resolves to.
     pub(super) fonts: usize,
     pub(super) outline: Option<(u32, [u8; 4])>,
+    /// Shadow offset x, offset y, blur (float bits) and colour.
+    pub(super) shadow: Option<(u32, u32, u32, [u8; 4])>,
+    /// Glow radius (float bits) and colour.
+    pub(super) glow: Option<(u32, [u8; 4])>,
     pub(super) background: Option<BoxKey>,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
@@ -58,6 +62,22 @@ impl BoxKey {
         (px + ox.abs()).max(py + oy.abs()).ceil()
     }
 }
+impl TextKey {
+    /// Pixels the raster grows beyond the text area on every side so painted
+    /// outline, shadow, glow and background are never clipped.
+    pub(super) fn margin(&self) -> f32 {
+        let outline = self.outline.map_or(0.0, |(width, _)| f32::from_bits(width));
+        let shadow = self.shadow.map_or(0.0, |(x, y, blur, _)| {
+            f32::from_bits(x).abs().max(f32::from_bits(y).abs()) + f32::from_bits(blur)
+        });
+        let glow = self.glow.map_or(0.0, |(radius, _)| f32::from_bits(radius));
+        outline
+            .max(shadow)
+            .max(glow)
+            .max(self.background.map_or(0.0, BoxKey::margin))
+            .ceil()
+    }
+}
 impl TextBox {
     pub(super) fn margin(self) -> f32 {
         self.key().margin()
@@ -93,6 +113,28 @@ pub(super) struct TextFace<'a> {
     pub(super) line_height: f32,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
+    /// Outer stroke width and colour in output pixels.
+    pub(super) outline: Option<(f32, [u8; 4])>,
+    /// Shadow offsets and blur in output pixels, and its colour.
+    pub(super) shadow: Option<(f32, f32, f32, [u8; 4])>,
+    /// Glow radius in output pixels and its colour.
+    pub(super) glow: Option<(f32, [u8; 4])>,
+}
+impl TextFace<'_> {
+    /// Pixels the raster grows beyond the text area on every side for these
+    /// decorations plus the background box.
+    pub(super) fn decoration_margin(self, background: Option<TextBox>) -> f32 {
+        let outline = self.outline.map_or(0.0, |(width, _)| width);
+        let shadow = self
+            .shadow
+            .map_or(0.0, |(x, y, blur, _)| x.abs().max(y.abs()) + blur);
+        let glow = self.glow.map_or(0.0, |(radius, _)| radius);
+        outline
+            .max(shadow)
+            .max(glow)
+            .max(background.map_or(0.0, TextBox::margin))
+            .ceil()
+    }
 }
 impl Default for TextFace<'_> {
     fn default() -> Self {
@@ -103,6 +145,9 @@ impl Default for TextFace<'_> {
             line_height: 0.0,
             align: TextAlign::Center,
             decoration: TextDecoration::None,
+            outline: None,
+            shadow: None,
+            glow: None,
         }
     }
 }
@@ -132,17 +177,27 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
         radius: f32::from_bits(b.radius),
         color: rgba(b.color),
     });
-    // Margin that keeps outline and the offset box inside the canvas on every side.
-    let pad = outline
-        .map_or(0.0, |o| o.width)
-        .max(key.background.map_or(0.0, BoxKey::margin))
-        .ceil();
+    let shadow = key.shadow.map(|(x, y, blur, color)| text::Shadow {
+        offset_x: f32::from_bits(x),
+        offset_y: f32::from_bits(y),
+        blur: f32::from_bits(blur),
+        color: rgba(color),
+    });
+    let glow = key.glow.map(|(radius, color)| text::Glow {
+        radius: f32::from_bits(radius),
+        color: rgba(color),
+    });
+    // Margin that keeps outline, shadow, glow and the offset box inside the canvas.
+    let pad = key.margin();
     if w as f32 <= pad * 2.0 || h as f32 <= pad * 2.0 {
-        return Err(Error::Invalid("caption decoration exceeds destination"));
+        return Err(Error::Invalid("text decoration exceeds destination"));
     }
+    // A shadow or glow adds intermediate coverage masks (four bytes per pixel each).
+    let decorated = u64::from(key.shadow.is_some() || key.glow.is_some()) * bytes * 4;
     let _scratch = hooks.reserve(
         MemoryKind::Compositor,
         bytes * (2 + u64::from(key.active_word.is_some()))
+            + decorated
             + key.value.len() as u64 * 512
             + (f64::from(size).powi(2) * 32.0).ceil() as u64,
     )?;
@@ -172,6 +227,8 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
                 .filter(|_| layout.certifies_spans(&key.word_spans))
                 .map(|(start, end, rgb)| text::SpanFill { start, end, rgb }),
             outline,
+            shadow,
+            glow,
             background,
             decoration: match key.decoration {
                 TextDecoration::None => text::Decoration::None,
@@ -189,11 +246,7 @@ fn rgba(value: [u8; 4]) -> text::Color {
 
 pub(super) fn fitted_layout(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<text::Layout> {
     let (w, h, size) = (key.width, key.height, f32::from_bits(key.size));
-    let pad = key
-        .outline
-        .map_or(0.0, |(width, _)| f32::from_bits(width))
-        .max(key.background.map_or(0.0, BoxKey::margin))
-        .ceil();
+    let pad = key.margin();
     let mut options = text::LayoutOptions {
         family: &key.font,
         style: &key.style,

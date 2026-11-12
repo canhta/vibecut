@@ -82,6 +82,8 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
             width: 4.0,
             kind: StrokeKind::Outer,
         }),
+        shadow: None,
+        glow: None,
         background: Some(text::Rectangle::uniform(
             Color::rgba(0, 0, 0, 150),
             24.0,

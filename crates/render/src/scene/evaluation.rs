@@ -13,6 +13,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use time::Tick;
 
+/// Glow halo radius as a fraction of the font size; the reference exposes one switch.
+const GLOW_SIZE: f32 = 0.15;
+/// Largest glow halo radius in output pixels.
+const GLOW_MAX: f32 = 64.0;
+
 impl<'a> Renderer<'a> {
     pub fn new(project: &'a Project, settings: RenderSettings) -> Result<Self> {
         settings.validate(project)?;
@@ -396,6 +401,34 @@ impl<'a> Renderer<'a> {
                             local,
                             p.color,
                         )?;
+                        // Stroke colour is the one style colour the reference keys.
+                        let outline = match &p.stroke {
+                            None => None,
+                            Some(stroke) => Some((
+                                stroke.width * scale,
+                                crate::color::at(
+                                    &item.animations,
+                                    &AnimationPath::from(BuiltinPath::StrokeColor),
+                                    local,
+                                    stroke.color,
+                                )?
+                                .0,
+                            )),
+                        };
+                        let shadow = p.shadow.as_ref().map(|shadow| {
+                            (
+                                shadow.offset_x * scale,
+                                shadow.offset_y * scale,
+                                shadow.blur * scale,
+                                shadow.color.0,
+                            )
+                        });
+                        let glow = p.glow.then(|| {
+                            (
+                                (p.font_size * scale * GLOW_SIZE).clamp(0.0, GLOW_MAX),
+                                fill.0,
+                            )
+                        });
                         let background = match &p.background {
                             None => None,
                             Some(b) => {
@@ -441,8 +474,19 @@ impl<'a> Renderer<'a> {
                             }
                         };
                         let style = text::style_name(p.weight, p.italic);
-                        // The raster grows by the box margin on every side; the text keeps its place.
-                        let margin = f64::from(background.map_or(0.0, TextBox::margin));
+                        let face = TextFace {
+                            family: p.font.as_str(),
+                            style: &style,
+                            letter_spacing: p.letter_spacing,
+                            line_height: p.line_height,
+                            align: p.align,
+                            decoration: p.decoration,
+                            outline,
+                            shadow,
+                            glow,
+                        };
+                        // The raster grows by every decoration's margin on each side; the text keeps its place.
+                        let margin = f64::from(face.decoration_margin(background));
                         let mut grown = placement;
                         grown.destination = Rect {
                             x: placement.destination.x - margin / f64::from(self.settings.width),
@@ -458,14 +502,7 @@ impl<'a> Renderer<'a> {
                             fill.0,
                             grown,
                             None,
-                            TextFace {
-                                family: p.font.as_str(),
-                                style: &style,
-                                letter_spacing: p.letter_spacing,
-                                line_height: p.line_height,
-                                align: p.align,
-                                decoration: p.decoration,
-                            },
+                            face,
                             background,
                             None,
                             hooks,
@@ -861,7 +898,12 @@ impl<'a> Renderer<'a> {
             fonts: text::generation(),
             outline: caption
                 .and_then(|s| s.outline.as_ref())
-                .map(|o| ((o.width * scale).to_bits(), o.color)),
+                .map(|o| ((o.width * scale).to_bits(), o.color))
+                .or_else(|| face.outline.map(|(width, color)| (width.to_bits(), color))),
+            shadow: face
+                .shadow
+                .map(|(x, y, blur, color)| (x.to_bits(), y.to_bits(), blur.to_bits(), color)),
+            glow: face.glow.map(|(radius, color)| (radius.to_bits(), color)),
             background: background.map(TextBox::key),
             align: face.align,
             decoration: face.decoration,

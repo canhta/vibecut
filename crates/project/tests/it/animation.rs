@@ -126,6 +126,23 @@ fn independent_linear_rgba_components_and_discrete_fallback_hold() {
         AnimationPath::scale_group(),
         [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY]
     );
+    // Title stroke colour is a real colour channel; a scalar on it refuses.
+    assert_eq!(BuiltinPath::StrokeColor.as_str(), "stroke.color");
+    let mut stroke = Animations::default();
+    stroke
+        .set(
+            AnimationPath::from(BuiltinPath::StrokeColor),
+            Param::new(ParamValue::Color([1.0, 0.0, 0.0, 1.0])).unwrap(),
+        )
+        .unwrap();
+    assert!(
+        stroke
+            .set(
+                AnimationPath::from(BuiltinPath::StrokeColor),
+                Param::new(ParamValue::Scalar(0.5)).unwrap(),
+            )
+            .is_err()
+    );
     // The crop position is a scalar pair; the auto flag is a held bool and never interpolates.
     for (path, name) in [
         (BuiltinPath::CropX, "crop.x"),

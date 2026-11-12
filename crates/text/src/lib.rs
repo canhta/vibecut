@@ -6,7 +6,7 @@
 //! [`Layout::index`] maps a layout point back to a source index, and [`word_range`] finds the
 //! word boundaries a double-click selects.
 //! [`render`] turns a layout into a premultiplied RGBA8 image with fill, an outer,
-//! centre or inner outline and an optional background box.
+//! centre or inner outline, an optional shadow or glow and an optional background box.
 //!
 //! The crate is headless and deterministic: it reads no system fonts, uses no GPU and has no
 //! clock, network or filesystem input. Callers that own a font catalog hand it font bytes
@@ -31,5 +31,6 @@ pub use layout::{
 };
 pub use mask::{StrokeKind, coverage_signed_distance, coverage_signed_distance_bytes};
 pub use render::{
-    Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, SpanFill, render,
+    Canvas, Decoration, Glow, Image, Outline, Paint, Rectangle, RenderError, Shadow, SpanFill,
+    render,
 };
