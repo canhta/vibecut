@@ -2098,7 +2098,9 @@ fn align_moves_each_transformed_box_to_the_canvas_and_preserves_its_other_axis()
     let bytes = project::encode(s.project(), false).unwrap();
     let loaded = project::decode(&bytes).unwrap();
     assert!(close(
-        position(&loaded.project, ItemId(21), TransformField::PositionX),
+        TransformField::PositionX
+            .value_at(&get_project_id(&loaded.project, ItemId(21)).animations, Tick::ZERO)
+            .unwrap(),
         -95.0
     ));
     // A second equal request is an exact no-op and adds no history.
