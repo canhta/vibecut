@@ -637,6 +637,7 @@ catalog! {
     EffectMagnifier { key: "effect_magnifier", en: "Magnifier", vi: "Kính lúp" },
     EffectMissing { key: "effect_missing", en: "Effect was removed", vi: "Hiệu ứng đã bị gỡ" },
     EffectMode { key: "effect_mode", en: "Mode", vi: "Chế độ" },
+    EffectOffset { key: "effect_offset", en: "Offset", vi: "Độ lệch" },
     EffectOnly { key: "effect_only", en: "Only", vi: "Chỉ hiệu ứng" },
     EffectOpacity { key: "effect_opacity", en: "Opacity", vi: "Độ mờ" },
     EffectOutputBlack { key: "effect_output_black", en: "Output black", vi: "Điểm đen sau chỉnh" },

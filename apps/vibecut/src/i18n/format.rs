@@ -107,6 +107,7 @@ pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
         ("turbulent_displace", Some("displacement")) => Text::EffectDisplacement,
         ("turbulent_displace", Some("amount")) => Text::EffectAmount,
         ("turbulent_displace", Some("size")) => Text::EffectSize,
+        ("turbulent_displace", Some("offset")) => Text::EffectOffset,
         ("turbulent_displace", Some("complexity")) => Text::EffectComplexity,
         ("turbulent_displace", Some("evolution")) => Text::EffectEvolution,
         ("corner_pin", None) => Text::EffectCornerPin,

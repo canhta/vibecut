@@ -689,7 +689,8 @@ pub(super) fn rgb_split(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32
     let g = texel(inputs.input, x, y);
     let b = inputs.sample_input(px + ox - 0.5, py + oy - 0.5, image_ops::Edge::Clamp);
     let mixed = [r[0], g[1], b[2], r[3].max(g[3]).max(b[3])];
-    std::array::from_fn(|channel| g[channel] + (mixed[channel] - g[channel]) * blend)
+    // `blend` is the original-picture fraction: 0 is the full split, 1 the input.
+    std::array::from_fn(|channel| mixed[channel] + (g[channel] - mixed[channel]) * blend)
 }
 
 // ------------------------------------------------------------------ overlay and key

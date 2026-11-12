@@ -1022,6 +1022,7 @@ fn whole_image_catalogue_defines_the_26_entries_on_their_shelves() {
         ("four_color_gradient", "p1", [0.25, 0.25]),
         ("four_color_gradient", "p4", [0.75, 0.75]),
         ("volumetric_rays", "center", [0.5, 0.25]),
+        ("turbulent_displace", "offset", [0.5, 0.5]),
     ] {
         assert_eq!(
             effect_definition(kind)

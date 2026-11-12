@@ -514,6 +514,8 @@ static DEFINITIONS: &[EffectDefinition] = &[
             choice("displacement", "Displacement", TURBULENT_KINDS, 0),
             slider("amount", "Amount", (-1000.0, 1000.0), 50.0, true),
             ranged("size", "Size", (2.0, 1000.0), (2.0, 400.0), 100.0, true),
+            // The source's unset offset is the layer centre.
+            point("offset", "Offset", [0.5, 0.5]),
             ranged(
                 "complexity",
                 "Complexity",
