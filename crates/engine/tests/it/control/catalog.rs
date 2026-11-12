@@ -78,7 +78,10 @@ impl control::ClipWorkflow for CannedClips {
                 kind: engine::jobs::JobKind::SuggestClips,
                 class: engine::jobs::ResourceClass::Cpu,
                 input,
-                bytes: Default::default(),
+                bytes: engine::jobs::JobBytes {
+                    result: bytes.len() as u64,
+                    ..Default::default()
+                },
             },
             move |_| -> Result<Vec<u8>, control::Error> { Ok(bytes.clone()) },
         )?;
