@@ -514,6 +514,7 @@ impl Session {
                 cues,
                 target_language,
                 force,
+                glossary,
             } => {
                 if self.transaction_active() {
                     return Err(EngineError::Session(
@@ -531,6 +532,7 @@ impl Session {
                     cues,
                     target_language,
                     force,
+                    glossary,
                     crate::control_preview::control_key(fingerprint)?,
                 )?;
                 Ok(ControlResult::JobAccepted {

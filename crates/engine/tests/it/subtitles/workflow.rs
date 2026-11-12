@@ -2070,11 +2070,15 @@ fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_appli
     let rev = s.revision();
     let history = s.history_len();
     let (mut r, _) = runner();
-    for (n, cues) in [
-        json!([]),
-        json!(["cue-1", "cue-1"]),
-        json!(["missing"]),
-        json!(["cue-0"]),
+    let too_many: Vec<_> = (0..129)
+        .map(|n| json!({"term": format!("term-{n}"), "translation": null}))
+        .collect();
+    for (n, (cues, glossary, expected)) in [
+        (json!([]), json!([]), ErrorCode::Limit),
+        (json!(["cue-1", "cue-1"]), json!([]), ErrorCode::Refused),
+        (json!(["missing"]), json!([]), ErrorCode::Refused),
+        (json!(["cue-0"]), json!([]), ErrorCode::Refused),
+        (json!(["cue-1"]), json!(too_many), ErrorCode::Ai),
     ]
     .into_iter()
     .enumerate()
@@ -2084,17 +2088,10 @@ fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_appli
             &mut r,
             &access,
             "captions.translate",
-            json!({"item":4,"cues":cues,"target_language":"vi"}),
+            json!({"item":4,"cues":cues,"target_language":"vi","glossary":glossary}),
             &format!("invalid-{n}"),
         );
-        error(
-            response,
-            if n == 0 {
-                ErrorCode::Limit
-            } else {
-                ErrorCode::Refused
-            },
-        );
+        error(response, expected);
     }
     let job = caption_submit(
         &mut s,
@@ -2156,7 +2153,8 @@ fn registry_translation_snapshots_all_windows_preserves_edited_targets_and_appli
         &mut r,
         &access,
         "captions.translate",
-        json!({"item":4,"cues":["cue-0"],"target_language":"vi","force":true}),
+        json!({"item":4,"cues":["cue-0"],"target_language":"vi","force":true,
+            "glossary":[{"term":"cue","translation":"tín hiệu"},{"term":"Vibe","translation":null}]}),
         "force",
     );
     finish(&mut r, job);

@@ -25,6 +25,43 @@ pub struct Runtime {
     pub threads: u8,
     pub gipformer_runner: Option<PathBuf>,
 }
+/// The transcriber of a translation-only `Providers`: it never recognises speech.
+struct NoTranscription {
+    config: ai::ProviderConfig,
+}
+impl ai::Transcriber for NoTranscription {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, _: &Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: "none".into(),
+            operation: ai::Operation::Transcribe,
+            languages: Vec::new(),
+            target_languages: Vec::new(),
+            timing: std::collections::BTreeSet::new(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: None,
+            max_duration_micros: None,
+            evidence: ai::Evidence::Advertised,
+            revision: "none".into(),
+        }
+    }
+    fn estimate(&self, _: &Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn transcribe(
+        &self,
+        _: ai::AudioWindow<'_>,
+        _: &ai::Request<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> std::result::Result<Vec<ai::RecognitionSegment>, ai::Error> {
+        Err(ai::Error::Unsupported)
+    }
+}
 pub(crate) struct IdleHooks;
 /// Resolved adapter instances and the leases that keep native model files immutable.
 pub struct Providers {
@@ -233,6 +270,46 @@ impl Providers {
         self.translation = Some(translation);
         self.translation_mode = Some(mode);
         Ok(self)
+    }
+
+    /// Providers for a translation-only workflow: the selected translator and a transcriber
+    /// that refuses every request, so translating needs no speech model or speech credential.
+    pub fn translation_only(
+        translation: TranslationProvider,
+        credentials: &Credentials,
+    ) -> Result<Self> {
+        let (translator, mode) = build_translator(&translation, credentials)?;
+        Self::translation_only_from_parts(translation, translator, mode)
+    }
+
+    /// `translation_only` over an already built translator and its resolved mode.
+    pub fn translation_only_from_parts(
+        translation: TranslationProvider,
+        translator: Arc<dyn ai::Translator>,
+        mode: NfcText,
+    ) -> Result<Self> {
+        let config = ai::ProviderConfig::new(
+            "translation-only".into(),
+            "none".into(),
+            "none".into(),
+            ai::Location::Local {
+                backend: "none".into(),
+                model_ref: "none".into(),
+            },
+        )?;
+        Ok(Self {
+            transcriber: Arc::new(NoTranscription { config }),
+            aligner: None,
+            translator: Some(translator),
+            transcription: TranscriptionProvider::Whisper {
+                model: "translation-only".into(),
+            },
+            translation: Some(translation),
+            transcription_mode: "none".into(),
+            translation_mode: Some(mode),
+            needs_alignment: false,
+            _leases: Vec::new(),
+        })
     }
 
     /// Test/application composition with already built adapters and their resolved ASR mode.

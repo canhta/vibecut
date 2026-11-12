@@ -33,6 +33,7 @@ pub(crate) fn translate(
     ids: Option<Vec<NfcText>>,
     target: LanguageTag,
     force: bool,
+    glossary: Vec<ai::GlossaryTerm>,
     input: crate::cache::CacheKey,
 ) -> SubtitleResult<JobId> {
     let caption = session
@@ -92,7 +93,7 @@ pub(crate) fn translate(
                 item,
                 ids,
                 target.clone(),
-                Vec::new(),
+                glossary.clone(),
                 "subtitle".into(),
                 force,
             )

@@ -1,6 +1,6 @@
 # Services
 
-Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_task`, `remote_models`, `progress`, `text_clipboard`.
+Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `text_clipboard`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -12,6 +12,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `preview` | `View` (fit flag, explicit scale, pan offset, 0.25–16x), `FrameTexture` (one upload per preview generation and tick, retaining its frame) and the snapshot boundary (`preview.snapshot`, clipboard copy). The player panel and the shorts window present their own chrome over the same state. |
 | `crop` | The source-normalized crop model: `portrait` and `control` (edge and corner drag, ratio lock, 5% minimum edge, 1% and 10% arrow steps). The editor's crop dialog lives in the player panel. |
 | `color_picker` | [Target-free colour controls and native screen sampler](color_picker/README.md). Callers own project targets, publication and history. |
+| `ai_access` | The one desktop composition of provider credentials, the process models cache (opened once) and registry dispatch (`run`): windows send `captions.*`/`clips.*` commands with the `CaptionAccess` an `Opener` builds per run; tests inject the opener. |
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
 | `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
 | `text_clipboard` | Read-only native text access with injected reader composition; viewport custody belongs to [input](../input/README.md). |

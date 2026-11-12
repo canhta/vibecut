@@ -1,14 +1,21 @@
 //! Captions panel: presentation and bounded staging through existing engine owners.
 mod editing;
+mod import;
 mod view;
-mod workflow;
 pub use crate::services::ai_task::TaskEvents;
-use crate::{Error, Result, egui, i18n::Text};
+use crate::{
+    Error, Result, egui,
+    i18n::Text,
+    services::ai_access::{self, Choice, Opener},
+};
 use captions::{LanguageTag, NfcText};
 use engine::{
     ByteBudget, Command, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
-    jobs::{CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, RunnerConfig, SystemClock},
+    jobs::{
+        CancelToken, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState, RunnerConfig,
+        SystemClock,
+    },
     providers::UploadRequest,
     transcript::{Cancellation, Stage},
 };
@@ -20,7 +27,6 @@ use std::{
     time::Duration,
 };
 use time::Tick;
-pub use workflow::LocalWorkflow;
 
 /// Persisted explicit choices. Consent, glossary and private text are never preferences.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -118,47 +124,28 @@ impl Options {
             })
     }
 }
-/// Immutable input to a real engine workflow; no UI state is shared with a worker.
-#[derive(Clone)]
-pub enum Work {
+/// What a running job does when it finishes. Generation and translation are registry
+/// jobs whose result the window applies with a further command; import is a local parse.
+enum Task {
     Generate {
-        asset: media::SourceAsset,
-        range: time::SourceRange,
         start: Tick,
-        options: Options,
-    },
-    Import {
-        asset_id: media::AssetId,
-        path: PathBuf,
-        language: LanguageTag,
-        start: Tick,
+        /// The language was auto-detected, so its tag is checked against the supported set.
+        auto: bool,
     },
     Translate {
-        project: Arc<project::Project>,
-        item: ItemId,
-        ids: Vec<NfcText>,
-        options: Options,
-        glossary: Vec<ai::GlossaryTerm>,
-        force: bool,
+        /// The revision the selection was read at; the result applies only against it.
+        revision: engine::control::Revision,
     },
-}
-/// Injectable only at the blocking composition boundary. Engine commands still apply
-/// the returned batch against the original Session revision, atomically.
-pub trait Workflow: Send + Sync + 'static {
-    fn run(
-        &self,
-        work: Work,
-        budget: ByteBudget,
-        events: &TaskEvents,
-        cancel: &Cancellation,
-    ) -> engine::control::Result<Command>;
+    Import {
+        token: CancelToken,
+        receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::control::Error>>>,
+    },
 }
 struct Active {
     id: JobId,
-    token: CancelToken,
+    task: Task,
     cancel: Cancellation,
     events: Arc<TaskEvents>,
-    receive: mpsc::Receiver<std::result::Result<Command, Arc<engine::control::Error>>>,
 }
 #[derive(Clone, Debug)]
 pub struct Inspection {
@@ -233,7 +220,7 @@ pub struct Subtitles {
     style_edit: Option<StyleEdit>,
     bank_frame: Option<u64>,
     word_warnings: Option<WordWarnings>,
-    workflow: Arc<dyn Workflow>,
+    access: Opener,
     budget: ByteBudget,
     active: Option<Active>,
     active_options: Option<Options>,
@@ -269,9 +256,10 @@ impl Drop for Subtitles {
 }
 impl Subtitles {
     pub fn new(budget: ByteBudget) -> Result<Self> {
-        Self::with_workflow(budget, Arc::new(LocalWorkflow))
+        Self::with_access(budget.clone(), ai_access::desktop_opener(budget))
     }
-    pub fn with_workflow(budget: ByteBudget, workflow: Arc<dyn Workflow>) -> Result<Self> {
+    /// Tests inject the opener at the lent-access seam; the window still sends registry commands.
+    pub fn with_access(budget: ByteBudget, access: Opener) -> Result<Self> {
         let runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
@@ -290,7 +278,7 @@ impl Subtitles {
             style_edit: None,
             bank_frame: None,
             word_warnings: None,
-            workflow,
+            access,
             budget,
             runner,
             active: None,
@@ -327,12 +315,11 @@ impl Subtitles {
             .active
             .as_ref()
             .and_then(|a| a.events.state.lock().ok());
+        let job = self.active.as_ref().and_then(|a| self.runner.snapshot(a.id));
         Inspection {
             busy: self.busy(),
-            job_state: self
-                .active
-                .as_ref()
-                .and_then(|a| self.runner.snapshot(a.id))
+            job_state: job
+                .clone()
                 .or_else(|| {
                     self.export
                         .as_ref()
@@ -340,8 +327,8 @@ impl Subtitles {
                 })
                 .map(|s| s.state),
             cancelling: self.active.as_ref().is_some_and(|a| a.cancel.cancelled()),
-            stage: state.as_ref().and_then(|s| s.stage),
-            progress: state.as_ref().and_then(|s| s.fraction).or_else(|| {
+            stage: job.as_ref().and_then(|s| stage_of(s.stage)),
+            progress: job.as_ref().map(|s| s.progress).filter(|p| *p > 0.0).or_else(|| {
                 self.export
                     .as_ref()
                     .and_then(|(id, _)| self.runner.snapshot(*id).map(|s| s.progress))
@@ -386,7 +373,12 @@ impl Subtitles {
     pub fn cancel(&mut self) {
         if let Some(active) = &self.active {
             active.cancel.cancel();
-            active.token.cancel();
+            match &active.task {
+                Task::Import { token, .. } => token.cancel(),
+                Task::Generate { .. } | Task::Translate { .. } => {
+                    let _ = self.runner.cancel_job(active.id);
+                }
+            }
         }
         if let Some((_, token)) = &self.export {
             token.cancel();
@@ -402,81 +394,28 @@ impl Subtitles {
         }
         active.events.answer(approved)
     }
-    fn start(&mut self, session: &Session, work: Work) -> Result<()> {
+    /// One job at a time, never inside a gesture; the job's cancellation and consent slot.
+    fn begin(&mut self, session: &Session) -> Result<(Cancellation, Arc<TaskEvents>)> {
         if self.busy() || session.transaction_active() {
             return Err(Error::Invalid("subtitle job busy"));
         }
         let cancel = Cancellation::new();
         let events = Arc::new(TaskEvents::new(cancel.clone()));
-        let (send, receive) = mpsc::sync_channel(1);
-        let worker = self.workflow.clone();
-        let budget = self.budget.clone();
-        let worker_events = events.clone();
-        let worker_cancel = cancel.clone();
-        self.active_options = match &work {
-            Work::Generate { options, .. } | Work::Translate { options, .. } => {
-                Some(options.clone())
-            }
-            _ => None,
-        };
-        let kind = if matches!(&work, Work::Translate { .. }) {
-            JobKind::Translate
-        } else {
-            JobKind::Transcribe
-        };
-        let (id, token) = self.runner.submit_for_session(
-            session,
-            JobSpec {
-                kind,
-                class: engine::jobs::ResourceClass::Cpu,
-                input: key()?,
-                bytes: engine::jobs::JobBytes {
-                    compositor: if matches!(&work, Work::Generate { .. }) {
-                        engine::transcript::WORK_BYTES
-                    } else {
-                        0
-                    },
-                    result: 32 * 1024 * 1024,
-                    ..Default::default()
-                },
-            },
-            move |ctx| {
-                ctx.check_cancelled()?;
-                let result =
-                    worker.run(work.clone(), budget.clone(), &worker_events, &worker_cancel);
-                match result {
-                    Ok(command) => {
-                        send.send(Ok(command)).map_err(|_| {
-                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Ok(Vec::new())
-                    }
-                    Err(error) => {
-                        let error = Arc::new(error);
-                        send.send(Err(error.clone())).map_err(|_| {
-                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
-                        })?;
-                        Err(engine::control::Error::Runtime(
-                            engine::RuntimeError::Failed(error),
-                        ))
-                    }
-                }
-            },
-        )?;
-        self.active = Some(Active {
-            id,
-            token,
-            cancel,
-            events,
-            receive,
-        });
+        Ok((cancel, events))
+    }
+    fn arm(&mut self, active: Active) {
+        self.active = Some(active);
         self.problem = None;
         self.error = None;
         self.completed = None;
         self.missing_model = None;
-        Ok(())
     }
-    pub fn generate(&mut self, session: &Session, source: ItemId, options: &Options) -> Result<()> {
+    pub fn generate(
+        &mut self,
+        session: &mut Session,
+        source: ItemId,
+        options: &Options,
+    ) -> Result<()> {
         options.validate()?;
         if !options.transcription_supported() {
             return Err(Error::Invalid("subtitle transcription capability"));
@@ -495,14 +434,14 @@ impl Subtitles {
         if !item.retime.speed.is_unity() {
             return Err(Error::Invalid("captions for a retimed item"));
         }
+        let (range, start) = (item.source_range, item.start);
         let asset = session
             .project()
             .data()
             .assets
             .iter()
             .find(|a| Some(a.id()) == item.source_asset)
-            .ok_or(Error::Invalid("select source media"))?
-            .clone();
+            .ok_or(Error::Invalid("select source media"))?;
         if !asset
             .probe()
             .streams
@@ -511,19 +450,43 @@ impl Subtitles {
         {
             return Err(Error::Invalid("source has no audio"));
         }
-        self.start(
-            session,
-            Work::Generate {
-                asset,
-                range: item.source_range,
-                start: item.start,
-                options: options.clone(),
+        let asset = asset.id();
+        let (cancel, events) = self.begin(session)?;
+        let access = (self.access)(
+            Choice::Transcribe {
+                provider: &options.transcription,
+                model: &options.transcription_model,
             },
-        )
+            events.clone(),
+        )?;
+        // An omitted language asks the selected provider to detect it as the job's first stage.
+        let (id, _) = ai_access::accepted(ai_access::run(
+            session,
+            &mut self.runner,
+            Some(&access),
+            None,
+            "captions.generate",
+            serde_json::json!({
+                "asset": asset,
+                "range": range,
+                "source_language": options.source_tag(),
+            }),
+        )?)?;
+        self.active_options = Some(options.clone());
+        self.arm(Active {
+            id,
+            task: Task::Generate {
+                start,
+                auto: options.source == "auto",
+            },
+            cancel,
+            events,
+        });
+        Ok(())
     }
     /// Re-run the last source with auto-detect after a no-speech/low-confidence
     /// result. The caller's Options keep the new choice for this project.
-    pub fn retry_auto(&mut self, session: &Session, options: &mut Options) -> Result<()> {
+    pub fn retry_auto(&mut self, session: &mut Session, options: &mut Options) -> Result<()> {
         let source = self.retry_source.ok_or(Error::Invalid("no source media"))?;
         options.source = "auto".into();
         if let Some(project) = self.project {
@@ -531,6 +494,8 @@ impl Subtitles {
         }
         self.generate(session, source, options)
     }
+    /// SRT/VTT parsing is a local command constructor, not a registry job; it runs off the
+    /// UI thread under the same admission and result lease as any job.
     pub fn import_file(
         &mut self,
         session: &Session,
@@ -538,28 +503,65 @@ impl Subtitles {
         source: &str,
         at: Tick,
     ) -> Result<()> {
-        self.start(
+        let asset_id = media::AssetId(
+            session
+                .project()
+                .data()
+                .assets
+                .iter()
+                .map(|a| a.id().0)
+                .max()
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or(Error::Invalid("asset identity overflow"))?,
+        );
+        let language = LanguageTag::parse(source)?;
+        let (cancel, events) = self.begin(session)?;
+        let (send, receive) = mpsc::sync_channel(1);
+        let worker_cancel = cancel.clone();
+        let (id, token) = self.runner.submit_for_session(
             session,
-            Work::Import {
-                asset_id: media::AssetId(
-                    session
-                        .project()
-                        .data()
-                        .assets
-                        .iter()
-                        .map(|a| a.id().0)
-                        .max()
-                        .unwrap_or(0)
-                        .checked_add(1)
-                        .ok_or(Error::Invalid("asset identity overflow"))?,
-                ),
-                path,
-                language: LanguageTag::parse(source)?,
-                start: at,
+            JobSpec {
+                kind: JobKind::Transcribe,
+                class: engine::jobs::ResourceClass::Cpu,
+                input: key()?,
+                bytes: engine::jobs::JobBytes {
+                    result: 32 * 1024 * 1024,
+                    ..Default::default()
+                },
             },
-        )
+            move |ctx| {
+                ctx.check_cancelled()?;
+                match import::command(asset_id, path.clone(), language.clone(), at, &worker_cancel)
+                {
+                    Ok(command) => {
+                        send.send(Ok(command)).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
+                        Ok(Vec::new())
+                    }
+                    Err(error) => {
+                        let error = Arc::new(error);
+                        send.send(Err(error.clone())).map_err(|_| {
+                            engine::control::Error::Runtime(engine::RuntimeError::Cancelled)
+                        })?;
+                        Err(engine::control::Error::Runtime(
+                            engine::RuntimeError::Failed(error),
+                        ))
+                    }
+                }
+            },
+        )?;
+        self.active_options = None;
+        self.arm(Active {
+            id,
+            task: Task::Import { token, receive },
+            cancel,
+            events,
+        });
+        Ok(())
     }
-    pub fn translate(&mut self, session: &Session, options: &Options) -> Result<()> {
+    pub fn translate(&mut self, session: &mut Session, options: &Options) -> Result<()> {
         engine::providers::choose_translation(
             &options.translation,
             Some(&options.translation_model),
@@ -568,17 +570,36 @@ impl Subtitles {
         if self.selected.is_empty() {
             return Err(Error::Invalid("select cues"));
         }
-        self.start(
-            session,
-            Work::Translate {
-                project: session.project().clone(),
-                item,
-                ids: self.selected.iter().cloned().collect(),
-                options: options.clone(),
-                glossary: self.glossary.clone(),
-                force: self.force,
+        let (cancel, events) = self.begin(session)?;
+        let access = (self.access)(
+            Choice::Translate {
+                provider: &options.translation,
+                model: &options.translation_model,
             },
-        )
+            events.clone(),
+        )?;
+        let (id, revision) = ai_access::accepted(ai_access::run(
+            session,
+            &mut self.runner,
+            Some(&access),
+            None,
+            "captions.translate",
+            serde_json::json!({
+                "item": item,
+                "cues": self.selected,
+                "target_language": options.target,
+                "force": self.force,
+                "glossary": self.glossary,
+            }),
+        )?)?;
+        self.active_options = Some(options.clone());
+        self.arm(Active {
+            id,
+            task: Task::Translate { revision },
+            cancel,
+            events,
+        });
+        Ok(())
     }
     /// Poll even while another tab is visible. Terminal results never apply after cancellation.
     pub fn tick(&mut self, session: &mut Session) -> Result<bool> {
@@ -590,41 +611,56 @@ impl Subtitles {
                 .is_some_and(|s| terminal(s.state))
         }) {
             let active = self.active.take().ok_or(Error::Invalid("subtitle job"))?;
-            let output = self.runner.take_output(active.id);
-            if active.cancel.cancelled() {
+            let snapshot = self.runner.snapshot(active.id);
+            let state = snapshot.as_ref().map_or(JobState::Failed, |s| s.state);
+            let error = snapshot.and_then(|s| s.error);
+            if active.cancel.cancelled() || state == JobState::Cancelled {
+                self.runner.take_output(active.id);
                 self.problem = Some(Text::ShortsJobCancelled);
             } else {
-                let result = active.receive.try_recv().unwrap_or_else(|_| {
-                    Err(Arc::new(engine::control::Error::Edit(
-                        engine::EditError::Invalid("subtitle worker terminated"),
-                    )))
-                });
-                match result {
-                    Ok(command) => {
-                        let output = output.ok_or(Error::Invalid("subtitle result missing"))?;
-                        match output.apply(session, command) {
-                            Ok(outcome) => {
-                                self.item = outcome
-                                    .created
-                                    .iter()
-                                    .find_map(|id| {
-                                        if let engine::CreatedId::Item(id) = id {
-                                            Some(*id)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .or(self.item);
-                                self.completed = Some(
-                                    self.caption(session).map_or(0, |(_, p)| p.cues.cues.len()),
-                                );
-                                self.notice = self.completed;
-                                changed = true;
+                let created = match active.task {
+                    Task::Import { receive, .. } => {
+                        let output = self.runner.take_output(active.id);
+                        let result = receive.try_recv().unwrap_or_else(|_| {
+                            Err(Arc::new(engine::control::Error::Edit(
+                                engine::EditError::Invalid("subtitle worker terminated"),
+                            )))
+                        });
+                        match result {
+                            Ok(command) => {
+                                let output =
+                                    output.ok_or(Error::Invalid("subtitle result missing"))?;
+                                match output.apply(session, command) {
+                                    Ok(outcome) => Some(outcome.created),
+                                    Err(e) => {
+                                        self.fail(Arc::new(e));
+                                        None
+                                    }
+                                }
                             }
-                            Err(e) => self.fail(Arc::new(e)),
+                            Err(e) => {
+                                self.fail(e);
+                                None
+                            }
                         }
                     }
-                    Err(e) => self.fail(e),
+                    task => self.apply_registry(session, active.id, task, state, error),
+                };
+                if let Some(created) = created {
+                    self.item = created
+                        .iter()
+                        .find_map(|id| {
+                            if let engine::CreatedId::Item(id) = id {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        })
+                        .or(self.item);
+                    self.completed =
+                        Some(self.caption(session).map_or(0, |(_, p)| p.cues.cues.len()));
+                    self.notice = self.completed;
+                    changed = true;
                 }
             }
         }
@@ -649,6 +685,86 @@ impl Subtitles {
         }
         self.refresh(session);
         Ok(changed)
+    }
+    /// Apply a finished registry job with its ordinary edit command (one undo step): the
+    /// retained result is decoded, checked, and sent back through the same admission.
+    /// `None` after reporting the refusal; the created ids otherwise.
+    fn apply_registry(
+        &mut self,
+        session: &mut Session,
+        id: JobId,
+        task: Task,
+        state: JobState,
+        error: Option<Arc<dyn engine::Failure + 'static>>,
+    ) -> Option<Vec<engine::CreatedId>> {
+        if state != JobState::Completed {
+            self.runner.take_output(id);
+            match error {
+                Some(error) => self.fail(error),
+                None => self.problem = Some(Text::SubFailed),
+            }
+            return None;
+        }
+        let applied = self.apply_output(session, id, task);
+        self.runner.take_output(id);
+        match applied {
+            Ok(created) => Some(created),
+            Err(error) => {
+                self.fail(Arc::new(error));
+                None
+            }
+        }
+    }
+    fn apply_output(
+        &mut self,
+        session: &mut Session,
+        id: JobId,
+        task: Task,
+    ) -> engine::control::Result<Vec<engine::CreatedId>> {
+        let bytes = self
+            .runner
+            .output_bytes(id)
+            .ok_or(engine::control::Error::Runtime(
+                engine::RuntimeError::JobNotRetained,
+            ))?;
+        let mut base_rev = None;
+        let (command, params) = match task {
+            Task::Generate { start, auto } => {
+                let result = engine::subtitles::decode_captions(bytes)
+                    .map_err(engine::control::Error::from)?;
+                // The detected tag is checked against the languages this app's ASR supports.
+                if auto && !SOURCE_LANGUAGES.contains(&result.source_language.as_str()) {
+                    return Err(engine::transcript::Error::LowConfidence.into());
+                }
+                ("captions.apply", serde_json::json!({"job": id, "start": start}))
+            }
+            Task::Translate { revision } => {
+                let result = engine::subtitles::decode_translations(bytes)
+                    .map_err(engine::control::Error::from)?;
+                base_rev = Some(revision);
+                (
+                    "retranslate",
+                    serde_json::json!({
+                        "item": result.item,
+                        "target_language": result.target_language,
+                        "texts": result.texts,
+                        "translation_ref": result.translation_ref,
+                        "force": self.force,
+                    }),
+                )
+            }
+            Task::Import { .. } => {
+                return Err(engine::control::Error::Edit(engine::EditError::Invalid(
+                    "subtitle import is not a registry job",
+                )));
+            }
+        };
+        match ai_access::run(session, &mut self.runner, None, base_rev, command, params)? {
+            engine::control::ControlResult::Edit { outcome } => Ok(outcome.created),
+            _ => Err(engine::control::Error::Edit(engine::EditError::Invalid(
+                "subtitle result was not applied",
+            ))),
+        }
     }
     fn fail(&mut self, error: Arc<dyn engine::Failure + 'static>) {
         self.error = Some(error.clone());
@@ -684,6 +800,11 @@ impl Subtitles {
             return;
         }
         if matches!(
+            root,
+            Some(engine::control::Error::Control(
+                engine::control::ControlError::StaleRevision
+            ))
+        ) || matches!(
             subtitles,
             Some(engine::subtitles::Error::Edit(engine::EditError::Session(
                 engine::SessionError::StaleResult
@@ -850,6 +971,18 @@ impl Subtitles {
                 });
             }
         }
+    }
+}
+/// The presentation stage of an engine job stage; anything else shows as loading.
+fn stage_of(stage: JobStage) -> Option<Stage> {
+    match stage {
+        JobStage::Extract => Some(Stage::Extract),
+        JobStage::Transcribe => Some(Stage::Transcribe),
+        JobStage::Align => Some(Stage::Align),
+        JobStage::Segment => Some(Stage::Segment),
+        JobStage::Assemble => Some(Stage::Assemble),
+        JobStage::Translate => Some(Stage::Translate),
+        _ => None,
     }
 }
 fn terminal(state: JobState) -> bool {

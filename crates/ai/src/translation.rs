@@ -18,7 +18,7 @@ pub struct TranslationSegment {
     pub id: NfcText,
     pub text: NfcText,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GlossaryTerm {
     pub term: NfcText,
