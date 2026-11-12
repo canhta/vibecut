@@ -46,7 +46,7 @@ impl Panel<'_, '_> {
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
                 ui.add_space(INSET / 2.0);
-                let name = self.tr(crate::editor::assets::transition_label(&tr.kind));
+                let name = self.tr(crate::i18n::transition_label(&tr.kind));
                 self.detail_row(ui, name);
                 self.transition_duration(ui, &tr);
                 self.transition_alignment(ui, &tr);

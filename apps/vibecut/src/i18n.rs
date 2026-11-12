@@ -9,7 +9,7 @@ mod text;
 
 pub use format::{
     Plural, blend_label, date, decimal, effect_label, export_duration, export_range, format,
-    format_count, number, parse_decimal, signed,
+    format_count, number, parse_decimal, signed, transition_label,
 };
 pub use locale::Locale;
 pub use text::{Text, text};

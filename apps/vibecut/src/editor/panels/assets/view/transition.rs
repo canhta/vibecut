@@ -85,7 +85,7 @@ impl View<'_> {
                     .is_none_or(|shelf| shelf == definition.shelf)
             })
             .filter(|definition| {
-                self.tr(transition::name(definition))
+                self.tr(crate::i18n::transition_label(definition.kind))
                     .to_lowercase()
                     .contains(&query)
             })
@@ -146,7 +146,7 @@ impl View<'_> {
         rect: Rect,
     ) {
         let kind = definition.kind;
-        let name = self.tr(transition::name(definition));
+        let name = self.tr(crate::i18n::transition_label(definition.kind));
         let reason = self.cx.transition_refusal.map(|reason| self.tr(reason));
         let enabled = self.cx.transition_drag_enabled;
         let response = ui

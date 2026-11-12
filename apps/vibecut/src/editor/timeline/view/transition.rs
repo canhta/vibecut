@@ -53,7 +53,7 @@ impl State {
             );
             let name = tr(
                 cx,
-                crate::editor::assets::transition_label(&transition.kind),
+                crate::i18n::transition_label(&transition.kind),
             );
             response.widget_info(|| {
                 egui::WidgetInfo::selected(egui::Role::Button, true, selected, name)
