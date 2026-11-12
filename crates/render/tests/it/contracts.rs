@@ -1480,7 +1480,7 @@ fn graphic_polygon_and_star_cover_their_geometry_at_every_scale() {
         cases.push((
             star(n, depth),
             vec![(0., 0.), (0., 0.4), (0.5 / n, 0.8 * d)],
-            vec![(0., 1.1), (0.5 / n, 1.2 * d)],
+            vec![(0., 1.1), (0.5 / n, d + 0.1)],
             format!("star{points}@{depth}"),
         ));
     }

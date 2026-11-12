@@ -400,14 +400,19 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
             })
             .count();
         assert!(added > 50, "{name}: coverage outside the fill {added}");
-        // Decoration colours under the antialiased glyph edge can move one
-        // threshold pixel; the text block itself stays where it was.
+        // Stroke and shadow stay behind the fill, so the bright text block is the
+        // plain one except that decoration colour under an antialiased glyph edge
+        // can drop one threshold pixel (the exact form fails by 1 px on the
+        // stroke). The glow is the text colour spread over `GLOW_SIZE *
+        // font_size` (28 * 0.15 = 4.2 px), so its bright halo may widen the block
+        // by at most that radius rounded up.
         let lit = bounds(&bright(&frame));
+        let tolerance = if name == "glow" { 5 } else { 1 };
         assert!(
-            lit.0.abs_diff(plain_text.0) <= 2
-                && lit.1.abs_diff(plain_text.1) <= 2
-                && lit.2.abs_diff(plain_text.2) <= 2
-                && lit.3.abs_diff(plain_text.3) <= 2,
+            lit.0.abs_diff(plain_text.0) <= tolerance
+                && lit.1.abs_diff(plain_text.1) <= tolerance
+                && lit.2.abs_diff(plain_text.2) <= tolerance
+                && lit.3.abs_diff(plain_text.3) <= tolerance,
             "{name}: {lit:?} {plain_text:?}"
         );
         match name {
