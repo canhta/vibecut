@@ -630,6 +630,27 @@ pub enum GraphicParams {
         #[serde(rename = "strokeAlign")]
         stroke_align: crate::StrokeAlign,
     },
+    Polygon {
+        fill: Color,
+        stroke: Color,
+        #[serde(rename = "strokeWidth")]
+        stroke_width: f64,
+        #[serde(rename = "strokeAlign")]
+        stroke_align: crate::StrokeAlign,
+        sides: f64,
+        #[serde(rename = "cornerRadius")]
+        corner_radius: f64,
+    },
+    Star {
+        fill: Color,
+        stroke: Color,
+        #[serde(rename = "strokeWidth")]
+        stroke_width: f64,
+        #[serde(rename = "strokeAlign")]
+        stroke_align: crate::StrokeAlign,
+        points: f64,
+        depth: f64,
+    },
 }
 impl GraphicParams {
     pub fn rectangle() -> Self {
@@ -649,6 +670,26 @@ impl GraphicParams {
             stroke_align: crate::StrokeAlign::Center,
         }
     }
+    pub fn polygon() -> Self {
+        Self::Polygon {
+            fill: Color([255; 4]),
+            stroke: Color([0, 0, 0, 255]),
+            stroke_width: 0.,
+            stroke_align: crate::StrokeAlign::Center,
+            sides: 5.,
+            corner_radius: 0.,
+        }
+    }
+    pub fn star() -> Self {
+        Self::Star {
+            fill: Color([255; 4]),
+            stroke: Color([0, 0, 0, 255]),
+            stroke_width: 0.,
+            stroke_align: crate::StrokeAlign::Center,
+            points: 5.,
+            depth: 45.,
+        }
+    }
     /// Stored fallbacks; present animation parameters remain authoritative, even without keys.
     pub fn appearance(&self) -> (Color, Color, f64, crate::StrokeAlign, f64) {
         match *self {
@@ -659,54 +700,111 @@ impl GraphicParams {
                 stroke_align,
                 corner_radius,
             } => (fill, stroke, stroke_width, stroke_align, corner_radius),
+            Self::Polygon {
+                fill,
+                stroke,
+                stroke_width,
+                stroke_align,
+                corner_radius,
+                ..
+            } => (fill, stroke, stroke_width, stroke_align, corner_radius),
             Self::Ellipse {
                 fill,
                 stroke,
                 stroke_width,
                 stroke_align,
+            }
+            | Self::Star {
+                fill,
+                stroke,
+                stroke_width,
+                stroke_align,
+                ..
             } => (fill, stroke, stroke_width, stroke_align, 0.),
+        }
+    }
+    /// Stored radial geometry: polygon sides, star points, star depth percent.
+    /// Values outside a definition's own fields are zero and unused.
+    pub fn radial(&self) -> (f64, f64, f64) {
+        match *self {
+            Self::Polygon { sides, .. } => (sides, 0., 0.),
+            Self::Star { points, depth, .. } => (0., points, depth),
+            _ => (0., 0., 0.),
         }
     }
     pub(crate) fn validate(&self, animations: &crate::Animations) -> Result<()> {
         let (_, _, width, _, radius) = self.appearance();
+        let radial_valid = match *self {
+            Self::Polygon { sides, .. } => sides.is_finite() && (3. ..=12.).contains(&sides),
+            Self::Star { points, depth, .. } => {
+                points.is_finite()
+                    && (3. ..=12.).contains(&points)
+                    && depth.is_finite()
+                    && (1. ..=99.).contains(&depth)
+            }
+            _ => true,
+        };
         if !width.is_finite()
             || !(0. ..=64.).contains(&width)
             || !radius.is_finite()
             || !(0. ..=50.).contains(&radius)
+            || !radial_valid
         {
             return Err(Error::Invalid("graphic appearance"));
         }
+        let bounded = |channel: &crate::Channel, range: std::ops::RangeInclusive<f64>| {
+            let valid = |value: &crate::ParamValue| {
+                matches!(value, crate::ParamValue::Scalar(value)
+                    if value.is_finite() && range.contains(value))
+            };
+            valid(channel.base()) && channel.keys().iter().all(|key| valid(&key.value))
+        };
         for (path, param) in animations.iter() {
             let Some(name) = path.as_str().strip_prefix("params.") else {
                 continue;
             };
             match (name, param) {
                 ("fill" | "stroke", crate::Param::Color(_)) => {}
-                ("strokeWidth" | "cornerRadius" | "strokeAlign", crate::Param::Value(channel)) => {
-                    if name == "cornerRadius" && !matches!(self, Self::Rectangle { .. }) {
-                        return Err(Error::Invalid("ellipse corner radius"));
+                ("strokeWidth", crate::Param::Value(channel)) => {
+                    if !bounded(channel, 0. ..=64.) {
+                        return Err(Error::Invalid("graphic animation"));
                     }
-                    let valid = |v: &crate::ParamValue| match (name, v) {
-                        ("strokeWidth", crate::ParamValue::Scalar(v)) => {
-                            v.is_finite() && (0. ..=64.).contains(v)
-                        }
-                        ("cornerRadius", crate::ParamValue::Scalar(v)) => {
-                            v.is_finite() && (0. ..=50.).contains(v)
-                        }
-                        ("strokeAlign", crate::ParamValue::Text(v)) => {
-                            matches!(v.as_str(), "inside" | "center" | "outside")
-                        }
-                        _ => false,
+                }
+                ("cornerRadius", crate::Param::Value(channel)) => {
+                    if !matches!(self, Self::Rectangle { .. } | Self::Polygon { .. })
+                        || !bounded(channel, 0. ..=50.)
+                    {
+                        return Err(Error::Invalid("graphic animation"));
+                    }
+                }
+                ("sides", crate::Param::Value(channel)) => {
+                    if !matches!(self, Self::Polygon { .. }) || !bounded(channel, 3. ..=12.) {
+                        return Err(Error::Invalid("graphic animation"));
+                    }
+                }
+                ("points", crate::Param::Value(channel)) => {
+                    if !matches!(self, Self::Star { .. }) || !bounded(channel, 3. ..=12.) {
+                        return Err(Error::Invalid("graphic animation"));
+                    }
+                }
+                ("depth", crate::Param::Value(channel)) => {
+                    if !matches!(self, Self::Star { .. }) || !bounded(channel, 1. ..=99.) {
+                        return Err(Error::Invalid("graphic animation"));
+                    }
+                }
+                ("strokeAlign", crate::Param::Value(channel)) => {
+                    let valid = |value: &crate::ParamValue| {
+                        matches!(value, crate::ParamValue::Text(value)
+                            if matches!(value.as_str(), "inside" | "center" | "outside"))
                     };
                     if !valid(channel.base())
                         || channel.keys().iter().any(|key| !valid(&key.value))
-                        || (name == "strokeAlign"
-                            && (channel.extrapolation()
-                                != (crate::Extrapolation::Hold, crate::Extrapolation::Hold)
-                                || channel
-                                    .keys()
-                                    .iter()
-                                    .any(|key| key.segment != crate::Segment::Step)))
+                        || channel.extrapolation()
+                            != (crate::Extrapolation::Hold, crate::Extrapolation::Hold)
+                        || channel
+                            .keys()
+                            .iter()
+                            .any(|key| key.segment != crate::Segment::Step)
                     {
                         return Err(Error::Invalid("graphic animation"));
                     }

@@ -1100,26 +1100,92 @@ impl<'a, 'c> Panel<'a, 'c> {
                                 },
                             );
                             panel.graphic_align(ui, item);
-                            if matches!(
-                                read::item(panel.cx.session.project(), item).map(|i| &i.content),
+                            match read::item(panel.cx.session.project(), item)
+                                .map(|item| &item.content)
+                            {
                                 Some(project::ItemParams::Graphic(
-                                    project::GraphicParams::Rectangle { .. }
-                                ))
-                            ) {
-                                panel.scrub_field(
-                                    ui,
-                                    item,
-                                    ScrubSpec {
-                                        field: "params.cornerRadius",
-                                        label: Text::BackgroundRadius,
-                                        min: 0.,
-                                        max: 50.,
-                                        step: 1.,
-                                        pixels_per_step: 2.,
-                                        decimals: 0,
-                                        suffix: "%",
-                                    },
-                                );
+                                    project::GraphicParams::Polygon { .. },
+                                )) => {
+                                    panel.scrub_field(
+                                        ui,
+                                        item,
+                                        ScrubSpec {
+                                            field: "params.sides",
+                                            label: Text::GraphicSides,
+                                            min: 3.,
+                                            max: 12.,
+                                            step: 1.,
+                                            pixels_per_step: 2.,
+                                            decimals: 0,
+                                            suffix: "",
+                                        },
+                                    );
+                                    panel.scrub_field(
+                                        ui,
+                                        item,
+                                        ScrubSpec {
+                                            field: "params.cornerRadius",
+                                            label: Text::BackgroundRadius,
+                                            min: 0.,
+                                            max: 50.,
+                                            step: 1.,
+                                            pixels_per_step: 2.,
+                                            decimals: 0,
+                                            suffix: "%",
+                                        },
+                                    );
+                                }
+                                Some(project::ItemParams::Graphic(
+                                    project::GraphicParams::Star { .. },
+                                )) => {
+                                    panel.scrub_field(
+                                        ui,
+                                        item,
+                                        ScrubSpec {
+                                            field: "params.points",
+                                            label: Text::GraphicPoints,
+                                            min: 3.,
+                                            max: 12.,
+                                            step: 1.,
+                                            pixels_per_step: 2.,
+                                            decimals: 0,
+                                            suffix: "",
+                                        },
+                                    );
+                                    panel.scrub_field(
+                                        ui,
+                                        item,
+                                        ScrubSpec {
+                                            field: "params.depth",
+                                            label: Text::GraphicDepth,
+                                            min: 1.,
+                                            max: 99.,
+                                            step: 1.,
+                                            pixels_per_step: 2.,
+                                            decimals: 0,
+                                            suffix: "%",
+                                        },
+                                    );
+                                }
+                                Some(project::ItemParams::Graphic(
+                                    project::GraphicParams::Rectangle { .. },
+                                )) => {
+                                    panel.scrub_field(
+                                        ui,
+                                        item,
+                                        ScrubSpec {
+                                            field: "params.cornerRadius",
+                                            label: Text::BackgroundRadius,
+                                            min: 0.,
+                                            max: 50.,
+                                            step: 1.,
+                                            pixels_per_step: 2.,
+                                            decimals: 0,
+                                            suffix: "%",
+                                        },
+                                    );
+                                }
+                                _ => {}
                             }
                         } else {
                             panel.color_row(

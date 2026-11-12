@@ -40,7 +40,15 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                     scrub.item == *item
                         && matches!(&scrub.target, super::ScrubTarget::Item(active)
                             if *active == field.as_str()
-                                && matches!(*active, "opacity" | "params.strokeWidth" | "params.cornerRadius"))
+                                && matches!(
+                                    *active,
+                                    "opacity"
+                                        | "params.strokeWidth"
+                                        | "params.cornerRadius"
+                                        | "params.sides"
+                                        | "params.points"
+                                        | "params.depth"
+                                ))
                 }) && state.opacity_edit.as_ref().is_some_and(|(snapshot, bound_item, at)| {
                     let view = desk.view();
                     bound_item == item

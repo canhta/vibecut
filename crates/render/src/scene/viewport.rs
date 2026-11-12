@@ -397,8 +397,10 @@ impl Renderer<'_> {
         match &item.content {
             ItemParams::Audio(_) => return Ok(None),
             ItemParams::Graphic(_) => {
-                let (fill, stroke, width, _, _) = super::draw::graphic_appearance(item, local)?;
-                if fill[3] == 0. && (stroke[3] == 0. || width == 0.) {
+                let appearance = super::draw::graphic_appearance(item, local)?;
+                if appearance.fill[3] == 0.
+                    && (appearance.stroke[3] == 0. || appearance.width == 0.)
+                {
                     return Ok(None);
                 }
             }

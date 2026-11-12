@@ -107,6 +107,8 @@ pub(crate) fn bookmark_target_in(
 pub enum GraphicShape {
     Rectangle,
     Ellipse,
+    Polygon,
+    Star,
 }
 
 /// Executable app workflows. Engine mutations inside a workflow still use the

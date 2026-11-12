@@ -340,8 +340,17 @@ pub(super) fn blur(image: &mut Image, radius: u32, hooks: &dyn ExecutionHooks) -
     Ok(())
 }
 
-/// Resolved graphic paint: fill, stroke, stroke width, alignment, corner radius.
-type GraphicAppearance = ([f32; 4], [f32; 4], f64, project::StrokeAlign, f64);
+/// Resolved graphic paint and radial geometry.
+pub(super) struct GraphicAppearance {
+    pub fill: [f32; 4],
+    pub stroke: [f32; 4],
+    pub width: f64,
+    pub align: project::StrokeAlign,
+    pub corner_radius: f64,
+    pub sides: f64,
+    pub points: f64,
+    pub depth: f64,
+}
 
 /// Resolve appearance at the real item clock; keyed colors are already linear.
 pub(super) fn graphic_appearance(
@@ -352,6 +361,7 @@ pub(super) fn graphic_appearance(
         return Err(Error::Invalid("graphic item"));
     };
     let (fill, stroke, width, align, radius) = params.appearance();
+    let (sides, points, depth) = params.radial();
     let value = |name: &str| -> Result<Option<project::ParamValue>> {
         Ok(item.animations.value_at(
             &project::AnimationPath::new(format!("params.{name}"))?,
@@ -381,13 +391,16 @@ pub(super) fn graphic_appearance(
         },
         _ => align,
     };
-    Ok((
-        color("fill", fill)?,
-        color("stroke", stroke)?,
-        scalar("strokeWidth", width, 64.)?,
+    Ok(GraphicAppearance {
+        fill: color("fill", fill)?,
+        stroke: color("stroke", stroke)?,
+        width: scalar("strokeWidth", width, 64.)?,
         align,
-        scalar("cornerRadius", radius, 50.)?,
-    ))
+        corner_radius: scalar("cornerRadius", radius, 50.)?,
+        sides: scalar("sides", sides, 12.)?,
+        points: scalar("points", points, 12.)?,
+        depth: scalar("depth", depth, 99.)?,
+    })
 }
 pub(super) fn draw_graphic(
     target: &mut Image,
@@ -396,13 +409,19 @@ pub(super) fn draw_graphic(
     placement: Placement,
     hooks: &dyn ExecutionHooks,
 ) -> Result<()> {
-    use super::mask::{Geometry as MaskGeometry, prepare_builtin, prepare_rounded_rectangle};
-    let (fill, stroke, width, align, radius) = graphic_appearance(item, local)?;
+    use super::mask::{
+        Geometry as MaskGeometry, prepare_builtin, prepare_polygon, prepare_rounded_rectangle,
+        prepare_star,
+    };
+    let appearance = graphic_appearance(item, local)?;
+    let project::ItemParams::Graphic(params) = &item.content else {
+        return Err(Error::Invalid("graphic item"));
+    };
     let r = placement.destination;
     let dw = r.width * f64::from(target.width);
     let dh = r.height * f64::from(target.height);
-    let inset = if align == project::StrokeAlign::Center {
-        width / 2.
+    let inset = if appearance.align == project::StrokeAlign::Center {
+        appearance.width / 2.
     } else {
         0.
     };
@@ -415,13 +434,23 @@ pub(super) fn draw_graphic(
         size: [(dw * extent) as f32, (dh * extent) as f32],
         rotation: 0.,
     };
-    let contour = if matches!(
-        item.content,
-        project::ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
-    ) {
-        prepare_rounded_rectangle(geometry, (radius / 50.) as f32, hooks)?
-    } else {
-        prepare_builtin("ellipse", geometry, hooks)?
+    let contour = match params {
+        project::GraphicParams::Rectangle { .. } => {
+            prepare_rounded_rectangle(geometry, (appearance.corner_radius / 50.) as f32, hooks)?
+        }
+        project::GraphicParams::Ellipse { .. } => prepare_builtin("ellipse", geometry, hooks)?,
+        project::GraphicParams::Polygon { .. } => prepare_polygon(
+            geometry,
+            appearance.sides.round().clamp(3., 12.) as u32,
+            appearance.corner_radius as f32,
+            hooks,
+        )?,
+        project::GraphicParams::Star { .. } => prepare_star(
+            geometry,
+            appearance.points.round().clamp(3., 12.) as u32,
+            (appearance.depth.clamp(1., 99.) / 100.) as f32,
+            hooks,
+        )?,
     };
     let paint = |target: &mut Image, coverage: Image, color: [f32; 4]| -> Result<()> {
         for (dst, src) in target
@@ -439,16 +468,16 @@ pub(super) fn draw_graphic(
         }
         Ok(())
     };
-    if fill[3] > 0. {
+    if appearance.fill[3] > 0. {
         paint(
             target,
             contour.mask.coverage(target.width, target.height, hooks)?,
-            fill,
+            appearance.fill,
         )?;
     }
-    if stroke[3] > 0. && width > 0. {
-        let w = (width * dw.min(dh) / 512.) as f32;
-        let (inside, outside) = match align {
+    if appearance.stroke[3] > 0. && appearance.width > 0. {
+        let w = (appearance.width * dw.min(dh) / 512.) as f32;
+        let (inside, outside) = match appearance.align {
             project::StrokeAlign::Inside => (w, 0.),
             project::StrokeAlign::Center => (w / 2., w / 2.),
             project::StrokeAlign::Outside => (0., w),
@@ -458,7 +487,7 @@ pub(super) fn draw_graphic(
             contour
                 .mask
                 .stroke(target.width, target.height, inside, outside, hooks)?,
-            stroke,
+            appearance.stroke,
         )?;
     }
     Ok(())

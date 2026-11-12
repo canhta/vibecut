@@ -185,30 +185,24 @@ pub(in crate::editor) fn set_item_field(
     field: &str,
     value: &str,
 ) -> Result<()> {
-    if (field == "opacity" || matches!(field, "params.strokeWidth" | "params.cornerRadius"))
-        && read::channel_has_keys(desk.view().session.project(), item, field)
-    {
+    let bounds = if field == "opacity" {
+        Some((0., 1.))
+    } else {
+        scalar_bounds(field)
+    };
+    if bounds.is_some() && read::channel_has_keys(desk.view().session.project(), item, field) {
         let (start, end) = read::range_of(desk.view().session.project(), item)
             .ok_or(Error::Invalid("opacity target"))?;
         let at = desk.view().playhead;
         if at < start || at >= end {
             return Err(Error::Invalid("opacity playhead outside item"));
         }
+        let (min, max) = bounds.ok_or(Error::Invalid("opacity"))?;
         let value = value
             .trim()
             .parse::<f64>()
             .ok()
-            .filter(|value| {
-                value.is_finite()
-                    && (0.0..=if field == "opacity" {
-                        1.
-                    } else if field == "params.strokeWidth" {
-                        64.
-                    } else {
-                        50.
-                    })
-                        .contains(value)
-            })
+            .filter(|value| value.is_finite() && (min..=max).contains(value))
             .ok_or(Error::Invalid("opacity"))?;
         return set_keyframe_at(desk, item, field, at.saturating_sub(start), value);
     }
@@ -221,17 +215,12 @@ pub(in crate::editor) fn set_item_field(
             read::retime_of(desk.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
         return super::speed::set_speed(desk, item, speed, maintain_pitch);
     }
-    if matches!(field, "params.strokeWidth" | "params.cornerRadius") {
-        let max = if field == "params.strokeWidth" {
-            64.
-        } else {
-            50.
-        };
+    if let Some((min, max)) = scalar_bounds(field) {
         let value = value
             .trim()
             .parse::<f64>()
             .ok()
-            .filter(|v| v.is_finite() && (0. ..=max).contains(v))
+            .filter(|v| v.is_finite() && (min..=max).contains(v))
             .ok_or(Error::Invalid("graphic scalar"))?;
         desk.apply_result(
             engine::Command::SetAnimatedParam {
@@ -246,6 +235,17 @@ pub(in crate::editor) fn set_item_field(
     let patch = item_patch(field, value)?;
     desk.apply_result(engine::Command::SetItemField { item, patch }, false)?;
     Ok(())
+}
+
+/// Admitted range of a graphic scalar parameter, in authored units.
+fn scalar_bounds(field: &str) -> Option<(f64, f64)> {
+    match field {
+        "params.strokeWidth" => Some((0., 64.)),
+        "params.cornerRadius" => Some((0., 50.)),
+        "params.sides" | "params.points" => Some((3., 12.)),
+        "params.depth" => Some((1., 99.)),
+        _ => None,
+    }
 }
 
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {

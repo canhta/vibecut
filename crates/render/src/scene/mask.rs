@@ -268,10 +268,31 @@ pub fn prepare_rounded_rectangle(
     }
     prepare_contour("rounded-rectangle", geometry, rounding, hooks)
 }
-fn prepare_contour(
-    kind: &str,
+/// Regular polygon in the source's author square. `corner_radius` is the
+/// authored 0..=50 percent, bounded by the polygon's inscribed radius.
+pub fn prepare_polygon(
     geometry: Geometry,
-    rounding: f32,
+    sides: u32,
+    corner_radius: f32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<PreparedMask> {
+    prepare_radial(geometry, sides, 1., corner_radius, hooks)
+}
+/// Star with `points` outer points; `depth` is the inner/outer radius ratio.
+pub fn prepare_star(
+    geometry: Geometry,
+    points: u32,
+    depth: f32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<PreparedMask> {
+    prepare_radial(geometry, points, depth, 0., hooks)
+}
+/// One radial contour builder shared by the mask star and generated polygons.
+fn prepare_radial(
+    geometry: Geometry,
+    points: u32,
+    depth: f32,
+    corner_radius: f32,
     hooks: &dyn ExecutionHooks,
 ) -> Result<PreparedMask> {
     check(hooks)?;
@@ -287,9 +308,162 @@ fn prepare_contour(
     {
         return Err(Error::Invalid("mask geometry"));
     }
+    if !(3..=12).contains(&points)
+        || !depth.is_finite()
+        || !(0.01..=1.).contains(&depth)
+        || !corner_radius.is_finite()
+        || !(0. ..=50.).contains(&corner_radius)
+    {
+        return Err(Error::Invalid("graphic contour"));
+    }
+    let star = depth < 1.;
+    let max_radius = geometry.size[0].max(geometry.size[1]) * 0.5;
+    let turn = 2. * std::f32::consts::PI / points as f32;
+    let arc_radius = max_radius * (std::f32::consts::PI / points as f32).sin();
+    let arc_steps = if star || corner_radius == 0. {
+        0
+    } else {
+        (turn * (arc_radius / 0.4).sqrt()).ceil().max(1.) as usize
+    };
+    let corners = points as usize * if star { 2 } else { 1 };
+    let vertex_bound = corners
+        .saturating_mul(2 + arc_steps)
+        .saturating_add(2)
+        .min(65_536);
+    if vertex_bound >= 65_536 {
+        return Err(Error::Invalid("mask flattening bound"));
+    }
+    let _lease = hooks.reserve(MemoryKind::Compositor, vertex_bound as u64 * 8)?;
+    let mut pts = Vec::new();
+    pts.try_reserve_exact(vertex_bound)?;
+    let (sin, cos) = geometry.rotation.sin_cos();
+    let mut push = |p: [f32; 2]| -> Result<()> {
+        if pts.len() >= vertex_bound {
+            return Err(Error::Invalid("mask flattening bound"));
+        }
+        let x = p[0] * geometry.size[0] * 0.5;
+        let y = p[1] * geometry.size[1] * 0.5;
+        pts.push([
+            geometry.center[0] + cos * x - sin * y,
+            geometry.center[1] + sin * x + cos * y,
+        ]);
+        Ok(())
+    };
+    let mut vertices = Vec::new();
+    vertices.try_reserve_exact(corners)?;
+    let step = if star {
+        std::f32::consts::PI / points as f32
+    } else {
+        turn
+    };
+    for index in 0..corners {
+        let angle = -std::f32::consts::FRAC_PI_2 + index as f32 * step;
+        let radius = if star && index % 2 == 1 { depth } else { 1. };
+        vertices.push([angle.cos() * radius, angle.sin() * radius]);
+    }
+    let rounding = if star {
+        0.
+    } else {
+        (std::f32::consts::PI / points as f32).sin() * corner_radius / 50.
+    };
+    if rounding <= 0. {
+        for vertex in &vertices {
+            push(*vertex)?;
+        }
+    } else {
+        let normalize = |p: [f32; 2]| {
+            let length = p[0].hypot(p[1]).max(f32::EPSILON);
+            [p[0] / length, p[1] / length]
+        };
+        for index in 0..corners {
+            let previous = vertices[(index + corners - 1) % corners];
+            let current = vertices[index];
+            let next = vertices[(index + 1) % corners];
+            let to_previous = normalize([previous[0] - current[0], previous[1] - current[1]]);
+            let to_next = normalize([next[0] - current[0], next[1] - current[1]]);
+            let angle = (to_previous[0] * to_next[0] + to_previous[1] * to_next[1])
+                .clamp(-1., 1.)
+                .acos();
+            let max_offset = (previous[0] - current[0])
+                .hypot(previous[1] - current[1])
+                .min((next[0] - current[0]).hypot(next[1] - current[1]))
+                * 0.5;
+            let tangent = rounding / (angle * 0.5).tan();
+            if tangent >= max_offset {
+                // The source's arc no longer fits between the legs: the corner stays sharp.
+                push(current)?;
+                continue;
+            }
+            let start = [
+                current[0] + to_previous[0] * tangent,
+                current[1] + to_previous[1] * tangent,
+            ];
+            let end = [
+                current[0] + to_next[0] * tangent,
+                current[1] + to_next[1] * tangent,
+            ];
+            push(start)?;
+            let bisector = normalize([to_previous[0] + to_next[0], to_previous[1] + to_next[1]]);
+            let offset = rounding / (angle * 0.5).sin();
+            let center = [
+                current[0] + bisector[0] * offset,
+                current[1] + bisector[1] * offset,
+            ];
+            let first = (start[1] - center[1]).atan2(start[0] - center[0]);
+            let last = (end[1] - center[1]).atan2(end[0] - center[0]);
+            let mut sweep = last - first;
+            while sweep > std::f32::consts::PI {
+                sweep -= 2. * std::f32::consts::PI;
+            }
+            while sweep < -std::f32::consts::PI {
+                sweep += 2. * std::f32::consts::PI;
+            }
+            let steps = ((sweep.abs() * (arc_radius / 0.4).sqrt()).ceil().max(1.) as usize)
+                .min(4096);
+            for n in 1..steps {
+                let angle = first + sweep * n as f32 / steps as f32;
+                push([
+                    center[0] + angle.cos() * rounding,
+                    center[1] + angle.sin() * rounding,
+                ])?;
+            }
+            push(end)?;
+        }
+    }
+    let mask = FlatMask {
+        pts,
+        feather: 0.,
+        expansion: 0.,
+        opacity: 1.,
+        inverted: false,
+    };
+    mask.validate()?;
+    Ok(PreparedMask { mask, _lease })
+}
+fn prepare_contour(
+    kind: &str,
+    geometry: Geometry,
+    rounding: f32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<PreparedMask> {
+    if kind == "star" {
+        return prepare_radial(geometry, 5, 0.45, 0., hooks);
+    }
+    check(hooks)?;
+    if geometry
+        .center
+        .iter()
+        .any(|v| !v.is_finite() || v.abs() > 9e7)
+        || geometry
+            .size
+            .iter()
+            .any(|v| !v.is_finite() || !(0.0..=1e6).contains(v) || *v == 0.0)
+        || !geometry.rotation.is_finite()
+    {
+        return Err(Error::Invalid("mask geometry"));
+    }
     let vertex_bound = match kind {
         "rectangle" | "cinematic-bars" | "diamond" => 4,
-        "star" => 10,
         "ellipse" | "heart" | "rounded-rectangle" => {
             let segments = if kind == "heart" { 2 } else { 4 };
             segments
@@ -401,13 +575,6 @@ fn prepare_contour(
         "diamond" => {
             for p in [[0., -1.], [1., 0.], [0., 1.], [-1., 0.]] {
                 push(p)?;
-            }
-        }
-        "star" => {
-            for n in 0..10 {
-                let angle = n as f32 * std::f32::consts::PI / 5. - std::f32::consts::FRAC_PI_2;
-                let r = if n % 2 == 0 { 1. } else { 0.45 };
-                push([angle.cos() * r, angle.sin() * r])?;
             }
         }
         _ => return Err(Error::Unsupported("mask contour")),

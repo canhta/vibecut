@@ -160,14 +160,18 @@ pub(super) fn apply_patch(
             ItemParams::Overlay(p) => p.color = *v,
             ItemParams::Graphic(
                 project::GraphicParams::Rectangle { fill, .. }
-                | project::GraphicParams::Ellipse { fill, .. },
+                | project::GraphicParams::Ellipse { fill, .. }
+                | project::GraphicParams::Polygon { fill, .. }
+                | project::GraphicParams::Star { fill, .. },
             ) => *fill = *v,
             _ => {}
         },
         crate::ItemParamPatch::GraphicStroke(v) => {
             if let ItemParams::Graphic(
                 project::GraphicParams::Rectangle { stroke, .. }
-                | project::GraphicParams::Ellipse { stroke, .. },
+                | project::GraphicParams::Ellipse { stroke, .. }
+                | project::GraphicParams::Polygon { stroke, .. }
+                | project::GraphicParams::Star { stroke, .. },
             ) = &mut target.content
             {
                 *stroke = *v;
@@ -184,7 +188,9 @@ pub(super) fn apply_patch(
         crate::ItemParamPatch::GraphicStrokeWidth(v) => {
             if let ItemParams::Graphic(
                 project::GraphicParams::Rectangle { stroke_width, .. }
-                | project::GraphicParams::Ellipse { stroke_width, .. },
+                | project::GraphicParams::Ellipse { stroke_width, .. }
+                | project::GraphicParams::Polygon { stroke_width, .. }
+                | project::GraphicParams::Star { stroke_width, .. },
             ) = &mut target.content
             {
                 *stroke_width = *v;
@@ -193,18 +199,46 @@ pub(super) fn apply_patch(
         crate::ItemParamPatch::GraphicStrokeAlign(v) => {
             if let ItemParams::Graphic(
                 project::GraphicParams::Rectangle { stroke_align, .. }
-                | project::GraphicParams::Ellipse { stroke_align, .. },
+                | project::GraphicParams::Ellipse { stroke_align, .. }
+                | project::GraphicParams::Polygon { stroke_align, .. }
+                | project::GraphicParams::Star { stroke_align, .. },
             ) = &mut target.content
             {
                 *stroke_align = *v;
             }
         }
         crate::ItemParamPatch::GraphicCornerRadius(v) => {
-            if let ItemParams::Graphic(project::GraphicParams::Rectangle {
-                corner_radius, ..
-            }) = &mut target.content
+            if let ItemParams::Graphic(
+                project::GraphicParams::Rectangle {
+                    corner_radius, ..
+                }
+                | project::GraphicParams::Polygon {
+                    corner_radius, ..
+                },
+            ) = &mut target.content
             {
                 *corner_radius = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicSides(v) => {
+            if let ItemParams::Graphic(project::GraphicParams::Polygon { sides, .. }) =
+                &mut target.content
+            {
+                *sides = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicPoints(v) => {
+            if let ItemParams::Graphic(project::GraphicParams::Star { points, .. }) =
+                &mut target.content
+            {
+                *points = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicDepth(v) => {
+            if let ItemParams::Graphic(project::GraphicParams::Star { depth, .. }) =
+                &mut target.content
+            {
+                *depth = *v;
             }
         }
         _ => return Err(EditError::Invalid("item patch")),

@@ -28,8 +28,22 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         ("params.strokeWidth", ItemParams::Graphic(p)) => Some(p.appearance().2),
         (
             "params.cornerRadius",
-            ItemParams::Graphic(project::GraphicParams::Rectangle { corner_radius, .. }),
+            ItemParams::Graphic(
+                project::GraphicParams::Rectangle { corner_radius, .. }
+                | project::GraphicParams::Polygon { corner_radius, .. },
+            ),
         ) => Some(*corner_radius),
+        (
+            "params.sides",
+            ItemParams::Graphic(project::GraphicParams::Polygon { sides, .. }),
+        ) => Some(*sides),
+        (
+            "params.points",
+            ItemParams::Graphic(project::GraphicParams::Star { points, .. }),
+        ) => Some(*points),
+        ("params.depth", ItemParams::Graphic(project::GraphicParams::Star { depth, .. })) => {
+            Some(*depth)
+        }
         ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
         ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),
         ("text_line_height", ItemParams::Text(params)) => Some(f64::from(params.line_height)),
@@ -67,10 +81,11 @@ pub(super) fn item_value_at(
         return transform.value_at(&item.animations, at).ok();
     }
     if field.starts_with("params.") && matches!(item.content, ItemParams::Graphic(_)) {
-        let max = if field == "params.strokeWidth" {
-            64.
-        } else {
-            50.
+        let max = match field {
+            "params.strokeWidth" => 64.,
+            "params.depth" => 99.,
+            "params.sides" | "params.points" => 12.,
+            _ => 50.,
         };
         return match item
             .animations

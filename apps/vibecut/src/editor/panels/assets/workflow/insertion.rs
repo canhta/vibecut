@@ -142,6 +142,8 @@ impl State {
             let content = match shape {
                 crate::actions::GraphicShape::Rectangle => project::GraphicParams::rectangle(),
                 crate::actions::GraphicShape::Ellipse => project::GraphicParams::ellipse(),
+                crate::actions::GraphicShape::Polygon => project::GraphicParams::polygon(),
+                crate::actions::GraphicShape::Star => project::GraphicParams::star(),
             };
             let outcome = desk.editor().session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,

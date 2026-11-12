@@ -195,6 +195,9 @@ pub enum ItemParamPatch {
     GraphicStrokeWidth(f64),
     GraphicStrokeAlign(project::StrokeAlign),
     GraphicCornerRadius(f64),
+    GraphicSides(f64),
+    GraphicPoints(f64),
+    GraphicDepth(f64),
 }
 impl ItemParamPatch {
     pub(crate) fn transform(&self) -> Option<(project::TransformField, f64)> {
@@ -250,7 +253,18 @@ impl ItemParamPatch {
                 )
                 | (
                     Self::GraphicCornerRadius(_),
-                    ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
+                    ItemParams::Graphic(
+                        project::GraphicParams::Rectangle { .. }
+                            | project::GraphicParams::Polygon { .. }
+                    )
+                )
+                | (
+                    Self::GraphicSides(_),
+                    ItemParams::Graphic(project::GraphicParams::Polygon { .. })
+                )
+                | (
+                    Self::GraphicPoints(_) | Self::GraphicDepth(_),
+                    ItemParams::Graphic(project::GraphicParams::Star { .. })
                 )
         )
     }
@@ -265,6 +279,10 @@ impl ItemParamPatch {
         let valid = match self {
             Self::GraphicStrokeWidth(v) => v.is_finite() && (0. ..=64.).contains(v),
             Self::GraphicCornerRadius(v) => v.is_finite() && (0. ..=50.).contains(v),
+            Self::GraphicSides(v) | Self::GraphicPoints(v) => {
+                v.is_finite() && (3. ..=12.).contains(v)
+            }
+            Self::GraphicDepth(v) => v.is_finite() && (1. ..=99.).contains(v),
             Self::GraphicStrokeAlign(_) => true,
             Self::BlendMode(_) => true,
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),

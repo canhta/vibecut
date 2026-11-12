@@ -125,6 +125,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "graphic.insert.polygon",
+        Text::GraphicPolygon,
+        ActionCategory::Edit,
+        "graphic insertion workflow",
+        UiAction::InsertGraphic(super::GraphicShape::Polygon),
+        &[],
+    ),
+    ActionSpec::ui(
+        "graphic.insert.star",
+        Text::GraphicStar,
+        ActionCategory::Edit,
+        "graphic insertion workflow",
+        UiAction::InsertGraphic(super::GraphicShape::Star),
+        &[],
+    ),
+    ActionSpec::ui(
         "text.insert",
         Text::ActionTextInsert,
         ActionCategory::Edit,
