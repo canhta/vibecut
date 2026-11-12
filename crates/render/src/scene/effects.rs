@@ -2417,9 +2417,7 @@ fn color_grade(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
     passes.extend(hsl_bands_passes(&bands)?);
     let vignette = frame.scalar("vignette")?;
     let grain = frame.scalar("grain")?;
-    if (vignette != 0.0 || grain != 0.0)
-        && geometry.working_size() != [frame.width, frame.height]
-    {
+    if (vignette != 0.0 || grain != 0.0) && geometry.working_size() != [frame.width, frame.height] {
         return Err(Error::Invalid("effect spatial geometry"));
     }
     if vignette != 0.0 {

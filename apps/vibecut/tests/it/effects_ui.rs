@@ -2282,14 +2282,8 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     harness.run_steps(2);
     assert!(grade(&harness, video).is_none());
     click(&mut harness, "effects.color_grade.tab.curves");
-    click_pos(
-        &mut harness,
-        curve_pos(
-            widget_rect(&harness, "effects.color_grade.curve.plot"),
-            0.5,
-            0.53,
-        ),
-    );
+    let plot = widget_rect(&harness, "effects.color_grade.curve.plot");
+    click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
     assert!(grade(&harness, video).is_none());
     assert_eq!(harness.state().session.history_len(), history);
 }
