@@ -1,6 +1,5 @@
 //! Offline clip workflow contracts: ASR-to-input snapping, explicit provider
-//! choice and export preparation across source/translated captions and hostile
-//! selections.
+//! choice and the registry export across hostile selections and queue pressure.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,12 +17,14 @@ use engine::providers::{
 };
 use engine::subtitles::LanguageTag;
 use engine::transcript::{Cancellation, SilentProgress};
+use captions::CueTrack;
+use engine::control::{ClipWorkflow as _, ClipsExportRequest};
 use engine::{
     ByteBudget, ClipSettings,
     jobs::{JobRunner, RunnerConfig, SystemClock},
 };
 use shorts::{
-    ClipExportRequest, ClipRequest, SnapSettings,
+    ClipJobs, ClipRequest, SnapSettings,
     clip_suggest::{self, SuggestionProvider},
 };
 use std::{
@@ -509,71 +510,55 @@ fn suggestion_refuses_shared_asr_budget_pressure_before_provider_work() {
 }
 
 #[test]
-fn export_preparation_covers_source_and_translated_captions() {
+fn registry_export_submits_one_job_per_selected_short() {
     let Some(input) = fixture() else {
         return;
     };
-    let providers = providers(true);
+    let providers = providers(false);
     let (mut runner, _budget) = runner();
     let mut outcome = suggest(&input, &providers, &mut runner);
+    let jobs = ClipJobs::new(Credentials::new(None, None, None));
     let directory = tempfile::tempdir().unwrap();
-    let mut prepare = |select: Vec<usize>, languages: Vec<LanguageTag>| {
-        clip_suggest::prepare_export(
-            &outcome,
-            ClipExportRequest {
-                directory: directory.path().to_path_buf(),
-                select,
-                languages,
-                formats: Vec::new(),
-                overwrite: false,
-                allow_degraded: false,
-                max_output_bytes: 1 << 30,
-            },
-            &providers,
-            &mut runner,
-            &AllowAll,
-            &SilentProgress,
-            &Cancellation::new(),
-        )
+    let request = |outcome: &shorts::ClipSuggestionOutcome,
+                   select: Vec<usize>,
+                   languages: Vec<LanguageTag>,
+                   directory: &Path| ClipsExportRequest {
+        result: clip_suggest::clips_result(outcome),
+        cues: CueTrack {
+            styles: Vec::new(),
+            cues: outcome.source_cues.clone(),
+        },
+        select,
+        languages,
+        formats: Vec::new(),
+        directory: directory.to_path_buf(),
+        overwrite: false,
+        allow_degraded: false,
     };
-    let source = prepare(vec![0], vec![lang("en")]).unwrap();
-    assert_eq!(source.batch.len(), 1);
-    assert_eq!(
-        source
-            .batch
-            .paths(0)
-            .unwrap()
-            .video
-            .extension()
-            .and_then(|value| value.to_str()),
-        Some("mp4")
-    );
-    let settings = source.batch.settings(0).unwrap();
-    assert_eq!(
-        (settings.render.width, settings.render.height),
-        (1080, 1920)
-    );
-
-    let translated = prepare(vec![0], vec![lang("vi")]).unwrap();
-    assert_eq!(translated.batch.len(), 1);
-    assert!(matches!(
-        translated.translation_cost,
-        engine::providers::Cost::Free
-    ));
-
-    for select in [vec![outcome.clips.len()], vec![0, 0], vec![]] {
-        assert!(prepare(select, Vec::new()).is_err());
+    // Hostile selections and a caption language the cues lack are refused before any job.
+    for (select, languages) in [
+        (vec![outcome.clips.len()], Vec::new()),
+        (vec![0, 0], Vec::new()),
+        (Vec::new(), Vec::new()),
+        (vec![0], vec![lang("vi")]),
+    ] {
+        let refused = jobs.export(
+            &mut runner,
+            &outcome.source_project,
+            request(&outcome, select, languages, directory.path()),
+        );
+        assert!(refused.is_err());
+        assert_eq!(runner.counts().0, 0, "a refused export admitted a job");
     }
-    drop(prepare);
 
-    // Table row: nine selected clips exceed the CLI's eight-slot runner queue.
-    // Keep the configured export workers busy without overflowing the queue.
+    // Table row: nine selected clips run with the configured export concurrency and
+    // each short owns its job. Three frames per clip cover scheduling without encoding
+    // nine full videos.
     let template = outcome.clips[0].clone();
     outcome.clips = (0..9)
         .map(|index| {
             let mut clip = template.clone();
             clip.proposal.title = format!("nine-{index}").into();
-            // Three frames cover scheduling without encoding nine full videos.
             clip.segments.truncate(1);
             let segment = &mut clip.segments[0];
             segment.range = time::SourceRange::new(
@@ -585,134 +570,61 @@ fn export_preparation_covers_source_and_translated_captions() {
             clip
         })
         .collect();
-    let (mut runner, _) = runner_with_exports(2, 8, 8);
-    let progress = ExportProgress::default();
-    let exported = clip_suggest::export(
-        &outcome,
-        ClipExportRequest {
-            directory: directory.path().to_path_buf(),
-            select: (0..9).collect(),
-            languages: Vec::new(),
-            formats: Vec::new(),
-            overwrite: false,
-            allow_degraded: false,
-            max_output_bytes: 1 << 30,
-        },
-        &providers,
-        &mut runner,
-        &DenyUploads,
-        &progress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    assert_eq!(exported.exports.len(), 9);
-    assert_eq!(progress.peak(), 2, "runner export capacity was underused");
-    let (pending, active, _, _) = runner.counts();
-    assert_eq!(
-        (pending, active),
-        (0, 0),
-        "nine-clip export left admitted jobs pending or active"
-    );
-
-    // Window two / pending queue one necessarily refuses the second unpumped
-    // submission. The workflow must pump and retry that exact admission error.
-    let queued_directory = tempfile::tempdir().unwrap();
-    let (mut congested, budget) = runner_with_exports(2, 1, 8);
-    let exported = clip_suggest::export(
-        &outcome,
-        ClipExportRequest {
-            directory: queued_directory.path().to_path_buf(),
-            select: (0..3).collect(),
-            languages: Vec::new(),
-            formats: Vec::new(),
-            overwrite: false,
-            allow_degraded: false,
-            max_output_bytes: 1 << 30,
-        },
-        &providers,
-        &mut congested,
-        &DenyUploads,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    assert_eq!(exported.exports.len(), 3);
-    assert_eq!(
-        std::fs::read_dir(queued_directory.path()).unwrap().count(),
-        3
-    );
-    assert_eq!((congested.counts().0, congested.counts().1), (0, 0));
-    assert_eq!(budget.snapshot().unwrap().used, 0);
-
-    let cancelled_directory = tempfile::tempdir().unwrap();
-    let cancellation = Cancellation::new();
-    let progress = ExportProgress {
-        cancel: Some(cancellation.clone()),
-        ..Default::default()
-    };
-    let result = clip_suggest::export(
-        &outcome,
-        ClipExportRequest {
-            directory: cancelled_directory.path().to_path_buf(),
-            select: (0..9).collect(),
-            languages: Vec::new(),
-            formats: Vec::new(),
-            overwrite: false,
-            allow_degraded: false,
-            max_output_bytes: 1 << 30,
-        },
-        &providers,
-        &mut runner,
-        &DenyUploads,
-        &progress,
-        &cancellation,
-    );
-    assert!(matches!(
-        result,
-        Err(shorts::Error::Engine(engine::control::Error::Runtime(
-            engine::RuntimeError::Cancelled
-        )))
-    ));
-    let (pending, active, _, _) = runner.counts();
-    assert_eq!(
-        (pending, active),
-        (0, 0),
-        "cancelled exports were not drained"
-    );
-}
-
-#[derive(Default)]
-struct ExportProgress {
-    state: Mutex<(BTreeSet<engine::jobs::JobId>, usize)>,
-    cancel: Option<Cancellation>,
-}
-impl ExportProgress {
-    fn peak(&self) -> usize {
-        self.state.lock().unwrap().1
+    let (mut runner, _) = runner_with_exports(2, 9, 9);
+    let shorts = jobs
+        .export(
+            &mut runner,
+            &outcome.source_project,
+            request(&outcome, (0..9).collect(), Vec::new(), directory.path()),
+        )
+        .unwrap();
+    assert_eq!(shorts.len(), 9);
+    let mut peak = 0;
+    for _ in 0..60_000 {
+        runner.tick().unwrap();
+        let (pending, active, _, _) = runner.counts();
+        peak = peak.max(active);
+        if pending == 0 && active == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
-}
-impl engine::transcript::Progress for ExportProgress {
-    fn stage(&self, _: engine::transcript::Stage) {}
-    fn job(&self, event: &engine::jobs::JobSnapshot) {
-        let mut state = self.state.lock().unwrap();
-        match event.state {
-            engine::jobs::JobState::Running => {
-                state.0.insert(event.id);
-            }
+    assert_eq!(peak, 2, "runner export capacity was underused");
+    for short in &shorts {
+        assert_eq!(
+            runner.snapshot(short.job).unwrap().state,
             engine::jobs::JobState::Completed
-            | engine::jobs::JobState::Failed
-            | engine::jobs::JobState::Cancelled => {
-                state.0.remove(&event.id);
-            }
-            _ => {}
-        }
-        state.1 = state.1.max(state.0.len());
-        if state.0.len() == 2
-            && let Some(cancel) = &self.cancel
-        {
-            cancel.cancel();
-        }
+        );
+        assert!(short.video.is_file());
     }
+
+    // A queue smaller than the selection refuses the whole export and leaves no admitted
+    // job and no file behind.
+    let queued = tempfile::tempdir().unwrap();
+    let (mut congested, budget) = runner_with_exports(2, 1, 8);
+    let refused = jobs
+        .export(
+            &mut congested,
+            &outcome.source_project,
+            request(&outcome, (0..3).collect(), Vec::new(), queued.path()),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        refused,
+        engine::control::Error::Runtime(engine::RuntimeError::QueueFull)
+    ));
+    for _ in 0..2_000 {
+        congested.tick().unwrap();
+        let (pending, active, _, _) = congested.counts();
+        if pending == 0 && active == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!((congested.counts().0, congested.counts().1), (0, 0));
+    assert_eq!(std::fs::read_dir(queued.path()).unwrap().count(), 0);
+    drop(congested);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 #[test]

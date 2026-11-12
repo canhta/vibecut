@@ -26,11 +26,17 @@ pub(crate) fn cli_runtime() -> Result<engine::providers::Runtime, CliError> {
 }
 
 pub(crate) fn cli_runner(budget: ByteBudget) -> Result<JobRunner, CliError> {
+    cli_runner_sized(budget, 8)
+}
+
+/// A runner whose queue and retained results hold `slots` jobs, for a command that
+/// submits a whole selection at once, such as one export job per short.
+pub(crate) fn cli_runner_sized(budget: ByteBudget, slots: usize) -> Result<JobRunner, CliError> {
     Ok(JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
-            queue: 8,
-            retained: 8,
+            queue: slots,
+            retained: slots,
             network_attempts: 3,
             backoff: Duration::from_millis(250),
             progress_interval: Duration::from_millis(50),
@@ -61,7 +67,8 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
             Arc::new(providers),
             Arc::new(DenyUploads),
             Arc::new(std::sync::Mutex::new(cache)),
-        ))
+        )
+        .with_clips(Arc::new(shorts::ClipJobs::new(Credentials::from_env()))))
     };
     open().unwrap_or_else(engine::subtitles::CaptionAccess::unavailable)
 }

@@ -3,23 +3,21 @@ use crate::clip_boundaries::{
     BoundaryFailure, ClipBoundarySettings, SegmentAdjustment, snap_clip_boundaries,
 };
 use crate::error::Error;
-use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
     AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
     ClipSourceSegment, ClipSuggester, ClipSuggestion, DroppedClip, HeuristicClipSuggester,
     OpenAiClipSuggester,
 };
 use ai::{CostEstimate, Money, Scope};
-use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
+use captions::{Cue, LanguageTag, NfcText};
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::control::Error as EngineError;
-use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
+use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, ResourceClass};
 use engine::providers::{
     CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,
 };
 use engine::transcript::{
-    Cancellation, Progress, Stage, Transcription, build_session, transcribe, translate_track,
-    wait_for_job,
+    Cancellation, Progress, Stage, Transcription, build_session, transcribe, wait_for_job,
 };
 use media::SourceAsset;
 use project::Project;
@@ -102,7 +100,8 @@ pub struct ClipSuggestionOutcome {
     pub elapsed: Duration,
     /// Retained source context for desktop review; no ASR or energy re-decoding.
     pub asset: SourceAsset,
-    duration: Tick,
+    /// Probed source duration.
+    pub duration: Tick,
     pub source_cues: Vec<Cue>,
     pub source_project: Project,
     pub transcript: captions::Transcript,
@@ -116,44 +115,15 @@ enum BuiltSuggester {
     Anthropic(AnthropicClipSuggester),
 }
 
-#[derive(Clone, Debug)]
-pub struct ClipExportRequest {
-    /// Existing output directory.
-    pub directory: PathBuf,
-    /// Zero-based candidate indices in candidate order; 1..=1000 distinct values.
-    pub select: Vec<usize>,
-    /// None/empty for no captions, or one/two distinct languages to burn.
-    pub languages: Vec<LanguageTag>,
-    pub formats: Vec<Format>,
-    pub overwrite: bool,
-    pub allow_degraded: bool,
-    pub max_output_bytes: u64,
-}
-
-/// Prepared clips keep the requested candidate index for each batch slot.
-pub struct ClipExportPrep {
-    pub batch: ClipBatch,
-    pub selected: Vec<usize>,
-    pub translation_cost: Cost,
-}
-
-/// One published short in batch-slot order.
-#[derive(Clone, Debug)]
-pub struct ClipExportPaths {
-    pub candidate: usize,
-    pub paths: ClipPaths,
-}
-
-#[derive(Clone, Debug)]
-pub struct ClipExportOutcome {
-    pub exports: Vec<ClipExportPaths>,
-    pub translation_cost: Cost,
-}
 mod selection;
 
 mod ranking;
 
 mod export;
+
+mod job;
+
+mod view;
 
 pub use selection::{check_suggestion_credentials, choose_suggestion, suggestion_options};
 
@@ -163,4 +133,8 @@ use ranking::fingerprint;
 
 pub use ranking::suggest;
 
-pub use export::{export, prepare_export};
+pub(crate) use export::submit_export;
+
+pub(crate) use job::submit_suggest;
+
+pub use view::{candidate_view, clips_result, segments_from_view};

@@ -35,8 +35,10 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         JobKind::MeasureLoudness => JobOutput::Loudness(crate::loudness::decode(retained()?)?),
         JobKind::DetectScenes => JobOutput::Scenes(crate::scene_detection::decode(retained()?)?),
         JobKind::AnalyzeReframe => JobOutput::Reframe(reframe_report(retained()?)?),
-        JobKind::SuggestClips
-        | JobKind::AnalyzeShots
+        JobKind::SuggestClips => {
+            JobOutput::Clips(Box::new(super::clips::decode_clips(retained()?)?))
+        }
+        JobKind::AnalyzeShots
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails

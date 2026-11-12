@@ -32,6 +32,21 @@ fn font_access<'a>(
 ) -> std::result::Result<&'a super::FontAccess<'a>, crate::FontError> {
     caller.fonts.ok_or(crate::FontError::Unavailable)
 }
+fn clip_access<'a>(
+    caller: &Caller<'a>,
+) -> Result<(
+    &'a crate::subtitles::CaptionAccess,
+    &'a std::sync::Arc<dyn super::ClipWorkflow>,
+)> {
+    let unavailable = || {
+        EngineError::Edit(crate::EditError::Unsupported(
+            "clip workflow unavailable",
+        ))
+    };
+    let access = caller.captions.ok_or_else(unavailable)?;
+    let workflow = access.clips().ok_or_else(unavailable)?;
+    Ok((access, workflow))
+}
 fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::SoundAccess<'a>> {
     caller.sounds.ok_or(crate::session::EditError::Unsupported(
         "sound library unavailable",
@@ -523,6 +538,132 @@ impl Session {
                     job,
                     revision: self.revision(),
                     paths: Vec::new(),
+                })
+            }
+            Command::ClipsSuggest {
+                asset,
+                source_language,
+                provider,
+                model,
+                count,
+                min_duration,
+                max_duration,
+                max_segments,
+                min_segment_duration,
+                overlap_tolerance,
+                keywords,
+            } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let (access, workflow) = clip_access(caller)?;
+                let source = self
+                    .project()
+                    .data()
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset)
+                    .cloned()
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset)))?;
+                let job = workflow.suggest(
+                    runner,
+                    access,
+                    self,
+                    super::ClipsSuggestRequest {
+                        asset: source,
+                        source_language,
+                        provider,
+                        model,
+                        count,
+                        min_duration,
+                        max_duration,
+                        max_segments,
+                        min_segment_duration,
+                        overlap_tolerance,
+                        keywords,
+                    },
+                    crate::control_preview::control_key(fingerprint)?,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::ClipsExport {
+                job,
+                select,
+                item,
+                languages,
+                formats,
+                directory,
+                overwrite,
+                allow_degraded,
+            } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let (_, workflow) = clip_access(caller)?;
+                let snapshot = runner
+                    .snapshot(job)
+                    .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
+                if snapshot.kind != JobKind::SuggestClips {
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "job is not a clip suggestion",
+                    )));
+                }
+                if snapshot.state != JobState::Completed {
+                    return Err(EngineError::Session(crate::SessionError::StaleResult));
+                }
+                // The suggestion is bound to its source asset, not to this session's
+                // revision: callers caption and translate the cues in between.
+                let result = super::decode_clips(
+                    runner
+                        .output_bytes(job)
+                        .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?,
+                )?;
+                let cues = match item {
+                    None => captions::CueTrack::default(),
+                    Some(item) => {
+                        let found = self
+                            .project()
+                            .data()
+                            .scene()
+                            .timeline
+                            .iter()
+                            .flat_map(|track| &track.items)
+                            .find(|candidate| candidate.id == item)
+                            .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+                        let project::ItemParams::Caption(params) = &found.content else {
+                            return Err(EngineError::Edit(crate::EditError::Invalid(
+                                "clip captions need a caption item",
+                            )));
+                        };
+                        params.cues.clone()
+                    }
+                };
+                let shorts = workflow.export(
+                    runner,
+                    self.project().as_ref(),
+                    super::ClipsExportRequest {
+                        result,
+                        cues,
+                        select,
+                        languages,
+                        formats,
+                        directory,
+                        overwrite,
+                        allow_degraded,
+                    },
+                )?;
+                Ok(ControlResult::ClipExports {
+                    revision: self.revision(),
+                    shorts,
                 })
             }
             Command::CaptionsApply { job, start } => {

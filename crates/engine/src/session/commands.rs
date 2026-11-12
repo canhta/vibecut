@@ -384,6 +384,8 @@ pub enum Fixture {
     Loudness,
     /// Timeline plus a real source asset and its retained completed transcription.
     Captions,
+    /// The `Waveform` fixture with one completed `clips.suggest` job, job 0, retained.
+    Clips,
     Library,
     History,
     Redo,
@@ -420,6 +422,11 @@ impl Command {
                 path, overwrite, ..
             } => Some((path.clone(), *overwrite)),
             Self::Snapshot { path, .. } => Some((path.clone(), false)),
+            Self::ClipsExport {
+                directory,
+                overwrite,
+                ..
+            } => Some((directory.clone(), *overwrite)),
             Self::ChaptersExportSidecars { dir, .. } => Some((dir.clone(), false)),
             _ => None,
         }
@@ -603,6 +610,8 @@ commands! {
     CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), available = NoTransaction, grant = Agent;
     PasteKeyframes, "clipboard.paste_keyframes", "Paste keyframes", Edit { item: ItemId, at: Tick, source: KeyframePasteSource } => Timeline, serde_json::json!({"item":1,"at":12,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":0,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]}}}), available = UnlockedItem, grant = Agent;
     ReadClipboard, "clipboard.read", "Read keyframe clipboard", Read {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Agent;
+    ClipsExport, "clips.export", "Export clip candidates", FilePublish { job: super::wire::JobId, select: Vec<usize>, #[serde(default)] item: Option<ItemId>, #[serde(default)] languages: Vec<captions::LanguageTag>, #[serde(default)] formats: Vec<captions::Format>, directory: std::path::PathBuf, overwrite: bool, #[serde(default)] allow_degraded: bool } => Clips, serde_json::json!({"job":0,"select":[0],"directory":"$output","overwrite":false});
+    ClipsSuggest, "clips.suggest", "Suggest clips", JobControl { asset: media::AssetId, #[serde(default)] source_language: Option<captions::LanguageTag>, #[serde(default)] provider: Option<String>, #[serde(default)] model: Option<String>, #[serde(default)] count: Option<usize>, #[serde(default)] min_duration: Option<Tick>, #[serde(default)] max_duration: Option<Tick>, #[serde(default)] max_segments: Option<usize>, #[serde(default)] min_segment_duration: Option<Tick>, #[serde(default)] overlap_tolerance: Option<f64>, #[serde(default)] keywords: Vec<NfcText> } => Waveform, serde_json::json!({"asset":97,"source_language":"en"}), grant = Agent;
     ImportLut, "color.import_lut", "Import 3D cube LUT", JobControl { path:std::path::PathBuf, #[serde(default)] name:Option<NfcText>, #[serde(default)] licence:Option<NfcText>, #[serde(default)] expected_hash:Option<project::LutId> } => Timeline, serde_json::json!({"path":"$output/look.cube","name":null,"licence":null,"expected_hash":null}), available = NoTransaction, grant = Human;
     RegisterLut, "color.register_lut", "Register imported LUT", Edit { record:project::LutRecord } => Timeline, serde_json::json!({"record":{"id":"0000000000000000000000000000000000000000000000000000000000000000","name":"Look","licence":null,"source_name":"look.cube","source_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"directory":"$output/lut"}}), grant = Human;
     CommitGesture, "commit_gesture", "Commit gesture", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;

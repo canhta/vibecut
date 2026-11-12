@@ -30,6 +30,7 @@ impl Session {
                     result,
                     ControlResult::Edit { .. }
                         | ControlResult::JobAccepted { .. }
+                        | ControlResult::ClipExports { .. }
                         | ControlResult::CancelRequested { .. }
                 ) {
                     self.ledger.push(

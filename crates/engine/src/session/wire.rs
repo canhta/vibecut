@@ -1,4 +1,5 @@
 //! Defines the transport-neutral wire contract of one session.
+mod clips;
 mod contract;
 mod decode;
 mod envelope;
@@ -8,6 +9,10 @@ mod limits;
 mod results;
 mod views;
 
+pub use clips::{
+    ClipAdjustment, ClipCandidateView, ClipEdge, ClipExportShort, ClipPieceRange, ClipPieceSpan,
+    ClipRefusal, ClipSubtitleFile, ClipsResult,
+};
 pub use contract::{contract_schema, reference_markdown, registry_hash};
 pub(crate) use decode::decode_command;
 pub use envelope::{

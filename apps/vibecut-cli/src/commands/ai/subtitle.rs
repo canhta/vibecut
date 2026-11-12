@@ -442,7 +442,7 @@ fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result
     })
 }
 
-fn cost_of(view: &CostView) -> Cost {
+pub(super) fn cost_of(view: &CostView) -> Cost {
     match view {
         CostView::Free => Cost::Free,
         CostView::UpperBound { currency, micros } => Cost::UpperBound {
@@ -454,7 +454,7 @@ fn cost_of(view: &CostView) -> Cost {
 }
 
 /// The caption track and item the applied transcription created.
-fn caption_ids(session: &engine::Session) -> Result<(TrackId, ItemId), CliError> {
+pub(super) fn caption_ids(session: &engine::Session) -> Result<(TrackId, ItemId), CliError> {
     session
         .project()
         .data()

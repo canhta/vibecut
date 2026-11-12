@@ -59,7 +59,7 @@ the network class; all other transcription uses CPU. Speech extraction, checkpoi
 recognition, alignment, assembly and segmentation run on that worker without nested jobs.
 
 `CaptionAccess` lends resolved providers, a `ConsentPrompt` and the one shared checkpoint-cache
-handle. Composition roots open the models cache once; every window locks it only for get/put.
+handle, and optionally the [clip workflow](../control/README.md#job-commands) (`with_clips`). Composition roots open the models cache once; every window locks it only for get/put.
 Completed raw windows keep the existing source/sample/language/provider/model/settings identity,
 including after failure or cancellation. Uncached remote windows ask the prompt before upload.
 Generation and translation use the [shared approval boundary](../providers/README.md#adapters-scopes-and-consent),

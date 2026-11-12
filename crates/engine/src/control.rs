@@ -3,7 +3,8 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, CaptionsResult, ControlError, ControlResult, CostView, Cursor, ErrorCode, Event,
+    API_VERSION, CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipExportShort,
+    ClipPieceRange, ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult, ControlError, ControlResult, CostView, Cursor, ErrorCode, Event,
     Failure, FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobOutput,
     JobView, LIMITS, Limits, MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH,
     MAX_EVENTS, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS,
@@ -143,11 +144,15 @@ impl From<captions::Error> for Error {
 }
 
 mod admission;
+mod clips;
 mod dispatch;
 mod media;
 mod output;
 mod receipts;
 mod resync;
+pub use clips::{
+    ClipWorkflow, ClipsExportRequest, ClipsSuggestRequest, MAX_CLIPS_RESULT_BYTES, decode_clips,
+};
 pub use media::MediaAccess;
 
 /// Supplied by the trusted composition root, never deserialized from client JSON.

@@ -8,7 +8,7 @@ use super::{
     SnapSettings, SourceAsset, SourceRange, Stage, Tick, Transcription, build_session,
     build_suggester, snap_clip_boundaries, transcribe, upload_request, wait_for_job,
 };
-fn clip_input(
+pub(super) fn clip_input(
     cues: &[Cue],
     language: &LanguageTag,
     settings: &ClipSettings,
@@ -38,7 +38,7 @@ fn clip_input(
     Ok(input)
 }
 
-fn snap_settings(
+pub(super) fn snap_settings(
     asset: &SourceAsset,
     duration: Tick,
     settings: &ClipSettings,
@@ -64,7 +64,7 @@ fn snap_settings(
     })
 }
 
-fn snap_candidate(
+pub(super) fn snap_candidate(
     suggestion: &ClipSuggestion,
     transcript: &captions::Transcript,
     profile: &captions::LanguageProfile,

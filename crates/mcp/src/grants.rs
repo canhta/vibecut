@@ -114,7 +114,10 @@ impl Policy for Grants {
                 self.output_path(
                     &path,
                     overwrite,
-                    matches!(command, Command::ChaptersExportSidecars { .. }),
+                    matches!(
+                        command,
+                        Command::ChaptersExportSidecars { .. } | Command::ClipsExport { .. }
+                    ),
                     project,
                 )
             }

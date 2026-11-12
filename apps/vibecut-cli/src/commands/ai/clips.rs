@@ -1,23 +1,28 @@
 //! Adapts native clip requests to the shorts workflow.
+use super::subtitle::{caption_ids, cost_of};
 use crate::args::CliError;
 use crate::args::{number_arg, parse_selection, seconds_arg, seconds_ticks, utf8};
-use crate::output::CliProgress;
-use crate::output::{CliConsent, cost_json, cost_label};
+use crate::output::{CliConsent, cost_json, cost_label, wait_for_job};
 use crate::output::{Output, json_path, tick_json};
 use crate::session::Context;
-use crate::session::{cli_runner, cli_runtime};
+use crate::session::{Lent, cli_runner_sized, cli_runtime, run_command, run_job_with};
 use engine::cache::ArtifactCache;
-use engine::providers::Cost;
-use engine::subtitles::LanguageTag;
-use engine::{ClipDropReason, ClipRole, ClipSettings, ClipSource, ClipSourceSegment, NfcText};
-use serde_json::{Value, json};
-use shorts::{
-    ClipCandidate, ClipExportRequest, ClipRequest, ClipSuggestionOutcome, SnapSettings,
-    clip_suggest,
+use engine::control::{
+    ClipCandidateView, ClipEdge, ClipExportShort, ClipRefusal, ClipsResult, ControlResult,
+    JobOutput,
 };
+use engine::jobs::JobRunner;
+use engine::providers::Cost;
+use engine::subtitles::{CaptionAccess, LanguageTag};
+use engine::transcript::{build_session, source_session};
+use media::{AssetId, SourceAsset};
+use serde_json::{Value, json};
+use shorts::{ClipJobs, clip_suggest};
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use time::Tick;
 
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
@@ -260,6 +265,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
         return Err(CliError::Usage("--aspect must be 9:16".into()));
     }
+    // Cheap pre-checks first: a refusal here costs no model load, no ASR and no upload.
     let suggestion = clip_suggest::choose_suggestion(&provider, model.as_deref())?;
     let transcription =
         engine::providers::choose_transcription(&asr_provider, asr_model.as_deref())?;
@@ -267,6 +273,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     clip_suggest::check_suggestion_credentials(&suggestion, &credentials)?;
     let runtime = cli_runtime()?;
     let budget = context.budget()?;
+    // The process opens the models cache once; the lent access shares it with every job.
     let root = engine::cache::CacheRoot::discover()?.models();
     let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
     let cancellation = engine::transcript::Cancellation::new();
@@ -297,94 +304,211 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             )?;
         }
     }
-    let settings = ClipSettings {
+    let access = CaptionAccess::new(
+        Arc::new(providers),
+        Arc::new(CliConsent::new(yes_upload, accept_unknown_price)),
+        Arc::new(Mutex::new(cache)),
+    )
+    .with_clips(Arc::new(ClipJobs::new(credentials)));
+    let plan = Plan {
+        input,
+        source_language,
+        target_language,
         count,
-        min_duration: seconds_ticks(min)?,
-        max_duration: seconds_ticks(max)?,
+        min: seconds_ticks(min)?,
+        max: seconds_ticks(max)?,
+        min_segment: seconds_ticks(min_segment)?,
         max_segments,
-        min_segment_duration: seconds_ticks(min_segment)?,
-        overlap_tolerance: overlap,
-        language: source_language.clone(),
-        keywords: keywords
-            .iter()
-            .map(|value| NfcText::from(value.as_str()))
-            .collect(),
+        overlap,
+        keywords,
+        provider,
+        model,
+        select,
+        export,
+        bilingual,
+        overwrite,
+        allow_degraded,
     };
-    let request = ClipRequest {
-        input: input.clone(),
-        source_language: Some(source_language.clone()),
-        settings: settings.clone(),
-        snap: SnapSettings {
-            frame_rate: None,
-            tolerance: seconds_ticks(1.0)?,
-            silence_rms: 0.01,
-        },
-        provider: suggestion,
+    let report = execute(&plan, &access, cli_runner_sized(budget, 32)?)?;
+    Ok(Output::new(
+        clips_json(&plan, &report)?,
+        clips_human(&report),
+        false,
+        0,
+    ))
+}
+
+/// Everything the registry commands need, fixed before any job starts.
+struct Plan {
+    input: PathBuf,
+    source_language: LanguageTag,
+    target_language: Option<LanguageTag>,
+    count: usize,
+    min: Tick,
+    max: Tick,
+    min_segment: Tick,
+    max_segments: usize,
+    overlap: f64,
+    keywords: Vec<String>,
+    provider: String,
+    model: Option<String>,
+    select: Option<Vec<usize>>,
+    export: Option<PathBuf>,
+    bilingual: bool,
+    overwrite: bool,
+    allow_degraded: bool,
+}
+
+/// What the finished jobs reported; the adapter owns no other result state.
+struct Report {
+    result: ClipsResult,
+    shorts: Vec<ClipExportShort>,
+    languages: Vec<LanguageTag>,
+    translation_cost: Cost,
+}
+
+/// The workflow as registry commands: `clips.suggest`, then for an export the caption item
+/// the cues become, optional `captions.translate` with `retranslate`, and `clips.export`.
+fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result<Report, CliError> {
+    let asset = SourceAsset::import(AssetId(1), plan.input.clone())?;
+    let duration = asset
+        .probe()
+        .duration
+        .filter(|value| *value > Tick::ZERO)
+        .ok_or(CliError::Rejected("media duration is unknown"))?;
+    let mut session = source_session(&asset, duration, false, None)?;
+    let lent = Lent {
+        captions: Some(access),
+        ..Lent::default()
     };
-    let mut runner = cli_runner(budget)?;
-    let progress = CliProgress::new();
-    let consent = CliConsent::new(yes_upload, accept_unknown_price);
-    let outcome = clip_suggest::suggest(
-        &request,
-        &credentials,
-        &providers,
+    let suggested = run_job_with(
+        &mut session,
         &mut runner,
-        &mut cache,
-        &consent,
-        &progress,
-        &cancellation,
+        lent,
+        "clips.suggest",
+        json!({
+            "asset": 1,
+            "source_language": plan.source_language,
+            "provider": plan.provider,
+            "model": plan.model,
+            "count": plan.count,
+            "min_duration": plan.min,
+            "max_duration": plan.max,
+            "max_segments": plan.max_segments,
+            "min_segment_duration": plan.min_segment,
+            "overlap_tolerance": plan.overlap,
+            "keywords": plan.keywords,
+        }),
     )?;
-    let mut selected = match select {
-        Some(values) => values,
-        None => (0..outcome.clips.len()).collect(),
+    let Some(JobOutput::Clips(result)) = suggested.output else {
+        return Err(CliError::Rejected("clip suggestion produced no candidates"));
+    };
+    let result = *result;
+    let mut selected = match &plan.select {
+        Some(values) => values.clone(),
+        None => (0..result.clips.len()).collect(),
     };
     for index in &selected {
-        if *index >= outcome.clips.len() {
+        if *index >= result.clips.len() {
             return Err(CliError::Usage(format!(
                 "--select index {} is outside 1..={}",
                 index + 1,
-                outcome.clips.len()
+                result.clips.len()
             )));
         }
     }
     selected.sort_unstable();
-    let languages = match &target_language {
-        Some(target) if bilingual => vec![source_language.clone(), target.clone()],
+    let languages = match &plan.target_language {
+        Some(target) if plan.bilingual => vec![result.source_language.clone(), target.clone()],
         Some(target) => vec![target.clone()],
         None => Vec::new(),
     };
-    let mut exported = None;
-    if let Some(directory) = export {
-        if selected.is_empty() {
-            return Err(CliError::Rejected("no clip candidates to export"));
-        }
-        let result = clip_suggest::export(
-            &outcome,
-            ClipExportRequest {
-                directory,
-                select: selected,
-                languages: languages.clone(),
-                formats: Vec::new(),
-                overwrite,
-                allow_degraded,
-                max_output_bytes: 64 << 30,
-            },
-            &providers,
-            &mut runner,
-            &consent,
-            &progress,
-            &cancellation,
-        )?;
-        exported = Some(result);
+    let mut report = Report {
+        result,
+        shorts: Vec::new(),
+        languages,
+        translation_cost: Cost::Free,
+    };
+    let Some(directory) = &plan.export else {
+        runner.shutdown();
+        return Ok(report);
+    };
+    if selected.is_empty() {
+        return Err(CliError::Rejected("no clip candidates to export"));
     }
+    // The cues become the caption item the export burns; translation is the ordinary
+    // caption command pair over that item, so consent and cost are shared with `subtitle`.
+    let mut captions = build_session(&asset, &report.result.cues, duration, true, None)?;
+    let (_, item) = caption_ids(&captions)?;
+    if let Some(target) = &plan.target_language
+        && &report.result.source_language != target
+    {
+        let translated = run_job_with(
+            &mut captions,
+            &mut runner,
+            lent,
+            "captions.translate",
+            json!({"item": item, "target_language": target}),
+        )?;
+        let Some(JobOutput::Translations(translation)) = translated.output else {
+            return Err(CliError::Rejected("translation produced no texts"));
+        };
+        report.translation_cost = cost_of(&translation.cost);
+        run_command(
+            &mut captions,
+            &mut runner,
+            lent,
+            "retranslate",
+            json!({
+                "item": translation.item,
+                "target_language": translation.target_language,
+                "texts": translation.texts,
+                "translation_ref": translation.translation_ref,
+                "force": false,
+            }),
+            true,
+        )?;
+    }
+    let accepted = run_command(
+        &mut captions,
+        &mut runner,
+        lent,
+        "clips.export",
+        json!({
+            "job": suggested.id,
+            "select": selected,
+            "item": item,
+            "languages": report.languages,
+            "directory": directory,
+            "overwrite": plan.overwrite,
+            "allow_degraded": plan.allow_degraded,
+        }),
+        true,
+    )?;
+    let ControlResult::ClipExports { shorts, .. } = accepted else {
+        return Err(CliError::Rejected("command did not start export jobs"));
+    };
+    report.shorts = shorts;
+    wait_for_shorts(&mut runner, &report.shorts)?;
     runner.shutdown();
-    let value = clips_json(&outcome, &input, &settings, exported.as_ref(), &languages)?;
-    Ok(Output::new(
-        value,
-        clips_human(&outcome, exported.as_ref()),
-        false,
-        0,
-    ))
+    Ok(report)
+}
+
+/// Wait for every short's own job. The first failure cancels and drains the rest, so no
+/// admitted sibling is left running; shorts that already published stay complete.
+fn wait_for_shorts(runner: &mut JobRunner, shorts: &[ClipExportShort]) -> Result<(), CliError> {
+    for (index, short) in shorts.iter().enumerate() {
+        if let Err(error) = wait_for_job(runner, short.job) {
+            for later in shorts.iter().skip(index + 1) {
+                let _ = runner.cancel_job(later.job);
+            }
+            for later in shorts.iter().skip(index + 1) {
+                let _ = wait_for_job(runner, later.job);
+            }
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 fn clips_usage() -> &'static str {
@@ -399,177 +523,106 @@ fn clips_usage() -> &'static str {
 fn clips_usage_error() -> CliError {
     CliError::Usage(clips_usage().into())
 }
-fn clips_json(
-    outcome: &ClipSuggestionOutcome,
-    input: &Path,
-    settings: &ClipSettings,
-    exported: Option<&shorts::ClipExportOutcome>,
-    languages: &[LanguageTag],
-) -> Result<Value, CliError> {
-    let candidates: Vec<Value> = outcome
+fn clips_json(plan: &Plan, report: &Report) -> Result<Value, CliError> {
+    let result = &report.result;
+    let candidates: Vec<Value> = result
         .clips
         .iter()
         .enumerate()
         .map(|(index, candidate)| candidate_json(index, candidate))
         .collect();
-    let rejected: Vec<Value> = outcome
-        .rejected
-        .iter()
-        .map(|clip| {
-            json!({
-                "title": clip.title.as_str(),
-                "reason": boundary_failure_name(clip.reason),
-            })
-        })
-        .collect();
-    let dropped: Vec<Value> = outcome
-        .dropped
-        .iter()
-        .map(|clip| {
-            json!({
-                "title": clip.proposal.title.as_str(),
-                "reason": drop_reason_name(clip.reason),
-            })
-        })
-        .collect();
-    let exports: Vec<Value> = match exported {
-        Some(result) => result
-            .exports
-            .iter()
-            .map(|clip| {
-                Ok(json!({
-                    "candidate": clip.candidate + 1,
-                    "video": json_path(&clip.paths.video)?,
-                    "subtitles": clip.paths.subtitles.iter().map(|subtitle| {
-                        Ok(json!({
-                            "format": format_name(subtitle.format),
-                            "path": json_path(&subtitle.path)?,
-                        }))
-                    }).collect::<Result<Vec<_>, CliError>>()?,
-                }))
-            })
-            .collect::<Result<Vec<_>, CliError>>()?,
-        None => Vec::new(),
+    let refusals = |list: &[ClipRefusal]| -> Vec<Value> {
+        list.iter()
+            .map(|clip| json!({"title": clip.title.as_str(), "reason": clip.reason}))
+            .collect()
     };
+    let exports: Vec<Value> = report
+        .shorts
+        .iter()
+        .map(|clip| {
+            Ok(json!({
+                "candidate": clip.candidate + 1,
+                "video": json_path(&clip.video)?,
+                "subtitles": clip.subtitles.iter().map(|subtitle| {
+                    Ok(json!({
+                        "format": format_name(subtitle.format),
+                        "path": json_path(&subtitle.path)?,
+                    }))
+                }).collect::<Result<Vec<_>, CliError>>()?,
+            }))
+        })
+        .collect::<Result<Vec<_>, CliError>>()?;
     Ok(json!({
         "status": "completed",
-        "input": json_path(input)?,
-        "source_language": outcome.source_language.as_str(),
+        "input": json_path(&plan.input)?,
+        "source_language": result.source_language.as_str(),
         "transcription": {
-            "provider": outcome.transcription_provider,
-            "model": outcome.transcription_model,
+            "provider": result.transcription_provider,
+            "model": result.transcription_model,
         },
         "suggestion": {
-            "provider": outcome.provider,
-            "model": outcome.model,
+            "provider": result.provider,
+            "model": result.model,
         },
         "settings": {
-            "count": settings.count,
-            "min_duration": tick_json(settings.min_duration),
-            "max_duration": tick_json(settings.max_duration),
-            "max_segments": settings.max_segments,
-            "min_segment_duration": tick_json(settings.min_segment_duration),
-            "overlap_tolerance": settings.overlap_tolerance,
-            "keywords": settings.keywords.iter().map(|value| value.as_str()).collect::<Vec<_>>(),
+            "count": plan.count,
+            "min_duration": tick_json(plan.min),
+            "max_duration": tick_json(plan.max),
+            "max_segments": plan.max_segments,
+            "min_segment_duration": tick_json(plan.min_segment),
+            "overlap_tolerance": plan.overlap,
+            "keywords": plan.keywords,
         },
         "candidates": candidates,
-        "rejected": rejected,
-        "dropped": dropped,
-        "transcript_segments": outcome.transcript_segments,
-        "cues": outcome.cues,
-        "checkpoints": outcome.checkpoints,
+        "rejected": refusals(&result.rejected),
+        "dropped": refusals(&result.dropped),
+        "transcript_segments": result.transcript_segments,
+        "cues": result.cues.len(),
+        "checkpoints": result.checkpoints,
         "cost": {
-            "transcription": cost_json(&outcome.transcription_cost),
-            "suggestion": cost_json(&outcome.suggestion_cost),
-            "translation": exported.map_or(json!({"kind": "free"}), |value| cost_json(&value.translation_cost)),
+            "transcription": cost_json(&cost_of(&result.transcription_cost)),
+            "suggestion": cost_json(&cost_of(&result.suggestion_cost)),
+            "translation": cost_json(&report.translation_cost),
         },
-        "subtitle_languages": languages.iter().map(LanguageTag::as_str).collect::<Vec<_>>(),
+        "subtitle_languages": report.languages.iter().map(LanguageTag::as_str).collect::<Vec<_>>(),
         "exports": exports,
-        "elapsed_seconds": outcome.elapsed.as_secs_f64(),
+        "elapsed_seconds": result.elapsed_seconds,
     }))
 }
 
-fn candidate_json(index: usize, candidate: &ClipCandidate) -> Value {
+fn candidate_json(index: usize, candidate: &ClipCandidateView) -> Value {
     json!({
         "index": index + 1,
-        "title": candidate.proposal.title.as_str(),
-        "hook_text": candidate.proposal.hook_text.as_str(),
-        "reason": candidate.proposal.reason.as_str(),
-        "score": candidate.proposal.score,
-        "source": clip_source_name(candidate.source),
+        "title": candidate.title.as_str(),
+        "hook_text": candidate.hook_text.as_str(),
+        "reason": candidate.reason.as_str(),
+        "score": candidate.score,
+        "source": candidate.source,
         "duration": tick_json(candidate.duration),
-        "segments": candidate.segments.iter().map(segment_json).collect::<Vec<_>>(),
+        "segments": candidate.segments.iter().map(|segment| json!({
+            "start": tick_json(segment.range.start()),
+            "end": tick_json(segment.range.end()),
+            "role": segment.role,
+            "source_order": segment.source_order,
+        })).collect::<Vec<_>>(),
         "adjustments": candidate.adjustments.iter().map(|pair| json!({
             "start": adjustment_json(&pair.start),
             "end": adjustment_json(&pair.end),
         })).collect::<Vec<_>>(),
-        "pieces": candidate.proposal.segments.iter().map(|piece| json!({
+        "pieces": candidate.pieces.iter().map(|piece| json!({
             "start_segment_id": piece.start_segment_id.as_str(),
             "end_segment_id": piece.end_segment_id.as_str(),
-            "role": clip_role_name(piece.role),
+            "role": piece.role,
         })).collect::<Vec<_>>(),
     })
 }
-fn segment_json(segment: &ClipSourceSegment) -> Value {
-    json!({
-        "start": tick_json(segment.range.start()),
-        "end": tick_json(segment.range.end()),
-        "role": clip_role_name(segment.role),
-        "source_order": segment.source_order,
-    })
-}
-fn adjustment_json(value: &shorts::clip_boundaries::BoundaryAdjustment) -> Value {
+fn adjustment_json(value: &ClipEdge) -> Value {
     json!({
         "original": tick_json(value.original),
         "adjusted": tick_json(value.adjusted),
         "delta": tick_json(value.delta),
-        "kind": boundary_kind_name(value.kind),
+        "kind": value.kind,
     })
-}
-fn clip_source_name(source: ClipSource) -> &'static str {
-    match source {
-        ClipSource::Llm => "llm",
-        ClipSource::Heuristic => "heuristic",
-    }
-}
-fn clip_role_name(role: ClipRole) -> &'static str {
-    match role {
-        ClipRole::Hook => "hook",
-        ClipRole::Context => "context",
-        ClipRole::Payoff => "payoff",
-    }
-}
-fn boundary_kind_name(kind: shorts::clip_boundaries::BoundaryKind) -> &'static str {
-    match kind {
-        shorts::clip_boundaries::BoundaryKind::SentenceSilence => "sentence_silence",
-        shorts::clip_boundaries::BoundaryKind::Sentence => "sentence",
-        shorts::clip_boundaries::BoundaryKind::Silence => "silence",
-        shorts::clip_boundaries::BoundaryKind::WordOrSegment => "word_or_segment",
-        shorts::clip_boundaries::BoundaryKind::WordFade => "word_fade",
-    }
-}
-fn boundary_failure_name(reason: shorts::clip_boundaries::BoundaryFailure) -> &'static str {
-    match reason {
-        shorts::clip_boundaries::BoundaryFailure::NoSafeFrame => "no_safe_frame",
-        shorts::clip_boundaries::BoundaryFailure::SegmentDuration => "segment_duration",
-        shorts::clip_boundaries::BoundaryFailure::TotalDuration => "total_duration",
-        shorts::clip_boundaries::BoundaryFailure::SegmentOverlap => "segment_overlap",
-        shorts::clip_boundaries::BoundaryFailure::Candidate => "candidate",
-    }
-}
-fn drop_reason_name(reason: ClipDropReason) -> &'static str {
-    match reason {
-        ClipDropReason::Duration => "duration",
-        ClipDropReason::SegmentDuration => "segment_duration",
-        ClipDropReason::SegmentCount => "segment_count",
-        ClipDropReason::UnknownId => "unknown_id",
-        ClipDropReason::ReversedRange => "reversed_range",
-        ClipDropReason::HookOrder => "hook_order",
-        ClipDropReason::SegmentOverlap => "segment_overlap",
-        ClipDropReason::Duplicate => "duplicate",
-        ClipDropReason::Overlap => "overlap",
-        ClipDropReason::CountLimit => "count_limit",
-    }
 }
 fn format_name(format: engine::Format) -> &'static str {
     match format {
@@ -579,35 +632,33 @@ fn format_name(format: engine::Format) -> &'static str {
     }
 }
 
-fn clips_human(
-    outcome: &ClipSuggestionOutcome,
-    exported: Option<&shorts::ClipExportOutcome>,
-) -> String {
+fn clips_human(report: &Report) -> String {
+    let result = &report.result;
     let mut human = format!(
         "source: {}\nprovider: {} ({})\ntranscription: {} ({})\n",
-        outcome.source_language.as_str(),
-        outcome.provider,
-        outcome.model,
-        outcome.transcription_provider,
-        outcome.transcription_model
+        result.source_language.as_str(),
+        result.provider,
+        result.model,
+        result.transcription_provider,
+        result.transcription_model
     );
     let _ = writeln!(
         human,
         "candidates: {} ({} rejected, {} dropped)\ncheckpoints reused: {}",
-        outcome.clips.len(),
-        outcome.rejected.len(),
-        outcome.dropped.len(),
-        outcome.checkpoints
+        result.clips.len(),
+        result.rejected.len(),
+        result.dropped.len(),
+        result.checkpoints
     );
-    for (index, candidate) in outcome.clips.iter().enumerate() {
+    for (index, candidate) in result.clips.iter().enumerate() {
         let _ = writeln!(
             human,
             "{}. {:.3} s, {} segment(s), score {:.3}: {}",
             index + 1,
             candidate.duration.seconds(),
             candidate.segments.len(),
-            candidate.proposal.score,
-            candidate.proposal.title.as_str()
+            candidate.score,
+            candidate.title.as_str()
         );
         for segment in &candidate.segments {
             let _ = writeln!(
@@ -615,42 +666,35 @@ fn clips_human(
                 "   {:.3}-{:.3} s {}",
                 segment.range.start().seconds(),
                 segment.range.end().seconds(),
-                clip_role_name(segment.role)
+                segment.role
             );
         }
     }
-    for clip in &outcome.rejected {
+    for clip in &result.rejected {
+        let _ = writeln!(human, "rejected ({}): {}", clip.reason, clip.title.as_str());
+    }
+    for clip in &report.shorts {
         let _ = writeln!(
             human,
-            "rejected ({}): {}",
-            boundary_failure_name(clip.reason),
-            clip.title.as_str()
+            "exported {}: {}",
+            clip.candidate + 1,
+            clip.video.display()
         );
-    }
-    if let Some(result) = exported {
-        for clip in &result.exports {
+        for subtitle in &clip.subtitles {
             let _ = writeln!(
                 human,
-                "exported {}: {}",
-                clip.candidate + 1,
-                clip.paths.video.display()
+                "  {}: {}",
+                format_name(subtitle.format),
+                subtitle.path.display()
             );
-            for subtitle in &clip.paths.subtitles {
-                let _ = writeln!(
-                    human,
-                    "  {}: {}",
-                    format_name(subtitle.format),
-                    subtitle.path.display()
-                );
-            }
         }
     }
     let _ = writeln!(
         human,
         "cost: transcribe {}; suggest {}; translate {}",
-        cost_label(&outcome.transcription_cost),
-        cost_label(&outcome.suggestion_cost),
-        cost_label(&exported.map_or(Cost::Free, |value| value.translation_cost.clone()))
+        cost_label(&cost_of(&result.transcription_cost)),
+        cost_label(&cost_of(&result.suggestion_cost)),
+        cost_label(&report.translation_cost)
     );
     human.trim_end().to_owned()
 }

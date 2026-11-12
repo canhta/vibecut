@@ -1259,6 +1259,170 @@ fn caption_jobs_generate_apply_and_export_over_mcp_and_deny_unapproved_uploads()
     }
 }
 
+/// Approves only the ASR upload: a clip suggestion upload must refuse without a human.
+struct AsrOnlyConsent;
+impl engine::providers::ConsentPrompt for AsrOnlyConsent {
+    fn approve(&self, request: &engine::providers::UploadRequest) -> engine::providers::Result<()> {
+        match request.operation {
+            engine::providers::CatalogOperation::Transcribe => Ok(()),
+            _ => Err(engine::providers::Error::ConsentRequired),
+        }
+    }
+}
+
+#[test]
+fn clip_jobs_suggest_then_export_over_mcp_and_refuse_an_unapproved_remote_suggestion() {
+    use engine::providers::{Credentials, Providers, TranscriptionProvider};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    // Rows: the local heuristic needs no upload and exports; a remote suggestion whose
+    // upload nobody approved is a typed permission failure and writes nothing.
+    for remote in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let media = root.path().join("clips-source.mp4");
+        crate::media_fixture::generate_av(&media, 3);
+        let path = root.path().join("clips-project.vibecut");
+        crate::media_fixture::media_project(&path, &media, None);
+        let mut session = engine::Session::new(project::load(&path).unwrap().project, 100).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let providers = Providers::from_parts(
+            TranscriptionProvider::ElevenLabs {
+                model: "offline-model".into(),
+            },
+            "transcribe".into(),
+            Arc::new(CaptionAsr {
+                config: ai::ProviderConfig::new(
+                    "offline-asr".into(),
+                    "offline-model".into(),
+                    "mcp-v1".into(),
+                    ai::Location::Remote {
+                        backend: "fixture".into(),
+                        base_url: "https://fixture.invalid".into(),
+                        auth_ref: "fixture".into(),
+                    },
+                )
+                .unwrap(),
+                calls: calls.clone(),
+            }),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let (cache, _) = engine::cache::ArtifactCache::open(
+            &root.path().join("cache"),
+            engine::ByteBudget::new(512 << 20).unwrap(),
+            16,
+        )
+        .unwrap();
+        let access = engine::subtitles::CaptionAccess::new(
+            Arc::new(providers),
+            Arc::new(AsrOnlyConsent),
+            Arc::new(std::sync::Mutex::new(cache)),
+        )
+        .with_clips(Arc::new(shorts::ClipJobs::new(Credentials::new(
+            Some("fixture-key".into()),
+            None,
+            None,
+        ))));
+        let endpoint = if cfg!(windows) {
+            PathBuf::from(format!("vibecut-clips-{}-{remote}", std::process::id()))
+        } else {
+            root.path().join("private/clips.sock")
+        };
+        let mut server = mcp::Server::bind(
+            &endpoint,
+            mcp::Grants::output(root.path()).unwrap(),
+            engine::ByteBudget::new(2 << 30).unwrap(),
+        )
+        .unwrap();
+        server.inbox.attach_captions(Arc::new(access));
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = stop.clone();
+        let worker = std::thread::spawn(move || {
+            while !stopping.load(Ordering::Acquire) {
+                server.inbox.poll(&mut session, |_, _| Ok(())).unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let mut client = Client::start(&[
+            "mcp".as_ref(),
+            "--attach".as_ref(),
+            "--socket".as_ref(),
+            endpoint.as_os_str(),
+        ]);
+        let initial = client.call("inspect", json!({}), None, None);
+        let rev = initial["rev_after"].clone();
+        let seconds = |value: f64| (value * time::TICKS_PER_SECOND as f64) as i64;
+        let accepted = client.call(
+            "clips.suggest",
+            json!({
+                "asset": 1,
+                "source_language": "en",
+                "provider": if remote { "openai" } else { "heuristic" },
+                "count": 1,
+                "min_duration": seconds(0.3),
+                "max_duration": seconds(4.0),
+                "max_segments": 1,
+                "min_segment_duration": seconds(0.1),
+            }),
+            Some(&rev),
+            Some("suggest"),
+        );
+        assert_eq!(accepted["value"]["status"], "result", "{accepted}");
+        let job = accepted["value"]["value"]["job"].clone();
+        if remote {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let status = loop {
+                let status = client.call("job_status", json!({"job": job}), None, None);
+                let state = status.pointer("/value/value/snapshot/state").cloned();
+                if state != Some(json!("queued")) && state != Some(json!("running")) {
+                    break status;
+                }
+                assert!(Instant::now() < deadline, "{status}");
+                std::thread::sleep(Duration::from_millis(25));
+            };
+            let snapshot = &status["value"]["value"]["snapshot"];
+            assert_eq!(snapshot["state"], "failed", "{status}");
+            assert_eq!(snapshot["error"], "permission", "{status}");
+            assert!(snapshot["output"].is_null());
+            let published = std::fs::read_dir(root.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "mp4"))
+                .count();
+            assert_eq!(published, 1, "only the source media exists");
+        } else {
+            let status = wait_for_media_job(&mut client, &job);
+            let output = &status["value"]["value"]["snapshot"]["output"];
+            assert_eq!(output["kind"], "clips", "{status}");
+            assert!(!output["clips"].as_array().unwrap().is_empty(), "{status}");
+            let exported = client.call(
+                "clips.export",
+                json!({"job": job, "select": [0], "directory": root.path(), "overwrite": false}),
+                Some(&rev),
+                Some("export"),
+            );
+            assert_eq!(exported["value"]["status"], "result", "{exported}");
+            let shorts = exported["value"]["value"]["shorts"].as_array().unwrap();
+            assert_eq!(shorts.len(), 1, "{exported}");
+            wait_for_media_job(&mut client, &shorts[0]["job"]);
+            let video = PathBuf::from(shorts[0]["video"].as_str().unwrap());
+            assert!(video.starts_with(root.path()));
+            assert!(video.is_file(), "{exported}");
+            assert_eq!(calls.load(Ordering::Acquire), 1);
+        }
+        drop(client);
+        stop.store(true, Ordering::Release);
+        worker.join().unwrap();
+    }
+}
+
 #[test]
 fn optional_asr_setup_refusal_keeps_headless_mcp_inspection_and_edits_usable() {
     if !crate::media_fixture::tools() {

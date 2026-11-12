@@ -1,8 +1,7 @@
 //! Observes engine jobs through stderr progress.
 use crate::args::CliError;
 use engine::control::Error as EngineError;
-use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState};
-use engine::transcript::{Progress, Stage};
+use engine::jobs::{JobId, JobRunner, JobStage, JobState};
 use std::io;
 use std::io::Write as _;
 use std::sync::Arc;
@@ -82,49 +81,5 @@ pub(crate) fn stage_name(stage: JobStage) -> &'static str {
         JobStage::Publish => "publish",
         JobStage::Backoff => "backoff",
         JobStage::Complete => "complete",
-    }
-}
-
-pub(crate) struct CliProgress {
-    last: std::sync::Mutex<(JobStage, u32)>,
-}
-impl CliProgress {
-    pub(crate) fn new() -> Self {
-        Self {
-            last: std::sync::Mutex::new((JobStage::Queued, u32::MAX)),
-        }
-    }
-}
-impl Progress for CliProgress {
-    fn stage(&self, stage: Stage) {
-        let _ = writeln!(io::stderr(), "stage {}", subtitle_stage_name(stage));
-    }
-    fn job(&self, snapshot: &JobSnapshot) {
-        let percent = progress_percent(snapshot.progress);
-        if let Ok(mut last) = self.last.lock()
-            && *last != (snapshot.stage, percent)
-        {
-            *last = (snapshot.stage, percent);
-            let _ = writeln!(
-                io::stderr(),
-                "progress {} {}%",
-                stage_name(snapshot.stage),
-                percent
-            );
-        }
-    }
-}
-fn subtitle_stage_name(stage: Stage) -> &'static str {
-    match stage {
-        Stage::Extract => "extract",
-        Stage::Transcribe => "transcribe",
-        Stage::Align => "align",
-        Stage::Assemble => "assemble",
-        Stage::Segment => "segment",
-        Stage::SuggestClips => "suggest_clips",
-        Stage::Snap => "snap",
-        Stage::Translate => "translate",
-        Stage::ExportSrt => "export_srt",
-        Stage::ExportBurn => "export_burn",
     }
 }

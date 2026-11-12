@@ -57,3 +57,17 @@ impl From<engine::EditError> for Error {
         Self::Engine(error.into())
     }
 }
+
+/// The registry sees one engine error type: a boundary or export refusal becomes the same
+/// typed `Invalid` refusal its reason names, and kernel failures pass through unchanged.
+impl From<Error> for engine::control::Error {
+    fn from(error: Error) -> Self {
+        match error {
+            Error::Engine(error) => error,
+            Error::ClipBoundary { .. } => {
+                Self::Edit(engine::EditError::Invalid("clip boundary refused"))
+            }
+            Error::ClipExport { reason, .. } => Self::Edit(engine::EditError::Invalid(reason)),
+        }
+    }
+}

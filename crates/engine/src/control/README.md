@@ -93,6 +93,13 @@ against its admitted immutable snapshot and returns job ID, revision and paths; 
 
 ## Job commands
 
+`clips.suggest` and `clips.export` are declared here and implemented above the engine: `ClipWorkflow`
+(`control/clips.rs`) is lent through `CaptionAccess::with_clips` because it shares that access's
+providers, consent and checkpoint cache. `clips.suggest` returns `JobAccepted`; its `clips` output
+decodes from the retained `SuggestClips` bytes. `clips.export {job}` is a `FilePublish` over a
+directory, decodes the retained suggestion (it is bound to its asset, not the session revision),
+reads cues from the optional caption `item` and returns `ClipExports`: one job per short.
+
 A command that starts a job is `JobControl`, declares `grant` explicitly and returns
 `JobAccepted { job, revision, paths }`. `job_status` returns a `JobView` whose single
 `output` is a tagged `JobOutput` (`preview`, `pauses`, `chapters`, `fillers`, `loudness`,

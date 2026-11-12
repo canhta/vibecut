@@ -79,6 +79,17 @@ and `captions.translate` names an existing caption item. Apply with the accepted
 publish with `export_subtitles` under the existing output grant. A remote run without approved
 consent fails before that window's upload; a client cannot add consent or source paths.
 
+`clips.suggest {asset, ...}` starts one suggestion job over an existing asset through the same
+`CaptionAccess`, which also lends the clip workflow (`CaptionAccess::with_clips`). Its output
+(`clips`) carries ranked candidates and the source-timed cues. `heuristic` (the default) uploads
+nothing; a remote provider uploads transcript segments only, after the lent prompt shows
+provider, endpoint, byte count, cost ceiling and the provider's retention/training link, and a
+client cannot grant that approval. A missing credential or refused consent is a typed failure,
+never a fallback to another provider. `clips.export {job, select, directory, ...}` names the
+retained completed suggestion job and starts one export job per selected short under the
+existing output directory grant (never overwriting); an optional `item` names the caption item
+(source cues plus any `captions.translate` result) whose languages are burned.
+
 The three noncurated Agent commands `clipboard.copy_keyframes`, `clipboard.read` and
 `clipboard.paste_keyframes` run through `command_run` (and their generated all-tools
 names). Read returns the bounded payload in structuredContent. Attached UI and MCP

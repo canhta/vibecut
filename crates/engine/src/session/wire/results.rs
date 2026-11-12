@@ -63,6 +63,11 @@ pub enum ControlResult {
         revision: Revision,
         paths: Vec<std::path::PathBuf>,
     },
+    /// `clips.export` accepted: one job per selected short, in selection order.
+    ClipExports {
+        revision: Revision,
+        shorts: Vec<super::ClipExportShort>,
+    },
     Job {
         snapshot: JobView,
     },
@@ -102,6 +107,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Fillers { .. } => "fillers",
             Self::ChapterSidecars { .. } => "chapter_sidecars",
             Self::JobAccepted { .. } => "job_accepted",
+            Self::ClipExports { .. } => "clip_exports",
             Self::Job { .. } => "job",
             Self::Snapshot { .. } => "snapshot",
             Self::CancelRequested { .. } => "cancel_requested",
@@ -154,4 +160,7 @@ pub enum JobOutput {
     /// Per-shot report of `reframe.generate`; `reframe.apply` reads the job's
     /// retained analysis instead of carrying it here.
     Reframe(super::ReframeReport),
+    /// Ranked candidates and source-timed cues of `clips.suggest`; `clips.export` reads
+    /// the job's retained bytes instead of carrying them back.
+    Clips(Box<super::ClipsResult>),
 }

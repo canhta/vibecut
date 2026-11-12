@@ -38,6 +38,67 @@ use engine::{ByteBudget, Command, Effect, Fixture, Session, registry};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
+/// The lent clip workflow with canned results: each command still runs through the
+/// engine's admission, dispatch and job path, so the examples exercise the real seam.
+struct CannedClips;
+impl control::ClipWorkflow for CannedClips {
+    fn suggest(
+        &self,
+        runner: &mut engine::jobs::JobRunner,
+        _: &engine::subtitles::CaptionAccess,
+        session: &Session,
+        request: control::ClipsSuggestRequest,
+        input: engine::cache::CacheKey,
+    ) -> control::Result<engine::jobs::JobId> {
+        let result = control::ClipsResult {
+            asset: request.asset.id(),
+            source_language: captions::LanguageTag::parse("en").unwrap(),
+            transcription_provider: "canned".into(),
+            transcription_model: "canned".into(),
+            provider: "heuristic".into(),
+            model: "sentence-pause-keyword".into(),
+            clips: Vec::new(),
+            rejected: Vec::new(),
+            dropped: Vec::new(),
+            cues: Vec::new(),
+            transcript_segments: 0,
+            checkpoints: 0,
+            transcription_cost: control::CostView::Free,
+            suggestion_cost: control::CostView::Free,
+            elapsed_seconds: 0.0,
+        };
+        let bytes = serde_json::to_vec(&result).unwrap();
+        let (job, _) = runner.submit_for_session(
+            session,
+            engine::jobs::JobSpec {
+                kind: engine::jobs::JobKind::SuggestClips,
+                class: engine::jobs::ResourceClass::Cpu,
+                input,
+                bytes: Default::default(),
+            },
+            move |_| -> Result<Vec<u8>, control::Error> { Ok(bytes.clone()) },
+        )?;
+        Ok(job)
+    }
+    fn export(
+        &self,
+        _: &mut engine::jobs::JobRunner,
+        _: &project::Project,
+        request: control::ClipsExportRequest,
+    ) -> control::Result<Vec<control::ClipExportShort>> {
+        Ok(request
+            .select
+            .iter()
+            .map(|candidate| control::ClipExportShort {
+                candidate: *candidate,
+                job: engine::jobs::JobId(0),
+                video: request.directory.join(format!("clip-{candidate}.mp4")),
+                subtitles: Vec::new(),
+            })
+            .collect())
+    }
+}
+
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
         Value::String(s) if s == "$output" => {
@@ -110,7 +171,8 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         )),
         Arc::new(engine::providers::AllowAll),
         Arc::new(Mutex::new(cache)),
-    );
+    )
+    .with_clips(Arc::new(CannedClips));
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -189,6 +251,23 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     ok(s.control_request(req, access, &mut r).unwrap())
                 else {
                     panic!("caption job");
+                };
+                finish(&mut r, job);
+            }
+            Fixture::Clips => {
+                s = with_waveform(&s, &wav);
+                let req = request(
+                    &s,
+                    "clips.suggest",
+                    json!({"asset":97,"source_language":"en"}),
+                    "clips-fixture-suggest",
+                );
+                let mut access = caller(&Allow);
+                access.captions = Some(&captions);
+                let ControlResult::JobAccepted { job, .. } =
+                    ok(s.control_request(req, access, &mut r).unwrap())
+                else {
+                    panic!("clip suggestion job");
                 };
                 finish(&mut r, job);
             }
@@ -383,6 +462,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "captions.generate",
             "captions.translate",
             "chapters.generate",
+            "clips.suggest",
             "color.import_lut",
             "fillers.classify",
             "fonts.download",
@@ -551,6 +631,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         [
             "burn_subtitles",
             "chapters.export_sidecars",
+            "clips.export",
             "export",
             "export_subtitles",
             "preview.snapshot"

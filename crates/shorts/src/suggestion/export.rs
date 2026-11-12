@@ -1,220 +1,81 @@
-//! Exports accepted clip candidates.
-use super::{
-    Cancellation, ClipBatch, ClipBatchRequest, ClipExportOutcome, ClipExportPaths, ClipExportPrep,
-    ClipExportRequest, ClipShort, ClipSuggestionOutcome, ConsentPrompt, Cost, CueTrack, Duration,
-    EngineError, Error, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers,
-    ResourceClass, fingerprint, translate_track,
-};
-/// Translate (when needed) and prepare every selected short for export.
-#[allow(clippy::too_many_arguments)]
-pub fn prepare_export(
-    outcome: &ClipSuggestionOutcome,
-    request: ClipExportRequest,
-    providers: &Providers,
+//! Submits the accepted candidates of a suggestion as one export job per short.
+use super::segments_from_view;
+use crate::error::Error;
+use crate::{ClipBatch, ClipBatchRequest, ClipShort, MAX_BATCH_CLIPS};
+use engine::control::{ClipExportShort, ClipSubtitleFile, ClipsExportRequest};
+use engine::jobs::JobRunner;
+use project::Project;
+use std::collections::BTreeSet;
+
+/// Per-artifact output and staging ceiling of the registry export, as the CLI always used.
+const MAX_OUTPUT_BYTES: u64 = 64 << 30;
+
+fn invalid(reason: &'static str) -> Error {
+    engine::EditError::Invalid(reason).into()
+}
+
+/// Prepare every selected short against `project` and submit one job per short onto `runner`.
+///
+/// `ClipBatch` is the one export path: it owns naming, caption mapping, portrait crops,
+/// publication and per-short cancellation. A failed admission cancels the shorts already
+/// admitted before returning its typed error; shorts that already published stay complete.
+/// The caller sizes the runner's queue for the whole selection.
+pub(crate) fn submit_export(
     runner: &mut JobRunner,
-    consent: &dyn ConsentPrompt,
-    progress: &dyn Progress,
-    cancel: &Cancellation,
-) -> Result<ClipExportPrep, Error> {
-    if request.select.is_empty() || request.select.len() > MAX_BATCH_CLIPS {
-        return Err(EngineError::Edit(engine::EditError::Invalid("clip selection size")).into());
+    project: &Project,
+    request: ClipsExportRequest,
+) -> Result<Vec<ClipExportShort>, Error> {
+    let select = request.select;
+    if select.is_empty() || select.len() > MAX_BATCH_CLIPS {
+        return Err(invalid("clip selection size"));
     }
-    let mut seen = std::collections::BTreeSet::new();
-    for index in &request.select {
-        if *index >= outcome.clips.len() || !seen.insert(*index) {
-            return Err(
-                EngineError::Edit(engine::EditError::Invalid("clip selection index")).into(),
-            );
-        }
-    }
-    let mut track = CueTrack {
-        styles: Vec::new(),
-        cues: outcome.source_cues.clone(),
-    };
-    let mut translation_cost = Cost::Free;
-    for language in &request.languages {
-        if language == &outcome.source_language {
-            continue;
-        }
-        let translated = translate_track(
-            &outcome.asset,
-            outcome.duration,
-            &outcome.source_cues,
-            providers,
-            runner,
-            consent,
-            progress,
-            cancel,
-            &outcome.source_language,
-            language,
-            &NfcText::from(fingerprint(&outcome.asset)),
-            &mut translation_cost,
-        )?;
-        for (target, source) in track.cues.iter_mut().zip(translated.cues) {
-            if target.id != source.id {
-                return Err(
-                    EngineError::Edit(engine::EditError::Invalid("translated clip cues")).into(),
-                );
-            }
-            for (tag, text) in source.texts {
-                if tag != outcome.source_language {
-                    target.texts.insert(tag, text);
-                }
-            }
-        }
-    }
-    let mut shorts = Vec::with_capacity(request.select.len());
-    for index in &request.select {
-        let candidate =
-            outcome
-                .clips
-                .get(*index)
-                .ok_or(EngineError::Edit(engine::EditError::Invalid(
-                    "clip selection index",
-                )))?;
+    let mut seen = BTreeSet::new();
+    let mut shorts = Vec::with_capacity(select.len());
+    for index in &select {
+        let candidate = request
+            .result
+            .clips
+            .get(*index)
+            .filter(|_| seen.insert(*index))
+            .ok_or(invalid("clip selection index"))?;
         shorts.push(ClipShort::new(
-            candidate.proposal.title.clone(),
-            candidate.segments.clone(),
+            candidate.title.clone(),
+            segments_from_view(candidate)?,
         ));
     }
-    let mut batch = ClipBatchRequest::new(outcome.asset.id(), shorts, request.directory);
-    batch.cues = track;
+    let mut batch = ClipBatchRequest::new(request.result.asset, shorts, request.directory);
+    batch.cues = request.cues;
     batch.languages = request.languages;
     batch.subtitle_formats = request.formats;
     batch.overwrite = request.overwrite;
     batch.allow_degraded = request.allow_degraded;
-    batch.max_output_bytes = request.max_output_bytes;
-    let batch = ClipBatch::prepare(&outcome.source_project, batch)?;
-    Ok(ClipExportPrep {
-        batch,
-        selected: request.select,
-        translation_cost,
-    })
-}
-
-/// Export with bounded parallelism, refilling slots as shorts complete. A failed
-/// admission or job cancels and drains admitted siblings before returning.
-/// Already published complete files remain.
-#[allow(clippy::too_many_arguments)]
-pub fn export(
-    outcome: &ClipSuggestionOutcome,
-    request: ClipExportRequest,
-    providers: &Providers,
-    runner: &mut JobRunner,
-    consent: &dyn ConsentPrompt,
-    progress: &dyn Progress,
-    cancel: &Cancellation,
-) -> Result<ClipExportOutcome, Error> {
-    let prep = prepare_export(
-        outcome, request, providers, runner, consent, progress, cancel,
-    )?;
-    let mut batch = prep.batch;
-    let capacity = runner.batch_capacity(ResourceClass::GpuEncoder);
-    let mut active = Vec::with_capacity(capacity);
-    let mut next = 0;
-    let result = (|| {
-        while next < prep.selected.len() || !active.is_empty() {
-            cancel.checkpoint()?;
-            while active.len() < capacity && next < prep.selected.len() {
-                cancel.checkpoint()?;
-                match batch.submit_one(runner, next) {
-                    Ok(_) => {
-                        active.push(next);
-                        next += 1;
-                    }
-                    // Pump the caller's other work before retrying admission.
-                    Err(Error::Engine(EngineError::Runtime(engine::RuntimeError::QueueFull))) => {
-                        break;
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
-            cancel.checkpoint()?;
-            runner.tick()?;
-            for event in runner.drain_events() {
-                if active
-                    .iter()
-                    .any(|slot| batch.job_id(*slot) == Some(event.id))
-                {
-                    progress.job(&event);
-                }
-            }
-            let mut index = 0;
-            while index < active.len() {
-                let slot = *active
-                    .get(index)
-                    .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
-                let snapshot = batch
-                    .snapshot(runner, slot)
-                    .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
-                match snapshot.state {
-                    JobState::Completed => {
-                        let _ = runner
-                            .take_output(snapshot.id)
-                            .ok_or(EngineError::Session(engine::SessionError::StaleResult))?;
-                        active.swap_remove(index);
-                    }
-                    JobState::Failed => {
-                        return Err(match snapshot.error {
-                            Some(error) => {
-                                EngineError::Runtime(engine::RuntimeError::Failed(error)).into()
-                            }
-                            None => EngineError::Edit(engine::EditError::Invalid(
-                                "clip job failed without diagnostics",
-                            ))
-                            .into(),
-                        });
-                    }
-                    JobState::Cancelled => {
-                        return Err(EngineError::Runtime(engine::RuntimeError::Cancelled).into());
-                    }
-                    _ => index += 1,
-                }
-            }
-            if !active.is_empty() || next < prep.selected.len() {
-                std::thread::sleep(Duration::from_millis(5));
-            }
+    batch.max_output_bytes = MAX_OUTPUT_BYTES;
+    let mut batch = ClipBatch::prepare(project, batch)?;
+    for slot in 0..select.len() {
+        if let Err(error) = batch.submit_one(runner, slot) {
+            batch.cancel_all();
+            return Err(error);
         }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        batch.cancel_all();
-        // Keep the batch alive until every admitted worker has reached a terminal
-        // state. Never shut down unrelated work in the caller's runner.
-        loop {
-            let running = (0..next).any(|slot| {
-                batch.snapshot(runner, slot).is_some_and(|snapshot| {
-                    !matches!(
-                        snapshot.state,
-                        JobState::Completed | JobState::Failed | JobState::Cancelled
-                    )
-                })
-            });
-            if !running {
-                break;
-            }
-            runner.tick()?;
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        for slot in 0..next {
-            if let Some(id) = batch.job_id(slot) {
-                let _ = runner.take_output(id);
-            }
-        }
-        return Err(error);
     }
-    let mut exports = Vec::with_capacity(prep.selected.len());
-    for (slot, candidate) in prep.selected.iter().enumerate() {
-        exports.push(ClipExportPaths {
+    let mut accepted = Vec::with_capacity(select.len());
+    for (slot, candidate) in select.iter().enumerate() {
+        let (Some(job), Some(paths)) = (batch.job_id(slot), batch.paths(slot)) else {
+            batch.cancel_all();
+            return Err(invalid("clip export job"));
+        };
+        accepted.push(ClipExportShort {
             candidate: *candidate,
-            paths: batch
-                .paths(slot)
-                .ok_or(EngineError::Edit(engine::EditError::Invalid("clip paths")))?
-                .clone(),
+            job,
+            video: paths.video.clone(),
+            subtitles: paths
+                .subtitles
+                .iter()
+                .map(|subtitle| ClipSubtitleFile {
+                    format: subtitle.format,
+                    path: subtitle.path.clone(),
+                })
+                .collect(),
         });
     }
-    Ok(ClipExportOutcome {
-        exports,
-        translation_cost: prep.translation_cost,
-    })
+    Ok(accepted)
 }

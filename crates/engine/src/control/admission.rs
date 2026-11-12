@@ -162,7 +162,10 @@ impl Session {
         if let Command::Export { path, .. }
         | Command::ExportSubtitles { path, .. }
         | Command::BurnSubtitles { path, .. }
-        | Command::Snapshot { path, .. } = &command
+        | Command::Snapshot { path, .. }
+        | Command::ClipsExport {
+            directory: path, ..
+        } = &command
         {
             bounded_json(path, MAX_PATH_BYTES)?;
         }

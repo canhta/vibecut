@@ -3,6 +3,7 @@ use super::Error as SubtitleError;
 use crate::runtime::{Error as RuntimeError, Result as RuntimeResult};
 use crate::{
     cache::ArtifactCache,
+    control::ClipWorkflow,
     providers::{ConsentPrompt, Providers},
 };
 use std::sync::{Arc, Mutex};
@@ -18,6 +19,7 @@ struct Resources {
 pub struct CaptionAccess {
     resources: std::result::Result<Arc<Resources>, Arc<SubtitleError>>,
     consent: Arc<dyn ConsentPrompt + Send + Sync>,
+    clips: Option<Arc<dyn ClipWorkflow>>,
 }
 impl CaptionAccess {
     pub fn new(
@@ -28,6 +30,7 @@ impl CaptionAccess {
         Self {
             resources: Ok(Arc::new(Resources { providers, cache })),
             consent,
+            clips: None,
         }
     }
     /// Retain an optional composition failure for caption commands; other commands stay usable.
@@ -35,7 +38,18 @@ impl CaptionAccess {
         Self {
             resources: Err(Arc::new(error)),
             consent: Arc::new(crate::providers::DenyUploads),
+            clips: None,
         }
+    }
+    /// Lend the clip workflow implemented above the engine. Clip jobs share these providers,
+    /// this consent and this checkpoint cache, so no clip command carries its own.
+    pub fn with_clips(mut self, clips: Arc<dyn ClipWorkflow>) -> Self {
+        self.clips = Some(clips);
+        self
+    }
+    /// The lent clip workflow, absent unless the composition root supplied one.
+    pub fn clips(&self) -> Option<&Arc<dyn ClipWorkflow>> {
+        self.clips.as_ref()
     }
     fn resources(&self) -> RuntimeResult<&Resources> {
         match &self.resources {
@@ -47,7 +61,8 @@ impl CaptionAccess {
     pub fn cache(&self) -> RuntimeResult<&Arc<Mutex<ArtifactCache>>> {
         Ok(&self.resources()?.cache)
     }
-    pub(crate) fn share(
+    /// The selected providers and the human approval they ask, for workflows above the engine.
+    pub fn share(
         &self,
     ) -> RuntimeResult<(Arc<Providers>, Arc<dyn ConsentPrompt + Send + Sync>)> {
         Ok((self.resources()?.providers.clone(), self.consent.clone()))

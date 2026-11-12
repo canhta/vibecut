@@ -195,7 +195,8 @@ impl Providers {
         self.detect_language_with_hooks(asset, duration, cancel, cancel)
     }
 
-    pub(crate) fn detect_language_with_hooks(
+    /// [`Providers::detect_language`] for a workflow job: cancellation and progress follow `hooks`.
+    pub fn detect_language_with_hooks(
         &self,
         asset: &SourceAsset,
         duration: Tick,

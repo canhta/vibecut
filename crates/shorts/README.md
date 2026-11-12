@@ -4,7 +4,7 @@ Produces accepted shorts from source segments for desktop review, CLI clips and 
 Cue-session construction returns Kernel Edit errors; translation returns Transcript errors.
 Shorts composes each through its existing Control aggregate boundary.
 
-Use `clip_suggest::{suggest, prepare_export, export}` for the complete workflow, `clip_boundaries::snap_clip_boundaries` for reviewed source edges, or `ClipBatch` for explicit accepted clips. Callers supply engine resources, consent, progress and cancellation. `shorts::Error` owns boundary and export refusals and passes engine failures through; `BoundaryFailure` names the boundary reason.
+Use `ClipJobs` (the registry's `clips.suggest` and `clips.export`, lent through `CaptionAccess::with_clips`) or the blocking `clip_suggest::suggest` for the complete workflow, `clip_boundaries::snap_clip_boundaries` for reviewed source edges, or `ClipBatch` for explicit accepted clips. Callers supply engine resources, consent, progress and cancellation. `shorts::Error` owns boundary and export refusals and passes engine failures through; `BoundaryFailure` names the boundary reason.
 
 | Module | Responsibility | Contract |
 |---|---|---|

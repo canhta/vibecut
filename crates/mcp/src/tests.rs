@@ -612,6 +612,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.apply", Effect::Edit, true, true),
         ("captions.set_word_highlight", Effect::Edit, true, true),
         ("captions.generate", Effect::JobControl, true, true),
+        ("clips.suggest", Effect::JobControl, true, true),
+        ("clips.export", Effect::FilePublish, true, false),
         ("captions.translate", Effect::JobControl, true, true),
         ("bookmark.add", Effect::Edit, true, true),
         ("bookmark.move", Effect::Edit, true, true),

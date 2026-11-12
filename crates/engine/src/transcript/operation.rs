@@ -79,7 +79,8 @@ impl ai::ExecutionHooks for Cancellation {
     fn stage(&self, _: ai::Stage) {}
 }
 impl Cancellation {
-    pub(crate) fn from_flag(flag: Arc<AtomicBool>) -> Self {
+    /// Share a job's cancellation flag, so a workflow running inside the job observes `job_cancel`.
+    pub fn from_flag(flag: Arc<AtomicBool>) -> Self {
         Self { flag }
     }
 }

@@ -19,15 +19,17 @@ mod suggestion;
 pub mod clip_suggest {
     //! Produces source-snapped clip suggestions.
     pub use super::suggestion::{
-        ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
-        ClipRequest, ClipSuggestionOutcome, OPENAI_POLICY_URL, RejectedClip, SnapSettings,
-        SuggestionOption, SuggestionProvider, check_suggestion_credentials, choose_suggestion,
-        export, prepare_export, suggest, suggestion_options,
+        ClipCandidate, ClipRequest, ClipSuggestionOutcome, OPENAI_POLICY_URL, RejectedClip,
+        SnapSettings, SuggestionOption, SuggestionProvider, candidate_view,
+        check_suggestion_credentials, choose_suggestion, clips_result, segments_from_view,
+        suggest, suggestion_options,
     };
 }
 
 pub use clip_suggest::{
-    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
-    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
-    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
+    ClipCandidate, ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings,
+    SuggestionOption, SuggestionProvider, check_suggestion_credentials, choose_suggestion,
+    suggestion_options,
 };
+mod workflow;
+pub use workflow::ClipJobs;

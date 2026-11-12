@@ -137,7 +137,8 @@ impl JobContext {
     pub fn cancelled(&self) -> bool {
         self.cancel.cancelled()
     }
-    pub(crate) fn media_cancel_flag(&self) -> Arc<AtomicBool> {
+    /// The job's cancellation flag, for bounded media decoding inside a workflow job.
+    pub fn media_cancel_flag(&self) -> Arc<AtomicBool> {
         self.cancel.1.clone()
     }
     pub fn check_cancelled(&self) -> RuntimeResult<()> {
