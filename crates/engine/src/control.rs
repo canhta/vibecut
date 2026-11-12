@@ -3,7 +3,7 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipExportShort,
+    API_VERSION, CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort,
     ClipPieceRange, ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult, ControlError, ControlResult, CostView, Cursor, ErrorCode, Event,
     Failure, FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobOutput,
     JobView, LIMITS, Limits, MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH,

@@ -61,6 +61,10 @@ impl control::ClipWorkflow for CannedClips {
             rejected: Vec::new(),
             dropped: Vec::new(),
             cues: Vec::new(),
+            energy: vec![control::ClipEnergy(
+                time::SourceRange::new(time::Tick::ZERO, time::Tick(1)).unwrap(),
+                0.5,
+            )],
             transcript_segments: 0,
             checkpoints: 0,
             transcription_cost: control::CostView::Free,

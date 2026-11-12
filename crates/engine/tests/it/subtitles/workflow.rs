@@ -2686,3 +2686,121 @@ fn registry_translation_retries_share_the_operation_attempt_ceiling() {
     assert_eq!(s.project(), &before);
     assert_eq!(s.revision(), rev);
 }
+
+/// Recognises every window as one word at the given confidence.
+struct ConfidenceAsr {
+    inner: FakeAsr,
+    confidence: f32,
+}
+impl Transcriber for ConfidenceAsr {
+    fn config(&self) -> &ProviderConfig {
+        self.inner.config()
+    }
+    fn capabilities(&self, scope: &Scope) -> Capabilities {
+        let mut capabilities = self.inner.capabilities(scope);
+        capabilities.timing = BTreeSet::from([TimingUnit::Segment, TimingUnit::Word]);
+        capabilities
+    }
+    fn estimate(&self, scope: &Scope) -> CostEstimate {
+        self.inner.estimate(scope)
+    }
+    fn transcribe(
+        &self,
+        audio: ai::AudioWindow<'_>,
+        _: &Request<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Vec<RecognitionSegment>, Error> {
+        Ok(vec![RecognitionSegment {
+            id: format!("fake:{}", audio.range.start()).into(),
+            text: "hello".into(),
+            range: Some(audio.range),
+            timing: vec![ai::TimedText {
+                text: "hello".into(),
+                unit: TimingUnit::Word,
+                range: audio.range,
+                provenance: captions::TimingProvenance::Native,
+                speaker: None,
+                confidence: captions::Confidence::try_from(self.confidence).ok(),
+            }],
+            raw_tokens: Vec::new(),
+        }])
+    }
+}
+
+/// These rows own the outcomes the desktop's auto-detect retry reacts to: the job fails with
+/// the typed transcript error, so the window maps `NoSpeech` and `LowConfidence` from the
+/// retained cause, with explicit or omitted language, and publishes nothing.
+#[test]
+fn registry_generation_fails_typed_for_silent_media_and_low_confidence_recognition() {
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let Some(silent) = testkit::oracle::generate(
+        &testkit::fixture::dir("engine"),
+        "silent captions",
+        "caption-silent-3s.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono",
+            "-t",
+            "3",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    ) else {
+        return;
+    };
+    let Some(tone) = fixture() else {
+        return;
+    };
+    for (media, confidence, language, expected_no_speech) in [
+        (&silent, 0.9, Some("en"), true),
+        (&silent, 0.9, None, true),
+        (&tone, 0.1, Some("en"), false),
+    ] {
+        let providers = Providers::from_parts(
+            TranscriptionProvider::Whisper {
+                model: "fake-asr-model".into(),
+            },
+            "transcribe".into(),
+            Arc::new(ConfidenceAsr {
+                inner: FakeAsr::new(Arc::new(AtomicUsize::new(0))),
+                confidence,
+            }),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let access = caption_access(&dir.path().join("cache"), providers, Arc::new(DenyUploads));
+        let (mut r, _) = runner();
+        let mut s = registry_session(media);
+        let before = s.project().clone();
+        let job = caption_submit(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.generate",
+            json!({"asset":1,"source_language":language}),
+            "typed-failure",
+        );
+        let error = settle(&mut r, job).unwrap_err();
+        let transcript = match cause(&error) {
+            engine::subtitles::Error::Transcript(transcript) => transcript,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            matches!(transcript, engine::transcript::Error::NoSpeech),
+            expected_no_speech,
+            "{language:?}: {transcript:?}"
+        );
+        assert!(
+            expected_no_speech
+                || matches!(transcript, engine::transcript::Error::LowConfidence),
+            "{transcript:?}"
+        );
+        assert!(r.output_bytes(job).is_none());
+        assert_eq!(s.project(), &before);
+    }
+}

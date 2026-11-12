@@ -10,7 +10,8 @@ use ai::{CostEstimate, Money, Scope};
 use captions::NfcText;
 use engine::cache::CacheKey;
 use engine::control::{
-    ClipsResult, ClipsSuggestRequest, Error as EngineError, MAX_CLIPS_RESULT_BYTES, bounded_json,
+    ClipEnergy, ClipsResult, ClipsSuggestRequest, Error as EngineError, MAX_CLIPS_RESULT_BYTES,
+    bounded_json,
 };
 use engine::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use engine::providers::{Cost, approve_upload};
@@ -246,7 +247,7 @@ pub(crate) fn submit_suggest(
                 }
             }
             hooks.check_cancelled()?;
-            let result = ClipsResult {
+            let mut result = ClipsResult {
                 asset: asset.id(),
                 source_language,
                 transcription_provider: providers.transcription().id().into(),
@@ -257,13 +258,25 @@ pub(crate) fn submit_suggest(
                 rejected: rejected_views(&rejected),
                 dropped: dropped_views(&suggested.dropped),
                 cues,
+                energy: energy
+                    .iter()
+                    .map(|window| ClipEnergy(window.range, window.rms as f32))
+                    .collect(),
                 transcript_segments: transcript.segments.len(),
                 checkpoints,
                 transcription_cost: cost_view(&transcription_cost),
                 suggestion_cost: cost_view(&suggestion_cost),
                 elapsed_seconds: started.elapsed().as_secs_f64(),
             };
-            Ok(bounded_json(&result, MAX_CLIPS_RESULT_BYTES)?)
+            // Hours-long sources can exceed the result limit with their energy windows; the
+            // candidates stay exact and only the trim hints are dropped.
+            match bounded_json(&result, MAX_CLIPS_RESULT_BYTES) {
+                Ok(bytes) => Ok(bytes),
+                Err(_) => {
+                    result.energy.clear();
+                    Ok(bounded_json(&result, MAX_CLIPS_RESULT_BYTES)?)
+                }
+            }
         },
     )?;
     Ok(id)

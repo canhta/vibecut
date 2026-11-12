@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use time::Tick;
 
 /// Largest retained output of one suggestion job; also its result reservation.
-pub const MAX_CLIPS_RESULT_BYTES: usize = 8 << 20;
+pub const MAX_CLIPS_RESULT_BYTES: usize = 16 << 20;
 
 /// What `clips.suggest` asks for. Every `None` takes the workflow's documented default;
 /// the request carries no credential and no approval, which the lent access owns.

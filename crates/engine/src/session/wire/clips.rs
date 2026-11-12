@@ -61,6 +61,11 @@ pub struct ClipCandidateView {
     pub pieces: Vec<ClipPieceSpan>,
 }
 
+/// One measured speech-energy window, serialized as `[range, rms]`: mono RMS amplitude ratio
+/// over at most 20 ms. A hint for trim snapping, never recognition.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ClipEnergy(pub SourceRange, pub f32);
+
 /// A suggestion that was refused, with its typed reason name.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -86,6 +91,9 @@ pub struct ClipsResult {
     /// Suggestions the provider contract dropped.
     pub dropped: Vec<ClipRefusal>,
     pub cues: Vec<Cue>,
+    /// Speech-energy windows over the whole source, in source order. Empty when the source is
+    /// too long for them to fit the result limit; the suggestion itself is unaffected.
+    pub energy: Vec<ClipEnergy>,
     pub transcript_segments: usize,
     /// ASR windows served from the checkpoint cache.
     pub checkpoints: usize,

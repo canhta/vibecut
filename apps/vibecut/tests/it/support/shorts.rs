@@ -198,6 +198,11 @@ pub fn result_of(source: &ReviewSource) -> ClipsResult {
         rejected: Vec::new(),
         dropped: Vec::new(),
         cues: source.cues.cues.clone(),
+        energy: source
+            .energy
+            .iter()
+            .map(|window| engine::control::ClipEnergy(window.range, window.rms as f32))
+            .collect(),
         transcript_segments: source.transcript.segments.len(),
         checkpoints: 0,
         transcription_cost: CostView::from(&Cost::Free),

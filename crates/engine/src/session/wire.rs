@@ -10,7 +10,7 @@ mod results;
 mod views;
 
 pub use clips::{
-    ClipAdjustment, ClipCandidateView, ClipEdge, ClipExportShort, ClipPieceRange, ClipPieceSpan,
+    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange, ClipPieceSpan,
     ClipRefusal, ClipSubtitleFile, ClipsResult,
 };
 pub use contract::{contract_schema, reference_markdown, registry_hash};

@@ -646,9 +646,14 @@ impl State {
             asset: result.asset,
             transcript,
             cues,
-            // The suggestion result carries no silence hints, so trim snaps to word and
-            // segment edges only.
-            energy: Vec::new(),
+            energy: result
+                .energy
+                .iter()
+                .map(|window| media::SpeechEnergyWindow {
+                    range: window.0,
+                    rms: f64::from(window.1),
+                })
+                .collect(),
             boundaries,
             candidates,
         })
