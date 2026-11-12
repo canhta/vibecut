@@ -26,8 +26,8 @@ use crate::editor::{
     Result, SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
-    AUDIO_GAIN_SCRUB, EffectReorder, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
-    TEXT_SIZE_SCRUB, TRANSITION_DURATION_SCRUB, effect_scrub_spec,
+    AUDIO_GAIN_SCRUB, EffectReorder, GraphDrag, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec,
+    ScrubTarget, TEXT_SIZE_SCRUB, TRANSITION_DURATION_SCRUB, effect_scrub_spec,
 };
 
 use workflow::transform_scrub;
@@ -47,6 +47,11 @@ pub(in crate::editor) struct State {
     details: bool,
     scrub: Option<ScrubDrag>,
     spatial_edit: Option<(ItemId, ScrubTarget, Tick)>,
+    /// Wheel or curve drag in progress and whether it wrote a value.
+    graph: Option<GraphDrag>,
+    graph_changed: bool,
+    /// Selected tone-curve channel, an index into the view's channel list.
+    curve_channel: usize,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
     picker: Option<color_picker::Draft>,
@@ -146,6 +151,9 @@ impl Default for State {
             details: false,
             scrub: None,
             spatial_edit: None,
+            graph: None,
+            graph_changed: false,
+            curve_channel: 0,
             opacity_edit: None,
             reorder: None,
             picker: None,

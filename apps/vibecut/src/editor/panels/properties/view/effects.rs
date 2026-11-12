@@ -1,9 +1,17 @@
 //! Renders effect parameters.
+mod curve;
+mod wheel;
+
 use super::Panel;
 use crate::editor::properties::{
     Action, BUTTON_ICON, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget,
     Text, Tick, Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
+
+/// Three colour wheels share one row in the measured 460 px panel.
+const WHEEL_DIAMETER: f32 = 104.0;
+/// Distance a curve point or polyline must be before a click edits it.
+const CURVE_REACH: f32 = 9.0;
 
 /// Effects whose numeric text keeps authored hard-bound precision and whose
 /// pending edits invalidate through the shared spatial draft path.
@@ -174,6 +182,7 @@ impl Panel<'_, '_> {
                 .find(|effect| effect.kind == "color_grade")
                 .map(|effect| effect.id.clone())
         });
+        let present = existing.is_some();
         let id = existing.unwrap_or_else(|| definition.id.to_owned());
         let at = self.effect_time(item);
         for parameter in definition.params.iter().filter(|p| {
@@ -189,7 +198,489 @@ impl Panel<'_, '_> {
                     .unwrap_or(0.0);
             self.effect_scrub_field(ui, item, &id, definition.id, parameter, current);
         }
+        self.wheel_controls(ui, item, &id, definition, at);
+        self.curve_controls(ui, item, &id, present);
         self.lut_controls(ui, item, &id, definition);
+    }
+
+    /// Three lift/gamma/gain wheels under the numeric grade rows.
+    fn wheel_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        definition: &project::EffectDefinition,
+        at: Tick,
+    ) {
+        let enabled = !read::item_locked(self.cx.session.project(), item)
+            && !self.cx.session.transaction_active();
+        let spare = theme::space::LG * 2.0;
+        let column = ((ui.available_width() - spare) / 3.0).max(72.0);
+        ui.add_space(theme::space::MD);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::space::LG;
+            for family in wheel::Family::ALL {
+                let values = family.keys().map(|key| {
+                    read::effect_param_value_at(self.cx.session.project(), item, effect, key, at)
+                        .or_else(|| {
+                            definition
+                                .param(key)
+                                .and_then(|param| param.default.scalar())
+                        })
+                        .unwrap_or(0.0)
+                });
+                self.wheel_control(ui, item, effect, family, values, column, enabled);
+            }
+        });
+        ui.add_space(theme::space::MD);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn wheel_control(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        family: wheel::Family,
+        values: [f64; 3],
+        width: f32,
+        enabled: bool,
+    ) {
+        let wheel = wheel::Wheel::from_values(family, values);
+        let reset_id = format!("effects.{effect}.wheel.{}.reset", family.id());
+        ui.allocate_ui_with_layout(
+            Vec2::new(width, theme::size::CONTROL),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(self.tr(family.label()))
+                        .size(theme::type_size::BODY)
+                        .color(self.text_color()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let reset = self.icon_only(
+                        ui,
+                        &reset_id,
+                        Icon::ArrowCounterClockwise,
+                        self.tr(Text::ResetValue),
+                        None,
+                        enabled && !family.is_neutral(values),
+                    );
+                    if reset {
+                        self.actions.push(Action::SetEffectValues {
+                            item,
+                            effect: effect.to_owned(),
+                            values: family
+                                .keys()
+                                .into_iter()
+                                .zip(family.neutral())
+                                .map(|(key, value)| {
+                                    (key.to_owned(), project::EffectParamUpdate::Scalar(value))
+                                })
+                                .collect(),
+                        });
+                    }
+                });
+            },
+        );
+        let (area, _) =
+            ui.allocate_exact_size(Vec2::new(width, WHEEL_DIAMETER), egui::Sense::hover());
+        let wheel_size = (area.width() - 18.0).clamp(48.0, WHEEL_DIAMETER);
+        let center = egui::pos2(area.right() - wheel_size / 2.0, area.center().y);
+        let wheel_rect = Rect::from_center_size(center, Vec2::splat(wheel_size));
+        let master_rect = Rect::from_min_max(
+            egui::pos2(area.left() + 2.0, area.top() + 6.0),
+            egui::pos2(area.left() + 8.0, area.bottom() - 6.0),
+        );
+        {
+            let painter = ui.painter();
+            let outer = wheel_rect.width() / 2.0 - 1.0;
+            let inner = outer - 10.0;
+            let mut mesh = egui::Mesh::default();
+            const SEGMENTS: usize = 64;
+            for index in 0..SEGMENTS {
+                let from = index as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+                let to = (index + 1) as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+                let color = egui::Color32::from(egui::ecolor::Hsva::new(
+                    index as f32 / SEGMENTS as f32,
+                    0.75,
+                    0.62,
+                    1.0,
+                ));
+                let base = mesh.vertices.len() as u32;
+                for (angle, radius) in [(from, inner), (from, outer), (to, outer), (to, inner)] {
+                    mesh.colored_vertex(
+                        center + Vec2::new(angle.cos(), -angle.sin()) * radius,
+                        color,
+                    );
+                }
+                mesh.add_triangle(base, base + 1, base + 2);
+                mesh.add_triangle(base, base + 2, base + 3);
+            }
+            painter.add(mesh);
+            painter.circle_filled(center, inner - 1.0, self.control_fill());
+            let cross = egui::Stroke::new(1.0, self.secondary());
+            painter.line_segment(
+                [center - Vec2::new(6.0, 0.0), center + Vec2::new(6.0, 0.0)],
+                cross,
+            );
+            painter.line_segment(
+                [center - Vec2::new(0.0, 6.0), center + Vec2::new(0.0, 6.0)],
+                cross,
+            );
+            let puck_radius = (inner - 4.0).max(1.0);
+            let puck = center
+                + Vec2::new(
+                    (wheel.radius * wheel.hue.cos()) as f32,
+                    -(wheel.radius * wheel.hue.sin()) as f32,
+                ) * puck_radius;
+            painter.circle_filled(puck, 5.0, egui::Color32::WHITE);
+            painter.circle_stroke(puck, 5.0, egui::Stroke::new(1.0, self.control_fill()));
+            painter.rect_filled(master_rect, theme::radius::FIELD, self.control_fill());
+            let knob =
+                master_rect.center().y - wheel.master as f32 * (master_rect.height() / 2.0 - 4.0);
+            painter.circle_filled(
+                egui::pos2(master_rect.center().x, knob),
+                4.0,
+                self.text_color(),
+            );
+        }
+        let wheel_id = format!("effects.{effect}.wheel.{}", family.id());
+        let response = ui.interact(
+            wheel_rect,
+            Id::unique(&wheel_id),
+            egui::Sense::click_and_drag(),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, enabled, self.tr(family.label()))
+        });
+        self.remember(wheel_id, &response);
+        self.wheel_gesture(
+            item,
+            effect,
+            family,
+            values,
+            wheel,
+            wheel_rect,
+            master_rect,
+            false,
+            enabled,
+            &response,
+        );
+        let master_id = format!("effects.{effect}.wheel.{}.master", family.id());
+        let response = ui.interact(
+            master_rect.expand(4.0),
+            Id::unique(&master_id),
+            egui::Sense::click_and_drag(),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, enabled, self.tr(family.label()))
+        });
+        self.remember(master_id, &response);
+        self.wheel_gesture(
+            item,
+            effect,
+            family,
+            values,
+            wheel,
+            wheel_rect,
+            master_rect.expand(4.0),
+            true,
+            enabled,
+            &response,
+        );
+    }
+
+    /// One pointer proposal on a wheel or its master; the whole drag is one gesture.
+    #[allow(clippy::too_many_arguments)]
+    fn wheel_gesture(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        family: wheel::Family,
+        values: [f64; 3],
+        wheel: wheel::Wheel,
+        wheel_rect: Rect,
+        master_rect: Rect,
+        master: bool,
+        enabled: bool,
+        response: &egui::Response,
+    ) {
+        if !enabled {
+            return;
+        }
+        let key = if master {
+            format!("wheel:{}:master", family.id())
+        } else {
+            format!("wheel:{}", family.id())
+        };
+        if (response.dragged() || response.clicked())
+            && let Some(position) = response.interact_pointer_pos()
+        {
+            let next = if master {
+                let reach = (master_rect.height() / 2.0 - 4.0).max(1.0);
+                let level = ((master_rect.center().y - position.y) / reach).clamp(-1.0, 1.0);
+                wheel.with_master(f64::from(level))
+            } else {
+                let reach = (wheel_rect.width() / 2.0 - 11.0).max(1.0);
+                let x = f64::from((position.x - wheel_rect.center().x) / reach);
+                let y = f64::from((wheel_rect.center().y - position.y) / reach);
+                wheel.with_puck(x, y)
+            };
+            if next.values(family) != values {
+                if !self.state.graph_matches(item, effect, &key) {
+                    let actions = self.state.begin_graph(item, effect, &key);
+                    self.actions.extend(actions);
+                }
+                for (parameter, value) in family.keys().into_iter().zip(next.values(family)) {
+                    self.set_effect_param(item, effect, parameter, value);
+                }
+                self.state.touch_graph();
+            }
+        }
+        if (response.drag_stopped() || response.clicked())
+            && self.state.graph_matches(item, effect, &key)
+        {
+            let actions = self.state.end_graph(true);
+            self.actions.extend(actions);
+        }
+    }
+
+    /// One channel's tone curve beside the primary controls.
+    fn curve_controls(&mut self, ui: &mut egui::Ui, item: ItemId, effect: &str, present: bool) {
+        let index = self.state.curve_channel;
+        let channel = curve::Channel::ALL
+            .get(index)
+            .copied()
+            .unwrap_or(curve::Channel::Red);
+        let tone = read::effect_curve(self.cx.session.project(), item, effect, channel.key())
+            .unwrap_or(project::ToneCurve::IDENTITY);
+        let enabled = !read::item_locked(self.cx.session.project(), item)
+            && !self.cx.session.transaction_active();
+        let reset_id = format!("effects.{effect}.curve.reset");
+        ui.horizontal(|ui| {
+            let reset_width = theme::size::CONTROL + theme::space::SM;
+            let width = (ui.available_width() - reset_width).max(120.0);
+            let ids = curve::Channel::ALL
+                .map(|channel| format!("effects.{effect}.curve.{}", channel.id()));
+            let labels = curve::Channel::ALL.map(|channel| self.tr(channel.label()));
+            ui.allocate_ui_with_layout(
+                Vec2::new(width, theme::size::CONTROL),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let cells = crate::kit::segmented(ui, &ids, &labels, index);
+                    for (position, response) in cells.iter().enumerate() {
+                        if let Some(id) = ids.get(position) {
+                            self.remember(id.clone(), response);
+                        }
+                        if response.clicked() {
+                            self.state.curve_channel = position;
+                        }
+                    }
+                },
+            );
+            let reset = self.icon_only(
+                ui,
+                &reset_id,
+                Icon::ArrowCounterClockwise,
+                self.tr(Text::ResetValue),
+                None,
+                enabled && present && !tone.is_identity(),
+            );
+            if reset {
+                self.actions.push(Action::SetEffectValues {
+                    item,
+                    effect: effect.to_owned(),
+                    values: vec![(
+                        channel.key().to_owned(),
+                        project::EffectParamUpdate::Curve(project::ToneCurve::IDENTITY),
+                    )],
+                });
+            }
+        });
+        self.curve_plot(ui, item, effect, channel, tone, enabled);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn curve_plot(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        channel: curve::Channel,
+        tone: project::ToneCurve,
+        enabled: bool,
+    ) {
+        let width = ui.available_width().max(1.0);
+        let height = (width * 0.55).clamp(120.0, 240.0);
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::click_and_drag());
+        {
+            let painter = ui.painter();
+            painter.rect_filled(rect, theme::radius::FIELD, self.control_fill());
+            painter.rect_stroke(
+                rect,
+                theme::radius::FIELD,
+                egui::Stroke::new(1.0, theme::border(self.cx.dark)),
+                egui::StrokeKind::Inside,
+            );
+            for division in 1..4 {
+                let fraction = division as f32 / 4.0;
+                let guide = egui::Stroke::new(1.0, theme::separator(self.cx.dark));
+                let x = rect.left() + rect.width() * fraction;
+                painter.line_segment(
+                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                    guide,
+                );
+                let y = rect.top() + rect.height() * fraction;
+                painter.line_segment(
+                    [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                    guide,
+                );
+            }
+            painter.line_segment(
+                [plot_screen(rect, [0.0, 0.0]), plot_screen(rect, [1.0, 1.0])],
+                egui::Stroke::new(1.0, theme::separator(self.cx.dark)),
+            );
+            let points: Vec<egui::Pos2> = tone
+                .points()
+                .iter()
+                .map(|point| plot_screen(rect, *point))
+                .collect();
+            if points.len() >= 2 {
+                painter.add(egui::Shape::line(
+                    points.clone(),
+                    egui::Stroke::new(1.5, theme::accent(self.cx.dark)),
+                ));
+            }
+            for point in points {
+                painter.circle_filled(point, 4.0, theme::accent(self.cx.dark));
+                painter.circle_stroke(point, 4.0, egui::Stroke::new(1.0, self.control_fill()));
+            }
+        }
+        let plot_id = format!("effects.{effect}.curve.plot");
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, enabled, self.tr(channel.label()))
+        });
+        self.remember(plot_id, &response);
+        self.curve_gesture(ui, item, effect, channel, tone, enabled, &response, rect);
+    }
+
+    /// A click adds a point, a drag moves one, and a double-click removes an interior point.
+    #[allow(clippy::too_many_arguments)]
+    fn curve_gesture(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        channel: curve::Channel,
+        tone: project::ToneCurve,
+        enabled: bool,
+        response: &egui::Response,
+        rect: Rect,
+    ) {
+        if !enabled {
+            return;
+        }
+        let key = format!("curve:{}", channel.key());
+        let index_key = Id::unique(format!("effects.{effect}.curve.{}.drag", channel.id()));
+        if response.drag_started()
+            && let Some(position) = ui
+                .input(|input| input.pointer.press_origin())
+                .or_else(|| response.interact_pointer_pos())
+            && let Some(index) = nearest_point(rect, tone.points(), position)
+            && index > 0
+            && index + 1 < tone.points().len()
+        {
+            let actions = self.state.begin_graph(item, effect, &key);
+            self.actions.extend(actions);
+            ui.data_mut(|data| data.insert_temp(index_key, index));
+        }
+        if response.dragged()
+            && self.state.graph_matches(item, effect, &key)
+            && let Some(index) = ui.data(|data| data.get_temp::<usize>(index_key))
+            && let Some(position) = response.interact_pointer_pos()
+        {
+            let point = plot_value(rect, position);
+            if let Ok(next) = curve::apply(
+                tone,
+                curve::Edit::Move {
+                    index,
+                    x: point[0],
+                    y: point[1],
+                },
+            ) && next != tone
+            {
+                self.write_curve(item, effect, channel, next);
+                self.state.touch_graph();
+            }
+        }
+        if response.drag_stopped() {
+            ui.data_mut(|data| data.remove::<usize>(index_key));
+            if self.state.graph_matches(item, effect, &key) {
+                let actions = self.state.end_graph(true);
+                self.actions.extend(actions);
+            }
+        }
+        if response.double_clicked() {
+            if let Some(position) = response.interact_pointer_pos()
+                && let Some(index) = nearest_point(rect, tone.points(), position)
+                && index > 0
+                && index + 1 < tone.points().len()
+                && let Ok(next) = curve::apply(tone, curve::Edit::Remove { index })
+            {
+                self.one_curve_edit(item, effect, channel, next, &key);
+            }
+        } else if response.clicked()
+            && let Some(position) = response.interact_pointer_pos()
+            && nearest_point(rect, tone.points(), position).is_none()
+            && near_curve(rect, tone.points(), position)
+        {
+            let point = plot_value(rect, position);
+            if let Ok(next) = curve::apply(
+                tone,
+                curve::Edit::Add {
+                    x: point[0],
+                    y: point[1],
+                },
+            ) {
+                self.one_curve_edit(item, effect, channel, next, &key);
+            }
+        }
+    }
+
+    /// A click or double-click is one complete engine gesture.
+    fn one_curve_edit(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        channel: curve::Channel,
+        next: project::ToneCurve,
+        key: &str,
+    ) {
+        let actions = self.state.begin_graph(item, effect, key);
+        self.actions.extend(actions);
+        self.write_curve(item, effect, channel, next);
+        self.state.touch_graph();
+        let actions = self.state.end_graph(true);
+        self.actions.extend(actions);
+    }
+
+    fn write_curve(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        channel: curve::Channel,
+        next: project::ToneCurve,
+    ) {
+        self.actions.push(Action::SetEffectValues {
+            item,
+            effect: effect.to_owned(),
+            values: vec![(
+                channel.key().to_owned(),
+                project::EffectParamUpdate::Curve(next),
+            )],
+        });
     }
 
     pub(super) fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
@@ -890,4 +1381,48 @@ impl Panel<'_, '_> {
 
 fn effect_param_path(effect: &str, key: &str) -> String {
     format!("effects.{effect}.params.{key}")
+}
+
+/// Plot coordinates to the panel; the curve's 0..1 domain runs up the height.
+fn plot_screen(rect: Rect, [x, y]: [f64; 2]) -> egui::Pos2 {
+    rect.min + Vec2::new(x as f32 * rect.width(), (1.0 - y as f32) * rect.height())
+}
+
+/// A pointer position as one normalized plot coordinate.
+fn plot_value(rect: Rect, position: egui::Pos2) -> [f64; 2] {
+    [
+        f64::from(((position.x - rect.left()) / rect.width()).clamp(0.0, 1.0)),
+        f64::from(((rect.bottom() - position.y) / rect.height()).clamp(0.0, 1.0)),
+    ]
+}
+
+/// The curve point within reach of `position`, nearest first.
+fn nearest_point(rect: Rect, points: &[[f64; 2]], position: egui::Pos2) -> Option<usize> {
+    points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| (index, plot_screen(rect, *point).distance(position)))
+        .filter(|(_, distance)| *distance < CURVE_REACH)
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(index, _)| index)
+}
+
+/// Whether a click lands on the drawn polyline for adding a point.
+fn near_curve(rect: Rect, points: &[[f64; 2]], position: egui::Pos2) -> bool {
+    points.windows(2).any(|pair| {
+        let (Some(from), Some(to)) = (pair.first(), pair.get(1)) else {
+            return false;
+        };
+        segment_distance(position, plot_screen(rect, *from), plot_screen(rect, *to)) < CURVE_REACH
+    })
+}
+
+fn segment_distance(point: egui::Pos2, from: egui::Pos2, to: egui::Pos2) -> f32 {
+    let span = to - from;
+    let length = span.length_sq();
+    if length <= f32::EPSILON {
+        return point.distance(from);
+    }
+    let t = ((point - from).dot(span) / length).clamp(0.0, 1.0);
+    (from + span * t).distance(point)
 }

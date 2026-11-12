@@ -1884,6 +1884,63 @@ fn grade(harness: &Harness<Editor>, id: ItemId) -> Option<[f64; 4]> {
         })
 }
 
+/// One wheel family's three stored percentages, neutral when the item has no grade.
+fn grade_wheel(harness: &Harness<Editor>, id: ItemId, family: &str) -> [f64; 3] {
+    let keys = match family {
+        "lift" => ["lift_r", "lift_g", "lift_b"],
+        "gamma" => ["gamma_r", "gamma_g", "gamma_b"],
+        _ => ["gain_r", "gain_g", "gain_b"],
+    };
+    let neutral = if family == "lift" { 0.0 } else { 100.0 };
+    let effect = effects(harness, id)
+        .into_iter()
+        .find(|effect| effect.kind == "color_grade");
+    keys.map(|key| {
+        effect
+            .as_ref()
+            .and_then(|effect| effect.value(key))
+            .and_then(EffectValue::scalar)
+            .unwrap_or(neutral)
+    })
+}
+
+fn grade_curve(harness: &Harness<Editor>, id: ItemId, key: &str) -> project::ToneCurve {
+    effects(harness, id)
+        .into_iter()
+        .find(|effect| effect.kind == "color_grade")
+        .and_then(|effect| effect.value(key).and_then(EffectValue::curve).copied())
+        .unwrap_or(project::ToneCurve::IDENTITY)
+}
+
+/// A plot coordinate as a screen position inside the curve widget.
+fn curve_pos(rect: egui::Rect, x: f64, y: f64) -> egui::Pos2 {
+    rect.min + egui::vec2(x as f32 * rect.width(), (1.0 - y as f32) * rect.height())
+}
+
+fn drag_from(harness: &mut Harness<Editor>, start: egui::Pos2, delta: egui::Vec2) {
+    harness.hover_at(start);
+    harness.run_steps(1);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    harness.hover_at(start + delta);
+    harness.run_steps(2);
+}
+
+fn double_click_pos(harness: &mut Harness<Editor>, at: egui::Pos2) {
+    for _ in 0..2 {
+        harness.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+    }
+    harness.run_steps(3);
+}
+
 fn type_value(harness: &mut Harness<Editor>, id: &str, text: &str) {
     click(harness, id);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
@@ -1896,7 +1953,9 @@ fn type_value(harness: &mut Harness<Editor>, id: &str, text: &str) {
 fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     let fixture = fixture();
     let (video, image, audio) = (fixture.video, fixture.image, fixture.audio);
-    let mut harness = build(fixture.editor);
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 2400.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
     select(&mut harness, audio);
     assert!(!has_widget(&harness, "inspector.tab.adjust"));
@@ -1925,10 +1984,35 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
                 &format!("effects.color_grade.param.{key}")
             ));
         }
-        // Curves get their own editor in the UI slice; the numeric Adjust tab
-        // does not fake a scalar row for them.
+        for family in ["lift", "gamma", "gain"] {
+            assert!(
+                has_widget(&harness, &format!("effects.color_grade.wheel.{family}")),
+                "wheel {family}"
+            );
+            assert!(has_widget(
+                &harness,
+                &format!("effects.color_grade.wheel.{family}.master")
+            ));
+            assert!(has_widget(
+                &harness,
+                &format!("effects.color_grade.wheel.{family}.reset")
+            ));
+        }
+        for channel in ["red", "green", "blue", "luma"] {
+            assert!(
+                has_widget(&harness, &format!("effects.color_grade.curve.{channel}")),
+                "curve channel {channel}"
+            );
+        }
+        assert!(has_widget(&harness, "effects.color_grade.curve.plot"));
+        assert!(has_widget(&harness, "effects.color_grade.curve.reset"));
+        // The curve editor owns the points; no fake scalar row stands in for them.
         assert!(!has_widget(&harness, "effects.color_grade.param.curve_red"));
         assert!(grade(&harness, item).is_none(), "viewing adds nothing");
+        assert_eq!(
+            grade_curve(&harness, item, "curve_red"),
+            project::ToneCurve::IDENTITY
+        );
     }
     select(&mut harness, video);
     click(&mut harness, "inspector.tab.adjust");
@@ -1965,6 +2049,118 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
     assert_eq!(grade(&harness, video), Some([20.0, 0.0, -50.0, 50.0]));
+    // A wheel drag is one gesture; each move writes all three channels through
+    // `effects.update_param`, and the release is one undo step.
+    let before = grade_wheel(&harness, video, "lift");
+    let history = harness.state().session.history_len();
+    let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
+    drag_from(&mut harness, start, egui::vec2(18.0, -10.0));
+    assert!(harness.state().session.gesture_active());
+    assert_eq!(harness.state().session.history_len(), history);
+    let dragged = grade_wheel(&harness, video, "lift");
+    assert!(dragged[0] > 0.0, "red lifts");
+    assert!(dragged[1] < 0.0 && dragged[2] < 0.0, "green and blue fall");
+    harness.drop_at(start + egui::vec2(18.0, -10.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_wheel(&harness, video, "lift"), before);
+    // The master slider moves the shared level and keeps the puck's chroma.
+    let before = grade_wheel(&harness, video, "gamma");
+    let history = harness.state().session.history_len();
+    let start = widget_rect(&harness, "effects.color_grade.wheel.gamma.master").center();
+    drag_from(&mut harness, start, egui::vec2(0.0, -12.0));
+    assert!(harness.state().session.gesture_active());
+    assert_eq!(harness.state().session.history_len(), history);
+    let lifted = grade_wheel(&harness, video, "gamma");
+    assert!(lifted.iter().zip(before).all(|(high, low)| *high > low));
+    harness.drop_at(start + egui::vec2(0.0, -12.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_wheel(&harness, video, "gamma"), before);
+    // Reset writes the three neutral coefficients in one undo step.
+    let start = widget_rect(&harness, "effects.color_grade.wheel.gain.master").center();
+    drag_from(&mut harness, start, egui::vec2(0.0, -14.0));
+    harness.drop_at(start + egui::vec2(0.0, -14.0));
+    harness.run_steps(2);
+    let raised = grade_wheel(&harness, video, "gain");
+    assert!(raised.iter().all(|value| *value > 100.0));
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.wheel.gain.reset");
+    assert_eq!(grade_wheel(&harness, video, "gain"), [100.0; 3]);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_wheel(&harness, video, "gain"), raised);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_wheel(&harness, video, "gain"), [100.0; 3]);
+    // A curve click adds one point through `effects.update_param`.
+    let plot = widget_rect(&harness, "effects.color_grade.curve.plot");
+    let history = harness.state().session.history_len();
+    click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
+    let added = grade_curve(&harness, video, "curve_red");
+    assert_eq!(added.points().len(), 3);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red").points().len(), 2);
+    // Dragging that point is one gesture; the release is one undo step.
+    click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
+    let before = grade_curve(&harness, video, "curve_red");
+    assert_eq!(before.points().len(), 3);
+    let point = before.points().get(1).copied().expect("an interior point");
+    let start = curve_pos(plot, point[0], point[1]);
+    let history = harness.state().session.history_len();
+    drag_from(&mut harness, start, egui::vec2(10.0, -8.0));
+    assert!(harness.state().session.gesture_active());
+    assert_eq!(harness.state().session.history_len(), history);
+    let moved = grade_curve(&harness, video, "curve_red");
+    assert_ne!(moved, before);
+    assert_eq!(moved.points().len(), 3);
+    harness.drop_at(start + egui::vec2(10.0, -8.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red"), before);
+    // Endpoints are fixed: a drag that would move one changes nothing.
+    let history = harness.state().session.history_len();
+    drag_from(&mut harness, plot.left_bottom(), egui::vec2(12.0, -12.0));
+    harness.drop_at(plot.left_bottom() + egui::vec2(12.0, -12.0));
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red"), before);
+    assert_eq!(harness.state().session.history_len(), history);
+    // A double-click removes only an interior point.
+    let history = harness.state().session.history_len();
+    double_click_pos(&mut harness, start);
+    assert_eq!(grade_curve(&harness, video, "curve_red").points().len(), 2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red"), before);
+    // Reset restores the two-point identity in one undo step.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.curve.reset");
+    assert!(grade_curve(&harness, video, "curve_red").is_identity());
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red"), before);
+    // The block's first click added the point as its own edit; drop it too.
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade_curve(&harness, video, "curve_red").points().len(), 2);
+    // Switching the shown channel changes no project data.
+    let snapshot = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.color_grade.curve.green");
+    click(&mut harness, "effects.color_grade.curve.luma");
+    assert_eq!(harness.state().session.project(), &snapshot);
+    assert_eq!(harness.state().session.history_len(), history);
     // Everything undoes back to an item with no effect at all.
     for _ in 0..3 {
         harness.state_mut().activate("edit.undo").unwrap();
@@ -1985,6 +2181,23 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     harness.run_steps(2);
     type_value(&mut harness, "effects.color_grade.param.brightness", "10");
     assert!(grade(&harness, video).is_none());
+    // The wheels and curve plot refuse on the same lock without a history entry.
+    let history = harness.state().session.history_len();
+    let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
+    drag_from(&mut harness, start, egui::vec2(16.0, -8.0));
+    harness.drop_at(start + egui::vec2(16.0, -8.0));
+    harness.run_steps(2);
+    assert!(grade(&harness, video).is_none());
+    click_pos(
+        &mut harness,
+        curve_pos(
+            widget_rect(&harness, "effects.color_grade.curve.plot"),
+            0.5,
+            0.53,
+        ),
+    );
+    assert!(grade(&harness, video).is_none());
+    assert_eq!(harness.state().session.history_len(), history);
 }
 
 fn chroma(harness: &Harness<Editor>, id: ItemId) -> Option<project::EffectInstance> {
@@ -2498,6 +2711,34 @@ fn adjust_panel_renders_the_grade_controls() {
     type_value(&mut harness, "effects.color_grade.param.saturation", "-30");
     let image = harness.render().expect("offscreen render");
     image.save(target.join("p1-68-adjust.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-87-colour-curves.png"]
+fn colour_wheels_and_curves_panel_renders() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 2400.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, video);
+    click(&mut harness, "inspector.tab.adjust");
+    type_value(&mut harness, "effects.color_grade.param.brightness", "15");
+    let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
+    drag_from(&mut harness, start, egui::vec2(20.0, -12.0));
+    harness.drop_at(start + egui::vec2(20.0, -12.0));
+    harness.run_steps(2);
+    let plot = widget_rect(&harness, "effects.color_grade.curve.plot");
+    click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
+    harness.run_steps(3);
+    let image = harness.render().expect("offscreen render");
+    image.save(target.join("p1-87-colour-curves.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
 }
 

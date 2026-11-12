@@ -121,6 +121,14 @@ pub(in crate::editor) struct EffectReorder {
     pub(in crate::editor) effect: String,
 }
 
+/// One open wheel or curve gesture; `key` names the wheel or curve channel.
+#[derive(Clone, Debug)]
+pub(super) struct GraphDrag {
+    pub(super) item: ItemId,
+    pub(super) effect: String,
+    pub(super) key: String,
+}
+
 /// The scrub contract of one effect parameter, from its admitted range.
 pub(super) fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> ScrubSpec {
     let (min, max) = match parameter.kind {

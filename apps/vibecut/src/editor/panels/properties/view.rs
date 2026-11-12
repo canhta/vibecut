@@ -143,6 +143,19 @@ pub(in crate::editor) fn show(
         panel.actions.extend(panel.state.close_picker());
     }
     panel.area(&mut ui, area);
+    if panel.state.graph.is_some()
+        && panel.actions.iter().any(|action| {
+            matches!(
+                action,
+                Action::SetTab { .. }
+                    | Action::Activate(_)
+                    | Action::RemoveEffect { .. }
+                    | Action::ToggleEffect { .. }
+            )
+        })
+    {
+        panel.actions.extend(panel.state.end_graph(false));
+    }
     if let Some((_, ref target, _)) = panel.state.spatial_edit.clone()
         && !panel
             .state

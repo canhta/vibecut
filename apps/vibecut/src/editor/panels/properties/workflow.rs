@@ -133,6 +133,11 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 key,
                 value,
             } => effects::set_effect_param(desk, item, &effect, &key, value),
+            Action::SetEffectValues {
+                item,
+                effect,
+                values,
+            } => effects::set_effect_values(desk, item, &effect, &values),
             Action::ToggleEffect {
                 item,
                 effect,

@@ -113,6 +113,12 @@ pub(in crate::editor) enum Action {
         key: String,
         value: f64,
     },
+    /// Typed parameter values on one instance; a reset of a wheel or curve is one edit.
+    SetEffectValues {
+        item: ItemId,
+        effect: String,
+        values: Vec<(String, project::EffectParamUpdate)>,
+    },
     ToggleEffect {
         item: ItemId,
         effect: String,
@@ -167,6 +173,7 @@ impl State {
             && !self.editing()
             && self.drafts.is_empty()
             && self.scrub.is_none()
+            && self.graph.is_none()
             && self.picker.is_none()
             && self.reorder.is_none()
             && !self.font_picker.open
@@ -311,6 +318,44 @@ impl State {
         Some(scrub.last != scrub.start)
     }
 
+    /// Open one wheel or curve gesture; a previous unfinished one is cancelled.
+    pub(super) fn begin_graph(&mut self, item: ItemId, effect: &str, key: &str) -> Vec<Action> {
+        let mut actions = self.end_graph(false);
+        self.graph = Some(super::gesture::GraphDrag {
+            item,
+            effect: effect.to_owned(),
+            key: key.to_owned(),
+        });
+        self.graph_changed = false;
+        actions.push(Action::ScrubBegin);
+        actions
+    }
+
+    pub(super) fn graph_matches(&self, item: ItemId, effect: &str, key: &str) -> bool {
+        self.graph
+            .as_ref()
+            .is_some_and(|graph| graph.item == item && graph.effect == effect && graph.key == key)
+    }
+
+    pub(super) fn touch_graph(&mut self) {
+        self.graph_changed = true;
+    }
+
+    /// End the open wheel or curve gesture as one undo step when it changed a value.
+    pub(super) fn end_graph(&mut self, commit: bool) -> Vec<Action> {
+        if self.graph.take().is_none() {
+            return Vec::new();
+        }
+        let changed = std::mem::take(&mut self.graph_changed);
+        vec![Action::ScrubEnd { commit, changed }]
+    }
+
+    /// Escape: drop the open wheel or curve gesture and report whether it wrote a value.
+    pub(in crate::editor) fn cancel_graph(&mut self) -> Option<bool> {
+        self.graph.take()?;
+        Some(std::mem::take(&mut self.graph_changed))
+    }
+
     /// Escape: drop the open effect reorder draft.
     pub(in crate::editor) fn cancel_reorder(&mut self) -> bool {
         self.reorder.take().is_some()
@@ -355,6 +400,13 @@ impl State {
         {
             self.reorder = None;
         }
+        if self.graph.as_ref().is_some_and(|graph| {
+            selected != Some(graph.item)
+                || self.details
+                || !graph_target(project, graph.item, &graph.effect)
+        }) {
+            actions.extend(self.end_graph(false));
+        }
         if self
             .scrub
             .as_ref()
@@ -368,6 +420,21 @@ impl State {
     pub(super) fn set_area(&mut self, area: Rect) {
         self.area = Some(area);
     }
+}
+
+/// Whether one clip still owns the effect a wheel or curve drag edits.
+fn graph_target(project: &project::Project, item: ItemId, effect: &str) -> bool {
+    let data = project.data();
+    data.scene().timeline.iter().any(|track| {
+        !track.locked
+            && track.items.iter().any(|candidate| {
+                candidate.id == item
+                    && candidate
+                        .effects
+                        .iter()
+                        .any(|candidate| candidate.id == effect)
+            })
+    })
 }
 
 /// Element kind of `id` and whether it has source audio, from project data.

@@ -20,13 +20,10 @@ impl Editor {
             scope: self.selection_scopes.active(&self.selection),
             keyframes: &self.selection_scopes.keyframes,
             mask_points: &self.selection_scopes.mask_points,
-            transition: self
-                .selection_scopes
-                .transition
-                .filter(|_| {
-                    self.selection_scopes.active(&self.selection)
-                        == crate::selection::SelectionScope::Transition
-                }),
+            transition: self.selection_scopes.transition.filter(|_| {
+                self.selection_scopes.active(&self.selection)
+                    == crate::selection::SelectionScope::Transition
+            }),
             visuals: &self.media,
             cache: self.media.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
@@ -600,6 +597,17 @@ impl Editor {
         }
         if self.timeline.cancel_bookmark_drag() {
             self.discard_gesture();
+            return;
+        }
+        if let Some(changed) = self.properties.cancel_graph() {
+            if self.session.gesture_active()
+                && let Err(error) = self.session.cancel_gesture()
+            {
+                self.desk().fail(error.to_string());
+            }
+            if changed {
+                self.desk().sync();
+            }
             return;
         }
         if let Some(changed) = self.properties.cancel_scrub() {

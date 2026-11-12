@@ -99,6 +99,10 @@ an explicit state or localized refusal. Edits go only through `effects.add`,
 `effects.reorder`, `effects.toggle`, `effects.remove`, `effects.update_param` and
 `keyframes.set_param`.
 
+## Colour wheels and curves
+
+The Adjust tab appends three lift/gamma/gain wheels and one tone-curve editor to the numeric grade rows. Each wheel has a triangular chroma puck, a vertical master and a reset; the plot has Red, Green, Blue and Luma channel cells and a reset. A wheel drag writes its three stored percentages through `effects.update_param` inside one engine gesture, the release is one undo step, and reset writes the three neutrals as one batch. A curve click adds one point snapped to the exact 1/4096 grid, a drag moves an interior point within its neighbours, a double-click removes an interior point and endpoints stay fixed; every edit replaces the whole validated curve through `effects.update_param`. A non-finite point, a point with no grid room between its neighbours or an endpoint edit is refused with no command. Reset restores the two-point identity. Viewing a clip with no grade shows the neutral wheels and identity curves and adds nothing; the first edit creates `color_grade` carrying that value. Wheel and plot geometry is a [new composition](../../../../../../docs/product/ui/editor.md#adjust-colour-wheels-and-curves) below the measured rows; ids are `effects.<instance>.wheel.<family>`, `.master`, `.reset` and `effects.<instance>.curve.<channel>`, `.plot`, `.reset`.
+
 ## Blend and opacity
 
 Visual selections show a blend dropdown (`inspector.blendMode`, options

@@ -224,6 +224,22 @@ pub(super) fn effect_param_value_at(
     })
 }
 
+/// One static tone curve owned by an effect instance.
+pub(super) fn effect_curve(
+    project: &project::Project,
+    item: ItemId,
+    effect: &str,
+    key: &str,
+) -> Option<project::ToneCurve> {
+    find(project, item)?
+        .effects
+        .iter()
+        .find(|candidate| candidate.id == effect)?
+        .value(key)?
+        .curve()
+        .copied()
+}
+
 /// The clip's chroma-key instance, the one the Remove BG sub-tab edits.
 pub(super) fn chroma_key(
     project: &project::Project,

@@ -269,6 +269,24 @@ pub(super) fn set_effect_param(
     key: &str,
     value: f64,
 ) -> Result<()> {
+    set_effect_values(
+        desk,
+        item,
+        effect,
+        &[(key.to_owned(), project::EffectParamUpdate::Scalar(value))],
+    )
+}
+
+/// Replace one or more typed values; a multi-value reset is one atomic batch.
+pub(super) fn set_effect_values(
+    desk: &mut Desk<'_>,
+    item: ItemId,
+    effect: &str,
+    values: &[(String, project::EffectParamUpdate)],
+) -> Result<()> {
+    if values.is_empty() {
+        return Ok(());
+    }
     let present = desk
         .view()
         .session
@@ -281,18 +299,26 @@ pub(super) fn set_effect_param(
         .find(|candidate| candidate.id == item)
         .is_some_and(|candidate| candidate.effects.iter().any(|e| e.id == effect));
     if present {
-        desk.apply_result(
-            engine::Command::UpdateEffectParam {
+        let mut commands: Vec<engine::Command> = values
+            .iter()
+            .map(|(key, value)| engine::Command::UpdateEffectParam {
                 item,
                 effect: effect.to_owned(),
-                key: key.to_owned(),
-                value: project::EffectParamUpdate::Scalar(value),
-            },
-            false,
-        )?;
+                key: key.clone(),
+                value: *value,
+            })
+            .collect();
+        let command = if commands.len() == 1 {
+            commands
+                .pop()
+                .ok_or(Error::Invalid("effect parameter values"))?
+        } else {
+            engine::Command::Batch { commands }
+        };
+        desk.apply_result(command, false)?;
     } else {
         // First edit on a panel that shows a registered effect at neutral:
-        // add it carrying the edited value, inside the open gesture.
+        // add it carrying the edited values, inside the open gesture.
         if let Some(reason) = effect_refusal(desk.view().session.project(), item) {
             return Err(Error::Invalid(match reason {
                 Text::EffectLocked => "track is locked",
@@ -304,7 +330,9 @@ pub(super) fn set_effect_param(
             .find(|definition| definition.id == effect)
             .map(|definition| definition.instance(effect))
             .ok_or(Error::Invalid("unknown effect"))?;
-        instance.set_scalar(key, value)?;
+        for (key, value) in values {
+            instance.set_param(key, *value)?;
+        }
         desk.apply_result(
             engine::Command::AddEffect {
                 item,

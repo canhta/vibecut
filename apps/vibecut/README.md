@@ -39,6 +39,7 @@ Each module's contract is its README.
 | `editor/panels/properties/font_picker/` | [Font picker](src/editor/panels/properties/font_picker/README.md) |
 | `editor/panels/properties/mask_picker/` | [Mask picker](src/editor/panels/properties/mask_picker/README.md) |
 | `editor/panels/properties/view/` | [Properties view](src/editor/panels/properties/view/README.md) |
+| `editor/panels/properties/view/effects/` | [Colour wheels and curves](src/editor/panels/properties/view/effects/README.md) |
 | `editor/panels/properties/workflow/` | [Properties workflow](src/editor/panels/properties/workflow/README.md) |
 | `editor/timeline/` | [Timeline](src/editor/timeline/README.md) |
 | `editor/timeline/view/` | [Timeline view](src/editor/timeline/view/README.md) |
