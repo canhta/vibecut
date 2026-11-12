@@ -272,6 +272,27 @@ impl Editor {
         Some((items, all_flipped))
     }
 
+    /// The whole current selection when every item has a saved canvas box that
+    /// alignment may translate. Any locked, unsupported or transiently placed
+    /// target refuses the list instead of silently skipping it.
+    fn arrange_targets(&self) -> Option<Vec<ItemId>> {
+        let selected = self.selected_items();
+        if selected.is_empty() {
+            return None;
+        }
+        let mut items = Vec::with_capacity(selected.len());
+        for (locked, item) in selected {
+            if locked
+                || !item.content.supports_arrange()
+                || self.playback.placement_overridden(item.id)
+            {
+                return None;
+            }
+            items.push(item.id);
+        }
+        Some(items)
+    }
+
     fn item_hidden(&self, item: ItemId) -> bool {
         self.session
             .project()
@@ -397,6 +418,10 @@ impl Editor {
                         }
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
                         EngineAction::Flip(axis) => self.flip_targets(axis).is_some(),
+                        EngineAction::Align(_) => self.arrange_targets().is_some(),
+                        EngineAction::Distribute(_) => {
+                            self.arrange_targets().is_some_and(|items| items.len() >= 3)
+                        }
                         EngineAction::InsertMedia => {
                             !self.importing() && self.assets.has_media_selection()
                         }
@@ -515,6 +540,22 @@ impl Editor {
                 }],
                 None => Vec::new(),
             },
+            EngineAction::Align(alignment) => match self.arrange_targets() {
+                Some(items) => vec![Command::AlignItems {
+                    items,
+                    alignment,
+                    at: self.playback.position()?,
+                }],
+                None => Vec::new(),
+            },
+            EngineAction::Distribute(axis) => match self.arrange_targets() {
+                Some(items) if items.len() >= 3 => vec![Command::DistributeItems {
+                    items,
+                    axis,
+                    at: self.playback.position()?,
+                }],
+                _ => Vec::new(),
+            },
         })
     }
 
@@ -560,7 +601,9 @@ impl Editor {
             | EngineAction::ExtractAudio
             | EngineAction::RecoverAudio
             | EngineAction::ToggleBookmark
-            | EngineAction::Flip(_) => self.prune_selection(),
+            | EngineAction::Flip(_)
+            | EngineAction::Align(_)
+            | EngineAction::Distribute(_) => self.prune_selection(),
         }
         if route == EngineAction::SplitLeft
             && self.preferences.ripple

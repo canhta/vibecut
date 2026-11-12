@@ -13,13 +13,14 @@ use engine::{
 };
 use media::{AssetId, ContentHash};
 use project::{
-    AnimationPath, BuiltinPath, Color, FlipAxis, Item, ItemId, ItemParams, Keyframe, Param,
-    ParamValue, Project, ProjectId, Segment, Track, TrackId, TrackKind,
+    AnimationPath, Animations, BuiltinPath, Color, DistributionAxis, FlipAxis, Item, ItemAlignment,
+    ItemId, ItemParams, Keyframe, Param, ParamValue, Project, ProjectId, Segment, Track, TrackId,
+    TrackKind, TransformField,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
 use std::sync::Arc;
-use time::Tick;
+use time::{SourceRange, Tick};
 
 #[test]
 fn split_trim_ripple_and_history_use_exact_source_and_output_coordinates() {
@@ -1973,4 +1974,294 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
     ));
     assert!(Arc::ptr_eq(&before, s.project()));
     assert_eq!(s.history_len(), history);
+fn arrange_overlay(id: u64, x: f64, y: f64) -> Item {
+    let mut animations = Animations::default();
+    for (path, value) in [
+        (BuiltinPath::TransformPositionX, x),
+        (BuiltinPath::TransformPositionY, y),
+        (BuiltinPath::TransformScaleX, 0.1),
+        (BuiltinPath::TransformScaleY, 0.1),
+    ] {
+        animations
+            .set(
+                AnimationPath::from(path),
+                Param::new(ParamValue::Scalar(value)).unwrap(),
+            )
+            .unwrap();
+    }
+    Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations,
+        id: ItemId(id),
+        source_asset: None,
+        source_range: SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
+        start: Tick::ZERO,
+        content: ItemParams::Overlay(project::OverlayParams {
+            color: Color([10, 20, 30, 255]),
+        }),
+    }
+}
+
+fn arrange_session(items: &[(u64, f64, f64)]) -> Session {
+    let mut data = crate::support::session::project().into_data();
+    data.canvas.width = 200;
+    data.canvas.height = 100;
+    let timeline = &mut data.scene_mut().timeline;
+    timeline.overlays[0].items.clear();
+    timeline.overlays[1].items.clear();
+    timeline.main.items.clear();
+    for (index, (id, x, y)) in items.iter().enumerate() {
+        let item = arrange_overlay(*id, *x, *y);
+        match index {
+            0 => timeline.overlays[0].items.push(item),
+            1 => timeline.overlays[1].items.push(item),
+            _ => timeline.main.items.push(item),
+        }
+    }
+    Session::new(Project::new(data).unwrap(), 100).unwrap()
+}
+
+fn position(s: &Session, id: ItemId, field: TransformField) -> f64 {
+    field
+        .value_at(&get_id(s, id).animations, Tick::ZERO)
+        .unwrap()
+}
+
+fn close(actual: f64, expected: f64) -> bool {
+    (actual - expected).abs() < 1e-6
+}
+
+#[test]
+fn align_moves_each_transformed_box_to_the_canvas_and_preserves_its_other_axis() {
+    let mut s = arrange_session(&[(21, -60.0, 0.0)]);
+    // Scaled 0.1 around the canvas centre: the box is x 30..=50, y 45..=55.
+    for (alignment, x, y) in [
+        (ItemAlignment::Left, -90.0, 0.0),
+        (ItemAlignment::HorizontalCenter, 0.0, 0.0),
+        (ItemAlignment::Right, 90.0, 0.0),
+        (ItemAlignment::Top, 0.0, -45.0),
+        (ItemAlignment::VerticalCenter, 0.0, 0.0),
+        (ItemAlignment::Bottom, 0.0, 45.0),
+    ] {
+        s.apply(Command::AlignItems {
+            items: vec![ItemId(21)],
+            alignment,
+            at: Tick::ZERO,
+        })
+        .unwrap();
+        assert!(
+            close(
+                position(&s, ItemId(21), TransformField::PositionX),
+                x
+            ) && close(position(&s, ItemId(21), TransformField::PositionY), y),
+            "{alignment:?}"
+        );
+        // Reset only the axis this case moved, so the next case starts at the
+        // documented saved position.
+        for (field, value) in [
+            (TransformField::PositionX, 0.0),
+            (TransformField::PositionY, 0.0),
+        ] {
+            s.apply(Command::SetAnimatedParam {
+                item: ItemId(21),
+                path: AnimationPath::from(field.builtin()),
+                param: Param::new(ParamValue::Scalar(value)).unwrap(),
+            })
+            .unwrap();
+        }
+    }
+
+    // A quarter turn swaps the box axes, so left alignment uses the rotated
+    // envelope rather than the saved destination.
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(21),
+        path: AnimationPath::from(BuiltinPath::TransformRotate),
+        param: Param::new(ParamValue::Scalar(90.0)).unwrap(),
+    })
+    .unwrap();
+    let history = s.history_len().0;
+    s.apply(Command::AlignItems {
+        items: vec![ItemId(21)],
+        alignment: ItemAlignment::Left,
+        at: Tick::ZERO,
+    })
+    .unwrap();
+    assert!(close(
+        position(&s, ItemId(21), TransformField::PositionX),
+        -95.0
+    ));
+    assert_eq!(s.history_len().0, history + 1);
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert!(close(
+        position(&loaded.project, ItemId(21), TransformField::PositionX),
+        -95.0
+    ));
+    // A second equal request is an exact no-op and adds no history.
+    let history = s.history_len().0;
+    s.apply(Command::AlignItems {
+        items: vec![ItemId(21)],
+        alignment: ItemAlignment::Left,
+        at: Tick::ZERO,
+    })
+    .unwrap();
+    assert_eq!(s.history_len().0, history);
+    s.undo().unwrap();
+    assert!(close(
+        position(&s, ItemId(21), TransformField::PositionX),
+        0.0
+    ));
+}
+
+#[test]
+fn distribute_pins_outer_edges_and_spaces_three_boxes_with_equal_gaps() {
+    let mut s = arrange_session(&[(21, -60.0, 0.0), (22, 0.0, 0.0), (23, 100.0, 0.0)]);
+    // Boxes are 20x10: leading edges 30, 90 and 190; span 180, total 60,
+    // so each of the two gaps is 60 and the middle box starts at 110.
+    let history = s.history_len().0;
+    s.apply(Command::DistributeItems {
+        items: vec![ItemId(23), ItemId(21), ItemId(22)],
+        axis: DistributionAxis::Horizontal,
+        at: Tick::ZERO,
+    })
+    .unwrap();
+    for (id, x) in [(21, -60.0), (22, 20.0), (23, 100.0)] {
+        assert!(close(
+            position(&s, ItemId(id), TransformField::PositionX),
+            x
+        ));
+    }
+    assert_eq!(s.history_len().0, history + 1);
+    s.undo().unwrap();
+    assert!(close(
+        position(&s, ItemId(22), TransformField::PositionX),
+        0.0
+    ));
+
+    let mut s = arrange_session(&[(21, 0.0, -30.0), (22, 0.0, 0.0), (23, 0.0, 60.0)]);
+    s.apply(Command::DistributeItems {
+        items: vec![ItemId(21), ItemId(22), ItemId(23)],
+        axis: DistributionAxis::Vertical,
+        at: Tick::ZERO,
+    })
+    .unwrap();
+    for (id, y) in [(21, -30.0), (22, 15.0), (23, 60.0)] {
+        assert!(close(
+            position(&s, ItemId(id), TransformField::PositionY),
+            y
+        ));
+    }
+}
+
+#[test]
+fn align_translates_curve_values_and_refuses_whole_lists() {
+    let mut s = arrange_session(&[(21, 0.0, 0.0)]);
+    let mut param = Param::new(ParamValue::Scalar(0.0)).unwrap();
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put(Keyframe::new(Tick::ZERO, ParamValue::Scalar(0.0)))
+        .unwrap();
+    param
+        .channel_mut(None)
+        .unwrap()
+        .put(Keyframe::new(Tick(50), ParamValue::Scalar(10.0)))
+        .unwrap();
+    s.apply(Command::SetAnimatedParam {
+        item: ItemId(21),
+        path: AnimationPath::from(BuiltinPath::TransformPositionX),
+        param,
+    })
+    .unwrap();
+    s.apply(Command::AlignItems {
+        items: vec![ItemId(21)],
+        alignment: ItemAlignment::Left,
+        at: Tick::ZERO,
+    })
+    .unwrap();
+    let channel = get_id(&s, ItemId(21))
+        .animations
+        .get(&AnimationPath::from(BuiltinPath::TransformPositionX))
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    let scalar = |value: &ParamValue| match value {
+        ParamValue::Scalar(value) => *value,
+        _ => panic!("scalar transform"),
+    };
+    assert!(close(scalar(channel.base()), -90.0));
+    let values = channel
+        .keys()
+        .iter()
+        .map(|key| scalar(&key.value))
+        .collect::<Vec<_>>();
+    assert!(
+        close(values[0], -90.0) && close(values[1], -80.0),
+        "{values:?}"
+    );
+    assert_eq!(channel.keys()[1].time, Tick(50));
+    assert!(!channel.keys().is_empty());
+
+    let before = s.project().clone();
+    for command in [
+        Command::DistributeItems {
+            items: vec![ItemId(21)],
+            axis: DistributionAxis::Horizontal,
+            at: Tick::ZERO,
+        },
+        Command::AlignItems {
+            items: Vec::new(),
+            alignment: ItemAlignment::Left,
+            at: Tick::ZERO,
+        },
+        Command::AlignItems {
+            items: vec![ItemId(21), ItemId(21)],
+            alignment: ItemAlignment::Left,
+            at: Tick::ZERO,
+        },
+    ] {
+        assert!(matches!(s.apply(command), Err(EditError::Invalid(_))));
+        assert_eq!(s.project(), &before);
+    }
+    assert!(matches!(
+        s.apply(Command::AlignItems {
+            items: vec![ItemId(21), ItemId(999)],
+            alignment: ItemAlignment::Left,
+            at: Tick::ZERO,
+        }),
+        Err(EditError::NoItem(id)) if id == ItemId(999)
+    ));
+    assert_eq!(s.project(), &before);
+    // With only two boxes the pinned outer edges leave no even middle gap.
+    let mut two = arrange_session(&[(21, -60.0, 0.0), (22, 100.0, 0.0)]);
+    let before = two.project().clone();
+    assert!(matches!(
+        two.apply(Command::DistributeItems {
+            items: vec![ItemId(21), ItemId(22)],
+            axis: DistributionAxis::Horizontal,
+            at: Tick::ZERO,
+        }),
+        Err(EditError::Invalid("distribute needs three items"))
+    ));
+    assert_eq!(two.project(), &before);
+    // A locked track refuses the whole list.
+    two.apply(Command::SetTrackLocked {
+        track: two.project().data().scene().timeline.overlays[0].id,
+        locked: true,
+    })
+    .unwrap();
+    let before = two.project().clone();
+    assert!(matches!(
+        two.apply(Command::AlignItems {
+            items: vec![ItemId(21), ItemId(22)],
+            alignment: ItemAlignment::Left,
+            at: Tick::ZERO,
+        }),
+        Err(EditError::Locked(_))
+    ));
+    assert_eq!(two.project(), &before);
 }

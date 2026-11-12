@@ -42,6 +42,50 @@ impl FlipAxis {
     }
 }
 
+/// Canvas edge or centre a selected item's transformed box is moved to.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemAlignment {
+    Left,
+    HorizontalCenter,
+    Right,
+    Top,
+    VerticalCenter,
+    Bottom,
+}
+
+/// Axis along which three or more selected items are spaced evenly.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DistributionAxis {
+    Horizontal,
+    Vertical,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransformField {
     PositionX,

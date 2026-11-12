@@ -1,4 +1,5 @@
 //! Evaluates project items into one RGBA frame.
+pub mod arrange;
 pub mod blend;
 mod caption;
 pub mod color;

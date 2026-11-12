@@ -17,7 +17,9 @@ pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Fit, Placement,
     RasterCacheStats, Rect, RenderSettings, Renderer, style_from_cue,
 };
-pub use scene::{blend, color, effects, mask, transition_thumbnail, transitions, viewport};
+pub use scene::{
+    arrange, blend, color, effects, mask, transition_thumbnail, transitions, viewport,
+};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

@@ -760,6 +760,128 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     harness.run_steps(2);
     assert_eq!(harness.state().session.project(), &prior);
     assert_ne!(harness.state().session.project(), &before);
+
+    // Arrange shares the Transform section: six alignments, then two spacing
+    // actions that stay disabled below three selected items.
+    let alignments = [
+        ("inspector.transform.align_left", "timeline.align_left"),
+        (
+            "inspector.transform.align_center_horizontal",
+            "timeline.align_horizontal_center",
+        ),
+        ("inspector.transform.align_right", "timeline.align_right"),
+        ("inspector.transform.align_top", "timeline.align_top"),
+        (
+            "inspector.transform.align_center_vertical",
+            "timeline.align_vertical_center",
+        ),
+        ("inspector.transform.align_bottom", "timeline.align_bottom"),
+    ];
+    for (id, action) in alignments {
+        assert!(has_widget(&harness, id), "{id}");
+        assert!(harness.state().action_enabled(action), "{action}");
+    }
+    for id in [
+        "inspector.transform.distribute_horizontal",
+        "inspector.transform.distribute_vertical",
+    ] {
+        assert!(has_widget(&harness, id), "{id}");
+        assert!(
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some(id)))
+                .accesskit_node()
+                .is_disabled(),
+            "{id}: one item cannot be distributed"
+        );
+    }
+    select(&mut harness, fixture.video);
+    for patch in [
+        ItemParamPatch::ScaleX(0.5),
+        ItemParamPatch::ScaleY(0.5),
+        ItemParamPatch::PositionX(0.0),
+        ItemParamPatch::PositionY(0.0),
+    ] {
+        harness
+            .state_mut()
+            .session
+            .apply(Command::SetItemField {
+                item: fixture.video,
+                patch,
+            })
+            .unwrap();
+    }
+    harness.run_steps(2);
+    let position = |harness: &Harness<Editor>, field: project::TransformField| {
+        field
+            .value_at(&item(harness, fixture.video).animations, Tick::ZERO)
+            .unwrap()
+    };
+    use project::TransformField as F;
+    for (id, x, y) in [
+        ("inspector.transform.align_left", -480.0, 0.0),
+        ("inspector.transform.align_center_horizontal", 0.0, 0.0),
+        ("inspector.transform.align_right", 480.0, 0.0),
+        ("inspector.transform.align_top", 0.0, -270.0),
+        ("inspector.transform.align_center_vertical", 0.0, 0.0),
+        ("inspector.transform.align_bottom", 0.0, 270.0),
+    ] {
+        click(&mut harness, id);
+        assert_eq!(position(&harness, F::PositionX), x, "{id}");
+        assert_eq!(position(&harness, F::PositionY), y, "{id}");
+    }
+    // Three visual items share the selection inspector and its arrange row.
+    let spread = [fixture.video, fixture.text, fixture.graphic];
+    for (item, x) in [
+        (fixture.video, -500.0),
+        (fixture.text, 0.0),
+        (fixture.graphic, 700.0),
+    ] {
+        for patch in [
+            ItemParamPatch::PositionX(x),
+            ItemParamPatch::PositionY(0.0),
+            ItemParamPatch::ScaleX(0.2),
+            ItemParamPatch::ScaleY(0.2),
+        ] {
+            harness
+                .state_mut()
+                .session
+                .apply(Command::SetItemField { item, patch })
+                .unwrap();
+        }
+    }
+    harness.state_mut().selection = spread.into_iter().collect();
+    harness.run_steps(3);
+    assert!(has_widget(
+        &harness,
+        "inspector.transform.distribute_horizontal"
+    ));
+    assert!(
+        harness
+            .state()
+            .action_enabled("timeline.distribute_horizontal")
+    );
+    click(&mut harness, "inspector.transform.distribute_horizontal");
+    let middle = project::TransformField::PositionX
+        .value_at(&item(&harness, fixture.text).animations, Tick::ZERO)
+        .unwrap();
+    assert!(
+        (middle - 100.0).abs() < 1e-9,
+        "the middle box moves to the even gap: {middle}"
+    );
+    assert_eq!(
+        project::TransformField::PositionX
+            .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
+            .unwrap(),
+        -500.0,
+        "the first leading edge is pinned"
+    );
+    assert_eq!(
+        project::TransformField::PositionX
+            .value_at(&item(&harness, fixture.graphic).animations, Tick::ZERO)
+            .unwrap(),
+        700.0,
+        "the last trailing edge is pinned"
+    );
 }
 
 #[test]

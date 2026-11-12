@@ -72,6 +72,32 @@ impl Transform {
     pub(super) fn scale(&self) -> [f64; 2] {
         [self.sx, self.sy]
     }
+    /// Canvas-axis-aligned envelope of the transformed box's four corners.
+    pub(super) fn bounds(&self, bounds: super::Rect) -> super::Rect {
+        let center = [
+            bounds.x + bounds.width / 2.0,
+            bounds.y + bounds.height / 2.0,
+        ];
+        let corners = [
+            [bounds.x, bounds.y],
+            [bounds.x + bounds.width, bounds.y],
+            [bounds.x + bounds.width, bounds.y + bounds.height],
+            [bounds.x, bounds.y + bounds.height],
+        ]
+        .map(|corner| self.point(corner, center));
+        let mut min = [f64::INFINITY; 2];
+        let mut max = [f64::NEG_INFINITY; 2];
+        for point in corners {
+            min = [min[0].min(point[0]), min[1].min(point[1])];
+            max = [max[0].max(point[0]), max[1].max(point[1])];
+        }
+        super::Rect {
+            x: min[0],
+            y: min[1],
+            width: max[0] - min[0],
+            height: max[1] - min[1],
+        }
+    }
     pub(crate) fn apply(
         &self,
         image: &Image,

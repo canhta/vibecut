@@ -14,6 +14,12 @@ use std::{
 /// Every icon the application uses. Unknown names cannot reach a widget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Icon {
+    AlignBottom,
+    AlignCenterHorizontal,
+    AlignCenterVertical,
+    AlignLeft,
+    AlignRight,
+    AlignTop,
     ArrowClockwise,
     ArrowCounterClockwise,
     ArrowLeft,
@@ -21,6 +27,8 @@ pub(crate) enum Icon {
     ArrowsInLineHorizontal,
     ArrowsInLineVertical,
     ArrowsLeftRight,
+    ArrowsOutLineHorizontal,
+    ArrowsOutLineVertical,
     BookmarkSimple,
     CaretDown,
     CaretRight,
@@ -77,6 +85,12 @@ pub(crate) enum Icon {
 impl Icon {
     #[allow(dead_code)] // complete catalog list, used by the icon tests and future pickers.
     pub(crate) const ALL: &'static [Self] = &[
+        Self::AlignBottom,
+        Self::AlignCenterHorizontal,
+        Self::AlignCenterVertical,
+        Self::AlignLeft,
+        Self::AlignRight,
+        Self::AlignTop,
         Self::ArrowClockwise,
         Self::ArrowCounterClockwise,
         Self::ArrowLeft,
@@ -84,6 +98,8 @@ impl Icon {
         Self::ArrowsInLineHorizontal,
         Self::ArrowsInLineVertical,
         Self::ArrowsLeftRight,
+        Self::ArrowsOutLineHorizontal,
+        Self::ArrowsOutLineVertical,
         Self::BookmarkSimple,
         Self::CaretDown,
         Self::CaretRight,
@@ -139,6 +155,12 @@ impl Icon {
 
     pub(crate) const fn name(self) -> &'static str {
         match self {
+            Self::AlignBottom => "align-bottom",
+            Self::AlignCenterHorizontal => "align-center-horizontal",
+            Self::AlignCenterVertical => "align-center-vertical",
+            Self::AlignLeft => "align-left",
+            Self::AlignRight => "align-right",
+            Self::AlignTop => "align-top",
             Self::ArrowClockwise => "arrow-clockwise",
             Self::ArrowCounterClockwise => "arrow-counter-clockwise",
             Self::ArrowLeft => "arrow-left",
@@ -146,6 +168,8 @@ impl Icon {
             Self::ArrowsInLineHorizontal => "arrows-in-line-horizontal",
             Self::ArrowsInLineVertical => "arrows-in-line-vertical",
             Self::ArrowsLeftRight => "arrows-left-right",
+            Self::ArrowsOutLineHorizontal => "arrows-out-line-horizontal",
+            Self::ArrowsOutLineVertical => "arrows-out-line-vertical",
             Self::BookmarkSimple => "bookmark-simple",
             Self::CaretDown => "caret-down",
             Self::CaretRight => "caret-right",
@@ -209,6 +233,30 @@ impl Icon {
 /// Phosphor `regular` 2.1.1, unmodified. The last entry wins for duplicates.
 const ICONS: &[(&str, &[u8])] = &[
     (
+        "align-bottom",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-bottom.svg"),
+    ),
+    (
+        "align-center-horizontal",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-center-horizontal.svg"),
+    ),
+    (
+        "align-center-vertical",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-center-vertical.svg"),
+    ),
+    (
+        "align-left",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-left.svg"),
+    ),
+    (
+        "align-right",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-right.svg"),
+    ),
+    (
+        "align-top",
+        include_bytes!("../../../../assets/icons/phosphor/regular/align-top.svg"),
+    ),
+    (
         "arrow-clockwise",
         include_bytes!("../../../../assets/icons/phosphor/regular/arrow-clockwise.svg"),
     ),
@@ -235,6 +283,14 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "arrows-left-right",
         include_bytes!("../../../../assets/icons/phosphor/regular/arrows-left-right.svg"),
+    ),
+    (
+        "arrows-out-line-horizontal",
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrows-out-line-horizontal.svg"),
+    ),
+    (
+        "arrows-out-line-vertical",
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrows-out-line-vertical.svg"),
     ),
     (
         "bookmark-simple",

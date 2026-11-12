@@ -22,9 +22,10 @@ pub use persistence::{
 pub use visual::{
     ANGLE_MAX, BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, Crop, DEFAULT_WEIGHT,
-    EffectDefinition, EffectInstance, EffectParamDefinition, EffectParamKind, EffectParamUpdate,
-    EffectShelf, EffectValue, FlipAxis, GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN, GRADE_BASIC,
-    GRADE_MAX, GRADE_MIN, HSL_BANDS, HSL_CONTROLS, LIFT_MAX, LIFT_MIN, LutId, LutRecord,
+    DistributionAxis, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParamKind,
+    EffectParamUpdate, EffectShelf, EffectValue, FlipAxis, GAIN_MAX, GAIN_MIN, GAMMA_MAX,
+    GAMMA_MIN, GRADE_BASIC, GRADE_MAX, GRADE_MIN, HSL_BANDS, HSL_CONTROLS, ItemAlignment,
+    LIFT_MAX, LIFT_MIN, LutId, LutRecord,
     LutReference, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath,
     MaskShape, MaskStroke, MaskVertex, PACKED_COLOR_MAX, POINT_MAX, StrokeAlign,
     TRANSITION_DEFINITIONS, ToneCurve, TransformField, Transition, TransitionAlignment,

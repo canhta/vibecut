@@ -137,6 +137,11 @@ pub struct ItemGeometry {
     transform: Transform,
 }
 impl ItemGeometry {
+    /// Not directly constructible: geometry comes from [`Renderer::item_geometry`]
+    /// or [`super::arrange::bounds`].
+    pub(super) fn from_parts(bounds: Rect, transform: Transform) -> Self {
+        Self { bounds, transform }
+    }
     fn center(&self) -> [f64; 2] {
         [
             self.bounds.x + self.bounds.width / 2.0,
@@ -146,6 +151,12 @@ impl ItemGeometry {
     /// Untransformed item box in project canvas pixels.
     pub fn bounds(&self) -> Rect {
         self.bounds
+    }
+    /// Canvas-axis-aligned envelope after scale, reflection, rotation and
+    /// translation, in project canvas pixels. It is the geometric selection box,
+    /// never alpha, glyph or effect coverage.
+    pub fn transformed_bounds(&self) -> Rect {
+        self.transform.bounds(self.bounds)
     }
     /// Screen point for an untransformed canvas point inside the item box, with the
     /// same placement transform the compositor applies.
@@ -417,15 +428,15 @@ impl Renderer<'_> {
         }
         let canvas = &self.project.data().canvas;
         let r = placement.destination;
-        Ok(Some(ItemGeometry {
-            bounds: Rect {
+        Ok(Some(ItemGeometry::from_parts(
+            Rect {
                 x: r.x * f64::from(canvas.width),
                 y: r.y * f64::from(canvas.height),
                 width: r.width * f64::from(canvas.width),
                 height: r.height * f64::from(canvas.height),
             },
-            transform: Transform::at(item, local)?,
-        }))
+            Transform::at(item, local)?,
+        )))
     }
     /// Topmost selection box under a screen point, returning the timeline's ItemId.
     /// Letterboxes, clipped canvas and viewport edges are never selectable.

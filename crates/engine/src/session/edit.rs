@@ -175,6 +175,8 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::DuplicateItems { items }
             | Command::SetItemsHidden { items, .. }
             | Command::SetItemsFlipped { items, .. }
+            | Command::AlignItems { items, .. }
+            | Command::DistributeItems { items, .. }
             | Command::SetItemsMuted { items, .. }
             | Command::ExtractAudio { items }
             | Command::RecoverAudio { items }
@@ -609,6 +611,16 @@ pub(crate) fn apply(
         } => {
             data = parameters::execute_set_items_flipped(data, items, axis, flipped)?;
         }
+        EditCommand::AlignItems {
+            items,
+            alignment,
+            at,
+        } => {
+            data = arrange::execute_align(data, items, alignment, at)?;
+        }
+        EditCommand::DistributeItems { items, axis, at } => {
+            data = arrange::execute_distribute(data, items, axis, at)?;
+        }
         EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;
         }
@@ -889,6 +901,7 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
     }
     Ok(())
 }
+mod arrange;
 mod audio;
 mod clips;
 mod effects;

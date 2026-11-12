@@ -41,6 +41,16 @@ track heights are unmeasured [proposed: audio 40 px, others 32 px]. Clip trim ha
 8 px wide with a 12 px capture area [proposed]; the captured clip is selected and shows no
 handle.
 
+## Arrange controls
+
+The Transform section's Arrange row is a new composition without a matching reference
+capture: a 39 px property row with a 12 px label and eight 22 px icon cells on a 2 px
+pitch. Six cells align each selected transformed box to the canvas left, horizontal
+centre, right, top, vertical centre or bottom; the final two space three or more boxes
+evenly along the horizontal or vertical axis and are disabled below three items. Cells use
+the existing icon-button hover fill, focus ring and localized tooltip. The row is
+noncomparable rather than a metric pass.
+
 ## Timeline gestures
 
 Move and resize stage the group move and trim contract candidate: the timeline paints `preview_project()` while the committed project stays untouched, and one drop publishes a single undo step. Escape or a refusal discards the candidate.

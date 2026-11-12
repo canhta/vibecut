@@ -348,6 +348,26 @@ pub(crate) fn with_text(seed: &Session) -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The text fixture with items 1, 3 and 5 spread apart for even spacing.
+pub(crate) fn with_arrange(seed: &Session) -> Session {
+    let mut session = with_text(seed);
+    for (item, x) in [(1, -30.0), (3, 0.0), (5, 30.0)] {
+        for (path, value) in [
+            (project::BuiltinPath::TransformScaleX, 0.1),
+            (project::BuiltinPath::TransformScaleY, 0.1),
+            (project::BuiltinPath::TransformPositionX, x),
+        ] {
+            session
+                .apply(Command::SetAnimatedParam {
+                    item: ItemId(item),
+                    path: path.into(),
+                    param: project::Param::new(project::ParamValue::Scalar(value)).unwrap(),
+                })
+                .unwrap();
+        }
+    }
+    session
+}
 /// The text fixture plus one saved style under `TextPresetId(100)`.
 pub(crate) fn with_text_presets(seed: &Session) -> Session {
     let mut data = with_text(seed).project().data().clone();

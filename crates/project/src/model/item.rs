@@ -746,6 +746,14 @@ impl ItemParams {
     /// Visual kinds that carry a placed raster layer a reflection can mirror.
     /// Captions own their saved cue layout and audio has no picture.
     pub fn supports_flip(&self) -> bool {
+        self.has_placed_box()
+    }
+    /// Visual kinds whose placed box alignment and even spacing may translate.
+    /// Captions own their saved cue layout and audio has no picture.
+    pub fn supports_arrange(&self) -> bool {
+        self.has_placed_box()
+    }
+    fn has_placed_box(&self) -> bool {
         matches!(
             self,
             Self::Video(_) | Self::Text(_) | Self::Overlay(_) | Self::Graphic(_)

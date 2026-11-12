@@ -8,13 +8,19 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117
-- Files: 54 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12
+- Files: 66 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
 | File | SHA-256 |
 |---|---|
+| `align-bottom.svg` | `6f0032f4994aaa5d931c535da216a2031819351537b39c65f718c9482616914d` |
+| `align-center-horizontal.svg` | `d3303453f368cd0bb2ce243c695c9a02eac9d22bdddd728cfdac031e87aefd49` |
+| `align-center-vertical.svg` | `da0ce9e796fbb26edc3562026db5dcc892c111c02ac9f679085357a62b8d87d6` |
+| `align-left.svg` | `37cf5a3b41f55b36b33623f5a987e3b4b6c4494e0c0ff46f5f16df8e305a39ab` |
+| `align-right.svg` | `8d09007324b1407441a93e79fec6fd3a9bd99af3ccbd53bc1ce8445090ad5978` |
+| `align-top.svg` | `4fbaeb924b02da8b423747c502786fa50ec31e110994931bfb17399c758984dd` |
 | `arrow-clockwise.svg` | `4a78a777b692cb74826e3071ae7049cc0d3927e68a7b8272e7251b1760cd771f` |
 | `arrow-counter-clockwise.svg` | `4eb160d5ae781107c674481ac081962e6bce6281a646129e6c3f960b9dd5dac6` |
 | `arrow-left.svg` | `3c2001cf957d182fc54927e4b286cc8cf66dd97830f441ca2650d42a63a9006a` |
@@ -22,6 +28,8 @@ SHA-256 of each embedded file:
 | `arrows-in-line-horizontal.svg` | `73d0df2946ad58d810e81f1b92a731c21674659135c4d40bb5ac29569a54d924` |
 | `arrows-in-line-vertical.svg` | `fd5c97c6287cd18e0bd5f723f67e86746e95a83b48d0b2fe1f26f5a1296bf091` |
 | `arrows-left-right.svg` | `84c43373542a3ac2e7de3d22ddef0c8eb61ef6ba7a270c6aca5aa493dd40f8b4` |
+| `arrows-out-line-horizontal.svg` | `1c952ab7336e60c82fd60a6d3b635b7f40007fa7e3fe91aae49e1cf2485bf6cf` |
+| `arrows-out-line-vertical.svg` | `143d29fe174808c3e2bb78b2a7ca944e5ed9ace230e97e8223c1bbcea8e32199` |
 | `bookmark-simple.svg` | `c3de1070187d7995c76e2fe5b7c899cb9eddbb9040aa7cfe90babd83b4adcc40` |
 | `caret-down.svg` | `9257147c4510788a10c3065f1d0f6c3c68da5bb265e03892b960f45d3d50d903` |
 | `caret-right.svg` | `da96a0362670cf8fc16b2e94ba4db4862852469570b586c428e897781ecc10a5` |

@@ -27,7 +27,7 @@ pub use effects::{
 pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
 };
-pub use transform::{FlipAxis, TransformField};
+pub use transform::{DistributionAxis, FlipAxis, ItemAlignment, TransformField};
 pub use transition::{Transition, TransitionAlignment, TransitionId};
 pub use transition_catalog::{TRANSITION_DEFINITIONS, TransitionDefinition, transition_definition};
 pub use transition_params::{

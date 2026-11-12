@@ -1,0 +1,8 @@
+asset: align-top.svg
+title: Phosphor regular icon
+author: Phosphor Icons
+source: https://www.npmjs.com/package/@phosphor-icons/core/v/2.1.1
+license: MIT
+license-file: assets/icons/phosphor/LICENSE
+added: p1-parity/197
+notes: Unmodified regular-weight SVG from @phosphor-icons/core 2.1.1, embedded by apps/vibecut.

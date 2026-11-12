@@ -14,6 +14,8 @@ Persisted visual item properties: transform, blend selection, masks, effects, vi
 
 `FlipAxis::{Horizontal, Vertical}` persists as the held Boolean `transform.flipX` / `transform.flipY` channels; absence means not flipped. A reflection reverses that local axis about the placed item centre before clockwise rotation and keeps the numeric scale magnitudes positive, so it is not a negative scale. Video, image, text, overlay and graphic items carry it; audio and caption items refuse it in whole-project validation and in the command reducer.
 
+`ItemAlignment::{Left, HorizontalCenter, Right, Top, VerticalCenter, Bottom}` and `DistributionAxis::{Horizontal, Vertical}` are command inputs, not saved fields. Alignment translates the existing position channels so an item's transformed envelope meets a canvas edge or centre; distribution spaces three or more envelopes with equal gaps while pinning the first and last outer edges. Video, image, text, overlay and graphic items admit both; captions own their cue layout and audio has no box.
+
 ## Blend selection and opacity
 
 `Item.blend_mode` persists as required `blendMode` using the 17 kebab-case IDs in `BlendMode::ALL`. Normal is the creation default; audio items refuse a non-normal blend.

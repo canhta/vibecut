@@ -12,7 +12,7 @@ use crate::{
 use project::ItemId;
 use render::{
     Rect,
-    viewport::{Handle, ItemGeometry, Viewport},
+    viewport::{ItemGeometry, Viewport},
 };
 
 /// Stable identity for a canvas snap target; the variant order breaks equal
@@ -176,27 +176,10 @@ pub(in crate::editor) fn rotation_guide(degrees: f64, centre: [f64; 2]) -> Previ
     }
 }
 
-/// Axis-aligned box of a transformed item in project canvas pixels.
-pub(in crate::editor) fn extent(geometry: &ItemGeometry, viewport: &Viewport) -> Option<Rect> {
-    let mut min = [f64::INFINITY; 2];
-    let mut max = [f64::NEG_INFINITY; 2];
-    for handle in [
-        Handle::TopLeft,
-        Handle::TopRight,
-        Handle::BottomRight,
-        Handle::BottomLeft,
-    ] {
-        let screen = geometry.handle_position(viewport, handle).ok()?;
-        let point = viewport.screen_to_canvas(screen).ok()?;
-        min = [min[0].min(point[0]), min[1].min(point[1])];
-        max = [max[0].max(point[0]), max[1].max(point[1])];
-    }
-    Some(Rect {
-        x: min[0],
-        y: min[1],
-        width: max[0] - min[0],
-        height: max[1] - min[1],
-    })
+/// Axis-aligned box of a transformed item in project canvas pixels. The
+/// envelope math is render-owned; the player only consumes it.
+pub(in crate::editor) fn extent(geometry: &ItemGeometry) -> Rect {
+    geometry.transformed_bounds()
 }
 
 /// The closest target for any of `edges`, as `(adjustment, target)`.
@@ -426,8 +409,7 @@ mod tests {
             .item_geometry(ItemId(1), Tick::ZERO)
             .unwrap()
             .unwrap();
-        let viewport = viewport(1.0, [0.0, 0.0]);
-        let extent = extent(&geometry, &viewport).unwrap();
+        let extent = extent(&geometry);
         let bounds = geometry.bounds();
         assert!(
             (extent.width - bounds.height).abs() < 1e-6,

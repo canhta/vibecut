@@ -214,6 +214,10 @@ pub enum EngineAction {
     DeleteScenes,
     /// Toggle one reflection axis over the current item selection.
     Flip(project::FlipAxis),
+    /// Move the current item selection to one canvas edge or centre.
+    Align(project::ItemAlignment),
+    /// Space the current item selection evenly along one canvas axis.
+    Distribute(project::DistributionAxis),
 }
 impl EngineAction {
     pub const fn command(self, ripple: bool) -> engine::CommandKind {
@@ -236,6 +240,8 @@ impl EngineAction {
             Self::CreateScene => K::CreateScene,
             Self::DeleteScenes => K::DeleteScenes,
             Self::Flip(_) => K::SetItemsFlipped,
+            Self::Align(_) => K::AlignItems,
+            Self::Distribute(_) => K::DistributeItems,
         }
     }
 }

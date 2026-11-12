@@ -83,6 +83,14 @@
 | `timeline.crop` — Crop | Edit | — | — | crop dialog |
 | `timeline.flip_horizontal` — Flip horizontal | Edit | — | `timeline.set_flipped` | — |
 | `timeline.flip_vertical` — Flip vertical | Edit | — | `timeline.set_flipped` | — |
+| `timeline.align_left` — Align left | Edit | — | `timeline.align_items` | — |
+| `timeline.align_horizontal_center` — Align horizontal centre | Edit | — | `timeline.align_items` | — |
+| `timeline.align_right` — Align right | Edit | — | `timeline.align_items` | — |
+| `timeline.align_top` — Align top | Edit | — | `timeline.align_items` | — |
+| `timeline.align_vertical_center` — Align vertical centre | Edit | — | `timeline.align_items` | — |
+| `timeline.align_bottom` — Align bottom | Edit | — | `timeline.align_items` | — |
+| `timeline.distribute_horizontal` — Distribute horizontally | Edit | — | `timeline.distribute_items` | — |
+| `timeline.distribute_vertical` — Distribute vertically | Edit | — | `timeline.distribute_items` | — |
 | `scene.open` — Open scenes | Timeline | — | — | scene switcher |
 | `scene.close` — Close scenes | Timeline | — | — | scene switcher |
 | `scene.create` — Create scene | Timeline | — | `scene.create` | — |

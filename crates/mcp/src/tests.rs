@@ -567,6 +567,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.split_right", Effect::Edit, true, true),
         ("timeline.duplicate", Effect::Edit, true, true),
         ("timeline.set_flipped", Effect::Edit, true, true),
+        ("timeline.align_items", Effect::Edit, true, true),
+        ("timeline.distribute_items", Effect::Edit, true, true),
         ("timeline.set_hidden", Effect::Edit, true, true),
         ("timeline.set_muted", Effect::Edit, true, true),
         ("timeline.extract_audio", Effect::Edit, true, true),

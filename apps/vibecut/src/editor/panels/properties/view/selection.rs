@@ -32,6 +32,8 @@ impl Panel<'_, '_> {
             ui.label(self.tr(Text::NoSharedFields));
         }
         self.shared_field_controls(ui, fields);
+        let items = self.cx.selection.iter().copied().collect::<Vec<_>>();
+        self.arrange_controls(ui, &items);
     }
     pub(super) fn shared_field_controls(
         &mut self,

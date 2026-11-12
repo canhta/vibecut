@@ -455,6 +455,91 @@ impl<'a, 'c> Panel<'a, 'c> {
                 .push(Action::Activate("timeline.flip_vertical"));
         }
     }
+    /// The six canvas alignments and two even-spacing actions for the current
+    /// selection. All controls share the registered engine actions, so a panel
+    /// click, a shortcut and an agent command are the same typed edit.
+    fn arrange_controls(&mut self, ui: &mut egui::Ui, items: &[ItemId]) {
+        if items.is_empty() {
+            return;
+        }
+        let ready = {
+            let project = self.cx.session.project();
+            items.iter().all(|item| {
+                read::item(project, *item).is_some_and(|target| {
+                    target.content.supports_arrange()
+                        && !read::item_locked(project, *item)
+                        && !self.cx.playback.placement_overridden(*item)
+                })
+            })
+        };
+        let spread = items.len() >= 3;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::Arrange));
+        value_ui.spacing_mut().item_spacing.x = 2.0;
+        for (id, icon, label, action, available) in [
+            (
+                "inspector.transform.align_left",
+                kit::Icon::AlignLeft,
+                Text::ActionAlignLeft,
+                "timeline.align_left",
+                true,
+            ),
+            (
+                "inspector.transform.align_center_horizontal",
+                kit::Icon::AlignCenterHorizontal,
+                Text::ActionAlignHorizontalCenter,
+                "timeline.align_horizontal_center",
+                true,
+            ),
+            (
+                "inspector.transform.align_right",
+                kit::Icon::AlignRight,
+                Text::ActionAlignRight,
+                "timeline.align_right",
+                true,
+            ),
+            (
+                "inspector.transform.align_top",
+                kit::Icon::AlignTop,
+                Text::ActionAlignTop,
+                "timeline.align_top",
+                true,
+            ),
+            (
+                "inspector.transform.align_center_vertical",
+                kit::Icon::AlignCenterVertical,
+                Text::ActionAlignVerticalCenter,
+                "timeline.align_vertical_center",
+                true,
+            ),
+            (
+                "inspector.transform.align_bottom",
+                kit::Icon::AlignBottom,
+                Text::ActionAlignBottom,
+                "timeline.align_bottom",
+                true,
+            ),
+            (
+                "inspector.transform.distribute_horizontal",
+                kit::Icon::ArrowsOutLineHorizontal,
+                Text::ActionDistributeHorizontal,
+                "timeline.distribute_horizontal",
+                spread,
+            ),
+            (
+                "inspector.transform.distribute_vertical",
+                kit::Icon::ArrowsOutLineVertical,
+                Text::ActionDistributeVertical,
+                "timeline.distribute_vertical",
+                spread,
+            ),
+        ] {
+            let label = self.tr(label);
+            if self.icon_only(&mut value_ui, id, icon, label, None, ready && available) {
+                self.actions.push(Action::Activate(action));
+            }
+        }
+    }
     fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.cx.locale, key)
     }
@@ -974,6 +1059,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                 (super::transform_scrub(F::PositionY), Some("Y")),
                             ],
                         );
+                        panel.arrange_controls(ui, &[item]);
                         panel.scrub_field(ui, item, super::transform_scrub(F::Rotate));
                         panel.transform_flips(ui, item);
                     },

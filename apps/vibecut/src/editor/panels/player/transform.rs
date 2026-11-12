@@ -138,7 +138,7 @@ impl Drag {
         let local = at.checked_sub(data.start)?;
         let start = Values::at(data, local)?;
         let geometry = renderer.item_geometry(item, at).ok().flatten()?;
-        let extent = snap::extent(&geometry, viewport)?;
+        let extent = snap::extent(&geometry);
         let targets = snap::Targets::new(
             [project.data().canvas.width, project.data().canvas.height],
             project
@@ -150,7 +150,7 @@ impl Drag {
                 .filter(|candidate| candidate.id != item)
                 .filter_map(|candidate| {
                     let geometry = renderer.item_geometry(candidate.id, at).ok().flatten()?;
-                    Some((candidate.id, snap::extent(&geometry, viewport)?))
+                    Some((candidate.id, snap::extent(&geometry)))
                 }),
         );
         let (screen, angle) = match kind {

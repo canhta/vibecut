@@ -362,6 +362,8 @@ pub enum Fixture {
     TextPresetBank,
     TransitionCut,
     Transition,
+    /// Timeline with three visual items spread far enough apart to distribute.
+    Arrange,
     Timeline,
     /// Timeline whose item 1 carries one closed cubic path mask, `mask1`.
     MaskPath,
@@ -697,8 +699,10 @@ commands! {
     ApplyTextPreset, "text.apply_preset", "Apply saved text preset", Edit { items: Vec<ItemId>, preset: project::TextPresetId } => TextPresetBank, serde_json::json!({"items":[3],"preset":100}), available = UnlockedItem, grant = Agent;
     SaveTextPreset, "text.save_preset", "Save text preset", Edit { item: ItemId, name: NfcText } => TextPresetBank, serde_json::json!({"item":3,"name":"Style 1"}), available = UnlockedItem, grant = Agent;
     AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
+    AlignItems, "timeline.align_items", "Align items", Edit { items: Vec<ItemId>, alignment: project::ItemAlignment, at: Tick } => Timeline, serde_json::json!({"items":[1],"alignment":"left","at":0}), available = UnlockedItem;
     TimelineCommitPreview, "timeline.commit_preview", "Commit timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     TimelineDiscardPreview, "timeline.discard_preview", "Discard timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
+    DistributeItems, "timeline.distribute_items", "Distribute items evenly", Edit { items: Vec<ItemId>, axis: project::DistributionAxis, at: Tick } => Arrange, serde_json::json!({"items":[1,3,5],"axis":"horizontal","at":0}), available = UnlockedItem;
     DuplicateItems, "timeline.duplicate", "Duplicate items on new tracks", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = UnlockedItem;
     TimelineEdit, "timeline.edit", "Edit timeline with ripple policy", Edit { commands: Vec<Command>, ripple: bool } => Timeline, serde_json::json!({"commands":[{"command":"delete","params":{"items":[1]}}],"ripple":true});
     ExtractAudio, "timeline.extract_audio", "Extract source audio", Edit { items: Vec<ItemId> } => SourceAudio, serde_json::json!({"items":[5]}), available = VideoItem;

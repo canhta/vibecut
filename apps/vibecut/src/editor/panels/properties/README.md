@@ -29,6 +29,14 @@ one undo step and the retained selection. Both toggles are disabled while their 
 carries keys; Reset writes the five numeric channels and both reflections as one
 atomic batch and refuses entirely if an axis is keyed.
 
+The same section's Arrange row carries six canvas alignments and two even-spacing
+actions. They activate the registered `timeline.align_*` / `timeline.distribute_*`
+actions, so keyboard, panel, CLI and agent paths share one command family. Align works
+for one or more selected video, image, text, overlay or graphic items; distribute
+requires three or more. Controls are disabled for captions, audio, a locked track, a
+keyed position bound refusal or an item whose transient render placement would move it
+elsewhere. The multi-selection inspector shows the same row under its shared fields.
+
 The multi-selection inspector shows audio gain and mute plus text content, font, size,
 colour, background and position for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs: Text (content, font,

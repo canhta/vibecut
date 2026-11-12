@@ -159,6 +159,17 @@ impl RenderState {
         });
         Ok(settings)
     }
+    /// Whether a transient render placement replaces this item's saved box.
+    pub(crate) fn overrides_placement(&self, item: project::ItemId) -> bool {
+        self.0
+            .lock()
+            .map(|state| {
+                state
+                    .as_deref()
+                    .is_some_and(|settings| settings.placements.contains_key(&item))
+            })
+            .unwrap_or(true)
+    }
 }
 #[derive(Clone)]
 struct Request {
@@ -254,6 +265,13 @@ impl Playback {
     /// The shared placement/crop render state the preview and an export job use.
     pub fn render_state(&self) -> Result<Arc<RenderState>> {
         Ok(read_request(&self.request)?.render_state)
+    }
+    /// Whether a transient placement replaces this item's saved box, so saved
+    /// geometry commands must refuse rather than align a different rectangle.
+    pub fn placement_overridden(&self, item: project::ItemId) -> bool {
+        read_request(&self.request)
+            .map(|request| request.render_state.overrides_placement(item))
+            .unwrap_or(true)
     }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
         let port = Arc::new(AudioPort::new(&budget)?);

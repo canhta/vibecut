@@ -18,6 +18,46 @@ const GLOW_SIZE: f32 = 0.15;
 /// Largest glow halo radius in output pixels.
 const GLOW_MAX: f32 = 64.0;
 
+/// The placement saved in the project, without transient render overrides:
+/// full canvas for video, image, overlay and other placed kinds, the text box
+/// around its saved position, and the centred graphic author square. Captions
+/// resolve through their style; audio has no box.
+pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<Placement> {
+    Some(match &item.content {
+        ItemParams::Text(params) => {
+            let width = 0.8;
+            let height = 0.25;
+            Placement {
+                destination: Rect {
+                    x: f64::from(params.position.x) / 100.0 - width / 2.0,
+                    y: f64::from(params.position.y) / 100.0 - height / 2.0,
+                    width,
+                    height,
+                },
+                fit: Fit::Stretch,
+                ..Default::default()
+            }
+        }
+        ItemParams::Graphic(_) => {
+            let side = 512_u32.min(canvas.width).min(canvas.height);
+            let width = f64::from(side) / f64::from(canvas.width);
+            let height = f64::from(side) / f64::from(canvas.height);
+            Placement {
+                destination: Rect {
+                    x: (1. - width) / 2.,
+                    y: (1. - height) / 2.,
+                    width,
+                    height,
+                },
+                fit: Fit::Stretch,
+                ..Default::default()
+            }
+        }
+        ItemParams::Video(_) | ItemParams::Overlay(_) => Placement::default(),
+        ItemParams::Audio(_) | ItemParams::Caption(_) => return None,
+    })
+}
+
 impl<'a> Renderer<'a> {
     pub fn new(project: &'a Project, settings: RenderSettings) -> Result<Self> {
         settings.validate(project)?;
@@ -82,38 +122,8 @@ impl<'a> Renderer<'a> {
                     let style = super::caption::item_style(self.project.data(), params)
                         .unwrap_or_else(|| self.settings.caption_style.clone());
                     super::caption::cue_placement(&style, None)
-                } else if let ItemParams::Text(params) = &item.content {
-                    let width = 0.8;
-                    let height = 0.25;
-                    let x = f64::from(params.position.x) / 100.0 - width / 2.0;
-                    let y = f64::from(params.position.y) / 100.0 - height / 2.0;
-                    Placement {
-                        destination: Rect {
-                            x,
-                            y,
-                            width,
-                            height,
-                        },
-                        fit: Fit::Stretch,
-                        ..Default::default()
-                    }
-                } else if matches!(item.content, ItemParams::Graphic(_)) {
-                    let canvas = &self.project.data().canvas;
-                    let side = 512_u32.min(canvas.width).min(canvas.height);
-                    let width = f64::from(side) / f64::from(canvas.width);
-                    let height = f64::from(side) / f64::from(canvas.height);
-                    Placement {
-                        destination: Rect {
-                            x: (1. - width) / 2.,
-                            y: (1. - height) / 2.,
-                            width,
-                            height,
-                        },
-                        fit: Fit::Stretch,
-                        ..Default::default()
-                    }
                 } else {
-                    Placement::default()
+                    saved_placement(&self.project.data().canvas, item).unwrap_or_default()
                 }
             });
         item_crop(item, placement, local)
