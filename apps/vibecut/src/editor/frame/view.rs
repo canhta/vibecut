@@ -1,7 +1,6 @@
 //! Composes the editor window.
 use crate::editor::{
-    Command, Editor, Icon, Id, Rect, Text, Vec2, actions, drag_panel, egui, error_detail, i18n,
-    icons, theme,
+    Command, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
 };
 
 impl Editor {
@@ -418,48 +417,5 @@ impl Editor {
         response: &egui::Response,
     ) {
         self.frame.widgets.remember_with_icon(id, icon, response);
-    }
-    /// One icon-only control that records its action and shortcut in a tooltip.
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::editor) fn icon_only(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &str,
-        icon: Icon,
-        label: &str,
-        shortcut: Option<&str>,
-        selected: Option<bool>,
-        enabled: bool,
-    ) -> bool {
-        let enabled = enabled && actions::action(id).is_none_or(|_| self.action_enabled(id));
-        let locale = self.preferences.locale;
-        let tooltip = shortcut.map_or_else(
-            || label.to_owned(),
-            |key| {
-                i18n::format(
-                    locale,
-                    Text::ActionShortcut,
-                    &[("action", label), ("shortcut", key)],
-                )
-            },
-        );
-        let is_selected = selected.unwrap_or(false);
-        let response = ui
-            .add_enabled_ui(enabled, |ui| {
-                crate::kit::icon_button(ui, id, icon, &tooltip, is_selected)
-            })
-            .inner;
-        response.widget_info(|| {
-            if let Some(selected) = selected {
-                egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, selected, &tooltip)
-            } else {
-                egui::WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip)
-            }
-        });
-        self.remember_with_icon(id, Some(icon.name()), &response);
-        if let Some(state) = self.frame.widgets.get_mut(id) {
-            state.tooltip = Some(tooltip);
-        }
-        enabled && response.clicked()
     }
 }

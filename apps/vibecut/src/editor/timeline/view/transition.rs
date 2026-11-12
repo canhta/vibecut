@@ -51,10 +51,7 @@ impl State {
                 Id::unique(("timeline.transition", transition.id.0)),
                 egui::Sense::click(),
             );
-            let name = tr(
-                cx,
-                crate::i18n::transition_label(&transition.kind),
-            );
+            let name = tr(cx, crate::i18n::transition_label(&transition.kind));
             response.widget_info(|| {
                 egui::WidgetInfo::selected(egui::Role::Button, true, selected, name)
             });

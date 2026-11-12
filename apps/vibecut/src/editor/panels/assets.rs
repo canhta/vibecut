@@ -10,13 +10,9 @@ mod tabs;
 mod transition;
 mod view;
 mod workflow;
-/// The localized catalogue name of an applied transition kind.
-pub(in crate::editor) fn transition_label(kind: &str) -> Text {
-    project::transition_definition(kind).map_or(Text::Transitions, transition::name)
-}
 pub use import::{
-    ImportEvent, ImportFailure, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MEDIA_EXTENSIONS,
-    ThumbnailOutcome, ThumbnailSource,
+    ImportEvent, ImportFailure, ImportProbe, ImportQueue, MAX_IMPORT_FILES, ThumbnailOutcome,
+    ThumbnailSource,
 };
 pub use media_panel::{MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView};
 pub(in crate::editor) use projection::prepare;
@@ -36,10 +32,9 @@ pub(in crate::editor) enum AudioSection {
 
 use super::super::{
     Align2, Arc, AssetId, AssetRow, BTreeMap, BTreeSet, Color32, Command, ContentHash, CreatedId,
-    Duration, Editor, Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result,
-    SelectionScopes, SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, Tick, Toast,
-    TrackKind, UnsupportedReason, Vec2, display_short_time, display_time, egui, error_detail,
-    icons, theme,
+    Editor, Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result,
+    SelectionScopes, SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, Tick, TrackKind,
+    UnsupportedReason, Vec2, display_short_time, display_time, egui, error_detail, icons, theme,
 };
 use state::MediaMarquee;
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};

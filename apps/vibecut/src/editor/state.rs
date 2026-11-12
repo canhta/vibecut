@@ -2,9 +2,9 @@
 
 use super::panels::player::{PreviewGuide, TextCaret};
 use super::{
-    Arc, AssetId, BTreeMap, Clock, Duration, Icon, ItemId, KeybindingIssue, MediaSort, MediaView,
-    PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick, WidgetState,
-    actions, egui, theme,
+    Arc, AssetId, BTreeMap, BTreeSet, Clock, Duration, Icon, ItemId, KeybindingIssue, MediaSort,
+    MediaView, PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick,
+    WidgetState, actions, egui, theme,
 };
 use crate::services::color_picker::EyedropperState;
 

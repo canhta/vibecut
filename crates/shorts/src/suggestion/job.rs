@@ -157,9 +157,10 @@ pub(crate) fn submit_suggest(
             if windows.len() > MAX_WINDOWS {
                 return Err(EngineError::Control(engine::control::ControlError::Limit));
             }
-            let digest = blake3::hash(&serde_json::to_vec(&clip_input).map_err(|_| {
-                EngineError::Edit(EditError::Invalid("clip input serialization"))
-            })?);
+            let digest =
+                blake3::hash(&serde_json::to_vec(&clip_input).map_err(|_| {
+                    EngineError::Edit(EditError::Invalid("clip input serialization"))
+                })?);
             let mut guard = approved.lock().map_err(|_| RuntimeError::Poisoned)?;
             if guard.is_none() {
                 // Consent binds exact payloads: each window is approved once, before any
@@ -177,9 +178,9 @@ pub(crate) fn submit_suggest(
                     let estimate = suggester.as_clip().estimate(&scope);
                     per_attempt.add(&estimate);
                     let token = if scope.provider.is_remote() {
-                        let disclosure = suggester.disclosure(&scope)?.ok_or(
-                            EngineError::Edit(EditError::Invalid("clip consent scope")),
-                        )?;
+                        let disclosure = suggester
+                            .disclosure(&scope)?
+                            .ok_or(EngineError::Edit(EditError::Invalid("clip consent scope")))?;
                         Some(approve_upload(
                             consent.as_ref(),
                             &upload_request(&scope, &disclosure, &source_language)?,
@@ -226,8 +227,7 @@ pub(crate) fn submit_suggest(
             drop(guard);
             hooks.check_cancelled()?;
             let full = SourceRange::new(Tick::ZERO, duration)?;
-            let energy =
-                media::analyze_speech_energy(&asset, full, hooks.media_cancel_flag())?;
+            let energy = media::analyze_speech_energy(&asset, full, hooks.media_cancel_flag())?;
             let profile = captions::LanguageRegistry::standard()?
                 .profile(&source_language)
                 .clone();

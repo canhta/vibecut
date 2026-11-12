@@ -39,11 +39,8 @@ fn clip_access<'a>(
     &'a crate::subtitles::CaptionAccess,
     &'a std::sync::Arc<dyn super::ClipWorkflow>,
 )> {
-    let unavailable = || {
-        EngineError::Edit(crate::EditError::Unsupported(
-            "clip workflow unavailable",
-        ))
-    };
+    let unavailable =
+        || EngineError::Edit(crate::EditError::Unsupported("clip workflow unavailable"));
     let access = caller.captions.ok_or_else(unavailable)?;
     let workflow = access.clips().ok_or_else(unavailable)?;
     Ok((access, workflow))

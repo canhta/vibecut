@@ -3,7 +3,6 @@ use super::{Text, egui};
 use engine::{ByteBudget, ByteBudgetHooks};
 use project::TransitionParams;
 
-
 /// The shelf's left-rail label; `Basic` is shared with other panels.
 pub(super) fn shelf_label(shelf: &str) -> Text {
     match shelf {

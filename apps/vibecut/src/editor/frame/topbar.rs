@@ -61,7 +61,8 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             .add_sized(
                 title.size(),
                 egui::Button::new(
-                    egui::RichText::new(cx.session.project().data().name.as_str()).font(font.clone()),
+                    egui::RichText::new(cx.session.project().data().name.as_str())
+                        .font(font.clone()),
                 )
                 .frame(false)
                 .truncate(),

@@ -414,11 +414,7 @@ fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
     let starts: Vec<i64> = track.items.iter().map(|item| item.start.0).collect();
     assert_eq!(
         starts,
-        [
-            0,
-            time::TICKS_PER_SECOND,
-            time::TICKS_PER_SECOND * 2
-        ]
+        [0, time::TICKS_PER_SECOND, time::TICKS_PER_SECOND * 2]
     );
     let inserted = &track.items[1];
     assert_eq!(inserted.start, Tick(time::TICKS_PER_SECOND));

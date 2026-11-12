@@ -80,7 +80,6 @@ pub fn decode_clips(bytes: &[u8]) -> Result<ClipsResult> {
             crate::session::wire::ControlError::Limit,
         ));
     }
-    serde_json::from_slice(bytes).map_err(|_| {
-        EngineError::Edit(EditError::Invalid("clip suggestion output is malformed"))
-    })
+    serde_json::from_slice(bytes)
+        .map_err(|_| EngineError::Edit(EditError::Invalid("clip suggestion output is malformed")))
 }

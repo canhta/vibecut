@@ -7,14 +7,14 @@ use time::TICKS_PER_SECOND;
 
 /// A shared cut identity; times are resolved again before publication.
 #[derive(Clone, Copy)]
-pub(in crate::editor::assets) struct Cut {
+pub(in crate::editor::panels::assets) struct Cut {
     pub track: TrackId,
     pub from: ItemId,
     pub to: ItemId,
     pub at: Tick,
 }
 
-pub(in crate::editor::assets) fn cuts(editor: &Editor) -> Vec<Cut> {
+pub(in crate::editor::panels::assets) fn cuts(editor: &Editor) -> Vec<Cut> {
     editor
         .session
         .project()
@@ -44,7 +44,7 @@ pub(in crate::editor::assets) fn cuts(editor: &Editor) -> Vec<Cut> {
         .collect()
 }
 
-pub(in crate::editor::assets) fn refusal(editor: &Editor, cut: Cut) -> Option<Text> {
+pub(in crate::editor::panels::assets) fn refusal(editor: &Editor, cut: Cut) -> Option<Text> {
     if editor.session.transaction_active() {
         return Some(Text::TransitionBusy);
     }
@@ -95,7 +95,10 @@ pub(in crate::editor::assets) fn refusal(editor: &Editor, cut: Cut) -> Option<Te
     None
 }
 
-pub(in crate::editor::assets) fn selected_cut(editor: &Editor, cuts: &[Cut]) -> Option<Cut> {
+pub(in crate::editor::panels::assets) fn selected_cut(
+    editor: &Editor,
+    cuts: &[Cut],
+) -> Option<Cut> {
     let selected = &editor.selection;
     if selected.len() == 2 {
         cuts.iter()

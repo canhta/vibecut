@@ -25,10 +25,11 @@ pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fie
 pub use editor::{
     AppCommand, AssetInspection, AssetState, AssetsTab, Client, CropAspect, CropInspection, Editor,
     EffectPreviewStatus, EffectPreviews, ImportEvent, ImportFailure, ImportProbe, ImportQueue,
-    Inspection, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode,
-    MusicProblem, MusicView, PREVIEW_SCALE, PREVIEW_SIZE, PreviewAxis, PreviewGuide, PreviewZoom,
-    SETTLE_BUDGET, ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds, SoundsMode,
-    SoundsProblem, SoundsView, TextCaret, ThumbnailOutcome, ThumbnailSource, WidgetState,
+    Inspection, MAX_IMPORT_FILES, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
+    Music, MusicMode, MusicProblem, MusicView, PREVIEW_SCALE, PREVIEW_SIZE, PreviewAxis,
+    PreviewGuide, PreviewZoom, SETTLE_BUDGET, ShortcutRow, ShortcutTab, ShortcutsInspection,
+    Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, ThumbnailOutcome, ThumbnailSource,
+    WidgetState,
 };
 pub use eframe::egui;
 

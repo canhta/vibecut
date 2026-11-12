@@ -102,11 +102,8 @@ impl Editor {
                 return false;
             };
             match scope {
-                SelectionScope::Keyframes => {
-                    crate::editor::context::single(&self.selection).is_some_and(|item| {
-                        self.session.can_paste_keyframes(item, at)
-                    })
-                }
+                SelectionScope::Keyframes => crate::editor::context::single(&self.selection)
+                    .is_some_and(|item| self.session.can_paste_keyframes(item, at)),
                 SelectionScope::Items => self.session.can_paste_items(at),
                 SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
                     false

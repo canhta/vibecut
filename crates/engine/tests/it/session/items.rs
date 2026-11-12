@@ -1804,7 +1804,9 @@ fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
     .unwrap();
     s.apply(Command::AddEffect {
         item,
-        effect: project::effect_definition("blur").unwrap().instance("blur1"),
+        effect: project::effect_definition("blur")
+            .unwrap()
+            .instance("blur1"),
     })
     .unwrap();
     s.apply(Command::AddMask {
@@ -1812,11 +1814,7 @@ fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
         mask: project::Mask::new("mask1", project::MaskShape::Rectangle),
     })
     .unwrap();
-    s.apply(Command::TrimStart {
-        item,
-        at: Tick(5),
-    })
-    .unwrap();
+    s.apply(Command::TrimStart { item, at: Tick(5) }).unwrap();
     let source = get(&s, 10).clone();
     let span = source.duration().unwrap();
     let payload = item_payload(&source, "video", 0);

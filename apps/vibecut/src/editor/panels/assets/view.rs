@@ -8,8 +8,8 @@ mod music;
 mod sounds;
 mod transition;
 
-pub(super) use deletion::show as delete_dialog;
-pub(super) use feedback::{drop_overlay, import_overlay, toast};
+pub(in crate::editor) use deletion::show as delete_dialog;
+pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
 
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,

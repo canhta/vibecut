@@ -6,7 +6,7 @@ use crate::editor::assets::{
 };
 use crate::i18n;
 
-pub(in crate::editor::assets) fn asset_kind(
+pub(in crate::editor::panels::assets) fn asset_kind(
     asset: &SourceAsset,
 ) -> std::result::Result<TrackKind, engine::control::Error> {
     if asset
@@ -29,14 +29,17 @@ pub(in crate::editor::assets) fn asset_kind(
         ))
     }
 }
-pub(in crate::editor::assets) fn asset_state_color(state: AssetState, dark: bool) -> Color32 {
+pub(in crate::editor::panels::assets) fn asset_state_color(
+    state: AssetState,
+    dark: bool,
+) -> Color32 {
     match state {
         AssetState::Probing => theme::secondary(dark),
         AssetState::Ready => theme::success(dark),
         AssetState::Unsupported(_) => theme::warning(dark),
     }
 }
-pub(in crate::editor::assets) fn asset_row(
+pub(in crate::editor::panels::assets) fn asset_row(
     asset: &SourceAsset,
     locale: Locale,
     size: Option<u64>,
@@ -110,7 +113,7 @@ pub(in crate::editor::assets) fn asset_row(
         duration: asset.probe().duration,
     }
 }
-pub(in crate::editor::assets) fn format_media_size(locale: Locale, bytes: u64) -> String {
+pub(in crate::editor::panels::assets) fn format_media_size(locale: Locale, bytes: u64) -> String {
     let (value, unit) = if bytes >= 1 << 30 {
         (
             i18n::decimal(locale, bytes as f64 / (1u64 << 30) as f64, 1),
@@ -131,7 +134,7 @@ pub(in crate::editor::assets) fn format_media_size(locale: Locale, bytes: u64) -
     };
     i18n::format(locale, Text::MediaSize, &[("size", &value), ("unit", unit)])
 }
-pub(in crate::editor::assets) fn file_name(path: &std::path::Path) -> String {
+pub(in crate::editor::panels::assets) fn file_name(path: &std::path::Path) -> String {
     path.file_name().map_or_else(
         || path.to_string_lossy().into_owned(),
         |name| name.to_string_lossy().into_owned(),

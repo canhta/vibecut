@@ -62,9 +62,7 @@ impl CaptionAccess {
         Ok(&self.resources()?.cache)
     }
     /// The selected providers and the human approval they ask, for workflows above the engine.
-    pub fn share(
-        &self,
-    ) -> RuntimeResult<(Arc<Providers>, Arc<dyn ConsentPrompt + Send + Sync>)> {
+    pub fn share(&self) -> RuntimeResult<(Arc<Providers>, Arc<dyn ConsentPrompt + Send + Sync>)> {
         Ok((self.resources()?.providers.clone(), self.consent.clone()))
     }
 }

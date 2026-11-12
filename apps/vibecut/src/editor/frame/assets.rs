@@ -109,7 +109,7 @@ impl Editor {
         }
     }
     pub(in crate::editor) fn show_media_delete_dialog(&mut self, ctx: &egui::Context) {
-        let mut state = std::mem::take(&mut self.assets);
+        let state = std::mem::take(&mut self.assets);
         let cx = self.context();
         let actions = assets::delete_dialog(&state, &cx, ctx);
         drop(cx);
@@ -123,7 +123,7 @@ impl Editor {
             .get("media")
             .copied()
             .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)));
-        let mut state = std::mem::take(&mut self.assets);
+        let state = std::mem::take(&mut self.assets);
         let cx = self.context();
         let actions = assets::import_overlay(&state, &cx, ctx, rect);
         drop(cx);

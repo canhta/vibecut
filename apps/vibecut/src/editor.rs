@@ -22,8 +22,9 @@ pub use assets::effects::{
 pub use assets::music::{Music, MusicMode, MusicProblem, MusicView};
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 pub use assets::{
-    AssetState, AssetsTab, ImportEvent, ImportFailure, ImportProbe, ImportQueue, MediaKind,
-    MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome, ThumbnailSource,
+    AssetState, AssetsTab, ImportEvent, ImportFailure, ImportProbe, ImportQueue, MAX_IMPORT_FILES,
+    MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome,
+    ThumbnailSource,
 };
 pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
 pub use state::{
@@ -108,12 +109,6 @@ impl Editor {
     }
     pub(in crate::editor) fn panel_fill(&self) -> Color32 {
         theme::panel(self.preferences.dark)
-    }
-    pub(in crate::editor) fn control_fill(&self) -> Color32 {
-        theme::field(self.preferences.dark)
-    }
-    pub(in crate::editor) fn border(&self) -> Color32 {
-        theme::border(self.preferences.dark)
     }
     pub(in crate::editor) fn secondary(&self) -> Color32 {
         theme::secondary(self.preferences.dark)
@@ -773,9 +768,6 @@ impl Editor {
     }
     pub(in crate::editor) fn prune_media_selection(&mut self) {
         self.assets.prune_media_selection(&self.session);
-    }
-    pub(in crate::editor) fn prune_asset_state(&mut self) {
-        self.assets.prune_asset_state(&self.session);
     }
     pub(in crate::editor) fn media_marquee(
         &mut self,
