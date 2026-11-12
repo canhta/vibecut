@@ -712,7 +712,7 @@ fn adding_a_cached_sound_is_one_undo_step_and_round_trips_metadata() {
         .find_map(|item| match &item.content {
             ItemParams::Audio(params) => match &params.source {
                 AudioSource::Library { sound } => Some(sound.clone()),
-                AudioSource::Upload => None,
+                AudioSource::Music { .. } | AudioSource::Upload => None,
             },
             _ => None,
         })

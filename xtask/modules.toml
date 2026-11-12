@@ -65,7 +65,7 @@ path = "crates/libraries"
 
 [[crate.layer]]
 name = "features"
-groups = ["font_catalog", "sound_library"]
+groups = ["font_catalog", "audio_library"]
 
 [[crate.module]]
 name = "font_catalog"
@@ -73,7 +73,11 @@ group = "font_catalog"
 
 [[crate.module]]
 name = "sound_library"
-group = "sound_library"
+group = "audio_library"
+
+[[crate.module]]
+name = "music_library"
+group = "audio_library"
 
 # Shorts operations are independent; only the suggestion workflow composes them.
 [[crate]]

@@ -7,8 +7,8 @@
 //! The `fonts.*` control commands through the real store and the shared runner.
 
 use engine::control::{
-    self, Caller, ControlResult, ErrorCode, FontAccess, Policy, Request, Response, ResponseValue,
-    SoundAccess,
+    self, Caller, ControlResult, ErrorCode, FontAccess, MusicAccess, Policy, Request, Response,
+    ResponseValue, SoundAccess,
 };
 use engine::jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, Command, Session};
@@ -78,6 +78,7 @@ fn control<'a>(
             policy: &Allow,
             fonts,
             sounds: None,
+            music: None,
             media: None,
             chapters: None,
             captions: None,
@@ -116,6 +117,7 @@ fn control_sounds(
             policy: &Allow,
             fonts: None,
             sounds,
+            music: None,
             media: None,
             chapters: None,
             captions: None,
@@ -437,6 +439,145 @@ fn sound_commands_return_typed_results_and_never_edit_the_project() {
         s.revision(),
         revision,
         "sound commands are not project edits"
+    );
+    assert!(!s.can_undo());
+}
+
+fn control_music(
+    s: &mut Session,
+    r: &mut JobRunner,
+    music: Option<&MusicAccess<'_>>,
+    id: &str,
+    params: Value,
+    key: &str,
+) -> Response {
+    let req = request(s, id, params, key);
+    s.control_request(
+        req,
+        Caller {
+            principal: "test",
+            external: true,
+            policy: &Allow,
+            fonts: None,
+            sounds: None,
+            music,
+            media: None,
+            chapters: None,
+            captions: None,
+        },
+        r,
+    )
+    .unwrap()
+}
+
+fn music_track(id: &str) -> libraries::music::MusicResult {
+    libraries::music::MusicResult {
+        id: id.into(),
+        title: "Night Walk".into(),
+        author: "Example Artist".into(),
+        licence: "CC BY 4.0".into(),
+        licence_url: "https://creativecommons.org/licenses/by/4.0/".into(),
+        attribution: "\"Night Walk\" by Example Artist is licensed under CC BY 4.0.".into(),
+        source_url: format!("https://source.example/{id}"),
+        audio_url: format!("https://cdn.example/{id}.mp3"),
+        duration_ms: 100,
+    }
+}
+
+#[test]
+fn music_commands_return_typed_results_and_never_edit_the_project() {
+    let root = tempfile::tempdir().unwrap();
+    let library = libraries::music::MusicLibrary::open(root.path()).unwrap();
+    library.save(&music_track("track-5")).unwrap();
+    let mut s = session();
+    let mut r = runner();
+    let revision = s.revision();
+
+    let ControlResult::MusicSearch { page } = library.with_control(None, |music| {
+        ok(control_music(
+            &mut s,
+            &mut r,
+            Some(music),
+            "music.search",
+            json!({"query":"night","tag":null,"page":1,"page_size":15,"saved":true}),
+            "a",
+        ))
+    }) else {
+        panic!("music.search result");
+    };
+    assert_eq!(page.source, engine::control::MusicSource::Local);
+    assert_eq!(page.results.len(), 1);
+    assert_eq!(page.results[0].id, "track-5");
+    assert_eq!(
+        page.results[0].licence_url,
+        "https://creativecommons.org/licenses/by/4.0/"
+    );
+
+    // A remote search is refused before any credential or request without the
+    // composition-root approval, while Saved still works.
+    library.with_control(None, |music| {
+        error(
+            control_music(
+                &mut s,
+                &mut r,
+                Some(music),
+                "music.search",
+                json!({"query":"night","tag":null,"page":1,"page_size":15,"saved":false}),
+                "b",
+            ),
+            ErrorCode::Sounds,
+        );
+    });
+
+    let entry = engine::control::MusicEntry::from(music_track("track-6"));
+    let ControlResult::MusicSaved { saved } = library.with_control(None, |music| {
+        ok(control_music(
+            &mut s,
+            &mut r,
+            Some(music),
+            "music.save",
+            json!({"music": entry.clone()}),
+            "c",
+        ))
+    }) else {
+        panic!("music.save result");
+    };
+    assert_eq!(saved.music.id, "track-6");
+    assert_eq!(saved.music.licence, "CC BY 4.0");
+
+    let ControlResult::MusicUnsaved { removed, .. } = library.with_control(None, |music| {
+        ok(control_music(
+            &mut s,
+            &mut r,
+            Some(music),
+            "music.unsave",
+            json!({"id":"track-6"}),
+            "d",
+        ))
+    }) else {
+        panic!("music.unsave result");
+    };
+    assert!(removed);
+
+    // A session without the lent library refuses every music command; none edits.
+    let mut bare = session();
+    for (id, params) in [
+        (
+            "music.search",
+            json!({"query":"","tag":null,"page":1,"page_size":15,"saved":true}),
+        ),
+        ("music.save", json!({"music": entry})),
+        ("music.unsave", json!({"id":"track-5"})),
+    ] {
+        error(
+            control_music(&mut bare, &mut r, None, id, params, "e"),
+            ErrorCode::Refused,
+        );
+    }
+    assert_eq!(
+        s.revision(),
+        revision,
+        "music commands are not project edits"
     );
     assert!(!s.can_undo());
 }

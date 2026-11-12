@@ -16,3 +16,13 @@ pub mod sounds {
         SoundLibrary, SoundPreview, SoundResult, Token, add_saved, add_to_timeline, commercial,
     };
 }
+mod music_library;
+pub mod music {
+    //! Provides openly licensed music for projects.
+    pub use super::music_library::{
+        ADD_COMMAND, CHIPS, CachedMusic, Music, MusicClient, MusicDownloads, MusicLibrary,
+        MusicPreview, MusicResult, MusicToken, PreviewClip, PreviewSink, SAVE_COMMAND,
+        SEARCH_COMMAND, SavedMusic, SearchPage, SearchRequest, SearchSource, add_saved,
+        add_to_timeline,
+    };
+}

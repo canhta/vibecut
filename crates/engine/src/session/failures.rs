@@ -137,21 +137,12 @@ pub enum MusicError {
     #[error("invalid music input: {0}")]
     Invalid(&'static str),
 }
-impl From<ai::Error> for MusicError {
-    fn from(error: ai::Error) -> Self {
+impl From<transport::Error> for MusicError {
+    fn from(error: transport::Error) -> Self {
         match error {
-            ai::Error::Auth => Self::Auth,
-            ai::Error::Quota => Self::Quota,
-            ai::Error::RateLimit {
-                retry_after_seconds,
-            } => Self::RateLimit {
-                retry_after_seconds,
-            },
-            ai::Error::Network | ai::Error::Timeout => Self::Network,
-            ai::Error::Server => Self::Server,
-            ai::Error::Payload => Self::Limit,
-            ai::Error::Cancelled => Self::Cancelled,
-            _ => Self::InvalidResponse,
+            transport::Error::Network => Self::Network,
+            transport::Error::Payload => Self::Limit,
+            transport::Error::Invalid(_) => Self::InvalidResponse,
         }
     }
 }
