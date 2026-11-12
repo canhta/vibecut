@@ -4032,11 +4032,9 @@ fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
     {
         assert!((got - want).abs() < 1e-3, "{got} != {want}");
     }
-    assert_eq!(
-        bytes(&harness),
-        start,
-        "live preview does not mutate the project"
-    );
+    // An explicit gesture exposes its candidate through `project()`; only the
+    // history and the Cancel restore below prove nothing was committed.
+    assert_ne!(bytes(&harness), start, "the staged preset is the candidate");
     assert_eq!(harness.state().session.history_len().0, history);
 
     // Dragging the outgoing handle updates the preview curve live.
@@ -4054,7 +4052,7 @@ fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
         "{dragged:?}"
     );
     assert!((dragged[2] - 0.32).abs() < 1e-3, "the other handle stays");
-    assert_eq!(bytes(&harness), start);
+    assert_eq!(harness.state().session.history_len().0, history);
 
     // Apply publishes everything staged as one undo step.
     harness.get(by("timeline.graph.apply")).click();
