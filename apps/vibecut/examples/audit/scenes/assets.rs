@@ -150,18 +150,18 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
 
 /// Recorded music page for the audit render; it never opens a socket.
 struct MusicAuditSource;
-impl ai::transport::HttpTransport for MusicAuditSource {
+impl transport::HttpTransport for MusicAuditSource {
     fn send(
         &self,
-        request: ai::transport::HttpRequest,
-    ) -> Result<ai::transport::HttpResponse, ai::Error> {
+        request: transport::HttpRequest,
+    ) -> Result<transport::HttpResponse, transport::Error> {
         self.send_bounded(request, 1 << 20)
     }
     fn send_bounded(
         &self,
-        _: ai::transport::HttpRequest,
+        _: transport::HttpRequest,
         _: usize,
-    ) -> Result<ai::transport::HttpResponse, ai::Error> {
+    ) -> Result<transport::HttpResponse, transport::Error> {
         let tracks = [
             (
                 "audit-1",
@@ -211,10 +211,10 @@ impl ai::transport::HttpTransport for MusicAuditSource {
             "page": 1,
             "results": results,
         });
-        Ok(ai::transport::HttpResponse {
+        Ok(transport::HttpResponse {
             status: 200,
             headers: Vec::new(),
-            body: serde_json::to_vec(&body).map_err(|_| ai::Error::Payload)?,
+            body: serde_json::to_vec(&body).map_err(|_| transport::Error::Payload)?,
         })
     }
 }
