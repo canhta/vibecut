@@ -338,7 +338,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         .apply(&primaries, &mixed, curve_inputs(), &Hooks)
         .unwrap();
     let actual = apply_effect(
-        primaries.copy(&Hooks).unwrap(),
+        Image::from_working_pixels(3, 1, primaries.pixels().iter().copied(), &Hooks).unwrap(),
         &mixed,
         &primaries,
         gpu.as_ref(),

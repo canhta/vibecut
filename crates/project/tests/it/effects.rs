@@ -611,7 +611,6 @@ fn instances_round_trip_through_json_with_typed_values() {
     // being ignored by the evaluator.
     let curve_path = graded.param_path("curve_luma").unwrap();
     let data = super::project::empty().into_data();
-    let mut data = data;
     let mut animations = Animations::default();
     animations
         .set(curve_path, Param::new(ParamValue::Scalar(0.5)).unwrap())

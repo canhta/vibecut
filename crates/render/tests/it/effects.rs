@@ -482,11 +482,11 @@ fn color_grade_controls_on_the_chart() {
     assert!(near(order[0][0], 0.55), "{order:?}");
     // Curves map their channel independently; the luma curve keeps chroma.
     let ramp = curve(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]);
-    let (red_curve, entries) = graded_with(&[("curve_red", ramp)]);
+    let (_, red_curve, entries) = graded_with(&[("curve_red", ramp)]);
     assert_eq!(entries, ["curve_red"]);
     assert!(near(red_curve[3][0], 0.25) && near(red_curve[3][1], 0.5));
     assert!(near(red_curve[5][0], 1.0) && near(red_curve[5][1], 0.0));
-    let (luma_curve, _) = graded_with(&[("curve_luma", ramp)]);
+    let (_, luma_curve, _) = graded_with(&[("curve_luma", ramp)]);
     assert!(
         near(luma_curve[3][0], 0.25)
             && near(luma_curve[3][1], 0.25)
@@ -497,7 +497,7 @@ fn color_grade_controls_on_the_chart() {
         near(luma_curve[5][0], 0.5) && near(luma_curve[5][1], 0.0),
         "chroma scales before clipping"
     );
-    let (bright_luma, _) =
+    let (_, bright_luma, _) =
         graded_with(&[("curve_luma", curve(&[[0.0, 0.0], [0.25, 1.0], [1.0, 1.0]]))]);
     assert!(near(bright_luma[5][0], 1.0) && near(bright_luma[5][1], 0.0));
     // Identity curves add no pass, and a combined extreme grade stays valid.
@@ -640,7 +640,7 @@ fn color_grade_refuses_hostile_values_and_bad_passes() {
 
 #[test]
 fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
-    use project::{ItemParams, OverlayParams, ProjectId, Track, TrackId, TrackKind};
+    use project::{ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind};
     use std::fs;
     let hooks = Hooks::default();
     let dir = tempfile::tempdir().unwrap();
@@ -748,10 +748,10 @@ fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
         .map(EffectPass::entry_point)
         .collect();
     assert_eq!(stack, ["grade", "lift", "lut_3d", "chroma_key"]);
-    let image = Image::from_working_pixels(1, 1, [[0.1, 0.3, 0.6, 1.0]], &hooks).unwrap();
-    let below = image.copy(&hooks).unwrap();
+    let pixel = || Image::from_working_pixels(1, 1, [[0.1, 0.3, 0.6, 1.0]].into_iter(), &hooks);
+    let below = pixel().unwrap();
     let graded = apply_effect(
-        image.copy(&hooks).unwrap(),
+        pixel().unwrap(),
         &grade_passes,
         &below,
         &CpuEffects,
@@ -4855,6 +4855,9 @@ fn whole_changed_value(kind: &str, param: &project::EffectParamDefinition) -> Ef
             [1.0, 1.0]
         }),
         EffectParamKind::Lut => EffectValue::Lut(None),
+        EffectParamKind::Curve => EffectValue::Curve(
+            project::ToneCurve::new(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]).unwrap(),
+        ),
     }
 }
 
@@ -4961,6 +4964,14 @@ fn whole_image_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
                         EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
                     }
                     project::EffectParamKind::Lut => EffectValue::Lut(None),
+                    project::EffectParamKind::Curve => EffectValue::Curve(
+                        project::ToneCurve::new(if high {
+                            &[[0.0, 0.0], [0.5, 0.75], [1.0, 1.0]]
+                        } else {
+                            &[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]
+                        })
+                        .unwrap(),
+                    ),
                 };
                 params.push((param.id, value));
             }
