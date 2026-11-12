@@ -2408,11 +2408,13 @@ fn color_grade(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
         }
     }
     let mut bands = [0.0; HSL_BAND_UNIFORMS];
-    for (index, band) in project::HSL_BANDS.iter().enumerate() {
-        for (slot, control) in project::HSL_CONTROLS.iter().enumerate() {
-            let key = format!("hsl_{band}_{control}");
-            bands[index * project::HSL_CONTROLS.len() + slot] = frame.scalar(&key)?;
-        }
+    let keys = project::HSL_BANDS.iter().flat_map(|band| {
+        project::HSL_CONTROLS
+            .iter()
+            .map(move |control| format!("hsl_{band}_{control}"))
+    });
+    for (slot, key) in bands.iter_mut().zip(keys) {
+        *slot = frame.scalar(&key)?;
     }
     passes.extend(hsl_bands_passes(&bands)?);
     let vignette = frame.scalar("vignette")?;

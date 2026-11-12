@@ -133,8 +133,7 @@ impl Wheel {
         } else {
             let direction = basis(self.hue);
             let limit = limit(master, direction);
-            [0, 1, 2]
-                .map(|index| (master + self.radius * limit * direction[index]).clamp(-1.0, 1.0))
+            direction.map(|axis| (master + self.radius * limit * axis).clamp(-1.0, 1.0))
         };
         z.map(|value| family.percent(value))
     }

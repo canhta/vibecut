@@ -496,7 +496,7 @@ pub(super) mod arrange {
             })
             .collect::<Vec<_>>();
         sorted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-        let first = sorted[0].1;
+        let first = sorted.first().map_or(0.0, |target| target.1);
         let last = sorted
             .last()
             .map(|target| target.1 + target.2)

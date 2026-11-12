@@ -141,7 +141,9 @@ fn easing_presets_expand_to_explicit_handles_that_evaluate_as_the_normalized_cur
         for (a, b) in back.into_iter().zip(curve) {
             assert!((a - b).abs() < 1e-3, "{preset:?} round trip");
         }
-        let (first, second) = (&c.keys()[0], &c.keys()[1]);
+        let [first, second, ..] = c.keys() else {
+            panic!("{preset:?} keeps two keys");
+        };
         if preset == EasingPreset::Linear {
             assert_eq!(
                 (first.segment, first.outgoing, second.incoming),
@@ -157,7 +159,7 @@ fn easing_presets_expand_to_explicit_handles_that_evaluate_as_the_normalized_cur
             );
         }
         // The neighbouring segment is untouched.
-        assert_eq!(c.keys()[2].incoming, None);
+        assert_eq!(c.keys().get(2).map(|key| key.incoming), Some(None));
     }
     // Overshoot: Pop passes the end value before settling.
     let mut pop = channel(
@@ -183,7 +185,14 @@ fn easing_presets_expand_to_explicit_handles_that_evaluate_as_the_normalized_cur
     flat_segment
         .set_easing(Tick(1200), EasingCurve([0.25, 0.5, 0.75, 1.0]))
         .unwrap();
-    assert_eq!(flat_segment.keys()[1].outgoing.map(|h| h.dv), Some(2.0));
+    assert_eq!(
+        flat_segment
+            .keys()
+            .get(1)
+            .and_then(|key| key.outgoing)
+            .map(|h| h.dv),
+        Some(2.0)
+    );
     // Refusals leave the channel unchanged.
     let before = pop.clone();
     for (time, curve) in [

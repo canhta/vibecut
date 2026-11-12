@@ -1258,8 +1258,10 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         eprintln!("word-emphasis-{tag} hash={:#x}", hash(&em_rgba.bytes));
         assert!(
             rgba.bytes
-                .chunks_exact(4)
-                .zip(em_rgba.bytes.chunks_exact(4))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(em_rgba.bytes.as_chunks::<4>().0)
                 .all(|(a, b)| a[3] == b[3]),
             "emphasis never changes alpha or geometry: {tag}"
         );

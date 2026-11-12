@@ -433,7 +433,7 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
                 };
                 assert!(grey(&frame) > grey(&plain) + 50, "glow spreads a grey halo");
             }
-            _ => unreachable!(),
+            other => panic!("no assertion for the {other} case"),
         }
     }
 

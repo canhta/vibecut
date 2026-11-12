@@ -628,7 +628,12 @@ fn color_grade_controls_on_the_chart() {
         [0.25, 0.5, 0.75, 1.0],
         [0.1, 0.2, 0.3, 0.5],
     ];
-    let goldens: [(&str, Vec<(&'static str, EffectValue)>, [[f64; 4]; 6]); 4] = [
+    type Golden = (
+        &'static str,
+        Vec<(&'static str, EffectValue)>,
+        [[f64; 4]; 6],
+    );
+    let goldens: [Golden; 4] = [
         (
             "neutral",
             Vec::new(),

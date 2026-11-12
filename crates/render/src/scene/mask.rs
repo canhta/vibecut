@@ -375,10 +375,13 @@ fn prepare_radial(
             let length = p[0].hypot(p[1]).max(f32::EPSILON);
             [p[0] / length, p[1] / length]
         };
-        for index in 0..corners {
-            let previous = vertices[(index + corners - 1) % corners];
-            let current = vertices[index];
-            let next = vertices[(index + 1) % corners];
+        for (index, current) in vertices.iter().copied().enumerate() {
+            let (Some(previous), Some(next)) = (
+                vertices.get((index + corners - 1) % corners).copied(),
+                vertices.get((index + 1) % corners).copied(),
+            ) else {
+                continue;
+            };
             let to_previous = normalize([previous[0] - current[0], previous[1] - current[1]]);
             let to_next = normalize([next[0] - current[0], next[1] - current[1]]);
             let angle = (to_previous[0] * to_next[0] + to_previous[1] * to_next[1])
