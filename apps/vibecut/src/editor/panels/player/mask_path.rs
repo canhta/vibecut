@@ -362,8 +362,10 @@ fn nearest_segment(
     for _ in 0..24 {
         let a = low + (high - low) / 3.0;
         let b = high - (high - low) / 3.0;
+        // Bind the distances under their own names: shadowing `a`/`b` here would
+        // narrow the bracket to a distance instead of a curve parameter.
         match (distance(segment, a), distance(segment, b)) {
-            (Some(a), Some(b)) if a < b => high = b,
+            (Some(near_a), Some(near_b)) if near_a < near_b => high = b,
             (Some(_), Some(_)) => low = a,
             _ => break,
         }
