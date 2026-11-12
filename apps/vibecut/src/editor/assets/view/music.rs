@@ -150,7 +150,7 @@ impl View<'_> {
                     Vec2::splat(theme::size::CONTROL),
                 )),
             |ui| {
-                if self.icon(ui, "music.settings", Icon::Gear, Text::MusicSettings, true) {
+                if self.icon(ui, "music.settings", Icon::GearSix, Text::MusicSettings, true) {
                     self.state.music_settings = !self.state.music_settings;
                 }
             },
@@ -305,7 +305,7 @@ impl View<'_> {
             self.tr(Text::MusicTerms),
             "https://docs.openverse.org/terms_of_service.html",
         );
-        self.remember("music.terms", &terms, Some(Icon::Link));
+        self.remember("music.terms", &terms, Some(Icon::LinkSimple));
         ui.add_space(4.0);
     }
 

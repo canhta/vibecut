@@ -483,7 +483,22 @@ pub(crate) fn apply(
             )?;
         }
         // Session commits this as one grouped transaction before reaching edit.
-        EditCommand::AddLibrarySound { .. } | EditCommand::AddLibraryMusic { .. } => {
+        // Bound by name: the variants' fields are only read by Session, and an
+        // explicit pattern keeps them from reading as dead in the generated enum.
+        EditCommand::AddLibrarySound {
+            placement: _placement,
+            start: _start,
+            asset: _asset,
+            sound: _sound,
+        } => {
+            return Err(EditError::Invalid("library audio requires a session"));
+        }
+        EditCommand::AddLibraryMusic {
+            placement: _placement,
+            start: _start,
+            asset: _asset,
+            music: _music,
+        } => {
             return Err(EditError::Invalid("library audio requires a session"));
         }
         EditCommand::InsertItem {

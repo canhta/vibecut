@@ -82,6 +82,7 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
         document: document.clone(),
     };
     assert!(grant.authorize(&sidecars(output.clone()), &project).is_ok());
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut refusals = vec![
         (
             "file command targeting granted directory",

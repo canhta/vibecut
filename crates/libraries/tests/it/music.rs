@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use engine::jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig};
-use engine::{Placement, Session};
+use engine::{Command, Placement, Session};
 use libraries::music::{
     MusicClient, MusicDownloads, MusicLibrary, MusicPreview, MusicResult, MusicToken, PreviewClip,
     PreviewSink, SearchRequest, add_saved,
