@@ -7,6 +7,7 @@ use crate::subtitles::CaptionAccess;
 use crate::{EditError, Session};
 use captions::{CueTrack, Format, LanguageTag, NfcText};
 use std::path::PathBuf;
+use std::sync::Arc;
 use time::Tick;
 
 /// Largest retained output of one suggestion job; also its result reservation.
@@ -71,6 +72,21 @@ pub trait ClipWorkflow: Send + Sync {
         project: &project::Project,
         request: ClipsExportRequest,
     ) -> Result<Vec<ClipExportShort>>;
+}
+
+impl CaptionAccess {
+    /// Lend the clip workflow implemented above the engine. Clip jobs share these providers,
+    /// this consent and this checkpoint cache, so no clip command carries its own.
+    pub fn with_clips(mut self, clips: Arc<dyn ClipWorkflow>) -> Self {
+        self.clips = Some(Arc::new(clips));
+        self
+    }
+    /// The lent clip workflow, absent unless the composition root supplied one.
+    pub fn clips(&self) -> Option<&Arc<dyn ClipWorkflow>> {
+        self.clips
+            .as_ref()
+            .and_then(|lent| lent.downcast_ref::<Arc<dyn ClipWorkflow>>())
+    }
 }
 
 /// Decode the retained bytes of a finished `clips.suggest` job.

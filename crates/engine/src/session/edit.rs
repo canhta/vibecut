@@ -630,10 +630,10 @@ pub(crate) fn apply(
             alignment,
             at,
         } => {
-            data = arrange::execute_align(data, items, alignment, at)?;
+            data = parameters::arrange::execute_align(data, items, alignment, at)?;
         }
         EditCommand::DistributeItems { items, axis, at } => {
-            data = arrange::execute_distribute(data, items, axis, at)?;
+            data = parameters::arrange::execute_distribute(data, items, axis, at)?;
         }
         EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;
@@ -921,7 +921,6 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
     }
     Ok(())
 }
-mod arrange;
 mod audio;
 mod clips;
 mod effects;

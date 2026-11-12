@@ -1,5 +1,4 @@
 //! Evaluates project items into one RGBA frame.
-pub mod arrange;
 pub mod blend;
 mod caption;
 pub mod color;
@@ -9,6 +8,7 @@ mod evaluation;
 pub mod mask;
 mod raster;
 pub(crate) mod transform;
+pub use transform::arrange;
 pub mod transition_thumbnail;
 pub mod transitions;
 pub mod viewport;

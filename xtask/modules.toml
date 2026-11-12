@@ -96,6 +96,10 @@ groups = ["boundaries", "batch_export"]
 name = "workflow"
 groups = ["suggestion"]
 
+[[crate.layer]]
+name = "composition"
+groups = ["workflow_jobs"]
+
 [[crate.module]]
 name = "boundaries"
 group = "boundaries"
@@ -107,6 +111,10 @@ group = "batch_export"
 [[crate.module]]
 name = "suggestion"
 group = "suggestion"
+
+[[crate.module]]
+name = "workflow"
+group = "workflow_jobs"
 
 [[crate.module]]
 name = "error"

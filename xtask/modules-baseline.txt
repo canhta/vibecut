@@ -12,5 +12,5 @@ doc	crates/ai/src/clips/remote.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-folder	apps/vibecut/src	25 direct children (limit 12)
+folder	apps/vibecut/src	22 direct children (limit 12)
 folder	crates/ai/src	22 direct children (limit 12)
