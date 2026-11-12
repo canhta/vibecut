@@ -53,6 +53,10 @@ Usage:
   vibecut-cli sounds save <library> <sound-json>
   vibecut-cli sounds unsave <library> <id>
   vibecut-cli sounds add <project> <library> <id> [--start <ticks>]
+  vibecut-cli music search --library <dir> [--tag <tag>] [--saved] [--page N] [--page-size N] [query]
+  vibecut-cli music save <library> <track-json>
+  vibecut-cli music unsave <library> <id>
+  vibecut-cli music add <project> <library> <id> [--start <ticks>]
   vibecut-cli model list
   vibecut-cli model info <id>
   vibecut-cli model download <id> --yes-download

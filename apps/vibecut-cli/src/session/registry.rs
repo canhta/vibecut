@@ -1,8 +1,8 @@
 //! Runs one registry command for a standalone CLI adapter.
 use crate::args::CliError;
 use engine::control::{
-    API_VERSION, Caller, ControlResult, FontAccess, MediaAccess, Policy, Request, SoundAccess,
-    VisionAccess, registry_hash,
+    API_VERSION, Caller, ControlResult, FontAccess, MediaAccess, MusicAccess, Policy, Request,
+    SoundAccess, VisionAccess, registry_hash,
 };
 use engine::jobs::JobRunner;
 use engine::subtitles::CaptionAccess;
@@ -15,6 +15,7 @@ use std::sync::Mutex;
 pub(crate) struct Lent<'a> {
     pub(crate) fonts: Option<&'a FontAccess<'a>>,
     pub(crate) sounds: Option<&'a SoundAccess<'a>>,
+    pub(crate) music: Option<&'a MusicAccess<'a>>,
     pub(crate) media: Option<&'a Mutex<MediaAccess>>,
     pub(crate) captions: Option<&'a CaptionAccess>,
     /// Narrower trusted admission than the default allow-all of a one-shot session.
@@ -66,6 +67,7 @@ pub(crate) fn run(
         policy: lent.policy.unwrap_or(&Trusted),
         fonts: lent.fonts,
         sounds: lent.sounds,
+        music: lent.music,
         media: lent.media,
         chapters: None,
         captions: lent.captions,

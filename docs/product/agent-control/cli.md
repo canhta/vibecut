@@ -33,6 +33,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli providers` | List transcription, translation, clip, chapter and filler providers offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
+| `vibecut-cli music search\|save\|unsave\|add` | Search the open music aggregator anonymously or read saved music; save, unsave and add a cached track |
 | `vibecut-cli fonts list\|resolve\|download\|import` | Search bundled, system and catalog fonts, resolve a family, or download a catalog font |
 | `vibecut-cli commands` | Print the generated command registry |
 | `vibecut-cli schema` | Print the generated control request/response/event schema |
@@ -200,6 +201,14 @@ The current API version and catalog digest are published by `commands --json`.
 `sounds save <library> <sound-json>` and `sounds unsave <library> <id>` run `sounds.save` and `sounds.unsave` against the same lent library. `sounds add <project> <library> <id> [--start <ticks>]` requires a cached preview and commits one undoable audio item with `sourceType=library`, attribution and licence metadata. Cached previews are keyed by the exact provider URL.
 
 The three library commands are read-effect registry entries (they never enter project undo) and declare `grant = Human`, so an agent transport cannot search, save or unsave the human's library.
+
+## Music
+
+`music search --library <dir> [--tag <tag>] [--saved] [--page N] [--page-size N] [query]` runs the registry command `music.search`. Without `--saved` it queries the open music aggregator anonymously, or with the user's own `OPENVERSE_API_KEY` when the environment sets one; `--saved` reads the local saved collection and never resolves a credential or touches the network. Every result carries title, author, licence name, licence deed URL, attribution, source page, audio URL and duration; only public-domain-dedication and attribution-only licences are admitted, and any other row is dropped even if the source ignores the filter. `--tag` and a free-text query are mutually exclusive. The CLI opens `--library` and reads the optional key in its composition root; neither is a command parameter, and the key is never printed, stored or put in a URL.
+
+`music save <library> <track-json>` and `music unsave <library> <id>` run `music.save` and `music.unsave` against the same lent library. `music add <project> <library> <id> [--start <ticks>]` requires a cached track and commits one undoable audio item with its title, author, licence, deed, attribution and source page. Cached audio is keyed by the exact provider URL and copied into project-owned media so library cleanup never removes bytes a project references.
+
+The three library commands are read-effect registry entries and declare `grant = Human`; `music.add_to_timeline` is one edit-effect entry with grouped undo. An agent transport is lent no music access, so MCP and generic control refuse these commands before any callback, network or filesystem work.
 
 ## Clip suggestions
 

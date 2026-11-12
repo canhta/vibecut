@@ -1,8 +1,9 @@
-//! Lends the process font and sound stores to registry requests.
+//! Lends the process font, sound and music stores to registry requests.
 use crate::args::CliError;
-use engine::control::{FontAccess, SoundAccess};
+use engine::control::{FontAccess, MusicAccess, SoundAccess};
 use engine::jobs::JobRunner;
 use libraries::fonts::FontStore;
+use libraries::music::{MusicClient, MusicLibrary, MusicToken};
 use libraries::sounds::{
     SearchRequest, SoundClient, SoundLibrary, SoundResult as LibrarySound, Token,
 };
@@ -73,4 +74,24 @@ pub(crate) fn with_sounds<T>(
     let unsave = |id: u64| -> engine::control::Result<bool> { Ok(library.unsave(id)?) };
     let access = SoundAccess::new(&search, &save, &unsave);
     serve(&access)
+}
+
+/// Open one music-library root and serve its three operations through the one
+/// library adapter. The remote resolver is the scoped approval for a deliberate
+/// human search: it resolves the optional user key lazily and is never called by
+/// Saved, save or unsave. The key never enters a command parameter.
+pub(crate) fn with_music<T>(
+    root: &Path,
+    remote: bool,
+    serve: impl FnOnce(&MusicAccess<'_>) -> Result<T, CliError>,
+) -> Result<T, CliError> {
+    let library = MusicLibrary::open(root)?;
+    let client = || -> libraries::music::Music<MusicClient> {
+        Ok(MusicClient::ureq(MusicToken::from_env()?))
+    };
+    if remote {
+        library.with_control(Some(&client), serve)
+    } else {
+        library.with_control(None, serve)
+    }
 }

@@ -23,6 +23,8 @@ pub enum CliError {
     Time(#[from] time::TimeError),
     #[error(transparent)]
     Sounds(#[from] engine::SoundError),
+    #[error(transparent)]
+    Music(#[from] engine::MusicError),
     #[error("{0}")]
     Job(Arc<dyn Failure + 'static>),
     #[error("{0}")]
@@ -52,6 +54,7 @@ impl CliError {
             Self::Media(_) => ("media", 6),
             Self::Time(_) => ("time", 5),
             Self::Sounds(error) => failure_code(error.code()),
+            Self::Music(error) => failure_code(error.code()),
             Self::Job(error) => failure_code(error.code()),
             Self::Io(_) => ("io", 7),
             Self::Rejected(_) => ("rejected", 5),
