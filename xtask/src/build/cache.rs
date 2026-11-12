@@ -798,22 +798,44 @@ pub(super) fn prepare(
 ) -> Result<PathBuf, String> {
     let name = target_name(root)?;
     let target = base.join("target").join(&name);
-    let admission =
-        super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
-    let entries = targets(base)?;
-    let reserve = warm_reserve(base, &entries, &configuration(root, args)?)?;
-    let free = free_space(base)?;
-    let used = entries
-        .iter()
-        .fold(0u64, |sum, target| sum.saturating_add(target.bytes));
-    let cap = directory_cap(free, used, reserve);
-    if free < DISK_FLOOR || (!target.is_dir() && entries.len() as u64 >= cap) {
-        return Err(format!(
-            "build refused: checkout target capacity {cap} ({} directories), 30 GiB disk floor; run cargo xtask prune --make-room. Candidates:\n{}",
-            entries.len(),
-            candidates(&entries)
-        ));
-    }
+    let configuration = configuration(root, args)?;
+    let mut waiting = false;
+    let admission = loop {
+        let admission =
+            super::queue::Queue::admission(&base.join("locks")).map_err(|e| e.to_string())?;
+        let entries = targets(base)?;
+        let reserve = warm_reserve(base, &entries, &configuration)?;
+        let free = free_space(base)?;
+        let used = entries
+            .iter()
+            .fold(0u64, |sum, target| sum.saturating_add(target.bytes));
+        let cap = directory_cap(free, used, reserve);
+        if free < DISK_FLOOR || (cap == 0 && !target.is_dir()) {
+            return Err(format!(
+                "build refused: checkout target capacity {cap} ({} directories), 30 GiB disk floor; run cargo xtask prune. Candidates:\n{}",
+                entries.len(),
+                candidates(&entries)
+            ));
+        }
+        if target.is_dir() || (entries.len() as u64) < cap {
+            break admission;
+        }
+        // At capacity: evict the oldest idle verified target and create this
+        // checkout's target under the same admission hold, so no other build
+        // can take the freed room.
+        if evict_one_idle(base, &entries)? {
+            break admission;
+        }
+        if !waiting {
+            eprintln!(
+                "[build] checkout target capacity {cap} reached and every target is in use; waiting for one to go idle:\n{}",
+                candidates(&entries)
+            );
+            waiting = true;
+        }
+        drop(admission);
+        std::thread::sleep(TARGET_WAIT);
+    };
     let fresh = !target.is_dir();
     if !fresh {
         let recorded = fs::read_to_string(base.join("locks").join(format!("{name}.owner")))
@@ -844,6 +866,29 @@ pub(super) fn prepare(
         );
     }
     Ok(target)
+}
+
+/// How long a build at full target capacity waits before checking again.
+pub(super) const TARGET_WAIT: Duration = Duration::from_secs(2);
+
+/// Caller holds admission. Removes the first idle target with a verified owner,
+/// in `targets` order (removed checkouts first, then least recently used).
+fn evict_one_idle(base: &Path, entries: &[Target]) -> Result<bool, String> {
+    for entry in entries.iter().filter(|entry| entry.valid_owner) {
+        let Some(_held) = open(&base.join("locks").join(&entry.name))
+            .and_then(try_lock)
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        remove_slot(
+            &base.join("target").join(&entry.name),
+            false,
+            "making room for a checkout at target capacity",
+        )?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 pub(super) fn prune_targets(

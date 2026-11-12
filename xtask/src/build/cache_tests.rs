@@ -69,7 +69,7 @@ fn checkout_targets_survive_other_checkouts_without_touching_sources() {
 }
 
 #[test]
-fn directory_capacity_refuses_new_targets_and_reports_prune_candidates() {
+fn directory_capacity_evicts_idle_targets_atomically_and_waits_for_held_ones() {
     for (free, used, expected) in [
         (0, 0, 0),
         (30 * GIB - 1, 0, 0),
@@ -87,15 +87,42 @@ fn directory_capacity_refuses_new_targets_and_reports_prune_candidates() {
     let second = base.join("second");
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
-    prepare(base, &first, &[], |_| Ok(30 * GIB + CACHE_SLOT_LIMIT)).unwrap();
-    let error = prepare(base, &second, &[], |_| Ok(30 * GIB + CACHE_SLOT_LIMIT)).unwrap_err();
-    assert!(error.contains(&target_name(&first).unwrap()));
-    assert!(error.contains("capacity 1"));
-    assert!(error.contains("prune --make-room"));
+    let free = |_: &Path| Ok(30 * GIB + CACHE_SLOT_LIMIT);
+    let first_target = prepare(base, &first, &[], free).unwrap();
+    fs::write(first_target.join("artifact"), b"warm").unwrap();
+    // At capacity with the only target held, a new checkout waits instead of
+    // refusing or evicting; once the holder goes idle it evicts that target
+    // and takes the room under the same admission hold.
+    let held = try_lock(open(&base.join("locks").join(target_name(&first).unwrap())).unwrap())
+        .unwrap()
+        .unwrap();
+    let holder = std::thread::spawn({
+        let first_target = first_target.clone();
+        move || {
+            std::thread::sleep(Duration::from_millis(300));
+            let kept = first_target.join("artifact").exists();
+            drop(held);
+            kept
+        }
+    });
+    let second_target = prepare(base, &second, &[], free).unwrap();
+    assert!(holder.join().unwrap(), "a held target was evicted");
+    assert!(second_target.is_dir());
+    assert!(!first_target.exists());
+    // An idle target at capacity is evicted at once; no target room at all
+    // (capacity 0 for a new checkout) is still a refusal.
+    let third = base.join("third");
+    fs::create_dir_all(&third).unwrap();
+    assert!(prepare(base, &third, &[], free).unwrap().is_dir());
+    assert!(!second_target.exists());
+    let fourth = base.join("fourth");
+    fs::create_dir_all(&fourth).unwrap();
+    let error = prepare(base, &fourth, &[], |_| Ok(30 * GIB)).unwrap_err();
+    assert!(error.contains("capacity 0"));
     assert!(
         !base
             .join("target")
-            .join(target_name(&second).unwrap())
+            .join(target_name(&fourth).unwrap())
             .exists()
     );
 }
