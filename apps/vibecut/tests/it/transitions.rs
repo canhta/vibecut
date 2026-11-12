@@ -454,6 +454,9 @@ fn localized_search_and_category_filter_keep_preview_tiles_available() {
         "Overlay",
         "Light",
         "Blur",
+        "Camera",
+        "3D",
+        "Slides",
         "Wipes",
         "Glitch & Distort",
     ] {

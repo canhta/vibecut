@@ -1,5 +1,7 @@
 //! Shape wipes driven by a scalar field: the incoming clip appears where `field < T(p)`.
-use super::pixels::{FRAC_PI_2, PI, TAU, angle_deg, angle_dir, centre, mix, px, smoothstep};
+use super::pixels::{
+    FRAC_PI_2, PI, TAU, angle_deg, angle_dir, centre, ease_out, hash, mix, px, smoothstep,
+};
 use super::{Out, Tx};
 use crate::{Error, ExecutionHooks, Result, check};
 
@@ -167,6 +169,12 @@ pub(super) fn run(id: &str, t: &Tx, out: &mut Out) -> Result<()> {
     }
     if id == "stretch_wipe" {
         return stretch(t, out);
+    }
+    if id == "shape_dissolve" {
+        return shape_dissolve(t, out);
+    }
+    if id == "shape_flow" {
+        return shape_flow(t, out);
     }
     let style = Style::of(t)?;
     let (w, h) = (t.width as f32, t.height as f32);
@@ -385,5 +393,80 @@ fn neon_edge(t: &Tx, out: &mut Out) -> Result<()> {
         let halo = (-d.abs() / (glow * 0.5)).exp();
         let k = (core * 1.5 + halo * 0.8) * amount * fade;
         super::pixels::add_light(base, col, k)
+    })
+}
+
+/// Smooth acceleration and deceleration, exactly 0 and 1 at the ends.
+#[inline]
+fn ease_in_out(t: f32) -> f32 {
+    let t = t.clamp(0., 1.);
+    if t < 0.5 {
+        4. * t * t * t
+    } else {
+        1. - (-2. * t + 2.).powi(3) / 2.
+    }
+}
+
+/// A grid of shapes sweeping in the catalogue order.
+fn shape_dissolve(t: &Tx, out: &mut Out) -> Result<()> {
+    let shape = t.params.choice("shape")?;
+    let size = px(t, "size")?.max(4.);
+    let rotation = angle_deg(t, "rotation")?;
+    let order = t.params.choice("order")?;
+    let seed = t.params.seed("seed")?;
+    let style = Style::new(px(t, "softness")?, 0., [0.; 4], 1.)?;
+    let (w, h) = (t.width as f32, t.height as f32);
+    let (cols, rows) = ((w / size).ceil().max(1.), (h / size).ceil().max(1.));
+    let diagonal = ((cols / 2.).powi(2) + (rows / 2.).powi(2)).sqrt().max(1.);
+    field_wipe(
+        t,
+        style,
+        move |x, y| {
+            let (cx, cy) = ((x / size).floor(), (y / size).floor());
+            let (lx, ly) = (x - (cx + 0.5) * size, y - (cy + 0.5) * size);
+            let (u, v) = rot(lx / (size * 0.5), ly / (size * 0.5), rotation);
+            let delay = match order {
+                1 => cx / cols,
+                2 => {
+                    (((cx + 0.5) - cols / 2.).powi(2) + ((cy + 0.5) - rows / 2.).powi(2)).sqrt()
+                        / diagonal
+                }
+                _ => hash(cx as i32, cy as i32, seed),
+            };
+            (shape_dist(shape, u, v) + delay * 1.5) * size * 0.5
+        },
+        out,
+    )
+}
+
+/// One shape growing from the entry side to cover the frame.
+fn shape_flow(t: &Tx, out: &mut Out) -> Result<()> {
+    let shape = t.params.choice("shape")?;
+    let (dx, dy) = match t.params.choice("direction")? {
+        0 => (0., 1.),
+        1 => (-1., 0.),
+        2 => (0., -1.),
+        _ => (1., 0.),
+    };
+    let style = Style::new(px(t, "softness")?, 0., [0.; 4], 1.)?;
+    let (w, h) = (t.width as f32, t.height as f32);
+    let (c1x, c1y) = (w / 2., h / 2.);
+    // Start beside the frame, far enough out that the feather reaches no pixel at progress 0.
+    let margin = style.margin();
+    let c0x = c1x - dx * w * 0.75 - dx.signum() * margin;
+    let c0y = c1y - dy * h * 0.75 - dy.signum() * margin;
+    let (_, cover) = field_range(
+        w,
+        h,
+        &|x: f32, y: f32| shape_dist(shape, x - c1x, y - c1y),
+        out.hooks(),
+    )?;
+    let maximum_radius = cover.max(0.) * 1.05 + margin + 1.;
+    let e = ease_out(t.progress);
+    let (cx, cy) = (c0x + (c1x - c0x) * e, c0y + (c1y - c0y) * e);
+    let radius = maximum_radius * ease_in_out(t.progress);
+    out.paint(move |x, y| {
+        let d = shape_dist(shape, x as f32 + 0.5 - cx, y as f32 + 0.5 - cy) - radius;
+        wipe_px(&style, t.outgoing_at(x, y), t.incoming_at(x, y), d)
     })
 }

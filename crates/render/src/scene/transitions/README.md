@@ -7,9 +7,19 @@ Implementation reference: the structure reference's CPU transition kernels, adap
 | Child | Kinds |
 |---|---|
 | `dissolve` | Light Fade, Film Fade, Soft Focus Fade, Burn Through, Brightness Fade, Pixel Blocks |
-| `wipe` | Straight, Soft Edge, Clock, Corner Sweep, Star, Panel, Stair, Stretch, Neon Edge, Circle/Box/Diamond/Cross Reveal, Double Doors, Corner Inset |
+| `wipe` | Straight, Soft Edge, Clock, Corner Sweep, Star, Panel, Stair, Stretch, Neon Edge, Circle/Box/Diamond/Cross Reveal, Double Doors, Corner Inset, Shape Dissolve, Shape Flow |
 | `lights` | Zoom Cross, Zoom Smear, Spin Smear, Streak Smear, Lens Defocus, Bloom, Flash, Lens Flare, Light Leak, Colour Leak, Colour Burn, Light Sweep, Light Rays, Phosphor Trail, Solarise, Stripes |
 | `grunge` | Scramble, Digital Glitch, Tape Damage, Flicker Cut, Quake, Glass Shards, Rough Edge, Kaleidoscope, Liquid Warp, Screen Off |
+| `motion` | Push, Slide, Roll, Split Open, Stretch In, Film Strip, Spring, Wave, Slices, Blinds, Picture Frame, Cylinder Roll, Card Flip, Fold Open, Spin, Turntable, Turntable Back, Page Peel, Mirror Flip, Tile Slide, Whip Pan, Camera Move, Zoom Travel, Match Scale, Pull, Pop |
+| `cards` | Pinhole-camera card geometry and ray tests; no kinds |
+
+`cards` places pixel-unit cards under a camera whose eye sits at the frame centre and whose focal
+distance follows the Perspective parameter. `motion` builds only card transforms per kind and
+borrows both frames, so the destination image's area cap bounds every scene; a frame above that
+cap is refused before any work. Motion blur averages at most twelve progress samples and shrinks
+its shutter at either end, so the endpoint frames stay exact. Shape Dissolve sweeps a grid field
+through `field_wipe`; Shape Flow grows a shape from the entry side with `wipe_px`, using the
+largest field value over the frame as its final radius.
 
 Every kind is a pure function of the outgoing frame, incoming frame, progress strictly inside (0, 1), the pixel scale and the persisted parameters: progress 0 is exactly the outgoing frame, 1 exactly the incoming one, and the output is finite, deterministic and continuous towards both ends. Pixel-denominated parameters multiply by `scale`; points are frame fractions with the origin at the top left; angles are clockwise degrees.
 

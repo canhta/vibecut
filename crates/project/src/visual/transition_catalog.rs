@@ -149,6 +149,81 @@ const BORDER_COLOR: TransitionParamDef = colour("border_color", "Border Colour",
 const ANTIALIAS: TransitionParamDef = choice("antialias", "Anti-aliasing", AA, 1);
 const AMOUNT: TransitionParamDef = percent("amount", "Amount", 80.);
 
+const MOTION_BLUR: TransitionParamDef = percent("motion_blur", "Motion Blur", 50.);
+const PERSPECTIVE: TransitionParamDef = percent("perspective", "Perspective", 50.);
+const BLOCKS: TransitionParamDef = ranged("blocks", "Blocks", 6., 2., 32.);
+const WHIP_BLUR: TransitionParamDef = percent("blur", "Blur", 80.);
+const GAP: TransitionParamDef = pixels("gap", "Gap", 40., 400.);
+const GAP_COLOR: TransitionParamDef = colour("gap_color", "Gap Colour", [8, 8, 8]);
+const OVERSHOOT: TransitionParamDef = percent("overshoot", "Overshoot", 20.);
+const SPIN_ROTATION: TransitionParamDef = TransitionParamDef {
+    id: "rotation",
+    name: "Rotation",
+    kind: TransitionParamKind::Float {
+        min: 0.,
+        max: 1440.,
+        default: 360.,
+        unit: "°",
+    },
+};
+const SPIN_DIRECTION: TransitionParamDef = choice("spin", "Spin Direction", SPIN_OPTIONS, 0);
+const BOUNCE: TransitionParamDef = percent("bounce", "Bounce", 40.);
+const ZOOM_OUT: TransitionParamDef = TransitionParamDef {
+    id: "zoom",
+    name: "Zoom Out",
+    kind: TransitionParamKind::Float {
+        min: 0.,
+        max: 90.,
+        default: 40.,
+        unit: "%",
+    },
+};
+const DEPTH: TransitionParamDef = percent("depth", "Depth", 60.);
+const FRAME_WIDTH: TransitionParamDef = pixels("frame_width", "Frame Width", 24., 200.);
+const FRAME_COLOR: TransitionParamDef = colour("frame_color", "Frame Colour", [255, 255, 255]);
+const FRAME_SCALE: TransitionParamDef = TransitionParamDef {
+    id: "scale",
+    name: "Scale",
+    kind: TransitionParamKind::Float {
+        min: 10.,
+        max: 95.,
+        default: 60.,
+        unit: "%",
+    },
+};
+const SLATS: TransitionParamDef = ranged("slats", "Slats", 8., 1., 64.);
+const PAGE_CORNER: TransitionParamDef = choice("corner", "Corner", CORNERS, 2);
+const CURL_RADIUS: TransitionParamDef = pixels("radius", "Curl Radius", 60., 500.);
+const SHADOW: TransitionParamDef = flag("shadow", "Shadow", true);
+const SLICES: TransitionParamDef = ranged("slices", "Slices", 8., 1., 64.);
+const SLICE_ANGLE: TransitionParamDef = angle("angle", "Angle", 20.);
+const AMPLITUDE: TransitionParamDef = pixels("amplitude", "Amplitude", 60., 500.);
+const WAVELENGTH: TransitionParamDef = pixels("wavelength", "Wavelength", 300., 3000.);
+const CAMERA_ZOOM: TransitionParamDef = TransitionParamDef {
+    id: "zoom",
+    name: "Zoom",
+    kind: TransitionParamKind::Float {
+        min: 0.,
+        max: 200.,
+        default: 40.,
+        unit: "%",
+    },
+};
+const CAMERA_ROTATION: TransitionParamDef = angle("rotation", "Rotation", 8.);
+const MATCH_SCALE: TransitionParamDef = percent("scale", "Scale Match", 15.);
+const SHAPE: TransitionParamDef = choice("shape", "Shape", SHAPES, 0);
+const SHAPE_SIZE: TransitionParamDef = pixels("size", "Shape Size", 120., 1000.);
+const SHAPE_SOFTNESS: TransitionParamDef = pixels("softness", "Softness", 2., 100.);
+const SHAPE_ROTATION: TransitionParamDef = angle("rotation", "Rotation", 0.);
+const SHAPE_ORDER: TransitionParamDef = choice("order", "Order", ORDERS, 0);
+const FLOW_SOFTNESS: TransitionParamDef = pixels("softness", "Softness", 4., 200.);
+
+const SPIN_OPTIONS: &[&str] = &["Clockwise", "Counter-clockwise"];
+const SHAPES: &[&str] = &[
+    "Circle", "Square", "Diamond", "Star", "Heart", "Triangle", "Hexagon",
+];
+const ORDERS: &[&str] = &["Random", "Left to Right", "Center Out"];
+
 pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
     TransitionDefinition {
         kind: "cross_dissolve",
@@ -655,6 +730,213 @@ pub const TRANSITION_DEFINITIONS: &[TransitionDefinition] = &[
             colour("glow_color", "Glow Colour", [217, 242, 255]),
             pixels("line", "Line Thickness", 4., 50.),
         ],
+    },
+    // ---- Slides (262) ----
+    TransitionDefinition {
+        kind: "push",
+        name: "Push",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "slide",
+        name: "Slide",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "roll",
+        name: "Roll",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "split",
+        name: "Split Open",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[choice("orientation", "Orientation", AXES, 0), MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "stretch",
+        name: "Stretch In",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION],
+    },
+    TransitionDefinition {
+        kind: "film_roll",
+        name: "Film Strip",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, GAP, GAP_COLOR, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "spring_motion",
+        name: "Spring",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, BOUNCE, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "wave",
+        name: "Wave",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[DIRECTION, AMPLITUDE, WAVELENGTH],
+    },
+    TransitionDefinition {
+        kind: "slice",
+        name: "Slices",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[SLICES, SLICE_ANGLE, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "louver",
+        name: "Blinds",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[SLATS, choice("orientation", "Orientation", AXES, 0)],
+    },
+    TransitionDefinition {
+        kind: "frame",
+        name: "Picture Frame",
+        family: "Slides",
+        shelf: "Slides",
+        params: &[FRAME_WIDTH, FRAME_COLOR, FRAME_SCALE],
+    },
+    // ---- 3D (262) ----
+    TransitionDefinition {
+        kind: "roll_3d",
+        name: "Cylinder Roll",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, PERSPECTIVE],
+    },
+    TransitionDefinition {
+        kind: "flip_motion",
+        name: "Card Flip",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, PERSPECTIVE, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "fold_motion",
+        name: "Fold Open",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, PERSPECTIVE],
+    },
+    TransitionDefinition {
+        kind: "spin_motion",
+        name: "Spin",
+        family: "3D",
+        shelf: "3D",
+        params: &[SPIN_ROTATION, SPIN_DIRECTION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "spin_3d",
+        name: "Turntable",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, PERSPECTIVE],
+    },
+    TransitionDefinition {
+        kind: "spinback_3d",
+        name: "Turntable Back",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, DEPTH],
+    },
+    TransitionDefinition {
+        kind: "page_peel",
+        name: "Page Peel",
+        family: "3D",
+        shelf: "3D",
+        params: &[PAGE_CORNER, CURL_RADIUS, SHADOW],
+    },
+    TransitionDefinition {
+        kind: "mirror_transition",
+        name: "Mirror Flip",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION],
+    },
+    TransitionDefinition {
+        kind: "block_motion",
+        name: "Tile Slide",
+        family: "3D",
+        shelf: "3D",
+        params: &[DIRECTION, BLOCKS, MOTION_BLUR],
+    },
+    // ---- Camera (262) ----
+    TransitionDefinition {
+        kind: "whip",
+        name: "Whip Pan",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[DIRECTION, WHIP_BLUR],
+    },
+    TransitionDefinition {
+        kind: "motion_camera",
+        name: "Camera Move",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[CAMERA_ZOOM, CAMERA_ROTATION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "travel_motion",
+        name: "Zoom Travel",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[DIRECTION, ZOOM_OUT, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "motion_tween",
+        name: "Match Scale",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[MATCH_SCALE],
+    },
+    TransitionDefinition {
+        kind: "pull_motion",
+        name: "Pull",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[DIRECTION, MOTION_BLUR],
+    },
+    TransitionDefinition {
+        kind: "pop_motion",
+        name: "Pop",
+        family: "Camera",
+        shelf: "Camera",
+        params: &[OVERSHOOT, MOTION_BLUR],
+    },
+    // ---- Wipes (262) ----
+    TransitionDefinition {
+        kind: "shape_dissolve",
+        name: "Shape Dissolve",
+        family: "Wipe",
+        shelf: "Wipes",
+        params: &[
+            SHAPE,
+            SHAPE_SIZE,
+            SHAPE_SOFTNESS,
+            SHAPE_ROTATION,
+            SHAPE_ORDER,
+            seed(),
+        ],
+    },
+    TransitionDefinition {
+        kind: "shape_flow",
+        name: "Shape Flow",
+        family: "Wipe",
+        shelf: "Wipes",
+        params: &[SHAPE, DIRECTION, FLOW_SOFTNESS],
     },
 ];
 

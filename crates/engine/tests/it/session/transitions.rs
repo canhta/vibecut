@@ -125,7 +125,7 @@ fn spans_clamp_by_alignment_and_refuse_overlap_hostile_and_locked_edits() {
             track: TrackId(1),
             from: ItemId(11),
             to: ItemId(12),
-            kind: "spin_motion".into(),
+            kind: "not_a_kind".into(),
             duration: Tick(10),
             alignment: TransitionAlignment::Center,
         },
@@ -165,7 +165,7 @@ fn spans_clamp_by_alignment_and_refuse_overlap_hostile_and_locked_edits() {
         .is_err()
     );
     assert!(
-        matches!(project::transition_definition("spin_motion"),Err(project::Error::UnsupportedTransition(kind)) if kind == "spin_motion")
+        matches!(project::transition_definition("not_a_kind"),Err(project::Error::UnsupportedTransition(kind)) if kind == "not_a_kind")
     );
 }
 

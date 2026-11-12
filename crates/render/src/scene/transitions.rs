@@ -3,9 +3,11 @@ use crate::{Error, ExecutionHooks, Image, Result, check};
 use project::{TransitionParamDef, TransitionParams, TransitionValue, transition_definition};
 use rayon::prelude::*;
 
+mod cards;
 mod dissolve;
 mod grunge;
 mod lights;
+mod motion;
 mod pixels;
 mod wipe;
 
@@ -427,6 +429,150 @@ const KINDS: &[Kind] = &[
     Kind {
         id: "screen_off",
         run: |t, out| grunge::run("screen_off", t, out),
+        sides: both_sides,
+    },
+    // Slides (262).
+    Kind {
+        id: "push",
+        run: |t, out| motion::run("push", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "slide",
+        run: |t, out| motion::run("slide", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "roll",
+        run: |t, out| motion::run("roll", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "split",
+        run: |t, out| motion::run("split", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "stretch",
+        run: |t, out| motion::run("stretch", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "film_roll",
+        run: |t, out| motion::run("film_roll", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "spring_motion",
+        run: |t, out| motion::run("spring_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "wave",
+        run: |t, out| motion::run("wave", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "slice",
+        run: |t, out| motion::run("slice", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "louver",
+        run: |t, out| motion::run("louver", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "frame",
+        run: |t, out| motion::run("frame", t, out),
+        sides: both_sides,
+    },
+    // 3D (262).
+    Kind {
+        id: "roll_3d",
+        run: |t, out| motion::run("roll_3d", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "flip_motion",
+        run: |t, out| motion::run("flip_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "fold_motion",
+        run: |t, out| motion::run("fold_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "spin_motion",
+        run: |t, out| motion::run("spin_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "spin_3d",
+        run: |t, out| motion::run("spin_3d", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "spinback_3d",
+        run: |t, out| motion::run("spinback_3d", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "page_peel",
+        run: |t, out| motion::run("page_peel", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "mirror_transition",
+        run: |t, out| motion::run("mirror_transition", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "block_motion",
+        run: |t, out| motion::run("block_motion", t, out),
+        sides: both_sides,
+    },
+    // Camera (262).
+    Kind {
+        id: "whip",
+        run: |t, out| motion::run("whip", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "motion_camera",
+        run: |t, out| motion::run("motion_camera", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "travel_motion",
+        run: |t, out| motion::run("travel_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "motion_tween",
+        run: |t, out| motion::run("motion_tween", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "pull_motion",
+        run: |t, out| motion::run("pull_motion", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "pop_motion",
+        run: |t, out| motion::run("pop_motion", t, out),
+        sides: both_sides,
+    },
+    // Wipes (262).
+    Kind {
+        id: "shape_dissolve",
+        run: |t, out| wipe::run("shape_dissolve", t, out),
+        sides: both_sides,
+    },
+    Kind {
+        id: "shape_flow",
+        run: |t, out| wipe::run("shape_flow", t, out),
         sides: both_sides,
     },
 ];
