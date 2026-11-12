@@ -121,3 +121,28 @@ blends the nearest tile colour toward the bilinear mix of the four surrounding
 tile centres; the sharp flag forces the nearest colour, so it changes the
 picture only with softness above zero. One block per axis on both axes emits
 no pass.
+
+## Whole-image entries (265)
+
+`whole_image.rs` owns the CPU references of the 26 E2 entries. Warps and generators are
+one `Sample` pass; glows compose `highlights`/`sobel_edges` (Pixel or Sample), the shared
+`gaussian` Convolve passes and a `glow_add` sample that reads the blurred light and the
+immutable instance input. `alpha_plane` plus a convolve feeds Torn Edges' depth field.
+Drop Shadow blurs first and shifts alpha in its sample; Long Shadow marches the source
+alpha over a bounded tap count. Every op returns premultiplied linear RGBA and the
+shared pass exit clamps it once.
+
+Determinism: time reads only the item-local `frame.seconds` (wave phase, shake noise,
+leak drift), so a given item-local time always produces the same pixels. Colour-key
+distance is BT.709 chroma plus 0.15·|ΔY| on encoded sRGB; tolerance spans
+`0.01 + 0.6·tolerance/255` and Edge Thin shifts it by `thin/5·0.1`. Luma Key ramps
+encoded luma between cutoff and threshold, or mirrors it from white when Invert is on.
+
+Quality: this port's preview budget is one 60 Hz frame at 1080p (16.7 ms). Entries above
+it lower sample counts in preview (`fine=false`) and run full quality in export, without
+changing geometry, colour mapping or affected pixels: Turbulent Displace caps noise
+octaves at 3, Paint Strokes at 8 of up to 24 taps, Sparkle at 10 of 24 streak taps, Sun
+Rays at 12 of 48 radial taps, Torn Edges at 3 octaves, Long Shadow at 12 of 40 march
+taps, Echo Glow at 3 of 6 blurs and Bloom at one of three scales; Glow's edge-width blur
+runs in fine only. The ignored `measure_whole_image_1080p` probe prints every entry's
+release cost and the five slowest; those numbers stay unverified until it runs.

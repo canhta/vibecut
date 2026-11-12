@@ -4694,3 +4694,423 @@ fn streak_cancels_inside_sample_rows_and_releases_partial_images() {
     drop(image);
     assert_eq!(base.used.load(Ordering::SeqCst), 0);
 }
+
+// ------------------------------------------------------------------ 265 whole-image entries
+
+/// The 265 entries with a frame evaluator. `posterize_time` is a content-time
+/// remap and is covered by its own test below.
+const WHOLE_EFFECTS: [&str; 25] = [
+    "twirl",
+    "spherize",
+    "magnify",
+    "wave_warp",
+    "lens_distortion",
+    "turbulent_displace",
+    "corner_pin",
+    "basic_3d",
+    "echo_glow",
+    "edge_glow",
+    "glint",
+    "wonder_glow",
+    "volumetric_rays",
+    "light_leaks",
+    "lens_flare",
+    "rgb_split",
+    "brush_strokes",
+    "roughen_edges",
+    "camera_shake",
+    "drop_shadow",
+    "long_shadow",
+    "gradient",
+    "four_color_gradient",
+    "color_key",
+    "luma_key",
+];
+
+/// A 24x18 fixture with spatial structure, colour variation and transparent
+/// and translucent regions, so warps, glows and keys all see real neighbours.
+fn whole_chart() -> Vec<[f32; 4]> {
+    let (w, h) = (24u32, 18u32);
+    (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let alpha = if x < 8 || y < 4 {
+                1.0
+            } else if (x + y) % 5 == 0 {
+                0.6
+            } else {
+                0.9
+            };
+            let r = x as f32 / (w - 1) as f32;
+            let g = y as f32 / (h - 1) as f32;
+            let b = ((x * 3 + y * 5) % 7) as f32 / 6.0;
+            [r * alpha, g * alpha, b * alpha, alpha]
+        })
+        .collect()
+}
+
+fn whole_output_at(
+    kind: &str,
+    params: &[(&str, EffectValue)],
+    at: time::Tick,
+    fine: bool,
+    source: &[[f32; 4]],
+) -> Vec<[f32; 4]> {
+    let hooks = Hooks::default();
+    let image = Image::from_working_pixels(24, 18, source.iter().copied(), &hooks).unwrap();
+    let instance = effect_instance(kind, params);
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &instance,
+        at,
+        EffectGeometry::new([24, 18], [1.0, 1.0]).unwrap(),
+        fine,
+        &render::lut::LutResources::default(),
+    )
+    .unwrap();
+    for pass in &passes {
+        validate_pass(pass, 24, 18).unwrap();
+    }
+    CpuEffects
+        .apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap()
+        .pixels()
+        .to_vec()
+}
+
+fn whole_output(kind: &str, params: &[(&str, EffectValue)]) -> Vec<[f32; 4]> {
+    whole_output_at(kind, params, whole_time(kind), true, &whole_fixture(kind))
+}
+
+/// Key fixtures sweep a continuous colour/luma ramp so tolerance, feather and
+/// cutoff land inside their bands; every other entry uses the spatial chart.
+fn whole_fixture(kind: &str) -> Vec<[f32; 4]> {
+    if matches!(kind, "color_key" | "luma_key") {
+        (0..432)
+            .map(|i| {
+                let t = i as f32 / 431.0;
+                let encoded = [t, t * 0.8, 1.0 - 0.5 * t];
+                [
+                    linear(encoded[0]),
+                    linear(encoded[1]),
+                    linear(encoded[2]),
+                    1.0,
+                ]
+            })
+            .collect()
+    } else {
+        whole_chart()
+    }
+}
+
+/// Entries whose parameters include a clock read the wave/shake phase at a
+/// nonzero item-local time so a speed/frequency change is observable.
+fn whole_time(kind: &str) -> time::Tick {
+    match kind {
+        "wave_warp" | "light_leaks" | "camera_shake" => tick(1, 4),
+        _ => time::Tick::ZERO,
+    }
+}
+
+/// A value the parameter does not hold at the tested state. Angles avoid
+/// 360-degree aliases and Corner Pin stays a valid quad.
+fn whole_changed_value(kind: &str, param: &project::EffectParamDefinition) -> EffectValue {
+    use project::{EffectParamKind, EffectValue};
+    match param.kind {
+        EffectParamKind::Float { min, max, .. } => {
+            let current = param.default.scalar().unwrap();
+            EffectValue::Scalar(if (current - min).abs() >= (current - max).abs() {
+                min
+            } else {
+                max
+            })
+        }
+        EffectParamKind::Angle => {
+            let current = param.default.scalar().unwrap_or(0.0);
+            EffectValue::Scalar(if current == 0.0 { 45.0 } else { 0.0 })
+        }
+        EffectParamKind::Choice { options } => {
+            EffectValue::Choice((param.default.choice().unwrap() + 1) % options.len() as u32)
+        }
+        EffectParamKind::Bool => EffectValue::Bool(!param.default.flag().unwrap()),
+        EffectParamKind::Color => {
+            EffectValue::Color(if param.default.color() == Some(Color([255, 0, 0, 255])) {
+                Color([0, 255, 255, 255])
+            } else {
+                Color([255, 0, 0, 255])
+            })
+        }
+        EffectParamKind::Point => EffectValue::Point(if kind == "corner_pin" {
+            [0.5, 0.5]
+        } else {
+            [1.0, 1.0]
+        }),
+        EffectParamKind::Lut => EffectValue::Lut(None),
+    }
+}
+
+/// State another parameter needs before this one is observable: Lens Warp's
+/// decentering scales the radial term, RGB Split's centre only applies in
+/// Radial mode and the keys need a tolerance/cutoff band.
+fn whole_base_params(
+    kind: &str,
+    param: &project::EffectParamDefinition,
+) -> Vec<(&'static str, EffectValue)> {
+    use EffectValue::Scalar as S;
+    match (kind, param.id) {
+        ("spherize", _) => vec![("radius", S(250.0))],
+        ("lens_distortion", _) => vec![("curvature", S(60.0))],
+        ("rgb_split", "center") => vec![("mode", EffectValue::Choice(1))],
+        ("rgb_split", "angle") => vec![("mode", EffectValue::Choice(0))],
+        ("color_key", _) => vec![("tolerance", S(80.0))],
+        ("luma_key", _) => vec![("threshold", S(60.0)), ("cutoff", S(20.0))],
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn whole_image_effects_that_are_identity_at_default_emit_no_pass() {
+    for kind in ["lens_distortion", "corner_pin", "basic_3d"] {
+        let instance = effect_instance(kind, &[]);
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &instance,
+            time::Tick::ZERO,
+            EffectGeometry::new([24, 18], [1.0, 1.0]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        )
+        .unwrap();
+        assert!(passes.is_empty(), "{kind} emits an identity pass");
+        assert_eq!(whole_output(kind, &[]), whole_chart(), "{kind} is identity");
+    }
+}
+
+#[test]
+fn every_whole_image_parameter_changes_the_picture() {
+    for kind in WHOLE_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for param in definition.params {
+            let mut base = whole_base_params(kind, param);
+            base.retain(|(id, _)| *id != param.id);
+            let changed = whole_changed_value(kind, param);
+            base.push((param.id, changed));
+            let at = whole_time(kind);
+            let source = whole_fixture(kind);
+            let before = whole_output_at(kind, &[], at, true, &source);
+            let base_before = if base.len() > 1 {
+                let defaults: Vec<_> = base
+                    .iter()
+                    .filter(|(id, _)| *id != param.id)
+                    .copied()
+                    .collect();
+                whole_output_at(kind, &defaults, at, true, &source)
+            } else {
+                before.clone()
+            };
+            let after = whole_output_at(kind, &base, at, true, &source);
+            assert_ne!(after, base_before, "{kind}.{} changed nothing", param.id);
+        }
+    }
+}
+
+#[test]
+fn whole_image_outputs_are_deterministic_for_an_item_local_time() {
+    for kind in WHOLE_EFFECTS {
+        let at = whole_time(kind);
+        let source = whole_fixture(kind);
+        let first = whole_output_at(kind, &[], at, true, &source);
+        let second = whole_output_at(kind, &[], at, true, &source);
+        assert_eq!(first, second, "{kind} is not deterministic");
+    }
+}
+
+#[test]
+fn whole_image_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
+    for kind in WHOLE_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for high in [false, true] {
+            let mut params = Vec::new();
+            for param in definition.params {
+                let value = match param.kind {
+                    project::EffectParamKind::Float { min, max, .. } => {
+                        EffectValue::Scalar(if high { max } else { min })
+                    }
+                    project::EffectParamKind::Angle => {
+                        EffectValue::Scalar(if high { ANGLE_MAX } else { -ANGLE_MAX })
+                    }
+                    project::EffectParamKind::Choice { options } => {
+                        EffectValue::Choice(if high { options.len() as u32 - 1 } else { 0 })
+                    }
+                    project::EffectParamKind::Bool => EffectValue::Bool(high),
+                    project::EffectParamKind::Color => EffectValue::Color(if high {
+                        Color([255, 255, 255, 255])
+                    } else {
+                        Color([0, 0, 0, 255])
+                    }),
+                    project::EffectParamKind::Point => {
+                        EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
+                    }
+                    project::EffectParamKind::Lut => EffectValue::Lut(None),
+                };
+                params.push((param.id, value));
+            }
+            let output = whole_output(kind, &params);
+            for pixel in output {
+                assert!(
+                    pixel
+                        .iter()
+                        .all(|v| v.is_finite() && (0.0..=1.0).contains(v)),
+                    "{kind} {high} {pixel:?}"
+                );
+                assert!(
+                    pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6),
+                    "{kind} {high} {pixel:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn whole_image_animations_clamp_to_their_hard_range() {
+    for kind in WHOLE_EFFECTS {
+        let definition = project::effect_definition(kind).unwrap();
+        for param in definition
+            .params
+            .iter()
+            .filter(|p| p.animatable)
+            .filter_map(|p| p.scalar_range().map(|range| (p, range)))
+        {
+            for (raw, expected) in [(1e9, param.1.1), (-1e9, param.1.0)] {
+                let mut animations = project::Animations::default();
+                animations
+                    .set(
+                        project::AnimationPath::new(format!("effects.one.params.{}", param.0.id))
+                            .unwrap(),
+                        project::Param::new(project::ParamValue::Scalar(raw)).unwrap(),
+                    )
+                    .unwrap();
+                let instance = definition.instance("one");
+                let frame =
+                    EffectFrame::new(&animations, &instance, time::Tick::ZERO, 24, 18).unwrap();
+                assert_eq!(
+                    frame.scalar(param.0.id).unwrap(),
+                    expected,
+                    "{kind}.{}",
+                    param.0.id
+                );
+                for pass in (evaluator(kind).unwrap())(
+                    &frame,
+                    &EffectGeometry::new([24, 18], [1.0, 1.0]).unwrap(),
+                )
+                .unwrap()
+                {
+                    validate_pass(&pass, 24, 18)
+                        .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.0.id));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn low_frame_rate_remaps_content_time_deterministically() {
+    let rate = |rate| {
+        project::effect_definition("posterize_time")
+            .unwrap()
+            .instance("low")
+            .with("rate", EffectValue::Scalar(rate))
+            .unwrap()
+    };
+    let item = content_scene(vec![rate(4.0)])
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items[0]
+        .clone();
+    let at = tick(3, 10);
+    let held = content_time(&item, at, 4, 4).unwrap();
+    assert_eq!(held, tick(1, 4));
+    assert_eq!(content_time(&item, at, 4, 4).unwrap(), held);
+    assert!(content_remap("posterize_time").is_some());
+    let mut plain = item.clone();
+    plain.effects.clear();
+    assert_eq!(content_time(&plain, at, 4, 4).unwrap(), at);
+}
+
+#[test]
+#[ignore = "manual 1080p CPU cost of the 265 whole-image entries"]
+fn measure_whole_image_1080p() {
+    let hooks = Hooks::default();
+    let input = Image::from_working_pixels(
+        1920,
+        1080,
+        (0..1920 * 1080).map(|i| {
+            let a = if i % 97 < 48 { 1.0 } else { 0.5 };
+            [
+                (i % 251) as f32 / 250.0 * a,
+                (i % 113) as f32 / 112.0 * a,
+                (i % 61) as f32 / 60.0 * a,
+                a,
+            ]
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let mut rows = Vec::new();
+    for kind in WHOLE_EFFECTS.iter().chain(["posterize_time"].iter()) {
+        let kind = *kind;
+        let instance = effect_instance(kind, &[]);
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &instance,
+            whole_time(kind),
+            EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        )
+        .unwrap();
+        let run = || {
+            CpuEffects
+                .apply(
+                    &input,
+                    &passes,
+                    EffectInputs {
+                        input: &input,
+                        below: &input,
+                        coverage: None,
+                    },
+                    &hooks,
+                )
+                .unwrap()
+        };
+        drop(run());
+        let start = std::time::Instant::now();
+        for _ in 0..2 {
+            drop(run());
+        }
+        let ms = start.elapsed().as_secs_f64() * 1000.0 / 2.0;
+        eprintln!(
+            "WHOLE_COST {kind} {ms:.3} ms/frame 1920x1080 passes={}",
+            passes.len()
+        );
+        rows.push((kind, ms));
+    }
+    rows.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (kind, ms) in rows.iter().take(5) {
+        eprintln!("WHOLE_SLOWEST {kind} {ms:.3} ms");
+    }
+    drop(input);
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}

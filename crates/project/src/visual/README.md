@@ -71,6 +71,25 @@ slider 1–200, default 10), an animatable softness percent and a static sharp f
 The counts are blocks per axis, not pixel sizes; one block per axis on both axes is
 identity.
 
+The 26 whole-image entries sit on the Distort, Glow & Light, Stylize and Overlay & Key
+shelves: twirl, spherize, magnify, wave_warp, lens_distortion, turbulent_displace,
+corner_pin and basic_3d on Distort; echo_glow, edge_glow, glint, wonder_glow,
+volumetric_rays, light_leaks, lens_flare and rgb_split on Glow & Light; brush_strokes,
+roughen_edges, camera_shake and posterize_time on Stylize; drop_shadow, long_shadow,
+gradient, four_color_gradient, color_key and luma_key on Overlay & Key. Ranges, defaults
+and animation flags live in [the catalogue](effects_catalog.rs). Author-level lengths
+and radii are full-resolution clip pixels; render converts them through the item's
+axis gains before sampling. `corner_pin`, the Magnifier/Sphere/Twirl centres, the two
+Gradients' points and the Sun Rays source are `Point` values in frame fractions. Lens
+Flare's authored parameters are `center`, `brightness` (0–300, default 100) and `blend`
+(0–100, default 0), read from the source definition; the renderer's extra legacy
+fields are not authored. `posterize_time.rate` is the one content-time remap: it holds
+the item's media at `floor(t·rate)/rate` while parameters keep real item-local time.
+
+Point parameters are defined, validated, persisted and duplicated with the instance,
+but no Properties control or edit command addresses them yet; that is the deferred
+Point contract from the earlier E1 port, not a second representation.
+
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector`; it is off in every production build.
 
 ## Video transitions

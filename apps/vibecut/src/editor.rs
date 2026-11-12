@@ -721,6 +721,33 @@ fn effect_preview_instance(
                 )
                 .ok()?;
         }
+        // Entries whose defaults are identity need a visible tile preview.
+        "spherize" => instance.set_scalar("radius", 150.0).ok()?,
+        "wave_warp" => {
+            instance.set_scalar("height", 25.0).ok()?;
+            instance.set_scalar("width", 60.0).ok()?;
+        }
+        "lens_distortion" => instance.set_scalar("curvature", 60.0).ok()?,
+        "corner_pin" => {
+            for (id, value) in [
+                ("upper_left", [0.1, 0.1]),
+                ("upper_right", [0.9, 0.1]),
+                ("lower_left", [0.1, 0.9]),
+                ("lower_right", [0.9, 0.9]),
+            ] {
+                instance = instance.with(id, project::EffectValue::Point(value)).ok()?;
+            }
+        }
+        "basic_3d" => {
+            instance.set_scalar("swivel", 30.0).ok()?;
+            instance.set_scalar("tilt", -20.0).ok()?;
+        }
+        "camera_shake" => instance.set_scalar("amount", 60.0).ok()?,
+        "color_key" => instance.set_scalar("tolerance", 120.0).ok()?,
+        "luma_key" => {
+            instance.set_scalar("threshold", 60.0).ok()?;
+            instance.set_scalar("cutoff", 20.0).ok()?;
+        }
         _ => {}
     }
     Some(instance)

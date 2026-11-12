@@ -7,6 +7,7 @@ use time::{Rounding, Tick};
 mod image_ops;
 mod layers;
 pub mod lut;
+mod whole_image;
 pub use layers::{
     FrameLayer, MAX_FRAME_LAYERS, composite_layers, reference_layers, validate_layers,
 };
@@ -676,7 +677,7 @@ struct PixelOp {
     valid: fn(&[f32]) -> bool,
     apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-static PIXEL_OPS: [PixelOp; 20] = [
+static PIXEL_OPS: [PixelOp; 24] = [
     PixelOp {
         entry_point: "grade",
         len: 4,
@@ -730,6 +731,34 @@ static PIXEL_OPS: [PixelOp; 20] = [
         len: 5,
         valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
         apply: chroma_key_pixel,
+    },
+    PixelOp {
+        entry_point: "highlights",
+        len: 2,
+        valid: |v| {
+            v.get(0)
+                .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
+                && v.get(1).is_some_and(|soft| *soft > 0.0 && *soft <= 1.0)
+        },
+        apply: whole_image::highlights,
+    },
+    PixelOp {
+        entry_point: "alpha_plane",
+        len: 0,
+        valid: |_| true,
+        apply: whole_image::alpha_plane,
+    },
+    PixelOp {
+        entry_point: "color_key",
+        len: 6,
+        valid: whole_image::valid_color_key,
+        apply: whole_image::color_key,
+    },
+    PixelOp {
+        entry_point: "luma_key",
+        len: 3,
+        valid: whole_image::valid_luma_key,
+        apply: whole_image::luma_key,
     },
     PixelOp {
         entry_point: "black_white",
@@ -1102,7 +1131,7 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 6] = [
+static SAMPLE_OPS: [SampleOp; 28] = [
     SampleOp {
         entry_point: "pixelate",
         len: 3,
@@ -1159,6 +1188,138 @@ static SAMPLE_OPS: [SampleOp; 6] = [
                 && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
         },
         apply: colour_relief_sample,
+    },
+    SampleOp {
+        entry_point: "twirl",
+        len: 4,
+        valid: whole_image::valid_twirl,
+        apply: whole_image::twirl,
+    },
+    SampleOp {
+        entry_point: "spherize",
+        len: 3,
+        valid: whole_image::valid_spherize,
+        apply: whole_image::spherize,
+    },
+    SampleOp {
+        entry_point: "magnify",
+        len: 6,
+        valid: whole_image::valid_magnify,
+        apply: whole_image::magnify,
+    },
+    SampleOp {
+        entry_point: "wave_warp",
+        len: 4,
+        valid: whole_image::valid_wave,
+        apply: whole_image::wave_warp,
+    },
+    SampleOp {
+        entry_point: "lens_distortion",
+        len: 4,
+        valid: whole_image::valid_lens,
+        apply: whole_image::lens_distortion,
+    },
+    SampleOp {
+        entry_point: "turbulent_displace",
+        len: 8,
+        valid: whole_image::valid_turbulent,
+        apply: whole_image::turbulent_displace,
+    },
+    SampleOp {
+        entry_point: "corner_pin",
+        len: 11,
+        valid: whole_image::valid_corner,
+        apply: whole_image::corner_pin,
+    },
+    SampleOp {
+        entry_point: "basic_3d",
+        len: 6,
+        valid: whole_image::valid_basic_3d,
+        apply: whole_image::basic_3d,
+    },
+    SampleOp {
+        entry_point: "brush_strokes",
+        len: 5,
+        valid: whole_image::valid_brush,
+        apply: whole_image::brush_strokes,
+    },
+    SampleOp {
+        entry_point: "roughen_edges",
+        len: 8,
+        valid: whole_image::valid_roughen,
+        apply: whole_image::roughen_edges,
+    },
+    SampleOp {
+        entry_point: "camera_shake",
+        len: 5,
+        valid: whole_image::valid_shake,
+        apply: whole_image::camera_shake,
+    },
+    SampleOp {
+        entry_point: "sobel_edges",
+        len: 1,
+        valid: whole_image::valid_sobel,
+        apply: whole_image::sobel_edges,
+    },
+    SampleOp {
+        entry_point: "glow_add",
+        len: 8,
+        valid: whole_image::valid_glow,
+        apply: whole_image::glow_add,
+    },
+    SampleOp {
+        entry_point: "glint_rays",
+        len: 9,
+        valid: whole_image::valid_glint,
+        apply: whole_image::glint_rays,
+    },
+    SampleOp {
+        entry_point: "radial_rays",
+        len: 9,
+        valid: whole_image::valid_radial,
+        apply: whole_image::radial_rays,
+    },
+    SampleOp {
+        entry_point: "light_leaks",
+        len: 12,
+        valid: whole_image::valid_leaks,
+        apply: whole_image::light_leaks,
+    },
+    SampleOp {
+        entry_point: "lens_flare",
+        len: 4,
+        valid: whole_image::valid_flare,
+        apply: whole_image::lens_flare,
+    },
+    SampleOp {
+        entry_point: "rgb_split",
+        len: 7,
+        valid: whole_image::valid_split,
+        apply: whole_image::rgb_split,
+    },
+    SampleOp {
+        entry_point: "drop_shadow",
+        len: 7,
+        valid: whole_image::valid_drop,
+        apply: whole_image::drop_shadow,
+    },
+    SampleOp {
+        entry_point: "long_shadow",
+        len: 10,
+        valid: whole_image::valid_long,
+        apply: whole_image::long_shadow,
+    },
+    SampleOp {
+        entry_point: "gradient",
+        len: 12,
+        valid: whole_image::valid_gradient,
+        apply: whole_image::gradient,
+    },
+    SampleOp {
+        entry_point: "four_color_gradient",
+        len: 20,
+        valid: whole_image::valid_four,
+        apply: whole_image::four_color_gradient,
     },
 ];
 /// Premultiplied linear luma of a sample near the current texel.
@@ -1868,6 +2029,32 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "strobe" => strobe,
         "tint" => tint,
         "hold_time" => hold_time,
+        "twirl" => whole_image::twirl_eval,
+        "spherize" => whole_image::spherize_eval,
+        "magnify" => whole_image::magnify_eval,
+        "wave_warp" => whole_image::wave_eval,
+        "lens_distortion" => whole_image::lens_eval,
+        "turbulent_displace" => whole_image::turbulent_eval,
+        "corner_pin" => whole_image::corner_eval,
+        "basic_3d" => whole_image::basic_3d_eval,
+        "brush_strokes" => whole_image::brush_eval,
+        "roughen_edges" => whole_image::roughen_eval,
+        "camera_shake" => whole_image::shake_eval,
+        "posterize_time" => whole_image::posterize_time_passes,
+        "echo_glow" => whole_image::echo_glow_eval,
+        "edge_glow" => whole_image::edge_glow_eval,
+        "glint" => whole_image::glint_eval,
+        "wonder_glow" => whole_image::wonder_glow_eval,
+        "volumetric_rays" => whole_image::radial_eval,
+        "light_leaks" => whole_image::leaks_eval,
+        "lens_flare" => whole_image::flare_eval,
+        "rgb_split" => whole_image::split_eval,
+        "drop_shadow" => whole_image::drop_eval,
+        "long_shadow" => whole_image::long_eval,
+        "gradient" => whole_image::gradient_eval,
+        "four_color_gradient" => whole_image::four_eval,
+        "color_key" => whole_image::color_key_eval,
+        "luma_key" => whole_image::luma_key_eval,
         _ => return None,
     })
 }
@@ -1877,6 +2064,7 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
 pub fn content_remap(kind: &str) -> Option<ContentTime> {
     Some(match kind {
         "hold_time" => hold_time_content,
+        "posterize_time" => whole_image::posterize_time_content,
         _ => return None,
     })
 }

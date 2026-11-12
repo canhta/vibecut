@@ -89,6 +89,24 @@ const fn colour(id: &'static str, name: &'static str, default: Color) -> EffectP
         animatable: true,
     }
 }
+const fn point(id: &'static str, name: &'static str, [x, y]: [f64; 2]) -> EffectParamDefinition {
+    EffectParamDefinition {
+        id,
+        name,
+        kind: EffectParamKind::Point,
+        default: EffectValue::Point([x, y]),
+        animatable: false,
+    }
+}
+const fn angle(id: &'static str, name: &'static str, default: f64) -> EffectParamDefinition {
+    EffectParamDefinition {
+        id,
+        name,
+        kind: EffectParamKind::Angle,
+        default: EffectValue::Scalar(default),
+        animatable: true,
+    }
+}
 /// Colour grade controls share one range and neutral default (0 = identity).
 const fn grade_param(id: &'static str, name: &'static str) -> EffectParamDefinition {
     slider(id, name, (GRADE_MIN, GRADE_MAX), 0.0, false)
@@ -109,6 +127,33 @@ const RED: Color = Color([255, 0, 0, 255]);
 const BLUE: Color = Color([0, 0, 255, 255]);
 
 const INVERT_CHANNELS: &[&str] = &["RGB", "Red", "Green", "Blue", "Alpha"];
+const MAGNIFY_SHAPES: &[&str] = &["Circle", "Square"];
+const TURBULENT_KINDS: &[&str] = &[
+    "Turbulent",
+    "Bulge",
+    "Twist",
+    "Turbulent Smoother",
+    "Bulge Smoother",
+    "Twist Smoother",
+    "Vertical Displacement",
+    "Horizontal Displacement",
+    "Cross Displacement",
+];
+const GLINT_RAYS: &[&str] = &["2", "4", "6", "8"];
+const ADD_SCREEN: &[&str] = &["Add", "Screen"];
+const SCREEN_ADD_OVERLAY: &[&str] = &["Screen", "Add", "Overlay"];
+const SPLIT_MODES: &[&str] = &["Linear", "Radial"];
+const TORN_EDGES: &[&str] = &[
+    "Roughen",
+    "Roughen Colour",
+    "Cut",
+    "Spiky",
+    "Rusty",
+    "Rusty Colour",
+    "Photocopy",
+    "Photocopy Colour",
+];
+const GRADIENT_SHAPES: &[&str] = &["Linear", "Radial", "Reflected", "Diamond"];
 
 static DEFINITIONS: &[EffectDefinition] = &[
     EffectDefinition {
@@ -387,6 +432,478 @@ static DEFINITIONS: &[EffectDefinition] = &[
             slider("relief", "Relief", (0.0, 10.0), 1.0, true),
             slider("contrast", "Contrast", (0.0, 500.0), 100.0, true),
             slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
+    // Distort additions.
+    EffectDefinition {
+        id: "twirl",
+        name: "Twirl",
+        shelf: EffectShelf::Distort,
+        params: &[
+            angle("angle", "Angle", 50.0),
+            slider("radius", "Twirl radius", (0.0, 100.0), 30.0, true),
+            point("center", "Twirl centre", [0.5, 0.5]),
+        ],
+    },
+    EffectDefinition {
+        id: "spherize",
+        name: "Bulge",
+        shelf: EffectShelf::Distort,
+        params: &[
+            ranged("radius", "Radius", (0.0, 2500.0), (0.0, 600.0), 0.0, true),
+            point("center", "Sphere centre", [0.5, 0.5]),
+        ],
+    },
+    EffectDefinition {
+        id: "magnify",
+        name: "Magnifier",
+        shelf: EffectShelf::Distort,
+        params: &[
+            choice("shape", "Shape", MAGNIFY_SHAPES, 0),
+            point("center", "Centre", [0.5, 0.5]),
+            ranged(
+                "magnification",
+                "Magnification",
+                (100.0, 600.0),
+                (100.0, 600.0),
+                200.0,
+                true,
+            ),
+            ranged("size", "Size", (0.0, 4000.0), (0.0, 600.0), 100.0, true),
+            ranged("feather", "Feather", (0.0, 1000.0), (0.0, 200.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "wave_warp",
+        name: "Ripple",
+        shelf: EffectShelf::Distort,
+        params: &[
+            slider("height", "Wave height", (-4000.0, 4000.0), 10.0, true),
+            slider("width", "Wave width", (1.0, 4000.0), 40.0, true),
+            angle("direction", "Direction", 90.0),
+            slider("speed", "Wave speed", (-100.0, 100.0), 1.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "lens_distortion",
+        name: "Lens Warp",
+        shelf: EffectShelf::Distort,
+        params: &[
+            slider("curvature", "Curvature", (-100.0, 100.0), 0.0, true),
+            slider(
+                "v_decentering",
+                "Vertical decentering",
+                (-100.0, 100.0),
+                0.0,
+                true,
+            ),
+            slider(
+                "h_decentering",
+                "Horizontal decentering",
+                (-100.0, 100.0),
+                0.0,
+                true,
+            ),
+        ],
+    },
+    EffectDefinition {
+        id: "turbulent_displace",
+        name: "Heat Haze",
+        shelf: EffectShelf::Distort,
+        params: &[
+            choice("displacement", "Displacement", TURBULENT_KINDS, 0),
+            slider("amount", "Amount", (-1000.0, 1000.0), 50.0, true),
+            ranged("size", "Size", (2.0, 1000.0), (2.0, 400.0), 100.0, true),
+            ranged(
+                "complexity",
+                "Complexity",
+                (1.0, 10.0),
+                (1.0, 10.0),
+                1.0,
+                true,
+            ),
+            angle("evolution", "Evolution", 0.0),
+        ],
+    },
+    EffectDefinition {
+        id: "corner_pin",
+        name: "Corner Pin",
+        shelf: EffectShelf::Distort,
+        params: &[
+            point("upper_left", "Upper left", [0.0, 0.0]),
+            point("upper_right", "Upper right", [1.0, 0.0]),
+            point("lower_left", "Lower left", [0.0, 1.0]),
+            point("lower_right", "Lower right", [1.0, 1.0]),
+        ],
+    },
+    EffectDefinition {
+        id: "basic_3d",
+        name: "Tilt Card",
+        shelf: EffectShelf::Distort,
+        params: &[
+            angle("swivel", "Swivel", 0.0),
+            angle("tilt", "Tilt", 0.0),
+            slider(
+                "distance",
+                "Distance to image",
+                (-10000.0, 10000.0),
+                0.0,
+                true,
+            ),
+        ],
+    },
+    // Glow & Light.
+    EffectDefinition {
+        id: "echo_glow",
+        name: "Echo Glow",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            slider("threshold", "Threshold", (0.0, 100.0), 60.0, true),
+            ranged("echoes", "Echoes", (1.0, 12.0), (1.0, 12.0), 4.0, true),
+            ranged("radius", "Radius", (0.0, 500.0), (0.0, 100.0), 12.0, true),
+            ranged("spread", "Spread", (1.0, 4.0), (1.0, 4.0), 1.8, true),
+            ranged(
+                "intensity",
+                "Intensity",
+                (0.0, 1000.0),
+                (0.0, 400.0),
+                100.0,
+                true,
+            ),
+            slider("decay", "Decay", (0.0, 100.0), 50.0, true),
+            colour("color", "Glow colour", Color([255, 217, 153, 255])),
+        ],
+    },
+    EffectDefinition {
+        id: "edge_glow",
+        name: "Edge Glow",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            slider("threshold", "Edge threshold", (0.0, 100.0), 20.0, true),
+            ranged("width", "Edge width", (0.0, 50.0), (0.0, 10.0), 2.0, true),
+            ranged(
+                "radius",
+                "Glow radius",
+                (0.0, 500.0),
+                (0.0, 100.0),
+                10.0,
+                true,
+            ),
+            ranged(
+                "intensity",
+                "Intensity",
+                (0.0, 1000.0),
+                (0.0, 400.0),
+                150.0,
+                true,
+            ),
+            colour("color", "Glow colour", Color([77, 204, 255, 255])),
+            flag("only", "Glow only", false),
+        ],
+    },
+    EffectDefinition {
+        id: "glint",
+        name: "Sparkle",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            slider("threshold", "Threshold", (0.0, 100.0), 75.0, true),
+            choice("rays", "Rays", GLINT_RAYS, 1),
+            ranged("length", "Length", (0.0, 2000.0), (0.0, 400.0), 60.0, true),
+            angle("rotation", "Rotation", 45.0),
+            ranged(
+                "intensity",
+                "Intensity",
+                (0.0, 1000.0),
+                (0.0, 400.0),
+                100.0,
+                true,
+            ),
+            colour("color", "Colour", WHITE),
+            slider("colorize", "Colorize", (0.0, 100.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "wonder_glow",
+        name: "Bloom",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            slider("threshold", "Threshold", (0.0, 100.0), 60.0, true),
+            ranged("radius", "Radius", (0.0, 1000.0), (0.0, 200.0), 25.0, true),
+            ranged(
+                "intensity",
+                "Intensity",
+                (0.0, 1000.0),
+                (0.0, 400.0),
+                100.0,
+                true,
+            ),
+            ranged(
+                "saturation",
+                "Saturation",
+                (0.0, 400.0),
+                (0.0, 200.0),
+                100.0,
+                true,
+            ),
+            flag("use_color", "Use glow colour", false),
+            colour("color", "Glow colour", Color([255, 204, 128, 255])),
+            choice("mode", "Blend mode", ADD_SCREEN, 0),
+        ],
+    },
+    EffectDefinition {
+        id: "volumetric_rays",
+        name: "Sun Rays",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            point("center", "Source point", [0.5, 0.25]),
+            slider("threshold", "Threshold", (0.0, 100.0), 60.0, true),
+            slider("length", "Ray length", (0.0, 100.0), 50.0, true),
+            ranged(
+                "intensity",
+                "Intensity",
+                (0.0, 1000.0),
+                (0.0, 400.0),
+                100.0,
+                true,
+            ),
+            colour("color", "Ray colour", Color([255, 242, 204, 255])),
+            flag("only", "Rays only", false),
+        ],
+    },
+    EffectDefinition {
+        id: "light_leaks",
+        name: "Light Leaks",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            colour("c1", "Colour 1", Color([255, 115, 26, 255])),
+            colour("c2", "Colour 2", Color([255, 38, 89, 255])),
+            slider("intensity", "Intensity", (0.0, 100.0), 70.0, true),
+            ranged("scale", "Scale", (10.0, 1000.0), (20.0, 400.0), 100.0, true),
+            angle("direction", "Direction", 30.0),
+            ranged("speed", "Speed", (0.0, 20.0), (0.0, 5.0), 1.0, true),
+            ranged(
+                "seed",
+                "Random seed",
+                (0.0, 10000.0),
+                (0.0, 1000.0),
+                0.0,
+                true,
+            ),
+            choice("mode", "Blend mode", SCREEN_ADD_OVERLAY, 0),
+        ],
+    },
+    EffectDefinition {
+        id: "lens_flare",
+        name: "Lens Flare",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            point("center", "Flare centre", [0.5, 0.5]),
+            ranged(
+                "brightness",
+                "Flare brightness",
+                (0.0, 300.0),
+                (0.0, 300.0),
+                100.0,
+                true,
+            ),
+            slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "rgb_split",
+        name: "Colour Split",
+        shelf: EffectShelf::GlowLight,
+        params: &[
+            choice("mode", "Mode", SPLIT_MODES, 0),
+            ranged("amount", "Amount", (0.0, 1000.0), (0.0, 100.0), 10.0, true),
+            angle("angle", "Angle", 0.0),
+            point("center", "Centre", [0.5, 0.5]),
+            slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
+    // Stylize additions.
+    EffectDefinition {
+        id: "brush_strokes",
+        name: "Paint Strokes",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            angle("angle", "Stroke angle", 135.0),
+            ranged("size", "Brush size", (0.0, 5.0), (0.0, 5.0), 2.0, true),
+            ranged(
+                "length",
+                "Stroke length",
+                (0.0, 40.0),
+                (0.0, 40.0),
+                10.0,
+                true,
+            ),
+            ranged(
+                "density",
+                "Stroke density",
+                (0.0, 2.0),
+                (0.0, 2.0),
+                1.0,
+                true,
+            ),
+        ],
+    },
+    EffectDefinition {
+        id: "roughen_edges",
+        name: "Torn Edges",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            choice("edge_type", "Edge type", TORN_EDGES, 0),
+            ranged("border", "Border", (0.0, 500.0), (0.0, 100.0), 8.0, true),
+            ranged("scale", "Scale", (10.0, 1000.0), (10.0, 400.0), 100.0, true),
+            ranged(
+                "complexity",
+                "Complexity",
+                (1.0, 10.0),
+                (1.0, 10.0),
+                2.0,
+                true,
+            ),
+        ],
+    },
+    EffectDefinition {
+        id: "camera_shake",
+        name: "Hand-held Shake",
+        shelf: EffectShelf::Stylize,
+        params: &[
+            ranged(
+                "amount",
+                "Position amount",
+                (0.0, 1000.0),
+                (0.0, 200.0),
+                20.0,
+                true,
+            ),
+            ranged(
+                "rotation",
+                "Rotation amount",
+                (0.0, 45.0),
+                (0.0, 10.0),
+                1.0,
+                true,
+            ),
+            slider("zoom", "Zoom amount", (0.0, 100.0), 5.0, true),
+            ranged(
+                "frequency",
+                "Frequency",
+                (0.1, 60.0),
+                (0.1, 20.0),
+                4.0,
+                true,
+            ),
+        ],
+    },
+    EffectDefinition {
+        id: "posterize_time",
+        name: "Low Frame Rate",
+        shelf: EffectShelf::Stylize,
+        params: &[ranged(
+            "rate",
+            "Frame rate",
+            (0.1, 99.0),
+            (1.0, 60.0),
+            12.0,
+            true,
+        )],
+    },
+    // Overlay & Key.
+    EffectDefinition {
+        id: "drop_shadow",
+        name: "Drop Shadow",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            colour("color", "Shadow colour", BLACK),
+            slider("opacity", "Opacity", (0.0, 100.0), 50.0, true),
+            angle("direction", "Direction", 135.0),
+            ranged(
+                "distance",
+                "Distance",
+                (0.0, 4000.0),
+                (0.0, 120.0),
+                5.0,
+                true,
+            ),
+            ranged(
+                "softness",
+                "Softness",
+                (0.0, 1000.0),
+                (0.0, 250.0),
+                0.0,
+                true,
+            ),
+            flag("only", "Shadow only", false),
+        ],
+    },
+    EffectDefinition {
+        id: "long_shadow",
+        name: "Long Shadow",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            angle("angle", "Angle", 135.0),
+            ranged("length", "Length", (0.0, 4000.0), (0.0, 600.0), 100.0, true),
+            colour("color", "Shadow colour", BLACK),
+            slider("opacity", "Opacity", (0.0, 100.0), 50.0, true),
+            flag("fade", "Fade", true),
+            flag("only", "Shadow only", false),
+        ],
+    },
+    EffectDefinition {
+        id: "gradient",
+        name: "Gradient",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            point("start", "Gradient start", [0.5, 0.0]),
+            colour("start_color", "Start colour", BLACK),
+            point("end", "Gradient end", [0.5, 1.0]),
+            colour("end_color", "End colour", WHITE),
+            choice("shape", "Gradient shape", GRADIENT_SHAPES, 0),
+        ],
+    },
+    EffectDefinition {
+        id: "four_color_gradient",
+        name: "Four-Corner Gradient",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            point("p1", "Point 1", [0.25, 0.25]),
+            colour("c1", "Colour 1", Color([255, 255, 0, 255])),
+            point("p2", "Point 2", [0.75, 0.25]),
+            colour("c2", "Colour 2", Color([0, 255, 0, 255])),
+            point("p3", "Point 3", [0.25, 0.75]),
+            colour("c3", "Colour 3", Color([255, 0, 255, 255])),
+            point("p4", "Point 4", [0.75, 0.75]),
+            colour("c4", "Colour 4", Color([0, 0, 255, 255])),
+        ],
+    },
+    EffectDefinition {
+        id: "color_key",
+        name: "Colour Key",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            colour("color", "Key colour", BLUE),
+            slider("tolerance", "Colour tolerance", (0.0, 255.0), 0.0, true),
+            slider("thin", "Edge thin", (-5.0, 5.0), 0.0, true),
+            ranged(
+                "feather",
+                "Edge feather",
+                (0.0, 50.0),
+                (0.0, 50.0),
+                0.0,
+                true,
+            ),
+        ],
+    },
+    EffectDefinition {
+        id: "luma_key",
+        name: "Luma Key",
+        shelf: EffectShelf::OverlayKey,
+        params: &[
+            slider("threshold", "Threshold", (0.0, 100.0), 0.0, true),
+            slider("cutoff", "Cutoff", (0.0, 100.0), 0.0, true),
+            flag("invert", "Key out brights", false),
         ],
     },
 ];

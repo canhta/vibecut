@@ -775,3 +775,297 @@ fn streak_angle_and_scalar_animation_refuse_wrong_types_atomically() {
         ));
     }
 }
+
+#[test]
+fn whole_image_catalogue_defines_the_26_entries_on_their_shelves() {
+    let expected = [
+        (
+            "twirl",
+            EffectShelf::Distort,
+            "angle",
+            EffectParamKind::Angle,
+        ),
+        (
+            "spherize",
+            EffectShelf::Distort,
+            "radius",
+            EffectParamKind::Float {
+                min: 0.0,
+                max: 2500.0,
+                soft_min: 0.0,
+                soft_max: 600.0,
+            },
+        ),
+        (
+            "magnify",
+            EffectShelf::Distort,
+            "shape",
+            EffectParamKind::Choice {
+                options: &["Circle", "Square"],
+            },
+        ),
+        (
+            "wave_warp",
+            EffectShelf::Distort,
+            "height",
+            EffectParamKind::Float {
+                min: -4000.0,
+                max: 4000.0,
+                soft_min: -4000.0,
+                soft_max: 4000.0,
+            },
+        ),
+        (
+            "lens_distortion",
+            EffectShelf::Distort,
+            "curvature",
+            EffectParamKind::Float {
+                min: -100.0,
+                max: 100.0,
+                soft_min: -100.0,
+                soft_max: 100.0,
+            },
+        ),
+        (
+            "turbulent_displace",
+            EffectShelf::Distort,
+            "displacement",
+            EffectParamKind::Choice { options: &[] },
+        ),
+        (
+            "corner_pin",
+            EffectShelf::Distort,
+            "upper_left",
+            EffectParamKind::Point,
+        ),
+        (
+            "basic_3d",
+            EffectShelf::Distort,
+            "swivel",
+            EffectParamKind::Angle,
+        ),
+        (
+            "echo_glow",
+            EffectShelf::GlowLight,
+            "echoes",
+            EffectParamKind::Float {
+                min: 1.0,
+                max: 12.0,
+                soft_min: 1.0,
+                soft_max: 12.0,
+            },
+        ),
+        (
+            "edge_glow",
+            EffectShelf::GlowLight,
+            "width",
+            EffectParamKind::Float {
+                min: 0.0,
+                max: 50.0,
+                soft_min: 0.0,
+                soft_max: 10.0,
+            },
+        ),
+        (
+            "glint",
+            EffectShelf::GlowLight,
+            "rays",
+            EffectParamKind::Choice { options: &[] },
+        ),
+        (
+            "wonder_glow",
+            EffectShelf::GlowLight,
+            "mode",
+            EffectParamKind::Choice { options: &[] },
+        ),
+        (
+            "volumetric_rays",
+            EffectShelf::GlowLight,
+            "center",
+            EffectParamKind::Point,
+        ),
+        (
+            "light_leaks",
+            EffectShelf::GlowLight,
+            "seed",
+            EffectParamKind::Float {
+                min: 0.0,
+                max: 10000.0,
+                soft_min: 0.0,
+                soft_max: 1000.0,
+            },
+        ),
+        (
+            "lens_flare",
+            EffectShelf::GlowLight,
+            "brightness",
+            EffectParamKind::Float {
+                min: 0.0,
+                max: 300.0,
+                soft_min: 0.0,
+                soft_max: 300.0,
+            },
+        ),
+        (
+            "rgb_split",
+            EffectShelf::GlowLight,
+            "mode",
+            EffectParamKind::Choice { options: &[] },
+        ),
+        (
+            "brush_strokes",
+            EffectShelf::Stylize,
+            "length",
+            EffectParamKind::Float {
+                min: 0.0,
+                max: 40.0,
+                soft_min: 0.0,
+                soft_max: 40.0,
+            },
+        ),
+        (
+            "roughen_edges",
+            EffectShelf::Stylize,
+            "edge_type",
+            EffectParamKind::Choice { options: &[] },
+        ),
+        (
+            "camera_shake",
+            EffectShelf::Stylize,
+            "frequency",
+            EffectParamKind::Float {
+                min: 0.1,
+                max: 60.0,
+                soft_min: 0.1,
+                soft_max: 20.0,
+            },
+        ),
+        (
+            "posterize_time",
+            EffectShelf::Stylize,
+            "rate",
+            EffectParamKind::Float {
+                min: 0.1,
+                max: 99.0,
+                soft_min: 1.0,
+                soft_max: 60.0,
+            },
+        ),
+        (
+            "drop_shadow",
+            EffectShelf::OverlayKey,
+            "direction",
+            EffectParamKind::Angle,
+        ),
+        (
+            "long_shadow",
+            EffectShelf::OverlayKey,
+            "fade",
+            EffectParamKind::Bool,
+        ),
+        (
+            "gradient",
+            EffectShelf::OverlayKey,
+            "start",
+            EffectParamKind::Point,
+        ),
+        (
+            "four_color_gradient",
+            EffectShelf::OverlayKey,
+            "p4",
+            EffectParamKind::Point,
+        ),
+        (
+            "color_key",
+            EffectShelf::OverlayKey,
+            "color",
+            EffectParamKind::Color,
+        ),
+        (
+            "luma_key",
+            EffectShelf::OverlayKey,
+            "invert",
+            EffectParamKind::Bool,
+        ),
+    ];
+    assert_eq!(expected.len(), 26);
+    for (kind, shelf, param, param_kind) in expected {
+        let definition = effect_definition(kind).unwrap();
+        assert_eq!(definition.shelf, shelf, "{kind} shelf");
+        let parameter = definition.param(param).unwrap();
+        match param_kind {
+            EffectParamKind::Choice { options } if options.is_empty() => {
+                assert!(matches!(parameter.kind, EffectParamKind::Choice { .. }));
+            }
+            expected => assert_eq!(parameter.kind, expected, "{kind}.{param}"),
+        }
+        definition.instance("one").validate().unwrap();
+    }
+    // Lens Flare's parameter set is read from the source definition: centre,
+    // brightness and blend; the renderer's extra legacy fields are not authored.
+    let flare = effect_definition("lens_flare").unwrap();
+    let ids: Vec<_> = flare.params.iter().map(|param| param.id).collect();
+    assert_eq!(ids, ["center", "brightness", "blend"]);
+    assert_eq!(
+        flare.param("brightness").unwrap().default,
+        EffectValue::Scalar(100.0)
+    );
+    assert_eq!(
+        flare.param("blend").unwrap().default,
+        EffectValue::Scalar(0.0)
+    );
+    // Point parameters default to the source's authored positions, not NaN.
+    for (kind, param, default) in [
+        ("corner_pin", "upper_left", [0.0, 0.0]),
+        ("corner_pin", "lower_right", [1.0, 1.0]),
+        ("gradient", "start", [0.5, 0.0]),
+        ("gradient", "end", [0.5, 1.0]),
+        ("four_color_gradient", "p1", [0.25, 0.25]),
+        ("four_color_gradient", "p4", [0.75, 0.75]),
+        ("volumetric_rays", "center", [0.5, 0.25]),
+    ] {
+        assert_eq!(
+            effect_definition(kind)
+                .unwrap()
+                .param(param)
+                .unwrap()
+                .default,
+            EffectValue::Point(default),
+            "{kind}.{param}"
+        );
+    }
+    // No 265 entry is offered in the inspector-only shelf.
+    for kind in [
+        "twirl",
+        "spherize",
+        "magnify",
+        "wave_warp",
+        "lens_distortion",
+        "turbulent_displace",
+        "corner_pin",
+        "brush_strokes",
+        "roughen_edges",
+        "camera_shake",
+        "posterize_time",
+        "echo_glow",
+        "edge_glow",
+        "glint",
+        "wonder_glow",
+        "volumetric_rays",
+        "light_leaks",
+        "lens_flare",
+        "rgb_split",
+        "drop_shadow",
+        "long_shadow",
+        "gradient",
+        "four_color_gradient",
+        "color_key",
+        "luma_key",
+        "basic_3d",
+    ] {
+        assert!(
+            effect_definition(kind).unwrap().shelf.in_library(),
+            "{kind}"
+        );
+    }
+}

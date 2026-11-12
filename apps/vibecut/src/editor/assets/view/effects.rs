@@ -4,16 +4,21 @@ use super::{
     theme,
 };
 
-/// Library shelves in the order the panel lists them; the four the effect
-/// port fills. Empty shelves keep their place and show the empty state.
-const SHELVES: [(project::EffectShelf, Text); 4] = [
+/// Library shelves in the order the panel lists them. Every shelf the effect
+/// catalogue uses is listed; empty shelves keep their place and show the empty state.
+const SHELVES: [(project::EffectShelf, Text); 6] = [
     (
         project::EffectShelf::BlurDetail,
         Text::EffectShelfBlurDetail,
     ),
     (project::EffectShelf::Colour, Text::EffectShelfColour),
     (project::EffectShelf::Distort, Text::EffectShelfDistort),
+    (project::EffectShelf::GlowLight, Text::EffectShelfGlowLight),
     (project::EffectShelf::Stylize, Text::EffectShelfStylize),
+    (
+        project::EffectShelf::OverlayKey,
+        Text::EffectShelfOverlayKey,
+    ),
 ];
 fn shelf_label(shelf: project::EffectShelf) -> Text {
     SHELVES
