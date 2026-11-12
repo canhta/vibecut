@@ -360,22 +360,20 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
     assert_eq!(saved.name.as_str(), "box renamed");
     // The box look saves as a presentation value with an opaque background.
     assert!(saved.style.background.is_some());
-    let cues = project
+    let caption = project
         .data()
         .scene()
         .timeline
         .iter()
         .flat_map(|track| &track.items)
         .find_map(|item| match &item.content {
-            project::ItemParams::Caption(params) => Some(&params.cues),
+            project::ItemParams::Caption(params) => Some(params),
             _ => None,
         })
         .unwrap();
-    assert!(!cues.cues.is_empty());
-    assert!(cues.cues.iter().all(|cue| {
-        cues.style_of(cue)
-            .is_some_and(|style| render::style_from_cue(style) == saved.style)
-    }));
+    assert!(!caption.cues.cues.is_empty());
+    // The export renders the saved look through the live selection, not copied cues.
+    assert_eq!(caption.preset, Some(saved.id));
     let mut session = engine::Session::new(project, 100).unwrap();
     let snapshot = session.project().clone();
     let revision = session.revision();

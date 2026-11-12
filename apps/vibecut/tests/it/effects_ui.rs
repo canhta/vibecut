@@ -1353,7 +1353,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
         .iter()
         .filter(|definition| definition.shelf.in_library())
         .collect();
-    assert_eq!(definitions.len(), 15);
+    assert_eq!(definitions.len(), 43);
     // Five is the smallest request set that exceeds the real four-entry queue.
     for count in [5, definitions.len()] {
         let mut previews = EffectPreviews::cpu().unwrap();

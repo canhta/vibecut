@@ -690,6 +690,8 @@ fn settings_apply_and_remove_the_session_key_without_touching_the_project() {
     click(&mut harness, "music.settings");
     assert!(has_widget(&harness, "music.key"));
     assert!(has_widget(&harness, "music.terms"));
+    // Text events go to the focused widget: focus the key field first.
+    click(&mut harness, "music.key");
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("music.key")))
         .type_text("key-123");

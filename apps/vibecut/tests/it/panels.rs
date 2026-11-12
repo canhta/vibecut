@@ -509,10 +509,17 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
         "inspector.text_color.picker" | "inspector.background_color"
     ) || id.starts_with("inspector.text_")
         || id.starts_with("text.animation.")
+        || id.starts_with("inspector.lut.")
     {
+        // Measure from the tab strip the selected kind shows (Text or Adjust).
+        let tab = if has_widget(harness, "inspector.tab.text") {
+            "inspector.tab.text"
+        } else {
+            "inspector.tab.adjust"
+        };
         for _ in 0..12 {
             let panel = harness.state().panels()["inspector"];
-            let top = widget_rect(harness, "inspector.tab.text").bottom() + 8.0;
+            let top = widget_rect(harness, tab).bottom() + 8.0;
             let viewport = egui::Rect::from_min_max(
                 egui::pos2(panel.left() + 12.0, top),
                 panel.max - egui::vec2(12.0, 12.0),
@@ -530,6 +537,14 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
                 modifiers: egui::Modifiers::NONE,
             });
             harness.run_steps(8);
+        }
+        // Wheel scrolling animates over frames: click only once the target is still.
+        for _ in 0..30 {
+            let before = widget_rect(harness, id);
+            harness.run_steps(2);
+            if widget_rect(harness, id) == before {
+                break;
+            }
         }
     }
     if matches!(id, "inspector.tab.transform" | "inspector.tab.blending")
@@ -697,7 +712,8 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     click(&mut harness, "inspector.section.transform.reset");
     assert!(!axis(&harness, project::FlipAxis::Horizontal));
     assert!(!axis(&harness, project::FlipAxis::Vertical));
-    // A keyed reflection axis keeps its curve and disables both toggles.
+    // A keyed reflection axis keeps its curve and disables its own toggle; the
+    // engine refuses per axis, so the other axis stays editable.
     let path = project::AnimationPath::from(project::BuiltinPath::TransformFlipX);
     let mut param = project::Param::new(project::ParamValue::Bool(true)).unwrap();
     param
@@ -719,16 +735,17 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
         })
         .unwrap();
     harness.run_steps(2);
-    for id in [
-        "inspector.transform.flip_horizontal",
-        "inspector.transform.flip_vertical",
+    for (id, disabled) in [
+        ("inspector.transform.flip_horizontal", true),
+        ("inspector.transform.flip_vertical", false),
     ] {
-        assert!(
+        assert_eq!(
             harness
                 .get(By::new().predicate(|node| node.author_id() == Some(id)))
                 .accesskit_node()
                 .is_disabled(),
-            "{id} must be disabled while the axis carries keys"
+            disabled,
+            "{id}: only the keyed axis is disabled"
         );
     }
     harness.state_mut().session.undo().unwrap();

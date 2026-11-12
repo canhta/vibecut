@@ -1588,5 +1588,6 @@ fn exec_freeform_mask_path_round_trips_through_save_and_reload() {
         return;
     };
     assert_eq!(stored_path.vertices.len(), 4);
-    assert_eq!(stored_path.vertices[1].t_out, [0.0, 0.5]);
+    // Removal keeps the survivors' tangents exactly as the split left them.
+    assert_eq!(stored_path, &expected.without(&[2]).unwrap());
 }
