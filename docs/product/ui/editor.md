@@ -8,7 +8,7 @@ Imported 3D cube LUT controls in Adjust are a newly adopted composition, not a m
 
 ## Adjust tabs, basic set, HSL, wheels and curves
 
-The Adjust tab follows the desktop reference composition (capcut-desktop-221802): a 24 px sub-tab bar with Basic, HSL, Curves and Color wheel, the panel body below, and an `Apply to all` / `Save as preset` footer. `Mask` is not built here (the Mask row lives in the Basic tab). The auto-adjust, colour-match and colour-correction rows are model features outside this ticket. Composition is [new]; labels and the four-tab order are the reference's.
+The Adjust tab follows the desktop reference composition (capcut-desktop-221802): a 24 px sub-tab bar with Basic, HSL, Curves and Color wheel, the panel body below, and an `Apply to all` / `Save as preset` footer. The reference's `Mask` sub-tab is not built here. The auto-adjust, colour-match and colour-correction rows are model features outside this ticket. Composition is [new]; labels and the four-tab order are the reference's.
 
 Basic uses the reference's measured order and range: Color (Saturation, Temperature, Hue), Lightness (Brightness, Contrast, Shine, Highlight, Shadow), Effects (Sharpness, Vignette, Fade, Grain), each a -50…50 slider with 0 neutral (web capture `screens/18`). HSL shows the reference tab's eight hue bands — Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta — as one 24 px band selector followed by Hue, Saturation and Lightness rows, each on the same -50…50 range; the band list itself is [new], because no capture opens the HSL tab. The 39 px property rows, 22 px fields and 12 px type are the measured ones.
 

@@ -566,6 +566,9 @@ pub fn hsl_bands_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
         saturation += weight * uniform(values, base + 1);
         lightness += weight * uniform(values, base + 2);
     }
+    if hue == 0.0 && saturation == 0.0 && lightness == 0.0 {
+        return pixel;
+    }
     let mapped = hsl_color(
         (h + hue / 12.0).rem_euclid(1.0),
         (s * (1.0 + saturation * 0.5)).clamp(0.0, 1.0),
@@ -2414,10 +2417,10 @@ fn color_grade(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
     passes.extend(hsl_bands_passes(&bands)?);
     let vignette = frame.scalar("vignette")?;
     let grain = frame.scalar("grain")?;
-    if vignette != 0.0 || grain != 0.0 {
-        if geometry.working_size() != [frame.width, frame.height] {
-            return Err(Error::Invalid("effect spatial geometry"));
-        }
+    if (vignette != 0.0 || grain != 0.0)
+        && geometry.working_size() != [frame.width, frame.height]
+    {
+        return Err(Error::Invalid("effect spatial geometry"));
     }
     if vignette != 0.0 {
         passes.push(EffectPass::Sample {

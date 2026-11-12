@@ -30,7 +30,7 @@ and uniforms cast encoded RGB to f32 without byte quantization. E1 colour operat
 use RGB only and preserve image coverage under alpha keys; chroma-key colour stays static.
 
 The existing per-instance plan reservation covers these bounded resolved values as
-well as pass storage: the catalogue's largest kind has 19 parameters and a grade
+well as pass storage: the catalogue's largest kind has 51 parameters and a grade
 instance emits the primary grade, tone, sharpen or soften, lift, gamma, gain, three RGB
 curves, luma, HSL bands, vignette and grain passes plus its optional LUT; Image's area
 bound limits admitted Blur to203 iterations/406 passes against the reserved512

@@ -142,21 +142,6 @@ const fn curve_param(id: &'static str, name: &'static str) -> EffectParamDefinit
         animatable: false,
     }
 }
-/// One HSL band's hue, saturation and lightness controls, all on the shared
-/// grade range.
-macro_rules! hsl_band {
-    ($id:literal, $name:literal) => {
-        grade_param(concat!("hsl_", $id, "_hue"), concat!($name, " hue")),
-        grade_param(
-            concat!("hsl_", $id, "_saturation"),
-            concat!($name, " saturation"),
-        ),
-        grade_param(
-            concat!("hsl_", $id, "_lightness"),
-            concat!($name, " lightness"),
-        ),
-    };
-}
 const BLACK: Color = Color([0, 0, 0, 255]);
 const WHITE: Color = Color([255, 255, 255, 255]);
 const RED: Color = Color([255, 0, 0, 255]);
@@ -240,14 +225,30 @@ static DEFINITIONS: &[EffectDefinition] = &[
             grade_param("vignette", "Vignette"),
             grade_param("fade", "Fade"),
             grade_param("grain", "Grain"),
-            hsl_band!("red", "Red"),
-            hsl_band!("orange", "Orange"),
-            hsl_band!("yellow", "Yellow"),
-            hsl_band!("green", "Green"),
-            hsl_band!("cyan", "Cyan"),
-            hsl_band!("blue", "Blue"),
-            hsl_band!("purple", "Purple"),
-            hsl_band!("magenta", "Magenta"),
+            grade_param("hsl_red_hue", "Red hue"),
+            grade_param("hsl_red_saturation", "Red saturation"),
+            grade_param("hsl_red_lightness", "Red lightness"),
+            grade_param("hsl_orange_hue", "Orange hue"),
+            grade_param("hsl_orange_saturation", "Orange saturation"),
+            grade_param("hsl_orange_lightness", "Orange lightness"),
+            grade_param("hsl_yellow_hue", "Yellow hue"),
+            grade_param("hsl_yellow_saturation", "Yellow saturation"),
+            grade_param("hsl_yellow_lightness", "Yellow lightness"),
+            grade_param("hsl_green_hue", "Green hue"),
+            grade_param("hsl_green_saturation", "Green saturation"),
+            grade_param("hsl_green_lightness", "Green lightness"),
+            grade_param("hsl_cyan_hue", "Cyan hue"),
+            grade_param("hsl_cyan_saturation", "Cyan saturation"),
+            grade_param("hsl_cyan_lightness", "Cyan lightness"),
+            grade_param("hsl_blue_hue", "Blue hue"),
+            grade_param("hsl_blue_saturation", "Blue saturation"),
+            grade_param("hsl_blue_lightness", "Blue lightness"),
+            grade_param("hsl_purple_hue", "Purple hue"),
+            grade_param("hsl_purple_saturation", "Purple saturation"),
+            grade_param("hsl_purple_lightness", "Purple lightness"),
+            grade_param("hsl_magenta_hue", "Magenta hue"),
+            grade_param("hsl_magenta_saturation", "Magenta saturation"),
+            grade_param("hsl_magenta_lightness", "Magenta lightness"),
             slider("lift_r", "Lift red", (LIFT_MIN, LIFT_MAX), 0.0, true),
             slider("lift_g", "Lift green", (LIFT_MIN, LIFT_MAX), 0.0, true),
             slider("lift_b", "Lift blue", (LIFT_MIN, LIFT_MAX), 0.0, true),
