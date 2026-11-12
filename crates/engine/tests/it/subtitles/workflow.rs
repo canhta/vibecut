@@ -2796,8 +2796,7 @@ fn registry_generation_fails_typed_for_silent_media_and_low_confidence_recogniti
             "{language:?}: {transcript:?}"
         );
         assert!(
-            expected_no_speech
-                || matches!(transcript, engine::transcript::Error::LowConfidence),
+            expected_no_speech || matches!(transcript, engine::transcript::Error::LowConfidence),
             "{transcript:?}"
         );
         assert!(r.output_bytes(job).is_none());

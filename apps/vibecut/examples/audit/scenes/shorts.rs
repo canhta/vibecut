@@ -39,7 +39,10 @@ pub(super) fn shorts_scene(
             };
             (Arc::new(Files), Arc::new(move |_| Ok(asset.clone())))
         } else {
-            (Arc::new(shorts_fixture::Pixels), shorts_fixture::importer_at(0))
+            (
+                Arc::new(shorts_fixture::Pixels),
+                shorts_fixture::importer_at(0),
+            )
         };
     let prefs = preferences(theme, locale);
     let opener = if scene == "generating" {

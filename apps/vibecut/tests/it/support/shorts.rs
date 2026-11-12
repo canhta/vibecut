@@ -8,7 +8,10 @@ use captions::{Fingerprint, LanguageTag, Segment, Transcript};
 use engine::{
     ByteBudget, Command, Session,
     cache::ArtifactCache,
-    control::{ClipExportShort, ClipWorkflow, ClipsExportRequest, ClipsResult, ClipsSuggestRequest, CostView},
+    control::{
+        ClipExportShort, ClipWorkflow, ClipsExportRequest, ClipsResult, ClipsSuggestRequest,
+        CostView,
+    },
     jobs::{JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, ResourceClass},
     providers::{ConsentPrompt, Cost, Credentials, Providers, TranscriptionProvider},
     subtitles::CaptionAccess,
@@ -172,9 +175,8 @@ pub fn source_at(offset: i64) -> ReviewSource {
         ],
     }
 }
-type Run = dyn Fn(&dyn ConsentPrompt, &JobContext) -> engine::control::Result<ReviewSource>
-    + Send
-    + Sync;
+type Run =
+    dyn Fn(&dyn ConsentPrompt, &JobContext) -> engine::control::Result<ReviewSource> + Send + Sync;
 /// The suggestion half of the lent clip workflow, standing in for ASR and ranking: its
 /// job runs `run` (which may ask the shared consent) and returns the fixture as a
 /// `clips.suggest` result. Export is the real `ClipJobs`.

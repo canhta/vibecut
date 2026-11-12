@@ -315,7 +315,10 @@ impl Subtitles {
             .active
             .as_ref()
             .and_then(|a| a.events.state.lock().ok());
-        let job = self.active.as_ref().and_then(|a| self.runner.snapshot(a.id));
+        let job = self
+            .active
+            .as_ref()
+            .and_then(|a| self.runner.snapshot(a.id));
         Inspection {
             busy: self.busy(),
             job_state: job
@@ -328,11 +331,15 @@ impl Subtitles {
                 .map(|s| s.state),
             cancelling: self.active.as_ref().is_some_and(|a| a.cancel.cancelled()),
             stage: job.as_ref().and_then(|s| stage_of(s.stage)),
-            progress: job.as_ref().map(|s| s.progress).filter(|p| *p > 0.0).or_else(|| {
-                self.export
-                    .as_ref()
-                    .and_then(|(id, _)| self.runner.snapshot(*id).map(|s| s.progress))
-            }),
+            progress: job
+                .as_ref()
+                .map(|s| s.progress)
+                .filter(|p| *p > 0.0)
+                .or_else(|| {
+                    self.export
+                        .as_ref()
+                        .and_then(|(id, _)| self.runner.snapshot(*id).map(|s| s.progress))
+                }),
             selected: self
                 .selected
                 .iter()
@@ -736,7 +743,10 @@ impl Subtitles {
                 if auto && !SOURCE_LANGUAGES.contains(&result.source_language.as_str()) {
                     return Err(engine::transcript::Error::LowConfidence.into());
                 }
-                ("captions.apply", serde_json::json!({"job": id, "start": start}))
+                (
+                    "captions.apply",
+                    serde_json::json!({"job": id, "start": start}),
+                )
             }
             Task::Translate { revision } => {
                 let result = engine::subtitles::decode_translations(bytes)

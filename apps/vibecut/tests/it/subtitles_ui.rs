@@ -1624,7 +1624,8 @@ fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
                 calls,
                 gate: None,
                 unknown_price: false,
-            }.opener(),
+            }
+            .opener(),
         )
         .unwrap(),
     );
@@ -1651,7 +1652,8 @@ fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
                 unknown_price: false,
                 calls,
                 gate: Some(gate.clone()),
-            }.opener(),
+            }
+            .opener(),
         )
         .unwrap(),
     );
@@ -1773,7 +1775,8 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
                         calls: calls.clone(),
                         gate: None,
                         unknown_price: false,
-                    }.opener(),
+                    }
+                    .opener(),
                 )
                 .unwrap(),
             );
@@ -2099,11 +2102,8 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
         e.preferences.subtitles.transcription = option.id.into();
         e.preferences.subtitles.transcription_model = option.models[0].clone();
         e.subtitles = Some(
-            Subtitles::with_access(
-                e.playback.budget().clone(),
-                generate_opener(false, None),
-            )
-            .unwrap(),
+            Subtitles::with_access(e.playback.budget().clone(), generate_opener(false, None))
+                .unwrap(),
         );
         let mut h = harness(e, 1.0);
         h.run_steps(3);
@@ -2135,11 +2135,7 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     let source = source_clip(&mut e);
     e.selection.insert(source);
     e.subtitles = Some(
-        Subtitles::with_access(
-            e.playback.budget().clone(),
-            generate_opener(true, None),
-        )
-        .unwrap(),
+        Subtitles::with_access(e.playback.budget().clone(), generate_opener(true, None)).unwrap(),
     );
     let mut h = harness(e, 1.0);
     h.run_steps(3);
@@ -2490,7 +2486,8 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
                     calls: calls.clone(),
                     gate: None,
                     unknown_price: true,
-                }.opener(),
+                }
+                .opener(),
             )
             .unwrap(),
         );

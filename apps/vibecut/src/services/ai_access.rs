@@ -56,10 +56,8 @@ pub fn desktop_opener(budget: ByteBudget) -> Opener {
                 &credentials,
             )?,
         };
-        Ok(
-            CaptionAccess::new(Arc::new(providers), consent, cache)
-                .with_clips(Arc::new(shorts::ClipJobs::new(credentials))),
-        )
+        Ok(CaptionAccess::new(Arc::new(providers), consent, cache)
+            .with_clips(Arc::new(shorts::ClipJobs::new(credentials))))
     })
 }
 
@@ -128,9 +126,7 @@ pub fn run(
 }
 
 /// The accepted job of a job command's result and the revision it was accepted at.
-pub fn accepted(
-    result: ControlResult,
-) -> engine::control::Result<(engine::jobs::JobId, Revision)> {
+pub fn accepted(result: ControlResult) -> engine::control::Result<(engine::jobs::JobId, Revision)> {
     match result {
         ControlResult::JobAccepted { job, revision, .. } => Ok((job, revision)),
         _ => Err(engine::control::Error::Edit(engine::EditError::Invalid(

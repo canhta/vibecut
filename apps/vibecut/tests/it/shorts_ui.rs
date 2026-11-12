@@ -14,9 +14,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     egui,
     i18n::Locale,
-    shorts::{
-        Action, Context, Decision, State as Shorts,
-    },
+    shorts::{Action, Context, Decision, State as Shorts},
 };
 fn by(id: &str) -> By<'_> {
     By::new().predicate(move |n| n.author_id() == Some(id))

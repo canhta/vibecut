@@ -1,8 +1,8 @@
 //! Bounded preference file IO and the startup repair warning.
 
 use super::{
-    DEFAULT_PANELS, EasingPreferences, FontPickerPreferences, MAX_PREFERENCES_BYTES, MAX_TIMELINE_LANES,
-    PREFERENCES_VERSION, Preferences, validate_panels,
+    DEFAULT_PANELS, EasingPreferences, FontPickerPreferences, MAX_PREFERENCES_BYTES,
+    MAX_TIMELINE_LANES, PREFERENCES_VERSION, Preferences, validate_panels,
 };
 use crate::{Error, Result};
 use std::{

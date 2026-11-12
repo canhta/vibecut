@@ -10,8 +10,8 @@ mod results;
 mod views;
 
 pub use clips::{
-    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange, ClipPieceSpan,
-    ClipRefusal, ClipSubtitleFile, ClipsResult,
+    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange,
+    ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult,
 };
 pub use contract::{contract_schema, reference_markdown, registry_hash};
 pub(crate) use decode::decode_command;

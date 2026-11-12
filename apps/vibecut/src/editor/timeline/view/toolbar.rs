@@ -341,7 +341,10 @@ impl State {
             &response,
         );
         if enabled && response.clicked() {
-            self.toggle_graph(cx, egui::pos2(rect.left(), rect.bottom() + theme::space::XS));
+            self.toggle_graph(
+                cx,
+                egui::pos2(rect.left(), rect.bottom() + theme::space::XS),
+            );
         }
     }
 

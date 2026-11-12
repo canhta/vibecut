@@ -13,7 +13,7 @@ use crate::{
 };
 use engine::ClipSourceSegment;
 use engine::{
-    ByteBudget, Command, Session,
+    ByteBudget, Command, NewItem, Session,
     jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock},
     transcript::Cancellation,
 };
@@ -624,7 +624,10 @@ impl State {
             .output_bytes(id)
             .ok_or(Error::Invalid("shorts suggestion missing"))?;
         let result = engine::control::decode_clips(bytes).map_err(Error::Engine)?;
-        let asset = self.asset.clone().ok_or(Error::Invalid("no shorts source"))?;
+        let asset = self
+            .asset
+            .clone()
+            .ok_or(Error::Invalid("no shorts source"))?;
         let duration = self.duration;
         let session =
             engine::transcript::build_session(&asset, &result.cues, duration, true, None)?;
@@ -1148,9 +1151,7 @@ fn review_boundaries(
     })
 }
 
-fn candidate_from_view(
-    view: &engine::control::ClipCandidateView,
-) -> Result<Candidate> {
+fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<Candidate> {
     let role = |name: &str| match name {
         "hook" => Ok(engine::ClipRole::Hook),
         "context" => Ok(engine::ClipRole::Context),
