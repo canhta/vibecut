@@ -6,7 +6,7 @@ Private host facts and tooling pointers live in `.scratch/process/orchestration.
 
 The master sets cross-host priorities and keeps the canonical tickets, decisions and final evidence under the [tracker's custody rules](issue-tracker.md). Each host coordinator owns its queue, dispatch, technical decisions, review, fixes, integration and normal pushes; send compact stage updates and transfer complete handback artifacts to the master. Source work continues during transfer. The maintainer decides unresolved product choices, credentials, hardware, assets and outward-facing actions.
 
-Use opencode for decided implementation and Codex for unresolved technical or UI judgement. Reuse compatible worker context and warm checkouts.
+Use opencode for decided implementation and Claude Sonnet for unresolved technical or UI judgement and reviews. Host coordinators run Claude Opus at medium effort. Codex is not used. Reuse compatible worker context and warm checkouts.
 
 ## Routing
 
