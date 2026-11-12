@@ -307,10 +307,10 @@ pub(crate) fn apply(
             ));
         }
         EditCommand::ReframeClear { item } => {
-            data = reframe::execute_clear(data, item)?;
+            data = parameters::execute_reframe_clear(data, item)?;
         }
         EditCommand::ReframeSetManual { item, at } => {
-            data = reframe::execute_set_manual(data, item, at)?;
+            data = parameters::execute_reframe_set_manual(data, item, at)?;
         }
         EditCommand::SaveCaptionPreset { item, name } => {
             data = text::save_caption_preset(data, item, name, sources, next, created)?;
@@ -863,9 +863,7 @@ mod masks;
 mod media_edits;
 mod parameters;
 mod project_edits;
-mod reframe;
 mod retime;
-pub(crate) use reframe::merge as merge_reframe;
 mod text;
 mod tracks;
 mod transitions;

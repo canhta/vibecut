@@ -143,7 +143,7 @@ different style first. Rename never changes appearance.
 
 ## Reframe
 
-`reframe.set_manual {item,at}` finds the shot containing `at` — the span from the last `crop.auto` key at or before it — and replaces that key's value with false while keeping every `crop.x`/`crop.y` key. `reframe.clear {item}` removes the three crop paths and leaves the static crop. Both are one undo step and refuse a locked track, a missing item or a shot time outside the item. `reframe.apply {job,replace_manual}` is executed by control dispatch because it needs the runner and the media cache: it merges the job's emitted keys shot by shot, keeps a shot whose `crop.auto` value is false unless `replace_manual`, then commits the static crop and the three channels through `transaction` as one undo step. The [reframe analysis](../../analysis/reframe/README.md) owns key emission.
+`reframe.set_manual {item,at}` finds the shot containing `at` — the span from the last `crop.auto` key at or before it — and replaces that key's value with false while keeping every `crop.x`/`crop.y` key. `reframe.clear {item}` removes the three crop paths and leaves the static crop. Both are one undo step and refuse a locked track, a missing item or a shot time outside the item. `reframe.apply {job,replace_manual}` is executed by control dispatch because it needs the runner and the media cache: it merges the job's emitted keys shot by shot, keeps a shot whose `crop.auto` value is false unless `replace_manual`, then commits the static crop and the three channels as one `Command::Batch`, one undo step. The [reframe analysis](../../analysis/reframe/README.md) owns key emission and that shot merge.
 
 ## Graphic appearance
 

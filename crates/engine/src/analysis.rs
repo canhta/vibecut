@@ -76,6 +76,7 @@ pub mod scene_detection {
 mod shot_analysis;
 pub(crate) use shot_analysis::{VisionHooks, iou};
 mod reframe;
+pub(crate) use reframe::merge as merge_reframe;
 pub use reframe::{
     ReframeAnalysis, ReframeJob, ReframeKeys, ReframeReason, ReframeRequest, ReframeSample,
     ReframeShot, ReframeTarget, ShotKeys, emit as emit_reframe,

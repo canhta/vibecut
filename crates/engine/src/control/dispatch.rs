@@ -815,7 +815,7 @@ impl Session {
                     .ok_or(EngineError::Edit(crate::EditError::NoItem(item_id)))?;
                 let keys = crate::emit_reframe(&analysis, &item)?;
                 let (crop, x, y, auto) =
-                    crate::session::merge_reframe(&item, keys, replace_manual)?;
+                    crate::analysis::merge_reframe(&item, keys, replace_manual)?;
                 // One atomic batch: one undo step, and the outcome the caller reports.
                 let mut commands = vec![Command::SetItemField {
                     item: item_id,

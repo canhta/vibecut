@@ -1,5 +1,6 @@
 //! Turns a source range into a smoothed subject path in source ticks.
 mod keys;
+mod merge;
 mod path;
 mod sampling;
 use super::{AnalysisSettings, Error as AnalysisError, Result};
@@ -15,6 +16,7 @@ use crate::{
 use ai::vision::VisionDetector;
 pub use keys::{ReframeKeys, ShotKeys, emit};
 use media::{SourceAsset, StreamKind};
+pub(crate) use merge::merge;
 use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};

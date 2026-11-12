@@ -23,6 +23,9 @@ downloads nothing. Face following is not speaker awareness; nothing here or in i
   speed change or a second item over the same span each get their own keys from one analysis. The
   last key before a cut is `Step`; nothing interpolates across a cut. A shot shorter than one
   output tick gets no keys.
+- `merge_reframe(&item, keys, replace_manual)` merges emitted keys with the item's current crop
+  channels shot by shot: a shot whose `crop.auto` is false at its start keeps its position keys
+  unless `replace_manual`; control dispatch commits the result for `reframe.apply`.
 - Key reduction: in one forward pass per channel and shot, a key is dropped when
   removing it (with the keys already dropped since the last kept one) moves the linear path by
   less than half a source pixel. Shot ends are always kept. More than 4096 keys in a channel is

@@ -326,3 +326,69 @@ pub(super) fn execute_set_items_flipped(
 
     Ok(data)
 }
+
+/// Current crop channel of `path`, if the item has one.
+fn crop_channel(item: &Item, path: project::BuiltinPath) -> Option<project::Channel> {
+    let param = item.animations.get(&project::AnimationPath::from(path))?;
+    param.channel(None).ok().cloned()
+}
+
+/// Marks the shot containing `at` as manual by clearing its `crop.auto` flag.
+/// Position keys stay exactly as they are; the user edits them with the ordinary
+/// keyframe commands.
+pub(super) fn execute_reframe_set_manual(
+    mut data: ProjectData,
+    id: ItemId,
+    at: Tick,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let auto = crop_channel(target, project::BuiltinPath::CropAuto)
+        .ok_or(EditError::Invalid("reframe is not generated"))?;
+    if at < Tick::ZERO || at >= target.duration()? {
+        return Err(EditError::Invalid("reframe shot time"));
+    }
+    let start = auto
+        .keys()
+        .iter()
+        .rev()
+        .find(|key| key.time <= at)
+        .map(|key| key.time)
+        .ok_or(EditError::Invalid("reframe shot time"))?;
+    let mut keys = auto.keys().to_vec();
+    let index = keys
+        .binary_search_by_key(&start, |key| key.time)
+        .map_err(|_| EditError::Invalid("reframe shot"))?;
+    let Some(key) = keys.get_mut(index) else {
+        return Err(EditError::Invalid("reframe shot"));
+    };
+    if key.value == project::ParamValue::Bool(false) {
+        return Ok(data);
+    }
+    key.value = project::ParamValue::Bool(false);
+    let mut auto = auto;
+    auto.put(
+        keys.get(index)
+            .cloned()
+            .ok_or(EditError::Invalid("reframe shot"))?,
+    )?;
+    target.animations.set(
+        project::AnimationPath::from(project::BuiltinPath::CropAuto),
+        project::Param::Value(auto),
+    )?;
+    Ok(data)
+}
+
+/// Removes the three crop channels and leaves the static crop untouched.
+pub(super) fn execute_reframe_clear(mut data: ProjectData, id: ItemId) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    for path in [
+        project::BuiltinPath::CropX,
+        project::BuiltinPath::CropY,
+        project::BuiltinPath::CropAuto,
+    ] {
+        target
+            .animations
+            .remove(&project::AnimationPath::from(path));
+    }
+    Ok(data)
+}
