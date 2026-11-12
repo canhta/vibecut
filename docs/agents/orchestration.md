@@ -6,7 +6,9 @@ Private host facts and tooling pointers live in `.scratch/process/orchestration.
 
 The master sets cross-host priorities and keeps the canonical tickets, decisions and final evidence under the [tracker's custody rules](issue-tracker.md). Each host coordinator owns its queue, dispatch, technical decisions, review, fixes, integration and normal pushes; send compact stage updates and transfer complete handback artifacts to the master. Source work continues during transfer. The maintainer decides unresolved product choices, credentials, hardware, assets and outward-facing actions.
 
-Use opencode for decided implementation and Claude Sonnet for unresolved technical or UI judgement and reviews. Host coordinators run Claude Opus at medium effort. Codex is not used. Reuse compatible worker context and warm checkouts.
+Use opencode for decided implementation and Claude Sonnet for unresolved technical or UI judgement and reviews. Host coordinators run Claude Opus at medium effort. Codex is not used.
+
+On dispatch, set the ticket `claimed`. The worker ends it `resolved` after merge, or `open` with an exact remaining list. Reuse compatible worker context and warm checkouts.
 
 ## Routing
 
@@ -18,7 +20,7 @@ Use opencode for decided implementation and Claude Sonnet for unresolved technic
 ## Placement and builds
 
 - Reuse a warm checkout; independent branches start at actual `origin/main`. Use another top-level checkout for another writer. Read-only reviews can share a checkout using immutable Git revisions. Keep implementation, review and corrections on the assigned host; move only for a concrete blocker or maintainer reassignment.
-- Agent count, product targets and active compilers are separate resources. Schedule workers from measured host pressure and ready work, without a fixed per-host count. Use `cargo xtask build-cap --json` and the [build owner](../../xtask/README.md#build-slots) for target admission and compiler slots. Retain at least 30% free memory and load below twice the core count. A source worker can use an isolated checkout before a build target is available; queue its checks for admitted capacity and report that wait truthfully. Source progress does not justify bypassing build admission or claiming unrun proof.
+- Agent count, product targets and active compilers are separate resources. Schedule workers from measured host pressure and ready work, without a fixed per-host count. Use `cargo xtask build-cap --json` and the [build owner](../../xtask/README.md#build-slots) for target admission and compiler slots. Retain at least 30% free memory and load below twice the core count. A source worker can use an isolated checkout before a build target is available; queue its checks for admitted capacity and report that wait truthfully. A worker whose change is otherwise ready to merge may run `cargo xtask prune --make-room` itself; it evicts only an idle verified target. Source progress does not justify bypassing build admission or claiming unrun proof.
 - Compile through `cargo xtask build -- <command>` using the checkout's managed target, without `CARGO_TARGET_DIR` overrides. Reuse valid artifacts. OS-specific proof needs that OS; name other platforms unverified. Tracked code and instructions must work without private host paths.
 
 ## Coordinator loop
