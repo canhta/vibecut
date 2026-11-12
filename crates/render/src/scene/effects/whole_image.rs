@@ -1356,9 +1356,13 @@ pub(super) fn echo_glow_eval(
     geometry: &EffectGeometry,
 ) -> Result<Vec<EffectPass>> {
     working_geometry(frame, geometry)?;
+    // Radius is in clip pixels like every other glow: scale it to the output so
+    // a preview tile and an export blur the same fraction of the picture.
+    let [gx, gy] = geometry.clip_pixel_scale();
+    let gain = (gx + gy) / 2.0;
     let colour = linear(frame.color("color")?);
     let echoes = frame.scalar("echoes")? as f32;
-    let radius = frame.scalar("radius")?;
+    let radius = frame.scalar("radius")? * gain;
     let spread = frame.scalar("spread")? as f32;
     let intensity = frame.scalar("intensity")? as f32 / 100.0;
     let decay = frame.scalar("decay")? as f32 / 100.0;
