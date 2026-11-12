@@ -180,7 +180,7 @@ impl Project {
                     continue;
                 }
                 bytes = bytes
-                    .checked_add(record.len() + usize::from(!records.is_empty()))
+                    .checked_add(record.len() + if records.is_empty() { 0 } else { 1 })
                     .ok_or(Error::TooLarge("music credits"))?;
                 if bytes > MAX_CREDIT_BYTES {
                     return Err(Error::TooLarge("music credits"));
