@@ -65,6 +65,194 @@ fn every_mode_matches_linear_image_pair_at_zero_half_and_full_opacity() {
 }
 
 #[test]
+fn frame_layers_match_the_blend_reference_and_recompute_from_the_same_inputs() {
+    use render::effects::{CpuEffects, EffectCompositor, EffectInputs, EffectPass, FrameLayer};
+    use std::sync::atomic::AtomicUsize;
+    #[derive(Clone, Copy)]
+    enum Reply {
+        Unsupported,
+        Budget,
+        /// A finished but unpublished device result that then reports loss.
+        LostAfterSubmit,
+    }
+    struct Device(Reply, AtomicUsize, AtomicUsize);
+    impl EffectCompositor for Device {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn ExecutionHooks,
+        ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+            Ok(None)
+        }
+        fn release_idle(&self) -> Result<()> {
+            self.2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        fn supports(&self, _: &str) -> bool {
+            false
+        }
+        fn apply(
+            &self,
+            _: &Image,
+            _: &[EffectPass],
+            _: EffectInputs<'_>,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            Err(Error::Unsupported("none"))
+        }
+        fn composite_layers(
+            &self,
+            width: u32,
+            height: u32,
+            _: &[FrameLayer<'_>],
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            match self.0 {
+                Reply::Unsupported => Err(Error::Unsupported("GPU frame layers")),
+                Reply::Budget => Err(Error::Budget {
+                    requested: 1,
+                    limit: 0,
+                }),
+                Reply::LostAfterSubmit => {
+                    let stale = Image::new(width, height, [0.9, 0.9, 0.9, 1.0], hooks)?;
+                    drop(stale);
+                    Err(Error::Unsupported("GPU device lost"))
+                }
+            }
+        }
+    }
+    let hooks = Hooks::default();
+    let (w, h) = (5, 3);
+    let backdrop = Image::from_working_pixels(
+        w,
+        h,
+        (0..w * h).map(|i| [0.2, 0.1, 0.3, 0.5 + 0.5 * (i % 2) as f32]),
+        &hooks,
+    )
+    .unwrap();
+    // Transparent edge column plus half-covered pixels exercise premultiplied alpha.
+    let top = Image::from_working_pixels(
+        w,
+        h,
+        (0..w * h).map(|i| match i % 5 {
+            0 => [0.0; 4],
+            1 => [0.1, 0.4, 0.2, 0.5],
+            _ => [0.3, 0.2, 0.6, 0.8],
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let third = Image::new(w, h, [0.1, 0.1, 0.0, 0.25], &hooks).unwrap();
+    let two = [
+        FrameLayer {
+            image: &backdrop,
+            opacity: 1.0,
+            mode: BlendMode::Normal,
+        },
+        FrameLayer {
+            image: &top,
+            opacity: 0.5,
+            mode: BlendMode::Normal,
+        },
+    ];
+    let three = [
+        two[0],
+        two[1],
+        FrameLayer {
+            image: &third,
+            opacity: 0.7,
+            mode: BlendMode::Multiply,
+        },
+    ];
+    let expected = |layers: &[FrameLayer<'_>]| {
+        let mut out = vec![[0.0f32; 4]; (w * h) as usize];
+        for layer in layers {
+            for (d, s) in out.iter_mut().zip(layer.image.pixels()) {
+                *d = blend::pixel(*d, *s, layer.opacity, layer.mode);
+            }
+        }
+        out
+    };
+    let used = || hooks.used.load(std::sync::atomic::Ordering::SeqCst);
+    let held = used();
+    for layers in [&two[..], &three[..]] {
+        let reference = render::effects::reference_layers(w, h, layers, &hooks).unwrap();
+        assert_eq!(reference.pixels(), expected(layers));
+        let cpu = render::effects::composite_layers(w, h, layers, &CpuEffects, &hooks).unwrap();
+        assert_eq!(cpu.pixels(), reference.pixels());
+        // Unsupported and a loss after the device finished both recompute from
+        // the same borrowed layers; the stale device result is never published.
+        for reply in [Reply::Unsupported, Reply::LostAfterSubmit] {
+            let device = Device(reply, AtomicUsize::new(0), AtomicUsize::new(0));
+            let out = render::effects::composite_layers(w, h, layers, &device, &hooks).unwrap();
+            assert_eq!(out.pixels(), reference.pixels());
+            assert_eq!(device.1.load(std::sync::atomic::Ordering::SeqCst), 1);
+            assert_eq!(device.2.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+        drop((reference, cpu));
+        assert_eq!(used(), held, "no layer or result charge outlives the call");
+    }
+    let empty = render::effects::reference_layers(w, h, &[], &hooks).unwrap();
+    assert!(empty.pixels().iter().all(|p| *p == [0.0; 4]));
+    drop(empty);
+    // Budget refusal and cancellation propagate with no CPU recompute.
+    let device = Device(Reply::Budget, AtomicUsize::new(0), AtomicUsize::new(0));
+    assert!(matches!(
+        render::effects::composite_layers(w, h, &two, &device, &hooks),
+        Err(Error::Budget { .. })
+    ));
+    assert_eq!(device.2.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let tight = Hooks {
+        limit: used() + 1,
+        ..hooks.clone()
+    };
+    assert!(matches!(
+        render::effects::composite_layers(w, h, &two, &CpuEffects, &tight),
+        Err(Error::Budget { .. })
+    ));
+    hooks.state.store(1, std::sync::atomic::Ordering::SeqCst);
+    let device = Device(Reply::Unsupported, AtomicUsize::new(0), AtomicUsize::new(0));
+    assert!(matches!(
+        render::effects::composite_layers(w, h, &two, &device, &hooks),
+        Err(Error::Cancelled)
+    ));
+    assert_eq!(device.1.load(std::sync::atomic::Ordering::SeqCst), 0);
+    hooks.state.store(0, std::sync::atomic::Ordering::SeqCst);
+    // Invalid inputs refuse before any adapter call.
+    let small = Image::new(w - 1, h, [0.0; 4], &hooks).unwrap();
+    for bad in [
+        [
+            two[0],
+            FrameLayer {
+                opacity: f32::NAN,
+                ..two[1]
+            },
+        ],
+        [
+            two[0],
+            FrameLayer {
+                opacity: 1.5,
+                ..two[1]
+            },
+        ],
+        [
+            two[0],
+            FrameLayer {
+                image: &small,
+                ..two[1]
+            },
+        ],
+    ] {
+        assert!(matches!(
+            render::effects::composite_layers(w, h, &bad, &device, &hooks),
+            Err(Error::Invalid(_))
+        ));
+    }
+    assert_eq!(device.1.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(used(), held + Image::bytes(w - 1, h).unwrap());
+}
+
+#[test]
 #[ignore = "bounded local throughput measurement"]
 fn blend_frame_benchmark() {
     let hooks = Hooks::default();

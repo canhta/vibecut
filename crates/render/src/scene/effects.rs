@@ -5,7 +5,11 @@ use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
 mod image_ops;
+mod layers;
 pub mod lut;
+pub use layers::{
+    FrameLayer, MAX_FRAME_LAYERS, composite_layers, reference_layers, validate_layers,
+};
 
 /// One shader uniform: what an effect hands a single-pass pixel op.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -127,6 +131,20 @@ pub trait EffectCompositor: Send + Sync {
         hooks: &dyn ExecutionHooks,
     ) -> Result<()> {
         super::blend::composite(below, item, opacity, mode, hooks)
+    }
+    /// Optional whole-frame composition of already prepared layers, bottom to top
+    /// over a transparent canvas. Callers go through [`composite_layers`], which
+    /// validates first and recomputes on the CPU reference after `Unsupported`.
+    /// Implementations decide admission before mutation or device work and never
+    /// publish a partial result; the default declines.
+    fn composite_layers(
+        &self,
+        _width: u32,
+        _height: u32,
+        _layers: &[FrameLayer<'_>],
+        _hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        Err(Error::Unsupported("frame layers"))
     }
     /// Whether this compositor has a pipeline for `entry_point`. The executor runs
     /// unsupported passes on the CPU and keeps their supported neighbours here.
@@ -1095,6 +1113,15 @@ impl EffectCompositor for CpuEffects {
     }
     fn supports(&self, _: &str) -> bool {
         true
+    }
+    fn composite_layers(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[FrameLayer<'_>],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        reference_layers(width, height, layers, hooks)
     }
     fn apply(
         &self,

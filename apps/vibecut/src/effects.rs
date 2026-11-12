@@ -2,14 +2,14 @@
 use eframe::wgpu;
 use render::{
     Error, ExecutionHooks, Image, MemoryKind, Result,
-    effects::{EffectCompositor, EffectInputs, EffectPass},
+    effects::{EffectCompositor, EffectInputs, EffectPass, FrameLayer},
 };
 use std::{
     borrow::Cow,
     collections::BTreeMap,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
@@ -38,14 +38,46 @@ fn read_image(entry: &str) -> Result<Option<ReadImage>> {
     }
 }
 
+/// Cumulative native work this adapter performed: counted at the call, not inferred
+/// from adapter presence. Failed or refused calls count only what actually happened.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuWork {
+    /// Full-image host-to-device uploads.
+    pub image_uploads: u64,
+    /// Compute dispatches encoded into submitted work.
+    pub dispatches: u64,
+    /// Queue submissions.
+    pub submissions: u64,
+    /// Completed device-to-host image readbacks.
+    pub readbacks: u64,
+}
+#[derive(Default)]
+struct Work {
+    image_uploads: AtomicU64,
+    dispatches: AtomicU64,
+    submissions: AtomicU64,
+    readbacks: AtomicU64,
+}
+
 pub struct GpuEffects {
     device: wgpu::Device,
     queue: wgpu::Queue,
     layout: wgpu::BindGroupLayout,
     pipelines: BTreeMap<&'static str, wgpu::ComputePipeline>,
     busy: Arc<AtomicBool>,
+    work: Work,
 }
 impl GpuEffects {
+    /// Snapshot of the native work counters.
+    pub fn work(&self) -> GpuWork {
+        GpuWork {
+            image_uploads: self.work.image_uploads.load(Ordering::Relaxed),
+            dispatches: self.work.dispatches.load(Ordering::Relaxed),
+            submissions: self.work.submissions.load(Ordering::Relaxed),
+            readbacks: self.work.readbacks.load(Ordering::Relaxed),
+        }
+    }
+
     /// Offscreen effect tiles and background-blur previews share this bounded
     /// engine cache and the existing GPU adapter; no window is required.
     pub fn thumbnails(
@@ -123,6 +155,7 @@ impl GpuEffects {
             layout,
             pipelines,
             busy: Arc::new(AtomicBool::new(false)),
+            work: Work::default(),
         })
     }
     fn open<'a>(&'a self, hooks: &'a dyn ExecutionHooks) -> Result<FrameEffects<'a>> {
@@ -418,13 +451,37 @@ impl FrameEffects<'_> {
     ) -> Result<Image> {
         use wgpu::BufferUsages as U;
         let core_new = scratch.core.is_none();
-        if core_new {
-            let lease = self.hooks.reserve(
-                MemoryKind::Compositor,
-                bytes
-                    .checked_mul(4)
-                    .ok_or(Error::Invalid("GPU working bytes"))?,
-            )?;
+        // Charge every image-sized allocation before creating any native buffer, so a
+        // refusal at the auxiliary reserve never leaves core buffers allocated.
+        let core_lease = if core_new {
+            Some(
+                self.hooks.reserve(
+                    MemoryKind::Compositor,
+                    bytes
+                        .checked_mul(4)
+                        .ok_or(Error::Invalid("GPU working bytes"))?,
+                )?,
+            )
+        } else {
+            None
+        };
+        if read.is_none() {
+            scratch.aux = None;
+        }
+        let aux_new = read.is_some() && scratch.aux.is_none();
+        let aux_lease = if aux_new {
+            Some(
+                self.hooks.reserve(
+                    MemoryKind::Compositor,
+                    bytes
+                        .checked_mul(2)
+                        .ok_or(Error::Invalid("GPU auxiliary bytes"))?,
+                )?,
+            )
+        } else {
+            None
+        };
+        if let Some(lease) = core_lease {
             scratch.core = Some(Arc::new(Core {
                 a: self.buffer(bytes, U::STORAGE | U::COPY_SRC | U::COPY_DST, false),
                 b: self.buffer(bytes, U::STORAGE | U::COPY_SRC | U::COPY_DST, false),
@@ -433,17 +490,7 @@ impl FrameEffects<'_> {
                 _lease: lease,
             }));
         }
-        if read.is_none() {
-            scratch.aux = None;
-        }
-        let aux_new = read.is_some() && scratch.aux.is_none();
-        if aux_new {
-            let lease = self.hooks.reserve(
-                MemoryKind::Compositor,
-                bytes
-                    .checked_mul(2)
-                    .ok_or(Error::Invalid("GPU auxiliary bytes"))?,
-            )?;
+        if let Some(lease) = aux_lease {
             scratch.aux = Some(Arc::new(Aux {
                 data: self.buffer(bytes, U::STORAGE | U::COPY_DST, false),
                 upload: self.buffer(bytes, U::MAP_WRITE | U::COPY_SRC, true),
@@ -503,6 +550,10 @@ impl FrameEffects<'_> {
                 &aux.upload,
             )?;
         }
+        self.gpu
+            .work
+            .image_uploads
+            .fetch_add(1 + u64::from(scratch.aux.is_some()), Ordering::Relaxed);
         let mut data = meta
             .upload
             .slice(..)
@@ -589,6 +640,7 @@ impl FrameEffects<'_> {
             compute.set_bind_group(0, &group, &[]);
             compute.dispatch_workgroups(item.width().div_ceil(8), item.height().div_ceil(8), 1);
             drop(compute);
+            self.gpu.work.dispatches.fetch_add(1, Ordering::Relaxed);
             std::mem::swap(&mut a, &mut b);
         }
         encoder.copy_buffer_to_buffer(a, 0, &core.download, 0, bytes);
@@ -606,6 +658,7 @@ impl FrameEffects<'_> {
         *submitted = true;
         submission.possible = true;
         self.gpu.queue.submit([encoder.finish()]);
+        self.gpu.work.submissions.fetch_add(1, Ordering::Relaxed);
         #[cfg(test)]
         if let Some(boundary) = &self.boundary {
             boundary.after_submit();
@@ -700,6 +753,9 @@ impl FrameEffects<'_> {
         });
         let result = Image::from_working_pixels(item.width(), item.height(), pixels, self.hooks);
         drop(data);
+        if result.is_ok() {
+            self.gpu.work.readbacks.fetch_add(1, Ordering::Relaxed);
+        }
         mappings.ready = result.is_ok();
         result
     }
@@ -757,6 +813,37 @@ impl EffectCompositor for GpuEffects {
         self.open(hooks)?
             .composite(below, item, opacity, mode, hooks)
     }
+    fn composite_layers(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[FrameLayer<'_>],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        if hooks.cancelled() {
+            return Err(Error::Cancelled);
+        }
+        render::effects::validate_layers(width, height, layers)?;
+        admitted_pair(layers)?;
+        self.open(hooks)?
+            .composite_layers(width, height, layers, hooks)
+    }
+}
+/// The first resident case: a full-canvas opaque Normal backdrop under one Normal
+/// layer. Anything else is declined before any device work and runs on the CPU.
+fn admitted_pair<'a, 'l>(
+    layers: &'l [FrameLayer<'a>],
+) -> Result<(&'l FrameLayer<'a>, &'l FrameLayer<'a>)> {
+    match layers {
+        [base, top]
+            if base.mode == project::BlendMode::Normal
+                && base.opacity == 1.0
+                && top.mode == project::BlendMode::Normal =>
+        {
+            Ok((base, top))
+        }
+        _ => Err(Error::Unsupported("GPU frame layers")),
+    }
 }
 impl EffectCompositor for FrameEffects<'_> {
     fn frame<'a>(
@@ -812,6 +899,34 @@ impl EffectCompositor for FrameEffects<'_> {
         )?;
         *below = result;
         Ok(())
+    }
+    fn composite_layers(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[FrameLayer<'_>],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        self.hooks(hooks)?;
+        render::effects::validate_layers(width, height, layers)?;
+        let (base, top) = admitted_pair(layers)?;
+        // Both prepared CPU images are borrowed from their owners for the whole call,
+        // so a runtime Unsupported leaves exactly these inputs for the CPU recompute.
+        let values = [top.opacity, project::BlendMode::Normal as u32 as f32];
+        self.execute(
+            top.image,
+            std::iter::once(ComputePass {
+                entry_point: "blend",
+                horizontal: false,
+                values: Cow::Borrowed(&values),
+            }),
+            EffectInputs {
+                input: top.image,
+                coverage: None,
+                below: base.image,
+            },
+            hooks,
+        )
     }
     fn apply(
         &self,
@@ -890,13 +1005,16 @@ mod tests {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&Default::default())).unwrap();
         let gpu = pollster::block_on(GpuEffects::new(device, queue)).unwrap();
-        for (fault, context) in [
-            (Fault::Timeout, "GPU effect wait"),
-            (Fault::Cancel, ""),
-            (Fault::Map, "GPU mapping"),
-            (Fault::Internal, "GPU effect execution"),
-            (Fault::Unwind, ""),
-        ] {
+        for (layered, (fault, context)) in [false, true].into_iter().flat_map(|layered| {
+            [
+                (Fault::Timeout, "GPU effect wait"),
+                (Fault::Cancel, ""),
+                (Fault::Map, "GPU mapping"),
+                (Fault::Internal, "GPU effect execution"),
+                (Fault::Unwind, ""),
+            ]
+            .map(move |row| (layered, row))
+        }) {
             let boundary = Arc::new(Boundary {
                 fault,
                 cancel: AtomicBool::new(false),
@@ -910,7 +1028,32 @@ mod tests {
             let mut scope = gpu.open(hooks).unwrap();
             scope.boundary = Some(boundary.clone());
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                scope.composite(&mut below, &image, 0.7, project::BlendMode::Normal, hooks)
+                if layered {
+                    // Same custody for the resident frame operation: a lost or timed
+                    // out submission publishes nothing and the CPU inputs stay intact.
+                    let normal = project::BlendMode::Normal;
+                    scope
+                        .composite_layers(
+                            17,
+                            9,
+                            &[
+                                FrameLayer {
+                                    image: &below,
+                                    opacity: 1.0,
+                                    mode: normal,
+                                },
+                                FrameLayer {
+                                    image: &image,
+                                    opacity: 0.7,
+                                    mode: normal,
+                                },
+                            ],
+                            hooks,
+                        )
+                        .map(drop)
+                } else {
+                    scope.composite(&mut below, &image, 0.7, project::BlendMode::Normal, hooks)
+                }
             }));
             match fault {
                 Fault::Unwind => assert!(result.is_err()),

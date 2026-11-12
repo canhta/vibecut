@@ -44,6 +44,8 @@ Device geometry support and [aggregate byte admission](../../../../crates/engine
 are separate: supported dimensions can still refuse once caller/result images,
 decoding and encoding consume the shared budget.
 
+`composite_layers` admits exactly two layers: an opaque Normal backdrop and one Normal layer with any opacity, full canvas, so it runs the existing `blend` entry once with the backdrop as the auxiliary image. That is two uploads, one dispatch, one submission and one readback, charged as the 6I plan above with image-sized leases taken before any buffer exists; other plans (including three layers or another mode) answer `Unsupported` before device work and render's [`composite_layers`](../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter) recomputes them on the CPU. `GpuEffects::work` reports cumulative uploads, dispatches, submissions and completed readbacks. Native Metal and Vulkan runs are required before admitting more than this case.
+
 Completed scratch reuses buffer allocations only within its frame scope, not image
 contents. Every apply/composite still packs and uploads its inputs, submits and waits
 for native work, reads the output back and constructs a separately charged CPU Image.

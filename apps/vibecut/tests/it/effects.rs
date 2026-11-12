@@ -1574,6 +1574,71 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         assert_ne!(below.pixels(), start.pixels());
         drop(below);
         assert_eq!(meter.budget.snapshot().unwrap().used, 0);
+        // Resident two-layer frame: a half-alpha layer with transparent pixels over a
+        // backdrop is one upload pair, one dispatch, one submission and one readback.
+        let layers = [
+            FrameLayer {
+                image: &other,
+                opacity: 1.0,
+                mode: Normal,
+            },
+            FrameLayer {
+                image: &input,
+                opacity: 0.5,
+                mode: Normal,
+            },
+        ];
+        let frame = |layers: &[FrameLayer<'_>], hooks: &dyn ExecutionHooks| {
+            composite_layers(w, h, layers, gpu.as_ref(), hooks)
+        };
+        let expected = reference_layers(w, h, &layers, &Hooks).unwrap();
+        meter.take();
+        let before = gpu.work();
+        let actual = frame(&layers, &meter).unwrap();
+        let work = gpu.work();
+        resources(meter.take(), bytes, 1, true);
+        parity(&actual, &expected);
+        assert_eq!(
+            [
+                work.image_uploads - before.image_uploads,
+                work.dispatches - before.dispatches,
+                work.submissions - before.submissions,
+                work.readbacks - before.readbacks,
+            ],
+            [2, 1, 1, 1]
+        );
+        assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+        drop(actual);
+        // Three layers or a non-Normal mode decline before GPU work and equal the CPU path.
+        let third = FrameLayer {
+            image: &start,
+            opacity: 0.3,
+            mode: Normal,
+        };
+        let multiply = FrameLayer {
+            mode: project::BlendMode::Multiply,
+            ..layers[1]
+        };
+        for plan in [vec![layers[0], layers[1], third], vec![layers[0], multiply]] {
+            let before = gpu.work();
+            let out = frame(&plan, &meter).unwrap();
+            assert_eq!(gpu.work(), before, "unsupported plan did no GPU work");
+            assert_eq!(
+                out.pixels(),
+                reference_layers(w, h, &plan, &Hooks).unwrap().pixels()
+            );
+        }
+        meter.take();
+        // Cancellation and byte refusal propagate unpublished, with no GPU work.
+        let before = gpu.work();
+        meter.cancel.store(true, Ordering::SeqCst);
+        assert!(matches!(frame(&layers, &meter), Err(Error::Cancelled)));
+        meter.cancel.store(false, Ordering::SeqCst);
+        let tight = Meter::new(1);
+        assert!(matches!(frame(&layers, &tight), Err(Error::Budget { .. })));
+        assert_eq!(tight.budget.snapshot().unwrap().used, 0);
+        assert_eq!(gpu.work(), before);
+        meter.take();
         let bad = Image::new(w + 1, h, [0.0; 4], &Hooks).unwrap();
         let valid = || EffectInputs {
             input: &input,
@@ -1641,5 +1706,39 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             Err(Error::Unsupported(_))
         ));
         assert!(meter.take().is_empty());
+    }
+    // Pressure at the 768 MiB budget: 1080p fits its resident working set; 4K is refused
+    // by byte admission before any native buffer or work, and nothing leaks.
+    let pressure = Meter::new(768 << 20);
+    for (w, h, fits) in [(1920, 1080, true), (3840, 2160, false)] {
+        let bytes = Image::bytes(w, h).unwrap();
+        let base = Image::new(w, h, [0.1, 0.2, 0.4, 0.5], &pressure).unwrap();
+        let top = Image::new(w, h, [0.2, 0.1, 0.3, 0.4], &pressure).unwrap();
+        let layers = [
+            FrameLayer {
+                image: &base,
+                opacity: 1.0,
+                mode: Normal,
+            },
+            FrameLayer {
+                image: &top,
+                opacity: 0.5,
+                mode: Normal,
+            },
+        ];
+        let before = gpu.work();
+        let result = composite_layers(w, h, &layers, gpu.as_ref(), &pressure);
+        if fits {
+            let actual = result.unwrap();
+            parity(&actual, &reference_layers(w, h, &layers, &Hooks).unwrap());
+            assert_eq!(pressure.budget.snapshot().unwrap().used, 3 * bytes);
+            assert_eq!(gpu.work().submissions - before.submissions, 1);
+        } else {
+            assert!(matches!(result, Err(Error::Budget { .. })));
+            assert_eq!(gpu.work(), before, "refused before native work");
+            assert_eq!(pressure.budget.snapshot().unwrap().used, 2 * bytes);
+        }
+        drop((base, top));
+        assert_eq!(pressure.budget.snapshot().unwrap().used, 0);
     }
 }
