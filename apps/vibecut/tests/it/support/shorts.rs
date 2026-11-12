@@ -352,14 +352,18 @@ pub fn importer_at(offset: i64) -> Importer {
     Arc::new(move |_| Ok(asset_at(offset)))
 }
 pub fn state(look: vibecut::appearance::Look, opener: Opener, offset: i64) -> Shorts {
-    Shorts::with_access(
+    let mut app = Shorts::with_access(
         look,
         ByteBudget::new(512 << 20).unwrap(),
         opener,
         importer_at(offset),
         Arc::new(Pixels),
     )
-    .unwrap()
+    .unwrap();
+    // The review bounds come from the request; the 3 to 7 s fixture clips need 1 to 20 s.
+    app.request.min_seconds = 1;
+    app.request.max_seconds = 20;
+    app
 }
 pub struct Pixels;
 impl Sources for Pixels {

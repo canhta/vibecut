@@ -303,7 +303,6 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     let before = app.reviews()[0].clone();
     let history = app.history_len();
     for (start, end) in [
-        (tick(11), tick(14)),
         (tick(14), tick(10)),
         (tick(-1), tick(4)),
         (tick(0), tick(11)),
@@ -316,6 +315,10 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(app.reviews()[0].segments[0].range, range(10, 13));
     app.redo();
     assert_eq!(app.reviews()[0], before);
+    // A start inside a spoken unit is within the one-second tolerance of its edge,
+    // so the trim snaps to that safe frame instead of refusing.
+    app.trim(0, tick(11), tick(14)).unwrap();
+    assert_eq!(app.reviews()[0].segments[0].range, range(10, 14));
     let mut h = harness(app, 1.0);
     h.run_steps(3);
     open_first(&mut h);
