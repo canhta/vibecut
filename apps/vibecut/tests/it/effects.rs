@@ -23,9 +23,25 @@ const MIX_IDENTITY: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.
 const MIX_CROSS: [f32; 12] = [
     2.0, -2.0, 0.25, -0.25, -0.5, 1.5, 0.5, 0.125, 0.25, 0.5, -2.0, 2.0,
 ];
+fn curve_values(points: &[(f32, f32)]) -> Vec<f32> {
+    let mut values = vec![points.len() as f32];
+    for index in 0..project::CURVE_MAX_POINTS {
+        let (x, y) = points.get(index).copied().unwrap_or((0.0, 0.0));
+        values.push(x);
+        values.push(y);
+    }
+    values
+}
 fn linear_colour_rows() -> Vec<EffectPass> {
     let mut rows = vec![
         pixel("black_white", &[]), // No parameters; nondefault parameter rows are N/A.
+        pixel("lift", &[0.0, 0.0, 0.0]),
+        pixel("lift", &[0.5, 0.5, 0.5]),
+        pixel("lift", &[-0.5, 0.2, 1.0]),
+        pixel("tone_gamma", &[1.0, 1.0, 1.0]),
+        pixel("tone_gamma", &[0.25, 1.0, 4.0]),
+        pixel("gain", &[1.0, 1.0, 1.0]),
+        pixel("gain", &[0.0, 2.0, 4.0]),
         pixel("channel_mix", &MIX_IDENTITY),
         pixel(
             "channel_mix",
@@ -98,6 +114,13 @@ fn expected_linear_colour(pass: &EffectPass, source: [f32; 4]) -> Option<[f64; 4
     let e = c.map(encode);
     let rgb = match pass.entry_point() {
         "black_white" => [luma; 3],
+        "lift" => [0, 1, 2].map(|k| (c[k] + f64::from(values[k]) * (1.0 - c[k])).clamp(0.0, 1.0)),
+        "tone_gamma" => [0, 1, 2].map(|k| {
+            c[k].max(0.0)
+                .powf(1.0 / f64::from(values[k]).max(0.25))
+                .clamp(0.0, 1.0)
+        }),
+        "gain" => [0, 1, 2].map(|k| (c[k] * f64::from(values[k])).clamp(0.0, 1.0)),
         "channel_mix" => [0, 1, 2].map(|k| {
             let row = k * 4;
             decode(
@@ -206,6 +229,9 @@ fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) 
                 "tint" => values[6] == 0.0,
                 "levels" => values.as_ref() == [0.0, 1.0, 0.0, 1.0, 1.0],
                 "strobe" => values[3] == 1.0,
+                "lift" => values.iter().all(|v| *v == 0.0),
+                "tone_gamma" => values.iter().all(|v| *v == 1.0),
+                "gain" => values.iter().all(|v| *v == 1.0),
                 _ => false,
             };
             if identity {
@@ -287,6 +313,40 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     )
     .unwrap();
     pixel_parity(&gpu, &primaries, "primaries-3x1");
+    // Curves are CPU-only until a 65-value native admission exists; a mixed run
+    // still executes supported neighbours natively and matches the CPU path.
+    let curve = pixel(
+        "curve_red",
+        &curve_values(&[(0.0, 0.0), (0.5, 0.25), (1.0, 1.0)]),
+    );
+    assert!(!gpu.supports("curve_red"));
+    let curve_inputs = || EffectInputs {
+        input: &primaries,
+        coverage: None,
+        below: &primaries,
+    };
+    assert!(matches!(
+        gpu.apply(&primaries, &[curve.clone()], curve_inputs(), &Hooks),
+        Err(Error::Unsupported(_))
+    ));
+    let mixed = [
+        pixel("lift", &[0.2, -0.1, 0.4]),
+        curve,
+        pixel("gain", &[0.8, 1.2, 0.6]),
+    ];
+    let cpu = CpuEffects
+        .apply(&primaries, &mixed, curve_inputs(), &Hooks)
+        .unwrap();
+    let actual = apply_effect(
+        primaries.copy(&Hooks).unwrap(),
+        &mixed,
+        &primaries,
+        gpu.as_ref(),
+        &Hooks,
+    )
+    .unwrap();
+    let max = max_error(&cpu, &actual);
+    assert!(max <= 2e-5, "mixed CPU/GPU curve run {max}");
     // Actual device admission and transparent singleton footprints use the
     // same contract as the CPU, including the largest admitted frame centres.
     for (w, h) in [(8, 4), (1, 3), (3, 1), (1, 1)] {

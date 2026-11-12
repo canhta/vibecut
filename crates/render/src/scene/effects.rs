@@ -354,6 +354,161 @@ pub fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     let [r, g, b] = out.map(|v| v.clamp(0.0, 1.0) * alpha);
     [r, g, b, alpha]
 }
+/// Render the lift coefficients of `[r, g, b]` percentages.
+pub fn lift_passes(r: f64, g: f64, b: f64) -> Result<Vec<EffectPass>> {
+    let range = project::LIFT_MIN..=project::LIFT_MAX;
+    if [r, g, b]
+        .iter()
+        .any(|v| !v.is_finite() || !range.contains(v))
+    {
+        return Err(Error::Invalid("lift control"));
+    }
+    if r == 0.0 && g == 0.0 && b == 0.0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "lift",
+        [r, g, b]
+            .map(|v| Uniform::Float((v / 100.0) as f32))
+            .to_vec(),
+    )])
+}
+/// Render the gamma coefficients of `[r, g, b]` percentages.
+pub fn gamma_passes(r: f64, g: f64, b: f64) -> Result<Vec<EffectPass>> {
+    let range = project::GAMMA_MIN..=project::GAMMA_MAX;
+    if [r, g, b]
+        .iter()
+        .any(|v| !v.is_finite() || !range.contains(v))
+    {
+        return Err(Error::Invalid("gamma control"));
+    }
+    if r == 100.0 && g == 100.0 && b == 100.0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "tone_gamma",
+        [r, g, b]
+            .map(|v| Uniform::Float((v / 100.0) as f32))
+            .to_vec(),
+    )])
+}
+/// Render the gain coefficients of `[r, g, b]` percentages.
+pub fn gain_passes(r: f64, g: f64, b: f64) -> Result<Vec<EffectPass>> {
+    let range = project::GAIN_MIN..=project::GAIN_MAX;
+    if [r, g, b]
+        .iter()
+        .any(|v| !v.is_finite() || !range.contains(v))
+    {
+        return Err(Error::Invalid("gain control"));
+    }
+    if r == 100.0 && g == 100.0 && b == 100.0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![pixel(
+        "gain",
+        [r, g, b]
+            .map(|v| Uniform::Float((v / 100.0) as f32))
+            .to_vec(),
+    )])
+}
+/// One pixel-local lift stage: `straight + L * (1 - straight)`, clamped.
+pub fn lift_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let lift = [0, 1, 2].map(|k| uniform(values, k));
+    let mapped = [0, 1, 2].map(|k| (c[k] + lift[k] * (1.0 - c[k])).clamp(0.0, 1.0));
+    premultiply(mapped, alpha)
+}
+/// One pixel-local gamma stage: `straight^(1/gamma)`, clamped.
+pub fn tone_gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let mapped = [0, 1, 2].map(|k| {
+        let gamma = uniform(values, k).max(0.25);
+        c[k].max(0.0).powf(1.0 / gamma).clamp(0.0, 1.0)
+    });
+    premultiply(mapped, alpha)
+}
+/// One pixel-local gain stage: `straight * gain`, clamped.
+pub fn gain_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let mapped = [0, 1, 2].map(|k| (c[k] * uniform(values, k)).clamp(0.0, 1.0));
+    premultiply(mapped, alpha)
+}
+/// The flat curve layout: point count, then 32 ordered `x, y` pairs zero-padded.
+const CURVE_UNIFORMS: usize = 1 + 2 * project::CURVE_MAX_POINTS;
+/// One monotone piecewise-linear lookup; malformed data is the identity.
+fn curve_map(values: &[f32], x: f32) -> f32 {
+    let Some(&raw) = values.first() else {
+        return x;
+    };
+    let count = raw as usize;
+    if !(project::CURVE_MIN_POINTS..=project::CURVE_MAX_POINTS).contains(&count)
+        || values.len() < 1 + count * 2
+    {
+        return x;
+    }
+    let point = |index: usize| {
+        [
+            uniform(values, 1 + index * 2),
+            uniform(values, 2 + index * 2),
+        ]
+    };
+    let mut low = point(0);
+    for index in 1..count {
+        let high = point(index);
+        if x <= high[0] {
+            let span = high[0] - low[0];
+            if span <= 0.0 {
+                return high[1];
+            }
+            let t = (x - low[0]) / span;
+            return (low[1] + (high[1] - low[1]) * t).clamp(0.0, 1.0);
+        }
+        low = high;
+    }
+    low[1]
+}
+fn curve_channel_pixel(pixel: [f32; 4], values: &[f32], channel: usize) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let mut mapped = c;
+    if let Some(value) = mapped.get_mut(channel) {
+        *value = curve_map(values, *value);
+    }
+    premultiply(mapped, alpha)
+}
+pub fn curve_red_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    curve_channel_pixel(pixel, values, 0)
+}
+pub fn curve_green_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    curve_channel_pixel(pixel, values, 1)
+}
+pub fn curve_blue_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    curve_channel_pixel(pixel, values, 2)
+}
+/// One pixel-local luma stage: preserves chroma by scaling straight RGB by
+/// `C(Y)/Y`; black stays black because every curve fixes `(0,0)`.
+pub fn curve_luma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+    let (c, alpha) = straight(pixel);
+    let y = luma(c).clamp(0.0, 1.0);
+    let mapped = curve_map(values, y);
+    let rgb = if y > 0.0 {
+        c.map(|v| (v * mapped / y).clamp(0.0, 1.0))
+    } else {
+        [0.0; 3]
+    };
+    premultiply(rgb, alpha)
+}
+/// The 65 flat floats a curve pass carries.
+fn curve_uniforms(curve: &project::ToneCurve) -> Vec<Uniform> {
+    let mut uniforms = Vec::with_capacity(CURVE_UNIFORMS);
+    let points = curve.points();
+    uniforms.push(Uniform::Float(points.len() as f32));
+    for index in 0..project::CURVE_MAX_POINTS {
+        let [x, y] = points.get(index).copied().unwrap_or([0.0, 0.0]);
+        uniforms.push(Uniform::Float(x as f32));
+        uniforms.push(Uniform::Float(y as f32));
+    }
+    uniforms
+}
 /// Chroma-key pass values: `[key r, key g, key b, intensity, shadow]` with the
 /// key sRGB-encoded and both controls in 0..=1. Intensity scales the
 /// chroma-distance tolerance and 0 emits no pass; shadow restores pixels darker
@@ -451,6 +606,68 @@ pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     }
     [out[0], out[1], out[2], alpha]
 }
+fn three_channel(values: &[f32], range: std::ops::RangeInclusive<f32>) -> bool {
+    values.len() == 3 && values.iter().all(|v| v.is_finite() && range.contains(v))
+}
+fn lift_uniforms(values: &[f32]) -> bool {
+    three_channel(values, -1.0..=1.0)
+}
+fn gamma_uniforms(values: &[f32]) -> bool {
+    three_channel(values, 0.25..=4.0)
+}
+fn gain_uniforms(values: &[f32]) -> bool {
+    three_channel(values, 0.0..=4.0)
+}
+/// The flat curve shape: integer count 2..=32, ordered grid x, monotone y and
+/// zero padding. Validation never sorts or repairs a proposal.
+fn curve_uniforms_valid(values: &[f32]) -> bool {
+    if values.len() != CURVE_UNIFORMS {
+        return false;
+    }
+    let Some(&raw) = values.first() else {
+        return false;
+    };
+    if !raw.is_finite() || raw.fract() != 0.0 || !(2.0..=32.0).contains(&raw) {
+        return false;
+    }
+    let count = raw as usize;
+    let mut previous = [0.0f32; 2];
+    for (index, pair) in values
+        .get(1..)
+        .unwrap_or_default()
+        .chunks_exact(2)
+        .enumerate()
+    {
+        let [x, y] = pair else {
+            return false;
+        };
+        let (x, y) = (*x, *y);
+        if index >= count {
+            if x != 0.0 || y != 0.0 {
+                return false;
+            }
+            continue;
+        }
+        let ticks = x * project::CURVE_GRID as f32;
+        if !x.is_finite()
+            || !y.is_finite()
+            || !(0.0..=1.0).contains(&x)
+            || !(0.0..=1.0).contains(&y)
+            || ticks.round() != ticks
+        {
+            return false;
+        }
+        if index == 0 {
+            if x != 0.0 || y != 0.0 {
+                return false;
+            }
+        } else if x - previous[0] < 1.0 / project::CURVE_GRID as f32 || y < previous[1] {
+            return false;
+        }
+        previous = [x, y];
+    }
+    previous == [1.0, 1.0]
+}
 /// A pixel-local op: its shader entry, flat uniform count, uniform check and
 /// the CPU reference the shader mirrors.
 struct PixelOp {
@@ -459,12 +676,54 @@ struct PixelOp {
     valid: fn(&[f32]) -> bool,
     apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-static PIXEL_OPS: [PixelOp; 13] = [
+static PIXEL_OPS: [PixelOp; 20] = [
     PixelOp {
         entry_point: "grade",
         len: 4,
         valid: |v| v.get(1).is_some_and(|exponent| *exponent > 0.0),
         apply: grade_pixel,
+    },
+    PixelOp {
+        entry_point: "lift",
+        len: 3,
+        valid: lift_uniforms,
+        apply: lift_pixel,
+    },
+    PixelOp {
+        entry_point: "tone_gamma",
+        len: 3,
+        valid: gamma_uniforms,
+        apply: tone_gamma_pixel,
+    },
+    PixelOp {
+        entry_point: "gain",
+        len: 3,
+        valid: gain_uniforms,
+        apply: gain_pixel,
+    },
+    PixelOp {
+        entry_point: "curve_red",
+        len: CURVE_UNIFORMS,
+        valid: curve_uniforms_valid,
+        apply: curve_red_pixel,
+    },
+    PixelOp {
+        entry_point: "curve_green",
+        len: CURVE_UNIFORMS,
+        valid: curve_uniforms_valid,
+        apply: curve_green_pixel,
+    },
+    PixelOp {
+        entry_point: "curve_blue",
+        len: CURVE_UNIFORMS,
+        valid: curve_uniforms_valid,
+        apply: curve_blue_pixel,
+    },
+    PixelOp {
+        entry_point: "curve_luma",
+        len: CURVE_UNIFORMS,
+        valid: curve_uniforms_valid,
+        apply: curve_luma_pixel,
     },
     PixelOp {
         entry_point: "chroma_key",
@@ -1404,6 +1663,7 @@ enum ResolvedValue {
     Color([f64; 4]),
     Point([f64; 2]),
     Lut(Option<project::LutId>),
+    Curve(project::ToneCurve),
 }
 impl From<EffectValue> for ResolvedValue {
     fn from(value: EffectValue) -> Self {
@@ -1414,6 +1674,7 @@ impl From<EffectValue> for ResolvedValue {
             EffectValue::Color(v) => Self::Color(v.0.map(|v| f64::from(v) / 255.0)),
             EffectValue::Point(v) => Self::Point(v),
             EffectValue::Lut(v) => Self::Lut(v),
+            EffectValue::Curve(v) => Self::Curve(v),
         }
     }
 }
@@ -1541,6 +1802,12 @@ impl EffectFrame {
             _ => Err(Error::Invalid("effect parameter")),
         }
     }
+    pub fn curve(&self, id: &str) -> Result<project::ToneCurve> {
+        match self.get(id)? {
+            ResolvedValue::Curve(v) => Ok(*v),
+            _ => Err(Error::Invalid("effect parameter")),
+        }
+    }
 }
 
 /// Geometry of the canvas layer before the item's later transform.
@@ -1654,13 +1921,42 @@ fn sharpen(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectP
     });
     Ok(passes)
 }
+/// Basic grade, then lift, gamma, gain, RGB curves and the luma curve. A LUT
+/// follows the whole instance in [`evaluate_effect`].
 fn color_grade(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
-    grade_passes(
+    let mut passes = grade_passes(
         frame.scalar("brightness")?,
         frame.scalar("contrast")?,
         frame.scalar("saturation")?,
         frame.scalar("hue")?,
-    )
+    )?;
+    passes.extend(lift_passes(
+        frame.scalar("lift_r")?,
+        frame.scalar("lift_g")?,
+        frame.scalar("lift_b")?,
+    )?);
+    passes.extend(gamma_passes(
+        frame.scalar("gamma_r")?,
+        frame.scalar("gamma_g")?,
+        frame.scalar("gamma_b")?,
+    )?);
+    passes.extend(gain_passes(
+        frame.scalar("gain_r")?,
+        frame.scalar("gain_g")?,
+        frame.scalar("gain_b")?,
+    )?);
+    for (id, entry) in [
+        ("curve_red", "curve_red"),
+        ("curve_green", "curve_green"),
+        ("curve_blue", "curve_blue"),
+        ("curve_luma", "curve_luma"),
+    ] {
+        let curve = frame.curve(id)?;
+        if !curve.is_identity() {
+            passes.push(pixel(entry, curve_uniforms(&curve)));
+        }
+    }
+    Ok(passes)
 }
 fn chroma_key(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
     chroma_key_passes(

@@ -24,6 +24,33 @@ fn lut_model_refuses_unregistered_references_and_keeps_current_wire_domains() {
         serde_json::from_str::<EffectParamUpdate>("{\"lut\":null}").unwrap(),
         EffectParamUpdate::LutRef(LutReference { lut: None })
     );
+    assert_eq!(
+        serde_json::from_str::<EffectParamUpdate>("[[0,0],[0.5,0.25],[1,1]]").unwrap(),
+        EffectParamUpdate::Curve(ToneCurve::new(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]).unwrap())
+    );
+    for invalid in [
+        "[[0,0]]",
+        "[[0,0],[1,0.5]]",
+        "[[0,0],[0.3,0.5],[1,1]]",
+        "[[0,0],[0.5,0.2],[0.5,0.4],[1,1]]",
+        "[[0,0],[0.5,0.8],[0.75,0.2],[1,1]]",
+        "[[0,0],[0.75,0.5],[0.5,0.6],[1,1]]",
+        "[[0,0],[0.5,0.5],[1,1],[]]",
+        "{\"points\":[[0,0],[1,1]]}",
+    ] {
+        assert!(
+            serde_json::from_str::<EffectParamUpdate>(invalid).is_err(),
+            "{invalid}"
+        );
+    }
+    let mut oversized = vec![[0.0, 0.0]; 33];
+    for (index, point) in oversized.iter_mut().enumerate().skip(1) {
+        *point = [index as f64 / 32.0, index as f64 / 32.0];
+    }
+    assert!(
+        serde_json::from_value::<EffectParamUpdate>(serde_json::json!(oversized)).is_err(),
+        "33 points refuse before retention"
+    );
     let effect = effect_definition("color_grade")
         .unwrap()
         .instance("grade")
@@ -154,6 +181,45 @@ fn every_parameter_kind_accepts_its_range_and_refuses_the_rest() {
         let result = param(kind, value).check(&value);
         assert_eq!(result.is_ok(), accepted, "{kind:?} {value:?}");
     }
+    // Tone curves: fixed endpoints, exact 1/4096 grid, ordered x, monotone y.
+    let identity = ToneCurve::IDENTITY;
+    assert_eq!(ToneCurve::new(&[[0.0, 0.0], [1.0, 1.0]]).unwrap(), identity);
+    assert!(identity.is_identity());
+    for valid in [
+        &[[0.0, 0.0], [1.0, 1.0]][..],
+        &[[0.0, 0.0], [0.25, 0.5], [1.0, 1.0]][..],
+        &[[0.0, 0.0], [0.5, 0.5], [0.500_244_140_625, 0.5], [1.0, 1.0]][..],
+    ] {
+        let curve = ToneCurve::new(valid).unwrap();
+        assert!(
+            param(EffectParamKind::Curve, EffectValue::Curve(curve))
+                .check(&EffectValue::Curve(curve))
+                .is_ok()
+        );
+    }
+    let too_few = &[[0.0, 0.0]][..];
+    let moved_end = &[[0.0, 0.0], [1.0, 0.5]][..];
+    let off_grid = &[[0.0, 0.0], [0.3, 0.5], [1.0, 1.0]][..];
+    let duplicate_x = &[[0.0, 0.0], [0.5, 0.2], [0.5, 0.4], [1.0, 1.0]][..];
+    let descending_y = &[[0.0, 0.0], [0.5, 0.8], [0.75, 0.2], [1.0, 1.0]][..];
+    let unsorted = &[[0.0, 0.0], [0.75, 0.5], [0.5, 0.6], [1.0, 1.0]][..];
+    let nonfinite = &[[0.0, 0.0], [0.5, f64::NAN], [1.0, 1.0]][..];
+    for invalid in [
+        too_few,
+        moved_end,
+        off_grid,
+        duplicate_x,
+        descending_y,
+        unsorted,
+        nonfinite,
+    ] {
+        assert!(ToneCurve::new(invalid).is_err(), "{invalid:?}");
+    }
+    let mut oversized = vec![[0.0, 0.0]; 33];
+    for (index, point) in oversized.iter_mut().enumerate().skip(1) {
+        *point = [index as f64 / 32.0, index as f64 / 32.0];
+    }
+    assert!(ToneCurve::new(&oversized).is_err(), "33 points refuse");
 }
 
 #[test]
@@ -251,6 +317,34 @@ fn pixel_catalogue_keeps_source_numeric_admission_and_typed_colours() {
             0.0
         };
         rows.push(("channel_mix", id, default, (-200.0, 200.0), (-200.0, 200.0)));
+    }
+    // Colour-grade lift/gamma/gain ranges are new decisions, not measured parity.
+    for id in ["lift_r", "lift_g", "lift_b"] {
+        rows.push((
+            "color_grade",
+            id,
+            0.0,
+            (LIFT_MIN, LIFT_MAX),
+            (LIFT_MIN, LIFT_MAX),
+        ));
+    }
+    for id in ["gamma_r", "gamma_g", "gamma_b"] {
+        rows.push((
+            "color_grade",
+            id,
+            100.0,
+            (GAMMA_MIN, GAMMA_MAX),
+            (GAMMA_MIN, GAMMA_MAX),
+        ));
+    }
+    for id in ["gain_r", "gain_g", "gain_b"] {
+        rows.push((
+            "color_grade",
+            id,
+            100.0,
+            (GAIN_MIN, GAIN_MAX),
+            (GAIN_MIN, GAIN_MAX),
+        ));
     }
     for (kind, id, default, hard, soft) in rows {
         let def = effect_definition(kind).unwrap();
@@ -465,6 +559,25 @@ fn instances_refuse_wrong_parameter_sets_and_set_scalar_is_atomic() {
         Some(&EffectValue::Color(Color([0x11, 0x22, 0x33, 255])))
     );
     chroma.validate().unwrap();
+
+    // A curve is not addressable as a scalar, and a scalar is not a curve.
+    let curve = ToneCurve::new(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]).unwrap();
+    let mut graded = effect_definition("color_grade").unwrap().instance("g");
+    let before = graded.clone();
+    assert!(graded.set_scalar("curve_red", 0.5).is_err());
+    assert_eq!(graded, before);
+    graded
+        .set_param("curve_red", EffectParamUpdate::Curve(curve))
+        .unwrap();
+    assert_eq!(graded.value("curve_red"), Some(&EffectValue::Curve(curve)));
+    let held = graded.clone();
+    assert!(
+        graded
+            .set_param("brightness", EffectParamUpdate::Curve(curve))
+            .is_err()
+    );
+    assert!(graded.set_scalar("nope", 1.0).is_err());
+    assert_eq!(graded, held);
 }
 
 #[test]
@@ -483,6 +596,46 @@ fn instances_round_trip_through_json_with_typed_values() {
             "legacy": true
         }));
     assert!(parsed.is_err(), "unknown fields refuse");
+    // A non-neutral curve keeps its exact points through typed JSON.
+    let curve = ToneCurve::new(&[[0.0, 0.0], [0.5, 0.375], [1.0, 1.0]]).unwrap();
+    let graded = effect_definition("color_grade")
+        .unwrap()
+        .instance("one")
+        .with("curve_luma", EffectValue::Curve(curve))
+        .unwrap();
+    let json = serde_json::to_value(&graded).unwrap();
+    assert_eq!(json["params"]["curve_luma"]["kind"], "curve");
+    let back: EffectInstance = serde_json::from_value(json).unwrap();
+    assert_eq!(back.value("curve_luma"), Some(&EffectValue::Curve(curve)));
+    // A curve's topology is static; an addressed path refuses rather than
+    // being ignored by the evaluator.
+    let curve_path = graded.param_path("curve_luma").unwrap();
+    let data = super::project::empty().into_data();
+    let mut data = data;
+    let mut animations = Animations::default();
+    animations
+        .set(curve_path, Param::new(ParamValue::Scalar(0.5)).unwrap())
+        .unwrap();
+    let mut candidate = data;
+    candidate.scene_mut().timeline.main.items.push(Item {
+        id: ItemId(1),
+        start: Tick::ZERO,
+        source_range: time::SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
+        source_asset: None,
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: vec![],
+        effects: vec![graded],
+        animations,
+        content: ItemParams::Overlay(OverlayParams {
+            color: Color([255; 4]),
+        }),
+    });
+    assert!(matches!(
+        Project::new(candidate),
+        Err(Error::Invalid("effect animation type"))
+    ));
 }
 
 #[test]

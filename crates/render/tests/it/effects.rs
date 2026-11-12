@@ -278,6 +278,56 @@ fn graded(grade: [f64; 4]) -> (Vec<[f32; 4]>, Vec<[f32; 4]>) {
 fn luma(p: [f32; 4]) -> f32 {
     0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
 }
+/// Run a full colour-grade instance (every stage plus its LUT) through the
+/// public evaluation and CPU execution path; returns source, output and the
+/// ordered pass entries.
+fn graded_on(
+    params: &[(&'static str, EffectValue)],
+    source: &[[f32; 4]],
+) -> (Vec<[f32; 4]>, Vec<&'static str>) {
+    let hooks = Hooks::default();
+    let image =
+        Image::from_working_pixels(source.len() as u32, 1, source.iter().copied(), &hooks).unwrap();
+    let mut effect = project::effect_definition("color_grade")
+        .unwrap()
+        .instance("grade");
+    for (id, value) in params {
+        effect = effect.with(id, *value).unwrap();
+    }
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &effect,
+        time::Tick::ZERO,
+        EffectGeometry::new([source.len() as u32, 1], [1.0, 1.0]).unwrap(),
+        true,
+        &render::lut::LutResources::default(),
+    )
+    .unwrap();
+    let entries = passes.iter().map(EffectPass::entry_point).collect();
+    let out = CpuEffects
+        .apply(
+            &image,
+            &passes,
+            EffectInputs {
+                input: &image,
+                coverage: None,
+                below: &image,
+            },
+            &hooks,
+        )
+        .unwrap();
+    (out.pixels().to_vec(), entries)
+}
+fn graded_with(
+    params: &[(&'static str, EffectValue)],
+) -> (Vec<[f32; 4]>, Vec<[f32; 4]>, Vec<&'static str>) {
+    let source = chart();
+    let (out, entries) = graded_on(params, &source);
+    (source, out, entries)
+}
+fn curve(points: &[[f64; 2]]) -> EffectValue {
+    EffectValue::Curve(project::ToneCurve::new(points).unwrap())
+}
 
 #[test]
 fn color_grade_controls_on_the_chart() {
@@ -345,6 +395,140 @@ fn color_grade_controls_on_the_chart() {
     // the half-transparent patch grades on its straight colour.
     let (_, half_alpha) = graded([50.0, 0.0, 0.0, 0.0]);
     assert!(near(half_alpha[12][0], (0.3 / 0.5 * 2.0f32).min(1.0) * 0.5));
+
+    // The whole family at neutral is exact identity with no pass.
+    let (source, neutral, entries) = graded_with(&[]);
+    assert_eq!(source, neutral);
+    assert!(entries.is_empty());
+    // Lift is x + L*(1-x) on straight colour, then clamped and premultiplied.
+    let (_, lifted, entries) = graded_with(&[
+        ("lift_r", EffectValue::Scalar(50.0)),
+        ("lift_g", EffectValue::Scalar(50.0)),
+        ("lift_b", EffectValue::Scalar(50.0)),
+    ]);
+    assert_eq!(entries, ["lift"]);
+    for (index, expected) in [(0, 0.5), (2, 0.59), (3, 0.75), (4, 1.0)] {
+        assert!(near(lifted[index][0], expected), "lift {index}");
+    }
+    let (_, lowered, _) = graded_with(&[
+        ("lift_r", EffectValue::Scalar(-50.0)),
+        ("lift_g", EffectValue::Scalar(-50.0)),
+        ("lift_b", EffectValue::Scalar(-50.0)),
+    ]);
+    assert!(near(lowered[2][0], 0.0) && near(lowered[3][0], 0.25));
+    let (_, black, _) = graded_with(&[
+        ("lift_r", EffectValue::Scalar(-100.0)),
+        ("lift_g", EffectValue::Scalar(-100.0)),
+        ("lift_b", EffectValue::Scalar(-100.0)),
+    ]);
+    let (_, white, _) = graded_with(&[
+        ("lift_r", EffectValue::Scalar(100.0)),
+        ("lift_g", EffectValue::Scalar(100.0)),
+        ("lift_b", EffectValue::Scalar(100.0)),
+    ]);
+    for (pixel, source) in black.iter().zip(&source) {
+        assert_eq!(pixel[3], source[3]);
+        assert!(pixel[..3].iter().all(|v| *v == 0.0));
+    }
+    for (pixel, source) in white.iter().zip(&source) {
+        assert_eq!(pixel[3], source[3]);
+        assert!(pixel[..3].iter().all(|v| (*v - pixel[3]).abs() < 1e-6));
+    }
+    // Soft alpha keeps the straight arithmetic: [.1,.4,.8] with [.2,-.2,.5].
+    let (mixed, _) = graded_on(
+        &[
+            ("lift_r", EffectValue::Scalar(20.0)),
+            ("lift_g", EffectValue::Scalar(-20.0)),
+            ("lift_b", EffectValue::Scalar(50.0)),
+        ],
+        &[[0.025, 0.1, 0.2, 0.25]],
+    );
+    assert_eq!(mixed[0][3], 0.25);
+    for (actual, expected) in mixed[0].iter().zip([0.07f32, 0.07, 0.225, 0.25]) {
+        assert!((actual - expected).abs() <= 1e-6, "{mixed:?}");
+    }
+    // Gamma is x^(1/g) on straight colour, gain is g*x.
+    let (_, gamma_low, entries) = graded_with(&[
+        ("gamma_r", EffectValue::Scalar(25.0)),
+        ("gamma_g", EffectValue::Scalar(25.0)),
+        ("gamma_b", EffectValue::Scalar(25.0)),
+    ]);
+    assert_eq!(entries, ["tone_gamma"]);
+    assert!(near(gamma_low[3][0], 0.0625));
+    let (mid, _) = graded_on(
+        &[("gamma_r", EffectValue::Scalar(400.0))],
+        &[[0.0625, 0.0625, 0.0625, 1.0]],
+    );
+    assert!(near(mid[0][0], 0.5) && near(mid[0][1], 0.0625));
+    let (_, gained, entries) = graded_with(&[("gain_r", EffectValue::Scalar(400.0))]);
+    assert_eq!(entries, ["gain"]);
+    assert!(near(gained[3][0], 1.0));
+    let (zeroed, _) = graded_on(
+        &[("gain_g", EffectValue::Scalar(0.0))],
+        &[[0.4, 0.4, 0.4, 1.0]],
+    );
+    assert!(near(zeroed[0][1], 0.0) && near(zeroed[0][0], 0.4));
+    // Basic grade stays before lift: -.5 stop then lift.5 on .2 is .55, not .3.
+    let (order, entries) = graded_on(
+        &[
+            ("brightness", EffectValue::Scalar(-50.0)),
+            ("lift_r", EffectValue::Scalar(50.0)),
+            ("lift_g", EffectValue::Scalar(50.0)),
+            ("lift_b", EffectValue::Scalar(50.0)),
+        ],
+        &[[0.2, 0.2, 0.2, 1.0]],
+    );
+    assert_eq!(entries, ["grade", "lift"]);
+    assert!(near(order[0][0], 0.55), "{order:?}");
+    // Curves map their channel independently; the luma curve keeps chroma.
+    let ramp = curve(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]);
+    let (red_curve, entries) = graded_with(&[("curve_red", ramp)]);
+    assert_eq!(entries, ["curve_red"]);
+    assert!(near(red_curve[3][0], 0.25) && near(red_curve[3][1], 0.5));
+    assert!(near(red_curve[5][0], 1.0) && near(red_curve[5][1], 0.0));
+    let (luma_curve, _) = graded_with(&[("curve_luma", ramp)]);
+    assert!(
+        near(luma_curve[3][0], 0.25)
+            && near(luma_curve[3][1], 0.25)
+            && near(luma_curve[3][2], 0.25)
+    );
+    assert!(near(luma_curve[0][0], 0.0), "black stays black");
+    assert!(
+        near(luma_curve[5][0], 0.5) && near(luma_curve[5][1], 0.0),
+        "chroma scales before clipping"
+    );
+    let (bright_luma, _) =
+        graded_with(&[("curve_luma", curve(&[[0.0, 0.0], [0.25, 1.0], [1.0, 1.0]]))]);
+    assert!(near(bright_luma[5][0], 1.0) && near(bright_luma[5][1], 0.0));
+    // Identity curves add no pass, and a combined extreme grade stays valid.
+    let identity = curve(&[[0.0, 0.0], [1.0, 1.0]]);
+    let (_, unchanged, entries) = graded_with(&[("curve_red", identity)]);
+    assert!(entries.is_empty());
+    assert_eq!(unchanged, source);
+    for params in [
+        [
+            ("lift_r", EffectValue::Scalar(100.0)),
+            ("gamma_b", EffectValue::Scalar(400.0)),
+            ("gain_g", EffectValue::Scalar(400.0)),
+            ("curve_luma", curve(&[[0.0, 0.0], [0.25, 1.0], [1.0, 1.0]])),
+        ],
+        [
+            ("lift_g", EffectValue::Scalar(-100.0)),
+            ("gamma_r", EffectValue::Scalar(25.0)),
+            ("gain_b", EffectValue::Scalar(0.0)),
+            ("curve_red", curve(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]])),
+        ],
+    ] {
+        let (_, out, _) = graded_with(&params);
+        for (pixel, source) in out.iter().zip(&source) {
+            assert_eq!(pixel[3], source[3]);
+            assert!(
+                pixel[..3]
+                    .iter()
+                    .all(|v| v.is_finite() && *v >= 0.0 && *v <= pixel[3] + 1e-6)
+            );
+        }
+    }
 }
 
 #[test]
@@ -370,6 +554,258 @@ fn color_grade_refuses_hostile_values_and_bad_passes() {
             .is_err()
         );
     }
+    for bad in [f64::NAN, f64::INFINITY, -100.1, 100.1] {
+        assert!(lift_passes(bad, 0.0, 0.0).is_err());
+    }
+    for bad in [f64::NAN, 24.9, 400.1] {
+        assert!(gamma_passes(bad, 100.0, 100.0).is_err());
+    }
+    for bad in [f64::NAN, -0.1, 400.1] {
+        assert!(gain_passes(100.0, bad, 100.0).is_err());
+    }
+    for (entry, weights) in [
+        ("lift", vec![0.0, 0.0]),
+        ("lift", vec![0.0, 1.5, 0.0]),
+        ("lift", vec![f32::NAN, 0.0, 0.0]),
+        ("tone_gamma", vec![1.0, 0.24, 1.0]),
+        ("gain", vec![1.0, 1.0, 4.1]),
+    ] {
+        assert!(
+            validate_pass(
+                &EffectPass::Pixel {
+                    entry_point: entry,
+                    uniforms: weights.into_iter().map(Uniform::Float).collect(),
+                },
+                8,
+                4
+            )
+            .is_err(),
+            "{entry}"
+        );
+    }
+    // Curve passes flatten to 65 values; padding and endpoints are checked.
+    let mut curve = vec![0.0f32; 1 + 2 * project::CURVE_MAX_POINTS];
+    curve[0] = 2.0;
+    curve[3] = 1.0;
+    curve[4] = 1.0;
+    assert!(
+        validate_pass(
+            &EffectPass::Pixel {
+                entry_point: "curve_red",
+                uniforms: curve.iter().copied().map(Uniform::Float).collect(),
+            },
+            8,
+            4
+        )
+        .is_ok()
+    );
+    for (index, value) in [
+        (0, 1.0),
+        (0, 33.0),
+        (0, 2.5),
+        (1, 1.0 / 8192.0),
+        (3, 0.9),
+        (4, -0.1),
+        (63, 0.5),
+    ] {
+        let mut hostile = curve.clone();
+        if let Some(slot) = hostile.get_mut(index) {
+            *slot = value;
+        }
+        assert!(
+            validate_pass(
+                &EffectPass::Pixel {
+                    entry_point: "curve_red",
+                    uniforms: hostile.into_iter().map(Uniform::Float).collect(),
+                },
+                8,
+                4
+            )
+            .is_err(),
+            "{index} {value}"
+        );
+    }
+    assert!(
+        validate_pass(
+            &EffectPass::Pixel {
+                entry_point: "curve_red",
+                uniforms: curve.iter().copied().take(64).map(Uniform::Float).collect(),
+            },
+            8,
+            4
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
+    use project::{ItemParams, OverlayParams, ProjectId, Track, TrackId, TrackKind};
+    use std::fs;
+    let hooks = Hooks::default();
+    let dir = tempfile::tempdir().unwrap();
+    // Encoded (r,g,b) -> (g,b,r): a linear table, so trilinear sampling is exact.
+    let cube = b"LUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n";
+    let path = dir.path().join("canonical.cube");
+    fs::write(&path, cube).unwrap();
+    let id = project::LutId::new(media::ContentHash::from_bytes(cube));
+    let record = project::LutRecord {
+        id,
+        name: "Swap".into(),
+        licence: None,
+        source_name: "swap.cube".into(),
+        source_hash: media::ContentHash::from_bytes(cube),
+        directory: dir.path().to_path_buf(),
+    };
+    let mut grade = project::effect_definition("color_grade")
+        .unwrap()
+        .instance("grade")
+        .with("brightness", EffectValue::Scalar(-50.0))
+        .unwrap()
+        .with("saturation", EffectValue::Scalar(50.0))
+        .unwrap()
+        .with("lift_r", EffectValue::Scalar(50.0))
+        .unwrap()
+        .with("lift_g", EffectValue::Scalar(50.0))
+        .unwrap()
+        .with("lift_b", EffectValue::Scalar(50.0))
+        .unwrap()
+        .with("lut", EffectValue::Lut(Some(id)))
+        .unwrap();
+    grade
+        .params
+        .insert("lut_strength".into(), EffectValue::Scalar(100.0));
+    let key = project::effect_definition("chroma_key")
+        .unwrap()
+        .instance("key")
+        .with("key_color", EffectValue::Color(Color([0, 255, 0, 255])))
+        .unwrap();
+    let mut data = Project::empty(ProjectId(1), "order".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 4;
+    data.canvas.height = 1;
+    data.luts.push(record);
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "V".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: vec![],
+            effects: vec![grade.clone(), key.clone()],
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: None,
+            source_range: time::SourceRange::new(
+                time::Tick::ZERO,
+                time::FrameRate::FPS_30.tick_of(30).unwrap(),
+            )
+            .unwrap(),
+            start: time::Tick::ZERO,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([0; 4]),
+            }),
+        }],
+    });
+    let project = Project::new(data).unwrap();
+    let item = &project.data().scene().timeline.main.items[0];
+    let resources =
+        render::lut::LutResources::resolve(&project, item.effects.iter(), &hooks).unwrap();
+    let geometry = EffectGeometry::new([4, 1], [1.0, 1.0]).unwrap();
+    let grade_passes = evaluate_effect(
+        &item.animations,
+        &item.effects[0],
+        time::Tick::ZERO,
+        geometry,
+        true,
+        &resources,
+    )
+    .unwrap();
+    let entries: Vec<_> = grade_passes.iter().map(EffectPass::entry_point).collect();
+    assert_eq!(entries, ["grade", "lift", "lut_3d"]);
+    let key_passes = evaluate_effect(
+        &item.animations,
+        &item.effects[1],
+        time::Tick::ZERO,
+        geometry,
+        true,
+        &resources,
+    )
+    .unwrap();
+    assert_eq!(key_passes.len(), 1);
+    assert_eq!(key_passes[0].entry_point(), "chroma_key");
+    // The item's effect vector is applied in stack order: the whole grade
+    // instance (including its LUT) precedes the later key instance.
+    let stack: Vec<_> = grade_passes
+        .iter()
+        .chain(&key_passes)
+        .map(EffectPass::entry_point)
+        .collect();
+    assert_eq!(stack, ["grade", "lift", "lut_3d", "chroma_key"]);
+    let image = Image::from_working_pixels(1, 1, [[0.1, 0.3, 0.6, 1.0]], &hooks).unwrap();
+    let below = image.copy(&hooks).unwrap();
+    let graded = apply_effect(
+        image.copy(&hooks).unwrap(),
+        &grade_passes,
+        &below,
+        &CpuEffects,
+        &hooks,
+    )
+    .unwrap();
+    // The LUT follows the grade stages, not the other way round.
+    let oetf = |v: f64| {
+        if v <= 0.0031308 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let eotf = |v: f64| {
+        let v = v.clamp(0.0, 1.0);
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    // The basic grade's saturation couples channels, so permuting before or
+    // after is observable (an affine per-channel map would commute).
+    let grade_rgb = |c: [f64; 3]| {
+        let x = c.map(|v| v * 0.5);
+        let l = 0.2126 * x[0] + 0.7152 * x[1] + 0.0722 * x[2];
+        x.map(|v| {
+            let saturated = l + (v - l) * 2.0;
+            (0.5 + 0.5 * saturated.clamp(0.0, 1.0)).clamp(0.0, 1.0)
+        })
+    };
+    let straight = [0.1f64, 0.3, 0.6];
+    let graded_rgb = grade_rgb(straight);
+    let after = [
+        eotf(oetf(graded_rgb[1])),
+        eotf(oetf(graded_rgb[2])),
+        eotf(oetf(graded_rgb[0])),
+    ];
+    let permuted = [oetf(straight[1]), oetf(straight[2]), oetf(straight[0])].map(eotf);
+    let before = grade_rgb(permuted);
+    for (actual, expected) in graded.pixels()[0].iter().zip(after) {
+        assert!(
+            (f64::from(*actual) - expected).abs() <= 2e-5,
+            "grade-before-LUT {actual} != {expected}"
+        );
+    }
+    assert!(
+        after
+            .iter()
+            .zip(before)
+            .any(|(after, before)| (after - before).abs() > 1e-3),
+        "the ordering witness must differ"
+    );
 }
 
 /// sRGB-encoded fixture component to the linear working space.
@@ -2045,6 +2481,9 @@ fn changed_value(param: &project::EffectParamDefinition) -> EffectValue {
         }
         EffectParamKind::Point => EffectValue::Point([1.0, 1.0]),
         EffectParamKind::Lut => EffectValue::Lut(None),
+        EffectParamKind::Curve => EffectValue::Curve(
+            project::ToneCurve::new(&[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]).unwrap(),
+        ),
     }
 }
 
@@ -2168,6 +2607,14 @@ fn pixel_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
                         project::EffectValue::Point([if high { 1.0 } else { 0.0 }; 2])
                     }
                     project::EffectParamKind::Lut => project::EffectValue::Lut(None),
+                    project::EffectParamKind::Curve => project::EffectValue::Curve(
+                        project::ToneCurve::new(if high {
+                            &[[0.0, 0.0], [0.5, 0.75], [1.0, 1.0]]
+                        } else {
+                            &[[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]]
+                        })
+                        .unwrap(),
+                    ),
                 };
                 params.push((param.id, value));
             }

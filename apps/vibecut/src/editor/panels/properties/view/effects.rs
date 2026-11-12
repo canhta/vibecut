@@ -176,11 +176,13 @@ impl Panel<'_, '_> {
         });
         let id = existing.unwrap_or_else(|| definition.id.to_owned());
         let at = self.effect_time(item);
-        for parameter in definition
-            .params
-            .iter()
-            .filter(|p| p.id != "lut" && p.id != "lut_strength")
-        {
+        for parameter in definition.params.iter().filter(|p| {
+            p.id != "lut_strength"
+                && matches!(
+                    p.kind,
+                    project::EffectParamKind::Float { .. } | project::EffectParamKind::Angle
+                )
+        }) {
             let current =
                 read::effect_param_value_at(self.cx.session.project(), item, &id, parameter.id, at)
                     .or_else(|| parameter.default.scalar())
@@ -356,7 +358,8 @@ impl Panel<'_, '_> {
                                 }
                                 project::EffectParamKind::Color
                                 | project::EffectParamKind::Point
-                                | project::EffectParamKind::Lut => {}
+                                | project::EffectParamKind::Lut
+                                | project::EffectParamKind::Curve => {}
                             }
                         }
                     }

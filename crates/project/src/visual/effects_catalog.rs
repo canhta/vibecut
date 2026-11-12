@@ -1,12 +1,22 @@
 //! The admitted effect kinds as data: id, name, shelf and parameter schema.
-use super::effects::{
-    EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue,
+use super::{
+    curve::ToneCurve,
+    effects::{EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue},
 };
 use crate::Color;
 
-/// Slider range of every colour-grade control.
+/// Slider range of every basic colour-grade control.
 pub const GRADE_MIN: f64 = -50.0;
 pub const GRADE_MAX: f64 = 50.0;
+/// Lift is a signed straight-colour offset in percent.
+pub const LIFT_MIN: f64 = -100.0;
+pub const LIFT_MAX: f64 = 100.0;
+/// Gamma is a positive straight-colour power in percent, 100 neutral.
+pub const GAMMA_MIN: f64 = 25.0;
+pub const GAMMA_MAX: f64 = 400.0;
+/// Gain is a straight-colour multiplier in percent, 100 neutral.
+pub const GAIN_MIN: f64 = 0.0;
+pub const GAIN_MAX: f64 = 400.0;
 /// Chroma-key controls: two 0..=100 sliders and one key colour.
 /// Measured on the reference: intensity default 40, shadow default 0.
 pub const CHROMA_KEY_MIN: f64 = 0.0;
@@ -83,6 +93,16 @@ const fn colour(id: &'static str, name: &'static str, default: Color) -> EffectP
 const fn grade_param(id: &'static str, name: &'static str) -> EffectParamDefinition {
     slider(id, name, (GRADE_MIN, GRADE_MAX), 0.0, false)
 }
+/// One static tone-curve parameter; the neutral value is the two endpoints.
+const fn curve_param(id: &'static str, name: &'static str) -> EffectParamDefinition {
+    EffectParamDefinition {
+        id,
+        name,
+        kind: EffectParamKind::Curve,
+        default: EffectValue::Curve(ToneCurve::IDENTITY),
+        animatable: false,
+    }
+}
 const BLACK: Color = Color([0, 0, 0, 255]);
 const WHITE: Color = Color([255, 255, 255, 255]);
 const RED: Color = Color([255, 0, 0, 255]);
@@ -131,6 +151,25 @@ static DEFINITIONS: &[EffectDefinition] = &[
             grade_param("contrast", "Contrast"),
             grade_param("saturation", "Saturation"),
             grade_param("hue", "Hue"),
+            slider("lift_r", "Lift red", (LIFT_MIN, LIFT_MAX), 0.0, true),
+            slider("lift_g", "Lift green", (LIFT_MIN, LIFT_MAX), 0.0, true),
+            slider("lift_b", "Lift blue", (LIFT_MIN, LIFT_MAX), 0.0, true),
+            slider("gamma_r", "Gamma red", (GAMMA_MIN, GAMMA_MAX), 100.0, true),
+            slider(
+                "gamma_g",
+                "Gamma green",
+                (GAMMA_MIN, GAMMA_MAX),
+                100.0,
+                true,
+            ),
+            slider("gamma_b", "Gamma blue", (GAMMA_MIN, GAMMA_MAX), 100.0, true),
+            slider("gain_r", "Gain red", (GAIN_MIN, GAIN_MAX), 100.0, true),
+            slider("gain_g", "Gain green", (GAIN_MIN, GAIN_MAX), 100.0, true),
+            slider("gain_b", "Gain blue", (GAIN_MIN, GAIN_MAX), 100.0, true),
+            curve_param("curve_red", "Red curve"),
+            curve_param("curve_green", "Green curve"),
+            curve_param("curve_blue", "Blue curve"),
+            curve_param("curve_luma", "Luma curve"),
             EffectParamDefinition {
                 id: "lut",
                 name: "LUT",

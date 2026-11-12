@@ -46,6 +46,38 @@ fn grade(@builtin(global_invocation_id) id: vec3<u32>) {
     dst[i] = vec4<f32>(clamp(o, vec3<f32>(0.0), vec3<f32>(1.0)) * px.a, px.a);
 }
 
+// Mirrors lift_pixel; weights = [lift r, lift g, lift b] in [-1, 1].
+@compute @workgroup_size(8, 8)
+fn lift(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let c = straight_rgb(px);
+    let mapped = clamp(c + vec3<f32>(weights[0], weights[1], weights[2]) * (vec3<f32>(1.0) - c), vec3<f32>(0.0), vec3<f32>(1.0));
+    dst[i] = vec4<f32>(mapped * px.a, px.a);
+}
+// Mirrors tone_gamma_pixel; weights = [gamma r, gamma g, gamma b], 1 neutral.
+@compute @workgroup_size(8, 8)
+fn tone_gamma(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let c = straight_rgb(px);
+    let gamma = max(vec3<f32>(weights[0], weights[1], weights[2]), vec3<f32>(0.25));
+    let mapped = clamp(pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0) / gamma), vec3<f32>(0.0), vec3<f32>(1.0));
+    dst[i] = vec4<f32>(mapped * px.a, px.a);
+}
+// Mirrors gain_pixel; weights = [gain r, gain g, gain b], 1 neutral.
+@compute @workgroup_size(8, 8)
+fn gain(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    let c = straight_rgb(px);
+    let mapped = clamp(c * vec3<f32>(weights[0], weights[1], weights[2]), vec3<f32>(0.0), vec3<f32>(1.0));
+    dst[i] = vec4<f32>(mapped * px.a, px.a);
+}
+
 fn oetf(x: f32) -> f32 {
     let v = clamp(x, 0.0, 1.0);
     if v <= 0.0031308 { return 12.92 * v; }

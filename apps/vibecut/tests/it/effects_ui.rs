@@ -1896,12 +1896,29 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     for item in [video, image] {
         select(&mut harness, item);
         click(&mut harness, "inspector.tab.adjust");
-        for key in ["brightness", "contrast", "saturation", "hue"] {
+        for key in [
+            "brightness",
+            "contrast",
+            "saturation",
+            "hue",
+            "lift_r",
+            "lift_g",
+            "lift_b",
+            "gamma_r",
+            "gamma_g",
+            "gamma_b",
+            "gain_r",
+            "gain_g",
+            "gain_b",
+        ] {
             assert!(has_widget(
                 &harness,
                 &format!("effects.color_grade.param.{key}")
             ));
         }
+        // Curves get their own editor in the UI slice; the numeric Adjust tab
+        // does not fake a scalar row for them.
+        assert!(!has_widget(&harness, "effects.color_grade.param.curve_red"));
         assert!(grade(&harness, item).is_none(), "viewing adds nothing");
     }
     select(&mut harness, video);

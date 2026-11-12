@@ -4,7 +4,7 @@
 
 `render::lut` owns strict bounded 3D cube parsing, canonical serialization, resource resolution and trilinear evaluation. Only UTF-8 `.cube` 3D tables with 2..65 samples per axis are admitted; 1D/combined shapers and other directives refuse. Original input is capped at 24 MiB, canonical input at 16 MiB, headers at 16 KiB and lines at 1 KiB. Quoted TITLE text admits at most 256 UTF-8 bytes after NFC; its normalization scratch is reserved before allocation. Rows are finite RGB in 0..1 with exact N³ count, red fastest; domains default to 0..1 and require each finite 0≤min<max≤1 with span at least 1e-6. No camera-log/HDR or gamut inference occurs.
 
-The four grade controls run first. LUT evaluation unpremultiplies once, encodes sRGB, clamps to the domain, interpolates eight corners with f64 weights, decodes to linear, blends wet/dry in linear light and re-premultiplies with unchanged alpha. None, disabled, zero strength and detected default-domain identity preserve exact working pixels; None/disabled/zero strength need no resource IO. Alpha zero produces zero RGB. Imported passes are explicit CPU `Lut3d` passes; the existing run splitter handles supported device neighbours and retries only Unsupported.
+The grade stages run first, in the order basic, lift, gamma, gain, RGB curves and luma curve, followed by the LUT. LUT evaluation unpremultiplies once, encodes sRGB, clamps to the domain, interpolates eight corners with f64 weights, decodes to linear, blends wet/dry in linear light and re-premultiplies with unchanged alpha. None, disabled, zero strength and detected default-domain identity preserve exact working pixels; None/disabled/zero strength need no resource IO. Alpha zero produces zero RGB. Imported passes are explicit CPU `Lut3d` passes; the existing run splitter handles supported device neighbours and retries only Unsupported.
 
 Active tables resolve before decoder/device work into one closed immutable per-frame snapshot. The hash covers the same bounded bytes parsed. Input, actual sample capacity, Arc overhead and the resource map are reserved through the exact frame hooks; pass readers retain the table lease until their last drop. No uncharged global or foreign-policy table is reused. This first implementation retains no idle tables between frames; filesystem-warm frames still read/parse and are measured separately, with no realtime claim. `InvalidLut` carries bounded line/reason, `LutUnavailable` carries only identity/reason; IO keeps its typed source and never substitutes an ungraded success.
 
@@ -30,10 +30,11 @@ and uniforms cast encoded RGB to f32 without byte quantization. E1 colour operat
 use RGB only and preserve image coverage under alpha keys; chroma-key colour stays static.
 
 The existing per-instance plan reservation covers these bounded resolved values as
-well as pass storage: the catalogue has at most12 parameters and pixel kinds emit one
-pass; Image's area bound limits admitted Blur to203 iterations/406 passes against the
-reserved512 pass/kernel slots. No additional image, unreserved image copy or kernel
-is introduced by colour interpolation.
+well as pass storage: the catalogue's largest kind has19 parameters and a grade
+instance emits at most eight pixel passes (basic, lift, gamma, gain, three RGB curves,
+luma) plus its optional LUT; Image's area bound limits admitted Blur to203
+iterations/406 passes against the reserved512 pass/kernel slots. No additional image,
+unreserved image copy or kernel is introduced by colour interpolation.
 
 The pixel-local colour references unpremultiply once and re-premultiply at the exit.
 Monochrome uses linear Rec.709 luma; levels, gamma, posterisation, channel mixing
@@ -44,6 +45,17 @@ linear-luma between its encoded endpoints. Threshold writes linear black/white
 coverage-colour while preserving alpha. Strobe gates at real item-local time and
 mixes its decoded colour with the original in linear light. Other than Alpha
 Invert, these operations preserve input alpha.
+
+Lift, tone gamma and gain are linear-light straight-colour stages: `x + L*(1-x)`,
+`x^(1/g)` and `g*x`, each clamped to 0..=1 and re-premultiplied with unchanged
+alpha. Their uniforms are three f32 coefficients in red/green/blue order, finite
+in `[-1,1]`, `[0.25,4]` and `[0,4]`. The four curve passes flatten to exactly 65
+uniforms: an integer count 2..=32, then 32 ordered `x,y` pairs zero-padded;
+validation refuses a malformed count, off-grid or unordered input, moved
+endpoints, nonfinite values and nonzero padding. Interpolation is piecewise
+linear on the authored f32 knots; no cubic or LUT approximation is used. The
+desktop adapter runs lift/tone gamma/gain natively and leaves all curve entries
+to the CPU until a 65-value native admission exists.
 
 Invert's blend is the original-picture fraction. Alpha Invert blends coverage
 between its complement and the original, preserving straight colour; undefined

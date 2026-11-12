@@ -1205,6 +1205,66 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
         })
         .is_err()
     );
+    // Lift/gamma/gain each accept both limits and refuse one step beyond.
+    for (key, low, high) in [
+        ("lift_r", project::LIFT_MIN, project::LIFT_MAX),
+        ("gamma_g", project::GAMMA_MIN, project::GAMMA_MAX),
+        ("gain_b", project::GAIN_MIN, project::GAIN_MAX),
+    ] {
+        for edge in [low, high] {
+            s.apply(Command::UpdateEffectParam {
+                item: ItemId(2),
+                effect: "color_grade".into(),
+                key: key.into(),
+                value: project::EffectParamUpdate::Scalar(edge),
+            })
+            .unwrap();
+            s.apply(Command::Undo {}).unwrap();
+            assert_eq!(s.project(), &added, "{key} {edge}");
+        }
+        let held = s.project().clone();
+        for bad in [low - 0.5, high + 0.5, f64::NAN] {
+            assert!(
+                s.apply(Command::UpdateEffectParam {
+                    item: ItemId(2),
+                    effect: "color_grade".into(),
+                    key: key.into(),
+                    value: project::EffectParamUpdate::Scalar(bad),
+                })
+                .is_err(),
+                "{key} {bad}"
+            );
+            assert_eq!(s.project(), &held);
+        }
+    }
+    // A curve is one typed update and one undo step.
+    let curve = ToneCurve::new(&[[0.0, 0.0], [0.5, 0.75], [1.0, 1.0]]).unwrap();
+    s.apply(Command::UpdateEffectParam {
+        item: ItemId(2),
+        effect: "color_grade".into(),
+        key: "curve_luma".into(),
+        value: project::EffectParamUpdate::Curve(curve),
+    })
+    .unwrap();
+    assert_eq!(
+        item(&s).effects[0].value("curve_luma"),
+        Some(&EffectValue::Curve(curve))
+    );
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &added);
+    s.apply(Command::Redo {}).unwrap();
+    let with_curve = s.project().clone();
+    assert!(
+        s.apply(Command::UpdateEffectParam {
+            item: ItemId(2),
+            effect: "color_grade".into(),
+            key: "curve_red".into(),
+            value: project::EffectParamUpdate::Scalar(0.5),
+        })
+        .is_err(),
+        "a curve is not a scalar"
+    );
+    assert_eq!(s.project(), &with_curve);
     // A drag gesture of many updates is a single undo step.
     s.begin_gesture().unwrap();
     for v in [5.0, 12.0, 20.0] {
@@ -1225,7 +1285,7 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
     let saved = project::encode(&graded, false).unwrap();
     assert_eq!(&project::decode(&saved).unwrap().project, graded.as_ref());
     s.apply(Command::Undo {}).unwrap();
-    assert_eq!(s.project(), &added);
+    assert_eq!(s.project(), &with_curve);
     s.apply(Command::Redo {}).unwrap();
     assert_eq!(s.project(), &graded);
 }

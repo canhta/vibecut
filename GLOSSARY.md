@@ -53,6 +53,7 @@ Language for the editor's privacy and execution boundaries.
 - **Clip**: A video or audio item, the kinds the timeline draws with a filmstrip and waveform; [project](crates/project/README.md) calls every timeline object an item, and clip names those two kinds.
 - **Short**: A suggested vertical clip: a source range with a title, role and play order that a user accepts for batch export from Long video to shorts.
 - **Effect**: One entry in an item's ordered effect stack, with a kind, typed parameters and an enabled flag; the effect owner declares it, `project` stores and validates it, and rendering executes it.
+- **Tone curve**: One monotone map from a 0..1 colour channel to 0..1, stored as 2..=32 ordered points on the exact 1/4096 input grid with fixed endpoints; the colour-grade effect owns red, green, blue and luma curves.
 - **Param**: An animated parameter override for one animation path, holding an explicit base value and its keyframes even when no keys remain.
 - **Keyframe**: One timed value inside a Param, with an interpolation segment and optional in/out handles.
 - **Text animation preset**: A built-in recipe expanded once into ordinary editable item-relative Params and Keyframes, with no runtime preset identity.

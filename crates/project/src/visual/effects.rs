@@ -1,5 +1,6 @@
 //! Persisted effect instances and the parameter model; evaluation and devices
 //! belong to render/apps.
+use super::{curve::ToneCurve, lut::LutReference};
 use crate::{
     AnimationPath, Animations, Color, Error, Param, ParamValue, Result, animation::identifier,
 };
@@ -8,7 +9,8 @@ use std::collections::BTreeMap;
 
 pub use super::effects_catalog::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX, CHROMA_KEY_MIN,
-    GRADE_MAX, GRADE_MIN, effect_definitions,
+    GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN, GRADE_MAX, GRADE_MIN, LIFT_MAX, LIFT_MIN,
+    effect_definitions,
 };
 
 /// Where an effect is offered. The effects library lists the library shelves;
@@ -52,6 +54,7 @@ pub enum EffectValue {
     Color(Color),
     Point([f64; 2]),
     Lut(Option<crate::LutId>),
+    Curve(ToneCurve),
 }
 impl EffectValue {
     pub const fn scalar(&self) -> Option<f64> {
@@ -84,6 +87,22 @@ impl EffectValue {
             _ => None,
         }
     }
+    pub const fn curve(&self) -> Option<&ToneCurve> {
+        match self {
+            Self::Curve(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+/// Disjoint scalar, curve and imported-resource domains of
+/// `effects.update_param`; one command family covers every control.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum EffectParamUpdate {
+    Scalar(f64),
+    LutRef(LutReference),
+    Curve(ToneCurve),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -107,6 +126,8 @@ pub enum EffectParamKind {
     /// A frame fraction on each axis, `0..=POINT_MAX`.
     Point,
     Lut,
+    /// A static monotone tone curve; curves never animate.
+    Curve,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EffectParamDefinition {
@@ -137,6 +158,9 @@ impl EffectParamDefinition {
                 (*i as usize) < options.len()
             }
             (EffectParamKind::Lut, EffectValue::Lut(_)) => true,
+            // ToneCurve's private fields are only reachable through its
+            // validating constructor and deserializer.
+            (EffectParamKind::Curve, EffectValue::Curve(_)) => true,
             (EffectParamKind::Bool, EffectValue::Bool(_))
             | (EffectParamKind::Color, EffectValue::Color(_)) => true,
             (EffectParamKind::Point, EffectValue::Point(p)) => p
@@ -267,7 +291,7 @@ impl EffectInstance {
                 _ => return Err(Error::Invalid("effect flag")),
             },
             EffectParamKind::Color => EffectValue::Color(packed_color(value)?),
-            EffectParamKind::Point | EffectParamKind::Lut => {
+            EffectParamKind::Point | EffectParamKind::Lut | EffectParamKind::Curve => {
                 return Err(Error::Unsupported("effect parameter"));
             }
         };
@@ -276,27 +300,34 @@ impl EffectInstance {
         Ok(())
     }
 
-    /// Replace a scalar or an imported resource reference atomically.
-    pub fn set_param(&mut self, id: &str, value: crate::EffectParamUpdate) -> Result<()> {
-        match value {
-            crate::EffectParamUpdate::Scalar(value) => self.set_scalar(id, value),
-            crate::EffectParamUpdate::LutRef(value) => {
-                self.definition()?
-                    .param(id)
-                    .ok_or(Error::Unsupported("effect parameter"))?
-                    .check(&EffectValue::Lut(value.lut))?;
-                self.params
-                    .insert(id.to_owned(), EffectValue::Lut(value.lut));
-                Ok(())
-            }
-        }
+    /// Replace a scalar, a tone curve or an imported resource reference atomically.
+    pub fn set_param(&mut self, id: &str, value: EffectParamUpdate) -> Result<()> {
+        let next = match value {
+            EffectParamUpdate::Scalar(value) => return self.set_scalar(id, value),
+            EffectParamUpdate::LutRef(value) => EffectValue::Lut(value.lut),
+            EffectParamUpdate::Curve(curve) => EffectValue::Curve(curve),
+        };
+        self.definition()?
+            .param(id)
+            .ok_or(Error::Unsupported("effect parameter"))?
+            .check(&next)?;
+        self.params.insert(id.to_owned(), next);
+        Ok(())
     }
 
     pub(crate) fn validate_animations(&self, animations: &Animations) -> Result<()> {
-        for definition in self.definition()?.params.iter().filter(|p| p.animatable) {
+        for definition in self.definition()?.params.iter() {
+            if !definition.animatable && definition.kind != EffectParamKind::Curve {
+                continue;
+            }
             let Some(param) = animations.get(&self.param_path(definition.id)?) else {
                 continue;
             };
+            // Static topology is a curve's contract; an addressed path is not
+            // silently ignored by the evaluator.
+            if definition.kind == EffectParamKind::Curve {
+                return Err(Error::Invalid("effect animation type"));
+            }
             match (definition.kind, param) {
                 (EffectParamKind::Float { .. } | EffectParamKind::Angle, Param::Value(channel))
                     if matches!(channel.base(), ParamValue::Scalar(_)) => {}

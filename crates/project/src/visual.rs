@@ -2,11 +2,12 @@
 
 mod blend;
 mod crop;
+mod curve;
 mod effects;
 mod effects_catalog;
 mod lut;
 mod mask;
-pub use lut::{EffectParamUpdate, LutId, LutRecord, LutReference};
+pub use lut::{LutId, LutRecord, LutReference};
 mod transform;
 mod transition;
 mod transition_catalog;
@@ -15,10 +16,12 @@ mod typography;
 
 pub use blend::BlendMode;
 pub use crop::Crop;
+pub use curve::{CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, ToneCurve};
 pub use effects::{
     ANGLE_MAX, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParamKind,
-    EffectShelf, EffectValue, GRADE_MAX, GRADE_MIN, PACKED_COLOR_MAX, POINT_MAX, effect_definition,
+    EffectParamUpdate, EffectShelf, EffectValue, GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN,
+    GRADE_MAX, GRADE_MIN, LIFT_MAX, LIFT_MIN, PACKED_COLOR_MAX, POINT_MAX, effect_definition,
     effect_definitions, packed_color,
 };
 pub use mask::{

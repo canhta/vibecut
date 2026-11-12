@@ -30,8 +30,8 @@ enum ReadImage {
 
 fn read_image(entry: &str) -> Result<Option<ReadImage>> {
     match entry {
-        "gaussian" | "grade" | "chroma_key" | "gamma" | "invert" | "black_white"
-        | "channel_mix" | "tint" | "levels" | "strobe" => Ok(None),
+        "gaussian" | "grade" | "lift" | "tone_gamma" | "gain" | "chroma_key" | "gamma"
+        | "invert" | "black_white" | "channel_mix" | "tint" | "levels" | "strobe" => Ok(None),
         "mirror" => Ok(Some(ReadImage::Instance)),
         "blend" => Ok(Some(ReadImage::Below)),
         _ => Err(Error::Unsupported("GPU shader inputs")),
@@ -121,6 +121,9 @@ impl GpuEffects {
             "gaussian",
             "blend",
             "grade",
+            "lift",
+            "tone_gamma",
+            "gain",
             "chroma_key",
             "mirror",
             "gamma",

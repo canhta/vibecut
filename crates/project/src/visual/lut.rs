@@ -97,13 +97,6 @@ impl LutRecord {
     }
 }
 
-/// Disjoint scalar and resource-reference domains of effects.update_param.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(untagged)]
-pub enum EffectParamUpdate {
-    Scalar(f64),
-    LutRef(LutReference),
-}
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LutReference {
