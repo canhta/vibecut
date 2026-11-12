@@ -4251,27 +4251,46 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
         "Escape never removes the mask"
     );
 
-    // Insertion through the same command the segment click emits; the pointer
-    // hit itself is recorded as unverified on the ticket without a build.
-    harness
-        .state_mut()
-        .session
-        .apply(Command::AddMaskPoint {
-            item: video,
-            mask: "mask1".into(),
-            segment: 0,
-            t: 0.5,
-        })
-        .unwrap();
-    harness.state_mut().selection_scopes.mask_points.clear();
-    harness.state_mut().selection_scopes.mask_points.insert(
-        vibecut::selection::MaskPointSelection {
-            item: video,
-            mask: "mask1".into(),
-            point: 1,
-        },
+    // A click on the curve inserts one point. Segment 2 (anchor 2 to 3) is
+    // untouched by the drag above; its two anchor targets fix the axis-aligned
+    // box mapping, so the cubic midpoint lands on the painted contour.
+    let path = path_of(&harness, video);
+    let (a, b) = (&path.vertices[2], &path.vertices[3]);
+    let controls = [
+        a.p,
+        [a.p[0] + a.t_out[0], a.p[1] + a.t_out[1]],
+        [b.p[0] + b.t_in[0], b.p[1] + b.t_in[1]],
+        b.p,
+    ];
+    let local: [f64; 2] = std::array::from_fn(|k| {
+        0.125 * controls[0][k]
+            + 0.375 * controls[1][k]
+            + 0.375 * controls[2][k]
+            + 0.125 * controls[3][k]
+    });
+    let (sa, sb) = (
+        widget_rect(&harness, "preview.mask.point.2").center(),
+        widget_rect(&harness, "preview.mask.point.3").center(),
     );
+    let screen = |axis: usize, from: f32, to: f32| {
+        let unit = (local[axis] - a.p[axis]) / (b.p[axis] - a.p[axis]);
+        from + (to - from) * unit as f32
+    };
+    let curve = egui::pos2(screen(0, sa.x, sb.x), screen(1, sa.y, sb.y));
+    let before = harness.state().session.history_len();
+    harness.event(egui::Event::PointerMoved(curve));
+    harness.run_steps(1);
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: curve,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        });
+        harness.run_steps(1);
+    }
     harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, before.0 + 1);
     assert_eq!(path_of(&harness, video).vertices.len(), 5);
     assert!(has_widget(&harness, "preview.mask.point.4"));
     assert_eq!(
@@ -4286,7 +4305,8 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
             .iter()
             .map(|point| point.point)
             .collect::<Vec<_>>(),
-        vec![1]
+        vec![3],
+        "the inserted anchor follows its segment and is selected"
     );
 
     // Delete removes the selected point, never the item.

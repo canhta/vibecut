@@ -368,7 +368,8 @@ fn nearest_segment(
             _ => break,
         }
     }
-    let t = (low + high) / 2.0;
+    // The engine splits only strictly inside a segment (2^-20..=1-2^-20).
+    let t = ((low + high) / 2.0).clamp(1.0 / 1_048_576.0, 1.0 - 1.0 / 1_048_576.0);
     let value = distance(segment, t)?;
     (value <= SEGMENT_HIT).then_some((segment, t, value))
 }
