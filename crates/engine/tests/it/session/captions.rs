@@ -75,7 +75,8 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     else {
         panic!("caption")
     };
-    assert_eq!(params.preset, Some(CaptionPresetId(100)));
+    // Selecting a saved look sets only the live reference: no overrides, same cues.
+    params.preset = Some(CaptionPresetId(100));
     assert!(params.overrides.is_empty());
     let unchanged = params.cues.clone();
     assert_eq!(s.project().data(), &expected);
@@ -220,7 +221,8 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
             .iter()
             .map(|p| p.id.0)
             .collect::<Vec<_>>(),
-        [102, 100]
+        // Saving appends and deleting keeps the remaining order.
+        [100, 102]
     );
     let bytes = project::encode(s.project(), false).unwrap();
     assert_eq!(

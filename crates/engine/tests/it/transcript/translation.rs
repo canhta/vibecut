@@ -121,7 +121,8 @@ impl HttpTransport for Transport {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, ::transport::Error> {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
         if self.cancelled.load(Ordering::Relaxed) {
-            return Err(::transport::Error::Network);
+            // A non-transient transport refusal: one attempt, then an opaque AI failure.
+            return Err(::transport::Error::Payload);
         }
         let wire: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
         let w: TranslationWindow = serde_json::from_str(wire["input"].as_str().unwrap()).unwrap();
@@ -422,7 +423,7 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
     assert_eq!(done.state, JobState::Failed);
     assert_eq!(t.calls.load(Ordering::Relaxed), 1);
     assert!(r.take_output(id).is_none());
-    // Translation keeps the ordinary AI network failure opaque, unlike acquisition's
+    // Translation keeps an ordinary non-transient AI failure opaque, unlike acquisition's
     // explicit execution bridge. The waiter must retain this natural producer.
     let (cancelled_run, cancelled_transport) = self::run(&s, selected(&s, false), 0, 1, 1_000_000);
     cancelled_transport.cancelled.store(true, Ordering::Relaxed);
@@ -430,7 +431,7 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
     let cancelled = pump(&mut r, cancelled_id);
     assert_eq!((cancelled.state, cancelled.attempts), (JobState::Failed, 1));
     let raw = cancelled.error.as_ref().unwrap();
-    let Some(engine::transcript::Error::Ai(source @ Error::Network)) = (raw.as_ref()
+    let Some(engine::transcript::Error::Ai(source @ Error::Payload)) = (raw.as_ref()
         as &(dyn std::error::Error + 'static))
         .downcast_ref::<engine::transcript::Error>()
     else {
