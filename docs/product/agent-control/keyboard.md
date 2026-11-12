@@ -104,7 +104,7 @@
 | `scene.row` — Choose scene | View | — | — | scene switcher |
 | `timeline.item` — Select item | View | — | — | timeline selection |
 | `preview.snapshot` — Save a frame | View | — | — | preview snapshot dialog |
-| `preview.copy_snapshot` — Copy snapshot | View | — | — | preview snapshot |
+| `preview.copy_snapshot` — Copy frame | View | — | — | preview snapshot |
 | `preview.fullscreen` — Toggle preview fullscreen | View | — | — | preview viewport |
 | `preview.zoom.fit` — Fit preview | View | — | — | preview view |
 | `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
