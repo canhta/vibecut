@@ -316,6 +316,10 @@ impl Panel<'_, '_> {
                 .response
             })
             .inner;
+        // The row label is painted beside the combo; name the combo itself too.
+        combo.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::ComboBox, enabled, self.tr(Text::TextPreset))
+        });
         self.remember("inspector.text_preset", &combo);
         let response = value_ui
             .add_enabled_ui(enabled, |ui| {
