@@ -4171,6 +4171,36 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                     .iter()
                     .any(|w| w.id == "inspector.graphic.cornerRadius")
             );
+            // Polygon and star: Graphic tab rows follow the definition (sides/corner radius, points/depth).
+            for (action, row_ids, absent_ids) in [
+                (
+                    "graphic.insert.polygon",
+                    ["inspector.graphic.sides", "inspector.graphic.cornerRadius"],
+                    ["inspector.graphic.points", "inspector.graphic.depth"],
+                ),
+                (
+                    "graphic.insert.star",
+                    ["inspector.graphic.points", "inspector.graphic.depth"],
+                    ["inspector.graphic.sides", "inspector.graphic.cornerRadius"],
+                ),
+            ] {
+                click(&mut h, action);
+                let shape = *h.state().selection.iter().next().unwrap();
+                h.run_steps(3);
+                assert!(matches!(
+                    item(&h, shape).content,
+                    ItemParams::Graphic(
+                        project::GraphicParams::Polygon { .. } | project::GraphicParams::Star { .. }
+                    )
+                ));
+                let widgets = h.state().inspect().unwrap().widgets;
+                for row in row_ids {
+                    assert!(widgets.iter().any(|w| w.id == row), "{action}: {row}");
+                }
+                for row in absent_ids {
+                    assert!(!widgets.iter().any(|w| w.id == row), "{action}: {row}");
+                }
+            }
             let rectangle_time = item(&h, id).start.checked_add(Tick(SECOND)).unwrap();
             h.state_mut()
                 .dispatch(vibecut::AppCommand::Seek(rectangle_time))

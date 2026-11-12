@@ -237,7 +237,7 @@ ceiling is fabricated. Existing token and byte bounds still apply. Job commands
 that receive resolved provider access (`chapters.generate`, `fillers.classify`)
 use that composition's model and consent, with no client override fields.
 
-Rectangle and ellipse items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
+Rectangle, ellipse, polygon and star items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
 
 ## Clipboard
 

@@ -1441,6 +1441,101 @@ fn graphic_fill_ring_opacity_and_native_geometry_match_analytic_pixels_without_s
     }
 }
 
+/// Polygon and star silhouettes: vertex/valley/edge probes at several sizes, sides, points and depths.
+#[test]
+fn graphic_polygon_and_star_cover_their_geometry_at_every_scale() {
+    let tau = std::f64::consts::TAU;
+    let polygon = |sides: f64| project::GraphicParams::Polygon {
+        fill: project::Color([255, 0, 0, 255]),
+        stroke: project::Color([0, 0, 255, 255]),
+        stroke_width: 0.,
+        stroke_align: project::StrokeAlign::Center,
+        sides,
+        corner_radius: 0.,
+    };
+    let star = |points: f64, depth: f64| project::GraphicParams::Star {
+        fill: project::Color([255, 0, 0, 255]),
+        stroke: project::Color([0, 0, 255, 255]),
+        stroke_width: 0.,
+        stroke_align: project::StrokeAlign::Center,
+        points,
+        depth,
+    };
+    // (graphic, inside probes, outside probes) as (angle from the first vertex in turns, radius / R).
+    let mut cases = Vec::new();
+    for sides in [3u32, 4, 5, 6, 12] {
+        let n = f64::from(sides);
+        let apothem = (std::f64::consts::PI / n).cos();
+        cases.push((
+            polygon(n),
+            vec![(0., 0.), (0., 0.9), (0.5 / n, 0.9 * apothem)],
+            vec![(0., 1.1), (0.5 / n, 1.1 * apothem)],
+            format!("polygon{sides}"),
+        ));
+    }
+    for (points, depth) in [(3u32, 45.), (5, 45.), (5, 20.), (8, 70.), (12, 50.)] {
+        let n = f64::from(points);
+        let d = depth / 100.;
+        cases.push((
+            star(n, depth),
+            vec![(0., 0.), (0., 0.4), (0.5 / n, 0.8 * d)],
+            vec![(0., 1.1), (0.5 / n, 1.2 * d)],
+            format!("star{points}@{depth}"),
+        ));
+    }
+    for (graphic, inside, outside, name) in cases {
+        for scale in [1u32, 2, 4] {
+            let hooks = Hooks::default();
+            let mut data = solid_project(1, 128, 128, [0; 4]).into_data();
+            data.canvas.background = project::Color([0; 4]);
+            let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+            item.content = project::ItemParams::Graphic(graphic.clone());
+            item.animations
+                .set(
+                    project::BuiltinPath::Opacity.into(),
+                    project::Param::new(project::ParamValue::Scalar(1.)).unwrap(),
+                )
+                .unwrap();
+            let p = project::Project::new(data).unwrap();
+            let mut settings = RenderSettings::from_project(&p);
+            settings.width = 128 * scale;
+            settings.height = 128 * scale;
+            settings.placements.insert(
+                project::ItemId(0),
+                Placement {
+                    destination: Rect {
+                        x: 0.25,
+                        y: 0.25,
+                        width: 0.375,
+                        height: 0.375,
+                    },
+                    ..Default::default()
+                },
+            );
+            let mut renderer = Renderer::new(&p, settings).unwrap();
+            let frame = renderer.render_frame(Tick(0), &mut Empty, &hooks).unwrap();
+            let size = 128. * f64::from(scale);
+            let r = 24. * f64::from(scale);
+            let c = size * 0.25 + r;
+            let alpha = |(turn, radius): (f64, f64)| {
+                let angle = -std::f64::consts::FRAC_PI_2 + turn * tau;
+                let x = (c + angle.cos() * radius * r).floor() as usize;
+                let y = (c + angle.sin() * radius * r).floor() as usize;
+                frame.pixels()[y * frame.width() as usize + x][3]
+            };
+            for probe in inside {
+                assert!(alpha(probe) > 0.99, "{name} x{scale} inside {probe:?}");
+            }
+            for probe in outside {
+                assert!(alpha(probe) < 0.01, "{name} x{scale} outside {probe:?}");
+            }
+            drop(frame);
+            drop(renderer);
+            assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
 #[test]
 fn graphic_budget_cancel_and_once_opacity_release_every_reservation() {
     let mut data = solid_project(1, 64, 64, [0; 4]).into_data();

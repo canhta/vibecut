@@ -1614,6 +1614,8 @@ fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
     for graphic in [
         project::GraphicParams::rectangle(),
         project::GraphicParams::ellipse(),
+        project::GraphicParams::polygon(),
+        project::GraphicParams::star(),
     ] {
         let mut s =
             Session::new(Project::empty(ProjectId(90), "Shapes".into()).unwrap(), 100).unwrap();
@@ -1675,7 +1677,10 @@ fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
             assert!(Arc::ptr_eq(&before, s.project()));
             assert_eq!(history, s.history_len());
         }
-        if matches!(graphic, project::GraphicParams::Ellipse { .. }) {
+        if matches!(
+            graphic,
+            project::GraphicParams::Ellipse { .. } | project::GraphicParams::Star { .. }
+        ) {
             assert!(
                 s.apply(Command::SetItemField {
                     item: id,
@@ -1708,6 +1713,25 @@ fn graphic_insertion_edits_refusals_masks_and_history_are_atomic() {
             .is_err()
         );
         assert!(Arc::ptr_eq(&before, s.project()));
+        // Radial parameters: own definition only, bounded sides/points 3..=12 and depth 1..=99.
+        let polygon = matches!(graphic, project::GraphicParams::Polygon { .. });
+        let star = matches!(graphic, project::GraphicParams::Star { .. });
+        for (patch, own, valid) in [
+            (P::GraphicSides(6.), polygon, true),
+            (P::GraphicSides(2.), polygon, false),
+            (P::GraphicSides(13.), polygon, false),
+            (P::GraphicPoints(7.), star, true),
+            (P::GraphicPoints(f64::NAN), star, false),
+            (P::GraphicDepth(30.), star, true),
+            (P::GraphicDepth(100.), star, false),
+        ] {
+            let before_radial = s.project().clone();
+            let applied = s.apply(Command::SetItemField { item: id, patch });
+            assert_eq!(applied.is_ok(), own && valid);
+            if applied.is_err() {
+                assert!(Arc::ptr_eq(&before_radial, s.project()));
+            }
+        }
         s.apply(Command::SetTrackLocked {
             track: TrackId(0),
             locked: true,

@@ -237,6 +237,8 @@ impl View<'_> {
             for (index, (id, label)) in [
                 ("graphic.insert.rectangle", Text::GraphicRectangle),
                 ("graphic.insert.ellipse", Text::GraphicEllipse),
+                ("graphic.insert.polygon", Text::GraphicPolygon),
+                ("graphic.insert.star", Text::GraphicStar),
             ]
             .into_iter()
             .enumerate()

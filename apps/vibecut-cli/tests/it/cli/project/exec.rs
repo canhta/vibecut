@@ -1467,6 +1467,8 @@ fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
     for graphic in [
         project::GraphicParams::rectangle(),
         project::GraphicParams::ellipse(),
+        project::GraphicParams::polygon(),
+        project::GraphicParams::star(),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("Hình.vibecut");

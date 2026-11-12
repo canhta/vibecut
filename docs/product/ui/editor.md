@@ -162,7 +162,7 @@ The Captions Style chooser lists Saved in project as live selections, retaining 
 
 ### Generated Shapes
 
-The Stickers tab now contains a local Shapes shelf with Rectangle and Ellipse only. The adopted composition uses existing kit tokens,39px Properties rows,22px fields,12px labels and4px corners, with English/Vietnamese labels. Graphic Properties expose alpha-capable fill/stroke, stroke width/alignment and rectangle corner radius with ordinary key controls. Captures are source-backed new composition; no matching reference screenshot is available, so they are noncomparable rather than a metric pass. Placement and transform limits are owned by [render](../../../crates/render/src/scene/README.md#generated-graphic-geometry).
+The Stickers tab now contains a local Shapes shelf with Rectangle, Ellipse, Polygon and Star only. The adopted composition uses existing kit tokens,39px Properties rows,22px fields,12px labels and4px corners, with English/Vietnamese labels. Graphic Properties expose alpha-capable fill/stroke, stroke width/alignment, rectangle and polygon corner radius, polygon sides (3-12) and star points (3-12) and depth (1-99%) with ordinary key controls. Captures are source-backed new composition; no matching reference screenshot is available, so they are noncomparable rather than a metric pass. Placement and transform limits are owned by [render](../../../crates/render/src/scene/README.md#generated-graphic-geometry).
 
 The keyframe-lane Copy/Paste menu, selected-item Paste row and item-scope Ctrl+C/Ctrl+V
 adopt the current menu pattern, localized labels, existing icons and 20 px lanes as a new

@@ -1789,7 +1789,12 @@ fn encoding_limit_failure_never_replaces_saved_project_or_rotates_snapshots() {
 fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_channels() {
     let root = testkit::fixture::dir("graphic-project");
     let path = root.join("Hình.vibecut");
-    for graphic in [GraphicParams::rectangle(), GraphicParams::ellipse()] {
+    for graphic in [
+        GraphicParams::rectangle(),
+        GraphicParams::ellipse(),
+        GraphicParams::polygon(),
+        GraphicParams::star(),
+    ] {
         let mut data = empty().into_data();
         let mut graphic_item = item(70, 5);
         graphic_item.masks.clear();
@@ -1863,12 +1868,48 @@ fn graphic_save_load_refuses_hostile_appearance_and_preserves_authoritative_chan
             let mut bad = data.clone();
             if let ItemParams::Graphic(
                 GraphicParams::Rectangle { stroke_width, .. }
-                | GraphicParams::Ellipse { stroke_width, .. },
+                | GraphicParams::Ellipse { stroke_width, .. }
+                | GraphicParams::Polygon { stroke_width, .. }
+                | GraphicParams::Star { stroke_width, .. },
             ) = &mut bad.scene_mut().timeline.main.items[0].content
             {
                 *stroke_width = width;
             }
             assert!(Project::new(bad).is_err());
+        }
+        // Radial geometry: sides/points stay in 3..=12, depth in 1..=99, only on their own definition.
+        for (name, value) in [
+            ("params.sides", 2.),
+            ("params.sides", 13.),
+            ("params.points", 2.),
+            ("params.points", 13.),
+            ("params.depth", 0.5),
+            ("params.depth", 100.),
+        ] {
+            let mut bad = data.clone();
+            bad.scene_mut().timeline.main.items[0]
+                .animations
+                .set(
+                    AnimationPath::new(name).unwrap(),
+                    Param::new(ParamValue::Scalar(value)).unwrap(),
+                )
+                .unwrap();
+            assert!(Project::new(bad).is_err(), "{name} {value}");
+        }
+        for (name, own) in [
+            ("params.sides", matches!(graphic, GraphicParams::Polygon { .. })),
+            ("params.points", matches!(graphic, GraphicParams::Star { .. })),
+            ("params.depth", matches!(graphic, GraphicParams::Star { .. })),
+        ] {
+            let mut good = data.clone();
+            good.scene_mut().timeline.main.items[0]
+                .animations
+                .set(
+                    AnimationPath::new(name).unwrap(),
+                    Param::new(ParamValue::Scalar(6.)).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(Project::new(good).is_ok(), own, "{name}");
         }
         let bytes = encode(&p, false).unwrap();
         let mut envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();

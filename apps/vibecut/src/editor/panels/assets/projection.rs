@@ -135,6 +135,8 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         [
             project::GraphicParams::rectangle(),
             project::GraphicParams::ellipse(),
+            project::GraphicParams::polygon(),
+            project::GraphicParams::star(),
         ]
         .map(
             |graphic| match graphic_preview(graphic, ctx.pixels_per_point()) {
@@ -148,7 +150,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             },
         )
     } else {
-        [None, None]
+        [None, None, None, None]
     };
     let (music_credits, music_credits_failed) = match editor.session.project().music_credits() {
         Ok(credits) => (credits, false),

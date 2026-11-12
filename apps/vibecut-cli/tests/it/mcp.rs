@@ -1621,12 +1621,14 @@ fn graphic_tools_publish_typed_shapes_keys_masks_effects_undo_and_persistence() 
             .as_array()
             .unwrap()
             .len(),
-        2
+        4
     );
     let mut rev = client.call("inspect", json!({}), None, None)["rev_after"].clone();
     for (n, graphic) in [
         project::GraphicParams::rectangle(),
         project::GraphicParams::ellipse(),
+        project::GraphicParams::polygon(),
+        project::GraphicParams::star(),
     ]
     .into_iter()
     .enumerate()
@@ -1680,7 +1682,7 @@ fn graphic_tools_publish_typed_shapes_keys_masks_effects_undo_and_persistence() 
     assert_eq!(saved["value"]["status"], "result", "{saved}");
     let p = project::load(&path).unwrap().project;
     let items = &p.data().scene().timeline.main.items;
-    assert_eq!(items.len(), 2);
+    assert_eq!(items.len(), 4);
     for item in items {
         assert!(matches!(item.content, project::ItemParams::Graphic(_)));
         assert_eq!(item.masks.len(), 1);

@@ -1155,10 +1155,11 @@ pub(in crate::editor::timeline) fn item_label(
         ItemParams::Graphic(params) => (
             i18n::text(
                 locale,
-                if matches!(params, project::GraphicParams::Rectangle { .. }) {
-                    Text::GraphicRectangle
-                } else {
-                    Text::GraphicEllipse
+                match params {
+                    project::GraphicParams::Rectangle { .. } => Text::GraphicRectangle,
+                    project::GraphicParams::Ellipse { .. } => Text::GraphicEllipse,
+                    project::GraphicParams::Polygon { .. } => Text::GraphicPolygon,
+                    project::GraphicParams::Star { .. } => Text::GraphicStar,
                 },
             )
             .to_owned(),
