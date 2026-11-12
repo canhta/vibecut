@@ -5174,7 +5174,7 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
                 h.event(egui::Event::PointerMoved(egui::pos2(800.0, 25.0)));
                 h.run_steps(2);
                 h.state_mut()
-                    .settle_previews(vibecut::effect_previews::SETTLE_BUDGET)
+                    .settle_previews(vibecut::SETTLE_BUDGET)
                     .unwrap();
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
                 while !h.state().playback.frame().is_some_and(|f| {

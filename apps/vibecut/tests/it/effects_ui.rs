@@ -15,9 +15,7 @@ use render::effects::EffectGeometry;
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    effect_previews::{EffectPreviewStatus, SETTLE_BUDGET},
-    egui,
+    Editor, EffectPreviewStatus, SETTLE_BUDGET, egui,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };
@@ -662,7 +660,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
 
 #[test]
 fn live_preview_coalescing_keeps_ready_frames_fair_work_and_generation_custody_bounded() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     let budget = ByteBudget::new(16 << 20).unwrap();
     let gate = Arc::new(PreviewGate::new(true, None));
     let cache = engine::effect_thumbnails::EffectThumbnails::new(gate.clone(), budget.clone());
@@ -1340,7 +1338,7 @@ impl render::effects::EffectCompositor for PreviewGate {
 
 #[test]
 fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     let definitions: Vec<_> = project::effect_definitions()
         .iter()
         .filter(|definition| definition.shelf.in_library())
@@ -1418,7 +1416,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
 
 #[test]
 fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     for retry in [false, true] {
         let budget = ByteBudget::new(16 << 20).unwrap();
         let gate = Arc::new(PreviewGate::new(false, None));
@@ -1508,7 +1506,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
 
 #[test]
 fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     for (failure, retry) in [0, 1, 2]
         .into_iter()
         .flat_map(|failure| [(failure, false), (failure, true)])
@@ -1552,11 +1550,7 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
                 &project::Animations::default(),
                 &project::effect_definition(kind).unwrap().instance(kind),
                 Tick::ZERO,
-                EffectGeometry::new(
-                    vibecut::effect_previews::PREVIEW_SIZE,
-                    vibecut::effect_previews::PREVIEW_SCALE,
-                )
-                .unwrap(),
+                EffectGeometry::new(vibecut::PREVIEW_SIZE, vibecut::PREVIEW_SCALE).unwrap(),
                 false,
                 &render::lut::LutResources::default(),
             )
@@ -1625,7 +1619,7 @@ fn preview_permanent_failures_do_not_retry_or_starve_healthy_deferred_kinds() {
 
 #[test]
 fn evicted_preview_job_becomes_failed_instead_of_remaining_pending() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     let limit = 16 << 20;
     let budget = ByteBudget::new(limit).unwrap();
     let cache = engine::effect_thumbnails::EffectThumbnails::new(
@@ -3657,7 +3651,7 @@ fn effect_picture(instance: &project::EffectInstance) -> Vec<[f32; 4]> {
 
 #[test]
 fn edge_relief_tile_presets_change_the_actual_demo_picture() {
-    use vibecut::effect_previews::EffectPreviews;
+    use vibecut::EffectPreviews;
     let f = fixture();
     let uploads: Uploads = Default::default();
     let mut h = crate::gpu::builder()

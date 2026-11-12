@@ -1,5 +1,7 @@
 //! Applies catalog choices at validated video cuts.
-use super::super::{AssetsTab, Editor, Text, Tick, egui};
+use super::super::{AssetsTab, Text, Tick, egui};
+use super::State;
+use crate::editor::{Desk, Editor};
 use project::{ItemId, TrackId, Transition, TransitionAlignment, TransitionId};
 use time::TICKS_PER_SECOND;
 
@@ -112,55 +114,81 @@ pub(in crate::editor::assets) fn selected_cut(editor: &Editor, cuts: &[Cut]) -> 
     }
 }
 
-impl Editor {
-    pub(in crate::editor) fn add_transition_from_selection(&mut self, kind: &str) {
-        match selected_cut(self, &cuts(self)) {
-            Some(cut) => self.add_transition_at_cut(kind, cut),
-            None => self.set_toast(self.tr(Text::TransitionSelectCut), None),
+impl State {
+    pub(in crate::editor) fn add_transition_from_selection(
+        &mut self,
+        desk: &mut Desk<'_>,
+        kind: &str,
+    ) {
+        let cuts = cuts(desk.editor());
+        let selected = selected_cut(desk.editor(), &cuts);
+        match selected {
+            Some(cut) => self.add_transition_at_cut(desk, kind, cut),
+            None => {
+                let text =
+                    crate::i18n::text(desk.editor().preferences.locale, Text::TransitionSelectCut);
+                desk.toast(text, None);
+            }
         }
     }
-    fn add_transition_at_cut(&mut self, kind: &str, cut: Cut) {
-        if let Some(reason) = refusal(self, cut) {
-            self.set_toast(self.tr(reason), None);
+
+    fn add_transition_at_cut(&mut self, desk: &mut Desk<'_>, kind: &str, cut: Cut) {
+        if let Some(reason) = refusal(desk.editor(), cut) {
+            let text = crate::i18n::text(desk.editor().preferences.locale, reason);
+            desk.toast(text, None);
             return;
         }
-        self.session.end_merge();
-        match self.session.apply(engine::Command::AddTransition {
+        desk.editor().session.end_merge();
+        let result = desk.editor().session.apply(engine::Command::AddTransition {
             track: cut.track,
             from: cut.from,
             to: cut.to,
             kind: kind.to_owned(),
             duration: Tick(TICKS_PER_SECOND / 2),
             alignment: TransitionAlignment::Center,
-        }) {
-            Ok(_) => self.desk().sync(),
+        });
+        match result {
+            Ok(_) => desk.sync(),
             Err(error) => {
                 tracing::warn!(category = "transition_apply", %error, "transition refused");
-                self.set_toast(self.tr(Text::TransitionFailed), None);
+                let text =
+                    crate::i18n::text(desk.editor().preferences.locale, Text::TransitionFailed);
+                desk.toast(text, None);
             }
         }
     }
-    pub(in crate::editor) fn begin_transition_drag(&mut self, kind: &'static str) {
-        self.assets.transition_drag = Some((kind, self.session.project().clone()));
+
+    pub(in crate::editor) fn begin_transition_drag(
+        &mut self,
+        desk: &mut Desk<'_>,
+        kind: &'static str,
+    ) {
+        self.transition_drag = Some((kind, desk.editor().session.project().clone()));
     }
+
     /// Drop accepts only the visible shared edge of two touching clips. No
     /// timeline gesture or project edit starts until the pointer is released.
-    pub(in crate::editor) fn finish_transition_drag(&mut self, ctx: &egui::Context) {
-        let Some((kind, before)) = self.assets.transition_drag.as_ref() else {
+    pub(in crate::editor) fn finish_transition_drag(
+        &mut self,
+        desk: &mut Desk<'_>,
+        ctx: &egui::Context,
+    ) {
+        let Some((kind, before)) = self.transition_drag.as_ref() else {
             return;
         };
-        if self.preferences.assets_tab != AssetsTab::Transitions
-            || !std::sync::Arc::ptr_eq(before, self.session.project())
+        let kind = *kind;
+        let before = std::sync::Arc::clone(before);
+        if desk.editor().preferences.assets_tab != AssetsTab::Transitions
+            || !std::sync::Arc::ptr_eq(&before, desk.editor().session.project())
             || ctx.input(|input| !input.focused || input.key_pressed(egui::Key::Escape))
         {
-            self.assets.transition_drag = None;
+            self.transition_drag = None;
             return;
         }
-        let kind = *kind;
         let pointer = ctx.input(|input| input.pointer.interact_pos());
+        let rects = desk.editor().timeline.item_rects().to_vec();
         let target = pointer.and_then(|point| {
-            cuts(self).into_iter().find(|cut| {
-                let rects = self.timeline.item_rects();
+            cuts(desk.editor()).into_iter().find(|cut| {
                 let (Some((_, a)), Some((_, b))) = (
                     rects.iter().find(|(id, _)| *id == cut.from),
                     rects.iter().find(|(id, _)| *id == cut.to),
@@ -174,13 +202,8 @@ impl Editor {
             })
         });
         if let Some(cut) = target {
-            let valid = refusal(self, cut).is_none();
-            if let Some((_, rect)) = self
-                .timeline
-                .item_rects()
-                .iter()
-                .find(|(id, _)| *id == cut.to)
-            {
+            let valid = refusal(desk.editor(), cut).is_none();
+            if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == cut.to) {
                 ctx.layer_painter(egui::LayerId::new(
                     egui::Order::Foreground,
                     egui::Id::unique("transition.drop"),
@@ -190,23 +213,25 @@ impl Editor {
                     egui::Stroke::new(
                         3.0,
                         if valid {
-                            self.accent()
+                            desk.editor().accent()
                         } else {
-                            self.secondary()
+                            desk.editor().secondary()
                         },
                     ),
                 );
             }
         }
         if ctx.input(|input| input.pointer.any_released()) {
-            self.assets.transition_drag = None;
+            self.transition_drag = None;
             if let Some(cut) = target {
-                self.add_transition_at_cut(kind, cut);
+                self.add_transition_at_cut(desk, kind, cut);
             } else {
-                self.set_toast(self.tr(Text::TransitionDropMiss), None);
+                let text =
+                    crate::i18n::text(desk.editor().preferences.locale, Text::TransitionDropMiss);
+                desk.toast(text, None);
             }
         } else if !ctx.input(|input| input.pointer.primary_down()) {
-            self.assets.transition_drag = None;
+            self.transition_drag = None;
         }
     }
 }

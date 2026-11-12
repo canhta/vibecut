@@ -22,6 +22,7 @@ Each module's contract is its README.
 | `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
 | `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |
 | `editor/panels/assets/workflow/` | [Assets workflow](src/editor/panels/assets/workflow/README.md) |
+| `editor/panels/assets/effects.rs` | [Effect previews](src/editor/panels/assets/effects/README.md) |
 | `editor/panels/assets/import.rs` | [Media import](src/editor/panels/assets/import/README.md) |
 | `editor/panels/assets/media_panel.rs` | [Media library](src/editor/panels/assets/media_panel/README.md) |
 | `editor/captions/` | [Captions panel](src/editor/captions/README.md) |
@@ -47,7 +48,6 @@ Each module's contract is its README.
 | `editor/timeline/workflow/` | [Timeline gestures](src/editor/timeline/workflow/README.md) |
 | `editor/timeline/workflow/viewport/` | [Timeline viewport](src/editor/timeline/workflow/viewport/README.md) |
 | `effects.rs` | [GPU effects](src/effects/README.md) |
-| `effect_previews.rs` | [Effect previews](src/effect_previews/README.md) |
 | `home.rs` / `home/` | [Projects page](src/home/README.md) |
 | `home/view/` | [Home view](src/home/view/README.md) |
 | `i18n.rs` / `i18n/` | [Localization](src/i18n/README.md) |

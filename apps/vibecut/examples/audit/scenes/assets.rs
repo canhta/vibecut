@@ -140,7 +140,7 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
     }
     if phase3 {
         if let App::Assets(editor) = &mut app.state_mut().app {
-            editor.settle_previews(vibecut::effect_previews::SETTLE_BUDGET)?;
+            editor.settle_previews(vibecut::SETTLE_BUDGET)?;
         }
         clock.0.store(100, Ordering::SeqCst);
         app.run_steps(1);

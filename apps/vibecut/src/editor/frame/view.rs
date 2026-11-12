@@ -223,8 +223,8 @@ impl Editor {
         {
             self.properties.cancel_reorder();
         }
-        self.finish_effect_drag(ui.ctx());
-        self.finish_transition_drag(ui.ctx());
+        self.with_assets(|assets, desk| assets.finish_effect_drag(desk, ui.ctx()));
+        self.with_assets(|assets, desk| assets.finish_transition_drag(desk, ui.ctx()));
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },

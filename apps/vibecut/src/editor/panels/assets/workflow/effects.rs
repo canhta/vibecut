@@ -1,31 +1,45 @@
-//! Applies effect choices to the editor context.
-use crate::editor::assets::{Arc, Editor, Result, Text, egui};
+//! Applies effect choices from the Effects tab.
+use super::super::effects::{EffectPreviews, preview_instance};
+use super::super::{Arc, Text, egui};
+use super::State;
+use crate::editor::{Desk, Result, context::single};
 
-impl Editor {
+impl State {
     /// Attach the native effect adapter to playback and thumbnail jobs, sharing
     /// playback's byte budget. Failure leaves the thumbnail composition unchanged.
-    pub fn set_effects(
+    pub(in crate::editor) fn set_effects(
         &mut self,
+        desk: &mut Desk<'_>,
         effects: Arc<dyn render::effects::EffectCompositor>,
     ) -> Result<()> {
-        let budget = self.playback.budget().clone();
+        let budget = desk.editor().playback.budget().clone();
         let cache =
             engine::effect_thumbnails::EffectThumbnails::new(effects.clone(), budget.clone());
-        let previews = crate::effect_previews::EffectPreviews::new(cache, budget)?;
-        self.playback.set_effects(effects)?;
+        let previews = EffectPreviews::new(cache, budget)?;
+        desk.editor().playback.set_effects(effects)?;
         self.effect_previews = Some(previews);
         Ok(())
     }
-    pub(in crate::editor) fn add_effect_from_selection(&mut self, kind: &str) {
-        match crate::editor::context::single(&self.selection) {
-            Some(item) => self.add_effect_to_item(item, kind),
+
+    pub(in crate::editor) fn add_effect_from_selection(&mut self, desk: &mut Desk<'_>, kind: &str) {
+        let selected = single(desk.view().selection);
+        match selected {
+            Some(item) => desk.editor().add_effect_to_item(item, kind),
             None => {
-                let text = self.tr(Text::EffectSelectClip).to_owned();
-                self.set_toast(&text, None);
+                let text =
+                    crate::i18n::text(desk.editor().preferences.locale, Text::EffectSelectClip);
+                desk.toast(text, None);
             }
         }
     }
-    pub(in crate::editor) fn finish_effect_drag(&mut self, ctx: &egui::Context) {
+
+    /// Finish the tile drag in the same frame the pointer is released; only a
+    /// clip under the pointer accepts the effect.
+    pub(in crate::editor) fn finish_effect_drag(
+        &mut self,
+        desk: &mut Desk<'_>,
+        ctx: &egui::Context,
+    ) {
         let Some(kind) = self.effect_drag.clone() else {
             return;
         };
@@ -39,18 +53,30 @@ impl Editor {
                 .interact_pos()
                 .or_else(|| input.pointer.latest_pos())
         });
+        let rects = desk.editor().timeline.item_rects().to_vec();
         let target = position.and_then(|position| {
-            self.timeline
-                .item_rects()
+            rects
                 .iter()
                 .find(|(_, rect)| rect.contains(position))
                 .map(|(item, _)| *item)
         });
         if let Some(item) = target {
-            self.add_effect_to_item(item, &kind);
+            desk.editor().add_effect_to_item(item, &kind);
         } else {
-            let text = self.tr(Text::EffectDropMiss).to_owned();
-            self.set_toast(&text, None);
+            let text = crate::i18n::text(desk.editor().preferences.locale, Text::EffectDropMiss);
+            desk.toast(text, None);
+        }
+    }
+
+    /// Replace one failed tile's static request; a late old job cannot present.
+    pub(in crate::editor) fn retry_effect(&mut self, kind: &str) {
+        if let Some(definition) = project::effect_definitions()
+            .iter()
+            .find(|definition| definition.id == kind)
+            && let Some(params) = preview_instance(definition)
+            && let Some(previews) = &mut self.effect_previews
+        {
+            previews.retry(kind, &params, &project::Animations::default());
         }
     }
 }

@@ -1,7 +1,10 @@
 # Effect previews
 
 Interface: `EffectPreviews`, `EffectPreviewStatus`, `PREVIEW_SIZE`, `PREVIEW_SCALE`,
-`SETTLE_BUDGET`.
+`SETTLE_BUDGET`, `preview_instance`.
+
+The Effects tab owns its tile previews here. `preview_instance` chooses the visible
+authored settings a tile renders with when a definition's defaults are an identity.
 
 `EffectPreviews::new(cache, budget)` owns one job runner and one entry per effect kind:
 `update(visible, Editor.clock.now())` advances a two-second30fps integer-frame demo,
@@ -21,12 +24,12 @@ sampling a clock. Drop cancels and joins. Queue4/retained4, one GPU worker,320×
 `GpuEffects::thumbnails(budget)` builds the engine's bounded offscreen cache over the
 playback GPU adapter without a window; `cpu()` uses the reference CPU compositor for
 headless panels. Bounds, cadence, cancellation, cache keys and typed failure are the
-engine's [thumbnail contract](../../../../crates/engine/src/artifacts/README.md#effect-thumbnails).
+engine's [thumbnail contract](../../../../../../../crates/engine/src/artifacts/README.md#effect-thumbnails).
 
 The generated 320x180 source stands in for a 1920x1080 reference clip, so it is
 rendered with explicit gains of 1/6 on each axis: an authored clip-pixel radius
 covers the same fraction of the picture as in an export, like Blur's
-[reference sigma](../../../../crates/render/src/scene/effects.rs). Thumbnails are
+[reference sigma](../../../../../../../crates/render/src/scene/effects.rs). Thumbnails are
 the interactive preview, so the engine evaluates them coarse (`fine=false`);
 `SETTLE_BUDGET` is the CPU reference's whole-library wait budget.
 Streak's visible demo uses length8/direction45; insertion keeps catalog identity.

@@ -144,7 +144,7 @@ impl View<'_> {
         );
     }
     fn effect(&mut self, ui: &mut egui::Ui, row: &EffectRow, rect: Rect) {
-        use crate::effect_previews::EffectPreviewStatus;
+        use super::super::effects::EffectPreviewStatus;
         let response = ui.interact(
             rect,
             Id::unique(("effects.tile", row.kind)),

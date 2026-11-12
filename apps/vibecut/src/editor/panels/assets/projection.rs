@@ -1,7 +1,8 @@
 //! Prepares the area's read-only workflow projection before rendering.
+use super::effects::preview_instance;
 use super::{
     AssetRow, AssetState, AssetsTab, BTreeMap, Editor, EffectRow, Icon, MediaKind, Model, Row,
-    Text, asset_row, effect_preview_instance, egui, file_name,
+    Text, asset_row, egui, file_name,
 };
 
 pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
@@ -68,7 +69,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         })
         .collect();
     let mut effects = Vec::new();
-    if let Some(previews) = &mut editor.effect_previews {
+    if let Some(previews) = &mut editor.assets.effect_previews {
         previews.update(
             editor.preferences.assets_tab == AssetsTab::Effects,
             editor.clock.now(),
@@ -80,15 +81,19 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             .iter()
             .filter(|definition| definition.shelf.in_library())
         {
-            let params = effect_preview_instance(definition);
-            if let (Some(previews), Some(params)) = (&mut editor.effect_previews, params.as_ref()) {
+            let params = preview_instance(definition);
+            if let (Some(previews), Some(params)) =
+                (&mut editor.assets.effect_previews, params.as_ref())
+            {
                 previews.ensure(definition.id, params, &project::Animations::default());
             }
             let status = editor
+                .assets
                 .effect_previews
                 .as_ref()
                 .and_then(|previews| previews.status(definition.id));
             let texture = editor
+                .assets
                 .effect_previews
                 .as_mut()
                 .and_then(|previews| previews.texture(ctx, definition.id));
@@ -162,7 +167,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         reveal: editor.assets.media_reveal.map(|reveal| reveal.asset),
         marquee: editor.assets.media_marquee.clone(),
         failed: !editor.assets.import_failures.is_empty() || editor.assets.import_notice.is_some(),
-        sounds: editor.sounds.as_ref().map(|sounds| sounds.view()),
+        sounds: editor.assets.sounds.as_ref().map(|sounds| sounds.view()),
         music: editor.music.as_ref().map(|music| music.view()),
         music_credits,
         music_credits_failed,

@@ -16,7 +16,7 @@ previews through the engine `EffectThumbnails` job and cache: the CPU reference
 compositor headlessly, the playback GPU adapter and its byte budget in native
 startup. Pending, failed and ready states stay visible; a failed tile offers Retry. A
 tile drops onto a video, image, sticker or graphic clip, or `+` adds it to the
-selected clip.
+selected clip. The tab's preview jobs and drag state live in [`effects`](effects/README.md).
 
 ## Transition catalog
 

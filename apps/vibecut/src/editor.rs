@@ -16,6 +16,9 @@ mod timeline;
 mod widgets;
 
 mod state;
+pub use assets::effects::{
+    EffectPreviewStatus, EffectPreviews, PREVIEW_SCALE, PREVIEW_SIZE, SETTLE_BUDGET,
+};
 pub use assets::music::{Music, MusicMode, MusicProblem, MusicView};
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 pub use assets::{
@@ -184,6 +187,34 @@ impl Editor {
         self.media.set_access(media);
     }
 
+    /// Attach the native effect adapter to playback and thumbnail jobs, sharing
+    /// playback's byte budget. Failure leaves the thumbnail composition unchanged.
+    pub fn set_effects(
+        &mut self,
+        effects: Arc<dyn render::effects::EffectCompositor>,
+    ) -> Result<()> {
+        self.with_assets(|assets, desk| assets.set_effects(desk, effects))
+    }
+
+    /// Attach the app-shared saved library. One library handle is shared by every
+    /// project window; each editor owns only its search/preview presentation.
+    pub fn set_sound_library(
+        &mut self,
+        library: Arc<libraries::sounds::SoundLibrary>,
+    ) -> Result<()> {
+        self.with_assets(|assets, desk| assets.set_sound_library(desk, library))
+    }
+
+    /// Injection boundary for tests and audit scenes.
+    pub fn set_sounds(&mut self, sounds: Sounds) {
+        self.assets.set_sounds(sounds);
+    }
+
+    /// Project-owned media directory used when a library sound is added.
+    pub fn set_sound_media_dir(&mut self, directory: PathBuf) {
+        self.assets.set_sound_media_dir(directory);
+    }
+
     /// Complete the source picker through the captured properties workflow.
     pub fn lut_picked_file(&mut self, path: Option<std::path::PathBuf>) -> Result<()> {
         let mut state = std::mem::take(&mut self.properties);
@@ -241,6 +272,8 @@ impl Editor {
         let mut player = panels::player::State::new(preferences_fit, preferences_zoom);
         player.last_view = view;
         let frame = frame::State::new(&preferences);
+        let mut asset_state = assets::State::default();
+        asset_state.effect_previews = EffectPreviews::cpu().ok();
         Self {
             session,
             playback,
@@ -249,8 +282,6 @@ impl Editor {
             selection,
             selection_scopes: SelectionScopes::default(),
             properties: properties::State::default(),
-            effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
-            effect_drag: None,
             frame,
             player,
             timeline: {
@@ -265,11 +296,8 @@ impl Editor {
             lifecycle_action: None,
             clock: Arc::new(SystemClock::default()),
             toast: None,
-            assets: assets::State::default(),
+            assets: asset_state,
             dialogs: dialogs::State::default(),
-            sound_library: None,
-            sounds: None,
-            sound_media_dir: None,
             music: None,
             music_media_dir: None,
             subtitles: None,
@@ -409,6 +437,7 @@ impl Editor {
                 )
                 .collect(),
             effect_previews: self
+                .assets
                 .effect_previews
                 .as_ref()
                 .map_or_else(BTreeMap::new, |previews| previews.statuses()),
@@ -417,7 +446,7 @@ impl Editor {
             media_order,
             media_highlight,
             media_delete_pending,
-            sounds: self.sounds.as_ref().map(|sounds| sounds.view()),
+            sounds: self.assets.sounds.as_ref().map(|sounds| sounds.view()),
             music: self.music.as_ref().map(|music| music.view()),
             export_options: self.preferences.export,
             export: self.dialogs.export.inspect(),
@@ -771,91 +800,6 @@ fn error_detail(error: &dyn std::error::Error) -> String {
         source = cause.source();
     }
     parts.join(": ")
-}
-/// A library tile must read as the effect at a glance, so previews use a
-/// visible setting instead of an insertion default that can be an identity.
-fn effect_preview_instance(
-    definition: &project::EffectDefinition,
-) -> Option<project::EffectInstance> {
-    let mut instance = definition.instance(definition.id);
-    match definition.id {
-        "blur" => {
-            let (_, max) = definition.param("intensity")?.scalar_range()?;
-            instance.set_scalar("intensity", max).ok()?;
-        }
-        "directional_blur" => {
-            instance.set_scalar("length", 8.0).ok()?;
-            instance.set_scalar("direction", 45.0).ok()?;
-        }
-        "sharpen" => instance.set_scalar("amount", 100.0).ok()?,
-        // A soft 8x6 lattice shows both axes and a blended edge.
-        "mosaic" => {
-            instance.set_scalar("horizontal", 8.0).ok()?;
-            instance.set_scalar("vertical", 6.0).ok()?;
-            instance.set_scalar("softness", 50.0).ok()?;
-        }
-        "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
-        "levels" => {
-            instance.set_scalar("in_black", 40.0).ok()?;
-            instance.set_scalar("in_white", 200.0).ok()?;
-        }
-        // Swap red and blue so the identity matrix does not read as no effect.
-        "channel_mix" => {
-            for (id, value) in [("rr", 0.0), ("rb", 100.0), ("br", 100.0), ("bb", 0.0)] {
-                instance.set_scalar(id, value).ok()?;
-            }
-        }
-        "color_replace" => {
-            instance = instance
-                .with(
-                    "target",
-                    project::EffectValue::Color(project::Color([0, 0, 255, 255])),
-                )
-                .ok()?
-                .with(
-                    "replace",
-                    project::EffectValue::Color(project::Color([255, 0, 0, 255])),
-                )
-                .ok()?;
-        }
-        "strobe" => {
-            instance = instance
-                .with(
-                    "color",
-                    project::EffectValue::Color(project::Color([255, 210, 0, 255])),
-                )
-                .ok()?;
-        }
-        // Entries whose defaults are identity need a visible tile preview.
-        "spherize" => instance.set_scalar("radius", 150.0).ok()?,
-        "wave_warp" => {
-            instance.set_scalar("height", 25.0).ok()?;
-            instance.set_scalar("width", 60.0).ok()?;
-        }
-        "lens_distortion" => instance.set_scalar("curvature", 60.0).ok()?,
-        "corner_pin" => {
-            for (id, value) in [
-                ("upper_left", [0.1, 0.1]),
-                ("upper_right", [0.9, 0.1]),
-                ("lower_left", [0.1, 0.9]),
-                ("lower_right", [0.9, 0.9]),
-            ] {
-                instance = instance.with(id, project::EffectValue::Point(value)).ok()?;
-            }
-        }
-        "basic_3d" => {
-            instance.set_scalar("swivel", 30.0).ok()?;
-            instance.set_scalar("tilt", -20.0).ok()?;
-        }
-        "camera_shake" => instance.set_scalar("amount", 60.0).ok()?,
-        "color_key" => instance.set_scalar("tolerance", 120.0).ok()?,
-        "luma_key" => {
-            instance.set_scalar("threshold", 60.0).ok()?;
-            instance.set_scalar("cutoff", 20.0).ok()?;
-        }
-        _ => {}
-    }
-    Some(instance)
 }
 fn display_label(value: &str, limit: usize) -> String {
     let mut label: String = value.chars().take(limit.saturating_add(1)).collect();

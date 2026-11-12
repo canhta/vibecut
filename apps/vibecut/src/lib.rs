@@ -4,7 +4,6 @@ pub mod appearance;
 pub mod capture;
 pub mod control;
 mod editor;
-pub mod effect_previews;
 pub mod effects;
 pub mod home;
 pub mod i18n;
@@ -25,11 +24,11 @@ pub use editor::properties::font_picker;
 pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fields};
 pub use editor::{
     AppCommand, AssetInspection, AssetState, AssetsTab, Client, CropAspect, CropInspection, Editor,
-    ImportEvent, ImportFailure, ImportProbe, ImportQueue, Inspection, MediaKind, MediaSort,
-    MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode, MusicProblem, MusicView,
-    PreviewAxis, PreviewGuide, PreviewZoom, ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds,
-    SoundsMode, SoundsProblem, SoundsView, TextCaret, ThumbnailOutcome, ThumbnailSource,
-    WidgetState,
+    EffectPreviewStatus, EffectPreviews, ImportEvent, ImportFailure, ImportProbe, ImportQueue,
+    Inspection, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode,
+    MusicProblem, MusicView, PREVIEW_SCALE, PREVIEW_SIZE, PreviewAxis, PreviewGuide, PreviewZoom,
+    SETTLE_BUDGET, ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds, SoundsMode,
+    SoundsProblem, SoundsView, TextCaret, ThumbnailOutcome, ThumbnailSource, WidgetState,
 };
 pub use eframe::egui;
 

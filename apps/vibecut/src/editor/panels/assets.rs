@@ -1,4 +1,5 @@
 //! Owns the assets presentation boundary.
+pub mod effects;
 pub mod import;
 pub mod media_panel;
 pub mod music;
@@ -37,8 +38,8 @@ use super::super::{
     Align2, Arc, AssetId, AssetRow, BTreeMap, BTreeSet, Color32, Command, ContentHash, CreatedId,
     Duration, Editor, Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result,
     SelectionScopes, SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, Tick, Toast,
-    TrackKind, UnsupportedReason, Vec2, display_short_time, display_time, effect_preview_instance,
-    egui, error_detail, icons, theme,
+    TrackKind, UnsupportedReason, Vec2, display_short_time, display_time, egui, error_detail,
+    icons, theme,
 };
 use state::MediaMarquee;
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};
@@ -87,7 +88,7 @@ struct EffectRow {
     kind: &'static str,
     name: &'static str,
     shelf: project::EffectShelf,
-    status: Option<crate::effect_previews::EffectPreviewStatus>,
+    status: Option<effects::EffectPreviewStatus>,
     texture: Option<egui::TextureHandle>,
 }
 pub(in crate::editor) struct Recorded {

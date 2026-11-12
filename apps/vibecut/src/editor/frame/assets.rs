@@ -57,28 +57,29 @@ impl Editor {
                         self.drain_requests();
                     }
                 }
-                assets::Action::EffectDrag(kind) => self.effect_drag = Some(kind.to_owned()),
-                assets::Action::AddEffect(kind) => self.add_effect_from_selection(kind),
-                assets::Action::TransitionDrag(kind) => self.begin_transition_drag(kind),
-                assets::Action::AddTransition(kind) => self.add_transition_from_selection(kind),
-                assets::Action::RetryEffect(kind) => {
-                    if let Some(definition) = project::effect_definitions()
-                        .iter()
-                        .find(|definition| definition.id == kind)
-                        && let Some(params) = crate::editor::effect_preview_instance(definition)
-                        && let Some(previews) = &mut self.effect_previews
-                    {
-                        previews.retry(kind, &params, &project::Animations::default());
-                    }
+                assets::Action::EffectDrag(kind) => self.assets.effect_drag = Some(kind.to_owned()),
+                assets::Action::AddEffect(kind) => {
+                    self.with_assets(|assets, desk| assets.add_effect_from_selection(desk, kind));
                 }
-                assets::Action::SoundsMode(mode) => self.sounds_set_mode(mode),
-                assets::Action::SoundsSearch { more } => self.sounds_search(more),
-                assets::Action::SoundsCommercial(on) => self.sounds_set_commercial(on),
-                assets::Action::SoundsPreview(id) => self.sounds_preview(id),
-                assets::Action::SoundsToggleSaved(id) => self.sounds_toggle_saved(id),
-                assets::Action::SoundsAdd(id) => self.sounds_add(id),
-                assets::Action::SoundsCancelCache => self.sounds_cancel_cache(),
-                assets::Action::SoundsRetry => self.sounds_retry(),
+                assets::Action::TransitionDrag(kind) => {
+                    self.with_assets(|assets, desk| assets.begin_transition_drag(desk, kind));
+                }
+                assets::Action::AddTransition(kind) => {
+                    self.with_assets(|assets, desk| {
+                        assets.add_transition_from_selection(desk, kind)
+                    });
+                }
+                assets::Action::RetryEffect(kind) => self.assets.retry_effect(kind),
+                assets::Action::SoundsMode(mode) => self.assets.sounds_set_mode(mode),
+                assets::Action::SoundsSearch { more } => self.assets.sounds_search(more),
+                assets::Action::SoundsCommercial(on) => self.assets.sounds_set_commercial(on),
+                assets::Action::SoundsPreview(id) => self.assets.sounds_preview(id),
+                assets::Action::SoundsToggleSaved(id) => self.assets.sounds_toggle_saved(id),
+                assets::Action::SoundsAdd(id) => {
+                    self.with_assets(|assets, desk| assets.sounds_add(desk, id));
+                }
+                assets::Action::SoundsCancelCache => self.assets.sounds_cancel_cache(),
+                assets::Action::SoundsRetry => self.assets.sounds_retry(),
                 assets::Action::MusicMode(mode) => self.music_set_mode(mode),
                 assets::Action::MusicChip(chip) => self.music_set_chip(chip),
                 assets::Action::MusicSearch { more } => self.music_search(more),

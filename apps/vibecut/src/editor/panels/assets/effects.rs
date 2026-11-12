@@ -1,4 +1,4 @@
-//! Effects-panel preview admission over engine-owned jobs, accounting and cache.
+//! Runs the Effects tab's tile preview jobs.
 
 use crate::{Result, egui};
 use engine::effect_thumbnails::EffectThumbnails;
@@ -422,4 +422,90 @@ impl Drop for EffectPreviews {
         }
         self.runner.shutdown();
     }
+}
+
+/// A library tile must read as the effect at a glance, so previews use a
+/// visible setting instead of an insertion default that can be an identity.
+pub(in crate::editor) fn preview_instance(
+    definition: &project::EffectDefinition,
+) -> Option<EffectInstance> {
+    let mut instance = definition.instance(definition.id);
+    match definition.id {
+        "blur" => {
+            let (_, max) = definition.param("intensity")?.scalar_range()?;
+            instance.set_scalar("intensity", max).ok()?;
+        }
+        "directional_blur" => {
+            instance.set_scalar("length", 8.0).ok()?;
+            instance.set_scalar("direction", 45.0).ok()?;
+        }
+        "sharpen" => instance.set_scalar("amount", 100.0).ok()?,
+        // A soft 8x6 lattice shows both axes and a blended edge.
+        "mosaic" => {
+            instance.set_scalar("horizontal", 8.0).ok()?;
+            instance.set_scalar("vertical", 6.0).ok()?;
+            instance.set_scalar("softness", 50.0).ok()?;
+        }
+        "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
+        "levels" => {
+            instance.set_scalar("in_black", 40.0).ok()?;
+            instance.set_scalar("in_white", 200.0).ok()?;
+        }
+        // Swap red and blue so the identity matrix does not read as no effect.
+        "channel_mix" => {
+            for (id, value) in [("rr", 0.0), ("rb", 100.0), ("br", 100.0), ("bb", 0.0)] {
+                instance.set_scalar(id, value).ok()?;
+            }
+        }
+        "color_replace" => {
+            instance = instance
+                .with(
+                    "target",
+                    project::EffectValue::Color(project::Color([0, 0, 255, 255])),
+                )
+                .ok()?
+                .with(
+                    "replace",
+                    project::EffectValue::Color(project::Color([255, 0, 0, 255])),
+                )
+                .ok()?;
+        }
+        "strobe" => {
+            instance = instance
+                .with(
+                    "color",
+                    project::EffectValue::Color(project::Color([255, 210, 0, 255])),
+                )
+                .ok()?;
+        }
+        // Entries whose defaults are identity need a visible tile preview.
+        "spherize" => instance.set_scalar("radius", 150.0).ok()?,
+        "wave_warp" => {
+            instance.set_scalar("height", 25.0).ok()?;
+            instance.set_scalar("width", 60.0).ok()?;
+        }
+        "lens_distortion" => instance.set_scalar("curvature", 60.0).ok()?,
+        "corner_pin" => {
+            for (id, value) in [
+                ("upper_left", [0.1, 0.1]),
+                ("upper_right", [0.9, 0.1]),
+                ("lower_left", [0.1, 0.9]),
+                ("lower_right", [0.9, 0.9]),
+            ] {
+                instance = instance.with(id, project::EffectValue::Point(value)).ok()?;
+            }
+        }
+        "basic_3d" => {
+            instance.set_scalar("swivel", 30.0).ok()?;
+            instance.set_scalar("tilt", -20.0).ok()?;
+        }
+        "camera_shake" => instance.set_scalar("amount", 60.0).ok()?,
+        "color_key" => instance.set_scalar("tolerance", 120.0).ok()?,
+        "luma_key" => {
+            instance.set_scalar("threshold", 60.0).ok()?;
+            instance.set_scalar("cutoff", 20.0).ok()?;
+        }
+        _ => {}
+    }
+    Some(instance)
 }

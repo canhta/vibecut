@@ -198,10 +198,6 @@ name = "effects"
 group = "assets"
 
 [[crate.module]]
-name = "effect_previews"
-group = "assets"
-
-[[crate.module]]
 name = "selection"
 group = "editor"
 

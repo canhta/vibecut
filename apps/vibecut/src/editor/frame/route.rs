@@ -45,7 +45,7 @@ impl Editor {
         let mut state = std::mem::take(&mut self.timeline);
         let mut cx = self.context();
         cx.disabled = disabled;
-        cx.effect_targets = self.effect_drag.is_some().then(|| {
+        cx.effect_targets = self.assets.effect_drag.is_some().then(|| {
             self.session
                 .project()
                 .data()
@@ -641,7 +641,7 @@ impl Editor {
         if self.timeline.cancel_track_edit() {
             return;
         }
-        if self.effect_drag.take().is_some() {
+        if self.assets.effect_drag.take().is_some() {
             return;
         }
         if self.properties.cancel_reorder() {
