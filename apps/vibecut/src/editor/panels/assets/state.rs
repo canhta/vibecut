@@ -43,10 +43,14 @@ pub(in crate::editor) struct State {
     pub(super) searches: BTreeMap<super::AssetsTab, String>,
     pub(super) filter: Filter,
     pub(super) effect_shelf: Option<project::EffectShelf>,
+    /// Effects tab: the Favorites sub-navigation entry replaces the shelf filter.
+    pub(super) effect_favorites: bool,
     /// Effects tab: the tile preview owner and the drag in flight.
     pub(in crate::editor) effect_previews: Option<super::effects::EffectPreviews>,
     pub(in crate::editor) effect_drag: Option<String>,
     pub(super) transition_family: Option<&'static str>,
+    /// Transitions tab: the Favorites sub-navigation entry replaces the family filter.
+    pub(super) transition_favorites: bool,
     pub(super) transition_previews: BTreeMap<&'static str, super::transition::Preview>,
     pub(in crate::editor) transition_drag: Option<(&'static str, std::sync::Arc<project::Project>)>,
     /// Sounds tab: the presentation owner and the add target directory.
@@ -111,9 +115,11 @@ impl Default for State {
             searches: BTreeMap::new(),
             filter: Filter::default(),
             effect_shelf: None,
+            effect_favorites: false,
             effect_previews: None,
             effect_drag: None,
             transition_family: None,
+            transition_favorites: false,
             transition_previews: BTreeMap::new(),
             transition_drag: None,
             sounds: None,

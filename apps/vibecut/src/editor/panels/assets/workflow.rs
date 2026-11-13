@@ -2,6 +2,7 @@
 mod actions;
 mod adjustment;
 mod effects;
+mod favorites;
 mod import;
 mod insertion;
 mod marquee;

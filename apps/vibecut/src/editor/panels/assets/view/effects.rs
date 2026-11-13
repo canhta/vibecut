@@ -39,39 +39,54 @@ fn shelf_id(shelf: project::EffectShelf) -> &'static str {
 }
 
 impl View<'_> {
+    /// One left sub-navigation button, shared by the catalogue tabs.
+    pub(super) fn subnav_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: Text,
+        selected: bool,
+    ) -> egui::Response {
+        ui.add_sized(
+            [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
+            egui::Button::new(
+                egui::RichText::new(self.tr(label))
+                    .size(theme::type_size::CHROME)
+                    .color(if selected {
+                        theme::accent(self.cx.preferences.dark)
+                    } else {
+                        theme::text(self.cx.preferences.dark)
+                    }),
+            )
+            .fill(if selected {
+                theme::hover(self.cx.preferences.dark)
+            } else {
+                theme::panel(self.cx.preferences.dark)
+            })
+            .stroke(egui::Stroke::NONE)
+            .truncate()
+            .right_text(""),
+        )
+        .on_hover_text(self.tr(label))
+    }
     pub(super) fn effects_nav(&mut self, ui: &mut egui::Ui) {
+        let favorites = self.state.effect_favorites;
+        let response = self.subnav_button(ui, Text::AssetsFavorites, favorites);
+        self.remember("effects.category.favorites".to_owned(), &response, None);
+        if response.clicked() {
+            self.state.effect_favorites = true;
+        }
         let shelves = std::iter::once((None, Text::AssetsAll))
             .chain(SHELVES.iter().map(|(shelf, label)| (Some(*shelf), *label)));
         for (shelf, label) in shelves {
-            let selected = self.state.effect_shelf == shelf;
-            let response = ui
-                .add_sized(
-                    [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
-                    egui::Button::new(
-                        egui::RichText::new(self.tr(label))
-                            .size(theme::type_size::CHROME)
-                            .color(if selected {
-                                theme::accent(self.cx.preferences.dark)
-                            } else {
-                                theme::text(self.cx.preferences.dark)
-                            }),
-                    )
-                    .fill(if selected {
-                        theme::hover(self.cx.preferences.dark)
-                    } else {
-                        theme::panel(self.cx.preferences.dark)
-                    })
-                    .stroke(egui::Stroke::NONE)
-                    .truncate()
-                    .right_text(""),
-                )
-                .on_hover_text(self.tr(label));
+            let selected = !favorites && self.state.effect_shelf == shelf;
+            let response = self.subnav_button(ui, label, selected);
             self.remember(
                 format!("effects.category.{}", shelf.map_or("all", shelf_id)),
                 &response,
                 None,
             );
             if response.clicked() {
+                self.state.effect_favorites = false;
                 self.state.effect_shelf = shelf;
             }
         }
@@ -79,7 +94,12 @@ impl View<'_> {
     pub(super) fn effects(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
         self.search(ui, area.width());
-        let title = self.state.effect_shelf.map_or(Text::AssetsAll, shelf_label);
+        let favorites = self.state.effect_favorites;
+        let title = if favorites {
+            Text::AssetsFavorites
+        } else {
+            self.state.effect_shelf.map_or(Text::AssetsAll, shelf_label)
+        };
         ui.painter().text(
             area.min + Vec2::new(0.0, 36.0),
             Align2::LEFT_TOP,
@@ -98,9 +118,15 @@ impl View<'_> {
             .effects
             .iter()
             .filter(|row| {
-                self.state
-                    .effect_shelf
-                    .is_none_or(|shelf| shelf == row.shelf)
+                if favorites {
+                    cx.preferences
+                        .catalog_favorites
+                        .contains("effects", row.kind)
+                } else {
+                    self.state
+                        .effect_shelf
+                        .is_none_or(|shelf| shelf == row.shelf)
+                }
             })
             .filter(|row| row.name.to_lowercase().contains(&query))
             .collect();
@@ -115,12 +141,12 @@ impl View<'_> {
                 .max_rect(cards),
             |ui| {
                 if rows.is_empty() {
-                    self.empty(
-                        ui,
-                        Icon::FilmStrip,
-                        Text::AssetsNoMatches,
-                        crate::kit::Tone::Quiet,
-                    );
+                    let text = if favorites {
+                        Text::AssetsFavoritesEmpty
+                    } else {
+                        Text::AssetsNoMatches
+                    };
+                    self.empty(ui, Icon::FilmStrip, text, crate::kit::Tone::Quiet);
                     return;
                 }
                 egui::ScrollArea::vertical()
@@ -246,6 +272,46 @@ impl View<'_> {
         icons::tinted(Icon::Plus, 12.0, theme::on_scrim()).paint_at(ui, plus.shrink(6.0));
         if response.clicked() {
             self.actions.push(Action::AddEffect(row.kind));
+        }
+        let starred = self
+            .cx
+            .preferences
+            .catalog_favorites
+            .contains("effects", row.kind);
+        let star = Rect::from_min_size(
+            preview.right_top() - Vec2::new(24.0, 0.0),
+            Vec2::splat(24.0),
+        );
+        let label = self.tr(if starred {
+            Text::AssetsFavoriteRemove
+        } else {
+            Text::AssetsFavoriteAdd
+        });
+        let response = ui
+            .interact(
+                star,
+                Id::unique(("effects.favorite", row.kind)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(label);
+        self.remember(
+            format!("effects.favorite.{}", row.kind),
+            &response,
+            None,
+        );
+        ui.painter().text(
+            star.center(),
+            Align2::CENTER_CENTER,
+            if starred { "★" } else { "☆" },
+            FontId::proportional(theme::type_size::BODY),
+            theme::text(self.cx.preferences.dark),
+        );
+        if response.clicked() {
+            self.actions.push(Action::ToggleFavorite {
+                family: "effects",
+                id: row.kind.to_owned(),
+                favorite: !starred,
+            });
         }
         ui.painter().with_clip_rect(rect).text(
             preview.left_bottom() + Vec2::new(0.0, theme::space::XS),

@@ -34,36 +34,22 @@ impl View<'_> {
                 .into_iter()
                 .map(|shelf| (Some(shelf), transition::shelf_label(shelf))),
         );
+        let favorites = self.state.transition_favorites;
+        let response = self.subnav_button(ui, Text::AssetsFavorites, favorites);
+        self.remember("transitions.category.favorites".to_owned(), &response, None);
+        if response.clicked() {
+            self.state.transition_favorites = true;
+        }
         for (family, label) in rows {
-            let selected = self.state.transition_family == family;
-            let response = ui
-                .add_sized(
-                    [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
-                    egui::Button::new(
-                        egui::RichText::new(self.tr(label))
-                            .size(theme::type_size::CHROME)
-                            .color(if selected {
-                                theme::accent(self.cx.preferences.dark)
-                            } else {
-                                theme::text(self.cx.preferences.dark)
-                            }),
-                    )
-                    .fill(if selected {
-                        theme::hover(self.cx.preferences.dark)
-                    } else {
-                        theme::panel(self.cx.preferences.dark)
-                    })
-                    .stroke(egui::Stroke::NONE)
-                    .truncate()
-                    .right_text(""),
-                )
-                .on_hover_text(self.tr(label));
+            let selected = !favorites && self.state.transition_family == family;
+            let response = self.subnav_button(ui, label, selected);
             self.remember(
                 format!("transitions.category.{}", family.unwrap_or("all")),
                 &response,
                 None,
             );
             if response.clicked() {
+                self.state.transition_favorites = false;
                 self.state.transition_family = family;
             }
         }
@@ -77,12 +63,20 @@ impl View<'_> {
             .get(&AssetsTab::Transitions)
             .map(|query| query.to_lowercase())
             .unwrap_or_default();
+        let favorites = self.state.transition_favorites;
         let definitions: Vec<_> = project::TRANSITION_DEFINITIONS
             .iter()
             .filter(|definition| {
-                self.state
-                    .transition_family
-                    .is_none_or(|shelf| shelf == definition.shelf)
+                if favorites {
+                    self.cx
+                        .preferences
+                        .catalog_favorites
+                        .contains("transitions", definition.kind)
+                } else {
+                    self.state
+                        .transition_family
+                        .is_none_or(|shelf| shelf == definition.shelf)
+                }
             })
             .filter(|definition| {
                 self.tr(crate::i18n::transition_label(definition.kind))
@@ -90,11 +84,16 @@ impl View<'_> {
                     .contains(&query)
             })
             .collect();
-        if let Some(shelf) = self.state.transition_family {
+        let title = if favorites {
+            Some(Text::AssetsFavorites)
+        } else {
+            self.state.transition_family.map(transition::shelf_label)
+        };
+        if let Some(title) = title {
             ui.painter().text(
                 area.min + Vec2::new(0.0, 36.0),
                 Align2::LEFT_TOP,
-                self.tr(transition::shelf_label(shelf)),
+                self.tr(title),
                 FontId::proportional(theme::type_size::BODY),
                 theme::text(self.cx.preferences.dark),
             );
@@ -110,12 +109,12 @@ impl View<'_> {
                 .max_rect(cards),
             |ui| {
                 if definitions.is_empty() {
-                    self.empty(
-                        ui,
-                        Icon::ArrowsLeftRight,
-                        Text::AssetsNoMatches,
-                        crate::kit::Tone::Quiet,
-                    );
+                    let text = if favorites {
+                        Text::AssetsFavoritesEmpty
+                    } else {
+                        Text::AssetsNoMatches
+                    };
+                    self.empty(ui, Icon::ArrowsLeftRight, text, crate::kit::Tone::Quiet);
                     return;
                 }
                 egui::ScrollArea::vertical()
@@ -324,6 +323,42 @@ impl View<'_> {
         .paint_at(ui, plus.shrink(6.0));
         if response.clicked() {
             self.actions.push(Action::AddTransition(kind));
+        }
+        let starred = self
+            .cx
+            .preferences
+            .catalog_favorites
+            .contains("transitions", kind);
+        let star = Rect::from_min_size(
+            preview.right_top() - Vec2::new(24.0, 0.0),
+            Vec2::splat(24.0),
+        );
+        let label = self.tr(if starred {
+            Text::AssetsFavoriteRemove
+        } else {
+            Text::AssetsFavoriteAdd
+        });
+        let response = ui
+            .interact(
+                star,
+                Id::unique(("transitions.favorite", kind)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(label);
+        self.remember(format!("transitions.favorite.{kind}"), &response, None);
+        ui.painter().text(
+            star.center(),
+            Align2::CENTER_CENTER,
+            if starred { "★" } else { "☆" },
+            FontId::proportional(theme::type_size::BODY),
+            theme::text(self.cx.preferences.dark),
+        );
+        if response.clicked() {
+            self.actions.push(Action::ToggleFavorite {
+                family: "transitions",
+                id: kind.to_owned(),
+                favorite: !starred,
+            });
         }
         ui.painter().with_clip_rect(rect).text(
             preview.left_bottom() + Vec2::new(0.0, theme::space::XS),

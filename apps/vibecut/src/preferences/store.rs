@@ -241,6 +241,10 @@ mod tests {
                 serde_json::json!({"tab": "favorites", "favorites": ["Anton", "Inter"]}),
             ),
             (
+                "catalog_favorites",
+                serde_json::json!({"effects": ["blur", "glow"], "sounds": ["12"]}),
+            ),
+            (
                 "easing",
                 serde_json::json!({
                     "tab": "saved",
