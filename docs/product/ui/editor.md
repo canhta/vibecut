@@ -210,9 +210,14 @@ original and scaled by 1727/3680 to the 1727×1029 logical frame, like the other
 
 Ours follows the grid exactly (six columns, 58 px square tiles, 15 px gutter) and the
 three-cell bar and the property row for Duration. Remaining differences and causes:
-- Tiles carry the look's name inside the tile instead of a thumbnail with the name beneath, so
-  our row pitch is 58 + 15 = 73 px, not 82 px. Cause: previews need their own render job; open,
-  to be ticketed by the coordinator.
+- Tiles show a rendered preview of the look with its name beneath (12 px line, then a 12 px gap
+  to the next row, so the row pitch is the measured 82 px). The preview is a one-second,
+  twelve-frame strip of a neutral square moved by the look's own keys, rendered once by the
+  engine's animation-preview job and cached ([artifacts](../../../crates/engine/src/artifacts/README.md)).
+  A resting tile shows one frame a third of the way into the motion; a hovered tile loops the
+  strip. Open: the reference capture is a still, so whether its tiles play on hover, the sample
+  picture, the None tile's glyph, the name's font size and the gap between tile and name are
+  unmeasured; ours are [new]. Previews use the default 0.5 s duration, not the clip's.
 - Our bar is the shared 24 px control height, about 3 px taller than the 21 px measured here;
   cause: one shared kit control (the 221643 sub-tab bar measures 24).
 - No search field and no category chips. Cause: they filter and group a catalogue of hundreds

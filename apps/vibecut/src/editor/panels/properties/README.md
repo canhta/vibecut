@@ -195,7 +195,11 @@ is one `clip.set_animation` request carrying the project snapshot it was drawn f
 look change keeps the slot's duration. The
 [engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#clip-animation)
 owns the looks, the clamp, the In/Out overlap rule, Combo exclusivity and the trim re-fit.
-Tiles and field are disabled, and a captured request refused, on a locked track, with
+Each look tile shows its preview (`view/animation/previews.rs`): a strip the engine's
+[animation-preview job](../../../../../../crates/engine/src/artifacts/README.md#animation-previews)
+renders once per slot and look and the panel keeps as one texture, so a draw only picks a
+frame; the name sits beneath the 58 px tile and a hovered tile loops the strip. The None
+tile is empty. Tiles and field are disabled, and a captured request refused, on a locked track, with
 an open draft, transaction, save, inline or caption edit, like the other item edits.
 
 The Style section's Preset row lists the project's saved text styles

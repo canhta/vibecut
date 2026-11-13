@@ -282,6 +282,7 @@ pub enum JobKind {
     MeasureLoudness,
     Preview,
     EffectThumbnail,
+    AnimationPreview,
     Export,
     Import,
     #[serde(rename = "import.probe")]

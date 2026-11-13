@@ -108,6 +108,13 @@ pub mod effect_thumbnails {
     //! Produces illustrative effect thumbnails.
     pub use super::effect_images::{EffectThumbnails, MAX_THUMBNAIL_EDGE, MAX_THUMBNAILS};
 }
+mod animation_images;
+pub mod animation_previews {
+    //! Produces the short motion previews of the Animation tab tiles.
+    pub use super::animation_images::{
+        AnimationPreviews, MAX_PREVIEWS, PREVIEW_EDGE, PREVIEW_FRAMES, preview_bytes,
+    };
+}
 mod preview_execution;
 pub(crate) mod control_preview {
     //! Produces bounded labelled control previews.

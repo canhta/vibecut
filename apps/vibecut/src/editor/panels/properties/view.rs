@@ -1575,6 +1575,7 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
 }
 
 mod animation;
+pub(super) use animation::Previews as AnimationPreviews;
 
 mod canvas;
 
