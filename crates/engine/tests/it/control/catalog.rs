@@ -572,7 +572,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::Assets, &["export.clips", "media.remove"]),
         (
             Availability::RetimableItem,
-            &["timeline.set_speed", "timeline.set_reverse"],
+            &["timeline.set_reverse", "timeline.set_speed"],
         ),
         (Availability::RemovableTrack, &["track.remove"]),
         (
