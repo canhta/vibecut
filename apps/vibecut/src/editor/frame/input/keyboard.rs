@@ -101,6 +101,12 @@ impl Editor {
             Dispatch::Blocked(BlockedReason::TextInput) => {
                 // The focused field sees Escape and blurs itself.
             }
+            // Ctrl+V with no in-app entry still pastes files from the OS clipboard.
+            Dispatch::FellThrough("edit.paste") => {
+                if let Err(error) = self.paste_os_files() {
+                    self.fail(error.to_string());
+                }
+            }
             Dispatch::Blocked(_) | Dispatch::NoMatch | Dispatch::FellThrough(_) => {}
             Dispatch::Action { action, .. } => {
                 self.action(action);

@@ -615,6 +615,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("text.save_preset", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
+        ("transcript.search", Effect::Read, true, true),
         ("timeline.filler_candidates", Effect::Read, true, true),
         ("timeline.remove_fillers", Effect::Edit, true, true),
         ("chapters.generate", Effect::JobControl, true, true),

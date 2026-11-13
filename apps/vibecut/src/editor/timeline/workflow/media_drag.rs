@@ -72,23 +72,50 @@ impl State {
                     zone: Some(DropZone::Track(track)),
                 })
             }
-            Some((track, Some(engine::TrackPlacement::Above { .. }))) => Some(Landing {
-                placement: engine::Placement::Above { track },
-                zone: Some(DropZone::Insert { track, above: true }),
-            }),
-            Some((track, Some(engine::TrackPlacement::Below { .. }))) => Some(Landing {
-                placement: engine::Placement::Below { track },
-                zone: Some(DropZone::Insert {
-                    track,
-                    above: false,
-                }),
-            }),
+            Some((track, Some(engine::TrackPlacement::Above { .. }))) => {
+                new_track_landing(drag, track, true, rows)
+            }
+            Some((track, Some(engine::TrackPlacement::Below { .. }))) => {
+                new_track_landing(drag, track, false, rows)
+            }
             Some((track, Some(engine::TrackPlacement::Auto))) => Some(Landing {
                 placement: engine::Placement::Auto,
                 zone: Some(DropZone::Track(track)),
             }),
         }
     }
+}
+
+/// A new track of the dragged kind next to `track`. Visual tracks stay above the main track
+/// and audio tracks below it, so a gap on the other side of that boundary lands on the
+/// boundary itself: directly above the main track for visual media, directly below it for
+/// audio.
+fn new_track_landing(
+    drag: &MediaDrag,
+    track: project::TrackId,
+    above: bool,
+    rows: &[TrackRow],
+) -> Option<Landing> {
+    let audio = drag.kind == project::TrackKind::Audio;
+    let row = rows.iter().find(|row| row.id == track)?;
+    let fits = if row.main {
+        above != audio
+    } else {
+        row.audio == audio
+    };
+    let (track, above) = if fits {
+        (track, above)
+    } else {
+        (rows.iter().find(|row| row.main)?.id, !audio)
+    };
+    Some(Landing {
+        placement: if above {
+            engine::Placement::Above { track }
+        } else {
+            engine::Placement::Below { track }
+        },
+        zone: Some(DropZone::Insert { track, above }),
+    })
 }
 
 /// The dragged asset's name beside the pointer, on a layer above the panels.

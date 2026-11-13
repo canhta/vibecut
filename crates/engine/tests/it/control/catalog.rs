@@ -771,6 +771,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "timeline.set_ripple",
             "transcript.delete_range",
             "transcript.merge_cues",
+            "transcript.search",
             "undo",
         ]
     );

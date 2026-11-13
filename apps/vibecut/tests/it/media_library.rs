@@ -1322,7 +1322,12 @@ fn dropping_an_asset_on_empty_space_below_the_tracks_creates_a_compatible_track(
         .iter()
         .count();
     let header = widget_rect(&harness, &format!("track.{}.header", main.0));
-    let empty = egui::pos2(header.right() + 80.0, header.bottom() + 120.0);
+    // Halfway between the last row and the bottom of the lanes, inside the timeline body.
+    let body = widget_rect(&harness, "timeline.marquee");
+    let empty = egui::pos2(
+        header.right() + 80.0,
+        (header.bottom() + body.bottom()) / 2.0,
+    );
     drag_asset_to(&mut harness, AssetId(3), empty);
 
     let project = harness.state().session.project();

@@ -938,7 +938,7 @@ impl State {
         let id = forked.data().id;
         let mut data = forked.into_data();
         data.name = format!("{name} {:08x}", id.0 as u32).as_str().into();
-        data.shorts_run = Some(run);
+        data.shorts_run = Some(Box::new(run));
         let project = project::Project::new(data)?;
         let at = source
             .candidates

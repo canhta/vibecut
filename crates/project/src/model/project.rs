@@ -109,8 +109,9 @@ pub struct ProjectData {
     pub text_presets: Vec<SavedTextPreset>,
     /// Colours committed through the colour popover, newest first, without duplicates.
     pub recent_colors: Vec<Color>,
-    /// Set only on a run of the shorts window; editor projects carry none.
-    pub shorts_run: Option<super::shorts_run::ShortsRun>,
+    /// Set only on a run of the shorts window; editor projects carry none. Boxed so the
+    /// rare run payload does not widen every `ProjectData` the edit path moves.
+    pub shorts_run: Option<Box<super::shorts_run::ShortsRun>>,
 }
 impl ProjectData {
     /// Candidates with an invalid current ID read main; validation still refuses them.

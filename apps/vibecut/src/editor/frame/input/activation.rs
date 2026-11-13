@@ -17,16 +17,8 @@ impl Editor {
             self.commit_text_edit();
         }
         let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
-        // Files on the OS clipboard win over the in-app clipboard and insert at the
-        // playhead; a focused text field keeps its own paste.
-        if id == "edit.paste" && !self.frame.text_focused {
-            let paths = self.assets.os_files.read();
-            if !paths.is_empty() {
-                return self.activate_with(None, |editor| {
-                    let at = editor.playback.position()?;
-                    editor.with_assets(|assets, port| assets.paste_files(port, paths, at))
-                });
-            }
+        if id == "edit.paste" && self.paste_os_files()? {
+            return Ok(());
         }
         // A disabled style action must not flush an unrelated caption draft.
         if (id.starts_with("subtitles.style.")
@@ -39,6 +31,23 @@ impl Editor {
         self.activate_with(Some(id), |editor| {
             editor.activate_action(id, spec, argument)
         })
+    }
+
+    /// Files on the OS clipboard win over the in-app clipboard and insert at the playhead;
+    /// a focused text field keeps its own paste. `false` when there were none to paste.
+    pub(in crate::editor) fn paste_os_files(&mut self) -> Result<bool> {
+        if self.frame.text_focused {
+            return Ok(false);
+        }
+        let paths = self.assets.os_files.read();
+        if paths.is_empty() {
+            return Ok(false);
+        }
+        self.activate_with(None, |editor| {
+            let at = editor.playback.position()?;
+            editor.with_assets(|assets, port| assets.paste_files(port, paths, at))
+        })?;
+        Ok(true)
     }
 
     /// Apply an admitted input through the editor's shared activation lifecycle.
