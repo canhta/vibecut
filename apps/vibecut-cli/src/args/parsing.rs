@@ -58,7 +58,7 @@ Usage:
   vibecut-cli sounds save <library> <sound-json>
   vibecut-cli sounds unsave <library> <id>
   vibecut-cli sounds add <project> <library> <id> [--start <ticks>]
-  vibecut-cli stickers search [--category all|flags] [--limit N] [query]
+  vibecut-cli stickers search [--category all|emoji|flags|icons] [--limit N] [query]
   vibecut-cli stickers insert <project> <id> [--start <ticks>] [--duration <ticks>]
   vibecut-cli music search --library <dir> [--tag <tag>] [--saved] [--page N] [--page-size N] [query]
   vibecut-cli music save <library> <track-json>

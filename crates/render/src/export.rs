@@ -12,7 +12,7 @@ use crate::{
 };
 pub use destination::validate_output_path;
 use execution::{
-    OmittedSources, admission, audio_only_export, copy_export, copy_plan, encoded_export,
+    OmittedSources, admission, admit_stickers, audio_only_export, copy_export, copy_plan, encoded_export,
 };
 use gif::gif_export;
 use media::{Container, EncodePreference};
@@ -178,6 +178,9 @@ pub fn export_with_sources(
         return Err(Error::Invalid("export frame expansion"));
     }
     gif::admission(range, settings)?;
+    if !settings.audio_only {
+        admit_stickers(project, range)?;
+    }
     let mut renderer = Renderer::new(project, settings.render.clone())?;
     sources.begin_video(&[]);
     sources.begin_audio(&[]);

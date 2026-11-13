@@ -127,6 +127,34 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
     });
     project::Project::new(data).unwrap()
 }
+/// Fetched-sticker fixture: three downloaded files (a red, a green and a blue square) and one id
+/// whose file is not downloaded. Every test lends the same source, so tests share it safely.
+pub struct FetchedStickers;
+impl FetchedStickers {
+    pub const RED: &'static str = "noto:1f600";
+    pub const GREEN: &'static str = "lucide:heart";
+    pub const BLUE: &'static str = "phosphor:star";
+    pub const NOT_DOWNLOADED: &'static str = "noto:1f601";
+
+    pub fn lend() {
+        render::lend_sticker_source(Arc::new(Self));
+    }
+}
+impl render::StickerSource for FetchedStickers {
+    fn svg(&self, sticker: &str) -> std::result::Result<Vec<u8>, render::StickerFault> {
+        let color = match sticker {
+            Self::RED => "#ff0000",
+            Self::GREEN => "#00ff00",
+            Self::BLUE => "#0000ff",
+            Self::NOT_DOWNLOADED => return Err(render::StickerFault::NotDownloaded),
+            _ => return Err(render::StickerFault::Unknown),
+        };
+        Ok(format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"{color}\"/></svg>"
+        )
+        .into_bytes())
+    }
+}
 pub struct Empty;
 impl render::SourceProvider for Empty {
     fn status(

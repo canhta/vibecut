@@ -670,3 +670,149 @@ fn search_spans_flags_and_reports_collections_that_are_not_downloaded() {
         Err(EngineError::Sticker(StickerError::NotDownloadable))
     ));
 }
+
+/// One solid square, so a rendered pixel names the file it came from.
+fn square(color: &str) -> Vec<u8> {
+    format!(
+        "<svg xmlns=\"{SVG_NS}\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"{color}\"/></svg>"
+    )
+    .into_bytes()
+}
+
+fn centre(sticker: &str) -> Result<[u8; 4], render::StickerError> {
+    let raster = render::rasterize_sticker(sticker, 32, 32)?;
+    let at = (16 * 32 + 16) * 4;
+    Ok(raster.pixels[at..at + 4].try_into().unwrap())
+}
+
+#[test]
+fn control_and_render_serve_every_collection_and_refuse_until_downloaded() {
+    use engine::control::StickerCategory;
+    use libraries::stickers::{insert_sticker, resolve_sticker, search_catalog};
+    let specs = [
+        ("noto", Category::Emoji, "grin", "#ff0000"),
+        ("lucide", Category::Icons, "heart", "#00ff00"),
+        ("phosphor", Category::Icons, "star", "#0000ff"),
+    ];
+    let server = Arc::new(Server::default());
+    let mut collections = Vec::new();
+    for (id, category, value, color) in specs {
+        let bytes = square(color);
+        let mut collection = demo(&[(value, &bytes)]);
+        collection.id = id.into();
+        collection.category = category;
+        {
+            let mut bodies = server.bodies.lock().unwrap();
+            bodies.insert(
+                collection.raw_url(&collection.license_path),
+                LICENSE.to_vec(),
+            );
+            bodies.insert(collection.raw_url(&format!("icons/{value}.svg")), bytes);
+        }
+        collections.push(collection);
+    }
+    let root = tempfile::tempdir().unwrap();
+    let store =
+        Arc::new(StickerStore::new(root.path().to_path_buf(), collections, server).unwrap());
+    render::lend_sticker_source(store.clone());
+    let handle: &StickerStore = &store;
+    let total = |category| {
+        search_catalog(Some(handle), "", category, Some(1000))
+            .unwrap()
+            .total
+    };
+
+    // Nothing downloaded: search lists flags only, every id still resolves with the fetched size
+    // and inserts, and the renderer refuses typed.
+    assert_eq!(total(StickerCategory::All), 271);
+    assert_eq!(total(StickerCategory::Emoji), 0);
+    assert_eq!(total(StickerCategory::Icons), 0);
+    let grin = resolve_sticker(Some(handle), " noto:grin ").unwrap();
+    assert_eq!(
+        (grin.id.as_str(), grin.width, grin.height),
+        ("noto:grin", 256, 256)
+    );
+    assert_eq!(
+        resolve_sticker(Some(handle), "flags:vn").unwrap().id,
+        "flags:VN"
+    );
+    assert!(resolve_sticker(Some(handle), "noto:nope").is_none());
+    assert!(resolve_sticker(None, "noto:grin").is_none());
+    assert_eq!(
+        centre("noto:grin"),
+        Err(render::StickerError::NotDownloaded {
+            sticker: "noto:grin".into()
+        })
+    );
+    let mut session = engine::Session::new(
+        project::Project::empty(project::ProjectId(1), "stickers".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let outcome = insert_sticker(
+        &mut session,
+        Some(handle),
+        "noto:grin",
+        engine::Placement::Auto,
+        time::Tick::ZERO,
+        time::Tick(1000),
+    )
+    .unwrap();
+    assert!(outcome.changed);
+    let stored: Vec<_> = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .filter_map(|item| match &item.content {
+            project::ItemParams::Sticker(params) => Some(params.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stored, [project::StickerParams::new("noto:grin", 256, 256)]);
+    assert!(
+        insert_sticker(
+            &mut session,
+            Some(handle),
+            "noto:nope",
+            engine::Placement::Auto,
+            time::Tick::ZERO,
+            time::Tick(1000),
+        )
+        .is_err()
+    );
+
+    // Downloaded: each collection lists under its category and draws its own pixels.
+    let mut jobs = runner();
+    for (id, ..) in specs {
+        let (job, _) = store.submit_download(&mut jobs, id, true).unwrap();
+        assert_eq!(finish(&mut jobs, job), JobState::Completed);
+    }
+    assert_eq!(total(StickerCategory::Emoji), 1);
+    assert_eq!(total(StickerCategory::Icons), 2);
+    assert_eq!(total(StickerCategory::All), 274);
+    let ids = |category, query| {
+        search_catalog(Some(handle), query, category, None)
+            .unwrap()
+            .results
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(StickerCategory::Icons, ""),
+        ["lucide:heart", "phosphor:star"]
+    );
+    assert_eq!(ids(StickerCategory::All, "kw-grin"), ["noto:grin"]);
+    assert_eq!(centre("noto:grin"), Ok([255, 0, 0, 255]));
+    assert_eq!(centre("lucide:heart"), Ok([0, 255, 0, 255]));
+
+    // A file changed after the download is never drawn.
+    fs::write(root.path().join("phosphor/star.svg"), square("#ffffff")).unwrap();
+    assert!(matches!(
+        centre("phosphor:star"),
+        Err(render::StickerError::Invalid { .. })
+    ));
+}

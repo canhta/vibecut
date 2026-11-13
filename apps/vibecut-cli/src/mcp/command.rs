@@ -77,7 +77,7 @@ pub(crate) fn run(
         ))?;
         let mut lease = project::WriterLease::acquire(&path)?;
         let loaded = lease.load()?;
-        crate::session::prepare_project_fonts(&loaded.project)?;
+        crate::session::prepare_project_libraries(&loaded.project)?;
         let mut session = Session::new(loaded.project, 100)?;
         session.restore_metadata(lease.metadata())?;
         let mut saved_project = session.project().as_ref().clone();

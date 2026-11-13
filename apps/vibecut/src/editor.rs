@@ -272,6 +272,8 @@ impl Editor {
         preferences: Preferences,
     ) -> Self {
         session.set_asset_export_sources(playback.export_sources());
+        // Opens the sticker cache and lends it to the renderer for this session's preview and export.
+        libraries::stickers::native_store();
         let font_error = libraries::fonts::FontStore::native()
             .and_then(|store| store.load_project(session.project()))
             .err()

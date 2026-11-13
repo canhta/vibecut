@@ -1938,6 +1938,84 @@ fn stickers_draw_flags_and_report_missing_assets_with_a_placeholder() {
     assert_eq!(at(&missing, 64, 4)[3], 0.);
 }
 
+/// Fetched stickers (`noto:`, `lucide:`, `phosphor:`) rasterise from the lent byte source at the
+/// destination size; an id whose file is not downloaded refuses typed, in the rasteriser, in a
+/// frame (placeholder plus the typed error) and in an export (before any file is staged).
+#[test]
+fn fetched_stickers_draw_from_the_lent_source_and_refuse_when_not_downloaded() {
+    use project::{ItemParams, StickerParams, TrackKind};
+    FetchedStickers::lend();
+    for (id, rgba) in [
+        (FetchedStickers::RED, [255, 0, 0, 255]),
+        (FetchedStickers::GREEN, [0, 255, 0, 255]),
+        (FetchedStickers::BLUE, [0, 0, 255, 255]),
+    ] {
+        for (w, h) in [(24_u32, 24_u32), (96, 96), (200, 100)] {
+            let raster = rasterize_sticker(id, w, h).unwrap();
+            assert_eq!((raster.width, raster.height), (w, h));
+            let i = (((h / 2) * w + w / 2) * 4) as usize;
+            assert_eq!(raster.pixels[i..i + 4], rgba, "{id} at {w}x{h}");
+        }
+    }
+    assert_eq!(
+        rasterize_sticker(FetchedStickers::NOT_DOWNLOADED, 8, 8),
+        Err(StickerError::NotDownloaded {
+            sticker: FetchedStickers::NOT_DOWNLOADED.into()
+        })
+    );
+    assert!(matches!(
+        rasterize_sticker("noto:unlisted", 8, 8),
+        Err(StickerError::Missing { .. })
+    ));
+    assert!(matches!(
+        rasterize_sticker(FetchedStickers::RED, 0, 8),
+        Err(StickerError::Invalid { .. })
+    ));
+
+    let project_with = |sticker: &str| {
+        let mut data = solid_project(1, 128, 128, [0; 4]).into_data();
+        data.canvas.background = project::Color([0; 4]);
+        let track = &mut data.scene_mut().timeline.overlays[0];
+        track.kind = TrackKind::Sticker;
+        track.items[0].content = ItemParams::Sticker(StickerParams::new(sticker, 256, 256));
+        project::Project::new(data).unwrap()
+    };
+    let hooks = Hooks::default();
+    let drawn = project_with(FetchedStickers::GREEN);
+    let mut renderer = Renderer::new(&drawn, RenderSettings::from_project(&drawn)).unwrap();
+    let frame = renderer.render_frame(Tick(0), &mut Empty, &hooks).unwrap();
+    let centre = frame.pixels()[64 * 128 + 64];
+    assert!(
+        centre[3] > 0.99 && centre[1] > 0.9 && centre[0] < 0.01,
+        "{centre:?}"
+    );
+    drop(frame);
+    assert!(renderer.sticker_errors().is_empty());
+
+    let refused = project_with(FetchedStickers::NOT_DOWNLOADED);
+    let mut renderer = Renderer::new(&refused, RenderSettings::from_project(&refused)).unwrap();
+    drop(renderer.render_frame(Tick(0), &mut Empty, &hooks).unwrap());
+    assert_eq!(
+        renderer.sticker_errors(),
+        [StickerError::NotDownloaded {
+            sticker: FetchedStickers::NOT_DOWNLOADED.into()
+        }]
+    );
+    let output = root().join("fetched-sticker-refused.mp4");
+    let settings = ExportSettings::from_project(&refused);
+    assert!(matches!(
+        export(
+            &refused,
+            TimeRange::new(Tick::ZERO, refused.duration()).unwrap(),
+            &settings,
+            &output,
+            &hooks,
+        ),
+        Err(Error::Sticker(StickerError::NotDownloaded { .. }))
+    ));
+    assert!(!output.exists(), "nothing is staged for a refused export");
+}
+
 /// Side of the square split clip. Bilinear upscaling ramps over one source column, so the
 /// clip has enough columns that the ramp stays well under the smallest blur sigma probed.
 const SPLIT_SIDE: u32 = 256;

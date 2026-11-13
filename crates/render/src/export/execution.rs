@@ -750,6 +750,25 @@ impl SourceProvider for OmittedSources<'_> {
     }
 }
 
+/// Refuses an export whose range shows a fetched sticker that is not downloaded or fails its
+/// verification, so no placeholder box reaches a published file.
+pub(super) fn admit_stickers(project: &Project, range: TimeRange) -> Result<()> {
+    for item in project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+    {
+        if let ItemParams::Sticker(params) = &item.content
+            && range.overlaps(TimeRange::new(item.start, item.end()?)?)
+        {
+            crate::scene::admit_sticker(&params.sticker)?;
+        }
+    }
+    Ok(())
+}
+
 /// Sound-library, music and sticker-collection attribution and licence records
 /// carried into the container metadata. Duplicates are collapsed by exact provider
 /// identity and URL; the combined comment is bounded by the muxer's own admission.

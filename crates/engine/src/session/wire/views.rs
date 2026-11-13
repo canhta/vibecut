@@ -204,7 +204,8 @@ pub struct SavedMusicEntry {
     pub saved_at_unix_ms: u64,
 }
 
-/// Filter of `stickers.search`. Stickers are flags only, so `all` and `flags` list the same rows.
+/// Filter of `stickers.search`. `all` lists emoji, flags and icons in that order; emoji and icons
+/// come only from collections that are downloaded.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -212,7 +213,9 @@ pub struct SavedMusicEntry {
 pub enum StickerCategory {
     #[default]
     All,
+    Emoji,
     Flags,
+    Icons,
 }
 
 /// One bundled sticker: the `provider:value` id a project stores, a display name and the

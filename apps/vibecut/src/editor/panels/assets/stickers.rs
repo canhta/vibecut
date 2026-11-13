@@ -7,8 +7,8 @@ use crate::i18n::{self, Locale, Text};
 use crate::{Result, egui};
 use engine::control::StickerCategory;
 use libraries::stickers::{
-    DEFAULT_SEARCH_LIMIT, FLAG_SIZE, FLAGS_PROVIDER, parse_sticker_id, resolve_sticker,
-    search_catalog,
+    DEFAULT_SEARCH_LIMIT, FLAG_SIZE, FLAGS_PROVIDER, native_store, parse_sticker_id,
+    resolve_sticker, search_catalog,
 };
 use std::{cell::RefCell, collections::BTreeMap};
 
@@ -138,8 +138,19 @@ pub(super) fn rows(
             .filter(|tile| needle.is_empty() || tile.name.to_lowercase().contains(&needle))
             .collect()
     };
+    // Flags only until the Emoji and Icons tabs read the collections; a store read failure shows
+    // no flags rather than a stale page.
     let flags = (tab != StickerTab::Shapes)
-        .then(|| search_catalog(query, StickerCategory::Flags, Some(limit as u32)));
+        .then(|| {
+            search_catalog(
+                native_store(),
+                query,
+                StickerCategory::Flags,
+                Some(limit as u32),
+            )
+            .ok()
+        })
+        .flatten();
     let total = shapes.len() + flags.as_ref().map_or(0, |page| page.total as usize);
     let mut results = shapes;
     results.extend(
@@ -186,7 +197,7 @@ fn known_recents(saved: &[String], locale: Locale) -> Vec<Tile> {
                     shape: true,
                 });
             }
-            resolve_sticker(id).map(|entry| Tile {
+            resolve_sticker(native_store(), id).map(|entry| Tile {
                 id: entry.id,
                 name: entry.name,
                 shape: false,

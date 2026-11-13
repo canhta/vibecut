@@ -2186,6 +2186,32 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
             .build(),
         ],
     });
+    // One fetched sticker per collection: each is drawn from the lent source and credited.
+    FetchedStickers::lend();
+    for (index, sticker) in [
+        FetchedStickers::RED,
+        FetchedStickers::GREEN,
+        FetchedStickers::BLUE,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        data.scene_mut().timeline.insert_track(project::Track {
+            id: project::TrackId(4 + index as u64),
+            name: "Fetched stickers".into(),
+            kind: project::TrackKind::Sticker,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![
+                testkit::item::item(
+                    project::ItemId(3 + index as u64),
+                    project::ItemParams::Sticker(project::StickerParams::new(sticker, 256, 256)),
+                )
+                .build(),
+            ],
+        });
+    }
     let p = project::Project::new(data).unwrap();
     let mut settings = ExportSettings::from_project(&p);
     settings.overwrite = project::atomic::Overwrite::Replace;
@@ -2205,6 +2231,13 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
     assert!(comment.contains("Whoosh by Freesound user (Attribution)"));
     assert!(comment.contains("https://freesound.org/s/42/"));
     assert!(comment.contains("flag-icons by Panayiotis Lipiridis (MIT)"));
+    for credit in [
+        "Noto Emoji by Google (Apache-2.0)",
+        "Lucide by Lucide Icons and Contributors (ISC)",
+        "Phosphor Icons by Phosphor Icons (MIT)",
+    ] {
+        assert!(comment.contains(credit), "{credit} missing from {comment}");
+    }
     let published = std::fs::read(&output).unwrap();
     for limit in ["bytes", "records"] {
         let mut data = p.data().clone();

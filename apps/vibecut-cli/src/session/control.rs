@@ -74,7 +74,7 @@ fn control_with(
     // final save, so no other writer can interleave during the stream.
     let mut lease = WriterLease::acquire(&project_path)?;
     let loaded = lease.load()?;
-    super::prepare_project_fonts(&loaded.project)?;
+    super::prepare_project_libraries(&loaded.project)?;
     let mut session = Session::new(loaded.project, 100)?;
     session.restore_metadata(lease.metadata())?;
     session.protect_paths(vec![
@@ -111,7 +111,7 @@ fn control_with(
     let mut last_exit = 0u8;
 
     loop {
-        super::prepare_project_fonts(session.project())?;
+        super::prepare_project_libraries(session.project())?;
         runner.tick()?;
         session.observe_jobs(&runner);
         let frame = match read_control_frame(&mut input, control::MAX_FRAME_BYTES) {

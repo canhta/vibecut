@@ -2,6 +2,7 @@
 
 pub(super) mod sticker;
 mod sticker_flags;
+pub(super) mod sticker_source;
 
 use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{TextAlign, TextCase, TextDecoration};

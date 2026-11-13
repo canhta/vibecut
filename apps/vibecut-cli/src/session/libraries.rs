@@ -9,8 +9,11 @@ use libraries::sounds::{
 };
 use std::path::Path;
 
-pub(crate) fn prepare_project_fonts(project: &project::Project) -> Result<(), CliError> {
+/// Registers the project's imported fonts and lends the sticker cache to the renderer, so an
+/// export draws downloaded emoji and icons and refuses ones that are not downloaded.
+pub(crate) fn prepare_project_libraries(project: &project::Project) -> Result<(), CliError> {
     FontStore::native()?.load_project(project)?;
+    libraries::stickers::native_store();
     Ok(())
 }
 
@@ -44,25 +47,26 @@ pub(crate) fn with_fonts<T>(serve: impl FnOnce(Option<&FontAccess<'_>>) -> T) ->
     serve(fonts.as_ref())
 }
 
-/// The bundled sticker catalog's search, the page `stickers.search` returns.
+/// The sticker catalog's search, the page `stickers.search` returns.
 fn sticker_search(
     query: &engine::control::StickerQuery,
 ) -> engine::control::Result<engine::control::StickerPage> {
-    Ok(libraries::stickers::search_catalog(
+    libraries::stickers::search_catalog(
+        libraries::stickers::native_store(),
         &query.query,
         query.category,
         query.limit,
-    ))
+    )
 }
 
-/// The bundled sticker catalog's entry for an id, refused when the catalog does not know it.
+/// The sticker catalog's entry for an id, refused when the catalog does not know it.
 fn sticker_resolve(id: &str) -> engine::control::Result<engine::control::StickerEntry> {
-    libraries::stickers::resolve_sticker(id).ok_or(engine::control::Error::Edit(
-        engine::EditError::Invalid("unknown sticker id"),
-    ))
+    libraries::stickers::resolve_sticker(libraries::stickers::native_store(), id).ok_or(
+        engine::control::Error::Edit(engine::EditError::Invalid("unknown sticker id")),
+    )
 }
 
-/// The bundled sticker catalog as an MCP inbox lends it. It has no store to open.
+/// The sticker catalog as an MCP inbox lends it; the per-user store opens on first use.
 pub(crate) fn sticker_lend() -> mcp::StickerLend {
     mcp::StickerLend {
         search: sticker_search,
@@ -70,7 +74,8 @@ pub(crate) fn sticker_lend() -> mcp::StickerLend {
     }
 }
 
-/// Lend the bundled sticker catalog. It has no store to open, so the access always exists.
+/// Lend the sticker catalog. Without a cache location only flags resolve, so the access always
+/// exists.
 pub(crate) fn with_stickers<T>(serve: impl FnOnce(&StickerAccess<'_>) -> T) -> T {
     serve(&StickerAccess::new(&sticker_search, &sticker_resolve))
 }

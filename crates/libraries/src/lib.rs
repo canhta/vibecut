@@ -24,8 +24,8 @@ pub mod stickers {
         Category, Collection, CollectionState, DEFAULT_SEARCH_LIMIT, Entry, FETCHED_SIZE,
         FLAG_SIZE, FLAGS_PROVIDER, FlagMatch, FlagPage, Item, MAX_RECENT_STICKERS, MAX_SVG_BYTES,
         Page, Recents, StickerStore, Unavailable, build_sticker_id, check_svg, curated_collections,
-        insert_sticker, is_offline, parse_sticker_id, resolve_sticker, search_catalog,
-        search_flags,
+        insert_sticker, is_offline, native_store, parse_sticker_id, resolve_sticker,
+        search_catalog, search_flags,
     };
 }
 mod music_library;

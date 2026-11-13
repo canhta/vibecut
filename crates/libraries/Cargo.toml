@@ -12,6 +12,7 @@ workspace = true
 engine.workspace = true
 media.workspace = true
 project.workspace = true
+render.workspace = true
 text.workspace = true
 time.workspace = true
 transport.workspace = true

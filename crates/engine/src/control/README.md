@@ -199,7 +199,7 @@ without it. All three are `grant = Human`, so an agent transport refuses them an
 composition supplies the one library root. `sounds.save` is an idempotent upsert and
 `sounds.unsave` an idempotent removal, so replaying either is safe.
 
-`stickers.search` and `stickers.insert` run over the lent `StickerAccess` (a search function and an id resolver). Both are `grant = Agent`. Search is a read; insert resolves the id to its entry, then applies one ordinary `InsertItem` with `ItemParams::Sticker` (one undo step), so the kernel stores only the canonical id and the intrinsic size the catalog reports and holds no sticker data. A caller without the access refuses `Unsupported`; the CLI `control` session lends the bundled catalog, the in-process MCP inbox does not yet.
+`stickers.search` and `stickers.insert` run over the lent `StickerAccess` (a search function and an id resolver). Both are `grant = Agent`. Search is a read; insert resolves the id to its entry, then applies one ordinary `InsertItem` with `ItemParams::Sticker` (one undo step), so the kernel stores only the canonical id and the intrinsic size the catalog reports and holds no sticker data. `stickers.search` takes a category of `all`, `emoji`, `flags` or `icons`; the lent search and resolver cover flags and every fetched collection (resolving an id does not need the collection downloaded; rendering refuses it until it is). A caller without the access refuses `Unsupported`; the CLI `control` session and the desktop and headless MCP inboxes lend the catalog.
 
 ## Control events and resynchronization
 

@@ -7,22 +7,24 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The bundled sticker catalog the desktop MCP inbox lends to `stickers.search` and
-/// `stickers.insert`, the same catalog the Stickers panel and the CLI read.
+/// The sticker catalog (flags and the downloaded emoji and icon collections) the desktop MCP inbox
+/// lends to `stickers.search` and `stickers.insert`, the same catalog the Stickers panel and the
+/// CLI read.
 pub fn sticker_lend() -> mcp::StickerLend {
     fn search(
         query: &engine::control::StickerQuery,
     ) -> engine::control::Result<engine::control::StickerPage> {
-        Ok(libraries::stickers::search_catalog(
+        libraries::stickers::search_catalog(
+            libraries::stickers::native_store(),
             &query.query,
             query.category,
             query.limit,
-        ))
+        )
     }
     fn resolve(id: &str) -> engine::control::Result<engine::control::StickerEntry> {
-        libraries::stickers::resolve_sticker(id).ok_or(engine::control::Error::Edit(
-            engine::EditError::Invalid("unknown sticker id"),
-        ))
+        libraries::stickers::resolve_sticker(libraries::stickers::native_store(), id).ok_or(
+            engine::control::Error::Edit(engine::EditError::Invalid("unknown sticker id")),
+        )
     }
     mcp::StickerLend { search, resolve }
 }

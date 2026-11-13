@@ -10,6 +10,6 @@
 - `music save <library> <track-json>` and `music unsave <library> <id>` run `music.save` and `music.unsave` against the same rented library.
 - `music add <project> <library> <id> [--start <ticks>]` requires the exact audio URL to be cached locally and never downloads implicitly. It commits the asset and audio item as one undo step through `music.add_to_timeline`, copying the track into `<project>.media/`.
 
-- `stickers search [--category all|flags] [--limit N] [query]` runs `stickers.search` and `stickers insert <project> <id> [--start <ticks>] [--duration <ticks>]` runs `stickers.insert`, both against the bundled catalog lent through the control caller; no store, network or credential is involved. The project keeps only the id and intrinsic size.
+- `stickers search [--category all|emoji|flags|icons] [--limit N] [query]` runs `stickers.search` and `stickers insert <project> <id> [--start <ticks>] [--duration <ticks>]` runs `stickers.insert`, both against the catalog lent through the control caller (flags plus the downloaded emoji and icon collections of the per-user sticker store); neither command downloads anything or uses the network or a credential. The project keeps only the id and intrinsic size.
 
 Missing cache, missing credential, auth, quota, rate-limit, network and no-audio-device failures keep distinct stable codes. No command prints or persists a key. The `sounds.*` and `music.*` library commands are `grant = Human`, so an agent transport refuses them.
