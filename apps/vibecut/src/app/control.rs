@@ -7,6 +7,26 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The bundled sticker catalog the desktop MCP inbox lends to `stickers.search` and
+/// `stickers.insert`, the same catalog the Stickers panel and the CLI read.
+pub fn sticker_lend() -> mcp::StickerLend {
+    fn search(
+        query: &engine::control::StickerQuery,
+    ) -> engine::control::Result<engine::control::StickerPage> {
+        Ok(libraries::stickers::search_catalog(
+            &query.query,
+            query.category,
+            query.limit,
+        ))
+    }
+    fn resolve(id: &str) -> engine::control::Result<engine::control::StickerEntry> {
+        libraries::stickers::resolve_sticker(id).ok_or(engine::control::Error::Edit(
+            engine::EditError::Invalid("unknown sticker id"),
+        ))
+    }
+    mcp::StickerLend { search, resolve }
+}
+
 /// Route desktop control by project id; focus is only the omitted-target default.
 pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Result<()> {
     inbox.retain_projects(|id| workspace.windows.contains_key(&id));

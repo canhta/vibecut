@@ -12,7 +12,7 @@ mod transport;
 pub use error::Error;
 pub use grants::Grants;
 pub use handler::Handler;
-pub use inbox::Inbox;
+pub use inbox::{Inbox, StickerLend};
 pub use server::Server;
 pub use socket::proxy;
 pub use transport::Framed;

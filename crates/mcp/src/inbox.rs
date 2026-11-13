@@ -5,7 +5,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
     ByteBudget, Session,
     control::Error as EngineError,
-    control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
+    control::{
+        self, Caller, ControlResult, MediaAccess, ResponseValue, StickerAccess, StickerEntry,
+        StickerPage, StickerQuery,
+    },
     jobs::{JobRunner, RunnerConfig, SystemClock},
     providers::TextAccess,
 };
@@ -17,7 +20,16 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(super) const QUEUE: usize = 16;
+
 pub(super) const DEADLINE: Duration = Duration::from_secs(30);
+
+/// The bundled sticker catalog a composition root lends to `stickers.search` and
+/// `stickers.insert`. The catalog is plain data, so the two functions are lent by value.
+#[derive(Clone, Copy)]
+pub struct StickerLend {
+    pub search: fn(&StickerQuery) -> control::Result<StickerPage>,
+    pub resolve: fn(&str) -> control::Result<StickerEntry>,
+}
 
 pub(super) struct Pending {
     pub(super) value: Value,
@@ -44,6 +56,9 @@ pub struct Inbox {
     /// The local vision detector the CLI composition root lends to
     /// `reframe.generate`. A desktop inbox currently lends none.
     vision: Option<Arc<engine::control::VisionAccess>>,
+    /// The bundled sticker catalog behind `stickers.search` and `stickers.insert`. Without it
+    /// those commands refuse `Unsupported`.
+    stickers: Option<StickerLend>,
 }
 impl Inbox {
     /// Build an inbox with its own media cache; without a usable cache the
@@ -88,6 +103,7 @@ impl Inbox {
                 chapters: None,
                 captions: None,
                 vision: None,
+                stickers: None,
             },
         ))
     }
@@ -112,6 +128,11 @@ impl Inbox {
     /// without it keeps every other command available.
     pub fn attach_vision(&mut self, vision: Arc<engine::control::VisionAccess>) {
         self.vision = Some(vision);
+    }
+
+    /// Lend the bundled sticker catalog behind `stickers.search` and `stickers.insert`.
+    pub fn attach_stickers(&mut self, stickers: StickerLend) {
+        self.stickers = Some(stickers);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -233,6 +254,7 @@ impl Inbox {
             chapters,
             captions,
             vision,
+            stickers,
             ..
         } = self;
         let runner = projects.get_mut(&id).ok_or(EngineError::Control(
@@ -246,6 +268,7 @@ impl Inbox {
             chapters.as_deref(),
             captions.as_deref(),
             vision.as_deref(),
+            *stickers,
             session,
             value,
             publish,
@@ -265,6 +288,7 @@ impl Inbox {
             chapters,
             captions,
             vision,
+            stickers,
             ..
         } = self;
         Self::execute_with(
@@ -274,6 +298,7 @@ impl Inbox {
             chapters.as_deref(),
             captions.as_deref(),
             vision.as_deref(),
+            *stickers,
             session,
             value,
             publish,
@@ -290,11 +315,16 @@ impl Inbox {
         chapters: Option<&TextAccess>,
         captions: Option<&engine::subtitles::CaptionAccess>,
         vision: Option<&engine::control::VisionAccess>,
+        stickers: Option<StickerLend>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
     ) -> engine::control::Result<Value> {
         let request = control::build_request(session, value)?;
+        let lent = stickers.map(|lend| (lend.search, lend.resolve));
+        let sticker_access = lent
+            .as_ref()
+            .map(|(search, resolve)| StickerAccess::new(search, resolve));
         let caller = Caller {
             principal: "local-mcp",
             external: true,
@@ -302,7 +332,7 @@ impl Inbox {
             fonts: None,
             sounds: None,
             music: None,
-            stickers: None,
+            stickers: sticker_access.as_ref(),
             brand: None,
             media,
             chapters,

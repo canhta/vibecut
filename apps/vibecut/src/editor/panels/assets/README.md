@@ -37,6 +37,6 @@ The Stickers tab searches with the search field and the All, Flags and Shapes ta
 
 Recent lists up to 50 ids of both kinds, newest first and deduplicated, from `Preferences::sticker_recents`. Stale ids drop out when the list is read. It stays outside projects, shows only while the search is empty, follows the tab, and Clear empties the saved list. The shared insertion predicate gates every insert, so drafts, transactions and modal work refuse it. Shape cards use their command ids (`graphic.insert.star`); other tiles use `stickers.insert.<id>` and Recent tiles `stickers.recent.insert.<id>`.
 
-The tile grid reuses the measured Effects card pitch (88 px cards, 15 px gaps) until a Stickers grid is measured. Sticker-specific geometry, the preview count of 24 and the five-second default length are open.
+The tile grid uses the measured Stickers grid: 85 px square tiles, 17 px column gaps and 13 px row gaps ([editor UI](../../../../../../docs/product/ui/editor.md#stickers-grid)). The name and `+` action under each tile are proposed. The preview count of 24 and the five-second default length are open.
 
 Music section: [sounds](sounds/README.md#music-section).
